@@ -13,6 +13,7 @@ from openlabels import __version__
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, close_db
 from openlabels.server.routes import (
+    auth,
     scans,
     results,
     targets,
@@ -86,6 +87,7 @@ async def api_info():
 
 
 # Include routers
+app.include_router(auth.router, tags=["Authentication"])  # /auth/* endpoints
 app.include_router(scans.router, prefix="/api/scans", tags=["Scans"])
 app.include_router(results.router, prefix="/api/results", tags=["Results"])
 app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
