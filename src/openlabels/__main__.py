@@ -549,6 +549,294 @@ def classify(file_path: str, exposure: str, enable_ml: bool):
         click.echo(f"Error classifying file: {e}", err=True)
 
 
+# =============================================================================
+# REMEDIATION COMMANDS
+# =============================================================================
+
+
+@cli.command()
+@click.argument("source", type=click.Path(exists=True))
+@click.argument("destination", type=click.Path())
+@click.option("--preserve-acls/--no-preserve-acls", default=True, help="Preserve ACLs during move")
+@click.option("--dry-run", is_flag=True, help="Preview without moving")
+def quarantine(source: str, destination: str, preserve_acls: bool, dry_run: bool):
+    """Quarantine a sensitive file to a secure location.
+
+    Moves the file from SOURCE to DESTINATION, optionally preserving ACLs.
+    On Windows uses robocopy for ACL preservation, on Unix uses rsync.
+
+    Examples:
+        openlabels quarantine ./sensitive.xlsx ./quarantine/
+        openlabels quarantine ./file.docx /secure/vault/ --dry-run
+    """
+    from openlabels.remediation import quarantine as do_quarantine
+
+    source_path = Path(source)
+    dest_path = Path(destination)
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would move {source_path} -> {dest_path}")
+        click.echo(f"  Preserve ACLs: {preserve_acls}")
+
+    result = do_quarantine(
+        source=source_path,
+        destination=dest_path,
+        preserve_acls=preserve_acls,
+        dry_run=dry_run,
+    )
+
+    if result.success:
+        if dry_run:
+            click.echo("Dry run completed successfully")
+        else:
+            click.echo(f"Quarantined: {result.source_path}")
+            click.echo(f"        To: {result.dest_path}")
+            click.echo(f"        By: {result.performed_by}")
+    else:
+        click.echo(f"Error: {result.error}", err=True)
+        sys.exit(1)
+
+
+@cli.command("lock-down")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--principals", multiple=True, help="Principals to grant access (repeatable)")
+@click.option("--keep-inheritance", is_flag=True, help="Keep permission inheritance")
+@click.option("--backup-acl", is_flag=True, help="Backup current ACL for rollback")
+@click.option("--dry-run", is_flag=True, help="Preview without changing permissions")
+def lock_down_cmd(file_path: str, principals: tuple, keep_inheritance: bool, backup_acl: bool, dry_run: bool):
+    """Lock down file permissions to restrict access.
+
+    Removes all permissions except for specified principals (defaults to
+    Administrators on Windows, root on Unix).
+
+    Examples:
+        openlabels lock-down ./sensitive.xlsx
+        openlabels lock-down ./file.docx --principals admin --principals secteam
+        openlabels lock-down ./file.txt --dry-run --backup-acl
+    """
+    from openlabels.remediation import lock_down
+
+    path = Path(file_path)
+    principal_list = list(principals) if principals else None
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would lock down {path}")
+        if principal_list:
+            click.echo(f"  Allowed principals: {principal_list}")
+        click.echo(f"  Remove inheritance: {not keep_inheritance}")
+
+    result = lock_down(
+        path=path,
+        allowed_principals=principal_list,
+        remove_inheritance=not keep_inheritance,
+        backup_acl=backup_acl,
+        dry_run=dry_run,
+    )
+
+    if result.success:
+        if dry_run:
+            click.echo("Dry run completed successfully")
+        else:
+            click.echo(f"Locked down: {result.source_path}")
+            click.echo(f"  Principals: {', '.join(result.principals or [])}")
+        if result.previous_acl and backup_acl:
+            click.echo(f"  ACL backup saved (can be used for rollback)")
+    else:
+        click.echo(f"Error: {result.error}", err=True)
+        sys.exit(1)
+
+
+# =============================================================================
+# MONITORING COMMANDS
+# =============================================================================
+
+
+@cli.group()
+def monitor():
+    """File access monitoring commands."""
+    pass
+
+
+@monitor.command("enable")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--risk-tier", default="HIGH", type=click.Choice(["CRITICAL", "HIGH", "MEDIUM", "LOW"]))
+@click.option("--audit-read/--no-audit-read", default=True, help="Audit read access")
+@click.option("--audit-write/--no-audit-write", default=True, help="Audit write access")
+def monitor_enable(file_path: str, risk_tier: str, audit_read: bool, audit_write: bool):
+    """Enable access monitoring on a file.
+
+    On Windows: Adds SACL audit rules to capture access events.
+    On Linux: Adds auditd rules via auditctl.
+
+    Prerequisites:
+        Windows: "Audit object access" must be enabled in security policy
+        Linux: auditd service must be running, requires root
+
+    Examples:
+        openlabels monitor enable ./sensitive.xlsx
+        openlabels monitor enable ./secrets.json --risk-tier CRITICAL
+    """
+    from openlabels.monitoring import enable_monitoring
+
+    path = Path(file_path)
+
+    result = enable_monitoring(
+        path=path,
+        risk_tier=risk_tier,
+        audit_read=audit_read,
+        audit_write=audit_write,
+    )
+
+    if result.success:
+        click.echo(f"Monitoring enabled: {path}")
+        click.echo(f"  Risk tier: {risk_tier}")
+        if result.sacl_enabled:
+            click.echo("  SACL: enabled")
+        if result.audit_rule_enabled:
+            click.echo("  Audit rule: enabled")
+        if result.message:
+            click.echo(f"  Note: {result.message}")
+    else:
+        click.echo(f"Error: {result.error}", err=True)
+        sys.exit(1)
+
+
+@monitor.command("disable")
+@click.argument("file_path", type=click.Path(exists=True))
+def monitor_disable(file_path: str):
+    """Disable access monitoring on a file.
+
+    Removes the SACL (Windows) or audit rule (Linux).
+
+    Examples:
+        openlabels monitor disable ./sensitive.xlsx
+    """
+    from openlabels.monitoring import disable_monitoring
+
+    path = Path(file_path)
+
+    result = disable_monitoring(path=path)
+
+    if result.success:
+        click.echo(f"Monitoring disabled: {path}")
+        if result.message:
+            click.echo(f"  {result.message}")
+    else:
+        click.echo(f"Error: {result.error}", err=True)
+        sys.exit(1)
+
+
+@monitor.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def monitor_list(as_json: bool):
+    """List all monitored files.
+
+    Shows files that have been registered for access monitoring.
+
+    Examples:
+        openlabels monitor list
+        openlabels monitor list --json
+    """
+    from openlabels.monitoring import get_watched_files
+
+    watched = get_watched_files()
+
+    if as_json:
+        import json as json_mod
+        output = [w.to_dict() for w in watched]
+        click.echo(json_mod.dumps(output, indent=2, default=str))
+    elif not watched:
+        click.echo("No files currently monitored")
+    else:
+        click.echo(f"{'Path':<50} {'Risk':<10} {'Added':<20}")
+        click.echo("-" * 80)
+        for w in watched:
+            path_str = str(w.path)[:49]
+            added = w.added_at.strftime("%Y-%m-%d %H:%M") if w.added_at else "N/A"
+            click.echo(f"{path_str:<50} {w.risk_tier:<10} {added:<20}")
+
+
+@monitor.command("history")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--days", default=30, type=int, help="Number of days to look back")
+@click.option("--limit", default=50, type=int, help="Maximum events to return")
+@click.option("--include-system", is_flag=True, help="Include system account access")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def monitor_history(file_path: str, days: int, limit: int, include_system: bool, as_json: bool):
+    """Show access history for a file.
+
+    Queries Windows Event Log or Linux audit logs for access events
+    on the specified file.
+
+    Examples:
+        openlabels monitor history ./sensitive.xlsx
+        openlabels monitor history ./secrets.json --days 7 --limit 100
+        openlabels monitor history ./file.docx --json
+    """
+    from openlabels.monitoring import get_access_history
+
+    path = Path(file_path)
+
+    events = get_access_history(
+        path=path,
+        days=days,
+        limit=limit,
+        include_system=include_system,
+    )
+
+    if as_json:
+        import json as json_mod
+        output = [e.to_dict() for e in events]
+        click.echo(json_mod.dumps(output, indent=2, default=str))
+    elif not events:
+        click.echo(f"No access events found for: {path}")
+        click.echo(f"  (searched last {days} days)")
+    else:
+        click.echo(f"Access history for: {path}")
+        click.echo(f"{'Timestamp':<20} {'User':<25} {'Action':<12} {'Process':<20}")
+        click.echo("-" * 80)
+        for event in events:
+            ts = event.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            user = event.user_display[:24]
+            action = event.action.value
+            process = (event.process_name or "")[:19]
+            click.echo(f"{ts:<20} {user:<25} {action:<12} {process:<20}")
+
+
+@monitor.command("status")
+@click.argument("file_path", type=click.Path(exists=True))
+def monitor_status(file_path: str):
+    """Check monitoring status for a file.
+
+    Shows whether a file is being monitored and its configuration.
+
+    Examples:
+        openlabels monitor status ./sensitive.xlsx
+    """
+    from openlabels.monitoring import is_monitored, get_watched_files
+
+    path = Path(file_path).resolve()
+
+    if is_monitored(path):
+        # Find the watched file entry
+        watched = get_watched_files()
+        entry = next((w for w in watched if w.path == path), None)
+
+        click.echo(f"File: {path}")
+        click.echo(f"Status: MONITORED")
+        if entry:
+            click.echo(f"  Risk tier: {entry.risk_tier}")
+            click.echo(f"  Added: {entry.added_at.strftime('%Y-%m-%d %H:%M:%S') if entry.added_at else 'N/A'}")
+            click.echo(f"  SACL enabled: {entry.sacl_enabled}")
+            click.echo(f"  Audit rule enabled: {entry.audit_rule_enabled}")
+            if entry.last_event_at:
+                click.echo(f"  Last access: {entry.last_event_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            click.echo(f"  Access count: {entry.access_count}")
+    else:
+        click.echo(f"File: {path}")
+        click.echo("Status: NOT MONITORED")
+
+
 def main():
     """Main entry point."""
     cli()
