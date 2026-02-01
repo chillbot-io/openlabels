@@ -528,6 +528,140 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             logger.error(f"Failed to resolve share URL: {e}")
             return None
 
+    async def remove_label(self, file_info: FileInfo) -> LabelResult:
+        """
+        Remove sensitivity label from a file.
+
+        Args:
+            file_info: File information from an adapter
+
+        Returns:
+            LabelResult with success status
+        """
+        if file_info.adapter == "filesystem":
+            return await self._remove_local_label(file_info.path)
+        elif file_info.adapter in ("sharepoint", "onedrive"):
+            return await self._remove_graph_label(file_info)
+        else:
+            return LabelResult(
+                success=False,
+                error=f"Unknown adapter type: {file_info.adapter}",
+            )
+
+    async def _remove_local_label(self, file_path: str) -> LabelResult:
+        """Remove label from local file."""
+        path = Path(file_path)
+        ext = path.suffix.lower()
+
+        # Remove sidecar file if exists
+        sidecar_path = Path(f"{file_path}.openlabels")
+        if sidecar_path.exists():
+            sidecar_path.unlink()
+
+        if ext in (".docx", ".xlsx", ".pptx"):
+            return await self._remove_office_label(file_path)
+        elif ext == ".pdf":
+            return await self._remove_pdf_label(file_path)
+        else:
+            # Sidecar removal was enough
+            return LabelResult(success=True, method="sidecar_removed")
+
+    async def _remove_office_label(self, file_path: str) -> LabelResult:
+        """Remove label from Office document custom properties."""
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                file_list = zf.namelist()
+                custom_props_path = "docProps/custom.xml"
+
+                if custom_props_path not in file_list:
+                    return LabelResult(success=True, method="no_label_found")
+
+                custom_xml = zf.read(custom_props_path).decode("utf-8")
+
+                import re
+                # Remove OpenLabels and Classification properties
+                custom_xml = re.sub(r'<property[^>]*name="OpenLabels_[^"]*"[^>]*>.*?</property>\s*', '', custom_xml, flags=re.DOTALL)
+                custom_xml = re.sub(r'<property[^>]*name="Classification"[^>]*>.*?</property>\s*', '', custom_xml, flags=re.DOTALL)
+
+                # Write updated file
+                output = io.BytesIO()
+                with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
+                    for item in file_list:
+                        if item != custom_props_path:
+                            out_zf.writestr(item, zf.read(item))
+                    out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
+
+                with open(file_path, "wb") as f:
+                    f.write(output.getvalue())
+
+            return LabelResult(success=True, method="office_metadata_removed")
+
+        except Exception as e:
+            return LabelResult(success=False, error=f"Failed to remove Office label: {e}")
+
+    async def _remove_pdf_label(self, file_path: str) -> LabelResult:
+        """Remove label from PDF metadata."""
+        try:
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except ImportError:
+                from PyPDF2 import PdfReader, PdfWriter
+
+            reader = PdfReader(file_path)
+            writer = PdfWriter()
+
+            for page in reader.pages:
+                writer.add_page(page)
+
+            # Copy metadata except label fields
+            if reader.metadata:
+                clean_metadata = {
+                    k: v for k, v in dict(reader.metadata).items()
+                    if not k.startswith("/OpenLabels_") and k != "/Classification"
+                }
+                writer.add_metadata(clean_metadata)
+
+            with open(file_path, "wb") as f:
+                writer.write(f)
+
+            return LabelResult(success=True, method="pdf_metadata_removed")
+
+        except Exception as e:
+            return LabelResult(success=False, error=f"Failed to remove PDF label: {e}")
+
+    async def _remove_graph_label(self, file_info: FileInfo) -> LabelResult:
+        """Remove label from SharePoint/OneDrive file via Graph API."""
+        try:
+            item_id = file_info.item_id or ""
+
+            if "/drive/items/" in item_id:
+                endpoint = f"/{item_id}"
+            elif file_info.site_id and item_id:
+                endpoint = f"/sites/{file_info.site_id}/drive/items/{item_id}"
+            elif file_info.user_id and item_id:
+                endpoint = f"/users/{file_info.user_id}/drive/items/{item_id}"
+            else:
+                resolved = await self._resolve_share_url(file_info.path)
+                if not resolved:
+                    return LabelResult(success=False, error="Could not resolve file ID")
+                endpoint = resolved
+
+            # Remove label by setting to null
+            response = await self._graph_request("PATCH", endpoint, {"sensitivityLabel": None})
+
+            if response.status_code in (200, 204):
+                return LabelResult(success=True, method="graph_api_removed")
+            else:
+                error_data = response.json() if response.content else {}
+                error_msg = error_data.get("error", {}).get("message", response.text)
+                return LabelResult(success=False, error=f"Graph API error: {error_msg}")
+
+        except Exception as e:
+            return LabelResult(success=False, error=str(e))
+
     async def get_available_labels(self) -> list[dict]:
         """
         Get available sensitivity labels from M365.
