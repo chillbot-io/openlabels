@@ -1,0 +1,1772 @@
+{
+  "overall": {
+    "precision": 0.5505050505050505,
+    "recall": 0.4007352941176471,
+    "f1": 0.46382978723404256,
+    "true_positives": 327,
+    "false_positives": 267,
+    "false_negatives": 489
+  },
+  "per_type": {
+    "EMAIL": {
+      "precision": 1.0,
+      "recall": 0.9838709677419355,
+      "f1": 0.991869918699187,
+      "tp": 61,
+      "fp": 0,
+      "fn": 1
+    },
+    "URL": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tp": 48,
+      "fp": 0,
+      "fn": 0
+    },
+    "NAME": {
+      "precision": 0.3783783783783784,
+      "recall": 0.0880503144654088,
+      "f1": 0.14285714285714285,
+      "tp": 28,
+      "fp": 46,
+      "fn": 290
+    },
+    "DATE": {
+      "precision": 0.36666666666666664,
+      "recall": 0.5789473684210527,
+      "f1": 0.44897959183673464,
+      "tp": 22,
+      "fp": 38,
+      "fn": 16
+    },
+    "PHONE": {
+      "precision": 0.7931034482758621,
+      "recall": 0.6388888888888888,
+      "f1": 0.7076923076923076,
+      "tp": 23,
+      "fp": 6,
+      "fn": 13
+    },
+    "AUTH_NUMBER": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    },
+    "GPS_COORDINATES": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 14,
+      "fn": 0
+    },
+    "CREDIT_CARD": {
+      "precision": 0.7,
+      "recall": 0.32558139534883723,
+      "f1": 0.44444444444444453,
+      "tp": 14,
+      "fp": 6,
+      "fn": 29
+    },
+    "ACCOUNT": {
+      "precision": 0.6078431372549019,
+      "recall": 0.484375,
+      "f1": 0.5391304347826086,
+      "tp": 31,
+      "fp": 20,
+      "fn": 33
+    },
+    "IP_ADDRESS": {
+      "precision": 1.0,
+      "recall": 0.5213675213675214,
+      "f1": 0.6853932584269664,
+      "tp": 61,
+      "fp": 0,
+      "fn": 56
+    },
+    "ADDRESS": {
+      "precision": 0.1724137931034483,
+      "recall": 0.11363636363636363,
+      "f1": 0.136986301369863,
+      "tp": 5,
+      "fp": 24,
+      "fn": 39
+    },
+    "IBAN": {
+      "precision": 1.0,
+      "recall": 0.8181818181818182,
+      "f1": 0.9,
+      "tp": 18,
+      "fp": 0,
+      "fn": 4
+    },
+    "ID_NUMBER": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 11,
+      "fn": 0
+    },
+    "MAC_ADDRESS": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 14,
+      "fn": 0
+    },
+    "LICENSE_PLATE": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 6,
+      "fn": 0
+    },
+    "AGE": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 10,
+      "fn": 0
+    },
+    "ETHEREUM_ADDRESS": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 15,
+      "fn": 0
+    },
+    "NAME_PROVIDER": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 0
+    },
+    "DEVICE_ID": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    },
+    "SSN": {
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8,
+      "tp": 16,
+      "fp": 0,
+      "fn": 8
+    },
+    "VIN": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 0
+    },
+    "DRIVER_LICENSE": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 5,
+      "fn": 0
+    },
+    "LITECOIN_ADDRESS": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 5,
+      "fn": 0
+    },
+    "SWIFT_BIC": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 5,
+      "fn": 0
+    },
+    "NAME_RELATIVE": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 4,
+      "fn": 0
+    },
+    "DATE_DOB": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 3,
+      "fn": 0
+    },
+    "HEALTH_PLAN_ID": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 4,
+      "fn": 0
+    },
+    "EMPLOYER": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 7,
+      "fn": 0
+    },
+    "PASSWORD": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 13,
+      "fn": 0
+    },
+    "PHONE_EXT": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    },
+    "ROOM": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    },
+    "HEIGHT": {
+      "precision": 0.0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 0
+    }
+  },
+  "false_positives": [
+    {
+      "start": 32,
+      "end": 42,
+      "type": "DATE",
+      "text": "08/04/2022",
+      "confidence": 0.699999988079071,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 32,
+      "end": 39,
+      "type": "AUTH_NUMBER",
+      "text": "parking",
+      "confidence": 0.8999999761581421,
+      "norm_type": "AUTH_NUMBER"
+    },
+    {
+      "start": 48,
+      "end": 65,
+      "type": "GPS_COORDINATES",
+      "text": "-47.3524,106.8148",
+      "confidence": 0.8799999952316284,
+      "norm_type": "GPS_COORDINATES"
+    },
+    {
+      "start": 75,
+      "end": 85,
+      "type": "ADDRESS",
+      "text": "89348-4584",
+      "confidence": 0.8799999952316284,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 122,
+      "end": 132,
+      "type": "DATE",
+      "text": "01/07/1935",
+      "confidence": 0.699999988079071,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 158,
+      "end": 174,
+      "type": "CREDIT_CARD",
+      "text": "3542853920446170",
+      "confidence": 0.87,
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 21,
+      "end": 38,
+      "type": "NAME_PATIENT",
+      "text": "Schaden has found",
+      "confidence": 0.8999999761581421,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 126,
+      "end": 142,
+      "type": "ID_NUMBER",
+      "text": "9322624072092464",
+      "confidence": 0.92,
+      "norm_type": "ID_NUMBER"
+    },
+    {
+      "start": 54,
+      "end": 71,
+      "type": "MAC_ADDRESS",
+      "text": "01:dd:27:9c:82:af",
+      "confidence": 0.8999999761581421,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 75,
+      "end": 84,
+      "type": "NAME_PATIENT",
+      "text": "reviewing",
+      "confidence": 0.8999999761581421,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 30,
+      "end": 36,
+      "type": "ACCOUNT_NUMBER",
+      "text": "number",
+      "confidence": 0.8500000238418579,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 51,
+      "end": 79,
+      "type": "ADDRESS",
+      "text": "73572 Center Road, Suite 991",
+      "confidence": 0.8199999928474426,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 109,
+      "end": 133,
+      "type": "DATE",
+      "text": "2019-10-09T17:29:31.861Z",
+      "confidence": 0.9200000166893005,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 5,
+      "end": 24,
+      "type": "NAME_PATIENT",
+      "text": "named Kianna London",
+      "confidence": 0.8999999761581421,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 78,
+      "end": 85,
+      "type": "LICENSE_PLATE",
+      "text": "IMEI 39",
+      "confidence": 0.75,
+      "norm_type": "LICENSE_PLATE"
+    },
+    {
+      "start": 64,
+      "end": 76,
+      "type": "AGE",
+      "text": "70 years old",
+      "confidence": 0.92,
+      "norm_type": "AGE"
+    },
+    {
+      "start": 243,
+      "end": 250,
+      "type": "LICENSE_PLATE",
+      "text": "MSIE 10",
+      "confidence": 0.75,
+      "norm_type": "LICENSE_PLATE"
+    },
+    {
+      "start": 228,
+      "end": 270,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0x4dd2dce3cbec483ad76d878199cd9ca9da9870c4",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 72,
+      "end": 75,
+      "type": "NAME_PROVIDER",
+      "text": "ERN",
+      "confidence": 0.9200000166893005,
+      "norm_type": "NAME_PROVIDER"
+    },
+    {
+      "start": 99,
+      "end": 108,
+      "type": "DEVICE_ID",
+      "text": "mentioned",
+      "confidence": 0.8999999761581421,
+      "norm_type": "DEVICE_ID"
+    },
+    {
+      "start": 95,
+      "end": 107,
+      "type": "AGE",
+      "text": "92 years old",
+      "confidence": 0.92,
+      "norm_type": "AGE"
+    },
+    {
+      "start": 49,
+      "end": 66,
+      "type": "VIN",
+      "text": "B95F9BJYWMAG74792",
+      "confidence": 0.92,
+      "norm_type": "VIN"
+    },
+    {
+      "start": 138,
+      "end": 188,
+      "type": "MAC_ADDRESS",
+      "text": "OS X 10.9.0 U; LI Presto/2.9.183 Version/10.00) on",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 160,
+      "end": 168,
+      "type": "DRIVER_LICENSE",
+      "text": "00159650",
+      "confidence": 0.800000011920929,
+      "norm_type": "DRIVER_LICENSE"
+    },
+    {
+      "start": 162,
+      "end": 211,
+      "type": "MAC_ADDRESS",
+      "text": "OS X 10.10.7 U; SE Presto/2.9.163 Version/11.00).",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 140,
+      "end": 149,
+      "type": "ADDRESS",
+      "text": "promptly.",
+      "confidence": 0.92,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 20,
+      "end": 34,
+      "type": "ADDRESS",
+      "text": "North Carolina",
+      "confidence": 0.800000011920929,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 137,
+      "end": 149,
+      "type": "DATE",
+      "text": "22th October",
+      "confidence": 0.7799999713897705,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 191,
+      "end": 233,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0xea6b6ea251ff19a83ec36cadc1ba1bee05f5b3ee",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 103,
+      "end": 133,
+      "type": "LITECOIN_ADDRESS",
+      "text": "MnzXH6tyEpB88x7jNtKjL3wceycf8g",
+      "confidence": 0.85,
+      "norm_type": "LITECOIN_ADDRESS"
+    },
+    {
+      "start": 79,
+      "end": 86,
+      "type": "ACCOUNT_NUMBER",
+      "text": "account",
+      "confidence": 0.8500000238418579,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 122,
+      "end": 140,
+      "type": "PHONE",
+      "text": "us at 31.132.172.6",
+      "confidence": 0.92,
+      "norm_type": "PHONE"
+    },
+    {
+      "start": 102,
+      "end": 107,
+      "type": "LICENSE_PLATE",
+      "text": "WOW64",
+      "confidence": 0.75,
+      "norm_type": "LICENSE_PLATE"
+    },
+    {
+      "start": 113,
+      "end": 130,
+      "type": "MAC_ADDRESS",
+      "text": "a1:2a:98:00:83:2e",
+      "confidence": 0.8999999761581421,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 57,
+      "end": 74,
+      "type": "MAC_ADDRESS",
+      "text": "39:70:a3:03:a8:bd",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 74,
+      "end": 98,
+      "type": "DATE",
+      "text": "2001-06-18T09:12:14.603Z",
+      "confidence": 0.9200000166893005,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 97,
+      "end": 108,
+      "type": "SWIFT_BIC",
+      "text": "OKYHGQT3T1R",
+      "confidence": 0.67,
+      "norm_type": "SWIFT_BIC"
+    },
+    {
+      "start": 185,
+      "end": 204,
+      "type": "USERNAME",
+      "text": "Niko_Schamberger59.",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 64,
+      "end": 69,
+      "type": "USERNAME",
+      "text": "agent",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 125,
+      "end": 133,
+      "type": "DRIVER_LICENSE",
+      "text": "20100101",
+      "confidence": 0.75,
+      "norm_type": "DRIVER_LICENSE"
+    },
+    {
+      "start": 45,
+      "end": 56,
+      "type": "DATE",
+      "text": "25th August",
+      "confidence": 0.7799999713897705,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 229,
+      "end": 245,
+      "type": "ID_NUMBER",
+      "text": "7791966530165416",
+      "confidence": 0.92,
+      "norm_type": "ID_NUMBER"
+    },
+    {
+      "start": 7,
+      "end": 35,
+      "type": "NAME_RELATIVE",
+      "text": "Mckenna Parker Runolfsdottir",
+      "confidence": 0.8199999928474426,
+      "norm_type": "NAME_RELATIVE"
+    },
+    {
+      "start": 42,
+      "end": 60,
+      "type": "DATE_DOB",
+      "text": "September 9, 1961,",
+      "confidence": 0.92,
+      "norm_type": "DATE_DOB"
+    },
+    {
+      "start": 318,
+      "end": 331,
+      "type": "NAME_RELATIVE",
+      "text": "Bernice Mayer",
+      "confidence": 0.8199999928474426,
+      "norm_type": "NAME_RELATIVE"
+    },
+    {
+      "start": 132,
+      "end": 139,
+      "type": "DATE",
+      "text": "4:50 PM",
+      "confidence": 0.8799999952316284,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 81,
+      "end": 124,
+      "type": "ACCOUNT_NUMBER",
+      "text": "information: Card 9390590757109983, CCV 637",
+      "confidence": 0.92,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 72,
+      "end": 78,
+      "type": "ACCOUNT_NUMBER",
+      "text": "linked",
+      "confidence": 0.8500000238418579,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 223,
+      "end": 228,
+      "type": "DATE",
+      "text": "20:04",
+      "confidence": 0.8500000238418579,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 232,
+      "end": 243,
+      "type": "DATE",
+      "text": "13th August",
+      "confidence": 0.7799999713897705,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 304,
+      "end": 311,
+      "type": "LICENSE_PLATE",
+      "text": "IMEI 64",
+      "confidence": 0.75,
+      "norm_type": "LICENSE_PLATE"
+    },
+    {
+      "start": 158,
+      "end": 163,
+      "type": "DATE",
+      "text": "05:18",
+      "confidence": 0.8500000238418579,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 115,
+      "end": 132,
+      "type": "MAC_ADDRESS",
+      "text": "80:89:c0:77:a3:d9",
+      "confidence": 0.8999999761581421,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 57,
+      "end": 65,
+      "type": "HEALTH_PLAN_ID",
+      "text": "49404298",
+      "confidence": 0.92,
+      "norm_type": "HEALTH_PLAN_ID"
+    },
+    {
+      "start": 111,
+      "end": 115,
+      "type": "ADDRESS",
+      "text": "July",
+      "confidence": 0.800000011920929,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 105,
+      "end": 109,
+      "type": "ADDRESS",
+      "text": "Metz",
+      "confidence": 0.800000011920929,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 100,
+      "end": 110,
+      "type": "DATE",
+      "text": "30th March",
+      "confidence": 0.7799999713897705,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 165,
+      "end": 181,
+      "type": "CREDIT_CARD",
+      "text": "5403698504705017",
+      "confidence": 0.87,
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 107,
+      "end": 118,
+      "type": "USERNAME",
+      "text": "credentials",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 17,
+      "end": 25,
+      "type": "USERNAME",
+      "text": "activity",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 72,
+      "end": 82,
+      "type": "ACCOUNT_NUMBER",
+      "text": "Investment",
+      "confidence": 0.92,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 91,
+      "end": 97,
+      "type": "ACCOUNT_NUMBER",
+      "text": "logged",
+      "confidence": 0.8500000238418579,
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 149,
+      "end": 204,
+      "type": "MAC_ADDRESS",
+      "text": "OS X 10.5.0; rv:10.8) Gecko/20100101 Firefox/10.8.1 and",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 5,
+      "end": 25,
+      "type": "NAME_PATIENT",
+      "text": "Director named Robin",
+      "confidence": 0.8999999761581421,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 61,
+      "end": 72,
+      "type": "USERNAME",
+      "text": "credentials",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 87,
+      "end": 106,
+      "type": "EMPLOYER",
+      "text": "Principal Solutions",
+      "confidence": 0.85,
+      "norm_type": "EMPLOYER"
+    },
+    {
+      "start": 112,
+      "end": 122,
+      "type": "DATE",
+      "text": "12/06/1984",
+      "confidence": 0.699999988079071,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 122,
+      "end": 139,
+      "type": "MAC_ADDRESS",
+      "text": "3f:5c:2a:55:5f:da",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 60,
+      "end": 102,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0xfa4b6c3db2afacdc154fcab003cee14e3dc1f37b",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 86,
+      "end": 99,
+      "type": "NAME",
+      "text": "Personal Loan",
+      "confidence": 0.92,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 111,
+      "end": 121,
+      "type": "DATE",
+      "text": "24th April",
+      "confidence": 0.7799999713897705,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 83,
+      "end": 125,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0x9b48bf186dcf1fd117b5aa616076afbb9a4b042c",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 222,
+      "end": 229,
+      "type": "NAME",
+      "text": "teacher",
+      "confidence": 0.92,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 71,
+      "end": 73,
+      "type": "AGE",
+      "text": "45",
+      "confidence": 0.9200000166893005,
+      "norm_type": "AGE"
+    },
+    {
+      "start": 195,
+      "end": 200,
+      "type": "DATE",
+      "text": "12:36",
+      "confidence": 0.8500000238418579,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 84,
+      "end": 109,
+      "type": "DATE_DOB",
+      "text": "1954-01-13T00:21:00.053Z.",
+      "confidence": 0.92,
+      "norm_type": "DATE_DOB"
+    },
+    {
+      "start": 122,
+      "end": 138,
+      "type": "ID_NUMBER",
+      "text": "8814767662491894",
+      "confidence": 0.92,
+      "norm_type": "ID_NUMBER"
+    },
+    {
+      "start": 200,
+      "end": 242,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0x8d60c878e1a03dd959ccdecf69fe9708b87d74e0",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 247,
+      "end": 279,
+      "type": "LITECOIN_ADDRESS",
+      "text": "LEQE1sFTKrVQF5gizqmojbEn92ocncBF",
+      "confidence": 0.85,
+      "norm_type": "LITECOIN_ADDRESS"
+    },
+    {
+      "start": 29,
+      "end": 35,
+      "type": "ADDRESS",
+      "text": "Female",
+      "confidence": 0.800000011920929,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 11,
+      "end": 20,
+      "type": "NAME_PATIENT",
+      "text": "a Officer",
+      "confidence": 0.8999999761581421,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 78,
+      "end": 95,
+      "type": "MAC_ADDRESS",
+      "text": "37:e0:d4:53:f0:04",
+      "confidence": 0.92,
+      "norm_type": "MAC_ADDRESS"
+    },
+    {
+      "start": 66,
+      "end": 73,
+      "type": "DATE",
+      "text": "8:15 AM",
+      "confidence": 0.8799999952316284,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 77,
+      "end": 87,
+      "type": "DATE",
+      "text": "12/10/2020",
+      "confidence": 0.699999988079071,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 120,
+      "end": 133,
+      "type": "ADDRESS",
+      "text": "Loan Account.",
+      "confidence": 0.92,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 45,
+      "end": 90,
+      "type": "ADDRESS",
+      "text": "1959 at Broomfield Public School on Torp Lane",
+      "confidence": 0.9,
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 67,
+      "end": 84,
+      "type": "VIN",
+      "text": "WWNTE2JH4XWA82966",
+      "confidence": 0.92,
+      "norm_type": "VIN"
+    },
+    {
+      "start": 113,
+      "end": 128,
+      "type": "GPS_COORDINATES",
+      "text": "57.8257,57.1839",
+      "confidence": 0.8799999952316284,
+      "norm_type": "GPS_COORDINATES"
+    },
+    {
+      "start": 166,
+      "end": 176,
+      "type": "DATE",
+      "text": "12/05/1936",
+      "confidence": 0.699999988079071,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 180,
+      "end": 187,
+      "type": "DATE",
+      "text": "5:39 AM",
+      "confidence": 0.8799999952316284,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 181,
+      "end": 194,
+      "type": "PASSWORD",
+      "text": "s7kfEp1caR0c.",
+      "confidence": 0.8999999761581421,
+      "norm_type": "PASSWORD"
+    },
+    {
+      "start": 84,
+      "end": 91,
+      "type": "DATE",
+      "text": "12:21pm",
+      "confidence": 0.8799999952316284,
+      "norm_type": "DATE"
+    },
+    {
+      "start": 18,
+      "end": 21,
+      "type": "USERNAME",
+      "text": "for",
+      "confidence": 0.8500000238418579,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 107,
+      "end": 120,
+      "type": "PASSWORD",
+      "text": "fXSYfrboCJN8.",
+      "confidence": 0.8999999761581421,
+      "norm_type": "PASSWORD"
+    },
+    {
+      "start": 51,
+      "end": 69,
+      "type": "NAME_PATIENT",
+      "text": "Marianne_Padberg29",
+      "confidence": 0.8549999773502349,
+      "norm_type": "NAME"
+    },
+    {
+      "start": 50,
+      "end": 92,
+      "type": "ETHEREUM_ADDRESS",
+      "text": "0x4bf0ed153b0ab0ece3cccda3787a5e70a7f1c852",
+      "confidence": 0.99,
+      "norm_type": "ETHEREUM_ADDRESS"
+    },
+    {
+      "start": 15,
+      "end": 27,
+      "type": "AGE",
+      "text": "27 years old",
+      "confidence": 0.92,
+      "norm_type": "AGE"
+    },
+    {
+      "start": 191,
+      "end": 202,
+      "type": "ID_NUMBER",
+      "text": "75629804811",
+      "confidence": 0.92,
+      "norm_type": "ID_NUMBER"
+    },
+    {
+      "start": 115,
+      "end": 131,
+      "type": "CREDIT_CARD",
+      "text": "7222538202446569",
+      "confidence": 0.9399999976158142,
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 24,
+      "end": 42,
+      "type": "NAME",
+      "text": "Teacher Assocation",
+      "confidence": 0.92,
+      "norm_type": "NAME"
+    }
+  ],
+  "false_negatives": [
+    {
+      "start": 3,
+      "end": 10,
+      "type": "NAME",
+      "text": "Katlynn",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 56,
+      "end": 67,
+      "type": "PHONE",
+      "text": "06454.22026",
+      "norm_type": "PHONE"
+    },
+    {
+      "start": 108,
+      "end": 118,
+      "type": "DOB",
+      "text": "16/05/1930",
+      "norm_type": "DATE"
+    },
+    {
+      "start": 0,
+      "end": 7,
+      "type": "NAME",
+      "text": "Kendall",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 216,
+      "end": 232,
+      "type": "CREDIT_CARD",
+      "text": "6308206456597485",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 67,
+      "end": 75,
+      "type": "ACCOUNT",
+      "text": "68810864",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 6,
+      "end": 13,
+      "type": "NAME",
+      "text": "Glennie",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 14,
+      "end": 21,
+      "type": "NAME",
+      "text": "Marlowe",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 22,
+      "end": 27,
+      "type": "NAME",
+      "text": "Borer",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 126,
+      "end": 165,
+      "type": "IP",
+      "text": "5f70:aac4:2e20:e74d:3192:19dd:1e38:72ac",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 3,
+      "end": 9,
+      "type": "NAME",
+      "text": "Dejuan",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 52,
+      "end": 91,
+      "type": "IP",
+      "text": "f5e5:c023:48b6:c39e:8abe:b0ae:16f6:9699",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 21,
+      "end": 28,
+      "type": "NAME",
+      "text": "Schaden",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 19,
+      "end": 58,
+      "type": "IP",
+      "text": "dacd:3fe8:c5fc:fbfe:a590:63a3:0c5a:3d73",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 83,
+      "end": 95,
+      "type": "ADDRESS",
+      "text": "Cronin Trace",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 126,
+      "end": 142,
+      "type": "CREDIT_CARD",
+      "text": "9322624072092464",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 78,
+      "end": 85,
+      "type": "NAME",
+      "text": "Gustave",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 35,
+      "end": 51,
+      "type": "CREDIT_CARD",
+      "text": "9704152215984072",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 121,
+      "end": 136,
+      "type": "ADDRESS",
+      "text": "Brittany Estate",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 24,
+      "end": 29,
+      "type": "NAME",
+      "text": "Adele",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 30,
+      "end": 36,
+      "type": "NAME",
+      "text": "Sporer",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 11,
+      "type": "NAME",
+      "text": "Dortha",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 6,
+      "end": 15,
+      "type": "NAME",
+      "text": "Greenholt",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 75,
+      "end": 83,
+      "type": "ACCOUNT",
+      "text": "59381808",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 57,
+      "end": 68,
+      "type": "ADDRESS",
+      "text": "Center Road",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 65,
+      "end": 81,
+      "type": "CREDIT_CARD",
+      "text": "0439893005524504",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 0,
+      "end": 5,
+      "type": "NAME",
+      "text": "North",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 115,
+      "end": 131,
+      "type": "CREDIT_CARD",
+      "text": "8803900108801602",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 43,
+      "end": 49,
+      "type": "NAME",
+      "text": "August",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 50,
+      "end": 58,
+      "type": "NAME",
+      "text": "Prohaska",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 71,
+      "end": 87,
+      "type": "ADDRESS",
+      "text": "Connelly Mission",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 67,
+      "end": 75,
+      "type": "ACCOUNT",
+      "text": "78135482",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 11,
+      "end": 17,
+      "type": "NAME",
+      "text": "Kianna",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 18,
+      "end": 24,
+      "type": "NAME",
+      "text": "London",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 25,
+      "end": 32,
+      "type": "NAME",
+      "text": "Barrows",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 47,
+      "end": 52,
+      "type": "NAME",
+      "text": "James",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 11,
+      "type": "NAME",
+      "text": "Simeon",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 178,
+      "end": 202,
+      "type": "IBAN",
+      "text": "SA02553154344106UG19B531",
+      "norm_type": "IBAN"
+    },
+    {
+      "start": 211,
+      "end": 217,
+      "type": "NAME",
+      "text": "Isaiah",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 218,
+      "end": 224,
+      "type": "NAME",
+      "text": "Austin",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 177,
+      "end": 216,
+      "type": "IP",
+      "text": "d6ba:3c64:7c9a:e7bb:dcee:db43:b60a:5ef2",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 0,
+      "end": 7,
+      "type": "NAME",
+      "text": "Martina",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 148,
+      "end": 162,
+      "type": "PHONE",
+      "text": "(74) 6790.0092",
+      "norm_type": "PHONE"
+    },
+    {
+      "start": 75,
+      "end": 85,
+      "type": "DOB",
+      "text": "23/05/1909",
+      "norm_type": "DATE"
+    },
+    {
+      "start": 0,
+      "end": 7,
+      "type": "NAME",
+      "text": "Lincoln",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 10,
+      "type": "NAME",
+      "text": "Urban",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 0,
+      "end": 5,
+      "type": "NAME",
+      "text": "Ellis",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 112,
+      "end": 125,
+      "type": "SSN",
+      "text": "756.1225.8258",
+      "norm_type": "SSN"
+    },
+    {
+      "start": 6,
+      "end": 13,
+      "type": "NAME",
+      "text": "Alexane",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 3,
+      "end": 6,
+      "type": "NAME",
+      "text": "Kai",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 9,
+      "type": "NAME",
+      "text": "Omer",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 36,
+      "end": 42,
+      "type": "NAME",
+      "text": "Eloisa",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 224,
+      "end": 231,
+      "type": "NAME",
+      "text": "Ardella",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 173,
+      "end": 212,
+      "type": "IP",
+      "text": "cd03:bdcc:d1cb:16fd:bee7:3c21:cacf:36a3",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 0,
+      "end": 7,
+      "type": "NAME",
+      "text": "Juvenal",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 160,
+      "end": 168,
+      "type": "ACCOUNT",
+      "text": "00159650",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 0,
+      "end": 7,
+      "type": "NAME",
+      "text": "Samanta",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 12,
+      "type": "NAME",
+      "text": "Coleman",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 13,
+      "end": 19,
+      "type": "NAME",
+      "text": "Billie",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 20,
+      "end": 25,
+      "type": "NAME",
+      "text": "Grant",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 9,
+      "end": 16,
+      "type": "NAME",
+      "text": "Jessika",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 10,
+      "end": 14,
+      "type": "NAME",
+      "text": "Veum",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 10,
+      "type": "NAME",
+      "text": "Quinn",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 82,
+      "end": 121,
+      "type": "IP",
+      "text": "4f78:deaf:a73d:8097:f7ba:a9d8:dbfa:d7a7",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 5,
+      "end": 10,
+      "type": "NAME",
+      "text": "Lonzo",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 12,
+      "type": "NAME",
+      "text": "Mckenna",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 9,
+      "type": "NAME",
+      "text": "Maud",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 92,
+      "end": 100,
+      "type": "ACCOUNT",
+      "text": "53977069",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 108,
+      "end": 147,
+      "type": "IP",
+      "text": "f4cc:8a91:d01f:1dcf:ffb9:f2cf:4c6a:5bf4",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 77,
+      "end": 91,
+      "type": "ADDRESS",
+      "text": "Arnaldo Rapids",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 128,
+      "end": 140,
+      "type": "IP",
+      "text": "31.132.172.6",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 16,
+      "end": 20,
+      "type": "NAME",
+      "text": "Olaf",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 55,
+      "end": 94,
+      "type": "IP",
+      "text": "d67a:cddf:ab1d:05f6:ebe6:e1c8:4f56:ab94",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 82,
+      "end": 121,
+      "type": "IP",
+      "text": "4ed8:3eeb:f512:935b:ea11:ca1f:8257:98db",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 5,
+      "end": 9,
+      "type": "NAME",
+      "text": "Hugh",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 38,
+      "end": 44,
+      "type": "NAME",
+      "text": "Dakota",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 53,
+      "end": 92,
+      "type": "IP",
+      "text": "74e0:dd9d:1f0f:dc7a:eec4:53ae:b3bd:c32a",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 227,
+      "end": 235,
+      "type": "NAME",
+      "text": "Virginia",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 236,
+      "end": 241,
+      "type": "NAME",
+      "text": "O'Kon",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 26,
+      "end": 33,
+      "type": "NAME",
+      "text": "Camille",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 229,
+      "end": 245,
+      "type": "CREDIT_CARD",
+      "text": "7791966530165416",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 7,
+      "end": 14,
+      "type": "NAME",
+      "text": "Mckenna",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 15,
+      "end": 21,
+      "type": "NAME",
+      "text": "Parker",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 22,
+      "end": 35,
+      "type": "NAME",
+      "text": "Runolfsdottir",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 42,
+      "end": 59,
+      "type": "DOB",
+      "text": "September 9, 1961",
+      "norm_type": "DATE"
+    },
+    {
+      "start": 135,
+      "end": 144,
+      "type": "ADDRESS",
+      "text": "O'Kon Dam",
+      "norm_type": "ADDRESS"
+    },
+    {
+      "start": 276,
+      "end": 284,
+      "type": "ACCOUNT",
+      "text": "32426295",
+      "norm_type": "ACCOUNT"
+    },
+    {
+      "start": 318,
+      "end": 325,
+      "type": "NAME",
+      "text": "Bernice",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 326,
+      "end": 331,
+      "type": "NAME",
+      "text": "Mayer",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 11,
+      "type": "NAME",
+      "text": "Carter",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 83,
+      "end": 99,
+      "type": "CREDIT_CARD",
+      "text": "6413247855915588",
+      "norm_type": "CREDIT_CARD"
+    },
+    {
+      "start": 6,
+      "end": 12,
+      "type": "NAME",
+      "text": "Horace",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 90,
+      "end": 129,
+      "type": "IP",
+      "text": "2815:4383:ea36:e44f:f528:6a6f:4195:9a7f",
+      "norm_type": "IP_ADDRESS"
+    },
+    {
+      "start": 6,
+      "end": 13,
+      "type": "NAME",
+      "text": "Dangelo",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 0,
+      "end": 6,
+      "type": "NAME",
+      "text": "Gudrun",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 5,
+      "end": 14,
+      "type": "NAME",
+      "text": "Katherine",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 128,
+      "end": 134,
+      "type": "NAME",
+      "text": "Katlyn",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 135,
+      "end": 142,
+      "type": "NAME",
+      "text": "Kovacek",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 335,
+      "end": 341,
+      "type": "NAME",
+      "text": "Skyler",
+      "norm_type": "NAME"
+    },
+    {
+      "start": 4,
+      "end": 8,
+      "type": "NAME",
+      "text": "Ryan",
+      "norm_type": "NAME"
+    }
+  ]
+}

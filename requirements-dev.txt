@@ -1,0 +1,79 @@
+# OpenLabels Developer Requirements
+#
+# Batteries-included: All dependencies for development, testing, and full functionality.
+# Install with: pip install -r requirements-dev.txt
+#
+# For minimal production install, use: pip install openlabels
+# For specific features only, use: pip install openlabels[pdf,office,auth]
+
+# =============================================================================
+# Core Dependencies (required)
+# =============================================================================
+regex>=2023.0.0,<2025.0.0       # ReDoS timeout protection (SECURITY REQUIRED)
+rich>=13.0.0,<14.0.0            # CLI output formatting and progress bars
+
+# =============================================================================
+# File Extraction
+# =============================================================================
+# PDF
+pymupdf>=1.23.11,<1.25.0        # PDF text extraction (CVE-2023-51105 fixed)
+
+# Office documents
+python-docx>=1.0.0,<2.0.0       # DOCX text extraction
+openpyxl>=3.1.0,<4.0.0          # Excel (.xlsx) extraction
+xlrd>=2.0.0,<3.0.0              # Excel (.xls) extraction
+striprtf>=0.0.26,<1.0.0         # RTF text extraction
+
+# Images
+pillow>=10.3.0,<11.0.0          # Image processing (CVE-2024-28219 fixed)
+
+# =============================================================================
+# OCR Support
+# =============================================================================
+numpy>=1.24.0,<2.0.0            # Required for OCR
+onnxruntime>=1.16.0,<2.0.0      # ONNX inference runtime
+rapidocr-onnxruntime>=1.3.0,<2.0.0  # RapidOCR text detection + recognition
+intervaltree>=3.1.0,<4.0.0      # Efficient span overlap detection
+
+# =============================================================================
+# Performance
+# =============================================================================
+pyahocorasick>=2.0.0,<3.0.0     # Aho-Corasick automaton for dictionary matching
+
+# =============================================================================
+# Archive Extraction
+# =============================================================================
+py7zr>=0.20.0,<1.0.0            # 7z archive extraction
+rarfile>=4.1,<5.0.0             # RAR archive extraction (requires unrar binary)
+
+# =============================================================================
+# Database (Server Mode)
+# =============================================================================
+psycopg[binary]>=3.1.0,<4.0.0   # PostgreSQL support (async + connection pooling)
+
+# =============================================================================
+# Authentication & Encryption
+# =============================================================================
+argon2-cffi>=23.1.0,<24.0.0     # Argon2id password hashing (OWASP recommended)
+cryptography>=42.0.0,<44.0.0    # AES-256-GCM encryption, X25519 key exchange
+PyJWT>=2.8.0,<3.0.0             # JWT session tokens
+
+# =============================================================================
+# GUI
+# =============================================================================
+PySide6>=6.5.0,<7.0.0           # Qt6 GUI framework
+
+# =============================================================================
+# Development & Testing
+# =============================================================================
+pytest>=7.0.0                   # Test framework
+pytest-cov>=4.0.0               # Code coverage
+pytest-qt>=4.2.0                # Qt/PySide6 GUI testing
+pytest-xvfb>=3.0.0              # Virtual X server for headless GUI tests
+mypy>=1.0.0                     # Static type checking
+ruff>=0.1.0                     # Fast Python linter
+
+# =============================================================================
+# Optional: File Watching (for real-time monitoring)
+# =============================================================================
+watchdog>=3.0.0,<5.0.0          # File system event monitoring

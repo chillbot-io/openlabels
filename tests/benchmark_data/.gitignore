@@ -1,0 +1,6 @@
+# Large corpus files - too big for git
+outputs/corpus.jsonl
+outputs/corpus.bio
+outputs/train.jsonl
+outputs/claude_samples.jsonl
+outputs/adversarial_samples.jsonl
