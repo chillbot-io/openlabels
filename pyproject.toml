@@ -59,6 +59,7 @@ dependencies = [
     "httpx>=0.26.0",
     "pyyaml>=6.0.0",
     "aiofiles>=23.2.0",
+    "psutil>=5.9.0",  # System resource monitoring
 
     # Detection (from openrisk)
     # These will be refined as we integrate
@@ -79,8 +80,18 @@ dev = [
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
 ]
+# Intel optimizations for high-performance scanning
+intel = [
+    "hyperscan>=0.7.0",         # SIMD-accelerated regex (10-100x faster)
+    "intel-extension-for-pytorch>=2.2.0",  # CPU inference optimization
+]
+# OpenVINO/ONNX for optimized model inference
+inference = [
+    "optimum[openvino]>=1.16.0",  # OpenVINO INT8 inference
+    "optimum[onnxruntime]>=1.16.0",  # ONNX Runtime
+]
 all = [
-    "openlabels[gui,mip,dev]",
+    "openlabels[gui,mip,dev,intel,inference]",
 ]
 
 [project.scripts]
