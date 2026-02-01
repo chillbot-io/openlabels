@@ -83,17 +83,12 @@ dev = [
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
 ]
-# Intel optimizations for high-performance scanning
-intel = [
-    "hyperscan>=0.7.0",         # SIMD-accelerated regex (10-100x faster)
-    "intel-extension-for-pytorch>=2.2.0",  # CPU inference optimization
-]
-# OpenVINO for Intel-optimized inference (optional)
-openvino = [
-    "optimum[openvino]>=1.16.0",  # OpenVINO INT8 inference
+# SIMD-accelerated regex for high-performance pattern matching
+hyperscan = [
+    "hyperscan>=0.7.0",  # Intel Hyperscan - 10-100x faster regex
 ]
 all = [
-    "openlabels[gui,mip,dev,intel,openvino]",
+    "openlabels[gui,mip,dev,hyperscan]",
 ]
 
 [project.scripts]
