@@ -334,12 +334,12 @@ if PYSIDE_AVAILABLE:
             try:
                 import httpx
                 response = httpx.post(
-                    f"{self.server_url}/api/results/{result_id}/label",
-                    json={"label_id": label_id},
+                    f"{self.server_url}/api/labels/apply",
+                    json={"result_id": result_id, "label_id": label_id},
                     timeout=10.0,
                 )
-                if response.status_code == 200:
-                    self.statusBar().showMessage("Label applied successfully", 3000)
+                if response.status_code == 202:
+                    self.statusBar().showMessage("Label application queued", 3000)
                     self._load_results()
                 else:
                     self.statusBar().showMessage(f"Failed to apply label: {response.text}", 5000)
@@ -399,7 +399,7 @@ if PYSIDE_AVAILABLE:
             try:
                 import httpx
                 response = httpx.get(
-                    f"{self.server_url}/api/label-rules",
+                    f"{self.server_url}/api/labels/rules",
                     timeout=10.0,
                 )
                 if response.status_code == 200:
