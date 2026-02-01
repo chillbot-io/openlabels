@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.db import get_session
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
 from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.jobs import JobQueue
 
 router = APIRouter()
 
@@ -169,9 +170,21 @@ async def apply_label(
     if not label or label.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Label not found")
 
-    # TODO: Enqueue labeling job
+    # Enqueue labeling job
+    queue = JobQueue(session, user.tenant_id)
+    job_id = await queue.enqueue(
+        task_type="label",
+        payload={
+            "result_id": str(request.result_id),
+            "label_id": request.label_id,
+            "file_path": result.file_path,
+        },
+        priority=60,  # Higher priority than scans
+    )
+
     return {
         "message": "Label application queued",
-        "result_id": request.result_id,
+        "job_id": str(job_id),
+        "result_id": str(request.result_id),
         "label_id": request.label_id,
     }

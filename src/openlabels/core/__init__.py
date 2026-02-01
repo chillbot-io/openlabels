@@ -50,6 +50,12 @@ from .scoring.scorer import (
     score_to_tier,
 )
 
+from .processor import (
+    FileProcessor,
+    FileClassification,
+    process_file,
+)
+
 from .pipeline import (
     resolve_coreferences,
     is_onnx_available,
@@ -84,6 +90,10 @@ __all__ = [
     "get_category",
     "calculate_content_score",
     "score_to_tier",
+    # Processor
+    "FileProcessor",
+    "FileClassification",
+    "process_file",
     # Pipeline
     "resolve_coreferences",
     "is_onnx_available",

@@ -12,8 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
-from openlabels.server.models import ScanSchedule, ScanTarget
+from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
 from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.jobs import JobQueue, parse_cron_expression
 
 router = APIRouter()
 
@@ -83,8 +84,7 @@ async def create_schedule(
 
     # Calculate next run time if cron is set
     if request.cron:
-        # TODO: Calculate next run from cron expression
-        pass
+        schedule.next_run_at = parse_cron_expression(request.cron)
 
     session.add(schedule)
     await session.flush()
@@ -120,7 +120,8 @@ async def update_schedule(
         schedule.name = request.name
     if request.cron is not None:
         schedule.cron = request.cron
-        # TODO: Recalculate next run time
+        # Recalculate next run time
+        schedule.next_run_at = parse_cron_expression(request.cron)
     if request.enabled is not None:
         schedule.enabled = request.enabled
 
@@ -152,5 +153,31 @@ async def trigger_schedule(
     if not schedule or schedule.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Schedule not found")
 
-    # TODO: Create and enqueue scan job
-    return {"message": "Scan triggered", "schedule_id": schedule_id}
+    # Create scan job
+    target = await session.get(ScanTarget, schedule.target_id)
+    job = ScanJob(
+        tenant_id=user.tenant_id,
+        target_id=schedule.target_id,
+        name=f"{schedule.name} (manual trigger)",
+        status="pending",
+        created_by=user.id,
+    )
+    session.add(job)
+    await session.flush()
+
+    # Enqueue the scan job
+    queue = JobQueue(session, user.tenant_id)
+    await queue.enqueue(
+        task_type="scan",
+        payload={"job_id": str(job.id)},
+        priority=70,  # Higher priority for manual triggers
+    )
+
+    # Update last run time
+    schedule.last_run_at = datetime.utcnow()
+
+    return {
+        "message": "Scan triggered",
+        "schedule_id": str(schedule_id),
+        "job_id": str(job.id),
+    }

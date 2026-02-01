@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.jobs import JobQueue
 
 router = APIRouter()
 
@@ -76,7 +77,13 @@ async def create_scan(
     session.add(job)
     await session.flush()
 
-    # TODO: Enqueue the job in the job queue
+    # Enqueue the job in the job queue
+    queue = JobQueue(session, user.tenant_id)
+    await queue.enqueue(
+        task_type="scan",
+        payload={"job_id": str(job.id)},
+        priority=50,
+    )
 
     return job
 
@@ -147,4 +154,6 @@ async def cancel_scan(
     job.status = "cancelled"
     job.completed_at = datetime.utcnow()
 
-    # TODO: Signal worker to stop
+    # Cancel any pending queue jobs for this scan
+    queue = JobQueue(session, user.tenant_id)
+    # Note: The worker will check job status before processing

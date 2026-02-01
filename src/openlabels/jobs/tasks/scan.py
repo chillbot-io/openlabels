@@ -1,5 +1,8 @@
 """
 Scan task implementation.
+
+Integrates the detection engine with the job system to scan files
+for sensitive data and compute risk scores.
 """
 
 import logging
@@ -11,8 +14,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.models import ScanJob, ScanTarget, ScanResult
 from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter
 from openlabels.server.config import get_settings
+from openlabels.core.processor import FileProcessor
 
 logger = logging.getLogger(__name__)
+
+# Global processor instance (reuse for efficiency)
+_processor: Optional[FileProcessor] = None
+
+
+def get_processor(enable_ml: bool = False) -> FileProcessor:
+    """Get or create the file processor."""
+    global _processor
+    if _processor is None:
+        settings = get_settings()
+        _processor = FileProcessor(
+            enable_ml=enable_ml,
+            ml_model_dir=getattr(settings, 'ml_model_dir', None),
+            confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+        )
+    return _processor
 
 
 async def execute_scan_task(
@@ -154,62 +174,68 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
     """
     Run detection and scoring on file content.
 
-    This is a placeholder that will be replaced with actual detection
-    engine integration from openrisk.
+    Uses the OpenLabels detection engine with:
+    - Checksum detectors (SSN, CC, NPI, DEA, IBAN, etc.)
+    - Secrets detectors (API keys, tokens, credentials)
+    - Financial detectors (crypto addresses, securities)
+    - Government detectors (classification markings)
+    - Optional ML detectors (PHI-BERT, PII-BERT)
+
+    Args:
+        content: Raw file bytes
+        file_info: File metadata (path, name, exposure, etc.)
+
+    Returns:
+        Dict with risk_score, risk_tier, entity_counts, etc.
     """
-    # TODO: Integrate with openrisk detection engine
-    # For now, return placeholder results
+    processor = get_processor()
+
+    # Get exposure level from file info
+    exposure_level = "PRIVATE"
+    if hasattr(file_info, 'exposure'):
+        exposure_level = file_info.exposure.value if hasattr(file_info.exposure, 'value') else str(file_info.exposure)
 
     try:
-        text = content.decode("utf-8", errors="ignore")
-    except Exception:
-        text = ""
+        # Process file through the detection engine
+        result = await processor.process_file(
+            file_path=file_info.path,
+            content=content,
+            exposure_level=exposure_level,
+            file_size=file_info.size if hasattr(file_info, 'size') else len(content),
+        )
 
-    # Placeholder detection - to be replaced with real detection
-    entity_counts = {}
-    total_entities = 0
+        # Build findings list from spans (for detailed reporting)
+        findings = []
+        for span in result.spans[:50]:  # Limit to first 50 findings
+            findings.append({
+                "entity_type": span.entity_type,
+                "start": span.start,
+                "end": span.end,
+                "confidence": span.confidence,
+                "detector": span.detector,
+                "tier": span.tier.name,
+            })
 
-    # Simple pattern matching placeholder
-    import re
+        return {
+            "risk_score": result.risk_score,
+            "risk_tier": result.risk_tier.value,
+            "entity_counts": result.entity_counts,
+            "total_entities": sum(result.entity_counts.values()),
+            "content_score": float(result.risk_score),
+            "exposure_multiplier": 1.0,  # Already factored into risk_score
+            "findings": findings,
+            "processing_time_ms": result.processing_time_ms,
+            "error": result.error,
+        }
 
-    # SSN pattern
-    ssn_matches = len(re.findall(r"\b\d{3}-\d{2}-\d{4}\b", text))
-    if ssn_matches:
-        entity_counts["SSN"] = ssn_matches
-        total_entities += ssn_matches
-
-    # Email pattern
-    email_matches = len(re.findall(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text))
-    if email_matches:
-        entity_counts["EMAIL"] = email_matches
-        total_entities += email_matches
-
-    # Credit card pattern
-    cc_matches = len(re.findall(r"\b(?:\d{4}[- ]?){3}\d{4}\b", text))
-    if cc_matches:
-        entity_counts["CREDIT_CARD"] = cc_matches
-        total_entities += cc_matches
-
-    # Calculate risk score
-    risk_score = min(100, total_entities * 10)
-
-    # Determine risk tier
-    if risk_score >= 80:
-        risk_tier = "CRITICAL"
-    elif risk_score >= 60:
-        risk_tier = "HIGH"
-    elif risk_score >= 40:
-        risk_tier = "MEDIUM"
-    elif risk_score >= 20:
-        risk_tier = "LOW"
-    else:
-        risk_tier = "MINIMAL"
-
-    return {
-        "risk_score": risk_score,
-        "risk_tier": risk_tier,
-        "entity_counts": entity_counts,
-        "total_entities": total_entities,
-        "content_score": float(risk_score),
-        "exposure_multiplier": 1.0,
-    }
+    except Exception as e:
+        logger.error(f"Detection failed for {file_info.path}: {e}")
+        return {
+            "risk_score": 0,
+            "risk_tier": "MINIMAL",
+            "entity_counts": {},
+            "total_entities": 0,
+            "content_score": 0.0,
+            "exposure_multiplier": 1.0,
+            "error": str(e),
+        }

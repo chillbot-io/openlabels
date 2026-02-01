@@ -3,6 +3,9 @@ Main window for the OpenLabels GUI.
 """
 
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from PySide6.QtWidgets import (
@@ -16,8 +19,9 @@ try:
         QMenuBar,
         QMenu,
         QToolBar,
+        QMessageBox,
     )
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QAction
 
     PYSIDE_AVAILABLE = True
@@ -26,6 +30,10 @@ except ImportError:
 
 
 if PYSIDE_AVAILABLE:
+    from openlabels.gui.widgets.dashboard_widget import DashboardWidget
+    from openlabels.gui.widgets.scan_widget import ScanWidget
+    from openlabels.gui.widgets.results_widget import ResultsWidget
+    from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
         """Main application window."""
@@ -34,6 +42,7 @@ if PYSIDE_AVAILABLE:
             super().__init__()
 
             self.server_url = server_url
+            self._api_worker: Optional[APIWorker] = None
 
             self.setWindowTitle("OpenLabels")
             self.setMinimumSize(1200, 800)
@@ -42,6 +51,10 @@ if PYSIDE_AVAILABLE:
             self._setup_toolbar()
             self._setup_ui()
             self._setup_statusbar()
+            self._setup_refresh_timer()
+
+            # Initial data load
+            QTimer.singleShot(100, self._load_initial_data)
 
         def _setup_menu(self) -> None:
             """Set up the menu bar."""
@@ -52,6 +65,7 @@ if PYSIDE_AVAILABLE:
 
             new_scan_action = QAction("&New Scan", self)
             new_scan_action.setShortcut("Ctrl+N")
+            new_scan_action.triggered.connect(self._on_new_scan)
             file_menu.addAction(new_scan_action)
 
             file_menu.addSeparator()
@@ -66,6 +80,7 @@ if PYSIDE_AVAILABLE:
 
             settings_action = QAction("&Settings", self)
             settings_action.setShortcut("Ctrl+,")
+            settings_action.triggered.connect(self._on_settings)
             edit_menu.addAction(settings_action)
 
             # View menu
@@ -73,12 +88,14 @@ if PYSIDE_AVAILABLE:
 
             refresh_action = QAction("&Refresh", self)
             refresh_action.setShortcut("F5")
+            refresh_action.triggered.connect(self._on_refresh)
             view_menu.addAction(refresh_action)
 
             # Help menu
             help_menu = menubar.addMenu("&Help")
 
             about_action = QAction("&About", self)
+            about_action.triggered.connect(self._on_about)
             help_menu.addAction(about_action)
 
             docs_action = QAction("&Documentation", self)
@@ -96,7 +113,15 @@ if PYSIDE_AVAILABLE:
             toolbar.setMovable(False)
             self.addToolBar(toolbar)
 
-            # Will add toolbar actions as we implement widgets
+            # New scan button
+            new_scan_action = QAction("New Scan", self)
+            new_scan_action.triggered.connect(self._on_new_scan)
+            toolbar.addAction(new_scan_action)
+
+            # Refresh button
+            refresh_action = QAction("Refresh", self)
+            refresh_action.triggered.connect(self._on_refresh)
+            toolbar.addAction(refresh_action)
 
         def _setup_ui(self) -> None:
             """Set up the main UI."""
@@ -109,13 +134,21 @@ if PYSIDE_AVAILABLE:
             self.tabs = QTabWidget()
             layout.addWidget(self.tabs)
 
-            # Add placeholder tabs
-            self.tabs.addTab(self._create_dashboard_tab(), "Dashboard")
-            self.tabs.addTab(self._create_scans_tab(), "Scans")
-            self.tabs.addTab(self._create_results_tab(), "Results")
+            # Create widgets
+            self.dashboard_widget = DashboardWidget()
+            self.scan_widget = ScanWidget()
+            self.results_widget = ResultsWidget()
+
+            # Add tabs
+            self.tabs.addTab(self.dashboard_widget, "Dashboard")
+            self.tabs.addTab(self.scan_widget, "Scans")
+            self.tabs.addTab(self.results_widget, "Results")
             self.tabs.addTab(self._create_schedules_tab(), "Schedules")
             self.tabs.addTab(self._create_labels_tab(), "Labels")
             self.tabs.addTab(self._create_settings_tab(), "Settings")
+
+            # Connect signals
+            self.tabs.currentChanged.connect(self._on_tab_changed)
 
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
@@ -123,7 +156,7 @@ if PYSIDE_AVAILABLE:
             self.setStatusBar(statusbar)
 
             # Connection status
-            self.connection_label = QLabel(f"Connected to {self.server_url}")
+            self.connection_label = QLabel(f"Connecting to {self.server_url}...")
             statusbar.addWidget(self.connection_label)
 
             # Spacer
@@ -134,35 +167,134 @@ if PYSIDE_AVAILABLE:
             version_label = QLabel(f"v{__version__}")
             statusbar.addPermanentWidget(version_label)
 
-        def _create_dashboard_tab(self) -> QWidget:
-            """Create the dashboard tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Dashboard - Coming Soon"))
-            layout.addStretch()
-            return widget
+        def _setup_refresh_timer(self) -> None:
+            """Set up auto-refresh timer."""
+            self._refresh_timer = QTimer(self)
+            self._refresh_timer.timeout.connect(self._on_auto_refresh)
+            self._refresh_timer.start(30000)  # Refresh every 30 seconds
 
-        def _create_scans_tab(self) -> QWidget:
-            """Create the scans tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Scans - Coming Soon"))
-            layout.addStretch()
-            return widget
+        def _load_initial_data(self) -> None:
+            """Load initial data from the server."""
+            self._check_connection()
+            self._load_dashboard_stats()
+            self._load_targets()
 
-        def _create_results_tab(self) -> QWidget:
-            """Create the results tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Results - Coming Soon"))
-            layout.addStretch()
-            return widget
+        def _check_connection(self) -> None:
+            """Check connection to server."""
+            try:
+                import httpx
+                response = httpx.get(f"{self.server_url}/health", timeout=5.0)
+                if response.status_code == 200:
+                    self.connection_label.setText(f"Connected to {self.server_url}")
+                    self.connection_label.setStyleSheet("color: green;")
+                else:
+                    self._handle_connection_error("Server returned error")
+            except Exception as e:
+                self._handle_connection_error(str(e))
+
+        def _handle_connection_error(self, error: str) -> None:
+            """Handle connection error."""
+            self.connection_label.setText(f"Not connected: {error}")
+            self.connection_label.setStyleSheet("color: red;")
+            logger.warning(f"Connection error: {error}")
+
+        def _load_dashboard_stats(self) -> None:
+            """Load dashboard statistics."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/dashboard/stats",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    stats = response.json()
+                    self.dashboard_widget.update_stats({
+                        "total_files": stats.get("total_files_scanned", 0),
+                        "high_risk_count": stats.get("critical_files", 0) + stats.get("high_files", 0),
+                        "labeled_percentage": (
+                            stats.get("labels_applied", 0) / max(1, stats.get("total_files_scanned", 1)) * 100
+                        ),
+                        "active_scans": stats.get("active_scans", 0),
+                        "risk_distribution": {
+                            "CRITICAL": stats.get("critical_files", 0),
+                            "HIGH": stats.get("high_files", 0),
+                            "MEDIUM": 0,
+                            "LOW": 0,
+                            "MINIMAL": 0,
+                        },
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to load dashboard stats: {e}")
+
+        def _load_targets(self) -> None:
+            """Load scan targets."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/targets",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    targets = response.json()
+                    self.scan_widget.load_targets(targets)
+            except Exception as e:
+                logger.warning(f"Failed to load targets: {e}")
+
+        def _on_tab_changed(self, index: int) -> None:
+            """Handle tab change."""
+            tab_name = self.tabs.tabText(index)
+            if tab_name == "Results":
+                self._load_results()
+
+        def _load_results(self) -> None:
+            """Load scan results."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/results",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    self.results_widget.load_results(data.get("items", []))
+            except Exception as e:
+                logger.warning(f"Failed to load results: {e}")
+
+        def _on_new_scan(self) -> None:
+            """Handle new scan action."""
+            self.tabs.setCurrentIndex(1)  # Switch to Scans tab
+
+        def _on_settings(self) -> None:
+            """Handle settings action."""
+            self.tabs.setCurrentIndex(5)  # Switch to Settings tab
+
+        def _on_refresh(self) -> None:
+            """Handle manual refresh."""
+            self._load_initial_data()
+            self.statusBar().showMessage("Refreshed", 2000)
+
+        def _on_auto_refresh(self) -> None:
+            """Handle auto refresh."""
+            if self.tabs.currentIndex() == 0:  # Dashboard
+                self._load_dashboard_stats()
+
+        def _on_about(self) -> None:
+            """Show about dialog."""
+            from openlabels import __version__
+            QMessageBox.about(
+                self,
+                "About OpenLabels",
+                f"<h3>OpenLabels v{__version__}</h3>"
+                "<p>Open Source Data Classification & Auto-Labeling Platform</p>"
+                "<p>Copyright (c) 2024 Chillbot.io</p>"
+                "<p><a href='https://github.com/chillbot-io/openlabels'>GitHub</a></p>"
+            )
 
         def _create_schedules_tab(self) -> QWidget:
             """Create the schedules tab."""
             widget = QWidget()
             layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Schedules - Coming Soon"))
+            layout.addWidget(QLabel("Schedules - Configure automated scan schedules"))
             layout.addStretch()
             return widget
 
@@ -170,7 +302,7 @@ if PYSIDE_AVAILABLE:
             """Create the labels tab."""
             widget = QWidget()
             layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Labels - Coming Soon"))
+            layout.addWidget(QLabel("Labels - Manage sensitivity labels and rules"))
             layout.addStretch()
             return widget
 
@@ -178,9 +310,24 @@ if PYSIDE_AVAILABLE:
             """Create the settings tab."""
             widget = QWidget()
             layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Settings - Coming Soon"))
+
+            # Server settings
+            server_layout = QHBoxLayout()
+            server_layout.addWidget(QLabel("Server URL:"))
+            server_layout.addWidget(QLabel(self.server_url))
+            server_layout.addStretch()
+            layout.addLayout(server_layout)
+
             layout.addStretch()
             return widget
+
+        def closeEvent(self, event) -> None:
+            """Handle window close."""
+            self._refresh_timer.stop()
+            if self._api_worker:
+                self._api_worker.quit()
+                self._api_worker.wait()
+            event.accept()
 
 else:
     # Fallback when PySide6 is not available
