@@ -7,7 +7,7 @@ All detectors must inherit from BaseDetector and implement the detect() method.
 from abc import ABC, abstractmethod
 from typing import List
 
-from .types import Span, Tier
+from ..types import Span, Tier
 
 
 class BaseDetector(ABC):

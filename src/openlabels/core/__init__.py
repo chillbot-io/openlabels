@@ -15,6 +15,10 @@ Usage:
     # Score detected entities
     score_result = score(result.entity_counts, exposure='INTERNAL')
     print(f"Risk: {score_result.score} ({score_result.tier.value})")
+
+    # Run coreference resolution on names
+    from openlabels.core import resolve_coreferences
+    expanded_spans = resolve_coreferences(text, result.spans)
 """
 
 from .types import (
@@ -46,6 +50,15 @@ from .scoring.scorer import (
     score_to_tier,
 )
 
+from .pipeline import (
+    resolve_coreferences,
+    is_onnx_available,
+    is_fastcoref_available,
+    ContextEnhancer,
+    create_enhancer,
+    validate_span_positions,
+)
+
 __all__ = [
     # Types
     "Span",
@@ -71,4 +84,11 @@ __all__ = [
     "get_category",
     "calculate_content_score",
     "score_to_tier",
+    # Pipeline
+    "resolve_coreferences",
+    "is_onnx_available",
+    "is_fastcoref_available",
+    "ContextEnhancer",
+    "create_enhancer",
+    "validate_span_positions",
 ]

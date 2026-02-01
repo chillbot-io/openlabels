@@ -3,12 +3,18 @@ Detector orchestrator for OpenLabels detection engine.
 
 Coordinates multiple detectors running in parallel and handles
 deduplication and post-processing of results.
+
+Supports:
+- Pattern-based detectors (checksum, secrets, financial, government)
+- ML detectors (PHI-BERT, PII-BERT) with optional ONNX acceleration
+- Post-processing pipeline (coref, context enhancement)
 """
 
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional, Set
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Union
 
 from ..types import Span, Tier, DetectionResult, normalize_entity_type
 from .base import BaseDetector
@@ -32,15 +38,23 @@ class DetectorOrchestrator:
 
     Features:
     - Runs detectors in parallel for performance
+    - Supports pattern-based and ML-based detectors
     - Handles deduplication across detectors
     - Higher tier detections take precedence
-    - Configurable detector enablement
+    - Optional post-processing pipeline (coref, context enhancement)
 
     Usage:
         orchestrator = DetectorOrchestrator()
         result = orchestrator.detect("My SSN is 123-45-6789")
         for span in result.spans:
             print(f"{span.entity_type}: {span.text}")
+
+        # With ML detectors:
+        orchestrator = DetectorOrchestrator(
+            enable_ml=True,
+            ml_model_dir=Path("~/.openlabels/models"),
+            use_onnx=True,
+        )
     """
 
     def __init__(
@@ -49,6 +63,11 @@ class DetectorOrchestrator:
         enable_secrets: bool = True,
         enable_financial: bool = True,
         enable_government: bool = True,
+        enable_ml: bool = False,
+        ml_model_dir: Optional[Path] = None,
+        use_onnx: bool = True,
+        enable_coref: bool = False,
+        enable_context_enhancement: bool = False,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         max_workers: int = 4,
     ):
@@ -60,14 +79,21 @@ class DetectorOrchestrator:
             enable_secrets: Enable secrets/credentials detector
             enable_financial: Enable financial instruments detector
             enable_government: Enable government markings detector
+            enable_ml: Enable ML-based detectors (requires model files)
+            ml_model_dir: Directory containing ML model files
+            use_onnx: Use ONNX-optimized ML detectors (faster)
+            enable_coref: Run coreference resolution on NAME entities
+            enable_context_enhancement: Run context enhancement for FP filtering
             confidence_threshold: Minimum confidence to include results
             max_workers: Max parallel detector threads
         """
         self.confidence_threshold = confidence_threshold
         self.max_workers = max_workers
+        self.enable_coref = enable_coref
+        self.enable_context_enhancement = enable_context_enhancement
         self.detectors: List[BaseDetector] = []
 
-        # Initialize enabled detectors
+        # Initialize pattern-based detectors
         if enable_checksum:
             self.detectors.append(ChecksumDetector())
         if enable_secrets:
@@ -77,10 +103,102 @@ class DetectorOrchestrator:
         if enable_government:
             self.detectors.append(GovernmentDetector())
 
+        # Initialize ML detectors if enabled
+        if enable_ml:
+            self._init_ml_detectors(ml_model_dir, use_onnx)
+
+        # Initialize post-processing components
+        self._coref_resolver = None
+        self._context_enhancer = None
+        if enable_coref or enable_context_enhancement:
+            self._init_pipeline(enable_coref, enable_context_enhancement)
+
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "
             f"{[d.name for d in self.detectors]}"
         )
+
+    def _init_ml_detectors(
+        self,
+        model_dir: Optional[Path],
+        use_onnx: bool = True
+    ) -> None:
+        """Initialize ML-based detectors."""
+        if model_dir is None:
+            model_dir = Path.home() / ".openlabels" / "models"
+
+        model_dir = Path(model_dir).expanduser()
+
+        if not model_dir.exists():
+            logger.warning(f"ML model directory not found: {model_dir}")
+            return
+
+        if use_onnx:
+            # Try ONNX detectors first (faster)
+            try:
+                from .ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
+
+                # PHI-BERT for clinical/healthcare NER
+                phi_bert = PHIBertONNXDetector(model_dir=model_dir)
+                if phi_bert.is_available():
+                    self.detectors.append(phi_bert)
+                    logger.info("PHI-BERT ONNX detector loaded")
+
+                # PII-BERT for general PII NER
+                pii_bert = PIIBertONNXDetector(model_dir=model_dir)
+                if pii_bert.is_available():
+                    self.detectors.append(pii_bert)
+                    logger.info("PII-BERT ONNX detector loaded")
+
+            except ImportError as e:
+                logger.warning(f"ONNX detectors not available: {e}")
+                use_onnx = False
+
+        if not use_onnx:
+            # Fall back to HuggingFace transformers
+            try:
+                from .ml import PHIBertDetector, PIIBertDetector
+
+                # PHI-BERT
+                phi_bert_dir = model_dir / "phi_bert"
+                if phi_bert_dir.exists():
+                    phi_bert = PHIBertDetector(model_path=phi_bert_dir)
+                    if phi_bert.is_available():
+                        self.detectors.append(phi_bert)
+                        logger.info("PHI-BERT HF detector loaded")
+
+                # PII-BERT
+                pii_bert_dir = model_dir / "pii_bert"
+                if pii_bert_dir.exists():
+                    pii_bert = PIIBertDetector(model_path=pii_bert_dir)
+                    if pii_bert.is_available():
+                        self.detectors.append(pii_bert)
+                        logger.info("PII-BERT HF detector loaded")
+
+            except ImportError as e:
+                logger.warning(f"HuggingFace detectors not available: {e}")
+
+    def _init_pipeline(
+        self,
+        enable_coref: bool,
+        enable_context_enhancement: bool
+    ) -> None:
+        """Initialize post-processing pipeline components."""
+        if enable_coref:
+            try:
+                from ..pipeline import resolve_coreferences
+                self._coref_resolver = resolve_coreferences
+                logger.info("Coreference resolution enabled")
+            except ImportError as e:
+                logger.warning(f"Coreference resolution not available: {e}")
+
+        if enable_context_enhancement:
+            try:
+                from ..pipeline import create_enhancer
+                self._context_enhancer = create_enhancer()
+                logger.info("Context enhancement enabled")
+            except ImportError as e:
+                logger.warning(f"Context enhancement not available: {e}")
 
     def detect(self, text: str) -> DetectionResult:
         """
@@ -125,6 +243,20 @@ class DetectorOrchestrator:
 
         # Post-process: deduplicate, filter, sort
         processed_spans = self._post_process(all_spans)
+
+        # Run coreference resolution if enabled
+        if self._coref_resolver and processed_spans:
+            try:
+                processed_spans = self._coref_resolver(text, processed_spans)
+            except Exception as e:
+                logger.error(f"Coreference resolution failed: {e}")
+
+        # Run context enhancement if enabled
+        if self._context_enhancer and processed_spans:
+            try:
+                processed_spans = self._context_enhancer.enhance(text, processed_spans)
+            except Exception as e:
+                logger.error(f"Context enhancement failed: {e}")
 
         # Calculate entity counts
         entity_counts: Dict[str, int] = {}
@@ -234,16 +366,39 @@ class DetectorOrchestrator:
 
 
 # Convenience function for simple usage
-def detect(text: str, **kwargs) -> DetectionResult:
+def detect(
+    text: str,
+    enable_ml: bool = False,
+    ml_model_dir: Optional[Union[str, Path]] = None,
+    use_onnx: bool = True,
+    enable_coref: bool = False,
+    enable_context_enhancement: bool = False,
+    **kwargs
+) -> DetectionResult:
     """
     Convenience function to detect entities in text.
 
     Args:
         text: Text to scan
-        **kwargs: Options passed to DetectorOrchestrator
+        enable_ml: Enable ML-based detectors (requires model files)
+        ml_model_dir: Directory containing ML model files
+        use_onnx: Use ONNX-optimized ML detectors (faster)
+        enable_coref: Run coreference resolution on NAME entities
+        enable_context_enhancement: Run context enhancement for FP filtering
+        **kwargs: Additional options passed to DetectorOrchestrator
 
     Returns:
         DetectionResult with detected spans
     """
-    orchestrator = DetectorOrchestrator(**kwargs)
+    if ml_model_dir is not None:
+        ml_model_dir = Path(ml_model_dir)
+
+    orchestrator = DetectorOrchestrator(
+        enable_ml=enable_ml,
+        ml_model_dir=ml_model_dir,
+        use_onnx=use_onnx,
+        enable_coref=enable_coref,
+        enable_context_enhancement=enable_context_enhancement,
+        **kwargs
+    )
     return orchestrator.detect(text)
