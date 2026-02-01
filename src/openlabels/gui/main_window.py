@@ -33,6 +33,10 @@ if PYSIDE_AVAILABLE:
     from openlabels.gui.widgets.dashboard_widget import DashboardWidget
     from openlabels.gui.widgets.scan_widget import ScanWidget
     from openlabels.gui.widgets.results_widget import ResultsWidget
+    from openlabels.gui.widgets.targets_widget import TargetsWidget
+    from openlabels.gui.widgets.schedules_widget import SchedulesWidget
+    from openlabels.gui.widgets.labels_widget import LabelsWidget
+    from openlabels.gui.widgets.file_detail_widget import FileDetailWidget
     from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
@@ -130,25 +134,46 @@ if PYSIDE_AVAILABLE:
 
             layout = QVBoxLayout(central_widget)
 
+            # Main horizontal split: tabs on left, file detail on right
+            main_layout = QHBoxLayout()
+            layout.addLayout(main_layout)
+
             # Tab widget for main screens
             self.tabs = QTabWidget()
-            layout.addWidget(self.tabs)
+            main_layout.addWidget(self.tabs, stretch=3)
 
             # Create widgets
             self.dashboard_widget = DashboardWidget()
             self.scan_widget = ScanWidget()
             self.results_widget = ResultsWidget()
+            self.targets_widget = TargetsWidget()
+            self.schedules_widget = SchedulesWidget()
+            self.labels_widget = LabelsWidget()
+
+            # File detail panel (context card)
+            self.file_detail_widget = FileDetailWidget()
+            self.file_detail_widget.setMaximumWidth(400)
+            self.file_detail_widget.setVisible(False)
+            self.file_detail_widget.close_requested.connect(self._hide_file_detail)
+            self.file_detail_widget.apply_label_requested.connect(self._on_apply_label)
+            main_layout.addWidget(self.file_detail_widget, stretch=1)
 
             # Add tabs
             self.tabs.addTab(self.dashboard_widget, "Dashboard")
             self.tabs.addTab(self.scan_widget, "Scans")
             self.tabs.addTab(self.results_widget, "Results")
-            self.tabs.addTab(self._create_schedules_tab(), "Schedules")
-            self.tabs.addTab(self._create_labels_tab(), "Labels")
+            self.tabs.addTab(self.targets_widget, "Targets")
+            self.tabs.addTab(self.schedules_widget, "Schedules")
+            self.tabs.addTab(self.labels_widget, "Labels")
             self.tabs.addTab(self._create_settings_tab(), "Settings")
 
             # Connect signals
             self.tabs.currentChanged.connect(self._on_tab_changed)
+            self.results_widget.result_selected.connect(self._on_result_selected)
+            self.targets_widget.scan_requested.connect(self._on_scan_target)
+            self.targets_widget.target_changed.connect(self._on_target_changed)
+            self.schedules_widget.schedule_changed.connect(self._on_schedule_changed)
+            self.labels_widget.label_rule_changed.connect(self._on_label_rule_changed)
 
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
@@ -178,6 +203,9 @@ if PYSIDE_AVAILABLE:
             self._check_connection()
             self._load_dashboard_stats()
             self._load_targets()
+            self._load_schedules()
+            self._load_labels()
+            self._load_label_rules()
 
         def _check_connection(self) -> None:
             """Check connection to server."""
@@ -237,6 +265,7 @@ if PYSIDE_AVAILABLE:
                 if response.status_code == 200:
                     targets = response.json()
                     self.scan_widget.load_targets(targets)
+                    self.targets_widget.load_targets(targets)
             except Exception as e:
                 logger.warning(f"Failed to load targets: {e}")
 
@@ -266,7 +295,7 @@ if PYSIDE_AVAILABLE:
 
         def _on_settings(self) -> None:
             """Handle settings action."""
-            self.tabs.setCurrentIndex(5)  # Switch to Settings tab
+            self.tabs.setCurrentIndex(6)  # Switch to Settings tab
 
         def _on_refresh(self) -> None:
             """Handle manual refresh."""
@@ -290,21 +319,109 @@ if PYSIDE_AVAILABLE:
                 "<p><a href='https://github.com/chillbot-io/openlabels'>GitHub</a></p>"
             )
 
-        def _create_schedules_tab(self) -> QWidget:
-            """Create the schedules tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Schedules - Configure automated scan schedules"))
-            layout.addStretch()
-            return widget
+        def _on_result_selected(self, result: dict) -> None:
+            """Handle result selection - show file detail panel."""
+            self.file_detail_widget.show_result(result)
+            self.file_detail_widget.setVisible(True)
 
-        def _create_labels_tab(self) -> QWidget:
-            """Create the labels tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.addWidget(QLabel("Labels - Manage sensitivity labels and rules"))
-            layout.addStretch()
-            return widget
+        def _hide_file_detail(self) -> None:
+            """Hide the file detail panel."""
+            self.file_detail_widget.setVisible(False)
+            self.file_detail_widget.clear()
+
+        def _on_apply_label(self, result_id: str, label_id: str) -> None:
+            """Apply a label to a scan result."""
+            try:
+                import httpx
+                response = httpx.post(
+                    f"{self.server_url}/api/results/{result_id}/label",
+                    json={"label_id": label_id},
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    self.statusBar().showMessage("Label applied successfully", 3000)
+                    self._load_results()
+                else:
+                    self.statusBar().showMessage(f"Failed to apply label: {response.text}", 5000)
+            except Exception as e:
+                logger.error(f"Failed to apply label: {e}")
+                self.statusBar().showMessage(f"Error: {e}", 5000)
+
+        def _on_scan_target(self, target_id: str) -> None:
+            """Start a scan on a target."""
+            try:
+                import httpx
+                response = httpx.post(
+                    f"{self.server_url}/api/scans",
+                    json={"target_id": target_id},
+                    timeout=10.0,
+                )
+                if response.status_code in (200, 201):
+                    self.statusBar().showMessage("Scan started", 3000)
+                    self.tabs.setCurrentIndex(1)  # Switch to Scans tab
+                else:
+                    self.statusBar().showMessage(f"Failed to start scan: {response.text}", 5000)
+            except Exception as e:
+                logger.error(f"Failed to start scan: {e}")
+                self.statusBar().showMessage(f"Error: {e}", 5000)
+
+        def _on_target_changed(self) -> None:
+            """Handle target created/updated/deleted."""
+            self._load_targets()
+            self.statusBar().showMessage("Targets updated", 2000)
+
+        def _on_schedule_changed(self) -> None:
+            """Handle schedule created/updated/deleted."""
+            self._load_schedules()
+            self.statusBar().showMessage("Schedules updated", 2000)
+
+        def _on_label_rule_changed(self) -> None:
+            """Handle label rule created/updated/deleted."""
+            self._load_label_rules()
+            self.statusBar().showMessage("Label rules updated", 2000)
+
+        def _load_schedules(self) -> None:
+            """Load scan schedules."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/schedules",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    schedules = response.json()
+                    self.schedules_widget.load_schedules(schedules)
+            except Exception as e:
+                logger.warning(f"Failed to load schedules: {e}")
+
+        def _load_label_rules(self) -> None:
+            """Load label rules."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/label-rules",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    rules = response.json()
+                    self.labels_widget.load_rules(rules)
+            except Exception as e:
+                logger.warning(f"Failed to load label rules: {e}")
+
+        def _load_labels(self) -> None:
+            """Load sensitivity labels from server."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/labels",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    labels = response.json()
+                    self.labels_widget.load_labels(labels)
+                    self.file_detail_widget.set_available_labels(labels)
+            except Exception as e:
+                logger.warning(f"Failed to load labels: {e}")
 
         def _create_settings_tab(self) -> QWidget:
             """Create the settings tab."""

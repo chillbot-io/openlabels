@@ -43,7 +43,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
     """
 
     if PYSIDE_AVAILABLE:
-        result_selected = Signal(str)
+        result_selected = Signal(dict)  # Emits the full result dict
         label_requested = Signal(list, str)
         refresh_requested = Signal()
 
@@ -242,6 +242,8 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
             if 0 <= row < len(self._filtered_results):
                 result = self._filtered_results[row]
                 self._show_details(result)
+                # Emit signal for file detail panel
+                self.result_selected.emit(result)
 
     def _show_details(self, result: dict) -> None:
         """Show details for a result."""
