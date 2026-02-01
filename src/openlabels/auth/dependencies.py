@@ -1,0 +1,140 @@
+"""
+FastAPI dependencies for authentication.
+"""
+
+from typing import Optional
+from uuid import UUID
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2AuthorizationCodeBearer
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openlabels.server.config import get_settings
+from openlabels.server.db import get_session
+from openlabels.server.models import User, Tenant
+from openlabels.auth.oauth import validate_token, TokenClaims
+
+
+# OAuth2 scheme
+settings = get_settings()
+oauth2_scheme = OAuth2AuthorizationCodeBearer(
+    authorizationUrl=f"https://login.microsoftonline.com/{settings.auth.tenant_id or 'common'}/oauth2/v2.0/authorize",
+    tokenUrl=f"https://login.microsoftonline.com/{settings.auth.tenant_id or 'common'}/oauth2/v2.0/token",
+    auto_error=False,  # Don't auto-error so we can handle dev mode
+)
+
+
+class CurrentUser(BaseModel):
+    """Current authenticated user context."""
+
+    id: UUID
+    tenant_id: UUID
+    email: str
+    name: Optional[str]
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
+async def get_or_create_user(
+    session: AsyncSession,
+    claims: TokenClaims,
+) -> User:
+    """Get existing user or create new one from token claims."""
+    # First, ensure tenant exists
+    tenant_query = select(Tenant).where(
+        Tenant.azure_tenant_id == claims.tenant_id
+    )
+    result = await session.execute(tenant_query)
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        # Create tenant
+        tenant = Tenant(
+            name=f"Tenant {claims.tenant_id[:8]}",
+            azure_tenant_id=claims.tenant_id,
+        )
+        session.add(tenant)
+        await session.flush()
+
+    # Find or create user
+    user_query = select(User).where(
+        User.tenant_id == tenant.id,
+        User.email == claims.preferred_username,
+    )
+    result = await session.execute(user_query)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        # Determine role - first user is admin
+        count_query = select(User.id).where(User.tenant_id == tenant.id)
+        result = await session.execute(count_query)
+        is_first_user = len(result.all()) == 0
+
+        user = User(
+            tenant_id=tenant.id,
+            email=claims.preferred_username,
+            name=claims.name,
+            azure_oid=claims.oid,
+            role="admin" if is_first_user or "admin" in claims.roles else "viewer",
+        )
+        session.add(user)
+        await session.flush()
+    else:
+        # Update name if changed
+        if claims.name and user.name != claims.name:
+            user.name = claims.name
+
+    return user
+
+
+async def get_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> CurrentUser:
+    """Get the current authenticated user."""
+    settings = get_settings()
+
+    if settings.auth.provider == "none":
+        # Development mode - create/get dev user
+        claims = TokenClaims(
+            oid="dev-user-oid",
+            preferred_username="dev@localhost",
+            name="Development User",
+            tenant_id="dev-tenant",
+            roles=["admin"],
+        )
+    else:
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        try:
+            claims = await validate_token(token)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    user = await get_or_create_user(session, claims)
+    return CurrentUser.model_validate(user)
+
+
+async def require_admin(
+    user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Require admin role for the current user."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user

@@ -1,0 +1,143 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openlabels"
+version = "0.1.0"
+description = "Open Source Data Classification & Auto-Labeling Platform"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Chillbot.io" },
+]
+keywords = [
+    "data-classification",
+    "auto-labeling",
+    "mip",
+    "dlp",
+    "pii-detection",
+    "sensitivity-labels",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    # Server
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # Database
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    "msal>=1.26.0",
+
+    # CLI
+    "click>=8.1.0",
+    "rich>=13.7.0",
+
+    # Utils
+    "httpx>=0.26.0",
+    "pyyaml>=6.0.0",
+    "aiofiles>=23.2.0",
+
+    # Detection (from openrisk)
+    # These will be refined as we integrate
+]
+
+[project.optional-dependencies]
+gui = [
+    "PySide6>=6.6.0",
+]
+mip = [
+    "pythonnet>=3.0.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
+all = [
+    "openlabels[gui,mip,dev]",
+]
+
+[project.scripts]
+openlabels = "openlabels.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/chillbot-io/openlabels"
+Documentation = "https://github.com/chillbot-io/openlabels/tree/main/docs"
+Repository = "https://github.com/chillbot-io/openlabels"
+Issues = "https://github.com/chillbot-io/openlabels/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openlabels"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/docs",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["openlabels"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "msal.*",
+    "pythonnet.*",
+    "clr.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --cov=openlabels --cov-report=term-missing"
