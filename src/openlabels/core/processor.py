@@ -23,8 +23,12 @@ from typing import Dict, List, Optional, Set, AsyncIterator, Union
 from .types import Span, DetectionResult, ScoringResult, RiskTier
 from .detectors.orchestrator import DetectorOrchestrator
 from .scoring.scorer import score
+from .constants import DEFAULT_MODELS_DIR
 
 logger = logging.getLogger(__name__)
+
+# Minimum native text length to consider PDF as text-based (not scanned)
+MIN_NATIVE_TEXT_LENGTH = 20
 
 
 # Supported text-based file extensions
@@ -44,6 +48,11 @@ OFFICE_EXTENSIONS: Set[str] = frozenset({
 
 # PDF extension
 PDF_EXTENSIONS: Set[str] = frozenset({".pdf"})
+
+# Image extensions (require OCR)
+IMAGE_EXTENSIONS: Set[str] = frozenset({
+    ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".webp",
+})
 
 
 @dataclass
@@ -102,6 +111,7 @@ class FileProcessor:
     def __init__(
         self,
         enable_ml: bool = False,
+        enable_ocr: bool = True,
         ml_model_dir: Optional[Path] = None,
         confidence_threshold: float = 0.70,
         max_file_size: int = 50 * 1024 * 1024,  # 50 MB
@@ -111,16 +121,39 @@ class FileProcessor:
 
         Args:
             enable_ml: Enable ML-based detectors
-            ml_model_dir: Path to ML model files
+            enable_ocr: Enable OCR for images and scanned PDFs
+            ml_model_dir: Path to ML model files (defaults to ~/.openlabels/models/)
             confidence_threshold: Minimum detection confidence
             max_file_size: Maximum file size to process (bytes)
         """
         self.max_file_size = max_file_size
+        self.enable_ocr = enable_ocr
+        self._ocr_engine = None
+        self._ml_model_dir = ml_model_dir or DEFAULT_MODELS_DIR
         self._orchestrator = DetectorOrchestrator(
             enable_ml=enable_ml,
             ml_model_dir=ml_model_dir,
             confidence_threshold=confidence_threshold,
         )
+
+        # Lazily initialize OCR engine when needed
+        if enable_ocr:
+            self._init_ocr_engine()
+
+    def _init_ocr_engine(self) -> None:
+        """Initialize OCR engine lazily."""
+        try:
+            from .ocr import OCREngine
+            self._ocr_engine = OCREngine(models_dir=self._ml_model_dir)
+            if self._ocr_engine.is_available:
+                # Start loading in background for faster first use
+                self._ocr_engine.start_loading()
+            else:
+                logger.info("OCR not available - rapidocr-onnxruntime not installed")
+                self._ocr_engine = None
+        except ImportError:
+            logger.debug("OCR module not available")
+            self._ocr_engine = None
 
     async def process_file(
         self,
@@ -241,12 +274,54 @@ class FileProcessor:
         if ext in OFFICE_EXTENSIONS:
             return await self._extract_office(content, ext)
 
-        # PDFs
+        # PDFs (with OCR fallback for scanned documents)
         if ext in PDF_EXTENSIONS:
             return await self._extract_pdf(content)
 
+        # Image files (require OCR)
+        if ext in IMAGE_EXTENSIONS:
+            return await self._extract_image(content)
+
         # Unknown - try as text
         return await self._decode_text(content)
+
+    async def _extract_image(self, content: bytes) -> str:
+        """
+        Extract text from image using OCR.
+
+        Args:
+            content: Raw image bytes
+
+        Returns:
+            Extracted text or empty string if OCR unavailable
+        """
+        if not self._ocr_engine:
+            logger.warning("OCR not available for image extraction")
+            return ""
+
+        try:
+            import io
+            from PIL import Image
+            import numpy as np
+
+            # Load image from bytes
+            image = Image.open(io.BytesIO(content))
+            # Convert to RGB if needed (OCR expects RGB)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            # Convert to numpy array for RapidOCR
+            image_array = np.array(image)
+
+            # Extract text using OCR
+            text = self._ocr_engine.extract_text(image_array)
+            return text
+
+        except ImportError as e:
+            logger.warning(f"Image processing library not installed: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error extracting text from image: {e}")
+            return ""
 
     async def _decode_text(self, content: bytes) -> str:
         """Decode bytes to text with encoding detection."""
@@ -514,8 +589,11 @@ class FileProcessor:
         1. pdfplumber (best for structured PDFs)
         2. PyMuPDF/fitz (fast, good for scanned PDFs with OCR)
         3. pypdf (lightweight fallback)
+        4. OCR fallback for scanned documents (if native text < MIN_NATIVE_TEXT_LENGTH)
         """
         import io
+
+        native_text = ""
 
         # Try pdfplumber first (best quality)
         try:
@@ -529,7 +607,7 @@ class FileProcessor:
                         text_parts.append(page_text)
 
             if text_parts:
-                return "\n".join(text_parts)
+                native_text = "\n".join(text_parts)
 
         except ImportError:
             logger.debug("pdfplumber not installed, trying alternatives")
@@ -537,69 +615,154 @@ class FileProcessor:
             logger.debug(f"pdfplumber extraction failed: {e}")
 
         # Try PyMuPDF (fitz) second
-        try:
-            import fitz  # PyMuPDF
+        if not native_text:
+            try:
+                import fitz  # PyMuPDF
 
-            text_parts = []
-            doc = fitz.open(stream=content, filetype="pdf")
+                text_parts = []
+                doc = fitz.open(stream=content, filetype="pdf")
 
-            for page in doc:
-                text = page.get_text()
-                if text.strip():
-                    text_parts.append(text)
+                for page in doc:
+                    text = page.get_text()
+                    if text.strip():
+                        text_parts.append(text)
 
-            doc.close()
+                doc.close()
 
-            if text_parts:
-                return "\n".join(text_parts)
+                if text_parts:
+                    native_text = "\n".join(text_parts)
 
-        except ImportError:
-            logger.debug("PyMuPDF not installed, trying alternatives")
-        except Exception as e:
-            logger.debug(f"PyMuPDF extraction failed: {e}")
+            except ImportError:
+                logger.debug("PyMuPDF not installed, trying alternatives")
+            except Exception as e:
+                logger.debug(f"PyMuPDF extraction failed: {e}")
 
         # Try pypdf as fallback
-        try:
-            from pypdf import PdfReader
+        if not native_text:
+            try:
+                from pypdf import PdfReader
 
-            text_parts = []
-            reader = PdfReader(io.BytesIO(content))
+                text_parts = []
+                reader = PdfReader(io.BytesIO(content))
 
-            for page in reader.pages:
-                text = page.extract_text()
-                if text and text.strip():
-                    text_parts.append(text)
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text and text.strip():
+                        text_parts.append(text)
 
-            if text_parts:
-                return "\n".join(text_parts)
+                if text_parts:
+                    native_text = "\n".join(text_parts)
 
-        except ImportError:
-            logger.debug("pypdf not installed, trying alternatives")
-        except Exception as e:
-            logger.debug(f"pypdf extraction failed: {e}")
+            except ImportError:
+                logger.debug("pypdf not installed, trying alternatives")
+            except Exception as e:
+                logger.debug(f"pypdf extraction failed: {e}")
 
         # Last resort: try PyPDF2 (older but common)
+        if not native_text:
+            try:
+                from PyPDF2 import PdfReader as PyPDF2Reader
+
+                text_parts = []
+                reader = PyPDF2Reader(io.BytesIO(content))
+
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text and text.strip():
+                        text_parts.append(text)
+
+                if text_parts:
+                    native_text = "\n".join(text_parts)
+
+            except ImportError:
+                logger.warning(
+                    "No PDF library installed. Install one of: "
+                    "pip install pdfplumber OR pip install pymupdf OR pip install pypdf"
+                )
+            except Exception as e:
+                logger.debug(f"PyPDF2 extraction failed: {e}")
+
+        # If native text is too short, try OCR (likely a scanned document)
+        if len(native_text.strip()) < MIN_NATIVE_TEXT_LENGTH and self._ocr_engine:
+            logger.info("PDF has minimal native text, attempting OCR extraction")
+            ocr_text = await self._extract_pdf_with_ocr(content)
+            if ocr_text:
+                return ocr_text
+
+        return native_text
+
+    async def _extract_pdf_with_ocr(self, content: bytes) -> str:
+        """
+        Extract text from scanned PDF pages using OCR.
+
+        Args:
+            content: PDF file bytes
+
+        Returns:
+            OCR-extracted text from all pages
+        """
+        if not self._ocr_engine:
+            return ""
+
         try:
-            from PyPDF2 import PdfReader as PyPDF2Reader
+            import io
 
-            text_parts = []
-            reader = PyPDF2Reader(io.BytesIO(content))
+            # Try PyMuPDF for rendering pages to images
+            try:
+                import fitz
+                import numpy as np
 
-            for page in reader.pages:
-                text = page.extract_text()
-                if text and text.strip():
-                    text_parts.append(text)
+                text_parts = []
+                doc = fitz.open(stream=content, filetype="pdf")
 
-            if text_parts:
-                return "\n".join(text_parts)
+                for page_num, page in enumerate(doc):
+                    # Render page to image (150 DPI for good OCR quality)
+                    mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI
+                    pix = page.get_pixmap(matrix=mat)
 
-        except ImportError:
-            logger.warning(
-                "No PDF library installed. Install one of: "
-                "pip install pdfplumber OR pip install pymupdf OR pip install pypdf"
-            )
+                    # Convert to numpy array
+                    img_array = np.frombuffer(pix.samples, dtype=np.uint8)
+                    img_array = img_array.reshape(pix.height, pix.width, pix.n)
+
+                    # Convert to RGB if RGBA
+                    if pix.n == 4:
+                        img_array = img_array[:, :, :3]
+
+                    # Run OCR
+                    page_text = self._ocr_engine.extract_text(img_array)
+                    if page_text:
+                        text_parts.append(page_text)
+
+                doc.close()
+
+                if text_parts:
+                    return "\n\n".join(text_parts)
+
+            except ImportError:
+                logger.debug("PyMuPDF not available for PDF OCR rendering")
+
+            # Fallback: try pdf2image if available
+            try:
+                from pdf2image import convert_from_bytes
+                import numpy as np
+
+                images = convert_from_bytes(content, dpi=150)
+                text_parts = []
+
+                for img in images:
+                    img_array = np.array(img)
+                    page_text = self._ocr_engine.extract_text(img_array)
+                    if page_text:
+                        text_parts.append(page_text)
+
+                if text_parts:
+                    return "\n\n".join(text_parts)
+
+            except ImportError:
+                logger.debug("pdf2image not available for PDF OCR rendering")
+
         except Exception as e:
-            logger.debug(f"PyPDF2 extraction failed: {e}")
+            logger.error(f"Error extracting PDF with OCR: {e}")
 
         return ""
 
@@ -618,7 +781,7 @@ class FileProcessor:
             return False
 
         ext = Path(file_path).suffix.lower()
-        supported = TEXT_EXTENSIONS | OFFICE_EXTENSIONS | PDF_EXTENSIONS
+        supported = TEXT_EXTENSIONS | OFFICE_EXTENSIONS | PDF_EXTENSIONS | IMAGE_EXTENSIONS
 
         return ext in supported
 

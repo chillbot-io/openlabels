@@ -16,6 +16,10 @@ __all__ = [
     # Processing
     "MAX_DETECTOR_WORKERS",
     "DETECTOR_TIMEOUT",
+    # OCR / Models
+    "MODEL_LOAD_TIMEOUT",
+    "OCR_READY_TIMEOUT",
+    "DEFAULT_MODELS_DIR",
 ]
 
 # --- DETECTION ---
@@ -78,3 +82,16 @@ PRODUCT_CODE_PREFIXES = frozenset({
 # --- PROCESSING ---
 MAX_DETECTOR_WORKERS = 8
 DETECTOR_TIMEOUT = 120.0  # seconds
+
+# --- OCR / MODELS ---
+MODEL_LOAD_TIMEOUT = 60.0  # seconds - timeout for loading ML models
+OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
+
+# Default directory for ML models (~/.openlabels/models/)
+# Models expected:
+#   - fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/, fastcoref.config.json
+#   - phi-bert/ (PHI-BERT int8 quantized)
+#   - pii-bert/ (PII-BERT int8 quantized)
+#   - rapidocr/ (det.onnx, rec.onnx, cls.onnx)
+from pathlib import Path
+DEFAULT_MODELS_DIR = Path.home() / ".openlabels" / "models"

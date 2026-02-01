@@ -65,6 +65,13 @@ from .pipeline import (
     validate_span_positions,
 )
 
+from .ocr import (
+    OCREngine,
+    OCRResult,
+    OCRBlock,
+    clean_ocr_text,
+)
+
 __all__ = [
     # Types
     "Span",
@@ -101,4 +108,9 @@ __all__ = [
     "ContextEnhancer",
     "create_enhancer",
     "validate_span_positions",
+    # OCR
+    "OCREngine",
+    "OCRResult",
+    "OCRBlock",
+    "clean_ocr_text",
 ]
