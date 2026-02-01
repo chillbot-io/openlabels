@@ -264,18 +264,343 @@ class FileProcessor:
         """
         Extract text from Office documents.
 
-        TODO: Implement with python-docx, openpyxl, python-pptx
+        Supports:
+        - .docx (python-docx)
+        - .xlsx (openpyxl)
+        - .pptx (python-pptx)
+        - .doc, .xls, .ppt (legacy - limited support)
+        - .odt, .ods, .odp (OpenDocument - via zipfile)
+        - .rtf (basic extraction)
         """
-        logger.warning(f"Office extraction not implemented for {ext}")
+        import io
+
+        try:
+            # Word documents (.docx)
+            if ext == ".docx":
+                return await self._extract_docx(content)
+
+            # Excel spreadsheets (.xlsx)
+            elif ext == ".xlsx":
+                return await self._extract_xlsx(content)
+
+            # PowerPoint presentations (.pptx)
+            elif ext == ".pptx":
+                return await self._extract_pptx(content)
+
+            # OpenDocument formats (.odt, .ods, .odp)
+            elif ext in (".odt", ".ods", ".odp"):
+                return await self._extract_odf(content)
+
+            # RTF files
+            elif ext == ".rtf":
+                return await self._extract_rtf(content)
+
+            # Legacy Office formats (.doc, .xls, .ppt)
+            elif ext in (".doc", ".xls", ".ppt"):
+                logger.warning(f"Legacy Office format {ext} has limited support")
+                # Try to extract any embedded text
+                return await self._extract_legacy_office(content)
+
+            else:
+                logger.warning(f"Unsupported Office format: {ext}")
+                return ""
+
+        except ImportError as e:
+            logger.warning(f"Office extraction library not installed: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error extracting Office document: {e}")
+            return ""
+
+    async def _extract_docx(self, content: bytes) -> str:
+        """Extract text from .docx files."""
+        try:
+            from docx import Document
+            import io
+
+            doc = Document(io.BytesIO(content))
+            text_parts = []
+
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+
+            # Also extract from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            text_parts.append(cell.text)
+
+            return "\n".join(text_parts)
+
+        except ImportError:
+            logger.warning("python-docx not installed. Install with: pip install python-docx")
+            # Fallback: try to extract from XML directly
+            return await self._extract_docx_fallback(content)
+
+    async def _extract_docx_fallback(self, content: bytes) -> str:
+        """Fallback extraction from .docx using zipfile."""
+        import zipfile
+        import io
+        import re
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                if "word/document.xml" in zf.namelist():
+                    xml_content = zf.read("word/document.xml").decode("utf-8")
+                    # Strip XML tags
+                    text = re.sub(r"<[^>]+>", " ", xml_content)
+                    # Clean up whitespace
+                    text = re.sub(r"\s+", " ", text).strip()
+                    return text
+        except Exception as e:
+            logger.debug(f"Fallback docx extraction failed: {e}")
+        return ""
+
+    async def _extract_xlsx(self, content: bytes) -> str:
+        """Extract text from .xlsx files."""
+        try:
+            from openpyxl import load_workbook
+            import io
+
+            wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            text_parts = []
+
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = [str(cell) for cell in row if cell is not None]
+                    if row_text:
+                        text_parts.append(" ".join(row_text))
+
+            wb.close()
+            return "\n".join(text_parts)
+
+        except ImportError:
+            logger.warning("openpyxl not installed. Install with: pip install openpyxl")
+            # Fallback: try to extract from XML directly
+            return await self._extract_xlsx_fallback(content)
+
+    async def _extract_xlsx_fallback(self, content: bytes) -> str:
+        """Fallback extraction from .xlsx using zipfile."""
+        import zipfile
+        import io
+        import re
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                text_parts = []
+                for name in zf.namelist():
+                    if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                        xml_content = zf.read(name).decode("utf-8")
+                        # Extract values from <v> tags
+                        values = re.findall(r"<v>([^<]+)</v>", xml_content)
+                        text_parts.extend(values)
+                return " ".join(text_parts)
+        except Exception as e:
+            logger.debug(f"Fallback xlsx extraction failed: {e}")
+        return ""
+
+    async def _extract_pptx(self, content: bytes) -> str:
+        """Extract text from .pptx files."""
+        try:
+            from pptx import Presentation
+            import io
+
+            prs = Presentation(io.BytesIO(content))
+            text_parts = []
+
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        text_parts.append(shape.text)
+
+            return "\n".join(text_parts)
+
+        except ImportError:
+            logger.warning("python-pptx not installed. Install with: pip install python-pptx")
+            # Fallback: try to extract from XML directly
+            return await self._extract_pptx_fallback(content)
+
+    async def _extract_pptx_fallback(self, content: bytes) -> str:
+        """Fallback extraction from .pptx using zipfile."""
+        import zipfile
+        import io
+        import re
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                text_parts = []
+                for name in zf.namelist():
+                    if name.startswith("ppt/slides/") and name.endswith(".xml"):
+                        xml_content = zf.read(name).decode("utf-8")
+                        # Extract text from <a:t> tags
+                        texts = re.findall(r"<a:t>([^<]+)</a:t>", xml_content)
+                        text_parts.extend(texts)
+                return " ".join(text_parts)
+        except Exception as e:
+            logger.debug(f"Fallback pptx extraction failed: {e}")
+        return ""
+
+    async def _extract_odf(self, content: bytes) -> str:
+        """Extract text from OpenDocument formats (.odt, .ods, .odp)."""
+        import zipfile
+        import io
+        import re
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                if "content.xml" in zf.namelist():
+                    xml_content = zf.read("content.xml").decode("utf-8")
+                    # Strip XML tags
+                    text = re.sub(r"<[^>]+>", " ", xml_content)
+                    # Clean up whitespace
+                    text = re.sub(r"\s+", " ", text).strip()
+                    return text
+        except Exception as e:
+            logger.debug(f"ODF extraction failed: {e}")
+        return ""
+
+    async def _extract_rtf(self, content: bytes) -> str:
+        """Extract text from RTF files."""
+        import re
+
+        try:
+            # Decode RTF content
+            text = content.decode("latin-1")
+
+            # Remove RTF control words and groups
+            text = re.sub(r"\\[a-z]+\d*\s?", " ", text)
+            text = re.sub(r"[{}]", "", text)
+            text = re.sub(r"\\[^a-z]", "", text)
+
+            # Clean up whitespace
+            text = re.sub(r"\s+", " ", text).strip()
+
+            return text
+        except Exception as e:
+            logger.debug(f"RTF extraction failed: {e}")
+        return ""
+
+    async def _extract_legacy_office(self, content: bytes) -> str:
+        """
+        Extract text from legacy Office formats (.doc, .xls, .ppt).
+
+        These formats are binary (OLE2) and require specialized libraries.
+        This provides basic extraction for any plaintext embedded in the file.
+        """
+        import re
+
+        try:
+            # Try to decode as text (may contain readable strings)
+            text = content.decode("latin-1", errors="ignore")
+
+            # Extract printable ASCII sequences (4+ chars)
+            strings = re.findall(r"[\x20-\x7e]{4,}", text)
+
+            # Filter out obvious binary garbage
+            filtered = [s for s in strings if not re.match(r"^[\x00-\x1f]+$", s)]
+
+            return " ".join(filtered[:1000])  # Limit to prevent huge outputs
+        except Exception as e:
+            logger.debug(f"Legacy Office extraction failed: {e}")
         return ""
 
     async def _extract_pdf(self, content: bytes) -> str:
         """
-        Extract text from PDF.
+        Extract text from PDF files.
 
-        TODO: Implement with pdfplumber or PyMuPDF
+        Tries multiple extraction methods in order:
+        1. pdfplumber (best for structured PDFs)
+        2. PyMuPDF/fitz (fast, good for scanned PDFs with OCR)
+        3. pypdf (lightweight fallback)
         """
-        logger.warning("PDF extraction not implemented")
+        import io
+
+        # Try pdfplumber first (best quality)
+        try:
+            import pdfplumber
+
+            text_parts = []
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+
+            if text_parts:
+                return "\n".join(text_parts)
+
+        except ImportError:
+            logger.debug("pdfplumber not installed, trying alternatives")
+        except Exception as e:
+            logger.debug(f"pdfplumber extraction failed: {e}")
+
+        # Try PyMuPDF (fitz) second
+        try:
+            import fitz  # PyMuPDF
+
+            text_parts = []
+            doc = fitz.open(stream=content, filetype="pdf")
+
+            for page in doc:
+                text = page.get_text()
+                if text.strip():
+                    text_parts.append(text)
+
+            doc.close()
+
+            if text_parts:
+                return "\n".join(text_parts)
+
+        except ImportError:
+            logger.debug("PyMuPDF not installed, trying alternatives")
+        except Exception as e:
+            logger.debug(f"PyMuPDF extraction failed: {e}")
+
+        # Try pypdf as fallback
+        try:
+            from pypdf import PdfReader
+
+            text_parts = []
+            reader = PdfReader(io.BytesIO(content))
+
+            for page in reader.pages:
+                text = page.extract_text()
+                if text and text.strip():
+                    text_parts.append(text)
+
+            if text_parts:
+                return "\n".join(text_parts)
+
+        except ImportError:
+            logger.debug("pypdf not installed, trying alternatives")
+        except Exception as e:
+            logger.debug(f"pypdf extraction failed: {e}")
+
+        # Last resort: try PyPDF2 (older but common)
+        try:
+            from PyPDF2 import PdfReader as PyPDF2Reader
+
+            text_parts = []
+            reader = PyPDF2Reader(io.BytesIO(content))
+
+            for page in reader.pages:
+                text = page.extract_text()
+                if text and text.strip():
+                    text_parts.append(text)
+
+            if text_parts:
+                return "\n".join(text_parts)
+
+        except ImportError:
+            logger.warning(
+                "No PDF library installed. Install one of: "
+                "pip install pdfplumber OR pip install pymupdf OR pip install pypdf"
+            )
+        except Exception as e:
+            logger.debug(f"PyPDF2 extraction failed: {e}")
+
         return ""
 
     def can_process(self, file_path: str, file_size: int) -> bool:

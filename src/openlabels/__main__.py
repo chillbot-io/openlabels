@@ -9,8 +9,13 @@ Usage:
     openlabels config show
 """
 
-import click
+import asyncio
+import json
 import sys
+from pathlib import Path
+from typing import Optional
+
+import click
 
 
 @click.group()
@@ -106,6 +111,22 @@ def config_set(key: str, value: str):
     click.echo("Note: Configuration changes require server restart")
 
 
+def _get_httpx_client():
+    """Get httpx client for CLI commands."""
+    try:
+        import httpx
+        return httpx.Client(timeout=30.0)
+    except ImportError:
+        click.echo("Error: httpx not installed. Run: pip install httpx", err=True)
+        sys.exit(1)
+
+
+def _get_server_url():
+    """Get server URL from environment or default."""
+    import os
+    return os.environ.get("OPENLABELS_SERVER", "http://localhost:8000")
+
+
 @cli.group()
 def user():
     """User management commands."""
@@ -115,8 +136,25 @@ def user():
 @user.command("list")
 def user_list():
     """List all users."""
-    click.echo("Users:")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.get(f"{server}/api/users")
+        if response.status_code == 200:
+            users = response.json()
+            click.echo(f"{'Email':<30} {'Role':<10} {'Created':<20}")
+            click.echo("-" * 60)
+            for user in users:
+                click.echo(f"{user.get('email', ''):<30} {user.get('role', ''):<10} {user.get('created_at', '')[:19]:<20}")
+        elif response.status_code == 401:
+            click.echo("Error: Authentication required. Set OPENLABELS_API_KEY", err=True)
+        else:
+            click.echo(f"Error: {response.status_code}", err=True)
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @user.command("create")
@@ -124,8 +162,23 @@ def user_list():
 @click.option("--role", default="viewer", type=click.Choice(["admin", "viewer"]))
 def user_create(email: str, role: str):
     """Create a new user."""
-    click.echo(f"Creating user {email} with role {role}")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.post(
+            f"{server}/api/users",
+            json={"email": email, "role": role}
+        )
+        if response.status_code == 201:
+            user = response.json()
+            click.echo(f"Created user: {user.get('email')}")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.group()
@@ -137,8 +190,26 @@ def target():
 @target.command("list")
 def target_list():
     """List configured scan targets."""
-    click.echo("Targets:")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.get(f"{server}/api/targets")
+        if response.status_code == 200:
+            targets = response.json()
+            click.echo(f"{'Name':<25} {'Adapter':<12} {'Path':<40}")
+            click.echo("-" * 80)
+            for target in targets:
+                name = target.get('name', '')[:24]
+                adapter = target.get('adapter_type', '')
+                path = target.get('path', target.get('config', {}).get('path', ''))[:39]
+                click.echo(f"{name:<25} {adapter:<12} {path:<40}")
+        else:
+            click.echo(f"Error: {response.status_code}", err=True)
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @target.command("add")
@@ -147,8 +218,27 @@ def target_list():
 @click.option("--path", required=True, help="Path or site URL to scan")
 def target_add(name: str, adapter: str, path: str):
     """Add a new scan target."""
-    click.echo(f"Adding target {name} ({adapter}: {path})")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.post(
+            f"{server}/api/targets",
+            json={
+                "name": name,
+                "adapter_type": adapter,
+                "config": {"path": path},
+            }
+        )
+        if response.status_code == 201:
+            target = response.json()
+            click.echo(f"Created target: {target.get('name')} (ID: {target.get('id')})")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.group()
@@ -161,24 +251,88 @@ def scan():
 @click.argument("target_name")
 def scan_start(target_name: str):
     """Start a scan on the specified target."""
-    click.echo(f"Starting scan on {target_name}")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        # First, find the target by name
+        response = client.get(f"{server}/api/targets")
+        if response.status_code != 200:
+            click.echo(f"Error fetching targets: {response.status_code}", err=True)
+            return
+
+        targets = response.json()
+        target = next((t for t in targets if t.get("name") == target_name), None)
+
+        if not target:
+            click.echo(f"Target not found: {target_name}", err=True)
+            return
+
+        # Start the scan
+        response = client.post(
+            f"{server}/api/scans",
+            json={"target_id": target["id"]}
+        )
+
+        if response.status_code == 201:
+            scan = response.json()
+            click.echo(f"Started scan: {scan.get('id')}")
+            click.echo(f"Status: {scan.get('status')}")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @scan.command("status")
 @click.argument("job_id")
 def scan_status(job_id: str):
     """Check status of a scan job."""
-    click.echo(f"Status of job {job_id}")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.get(f"{server}/api/scans/{job_id}")
+        if response.status_code == 200:
+            scan = response.json()
+            click.echo(f"Job ID:     {scan.get('id')}")
+            click.echo(f"Status:     {scan.get('status')}")
+            click.echo(f"Started:    {scan.get('started_at', 'N/A')}")
+            click.echo(f"Completed:  {scan.get('completed_at', 'N/A')}")
+
+            progress = scan.get("progress", {})
+            if progress:
+                click.echo(f"Progress:   {progress.get('files_scanned', 0)}/{progress.get('files_total', 0)} files")
+        else:
+            click.echo(f"Error: {response.status_code}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @scan.command("cancel")
 @click.argument("job_id")
 def scan_cancel(job_id: str):
     """Cancel a running scan."""
-    click.echo(f"Cancelling job {job_id}")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.delete(f"{server}/api/scans/{job_id}")
+        if response.status_code in (200, 204):
+            click.echo(f"Cancelled scan: {job_id}")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.group()
@@ -187,27 +341,133 @@ def labels():
     pass
 
 
+@labels.command("list")
+def labels_list():
+    """List configured sensitivity labels."""
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.get(f"{server}/api/labels")
+        if response.status_code == 200:
+            labels = response.json()
+            click.echo(f"{'Name':<30} {'Priority':<10} {'ID'}")
+            click.echo("-" * 80)
+            for label in labels:
+                click.echo(f"{label.get('name', ''):<30} {label.get('priority', 0):<10} {label.get('id', '')}")
+        else:
+            click.echo(f"Error: {response.status_code}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
+
+
 @labels.command("sync")
 def labels_sync():
     """Sync sensitivity labels from Microsoft 365."""
-    click.echo("Syncing labels from M365...")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        click.echo("Syncing labels from M365...")
+        response = client.post(f"{server}/api/labels/sync")
+        if response.status_code == 202:
+            result = response.json()
+            click.echo(f"Synced {result.get('labels_synced', 0)} labels")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error connecting to server: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.command()
 @click.option("--output", default="./backup", help="Output directory")
 def backup(output: str):
     """Backup OpenLabels data."""
-    click.echo(f"Backing up to {output}")
-    # TODO: Implement
+    import shutil
+    from datetime import datetime
+
+    output_path = Path(output)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"openlabels_backup_{timestamp}"
+
+    click.echo(f"Creating backup: {backup_name}")
+
+    # Export data via API
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    backup_dir = output_path / backup_name
+    backup_dir.mkdir(exist_ok=True)
+
+    try:
+        # Export configurations
+        for endpoint in ["targets", "labels", "labels/rules", "schedules"]:
+            try:
+                response = client.get(f"{server}/api/{endpoint}")
+                if response.status_code == 200:
+                    with open(backup_dir / f"{endpoint.replace('/', '_')}.json", "w") as f:
+                        json.dump(response.json(), f, indent=2)
+                    click.echo(f"  Exported: {endpoint}")
+            except Exception as e:
+                click.echo(f"  Failed to export {endpoint}: {e}", err=True)
+
+        click.echo(f"Backup created: {backup_dir}")
+
+    except Exception as e:
+        click.echo(f"Backup failed: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.command()
 @click.option("--from", "from_path", required=True, help="Backup directory to restore from")
 def restore(from_path: str):
     """Restore OpenLabels data from backup."""
-    click.echo(f"Restoring from {from_path}")
-    # TODO: Implement
+    backup_path = Path(from_path)
+
+    if not backup_path.exists():
+        click.echo(f"Backup not found: {from_path}", err=True)
+        return
+
+    click.echo(f"Restoring from: {backup_path}")
+
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        # Restore configurations
+        for file in backup_path.glob("*.json"):
+            endpoint = file.stem.replace("_", "/")
+            try:
+                with open(file) as f:
+                    data = json.load(f)
+
+                if isinstance(data, list):
+                    for item in data:
+                        response = client.post(f"{server}/api/{endpoint}", json=item)
+                        if response.status_code not in (200, 201):
+                            click.echo(f"  Warning: Failed to restore item in {endpoint}", err=True)
+                    click.echo(f"  Restored: {endpoint} ({len(data)} items)")
+                else:
+                    click.echo(f"  Skipped: {file.name} (not a list)")
+
+            except Exception as e:
+                click.echo(f"  Failed to restore {file.name}: {e}", err=True)
+
+        click.echo("Restore completed")
+
+    except Exception as e:
+        click.echo(f"Restore failed: {e}", err=True)
+    finally:
+        client.close()
 
 
 @cli.group()
@@ -222,8 +482,71 @@ def export():
 @click.option("--output", required=True, help="Output file path")
 def export_results(job: str, fmt: str, output: str):
     """Export scan results."""
-    click.echo(f"Exporting job {job} to {output} as {fmt}")
-    # TODO: Implement
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    try:
+        response = client.get(
+            f"{server}/api/results/export",
+            params={"job_id": job, "format": fmt}
+        )
+
+        if response.status_code == 200:
+            with open(output, "wb") as f:
+                f.write(response.content)
+            click.echo(f"Exported to: {output}")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error exporting results: {e}", err=True)
+    finally:
+        client.close()
+
+
+@cli.command()
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--exposure", default="PRIVATE", type=click.Choice(["PRIVATE", "INTERNAL", "ORG_WIDE", "PUBLIC"]))
+@click.option("--enable-ml", is_flag=True, help="Enable ML-based detectors")
+def classify(file_path: str, exposure: str, enable_ml: bool):
+    """Classify a single file locally (no server required)."""
+    click.echo(f"Classifying: {file_path}")
+
+    try:
+        from openlabels.core.processor import FileProcessor
+
+        processor = FileProcessor(enable_ml=enable_ml)
+
+        with open(file_path, "rb") as f:
+            content = f.read()
+
+        # Run async processor
+        result = asyncio.run(
+            processor.process_file(
+                file_path=file_path,
+                content=content,
+                exposure_level=exposure,
+            )
+        )
+
+        click.echo(f"\nResults for: {result.file_name}")
+        click.echo("-" * 50)
+        click.echo(f"Risk Score: {result.risk_score}")
+        click.echo(f"Risk Tier:  {result.risk_tier.value}")
+        click.echo(f"Entities:   {sum(result.entity_counts.values())}")
+
+        if result.entity_counts:
+            click.echo("\nDetected Entities:")
+            for entity_type, count in sorted(result.entity_counts.items(), key=lambda x: -x[1]):
+                click.echo(f"  {entity_type}: {count}")
+
+        if result.error:
+            click.echo(f"\nError: {result.error}", err=True)
+
+    except ImportError as e:
+        click.echo(f"Error: Required module not installed: {e}", err=True)
+    except Exception as e:
+        click.echo(f"Error classifying file: {e}", err=True)
 
 
 def main():

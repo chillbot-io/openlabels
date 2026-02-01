@@ -1,8 +1,23 @@
 """
 Label application task implementation.
+
+Applies sensitivity labels to files using:
+1. MIP SDK for local files (Windows + .NET required)
+2. Microsoft Graph API for SharePoint/OneDrive files
+3. Metadata/sidecar fallback for other scenarios
 """
 
+import asyncio
+import base64
+import json
 import logging
+import shutil
+import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+from typing import Optional, Dict, Tuple
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.models import ScanResult, SensitivityLabel
 
 logger = logging.getLogger(__name__)
+
+# Check for optional dependencies
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
 
 
 async def execute_label_task(
@@ -24,7 +46,7 @@ async def execute_label_task(
         payload: Task payload containing result_id and label_id
 
     Returns:
-        Result dictionary
+        Result dictionary with success status and details
     """
     result_id = UUID(payload["result_id"])
     label_id = payload["label_id"]
@@ -42,13 +64,10 @@ async def execute_label_task(
     logger.info(f"Applying label '{label.name}' to {result.file_path}")
 
     try:
-        # Apply label based on adapter type
-        # This will use MIP SDK for local files or Graph API for cloud files
-        success = await _apply_label(result, label)
+        # Apply label based on file location
+        labeling_result = await _apply_label(result, label)
 
-        if success:
-            from datetime import datetime
-
+        if labeling_result["success"]:
             result.label_applied = True
             result.label_applied_at = datetime.utcnow()
             result.current_label_id = label_id
@@ -60,12 +79,15 @@ async def execute_label_task(
                 "file_path": result.file_path,
                 "label_id": label_id,
                 "label_name": label.name,
+                "method": labeling_result.get("method", "unknown"),
             }
         else:
-            result.label_error = "Label application failed"
+            result.label_error = labeling_result.get("error", "Label application failed")
             return {
                 "success": False,
-                "error": "Label application failed",
+                "file_path": result.file_path,
+                "error": result.label_error,
+                "method": labeling_result.get("method", "unknown"),
             }
 
     except Exception as e:
@@ -74,56 +96,539 @@ async def execute_label_task(
         raise
 
 
-async def _apply_label(result: ScanResult, label: SensitivityLabel) -> bool:
+async def _apply_label(result: ScanResult, label: SensitivityLabel) -> dict:
     """
     Apply a sensitivity label to a file.
 
-    This is a placeholder that will be replaced with actual MIP SDK
-    or Graph API integration.
+    Routes to appropriate labeling method based on file location.
     """
-    # TODO: Implement MIP SDK integration for local files
-    # TODO: Implement Graph API integration for SharePoint/OneDrive
-
-    # Determine which labeling method to use based on file path
     file_path = result.file_path
 
-    if file_path.startswith("http"):
-        # Graph API for cloud files
+    # SharePoint/OneDrive URLs - use Graph API
+    if file_path.startswith("https://") and ("sharepoint.com" in file_path or "onedrive" in file_path):
         return await _apply_label_graph(result, label)
-    else:
-        # MIP SDK for local files
-        return await _apply_label_mip(result, label)
+
+    # Other HTTP URLs - cannot label
+    if file_path.startswith("http"):
+        return {
+            "success": False,
+            "method": "unsupported",
+            "error": "Cannot apply labels to non-Microsoft cloud files",
+        }
+
+    # Local files - try MIP SDK, fall back to metadata
+    return await _apply_label_local(result, label)
 
 
-async def _apply_label_mip(result: ScanResult, label: SensitivityLabel) -> bool:
+async def _apply_label_local(result: ScanResult, label: SensitivityLabel) -> dict:
     """
-    Apply label using MIP SDK.
+    Apply label to local files.
 
-    TODO: Implement using pythonnet and MIP SDK
+    Tries MIP SDK first, falls back to metadata if MIP unavailable.
     """
-    logger.info(f"MIP SDK label application for {result.file_path}")
+    file_path = result.file_path
 
-    # Placeholder - actual implementation will use:
-    # - pythonnet to load .NET MIP SDK
-    # - Authenticate with Azure AD
-    # - Create file handler
-    # - Apply label
-    # - Commit changes
+    # Check if file exists
+    if not Path(file_path).exists():
+        return {
+            "success": False,
+            "method": "local",
+            "error": f"File not found: {file_path}",
+        }
 
-    return True  # Placeholder success
+    # Try MIP SDK first (Windows only, requires .NET)
+    mip_result = await _apply_label_mip(file_path, label)
+    if mip_result["success"]:
+        return mip_result
+
+    # If MIP not available/failed, try metadata approach
+    if "not available" in mip_result.get("error", "").lower():
+        metadata_result = await _apply_label_metadata(file_path, label)
+        return metadata_result
+
+    # MIP was available but failed - return MIP error
+    return mip_result
 
 
-async def _apply_label_graph(result: ScanResult, label: SensitivityLabel) -> bool:
+async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
+    """
+    Apply label using Microsoft Information Protection SDK.
+
+    Requires Windows with .NET and the MIP SDK installed.
+    """
+    try:
+        from openlabels.labeling.mip import MIPClient, is_mip_available
+
+        if not is_mip_available():
+            return {
+                "success": False,
+                "method": "mip",
+                "error": "MIP SDK not available (pythonnet not installed)",
+            }
+
+        # Get MIP credentials from settings
+        try:
+            from openlabels.server.config import get_settings
+            settings = get_settings()
+            mip_config = getattr(settings, "mip", None)
+        except Exception:
+            mip_config = None
+
+        if not mip_config:
+            return {
+                "success": False,
+                "method": "mip",
+                "error": "MIP SDK not available (not configured)",
+            }
+
+        # Initialize MIP client
+        client = MIPClient(
+            client_id=mip_config.client_id,
+            client_secret=mip_config.client_secret,
+            tenant_id=mip_config.tenant_id,
+        )
+
+        initialized = await client.initialize()
+        if not initialized:
+            return {
+                "success": False,
+                "method": "mip",
+                "error": "MIP SDK not available (initialization failed)",
+            }
+
+        try:
+            # Apply the label
+            result = await client.apply_label(
+                file_path=file_path,
+                label_id=label.id,
+                justification="Auto-labeled by OpenLabels based on content classification",
+            )
+
+            return {
+                "success": result.success,
+                "method": "mip",
+                "error": result.error if not result.success else None,
+            }
+        finally:
+            await client.shutdown()
+
+    except ImportError:
+        return {
+            "success": False,
+            "method": "mip",
+            "error": "MIP SDK not available (module not found)",
+        }
+    except Exception as e:
+        logger.error(f"MIP SDK error: {e}")
+        return {
+            "success": False,
+            "method": "mip",
+            "error": str(e),
+        }
+
+
+async def _apply_label_metadata(file_path: str, label: SensitivityLabel) -> dict:
+    """
+    Apply label using file metadata (custom properties).
+
+    This is a fallback when MIP SDK is not available. It stores label
+    information in file metadata but does NOT provide MIP encryption
+    or protection features.
+    """
+    path = Path(file_path)
+    ext = path.suffix.lower()
+
+    # For Office documents, add custom properties
+    if ext in (".docx", ".xlsx", ".pptx"):
+        return await _apply_label_office_metadata(file_path, label)
+
+    # For PDFs, add metadata
+    if ext == ".pdf":
+        return await _apply_label_pdf_metadata(file_path, label)
+
+    # For other files, create a sidecar file
+    return await _apply_label_sidecar(file_path, label)
+
+
+async def _apply_label_office_metadata(file_path: str, label: SensitivityLabel) -> dict:
+    """Add label to Office document custom properties."""
+    try:
+        path = Path(file_path)
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+
+        # Read and modify the document
+        with zipfile.ZipFile(file_path, "r") as zf_in:
+            with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zf_out:
+                has_custom = "docProps/custom.xml" in zf_in.namelist()
+
+                for item in zf_in.namelist():
+                    content = zf_in.read(item)
+
+                    # Update custom properties if exists
+                    if item == "docProps/custom.xml":
+                        content = _update_custom_props_xml(content, label)
+                    # Update content types if we need to add custom props
+                    elif item == "[Content_Types].xml" and not has_custom:
+                        content = _update_content_types(content)
+
+                    zf_out.writestr(item, content)
+
+                # Add custom properties if they don't exist
+                if not has_custom:
+                    custom_xml = _create_custom_props_xml(label)
+                    zf_out.writestr("docProps/custom.xml", custom_xml)
+
+                    # Also need to update _rels/.rels
+                    if "docProps/_rels/core.xml.rels" not in zf_in.namelist():
+                        pass  # Custom props don't need explicit relationship
+
+        # Replace original with modified
+        shutil.move(str(temp_path), file_path)
+
+        logger.info(f"Applied label via Office metadata: {file_path}")
+        return {
+            "success": True,
+            "method": "office_metadata",
+        }
+
+    except Exception as e:
+        logger.error(f"Office metadata labeling failed: {e}")
+        # Clean up temp file if it exists
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except Exception:
+            pass
+        return {
+            "success": False,
+            "method": "office_metadata",
+            "error": str(e),
+        }
+
+
+def _create_custom_props_xml(label: SensitivityLabel) -> bytes:
+    """Create custom properties XML with label info."""
+    ns_props = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+    ns_vt = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="{ns_props}" xmlns:vt="{ns_vt}">
+    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="OpenLabels_LabelId">
+        <vt:lpwstr>{label.id}</vt:lpwstr>
+    </property>
+    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="3" name="OpenLabels_LabelName">
+        <vt:lpwstr>{label.name}</vt:lpwstr>
+    </property>
+    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="4" name="Classification">
+        <vt:lpwstr>{label.name}</vt:lpwstr>
+    </property>
+</Properties>"""
+    return xml.encode("utf-8")
+
+
+def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
+    """Update existing custom properties XML with label info."""
+    try:
+        ns = {
+            "cp": "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties",
+            "vt": "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes",
+        }
+
+        # Register namespaces to preserve them in output
+        ET.register_namespace("", ns["cp"])
+        ET.register_namespace("vt", ns["vt"])
+
+        root = ET.fromstring(content)
+
+        label_props = {
+            "OpenLabels_LabelId": label.id,
+            "OpenLabels_LabelName": label.name,
+            "Classification": label.name,
+        }
+
+        # Find max PID and update existing props
+        max_pid = 1
+        for prop in root.findall(".//{%s}property" % ns["cp"]):
+            pid = int(prop.get("pid", "0"))
+            if pid > max_pid:
+                max_pid = pid
+
+            name = prop.get("name")
+            if name in label_props:
+                vt_elem = prop.find("{%s}lpwstr" % ns["vt"])
+                if vt_elem is not None:
+                    vt_elem.text = label_props[name]
+                del label_props[name]
+
+        # Add missing properties
+        for name, value in label_props.items():
+            max_pid += 1
+            prop = ET.SubElement(root, "{%s}property" % ns["cp"])
+            prop.set("fmtid", "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}")
+            prop.set("pid", str(max_pid))
+            prop.set("name", name)
+            vt = ET.SubElement(prop, "{%s}lpwstr" % ns["vt"])
+            vt.text = value
+
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    except Exception:
+        return _create_custom_props_xml(label)
+
+
+def _update_content_types(content: bytes) -> bytes:
+    """Update content types to include custom properties."""
+    try:
+        ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+        ET.register_namespace("", ns)
+
+        root = ET.fromstring(content)
+
+        # Check if custom properties type already exists
+        for override in root.findall(".//{%s}Override" % ns):
+            if override.get("PartName") == "/docProps/custom.xml":
+                return content
+
+        # Add override for custom properties
+        override = ET.SubElement(root, "{%s}Override" % ns)
+        override.set("PartName", "/docProps/custom.xml")
+        override.set("ContentType", "application/vnd.openxmlformats-officedocument.custom-properties+xml")
+
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    except Exception:
+        return content
+
+
+async def _apply_label_pdf_metadata(file_path: str, label: SensitivityLabel) -> dict:
+    """Add label to PDF metadata."""
+    # Try pypdf/PyPDF2
+    try:
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError:
+            from PyPDF2 import PdfReader, PdfWriter
+
+        reader = PdfReader(file_path)
+        writer = PdfWriter()
+
+        # Copy all pages
+        for page in reader.pages:
+            writer.add_page(page)
+
+        # Add label metadata
+        writer.add_metadata({
+            "/OpenLabels_LabelId": label.id,
+            "/OpenLabels_LabelName": label.name,
+            "/Classification": label.name,
+        })
+
+        # Write to temp file then replace
+        temp_path = Path(file_path).with_suffix(".pdf.tmp")
+        with open(temp_path, "wb") as f:
+            writer.write(f)
+
+        shutil.move(str(temp_path), file_path)
+
+        logger.info(f"Applied label via PDF metadata: {file_path}")
+        return {
+            "success": True,
+            "method": "pdf_metadata",
+        }
+
+    except ImportError:
+        logger.debug("No PDF library available, using sidecar")
+        return await _apply_label_sidecar(file_path, label)
+    except Exception as e:
+        logger.error(f"PDF metadata labeling failed: {e}")
+        return {
+            "success": False,
+            "method": "pdf_metadata",
+            "error": str(e),
+        }
+
+
+async def _apply_label_sidecar(file_path: str, label: SensitivityLabel) -> dict:
+    """Create a sidecar file with label information."""
+    try:
+        sidecar_path = Path(file_path).with_suffix(Path(file_path).suffix + ".openlabels")
+
+        sidecar_data = {
+            "file": str(file_path),
+            "label_id": label.id,
+            "label_name": label.name,
+            "applied_at": datetime.utcnow().isoformat(),
+            "applied_by": "OpenLabels",
+        }
+
+        with open(sidecar_path, "w") as f:
+            json.dump(sidecar_data, f, indent=2)
+
+        logger.info(f"Applied label via sidecar: {sidecar_path}")
+        return {
+            "success": True,
+            "method": "sidecar",
+        }
+
+    except Exception as e:
+        logger.error(f"Sidecar labeling failed: {e}")
+        return {
+            "success": False,
+            "method": "sidecar",
+            "error": str(e),
+        }
+
+
+async def _apply_label_graph(result: ScanResult, label: SensitivityLabel) -> dict:
     """
     Apply label using Microsoft Graph API.
 
-    TODO: Implement Graph API labeling
+    Works with SharePoint and OneDrive files.
     """
-    logger.info(f"Graph API label application for {result.file_path}")
+    if not HTTPX_AVAILABLE:
+        return {
+            "success": False,
+            "method": "graph",
+            "error": "httpx not installed (pip install httpx)",
+        }
 
-    # Placeholder - actual implementation will:
-    # - Use httpx to call Graph API
-    # - PATCH /sites/{siteId}/drive/items/{itemId}
-    # - Set sensitivityLabel property
+    try:
+        from openlabels.server.config import get_settings
+        settings = get_settings()
 
-    return True  # Placeholder success
+        graph_config = getattr(settings, "graph", None)
+        if not graph_config:
+            return {
+                "success": False,
+                "method": "graph",
+                "error": "Graph API not configured in settings",
+            }
+
+        # Get access token
+        token = await _get_graph_token(
+            tenant_id=graph_config.tenant_id,
+            client_id=graph_config.client_id,
+            client_secret=graph_config.client_secret,
+        )
+
+        if not token:
+            return {
+                "success": False,
+                "method": "graph",
+                "error": "Failed to obtain Graph API access token",
+            }
+
+        # Parse the SharePoint/OneDrive URL to get site and item IDs
+        file_url = result.file_path
+        site_id, item_id = await _parse_sharepoint_url(file_url, token)
+
+        if not site_id or not item_id:
+            return {
+                "success": False,
+                "method": "graph",
+                "error": "Could not resolve SharePoint file location from URL",
+            }
+
+        # Apply the label via Graph API
+        async with httpx.AsyncClient() as client:
+            response = await client.patch(
+                f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{item_id}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "sensitivityLabel": {
+                        "labelId": label.id,
+                        "assignmentMethod": "standard",
+                    }
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code in (200, 204):
+                logger.info(f"Applied label via Graph API: {file_url}")
+                return {
+                    "success": True,
+                    "method": "graph",
+                }
+            else:
+                error_msg = response.text[:500] if response.text else f"HTTP {response.status_code}"
+                logger.error(f"Graph API error: {error_msg}")
+                return {
+                    "success": False,
+                    "method": "graph",
+                    "error": f"Graph API returned {response.status_code}",
+                }
+
+    except Exception as e:
+        logger.error(f"Graph API labeling failed: {e}")
+        return {
+            "success": False,
+            "method": "graph",
+            "error": str(e),
+        }
+
+
+async def _get_graph_token(tenant_id: str, client_id: str, client_secret: str) -> Optional[str]:
+    """Get OAuth2 access token for Microsoft Graph API."""
+    if not HTTPX_AVAILABLE:
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "scope": "https://graph.microsoft.com/.default",
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                return response.json().get("access_token")
+            else:
+                logger.error(f"Failed to get Graph token: {response.status_code} - {response.text[:200]}")
+                return None
+
+    except Exception as e:
+        logger.error(f"Graph token error: {e}")
+        return None
+
+
+async def _parse_sharepoint_url(url: str, token: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse SharePoint/OneDrive URL to get site and item IDs.
+
+    Uses the Graph API shares endpoint to resolve sharing URLs.
+    """
+    if not HTTPX_AVAILABLE:
+        return None, None
+
+    try:
+        # Encode URL for shares endpoint
+        encoded_url = "u!" + base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://graph.microsoft.com/v1.0/shares/{encoded_url}/driveItem",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                parent_ref = data.get("parentReference", {})
+                site_id = parent_ref.get("siteId")
+                item_id = data.get("id")
+                return site_id, item_id
+            else:
+                logger.debug(f"Could not resolve URL via shares endpoint: {response.status_code}")
+
+    except Exception as e:
+        logger.error(f"Failed to parse SharePoint URL: {e}")
+
+    return None, None

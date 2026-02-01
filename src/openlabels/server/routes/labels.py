@@ -2,6 +2,8 @@
 Sensitivity label management API endpoints.
 """
 
+import logging
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -14,6 +16,15 @@ from openlabels.server.db import get_session
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
 from openlabels.auth.dependencies import get_current_user, require_admin
 from openlabels.jobs import JobQueue
+
+logger = logging.getLogger(__name__)
+
+# Check for httpx
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
 
 router = APIRouter()
 
@@ -82,8 +93,109 @@ async def sync_labels(
     user=Depends(require_admin),
 ):
     """Sync sensitivity labels from Microsoft 365."""
-    # TODO: Implement Graph API call to fetch labels
-    return {"message": "Label sync initiated"}
+    if not HTTPX_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="httpx not installed - cannot sync labels"
+        )
+
+    try:
+        from openlabels.server.config import get_settings
+        settings = get_settings()
+        graph_config = getattr(settings, "graph", None)
+
+        if not graph_config:
+            raise HTTPException(
+                status_code=503,
+                detail="Graph API not configured"
+            )
+
+        # Get access token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                f"https://login.microsoftonline.com/{graph_config.tenant_id}/oauth2/v2.0/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": graph_config.client_id,
+                    "client_secret": graph_config.client_secret,
+                    "scope": "https://graph.microsoft.com/.default",
+                },
+                timeout=30.0,
+            )
+
+            if token_response.status_code != 200:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Failed to authenticate with Graph API"
+                )
+
+            token = token_response.json().get("access_token")
+
+            # Fetch sensitivity labels
+            labels_response = await client.get(
+                "https://graph.microsoft.com/v1.0/informationProtection/policy/labels",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30.0,
+            )
+
+            if labels_response.status_code != 200:
+                logger.error(f"Graph API error: {labels_response.text[:500]}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Failed to fetch labels from Graph API"
+                )
+
+            labels_data = labels_response.json().get("value", [])
+
+            # Sync labels to database
+            synced_count = 0
+            for label_data in labels_data:
+                label_id = label_data.get("id")
+                if not label_id:
+                    continue
+
+                # Check if label exists
+                existing = await session.get(SensitivityLabel, label_id)
+
+                if existing:
+                    # Update existing label
+                    existing.name = label_data.get("name", existing.name)
+                    existing.description = label_data.get("description")
+                    existing.color = label_data.get("color")
+                    existing.priority = label_data.get("priority", 0)
+                    existing.parent_id = label_data.get("parent", {}).get("id")
+                    existing.synced_at = datetime.utcnow()
+                else:
+                    # Create new label
+                    new_label = SensitivityLabel(
+                        id=label_id,
+                        tenant_id=user.tenant_id,
+                        name=label_data.get("name", "Unknown"),
+                        description=label_data.get("description"),
+                        color=label_data.get("color"),
+                        priority=label_data.get("priority", 0),
+                        parent_id=label_data.get("parent", {}).get("id"),
+                        synced_at=datetime.utcnow(),
+                    )
+                    session.add(new_label)
+
+                synced_count += 1
+
+            await session.flush()
+
+            return {
+                "message": "Label sync completed",
+                "labels_synced": synced_count,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Label sync failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Label sync failed: {str(e)}"
+        )
 
 
 @router.get("/rules", response_model=list[LabelRuleResponse])

@@ -4,8 +4,11 @@ Results viewer widget.
 Displays scan results with filtering, sorting, and export capabilities.
 """
 
+import csv
+import json
 import logging
-from typing import Optional, List
+from pathlib import Path
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +16,8 @@ try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QTableWidget, QTableWidgetItem, QComboBox, QLineEdit,
-        QGroupBox, QHeaderView, QSplitter, QTextEdit,
+        QGroupBox, QHeaderView, QSplitter, QTextEdit, QFileDialog,
+        QMessageBox,
     )
     from PySide6.QtCore import Qt, Signal
     PYSIDE_AVAILABLE = True
@@ -34,12 +38,14 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
     Signals:
         result_selected: Emitted when a result is selected (result_id)
-        label_requested: Emitted when labeling is requested (result_ids)
+        label_requested: Emitted when labeling is requested (result_ids, label_id)
+        refresh_requested: Emitted when refresh is requested
     """
 
     if PYSIDE_AVAILABLE:
         result_selected = Signal(str)
-        label_requested = Signal(list)
+        label_requested = Signal(list, str)
+        refresh_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         if not PYSIDE_AVAILABLE:
@@ -47,6 +53,8 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
             return
 
         super().__init__(parent)
+        self._all_results: List[Dict] = []
+        self._filtered_results: List[Dict] = []
         self._setup_ui()
         self._connect_signals()
 
@@ -70,6 +78,12 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._tier_combo.addItem("Minimal", "MINIMAL")
         filters_layout.addWidget(self._tier_combo)
 
+        self._labeled_combo = QComboBox()
+        self._labeled_combo.addItem("All Files", None)
+        self._labeled_combo.addItem("Labeled", True)
+        self._labeled_combo.addItem("Unlabeled", False)
+        filters_layout.addWidget(self._labeled_combo)
+
         self._refresh_btn = QPushButton("Refresh")
         filters_layout.addWidget(self._refresh_btn)
 
@@ -80,15 +94,19 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
         # Results table
         self._results_table = QTableWidget()
-        self._results_table.setColumnCount(5)
+        self._results_table.setColumnCount(6)
         self._results_table.setHorizontalHeaderLabels([
-            "File", "Risk", "Score", "Entities", "Labeled"
+            "File", "Risk", "Score", "Entities", "Labeled", "ID"
         ])
         self._results_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
+        self._results_table.setColumnHidden(5, True)  # Hide ID column
         self._results_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._results_table.setSelectionMode(
+            QTableWidget.SelectionMode.ExtendedSelection
         )
         splitter.addWidget(self._results_table)
 
@@ -97,6 +115,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         details_layout = QVBoxLayout(details_widget)
 
         self._details_label = QLabel("Select a file to view details")
+        self._details_label.setWordWrap(True)
         details_layout.addWidget(self._details_label)
 
         self._entities_text = QTextEdit()
@@ -115,8 +134,11 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._label_btn.setEnabled(False)
         actions_layout.addWidget(self._label_btn)
 
-        self._export_btn = QPushButton("Export")
+        self._export_btn = QPushButton("Export CSV")
         actions_layout.addWidget(self._export_btn)
+
+        self._export_json_btn = QPushButton("Export JSON")
+        actions_layout.addWidget(self._export_json_btn)
 
         actions_layout.addStretch()
 
@@ -127,71 +149,215 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
     def _connect_signals(self) -> None:
         """Connect widget signals."""
-        self._search_edit.textChanged.connect(self._on_filter_changed)
-        self._tier_combo.currentIndexChanged.connect(self._on_filter_changed)
+        self._search_edit.textChanged.connect(self._apply_filters)
+        self._tier_combo.currentIndexChanged.connect(self._apply_filters)
+        self._labeled_combo.currentIndexChanged.connect(self._apply_filters)
         self._refresh_btn.clicked.connect(self._on_refresh)
         self._results_table.itemSelectionChanged.connect(self._on_selection_changed)
         self._label_btn.clicked.connect(self._on_label_clicked)
-        self._export_btn.clicked.connect(self._on_export_clicked)
+        self._export_btn.clicked.connect(self._on_export_csv)
+        self._export_json_btn.clicked.connect(self._on_export_json)
 
-    def _on_filter_changed(self) -> None:
-        """Handle filter change."""
-        # TODO: Apply filters to results
-        logger.info("Filter changed")
+    def _apply_filters(self) -> None:
+        """Apply current filters to results."""
+        search_text = self._search_edit.text().lower()
+        tier_filter = self._tier_combo.currentData()
+        labeled_filter = self._labeled_combo.currentData()
+
+        self._filtered_results = []
+
+        for result in self._all_results:
+            # Apply search filter
+            file_name = result.get("file_name", "").lower()
+            file_path = result.get("file_path", "").lower()
+            if search_text and search_text not in file_name and search_text not in file_path:
+                continue
+
+            # Apply tier filter
+            if tier_filter and result.get("risk_tier") != tier_filter:
+                continue
+
+            # Apply labeled filter
+            is_labeled = result.get("label_applied", result.get("labeled", False))
+            if labeled_filter is True and not is_labeled:
+                continue
+            if labeled_filter is False and is_labeled:
+                continue
+
+            self._filtered_results.append(result)
+
+        self._refresh_table()
+
+    def _refresh_table(self) -> None:
+        """Refresh the table with filtered results."""
+        self._results_table.setRowCount(len(self._filtered_results))
+
+        for row, result in enumerate(self._filtered_results):
+            file_name = result.get("file_name", Path(result.get("file_path", "")).name)
+            risk_tier = result.get("risk_tier", "UNKNOWN")
+            risk_score = result.get("risk_score", 0)
+            entity_count = sum(result.get("entity_counts", {}).values()) if isinstance(result.get("entity_counts"), dict) else result.get("entity_count", 0)
+            is_labeled = result.get("label_applied", result.get("labeled", False))
+            result_id = str(result.get("id", ""))
+
+            self._results_table.setItem(row, 0, QTableWidgetItem(file_name))
+
+            tier_item = QTableWidgetItem(risk_tier)
+            self._color_tier_item(tier_item, risk_tier)
+            self._results_table.setItem(row, 1, tier_item)
+
+            self._results_table.setItem(row, 2, QTableWidgetItem(str(risk_score)))
+            self._results_table.setItem(row, 3, QTableWidgetItem(str(entity_count)))
+            self._results_table.setItem(row, 4, QTableWidgetItem("Yes" if is_labeled else "No"))
+            self._results_table.setItem(row, 5, QTableWidgetItem(result_id))
+
+        self._count_label.setText(f"{len(self._filtered_results)} results")
+
+    def _color_tier_item(self, item: QTableWidgetItem, tier: str) -> None:
+        """Color a table item based on risk tier."""
+        colors = {
+            "CRITICAL": Qt.GlobalColor.red,
+            "HIGH": Qt.GlobalColor.darkYellow,
+            "MEDIUM": Qt.GlobalColor.yellow,
+            "LOW": Qt.GlobalColor.green,
+            "MINIMAL": Qt.GlobalColor.gray,
+        }
+        if tier in colors:
+            item.setBackground(colors[tier])
 
     def _on_refresh(self) -> None:
         """Handle refresh click."""
-        # TODO: Reload results
-        logger.info("Refresh clicked")
+        logger.info("Refresh requested")
+        self.refresh_requested.emit()
 
     def _on_selection_changed(self) -> None:
         """Handle selection change."""
-        selected = bool(self._results_table.selectedItems())
+        selected_rows = self._results_table.selectedItems()
+        selected = bool(selected_rows)
         self._label_btn.setEnabled(selected)
 
         if selected:
-            # TODO: Load details for selected result
-            pass
+            # Get first selected row
+            row = selected_rows[0].row()
+            if 0 <= row < len(self._filtered_results):
+                result = self._filtered_results[row]
+                self._show_details(result)
+
+    def _show_details(self, result: dict) -> None:
+        """Show details for a result."""
+        file_path = result.get("file_path", "")
+        risk_tier = result.get("risk_tier", "UNKNOWN")
+        risk_score = result.get("risk_score", 0)
+
+        self._details_label.setText(
+            f"<b>Path:</b> {file_path}<br>"
+            f"<b>Risk:</b> {risk_tier} ({risk_score})<br>"
+            f"<b>Label:</b> {result.get('current_label_name', 'None')}"
+        )
+
+        # Show entity details
+        entities = result.get("entity_counts", {})
+        if entities:
+            details = "<b>Detected Entities:</b>\n\n"
+            for etype, count in sorted(entities.items(), key=lambda x: -x[1]):
+                details += f"  {etype}: {count}\n"
+        else:
+            details = "No entities detected"
+
+        self._entities_text.setText(details)
 
     def _on_label_clicked(self) -> None:
         """Handle label button click."""
-        # TODO: Request labeling for selected results
-        logger.info("Label clicked")
+        selected_ids = self._get_selected_result_ids()
+        if not selected_ids:
+            return
 
-    def _on_export_clicked(self) -> None:
-        """Handle export button click."""
-        # TODO: Export results
-        logger.info("Export clicked")
+        # For now, emit signal - parent window should show label selection dialog
+        # In a full implementation, we'd show a dialog to select a label
+        logger.info(f"Label requested for {len(selected_ids)} results")
+        self.label_requested.emit(selected_ids, "")
+
+    def _get_selected_result_ids(self) -> List[str]:
+        """Get IDs of selected results."""
+        result_ids = []
+        for item in self._results_table.selectedItems():
+            if item.column() == 5:  # ID column
+                result_ids.append(item.text())
+            elif item.column() == 0:  # First column, get ID from same row
+                row = item.row()
+                id_item = self._results_table.item(row, 5)
+                if id_item and id_item.text() not in result_ids:
+                    result_ids.append(id_item.text())
+        return list(set(result_ids))
+
+    def _on_export_csv(self) -> None:
+        """Export results to CSV."""
+        if not self._filtered_results:
+            QMessageBox.information(self, "Export", "No results to export")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export CSV",
+            "openlabels_results.csv",
+            "CSV Files (*.csv)",
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["File Path", "File Name", "Risk Tier", "Risk Score", "Entity Count", "Labeled", "Label Name"])
+
+                for result in self._filtered_results:
+                    entity_count = sum(result.get("entity_counts", {}).values()) if isinstance(result.get("entity_counts"), dict) else result.get("entity_count", 0)
+                    writer.writerow([
+                        result.get("file_path", ""),
+                        result.get("file_name", ""),
+                        result.get("risk_tier", ""),
+                        result.get("risk_score", 0),
+                        entity_count,
+                        "Yes" if result.get("label_applied") else "No",
+                        result.get("current_label_name", ""),
+                    ])
+
+            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
+
+    def _on_export_json(self) -> None:
+        """Export results to JSON."""
+        if not self._filtered_results:
+            QMessageBox.information(self, "Export", "No results to export")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export JSON",
+            "openlabels_results.json",
+            "JSON Files (*.json)",
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(self._filtered_results, f, indent=2, default=str)
+
+            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def load_results(self, results: List[dict]) -> None:
         """Load results into the table."""
-        self._results_table.setRowCount(len(results))
-
-        for row, result in enumerate(results):
-            self._results_table.setItem(
-                row, 0, QTableWidgetItem(result.get("file_name", ""))
-            )
-            self._results_table.setItem(
-                row, 1, QTableWidgetItem(result.get("risk_tier", ""))
-            )
-            self._results_table.setItem(
-                row, 2, QTableWidgetItem(str(result.get("risk_score", 0)))
-            )
-            self._results_table.setItem(
-                row, 3, QTableWidgetItem(str(result.get("entity_count", 0)))
-            )
-            self._results_table.setItem(
-                row, 4, QTableWidgetItem("Yes" if result.get("labeled") else "No")
-            )
-
-        self._count_label.setText(f"{len(results)} results")
+        self._all_results = results
+        self._apply_filters()
 
     def show_details(self, result: dict) -> None:
-        """Show details for a result."""
-        self._details_label.setText(result.get("file_path", ""))
-
-        entities = result.get("entity_counts", {})
-        details = "\n".join(
-            f"{etype}: {count}" for etype, count in entities.items()
-        )
-        self._entities_text.setText(details or "No entities detected")
+        """Show details for a result (external call)."""
+        self._show_details(result)
