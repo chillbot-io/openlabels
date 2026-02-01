@@ -61,8 +61,11 @@ dependencies = [
     "aiofiles>=23.2.0",
     "psutil>=5.9.0",  # System resource monitoring
 
-    # Detection (from openrisk)
-    # These will be refined as we integrate
+    # ML Inference (core)
+    "onnxruntime>=1.17.0",  # ONNX model inference
+    "transformers>=4.36.0",  # NER models
+    "tokenizers>=0.15.0",  # Fast tokenization
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -85,13 +88,12 @@ intel = [
     "hyperscan>=0.7.0",         # SIMD-accelerated regex (10-100x faster)
     "intel-extension-for-pytorch>=2.2.0",  # CPU inference optimization
 ]
-# OpenVINO/ONNX for optimized model inference
-inference = [
+# OpenVINO for Intel-optimized inference (optional)
+openvino = [
     "optimum[openvino]>=1.16.0",  # OpenVINO INT8 inference
-    "optimum[onnxruntime]>=1.16.0",  # ONNX Runtime
 ]
 all = [
-    "openlabels[gui,mip,dev,intel,inference]",
+    "openlabels[gui,mip,dev,intel,openvino]",
 ]
 
 [project.scripts]
