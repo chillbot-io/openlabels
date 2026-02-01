@@ -246,3 +246,117 @@ class JobQueue(Base):
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=3)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# =============================================================================
+# DATA INVENTORY MODELS (for delta scanning)
+# =============================================================================
+
+
+class FolderInventory(Base):
+    """
+    Folder-level inventory for delta scanning.
+
+    Tracks all folders discovered during scans. Non-sensitive folders are
+    only tracked at this level, enabling efficient delta scans by comparing
+    folder modification times.
+    """
+
+    __tablename__ = "folder_inventory"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    target_id: Mapped[UUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+
+    # Folder identification
+    folder_path: Mapped[str] = mapped_column(Text, nullable=False)
+    adapter: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Folder metadata
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    folder_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Scan tracking
+    last_scanned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_scan_job_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("scan_jobs.id"))
+
+    # Risk summary for folder
+    has_sensitive_files: Mapped[bool] = mapped_column(Boolean, default=False)
+    highest_risk_tier: Mapped[Optional[str]] = mapped_column(String(20))  # MINIMAL, LOW, MEDIUM, HIGH, CRITICAL
+    total_entities_found: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Timestamps
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Index for fast lookups
+    __table_args__ = (
+        # Unique constraint on tenant + target + path
+        {"comment": "Folder-level inventory for delta scanning"},
+    )
+
+
+class FileInventory(Base):
+    """
+    File-level inventory for sensitive files only.
+
+    Only files with detected sensitive data are tracked at the file level.
+    This enables:
+    1. Efficient delta scans (only re-scan if content_hash changed)
+    2. Label tracking over time
+    3. Sensitive file monitoring
+    """
+
+    __tablename__ = "file_inventory"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    target_id: Mapped[UUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    folder_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("folder_inventory.id"))
+
+    # File identification
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    adapter: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Content tracking for delta scans
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64))  # SHA-256
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger)
+    file_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Risk information
+    risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    risk_tier: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_counts: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    total_entities: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Exposure
+    exposure_level: Mapped[Optional[str]] = mapped_column(String(20))
+    owner: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # Label tracking
+    current_label_id: Mapped[Optional[str]] = mapped_column(String(36))
+    current_label_name: Mapped[Optional[str]] = mapped_column(String(255))
+    label_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Scan tracking
+    last_scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_scan_job_id: Mapped[UUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False)
+    scan_count: Mapped[int] = mapped_column(Integer, default=1)
+    content_changed_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Monitoring flags
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=True)  # Track changes
+    needs_rescan: Mapped[bool] = mapped_column(Boolean, default=False)  # Force rescan
+
+    # Timestamps
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    folder: Mapped[Optional["FolderInventory"]] = relationship()
+
+    __table_args__ = (
+        {"comment": "File-level inventory for sensitive files"},
+    )

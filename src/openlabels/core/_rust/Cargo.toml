@@ -1,0 +1,21 @@
+[package]
+name = "openlabels_matcher"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance pattern matching for OpenLabels"
+
+[lib]
+name = "openlabels_matcher"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+regex = "1.10"
+rayon = "1.8"
+aho-corasick = "1.1"
+lazy_static = "1.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

@@ -44,16 +44,22 @@ async def execute_scan_task(
     payload: dict,
 ) -> dict:
     """
-    Execute a scan task.
+    Execute a scan task with delta scanning support.
 
     Args:
         session: Database session
-        payload: Task payload containing job_id
+        payload: Task payload containing:
+            - job_id: UUID of the scan job
+            - force_full_scan: bool (optional) - Force full scan, ignore inventory
 
     Returns:
         Result dictionary with scan statistics
     """
+    from openlabels.jobs.inventory import InventoryService, get_folder_path
+
     job_id = UUID(payload["job_id"])
+    force_full_scan = payload.get("force_full_scan", False)
+
     job = await session.get(ScanJob, job_id)
 
     if not job:
@@ -70,6 +76,15 @@ async def execute_scan_task(
     # Get adapter
     adapter = _get_adapter(target.adapter, target.config)
 
+    # Initialize inventory service for delta scanning
+    inventory = InventoryService(session, job.tenant_id, target.id)
+    await inventory.load_file_inventory()
+    await inventory.load_folder_inventory()
+
+    # Track seen files for missing file detection
+    seen_file_paths: set[str] = set()
+    folder_stats: dict[str, dict] = {}
+
     # Scan statistics
     stats = {
         "files_scanned": 0,
@@ -80,6 +95,8 @@ async def execute_scan_task(
         "medium_count": 0,
         "low_count": 0,
         "minimal_count": 0,
+        "files_skipped": 0,  # Delta scan skips
+        "scan_mode": "full" if force_full_scan else "delta",
     }
 
     try:
@@ -88,8 +105,34 @@ async def execute_scan_task(
 
         async for file_info in adapter.list_files(target_path):
             try:
+                seen_file_paths.add(file_info.path)
+                folder_path = get_folder_path(file_info.path)
+
+                # Initialize folder stats
+                if folder_path not in folder_stats:
+                    folder_stats[folder_path] = {
+                        "file_count": 0,
+                        "total_size": 0,
+                        "has_sensitive": False,
+                        "highest_risk": None,
+                        "total_entities": 0,
+                    }
+                folder_stats[folder_path]["file_count"] += 1
+                folder_stats[folder_path]["total_size"] += file_info.size
+
                 # Read file content
                 content = await adapter.read_file(file_info)
+                content_hash = inventory.compute_content_hash(content)
+
+                # Check if file needs scanning (delta mode)
+                should_scan, scan_reason = await inventory.should_scan_file(
+                    file_info, content_hash, force_full_scan
+                )
+
+                if not should_scan:
+                    stats["files_skipped"] += 1
+                    logger.debug(f"Skipping unchanged file: {file_info.path}")
+                    continue
 
                 # Run detection
                 result = await _detect_and_score(content, file_info)
@@ -102,6 +145,7 @@ async def execute_scan_task(
                     file_name=file_info.name,
                     file_size=file_info.size,
                     file_modified=file_info.modified,
+                    content_hash=content_hash,
                     risk_score=result["risk_score"],
                     risk_tier=result["risk_tier"],
                     entity_counts=result["entity_counts"],
@@ -121,12 +165,32 @@ async def execute_scan_task(
                 stats["total_entities"] += result["total_entities"]
                 stats[f"{result['risk_tier'].lower()}_count"] += 1
 
+                # Update folder stats for inventory
+                if result["total_entities"] > 0:
+                    folder_stats[folder_path]["has_sensitive"] = True
+                    folder_stats[folder_path]["total_entities"] += result["total_entities"]
+                    # Track highest risk
+                    risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
+                    current_risk = folder_stats[folder_path]["highest_risk"]
+                    new_risk = result["risk_tier"]
+                    if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                        folder_stats[folder_path]["highest_risk"] = new_risk
+
+                    # Update file inventory for sensitive files
+                    await inventory.update_file_inventory(
+                        file_info=file_info,
+                        scan_result=scan_result,
+                        content_hash=content_hash,
+                        job_id=job.id,
+                    )
+
                 # Update job progress
                 job.files_scanned = stats["files_scanned"]
                 job.files_with_pii = stats["files_with_pii"]
                 job.progress = {
                     "current_file": file_info.name,
                     "files_scanned": stats["files_scanned"],
+                    "files_skipped": stats["files_skipped"],
                 }
 
                 # Commit periodically
@@ -136,6 +200,29 @@ async def execute_scan_task(
             except Exception as e:
                 logger.warning(f"Error scanning file {file_info.path}: {e}")
                 continue
+
+        # Update folder inventory
+        for folder_path, fstats in folder_stats.items():
+            await inventory.update_folder_inventory(
+                folder_path=folder_path,
+                adapter=target.adapter,
+                job_id=job.id,
+                file_count=fstats["file_count"],
+                total_size=fstats["total_size"],
+                has_sensitive=fstats["has_sensitive"],
+                highest_risk=fstats["highest_risk"],
+                total_entities=fstats["total_entities"],
+            )
+
+        # Mark files that weren't seen (may be deleted/moved)
+        missing_count = await inventory.mark_missing_files(seen_file_paths, job.id)
+        if missing_count > 0:
+            logger.info(f"Marked {missing_count} files for rescan (not seen in current scan)")
+            stats["files_missing"] = missing_count
+
+        # Get inventory stats
+        inv_stats = await inventory.get_inventory_stats()
+        stats["inventory"] = inv_stats
 
         # Mark job as completed
         job.status = "completed"
