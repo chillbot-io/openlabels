@@ -329,12 +329,10 @@ class Span:
     detector: str
     tier: Tier
 
-    # Optional metadata
+    # Optional metadata for classification
     needs_review: bool = False
     review_reason: Optional[str] = None
-    token: Optional[str] = None  # Assigned token e.g. [NAME_1]
-    safe_harbor_value: Optional[str] = None  # Replacement text for redaction
-    coref_anchor_value: Optional[str] = None  # Link to coreference anchor
+    coref_anchor_value: Optional[str] = None  # Link to coreference anchor for entity grouping
 
     def __post_init__(self):
         """Validate span attributes."""
