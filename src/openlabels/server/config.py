@@ -34,7 +34,38 @@ class DatabaseSettings(BaseSettings):
 
 
 class AuthSettings(BaseSettings):
-    """Authentication configuration."""
+    """
+    Authentication configuration for Azure AD / Microsoft Graph API.
+
+    Required Azure AD App Registration:
+    1. Create an App Registration in Azure Portal
+    2. Configure the following API Permissions (Application type):
+
+    SCANNING PERMISSIONS (minimum for SharePoint/OneDrive scanning):
+    - Sites.Read.All          - Read items in all site collections
+    - Files.Read.All          - Read all files that user can access
+    - User.Read.All           - Read all users' full profiles (for OneDrive)
+
+    LABELING PERMISSIONS (for applying sensitivity labels):
+    - Sites.ReadWrite.All     - Edit or delete items in all site collections
+    - Files.ReadWrite.All     - Read and write all files that user can access
+    - InformationProtectionPolicy.Read.All  - Read sensitivity labels
+
+    LABEL MANAGEMENT PERMISSIONS (for syncing labels from M365):
+    - InformationProtectionPolicy.Read.All  - Read sensitivity labels and policies
+
+    OPTIONAL PERMISSIONS (for full functionality):
+    - User.ReadBasic.All      - Read basic profiles of all users
+    - Directory.Read.All      - Read directory data
+
+    3. Grant admin consent for the permissions
+    4. Create a client secret and note the value
+
+    Environment variables:
+    - AUTH_TENANT_ID: Azure AD tenant ID (GUID)
+    - AUTH_CLIENT_ID: App registration client/application ID (GUID)
+    - AUTH_CLIENT_SECRET: Client secret value
+    """
 
     provider: Literal["azure_ad", "none"] = "none"
     tenant_id: str | None = None

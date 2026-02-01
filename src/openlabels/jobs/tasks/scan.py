@@ -6,15 +6,19 @@ for sensitive data and compute risk scores.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import ScanJob, ScanTarget, ScanResult
+from openlabels.server.models import ScanJob, ScanTarget, ScanResult, LabelRule, SensitivityLabel
 from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter
+from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
+from openlabels.labeling.engine import LabelingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +141,17 @@ async def execute_scan_task(
         job.status = "completed"
         await session.commit()
 
+        # Auto-labeling if enabled
+        settings = get_settings()
+        if settings.labeling.enabled and settings.labeling.mode == "auto":
+            try:
+                auto_label_stats = await _auto_label_results(session, job)
+                stats["auto_labeled"] = auto_label_stats.get("labeled", 0)
+                stats["auto_label_errors"] = auto_label_stats.get("errors", 0)
+            except Exception as e:
+                logger.error(f"Auto-labeling failed: {e}")
+                stats["auto_label_error"] = str(e)
+
         return stats
 
     except Exception as e:
@@ -168,6 +183,150 @@ def _get_adapter(adapter_type: str, config: dict):
         )
     else:
         raise ValueError(f"Unknown adapter type: {adapter_type}")
+
+
+async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
+    """
+    Automatically apply labels to scan results based on rules.
+
+    Args:
+        session: Database session
+        job: Completed scan job
+
+    Returns:
+        Dict with labeling statistics
+    """
+    settings = get_settings()
+    stats = {"labeled": 0, "errors": 0, "skipped": 0}
+
+    # Get label rules ordered by priority (highest first)
+    rules_query = (
+        select(LabelRule, SensitivityLabel)
+        .join(SensitivityLabel, LabelRule.label_id == SensitivityLabel.id)
+        .where(LabelRule.tenant_id == job.tenant_id)
+        .order_by(LabelRule.priority.desc())
+    )
+    rules_result = await session.execute(rules_query)
+    rules_data = rules_result.all()
+
+    if not rules_data:
+        # No rules configured, use risk_tier_mapping from settings
+        risk_tier_mapping = settings.labeling.risk_tier_mapping
+        if not any(risk_tier_mapping.values()):
+            logger.info("No label rules or risk tier mappings configured")
+            return stats
+    else:
+        # Build risk_tier and entity_type rule lookups
+        risk_tier_rules = {}
+        entity_type_rules = {}
+
+        for rule, label in rules_data:
+            if rule.rule_type == "risk_tier":
+                if rule.match_value not in risk_tier_rules:
+                    risk_tier_rules[rule.match_value] = (rule, label)
+            elif rule.rule_type == "entity_type":
+                if rule.match_value not in entity_type_rules:
+                    entity_type_rules[rule.match_value] = (rule, label)
+
+    # Get scan results for this job that don't have labels yet
+    results_query = (
+        select(ScanResult)
+        .where(ScanResult.job_id == job.id)
+        .where(ScanResult.label_applied == False)
+    )
+    results = await session.execute(results_query)
+    scan_results = results.scalars().all()
+
+    if not scan_results:
+        logger.info(f"No unlabeled results for job {job.id}")
+        return stats
+
+    # Initialize labeling engine
+    labeling_engine = LabelingEngine(
+        tenant_id=settings.auth.tenant_id,
+        client_id=settings.auth.client_id,
+        client_secret=settings.auth.client_secret,
+    )
+
+    # Get target for adapter info
+    target = await session.get(ScanTarget, job.target_id)
+
+    for result in scan_results:
+        try:
+            matched_label = None
+            matched_label_name = None
+
+            # Try to match by entity type first (highest priority)
+            if entity_type_rules and result.entity_counts:
+                for entity_type in result.entity_counts.keys():
+                    if entity_type in entity_type_rules:
+                        rule, label = entity_type_rules[entity_type]
+                        matched_label = label.id
+                        matched_label_name = label.name
+                        break
+
+            # Fall back to risk tier matching
+            if not matched_label:
+                if risk_tier_rules and result.risk_tier in risk_tier_rules:
+                    rule, label = risk_tier_rules[result.risk_tier]
+                    matched_label = label.id
+                    matched_label_name = label.name
+                elif settings.labeling.risk_tier_mapping:
+                    # Use settings mapping as fallback
+                    label_name = settings.labeling.risk_tier_mapping.get(result.risk_tier)
+                    if label_name:
+                        # Look up label by name
+                        label_query = (
+                            select(SensitivityLabel)
+                            .where(SensitivityLabel.tenant_id == job.tenant_id)
+                            .where(SensitivityLabel.name == label_name)
+                        )
+                        label_result = await session.execute(label_query)
+                        label = label_result.scalar_one_or_none()
+                        if label:
+                            matched_label = label.id
+                            matched_label_name = label.name
+
+            if not matched_label:
+                stats["skipped"] += 1
+                continue
+
+            # Build FileInfo for labeling engine
+            file_info = FileInfo(
+                id=str(result.id),
+                path=result.file_path,
+                name=result.file_name,
+                size=result.file_size or 0,
+                modified=result.file_modified,
+                adapter=target.adapter if target else "filesystem",
+                exposure=ExposureLevel.PRIVATE,
+            )
+
+            # Apply label
+            label_result = await labeling_engine.apply_label(
+                file_info=file_info,
+                label_id=matched_label,
+                label_name=matched_label_name,
+            )
+
+            if label_result.success:
+                result.current_label_id = matched_label
+                result.current_label_name = matched_label_name
+                result.label_applied = True
+                result.label_applied_at = datetime.now(timezone.utc)
+                stats["labeled"] += 1
+                logger.info(f"Applied label '{matched_label_name}' to {result.file_path}")
+            else:
+                result.label_error = label_result.error
+                stats["errors"] += 1
+                logger.warning(f"Failed to label {result.file_path}: {label_result.error}")
+
+        except Exception as e:
+            stats["errors"] += 1
+            logger.error(f"Error auto-labeling {result.file_path}: {e}")
+
+    await session.commit()
+    return stats
 
 
 async def _detect_and_score(content: bytes, file_info) -> dict:
