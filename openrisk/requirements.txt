@@ -1,0 +1,37 @@
+# OpenLabels / orscan dependencies
+#
+# Core: No external dependencies required for basic pattern detection
+# All dependencies below are optional with graceful fallbacks
+
+# File extraction (optional - enables richer file format support)
+pymupdf>=1.23.0          # PDF text extraction (import as fitz)
+python-docx>=1.0.0       # DOCX text extraction
+openpyxl>=3.1.0          # Excel (.xlsx) text extraction
+pillow>=10.0.0           # Image processing
+
+# OCR support (optional - for scanned documents and images)
+numpy>=1.24.0            # Required for OCR
+onnxruntime>=1.16.0      # ONNX inference runtime
+rapidocr-onnxruntime>=1.3.0  # RapidOCR text detection + recognition
+intervaltree>=3.1.0      # Efficient span overlap detection
+
+# Performance (optional - faster pattern matching)
+pyahocorasick>=2.0.0     # Aho-Corasick automaton for dictionary matching
+
+# Authentication & encryption (required for vault/auth features)
+argon2-cffi>=23.1.0      # Argon2id password hashing
+cryptography>=41.0.0     # AES-256-GCM encryption, X25519 key exchange
+PyJWT>=2.8.0             # JWT session tokens
+
+# Async scanner API server (optional - for GUI backend or standalone service)
+# Install with: pip install 'openlabels[server]'
+fastapi>=0.109.0         # REST API framework
+uvicorn>=0.27.0          # ASGI server
+pydantic>=2.5.0          # Data validation
+
+# GUI (optional - large dependency ~150MB)
+# Install with: pip install 'openlabels[gui]'
+PySide6>=6.5.0           # Qt6 GUI framework
+
+# Uncommon format support (optional)
+# pillow-heif>=0.13.0    # HEIF/HEIC image support
