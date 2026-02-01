@@ -18,6 +18,13 @@ from .span_validation import (
     check_for_overlaps,
     SpanValidationError,
 )
+from .entity_resolver import (
+    EntityResolver,
+    Entity,
+    Mention,
+    resolve_entities,
+    get_entity_counts,
+)
 
 __all__ = [
     # Context enhancement
@@ -29,6 +36,12 @@ __all__ = [
     "validate_after_coref",
     "check_for_overlaps",
     "SpanValidationError",
+    # Entity resolution
+    "EntityResolver",
+    "Entity",
+    "Mention",
+    "resolve_entities",
+    "get_entity_counts",
 ]
 
 # Coreference resolution - optional (requires numpy)

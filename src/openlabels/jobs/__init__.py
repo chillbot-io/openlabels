@@ -1,8 +1,19 @@
 """
-Job queue and worker management.
+Job queue, worker, and scheduler management.
 """
 
-from openlabels.jobs.queue import JobQueue
-from openlabels.jobs.worker import run_worker
+from .queue import JobQueue
+from .worker import run_worker
+from .scheduler import (
+    Scheduler,
+    get_scheduler,
+    parse_cron_expression,
+)
 
-__all__ = ["JobQueue", "run_worker"]
+__all__ = [
+    "JobQueue",
+    "run_worker",
+    "Scheduler",
+    "get_scheduler",
+    "parse_cron_expression",
+]
