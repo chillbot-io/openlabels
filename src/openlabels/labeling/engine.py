@@ -215,9 +215,9 @@ class LabelingEngine:
                 client_secret=self.client_secret,
             )
 
-            if mip_client.initialize():
-                success = mip_client.apply_label(file_path, label_id)
-                if success:
+            if await mip_client.initialize():
+                result = await mip_client.apply_label(file_path, label_id)
+                if result.success:
                     return LabelResult(
                         success=True,
                         label_id=label_id,
@@ -433,15 +433,17 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
     ) -> LabelResult:
         """Apply label using Graph API for SharePoint/OneDrive files."""
         try:
-            # Extract site_id and item_id from file_info
-            # file_info.id format: "sites/{site_id}/drive/items/{item_id}" or similar
-            file_id = file_info.id
+            # Build Graph API endpoint from file_info attributes
+            # item_id format may be: "sites/{site_id}/drive/items/{item_id}" or just item ID
+            item_id = file_info.item_id or ""
 
             # Determine the Graph API endpoint
             if file_info.adapter == "sharepoint":
                 # SharePoint: /sites/{site_id}/drive/items/{item_id}
-                if "/drive/items/" in file_id:
-                    endpoint = f"/{file_id}"
+                if "/drive/items/" in item_id:
+                    endpoint = f"/{item_id}"
+                elif file_info.site_id and item_id:
+                    endpoint = f"/sites/{file_info.site_id}/drive/items/{item_id}"
                 else:
                     # Try to resolve from URL using shares API
                     endpoint = await self._resolve_share_url(file_info.path)
@@ -453,8 +455,10 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                         )
             else:
                 # OneDrive: /users/{user_id}/drive/items/{item_id}
-                if "/drive/items/" in file_id:
-                    endpoint = f"/{file_id}"
+                if "/drive/items/" in item_id:
+                    endpoint = f"/{item_id}"
+                elif file_info.user_id and item_id:
+                    endpoint = f"/users/{file_info.user_id}/drive/items/{item_id}"
                 else:
                     endpoint = await self._resolve_share_url(file_info.path)
                     if not endpoint:
@@ -630,10 +634,14 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
     async def _get_graph_label(self, file_info: FileInfo) -> Optional[dict]:
         """Get label from SharePoint/OneDrive file via Graph API."""
         try:
-            file_id = file_info.id
+            item_id = file_info.item_id or ""
 
-            if "/drive/items/" in file_id:
-                endpoint = f"/{file_id}?$select=sensitivityLabel"
+            if "/drive/items/" in item_id:
+                endpoint = f"/{item_id}?$select=sensitivityLabel"
+            elif file_info.site_id and item_id:
+                endpoint = f"/sites/{file_info.site_id}/drive/items/{item_id}?$select=sensitivityLabel"
+            elif file_info.user_id and item_id:
+                endpoint = f"/users/{file_info.user_id}/drive/items/{item_id}?$select=sensitivityLabel"
             else:
                 resolved = await self._resolve_share_url(file_info.path)
                 if not resolved:

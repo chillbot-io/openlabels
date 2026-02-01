@@ -293,13 +293,13 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
 
             # Build FileInfo for labeling engine
             file_info = FileInfo(
-                id=str(result.id),
                 path=result.file_path,
                 name=result.file_name,
                 size=result.file_size or 0,
-                modified=result.file_modified,
+                modified=result.file_modified or datetime.now(timezone.utc),
                 adapter=target.adapter if target else "filesystem",
                 exposure=ExposureLevel.PRIVATE,
+                item_id=str(result.id),  # Use item_id for Graph API tracking
             )
 
             # Apply label
