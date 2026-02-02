@@ -78,6 +78,11 @@ gui = [
 mip = [
     "pythonnet>=3.0.0",
 ]
+windows = [
+    "PySide6>=6.6.0",
+    "pywin32>=306",
+    "httpx>=0.26.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
@@ -91,7 +96,7 @@ hyperscan = [
     "hyperscan>=0.7.0",  # Intel Hyperscan - 10-100x faster regex
 ]
 all = [
-    "openlabels[gui,mip,dev,hyperscan]",
+    "openlabels[gui,mip,windows,dev,hyperscan]",
 ]
 
 [project.scripts]

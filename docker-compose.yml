@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://openlabels:openlabels@db:5432/openlabels
+      - AUTH_PROVIDER=azure_ad
+      - AUTH_TENANT_ID=${AUTH_TENANT_ID}
+      - AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
+      - AUTH_CLIENT_SECRET=${AUTH_CLIENT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - scan-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=openlabels
+      - POSTGRES_PASSWORD=openlabels
+      - POSTGRES_DB=openlabels
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openlabels"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Redis for job queue (if you want distributed workers)
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+
+volumes:
+  postgres-data:
+  scan-data:
