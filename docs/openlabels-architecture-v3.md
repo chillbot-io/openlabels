@@ -40,13 +40,12 @@ Into a single **portable 0-100 risk score** that works across any platform.
 ### What OpenLabels Is NOT
 
 - **Not just a scanner** — it's a scoring framework with remediation capabilities
-- **Not a replacement for Macie/DLP/Purview** — it consumes their output and normalizes to a universal score
 - **Not just another label** — it quantifies risk by combining content sensitivity with exposure context
 
 ### The Core Insight
 
 ```
-Macie tells you WHAT's in your data.
+Traditional DLP tells you WHAT's in your data.
 OpenLabels tells you HOW RISKY that data actually is, given WHERE it lives.
 ```
 
@@ -62,10 +61,9 @@ Same content, different risk. Only OpenLabels captures this.
 |------|----------|
 | Cross-platform comparison | Same score formula everywhere |
 | Content + Context risk | Only OpenLabels combines both |
-| Already have Macie/DLP | Use **Labeler** → normalize existing findings |
-| No DLP capabilities | Use **Scanner** → analyze content directly |
-| Want portability | Scanner works anywhere (on-prem, any cloud) |
+| Want portability | Works anywhere (on-prem, SharePoint, OneDrive) |
 | **Sensitive file found** | **Quarantine, lock down permissions, or monitor access** |
+| **MIP label integration** | **Apply Microsoft sensitivity labels based on risk** |
 
 ---
 
@@ -90,17 +88,17 @@ Same content, different risk. Only OpenLabels captures this.
 │                     (all produce normalized entities + context)             │
 │                                                                             │
 │  ┌─────────────────────────────────────────────┐  ┌─────────────────────┐  │
-│  │              LABELER ADAPTERS               │  │      SCANNER        │  │
-│  │   (read metadata + existing labels)         │  │  (analyze content)  │  │
+│  │              STORAGE ADAPTERS               │  │      SCANNER        │  │
+│  │   (enumerate files + read metadata)         │  │  (analyze content)  │  │
 │  │                                             │  │                     │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐       │  │ • Patterns          │  │
-│  │  │  Macie  │ │ GCP DLP │ │ Purview │       │  │ • Checksums         │  │
-│  │  │ +S3 meta│ │+GCS meta│ │+Blob    │       │  │ • ML detection      │  │
-│  │  └─────────┘ └─────────┘ └─────────┘       │  │ • OCR (RapidOCR)    │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐       │  │ • Archives          │  │
-│  │  │  NTFS   │ │   NFS   │ │  M365   │       │  │                     │  │
-│  │  │  ACLs   │ │ exports │ │ perms   │       │  │                     │  │
-│  │  └─────────┘ └─────────┘ └─────────┘       │  │                     │  │
+│  │  ┌─────────────┐ ┌─────────────────────┐   │  │ • Patterns          │  │
+│  │  │ Filesystem  │ │  SharePoint/OneDrive │   │  │ • Checksums         │  │
+│  │  │  (NTFS/NFS) │ │   (Graph API)        │   │  │ • ML detection      │  │
+│  │  └─────────────┘ └─────────────────────┘   │  │ • OCR (RapidOCR)    │  │
+│  │                                             │  │ • Archives          │  │
+│  │  • File enumeration                         │  │                     │  │
+│  │  • Content reading                          │  │                     │  │
+│  │  • ACL/permission extraction                │  │                     │  │
 │  └─────────────────────┬───────────────────────┘  └──────────┬──────────┘  │
 │                        │                                      │             │
 │                        └──────────────────┬───────────────────┘             │
@@ -683,14 +681,6 @@ await adapter.set_acl(file_info, restricted_acl)
 success, original_acl = await adapter.lockdown_file(file_info, allowed_sids=["S-1-5-32-544"])
 ```
 
-### Planned Adapters (Future)
-
-| Adapter | Source | Status |
-|---------|--------|--------|
-| MacieAdapter | AWS Macie + S3 | Planned |
-| DLPAdapter | GCP DLP + GCS | Planned |
-| PurviewAdapter | Azure Purview + Blob | Planned |
-
 ---
 
 ## CLI & Query Language
@@ -978,7 +968,6 @@ openlabels/
 |-----------|--------|----------|
 | ML detectors (PHI-BERT, PII-BERT) | Scaffolded | Medium |
 | Coreference resolution (FastCoref) | Scaffolded | Low |
-| Cloud DLP adapters (Macie, Purview) | Planned | Low |
 
 ### Test Coverage
 

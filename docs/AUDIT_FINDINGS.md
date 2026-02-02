@@ -181,29 +181,7 @@ This query is constructed but never executed. The code immediately builds and ex
 
 Based on `openlabels-architecture-v3.md` and `openlabels-spec-v2.md`:
 
-### 4.1 Label Portability (Spec Section 5) - NOT IMPLEMENTED
-
-**Spec requires:**
-- Embedded labels in PDF XMP metadata
-- Embedded labels in DOCX/XLSX/PPTX custom properties
-- Virtual labels in extended attributes (Linux: `user.openlabels`, Windows: NTFS ADS)
-
-**Current implementation:** Labels stored only in PostgreSQL database. No file-embedded label support.
-
----
-
-### 4.2 Cloud DLP Adapters - NOT IMPLEMENTED
-
-**Spec mentions (Architecture Section "Planned Adapters"):**
-- `MacieAdapter` - AWS Macie + S3
-- `DLPAdapter` - GCP DLP + GCS
-- `PurviewAdapter` - Azure Purview + Blob
-
-**Current implementation:** Only `FilesystemAdapter`, `SharePointAdapter`, `OneDriveAdapter` exist.
-
----
-
-### 4.3 Monitor CLI Commands - PARTIALLY IMPLEMENTED
+### 4.1 Monitor CLI Commands - PARTIALLY IMPLEMENTED
 
 **Spec CLI commands:**
 ```bash
@@ -218,7 +196,7 @@ openlabels monitor status <file>
 
 ---
 
-### 4.4 Report/Heatmap CLI Commands - STATUS UNKNOWN
+### 4.2 Report/Heatmap CLI Commands - STATUS UNKNOWN
 
 **Spec CLI commands:**
 ```bash
@@ -230,7 +208,7 @@ Need verification these are fully implemented.
 
 ---
 
-### 4.5 Batch Remediation with Filters - STATUS UNKNOWN
+### 4.3 Batch Remediation with Filters - STATUS UNKNOWN
 
 **Spec CLI commands:**
 ```bash
@@ -337,12 +315,11 @@ Some routes lack OpenAPI documentation for error responses. FastAPI generates do
 4. Add specific exception handling instead of bare `except Exception:`
 5. Fix global processor caching to respect `enable_ml` parameter
 6. Remove unused imports and dead code
-7. Implement label portability (embedded/virtual labels) per spec
 
 ### LOW PRIORITY
-8. Move magic numbers to configuration
-9. Clean up verbose comments
-10. Improve test coverage
+7. Move magic numbers to configuration
+8. Clean up verbose comments
+9. Improve test coverage
 
 ---
 
