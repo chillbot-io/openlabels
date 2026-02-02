@@ -1,0 +1,62 @@
+# OpenLabels Configuration
+# Copy this file to config.yaml and edit as needed
+
+# Azure AD / Microsoft Entra ID settings
+auth:
+  provider: azure_ad
+  tenant_id: "YOUR_TENANT_ID"
+  client_id: "YOUR_CLIENT_ID"
+  client_secret: "YOUR_CLIENT_SECRET"
+
+# Server settings
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+# Database (uses Docker PostgreSQL by default)
+database:
+  url: "postgresql+asyncpg://openlabels:openlabels@localhost:5432/openlabels"
+
+# Adapter settings
+adapters:
+  # Local/network filesystem scanning
+  filesystem:
+    enabled: true
+    # service_account: "DOMAIN\\svcaccount"  # For impersonation
+
+  # SharePoint Online
+  sharepoint:
+    enabled: true
+    scan_all_sites: false
+    # sites:
+    #   - "https://contoso.sharepoint.com/sites/Documents"
+
+  # OneDrive for Business
+  onedrive:
+    enabled: true
+    scan_all_users: false
+    # users:
+    #   - "user@contoso.com"
+
+# Sensitivity labeling
+labeling:
+  enabled: true
+  mode: auto  # auto or recommend
+  risk_tier_mapping:
+    CRITICAL: "Highly Confidential"
+    HIGH: "Confidential"
+    MEDIUM: "Internal"
+    LOW: null
+    MINIMAL: null
+
+# Detection settings
+detection:
+  confidence_threshold: 0.70
+  enable_ml: true
+  enable_ocr: true
+  max_file_size_mb: 100
+
+# Logging
+logging:
+  level: INFO
+  # file: "C:\\ProgramData\\OpenLabels\\logs\\openlabels.log"
