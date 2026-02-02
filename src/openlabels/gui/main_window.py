@@ -37,6 +37,9 @@ if PYSIDE_AVAILABLE:
     from openlabels.gui.widgets.schedules_widget import SchedulesWidget
     from openlabels.gui.widgets.labels_widget import LabelsWidget
     from openlabels.gui.widgets.file_detail_widget import FileDetailWidget
+    from openlabels.gui.widgets.settings_widget import SettingsWidget
+    from openlabels.gui.widgets.monitoring_widget import MonitoringWidget
+    from openlabels.gui.widgets.health_widget import HealthWidget
     from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
@@ -149,6 +152,9 @@ if PYSIDE_AVAILABLE:
             self.targets_widget = TargetsWidget()
             self.schedules_widget = SchedulesWidget()
             self.labels_widget = LabelsWidget()
+            self.monitoring_widget = MonitoringWidget()
+            self.health_widget = HealthWidget()
+            self.settings_widget = SettingsWidget(server_url=self.server_url)
 
             # File detail panel (context card)
             self.file_detail_widget = FileDetailWidget()
@@ -165,7 +171,9 @@ if PYSIDE_AVAILABLE:
             self.tabs.addTab(self.targets_widget, "Targets")
             self.tabs.addTab(self.schedules_widget, "Schedules")
             self.tabs.addTab(self.labels_widget, "Labels")
-            self.tabs.addTab(self._create_settings_tab(), "Settings")
+            self.tabs.addTab(self.monitoring_widget, "Monitoring")
+            self.tabs.addTab(self.health_widget, "Health")
+            self.tabs.addTab(self.settings_widget, "Settings")
 
             # Connect signals
             self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -174,6 +182,9 @@ if PYSIDE_AVAILABLE:
             self.targets_widget.target_changed.connect(self._on_target_changed)
             self.schedules_widget.schedule_changed.connect(self._on_schedule_changed)
             self.labels_widget.label_rule_changed.connect(self._on_label_rule_changed)
+            self.monitoring_widget.refresh_requested.connect(self._on_refresh)
+            self.health_widget.refresh_requested.connect(self._load_health_status)
+            self.settings_widget.settings_changed.connect(self._on_settings_changed)
 
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
@@ -202,6 +213,8 @@ if PYSIDE_AVAILABLE:
             """Load initial data from the server."""
             self._check_connection()
             self._load_dashboard_stats()
+            self._load_dashboard_charts()
+            self._load_health_status()
             self._load_targets()
             self._load_schedules()
             self._load_labels()
@@ -254,6 +267,41 @@ if PYSIDE_AVAILABLE:
             except Exception as e:
                 logger.warning(f"Failed to load dashboard stats: {e}")
 
+        def _load_dashboard_charts(self) -> None:
+            """Load dashboard chart data (entity trends + access heatmap)."""
+            try:
+                import httpx
+
+                # Load entity trends for time series chart
+                response = httpx.get(
+                    f"{self.server_url}/api/dashboard/entity-trends",
+                    params={"days": 14},
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    series = data.get("series", {})
+                    # Convert to expected format: {name: [(date, count), ...]}
+                    chart_data = {}
+                    for name, points in series.items():
+                        chart_data[name] = [(p[0], p[1]) for p in points]
+                    self.dashboard_widget.update_time_series(chart_data)
+
+                # Load access heatmap
+                response = httpx.get(
+                    f"{self.server_url}/api/dashboard/access-heatmap",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    heatmap = data.get("data", [[0]*24 for _ in range(7)])
+                    self.dashboard_widget.update_heat_map(heatmap)
+
+            except Exception as e:
+                logger.warning(f"Failed to load dashboard charts: {e}")
+                # Fall back to sample data if API fails
+                self.dashboard_widget.load_sample_charts()
+
         def _load_targets(self) -> None:
             """Load scan targets."""
             try:
@@ -295,7 +343,16 @@ if PYSIDE_AVAILABLE:
 
         def _on_settings(self) -> None:
             """Handle settings action."""
-            self.tabs.setCurrentIndex(6)  # Switch to Settings tab
+            self.tabs.setCurrentIndex(8)  # Switch to Settings tab
+
+        def _on_settings_changed(self, settings: dict) -> None:
+            """Handle settings changed."""
+            logger.info(f"Settings changed: {settings}")
+            # Apply relevant settings
+            if "refresh_interval" in settings:
+                interval = settings["refresh_interval"] * 1000  # Convert to ms
+                self._refresh_timer.setInterval(interval)
+            self.statusBar().showMessage("Settings saved", 3000)
 
         def _on_refresh(self) -> None:
             """Handle manual refresh."""
@@ -423,20 +480,28 @@ if PYSIDE_AVAILABLE:
             except Exception as e:
                 logger.warning(f"Failed to load labels: {e}")
 
-        def _create_settings_tab(self) -> QWidget:
-            """Create the settings tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-
-            # Server settings
-            server_layout = QHBoxLayout()
-            server_layout.addWidget(QLabel("Server URL:"))
-            server_layout.addWidget(QLabel(self.server_url))
-            server_layout.addStretch()
-            layout.addLayout(server_layout)
-
-            layout.addStretch()
-            return widget
+        def _load_health_status(self) -> None:
+            """Load system health status from server."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/health/status",
+                    timeout=5.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    self.health_widget.update_status(data)
+            except Exception as e:
+                # Show connection error in health widget
+                self.health_widget.update_status({
+                    "api": "error", "api_text": "Not connected",
+                    "db": "unknown", "db_text": "",
+                    "queue": "unknown", "queue_text": "",
+                    "ml": "unknown", "ml_text": "",
+                    "mip": "unknown", "mip_text": "",
+                    "ocr": "unknown", "ocr_text": "",
+                })
+                self.health_widget.add_error("Connection", str(e))
 
         def closeEvent(self, event) -> None:
             """Handle window close."""

@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -46,21 +46,52 @@ class TargetResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("", response_model=list[TargetResponse])
+class PaginatedTargetsResponse(BaseModel):
+    """Paginated list of scan targets."""
+
+    items: list[TargetResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+@router.get("", response_model=PaginatedTargetsResponse)
 async def list_targets(
     adapter: Optional[str] = Query(None, description="Filter by adapter type"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """List configured scan targets."""
-    query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
+    """List configured scan targets with pagination."""
+    # Base query with tenant filter
+    base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
 
     if adapter:
-        query = query.where(ScanTarget.adapter == adapter)
+        base_query = base_query.where(ScanTarget.adapter == adapter)
 
-    result = await session.execute(query)
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total_result = await session.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Calculate pagination
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+    offset = (page - 1) * page_size
+
+    # Get paginated results
+    paginated_query = base_query.order_by(ScanTarget.name).offset(offset).limit(page_size)
+    result = await session.execute(paginated_query)
     targets = result.scalars().all()
-    return [TargetResponse.model_validate(t) for t in targets]
+
+    return PaginatedTargetsResponse(
+        items=[TargetResponse.model_validate(t) for t in targets],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @router.post("", response_model=TargetResponse, status_code=201)

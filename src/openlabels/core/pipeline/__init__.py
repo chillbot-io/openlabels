@@ -1,7 +1,8 @@
 """
 Pipeline components for OpenLabels detection.
 
-Post-processing pipeline stages:
+Main components:
+- TieredPipeline: Multi-stage detection with intelligent escalation
 - Coreference resolution (FastCoref) - requires numpy
 - Context enhancement (false positive filtering)
 - Span validation
@@ -25,8 +26,25 @@ from .entity_resolver import (
     resolve_entities,
     get_entity_counts,
 )
+from .tiered import (
+    TieredPipeline,
+    PipelineConfig,
+    PipelineResult,
+    PipelineStage,
+    create_pipeline,
+    detect_tiered,
+    ESCALATION_THRESHOLD,
+)
 
 __all__ = [
+    # Tiered pipeline
+    "TieredPipeline",
+    "PipelineConfig",
+    "PipelineResult",
+    "PipelineStage",
+    "create_pipeline",
+    "detect_tiered",
+    "ESCALATION_THRESHOLD",
     # Context enhancement
     "ContextEnhancer",
     "create_enhancer",

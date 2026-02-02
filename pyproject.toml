@@ -60,6 +60,16 @@ dependencies = [
     "pyyaml>=6.0.0",
     "aiofiles>=23.2.0",
     "psutil>=5.9.0",  # System resource monitoring
+    "croniter>=2.0.0",  # Cron expression parsing for schedules
+
+    # File extractors
+    "pymupdf>=1.23.0",  # PDF text extraction
+    "python-docx>=1.1.0",  # DOCX text extraction
+    "openpyxl>=3.1.0",  # XLSX text extraction
+    "python-pptx>=0.6.23",  # PPTX text extraction
+    "extract-msg>=0.48.0",  # Outlook MSG file extraction
+    "beautifulsoup4>=4.12.0",  # HTML parsing
+    "pillow>=10.2.0",  # Image processing
 
     # Security
     "slowapi>=0.1.9",  # Rate limiting
@@ -74,6 +84,8 @@ dependencies = [
 [project.optional-dependencies]
 gui = [
     "PySide6>=6.6.0",
+    "pyqtgraph>=0.13.0",
+    "numpy>=1.24.0",
 ]
 mip = [
     "pythonnet>=3.0.0",
@@ -95,8 +107,12 @@ dev = [
 hyperscan = [
     "hyperscan>=0.7.0",  # Intel Hyperscan - 10-100x faster regex
 ]
+# OCR support (requires tesseract binary on system)
+ocr = [
+    "pytesseract>=0.3.10",  # Python wrapper for Tesseract OCR
+]
 all = [
-    "openlabels[gui,mip,windows,dev,hyperscan]",
+    "openlabels[gui,mip,windows,dev,hyperscan,ocr]",
 ]
 
 [project.scripts]

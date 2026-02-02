@@ -64,6 +64,8 @@ OpenLabels separates three concerns:
 | **Targeted Monitoring** | SACL-based access monitoring for flagged files |
 | **OCR Specification** | RapidOCR integration for images and scanned PDFs |
 | **ML Model Paths** | Standardized model directory structure |
+| **Tiered Detection** | Multi-stage pipeline with intelligent ML escalation |
+| **Medical Dictionaries** | 380K+ terms for clinical context detection |
 
 ---
 
@@ -316,6 +318,53 @@ final_score = min(100, content_score × exposure_multiplier)
 | ORG_WIDE | 1.8 |
 | PUBLIC | 2.5 |
 
+### 7.4 Tiered Detection Pipeline
+
+To optimize performance, implementations SHOULD use a tiered detection approach:
+
+#### 7.4.1 Stage 1: Fast Triage (Required)
+
+All content MUST pass through Stage 1 detectors:
+- Checksum-validated patterns (SSN, credit cards, NPI, IBAN)
+- Secret/credential patterns (API keys, tokens)
+- Financial patterns (CUSIP, ISIN, crypto addresses)
+- Government markings (classifications, CAGE codes)
+- General regex patterns (names, dates, phones, emails)
+
+#### 7.4.2 Stage 2: ML Escalation (Conditional)
+
+ML detectors SHOULD only run when:
+- Any Stage 1 span has confidence < 0.7 (escalation threshold)
+- Medical context is detected in content
+- Entity types that benefit from ML refinement are present
+
+#### 7.4.3 Stage 3: Deep Analysis (Medical Context)
+
+When medical context is detected:
+- MUST run both PHI-BERT and PII-BERT
+- PHI-BERT alone misses standard PII in clinical documents
+- Dual analysis catches both clinical entities and general PII
+
+#### 7.4.4 Medical Context Detection
+
+Medical context SHOULD be detected using dictionary-based keyword matching:
+
+| Dictionary | Purpose | Example Terms |
+|------------|---------|---------------|
+| diagnoses | ICD-10-CM codes | diabetes, hypertension, carcinoma |
+| drugs | FDA NDC medications | metformin, lisinopril, atorvastatin |
+| clinical_workflow | High-signal terms | discharge summary, prognosis, intubation |
+| professions | Healthcare roles | physician, nurse practitioner |
+
+Implementations SHOULD provide at least 50,000 medical terms for reliable context detection.
+
+#### 7.4.5 OCR Optimization
+
+For image files, implementations SHOULD:
+1. Perform quick text detection check before full OCR
+2. Skip OCR pipeline if no text regions detected
+3. Use lazy model loading to reduce startup time
+
 ---
 
 ## 8. Remediation
@@ -330,23 +379,35 @@ Quarantine moves sensitive files to a secure location while preserving metadata.
 - MUST support resumable transfers for large files
 - MUST create audit log entry
 - MUST update Label Set with remediation status
-- SHOULD use platform-native tools (robocopy on Windows)
+- MAY use platform-native tools or standard libraries
 
-#### 8.1.2 Windows Implementation
+#### 8.1.2 Reference Implementation
 
+The OpenLabels reference implementation uses adapter-based file operations:
+
+```python
+from openlabels.remediation import quarantine
+
+result = quarantine(
+    source=Path("/data/sensitive/ssn_list.xlsx"),
+    destination=Path("/quarantine/"),
+    preserve_acls=True,
+)
+```
+
+**Windows:** Uses `shutil.move` with `win32security` for ACL preservation
+**Linux:** Uses `shutil.move` with `os.chmod`/`os.chown` for permission preservation
+
+#### 8.1.3 Alternative: Platform-Native Tools
+
+For production deployments requiring advanced features (resumable transfers, retry logic):
+
+**Windows:**
 ```bash
 robocopy <source_dir> <dest_dir> <filename> /COPY:DATSOU /MOVE /R:3 /W:5 /LOG+:quarantine.log
 ```
 
-Flags:
-- `/COPY:DATSOU` - Copy Data, Attributes, Timestamps, Security, Owner, aUditing
-- `/MOVE` - Move files (delete from source after copy)
-- `/R:3` - Retry 3 times
-- `/W:5` - Wait 5 seconds between retries
-- `/LOG+` - Append to log file
-
-#### 8.1.3 Linux Implementation
-
+**Linux:**
 ```bash
 rsync -avX --remove-source-files <source> <dest>
 ```
@@ -376,8 +437,27 @@ Permission lockdown restricts file access to a minimal set of principals.
 - MUST optionally remove inheritance
 - MUST create audit log entry
 - MUST update Label Set with remediation status
+- SHOULD save original ACL for rollback support
 
-#### 8.2.2 Windows Implementation
+#### 8.2.2 Reference Implementation
+
+The OpenLabels reference implementation uses direct API calls:
+
+```python
+from openlabels.remediation import lock_down
+
+result = lock_down(
+    path=Path("/data/sensitive/ssn_list.xlsx"),
+    allowed_principals=["BUILTIN\\Administrators"],
+    remove_inheritance=True,
+    backup_acl=True,  # Save original for rollback
+)
+```
+
+**Windows:** Uses `win32security` API for DACL manipulation
+**Linux:** Uses `os.chmod(path, 0o600)` and `os.chown` for ownership
+
+#### 8.2.3 Alternative: Windows Command Line
 
 ```powershell
 # Remove all existing permissions
@@ -405,7 +485,7 @@ $acl.AddAccessRule($rule)
 Set-Acl <path> $acl
 ```
 
-#### 8.2.3 Linux Implementation
+#### 8.2.4 Alternative: Linux Command Line
 
 ```bash
 # Remove all ACLs
@@ -894,6 +974,57 @@ Core categories:
 |---------|------|---------|
 | 1.0.0-draft | 2026-01 | Initial draft |
 | 2.0.0-draft | 2026-02 | Added remediation, monitoring, OCR specifications |
+
+---
+
+## Appendix D: Implementation Notes
+
+This section documents the current state of the OpenLabels reference implementation relative to this specification.
+
+### D.1 Label Portability (Sections 4-5)
+
+**Spec:** Labels can be embedded in file metadata (XMP, custom properties) or stored as virtual labels in extended attributes.
+
+**Current Implementation:** Labels are stored in the PostgreSQL database (`scan_results` table). File-embedded label storage is planned for a future release.
+
+### D.2 Database Schema (Section 6)
+
+**Spec:** Defines `label_objects`, `label_versions`, `watch_list`, `access_events`, `remediation_log` tables.
+
+**Current Implementation:** Uses a more comprehensive schema with:
+- `scan_results` - Per-file scan results with risk scoring
+- `file_inventory` - Sensitive file tracking for delta scans
+- `folder_inventory` - Folder-level inventory
+- `remediation_actions` - Remediation audit trail
+- `monitored_files` - Watch list for access monitoring
+- `file_access_events` - Access event storage
+
+See `src/openlabels/server/models.py` for the full schema.
+
+### D.3 CLI Filter Grammar
+
+**Spec:** Not specified in this document.
+
+**Current Implementation:** Full filter grammar support:
+```
+filter      = or_expr
+or_expr     = and_expr (OR and_expr)*
+and_expr    = condition (AND condition)*
+condition   = comparison | function_call | "(" filter ")" | NOT condition
+comparison  = field operator value
+function_call = has(entity) | missing(field) | count(entity) operator value
+```
+
+Example: `openlabels find ./data -r --where "score > 75 AND has(SSN)"`
+
+### D.4 Adapters
+
+**Spec:** Not specified in this document.
+
+**Current Implementation:** Three adapters available:
+- `FilesystemAdapter` - Local filesystem with full remediation support
+- `SharePointAdapter` - SharePoint Online via Microsoft Graph
+- `OneDriveAdapter` - OneDrive via Microsoft Graph
 
 ---
 

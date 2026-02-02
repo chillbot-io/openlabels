@@ -9,6 +9,8 @@ Widgets:
 - SchedulesWidget: Configure automated scan schedules
 - LabelsWidget: Manage sensitivity labels and auto-label rules
 - FileDetailWidget: Context card showing file details and risk info
+- SettingsWidget: Application settings and configuration
+- MonitoringWidget: File access monitoring management
 """
 
 try:
@@ -19,6 +21,10 @@ try:
     from .schedules_widget import SchedulesWidget, ScheduleDialog
     from .labels_widget import LabelsWidget, LabelRuleDialog
     from .file_detail_widget import FileDetailWidget, RiskGauge
+    from .settings_widget import SettingsWidget
+    from .monitoring_widget import MonitoringWidget, AddMonitoringDialog
+    from .charts_widget import HeatMapChart, SensitiveDataChart, ChartPanel
+    from .health_widget import HealthWidget, StatusIndicator
 
     __all__ = [
         "ScanWidget",
@@ -33,7 +39,15 @@ try:
         "LabelRuleDialog",
         "FileDetailWidget",
         "RiskGauge",
+        "SettingsWidget",
+        "MonitoringWidget",
+        "AddMonitoringDialog",
+        "HeatMapChart",
+        "SensitiveDataChart",
+        "ChartPanel",
+        "HealthWidget",
+        "StatusIndicator",
     ]
 except ImportError:
-    # PySide6 not available
+    # PySide6 or pyqtgraph not available
     __all__ = []

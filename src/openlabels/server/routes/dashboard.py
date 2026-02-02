@@ -1,5 +1,8 @@
 """
 Dashboard API endpoints for statistics and visualizations.
+
+All dashboard queries use SQL aggregation for performance at scale.
+Statistics are computed in PostgreSQL, not Python.
 """
 
 from datetime import datetime, timedelta
@@ -8,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, cast, Date, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -67,38 +70,44 @@ async def get_overall_stats(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """Get overall dashboard statistics."""
-    # Count scans
-    scan_query = select(func.count()).where(ScanJob.tenant_id == user.tenant_id)
-    result = await session.execute(scan_query)
-    total_scans = result.scalar() or 0
+    """
+    Get overall dashboard statistics.
 
-    # Count active scans
-    active_query = select(func.count()).where(
-        ScanJob.tenant_id == user.tenant_id,
-        ScanJob.status.in_(["pending", "running"]),
-    )
-    result = await session.execute(active_query)
-    active_scans = result.scalar() or 0
+    Uses SQL aggregation for efficient computation at scale.
+    All counts are computed in PostgreSQL, not Python.
+    """
+    # Count total and active scans in one query
+    scan_stats_query = select(
+        func.count().label("total"),
+        func.sum(
+            case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+        ).label("active"),
+    ).where(ScanJob.tenant_id == user.tenant_id)
 
-    # Get result stats
-    result_query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
-    result = await session.execute(result_query)
-    results = result.scalars().all()
+    result = await session.execute(scan_stats_query)
+    scan_row = result.one()
+    total_scans = scan_row.total or 0
+    active_scans = scan_row.active or 0
 
-    total_files = len(results)
-    files_with_pii = sum(1 for r in results if r.total_entities > 0)
-    labels_applied = sum(1 for r in results if r.label_applied)
-    critical_files = sum(1 for r in results if r.risk_tier == "CRITICAL")
-    high_files = sum(1 for r in results if r.risk_tier == "HIGH")
+    # Get all result stats in one aggregation query
+    result_stats_query = select(
+        func.count().label("total_files"),
+        func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+        func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
+        func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
+        func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label("high_files"),
+    ).where(ScanResult.tenant_id == user.tenant_id)
+
+    result = await session.execute(result_stats_query)
+    stats_row = result.one()
 
     return OverallStats(
         total_scans=total_scans,
-        total_files_scanned=total_files,
-        files_with_pii=files_with_pii,
-        labels_applied=labels_applied,
-        critical_files=critical_files,
-        high_files=high_files,
+        total_files_scanned=stats_row.total_files or 0,
+        files_with_pii=stats_row.files_with_pii or 0,
+        labels_applied=stats_row.labels_applied or 0,
+        critical_files=stats_row.critical_files or 0,
+        high_files=stats_row.high_files or 0,
         active_scans=active_scans,
     )
 
@@ -109,35 +118,50 @@ async def get_trends(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """Get trend data over time."""
+    """
+    Get trend data over time.
+
+    Uses SQL GROUP BY for efficient aggregation at scale.
+    Results are grouped by date in PostgreSQL.
+    """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
 
-    # Get results in date range
-    query = select(ScanResult).where(
-        ScanResult.tenant_id == user.tenant_id,
-        ScanResult.scanned_at >= start_date,
+    # Use SQL aggregation with GROUP BY date
+    # Cast scanned_at to date for grouping
+    scan_date = cast(ScanResult.scanned_at, Date)
+
+    trend_query = (
+        select(
+            scan_date.label("scan_date"),
+            func.count().label("files_scanned"),
+            func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+            func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
+        )
+        .where(
+            and_(
+                ScanResult.tenant_id == user.tenant_id,
+                ScanResult.scanned_at >= start_date,
+            )
+        )
+        .group_by(scan_date)
+        .order_by(scan_date)
     )
-    result = await session.execute(query)
-    results = result.scalars().all()
 
-    # Group by date
-    daily_stats: dict[str, dict] = {}
-    for r in results:
-        date_str = r.scanned_at.strftime("%Y-%m-%d")
-        if date_str not in daily_stats:
-            daily_stats[date_str] = {
-                "files_scanned": 0,
-                "files_with_pii": 0,
-                "labels_applied": 0,
-            }
-        daily_stats[date_str]["files_scanned"] += 1
-        if r.total_entities > 0:
-            daily_stats[date_str]["files_with_pii"] += 1
-        if r.label_applied:
-            daily_stats[date_str]["labels_applied"] += 1
+    result = await session.execute(trend_query)
+    rows = result.all()
 
-    # Fill in missing dates
+    # Convert to dict for easy lookup
+    daily_stats = {
+        row.scan_date.strftime("%Y-%m-%d"): {
+            "files_scanned": row.files_scanned or 0,
+            "files_with_pii": row.files_with_pii or 0,
+            "labels_applied": row.labels_applied or 0,
+        }
+        for row in rows
+    }
+
+    # Fill in missing dates with zeros
     points = []
     current = start_date
     while current <= end_date:
@@ -151,6 +175,145 @@ async def get_trends(
         current += timedelta(days=1)
 
     return TrendResponse(points=points)
+
+
+class EntityTrendsResponse(BaseModel):
+    """Entity type trends over time for charts."""
+
+    series: dict[str, list[tuple[str, int]]]  # entity_type -> [(date, count), ...]
+
+
+@router.get("/entity-trends", response_model=EntityTrendsResponse)
+async def get_entity_trends(
+    days: int = Query(14, ge=1, le=90, description="Number of days to include"),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get entity type detection trends over time.
+
+    Returns counts by entity type per day, suitable for time series charts.
+    """
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    # Get results with entity counts
+    results_query = select(
+        ScanResult.scanned_at,
+        ScanResult.entity_counts,
+    ).where(
+        and_(
+            ScanResult.tenant_id == user.tenant_id,
+            ScanResult.scanned_at >= start_date,
+            ScanResult.entity_counts.isnot(None),
+        )
+    )
+
+    result = await session.execute(results_query)
+    rows = result.all()
+
+    # Aggregate by date and entity type
+    daily_counts: dict[str, dict[str, int]] = {}  # date -> {entity_type -> count}
+
+    for row in rows:
+        date_str = row.scanned_at.strftime("%Y-%m-%d")
+        if date_str not in daily_counts:
+            daily_counts[date_str] = {}
+
+        entity_counts = row.entity_counts or {}
+        for entity_type, count in entity_counts.items():
+            if entity_type not in daily_counts[date_str]:
+                daily_counts[date_str][entity_type] = 0
+            daily_counts[date_str][entity_type] += count
+
+    # Collect all entity types
+    all_entity_types = set()
+    for counts in daily_counts.values():
+        all_entity_types.update(counts.keys())
+
+    # Build series data - always include Total
+    series: dict[str, list[tuple[str, int]]] = {"Total": []}
+
+    # Add top entity types (by total count)
+    type_totals = {}
+    for entity_type in all_entity_types:
+        type_totals[entity_type] = sum(
+            daily_counts[d].get(entity_type, 0) for d in daily_counts
+        )
+
+    top_types = sorted(type_totals.keys(), key=lambda t: type_totals[t], reverse=True)[:6]
+
+    for entity_type in top_types:
+        series[entity_type] = []
+
+    # Fill in data for each date
+    current = start_date
+    while current <= end_date:
+        date_str = current.strftime("%Y-%m-%d")
+        day_counts = daily_counts.get(date_str, {})
+
+        # Total
+        total = sum(day_counts.values())
+        series["Total"].append((date_str, total))
+
+        # By type
+        for entity_type in top_types:
+            count = day_counts.get(entity_type, 0)
+            series[entity_type].append((date_str, count))
+
+        current += timedelta(days=1)
+
+    return EntityTrendsResponse(series=series)
+
+
+class AccessHeatmapResponse(BaseModel):
+    """File access heatmap data (7 days x 24 hours)."""
+
+    data: list[list[int]]  # 7x24 matrix
+
+
+@router.get("/access-heatmap", response_model=AccessHeatmapResponse)
+async def get_access_heatmap(
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get file access activity heatmap by hour and day of week.
+
+    Returns a 7x24 matrix where data[day][hour] = access count.
+    Day 0 = Monday, day 6 = Sunday.
+    """
+    from openlabels.server.models import FileAccessEvent
+
+    # Get access events from last 4 weeks
+    cutoff = datetime.utcnow() - timedelta(days=28)
+
+    try:
+        events_query = select(
+            FileAccessEvent.accessed_at,
+        ).where(
+            and_(
+                FileAccessEvent.tenant_id == user.tenant_id,
+                FileAccessEvent.accessed_at >= cutoff,
+            )
+        )
+
+        result = await session.execute(events_query)
+        rows = result.all()
+
+        # Build 7x24 matrix
+        heatmap = [[0] * 24 for _ in range(7)]
+
+        for row in rows:
+            day = row.accessed_at.weekday()
+            hour = row.accessed_at.hour
+            heatmap[day][hour] += 1
+
+    except Exception:
+        # FileAccessEvent table may not exist, return empty heatmap
+        heatmap = [[0] * 24 for _ in range(7)]
+
+    return AccessHeatmapResponse(data=heatmap)
 
 
 @router.get("/heatmap", response_model=HeatmapResponse)

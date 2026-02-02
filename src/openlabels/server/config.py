@@ -110,11 +110,60 @@ class AdapterSettings(BaseSettings):
     onedrive: OneDriveAdapterSettings = Field(default_factory=OneDriveAdapterSettings)
 
 
+class MipSettings(BaseSettings):
+    """
+    Microsoft Information Protection SDK configuration.
+
+    The MIP SDK enables native sensitivity label application with full
+    encryption and protection features. Requires:
+    - Windows with .NET Framework
+    - MIP SDK assemblies
+    - pythonnet package
+
+    When MIP SDK is unavailable, OpenLabels falls back to:
+    - Office metadata (docx/xlsx/pptx custom properties)
+    - PDF metadata
+    - Sidecar files (.openlabels JSON)
+
+    Environment variables:
+    - MIP_ENABLED: Enable/disable MIP SDK integration
+    - MIP_SDK_PATH: Path to MIP SDK assemblies
+    - MIP_APP_NAME: Application name registered with MIP
+    - MIP_APP_VERSION: Application version for MIP
+    """
+
+    enabled: bool = False  # Disabled by default - requires Windows + .NET
+    sdk_path: str | None = None  # Path to MIP SDK assemblies
+    app_name: str = "OpenLabels"
+    app_version: str = "1.0.0"
+
+    @property
+    def is_available(self) -> bool:
+        """Check if MIP SDK should be attempted."""
+        if not self.enabled:
+            return False
+        # Only available on Windows
+        import sys
+        return sys.platform == "win32"
+
+
+class LabelCacheSettings(BaseSettings):
+    """Label caching configuration."""
+
+    enabled: bool = True
+    ttl_seconds: int = 300  # 5 minutes
+    max_labels: int = 1000  # Maximum cached labels
+
+
 class LabelingSettings(BaseSettings):
     """Labeling configuration."""
 
     enabled: bool = True
     mode: Literal["auto", "recommend"] = "auto"
+    auto_sync_on_startup: bool = True  # Sync labels on server start
+    sync_interval_hours: int = 24  # How often to auto-sync labels
+    cache: LabelCacheSettings = Field(default_factory=LabelCacheSettings)
+    mip: MipSettings = Field(default_factory=MipSettings)
     risk_tier_mapping: dict[str, str | None] = Field(
         default_factory=lambda: {
             "CRITICAL": "Highly Confidential",
@@ -151,7 +200,17 @@ class CORSSettings(BaseSettings):
     )
     allow_credentials: bool = True
     allow_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-    allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+    allow_headers: list[str] = Field(
+        default_factory=lambda: [
+            "Accept",
+            "Accept-Language",
+            "Authorization",
+            "Content-Type",
+            "Origin",
+            "X-Request-ID",
+            "X-Requested-With",
+        ]
+    )
 
 
 class RateLimitSettings(BaseSettings):

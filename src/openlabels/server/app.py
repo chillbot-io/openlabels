@@ -15,15 +15,47 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels import __version__
 from openlabels.server.config import get_settings
+
+
+def get_client_ip(request: Request) -> str:
+    """
+    Get real client IP address, handling proxies.
+
+    Checks X-Forwarded-For header first (set by reverse proxies),
+    then falls back to the direct client IP.
+
+    Security note: X-Forwarded-For can be spoofed by clients.
+    In production, configure your reverse proxy to overwrite
+    (not append) this header with the actual client IP.
+    """
+    # Check X-Forwarded-For (standard proxy header)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take the first IP (original client), stripping whitespace
+        # Format: "client, proxy1, proxy2"
+        return forwarded_for.split(",")[0].strip()
+
+    # Check X-Real-IP (nginx default)
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # Fall back to direct client IP
+    if request.client:
+        return request.client.host
+
+    return "127.0.0.1"
 from openlabels.server.db import init_db, close_db
+from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.routes import (
     auth,
+    audit,
+    jobs,
     scans,
     results,
     targets,
@@ -32,12 +64,15 @@ from openlabels.server.routes import (
     dashboard,
     ws,
     users,
+    remediation,
+    monitoring,
+    health,
 )
 
 logger = logging.getLogger(__name__)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Initialize rate limiter with proxy-aware IP detection
+limiter = Limiter(key_func=get_client_ip)
 
 
 @asynccontextmanager
@@ -84,6 +119,9 @@ def configure_middleware():
     if settings.rate_limit.enabled:
         app.add_middleware(SlowAPIMiddleware)
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # CSRF protection middleware
+    app.add_middleware(CSRFMiddleware)
 
 
 # Configure middleware
@@ -145,6 +183,8 @@ async def api_info():
 
 # Include routers
 app.include_router(auth.router, tags=["Authentication"])  # /auth/* endpoints
+app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(scans.router, prefix="/api/scans", tags=["Scans"])
 app.include_router(results.router, prefix="/api/results", tags=["Results"])
 app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
@@ -152,4 +192,7 @@ app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"]
 app.include_router(labels.router, prefix="/api/labels", tags=["Labels"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(remediation.router, prefix="/api/remediation", tags=["Remediation"])
+app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(ws.router, tags=["WebSocket"])

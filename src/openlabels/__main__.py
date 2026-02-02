@@ -469,6 +469,246 @@ def labels_sync():
         client.close()
 
 
+@labels.command("apply")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--label", required=True, help="Label name or ID to apply")
+@click.option("--justification", help="Justification for downgrade (if applicable)")
+@click.option("--dry-run", is_flag=True, help="Preview without applying")
+def labels_apply(file_path: str, label: str, justification: Optional[str], dry_run: bool):
+    """Apply a sensitivity label to a file.
+
+    Uses the MIP SDK on Windows, or records the label in the database on other platforms.
+
+    Examples:
+        openlabels labels apply ./document.docx --label "Confidential"
+        openlabels labels apply ./data.xlsx --label "Highly Confidential" --dry-run
+    """
+    path = Path(file_path)
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would apply label '{label}' to {path}")
+        return
+
+    try:
+        from openlabels.labeling import LabelingEngine, get_label_cache
+
+        # Try to get label from cache first
+        cache = get_label_cache()
+        cached_label = cache.get_by_name(label)
+
+        if cached_label:
+            label_id = cached_label.label_id
+            label_name = cached_label.name
+        else:
+            # Assume it's a label ID
+            label_id = label
+            label_name = label
+
+        engine = LabelingEngine()
+
+        click.echo(f"Applying label '{label_name}' to {path}...")
+        result = asyncio.run(engine.apply_label(
+            file_path=path,
+            label_id=label_id,
+            justification=justification,
+        ))
+
+        if result.success:
+            click.echo(f"Label applied: {label_name}")
+            if result.method:
+                click.echo(f"  Method: {result.method}")
+        else:
+            click.echo(f"Failed to apply label: {result.error}", err=True)
+            sys.exit(1)
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error applying label: {e}", err=True)
+        sys.exit(1)
+
+
+@labels.command("remove")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--justification", help="Justification for label removal")
+@click.option("--dry-run", is_flag=True, help="Preview without removing")
+def labels_remove(file_path: str, justification: Optional[str], dry_run: bool):
+    """Remove a sensitivity label from a file.
+
+    Examples:
+        openlabels labels remove ./document.docx
+        openlabels labels remove ./data.xlsx --justification "Data declassified"
+    """
+    path = Path(file_path)
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would remove label from {path}")
+        return
+
+    try:
+        from openlabels.labeling import LabelingEngine
+
+        engine = LabelingEngine()
+
+        click.echo(f"Removing label from {path}...")
+        result = asyncio.run(engine.remove_label(
+            file_path=path,
+            justification=justification,
+        ))
+
+        if result.success:
+            click.echo("Label removed successfully")
+        else:
+            click.echo(f"Failed to remove label: {result.error}", err=True)
+            sys.exit(1)
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error removing label: {e}", err=True)
+        sys.exit(1)
+
+
+@labels.command("info")
+@click.argument("file_path", type=click.Path(exists=True))
+def labels_info(file_path: str):
+    """Show label information for a file.
+
+    Examples:
+        openlabels labels info ./document.docx
+    """
+    path = Path(file_path)
+
+    try:
+        from openlabels.labeling import LabelingEngine
+
+        engine = LabelingEngine()
+
+        result = asyncio.run(engine.get_label_info(file_path=path))
+
+        click.echo(f"File: {path}")
+        click.echo("-" * 50)
+
+        if result.has_label:
+            click.echo(f"Label:       {result.label_name or result.label_id}")
+            click.echo(f"Label ID:    {result.label_id}")
+            if result.applied_at:
+                click.echo(f"Applied:     {result.applied_at}")
+            if result.applied_by:
+                click.echo(f"Applied by:  {result.applied_by}")
+            if result.protection:
+                click.echo(f"Protection:  {result.protection}")
+        else:
+            click.echo("No sensitivity label applied")
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error getting label info: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def status():
+    """Show OpenLabels system status.
+
+    Displays server connectivity, database status, job queue, and monitoring info.
+
+    Examples:
+        openlabels status
+    """
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    click.echo("OpenLabels Status")
+    click.echo("=" * 50)
+
+    # Check server health
+    try:
+        response = client.get(f"{server}/health", timeout=5.0)
+        if response.status_code == 200:
+            health = response.json()
+            click.echo(f"Server:      ✓ Online ({server})")
+            click.echo(f"  Version:   {health.get('version', 'unknown')}")
+            click.echo(f"  Database:  {health.get('database', 'unknown')}")
+        else:
+            click.echo(f"Server:      ✗ Unhealthy (status {response.status_code})")
+    except Exception as e:
+        click.echo(f"Server:      ✗ Offline ({e})")
+        click.echo("\nCannot retrieve additional status without server connection.")
+        client.close()
+        return
+
+    # Get job queue status
+    try:
+        response = client.get(f"{server}/api/jobs/stats")
+        if response.status_code == 200:
+            stats = response.json()
+            click.echo(f"\nJob Queue:")
+            click.echo(f"  Pending:   {stats.get('pending', 0)}")
+            click.echo(f"  Running:   {stats.get('running', 0)}")
+            click.echo(f"  Completed: {stats.get('completed', 0)}")
+            click.echo(f"  Failed:    {stats.get('failed', 0)}")
+    except Exception:
+        pass
+
+    # Get scan statistics
+    try:
+        response = client.get(f"{server}/api/dashboard/summary")
+        if response.status_code == 200:
+            summary = response.json()
+            click.echo(f"\nScan Summary:")
+            click.echo(f"  Total files scanned:  {summary.get('total_files', 0):,}")
+            click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
+            click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
+            click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
+    except Exception:
+        pass
+
+    # Get monitored files count
+    try:
+        from openlabels.monitoring import get_watched_files
+        watched = get_watched_files()
+        click.echo(f"\nMonitoring:")
+        click.echo(f"  Files monitored:      {len(watched)}")
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Check MIP availability
+    try:
+        from openlabels.labeling.mip import MIPClient
+        mip = MIPClient()
+        if mip.is_available():
+            click.echo(f"\nMIP SDK:     ✓ Available")
+        else:
+            click.echo(f"\nMIP SDK:     ✗ Not available (Windows only)")
+    except ImportError:
+        click.echo(f"\nMIP SDK:     ✗ Not installed")
+    except Exception:
+        pass
+
+    # Check ML models
+    try:
+        models_dir = Path.home() / ".openlabels" / "models"
+        phi_bert = models_dir / "phi-bert" / "model.onnx"
+        pii_bert = models_dir / "pii-bert" / "model.onnx"
+        rapidocr = models_dir / "rapidocr" / "det.onnx"
+
+        click.echo(f"\nML Models:")
+        click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
+        click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
+        click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
+    except Exception:
+        pass
+
+    client.close()
+
+
 @cli.command()
 @click.option("--output", default="./backup", help="Output directory")
 def backup(output: str):
@@ -589,43 +829,104 @@ def export_results(job: str, fmt: str, output: str):
 
 
 @cli.command()
-@click.argument("file_path", type=click.Path(exists=True))
+@click.argument("path", type=click.Path(exists=True))
 @click.option("--exposure", default="PRIVATE", type=click.Choice(["PRIVATE", "INTERNAL", "ORG_WIDE", "PUBLIC"]))
 @click.option("--enable-ml", is_flag=True, help="Enable ML-based detectors")
-def classify(file_path: str, exposure: str, enable_ml: bool):
-    """Classify a single file locally (no server required)."""
-    click.echo(f"Classifying: {file_path}")
+@click.option("--recursive", "-r", is_flag=True, help="Scan directories recursively")
+@click.option("--output", "-o", help="Output file for results (JSON)")
+@click.option("--min-score", default=0, type=int, help="Minimum risk score to report")
+def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output: Optional[str], min_score: int):
+    """Classify files locally (no server required).
+
+    Can classify a single file or a directory of files.
+
+    Examples:
+        openlabels classify ./document.docx
+        openlabels classify ./data/ --recursive --output results.json
+        openlabels classify ./folder/ -r --min-score 50
+    """
+    target_path = Path(path)
+
+    if target_path.is_dir():
+        if recursive:
+            files = list(target_path.rglob("*"))
+        else:
+            files = list(target_path.glob("*"))
+        files = [f for f in files if f.is_file()]
+        click.echo(f"Classifying {len(files)} files...")
+    else:
+        files = [target_path]
+        click.echo(f"Classifying: {path}")
 
     try:
         from openlabels.core.processor import FileProcessor
 
         processor = FileProcessor(enable_ml=enable_ml)
+        results = []
 
-        with open(file_path, "rb") as f:
-            content = f.read()
+        async def process_all():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
 
-        # Run async processor
-        result = asyncio.run(
-            processor.process_file(
-                file_path=file_path,
-                content=content,
-                exposure_level=exposure,
-            )
-        )
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level=exposure,
+                    )
+                    all_results.append(result)
+                except Exception as e:
+                    click.echo(f"Error processing {file_path}: {e}", err=True)
+            return all_results
 
-        click.echo(f"\nResults for: {result.file_name}")
-        click.echo("-" * 50)
-        click.echo(f"Risk Score: {result.risk_score}")
-        click.echo(f"Risk Tier:  {result.risk_tier.value}")
-        click.echo(f"Entities:   {sum(result.entity_counts.values())}")
+        results = asyncio.run(process_all())
 
-        if result.entity_counts:
-            click.echo("\nDetected Entities:")
-            for entity_type, count in sorted(result.entity_counts.items(), key=lambda x: -x[1]):
-                click.echo(f"  {entity_type}: {count}")
+        # Filter by min_score
+        results = [r for r in results if r.risk_score >= min_score]
 
-        if result.error:
-            click.echo(f"\nError: {result.error}", err=True)
+        # Output results
+        if output:
+            # JSON output
+            output_data = []
+            for result in results:
+                output_data.append({
+                    "file": result.file_name,
+                    "risk_score": result.risk_score,
+                    "risk_tier": result.risk_tier.value,
+                    "entity_counts": result.entity_counts,
+                    "error": result.error,
+                })
+            with open(output, "w") as f:
+                json.dump(output_data, f, indent=2)
+            click.echo(f"\nResults written to: {output}")
+            click.echo(f"Files processed: {len(results)}")
+            click.echo(f"Files with risk >= {min_score}: {len([r for r in results if r.risk_score >= min_score])}")
+        else:
+            # Console output
+            for result in results:
+                click.echo(f"\n{'=' * 50}")
+                click.echo(f"File: {result.file_name}")
+                click.echo("-" * 50)
+                click.echo(f"Risk Score: {result.risk_score}")
+                click.echo(f"Risk Tier:  {result.risk_tier.value}")
+                click.echo(f"Entities:   {sum(result.entity_counts.values())}")
+
+                if result.entity_counts:
+                    click.echo("\nDetected Entities:")
+                    for entity_type, count in sorted(result.entity_counts.items(), key=lambda x: -x[1]):
+                        click.echo(f"  {entity_type}: {count}")
+
+                if result.error:
+                    click.echo(f"\nError: {result.error}", err=True)
+
+            if len(results) > 1:
+                click.echo(f"\n{'=' * 50}")
+                click.echo(f"Summary: {len(results)} files processed")
+                high_risk = [r for r in results if r.risk_score >= 55]
+                if high_risk:
+                    click.echo(f"High/Critical risk: {len(high_risk)} files")
 
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
@@ -634,100 +935,838 @@ def classify(file_path: str, exposure: str, enable_ml: bool):
 
 
 # =============================================================================
+# FIND COMMAND
+# =============================================================================
+
+
+def _validate_where_filter(ctx, param, value):
+    """Validate the --where filter option."""
+    if value is None:
+        return None
+    from openlabels.cli.filter_parser import parse_filter, ParseError, LexerError
+    try:
+        parse_filter(value)
+        return value
+    except (ParseError, LexerError) as e:
+        raise click.BadParameter(f"Invalid filter: {e}")
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--where", "where_filter", callback=_validate_where_filter,
+              help='Filter expression (e.g., "score > 75 AND has(SSN)")')
+@click.option("--recursive", "-r", is_flag=True, help="Search directories recursively")
+@click.option("--format", "fmt", default="table", type=click.Choice(["table", "json", "csv", "paths"]),
+              help="Output format")
+@click.option("--limit", default=100, type=int, help="Maximum results to return")
+@click.option("--sort", "sort_by", default="score", type=click.Choice(["score", "path", "tier", "entities"]),
+              help="Sort results by field")
+@click.option("--desc/--asc", "descending", default=True, help="Sort direction")
+def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
+         limit: int, sort_by: str, descending: bool):
+    """Find sensitive files matching filter criteria.
+
+    Scans files and applies the filter to find matches.
+
+    Filter Grammar:
+        score > 75              - Risk score comparison
+        tier = CRITICAL         - Exact tier match
+        has(SSN)                - Has entity type with count > 0
+        count(SSN) >= 10        - Entity count comparison
+        path ~ ".*\\.xlsx$"     - Regex path match
+        missing(owner)          - Field is empty/null
+        NOT has(CREDIT_CARD)    - Negation
+        expr AND expr           - Logical AND
+        expr OR expr            - Logical OR
+        (expr)                  - Grouping
+
+    Examples:
+        openlabels find ./data --where "score > 75"
+        openlabels find ./docs -r --where "has(SSN) AND tier = CRITICAL"
+        openlabels find . -r --where "count(CREDIT_CARD) >= 5" --format json
+        openlabels find ./files --where "path ~ '.*\\.xlsx$' AND exposure = PUBLIC"
+    """
+    from openlabels.cli.filter_executor import filter_scan_results
+
+    target_path = Path(path)
+
+    # Collect files to scan
+    if target_path.is_dir():
+        if recursive:
+            files = list(target_path.rglob("*"))
+        else:
+            files = list(target_path.glob("*"))
+        files = [f for f in files if f.is_file()]
+    else:
+        files = [target_path]
+
+    if not files:
+        click.echo("No files found")
+        return
+
+    click.echo(f"Scanning {len(files)} files...", err=True)
+
+    try:
+        from openlabels.core.processor import FileProcessor
+
+        processor = FileProcessor(enable_ml=False)
+
+        async def process_all():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level="PRIVATE",
+                    )
+                    # Convert to dict for filtering
+                    all_results.append({
+                        "file_path": str(file_path),
+                        "file_name": result.file_name,
+                        "risk_score": result.risk_score,
+                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "entity_counts": result.entity_counts,
+                        "total_entities": sum(result.entity_counts.values()),
+                        "exposure_level": "PRIVATE",
+                        "owner": None,
+                    })
+                except Exception:
+                    pass  # Skip files that can't be processed
+            return all_results
+
+        results = asyncio.run(process_all())
+
+        # Apply filter if specified
+        if where_filter:
+            results = filter_scan_results(results, where_filter)
+
+        # Sort results
+        sort_key_map = {
+            "score": lambda x: x["risk_score"],
+            "path": lambda x: x["file_path"],
+            "tier": lambda x: ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"].index(x["risk_tier"]),
+            "entities": lambda x: x["total_entities"],
+        }
+        results.sort(key=sort_key_map[sort_by], reverse=descending)
+
+        # Apply limit
+        results = results[:limit]
+
+        if not results:
+            click.echo("No matching files found")
+            return
+
+        # Output in requested format
+        if fmt == "json":
+            click.echo(json.dumps(results, indent=2))
+        elif fmt == "csv":
+            import csv
+            import io
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=["file_path", "risk_score", "risk_tier", "total_entities"])
+            writer.writeheader()
+            for r in results:
+                writer.writerow({k: r[k] for k in ["file_path", "risk_score", "risk_tier", "total_entities"]})
+            click.echo(output.getvalue())
+        elif fmt == "paths":
+            for r in results:
+                click.echo(r["file_path"])
+        else:
+            # Table format
+            click.echo(f"\n{'Path':<50} {'Score':<7} {'Tier':<10} {'Entities':<10}")
+            click.echo("-" * 80)
+            for r in results:
+                path_str = r["file_path"]
+                if len(path_str) > 49:
+                    path_str = "..." + path_str[-46:]
+                click.echo(f"{path_str:<50} {r['risk_score']:<7} {r['risk_tier']:<10} {r['total_entities']:<10}")
+
+            click.echo(f"\nFound {len(results)} matching files")
+
+    except ImportError as e:
+        click.echo(f"Error: Required module not installed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+# =============================================================================
+# REPORT COMMAND
+# =============================================================================
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--where", "where_filter", callback=_validate_where_filter,
+              help='Filter expression (e.g., "score > 75")')
+@click.option("--recursive", "-r", is_flag=True, help="Search directories recursively")
+@click.option("--format", "fmt", default="text", type=click.Choice(["text", "json", "csv", "html"]),
+              help="Output format")
+@click.option("--output", "-o", type=click.Path(), help="Output file (default: stdout)")
+@click.option("--title", default="OpenLabels Scan Report", help="Report title")
+def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
+           output: Optional[str], title: str):
+    """Generate a report of sensitive data findings.
+
+    Examples:
+        openlabels report ./data -r --format html -o report.html
+        openlabels report ./docs --where "tier = CRITICAL" --format json
+        openlabels report . -r --where "has(SSN)" --format csv -o findings.csv
+    """
+    from datetime import datetime
+    from openlabels.cli.filter_executor import filter_scan_results
+
+    target_path = Path(path)
+
+    # Collect files
+    if target_path.is_dir():
+        if recursive:
+            files = list(target_path.rglob("*"))
+        else:
+            files = list(target_path.glob("*"))
+        files = [f for f in files if f.is_file()]
+    else:
+        files = [target_path]
+
+    if not files:
+        click.echo("No files found", err=True)
+        return
+
+    click.echo(f"Scanning {len(files)} files for report...", err=True)
+
+    try:
+        from openlabels.core.processor import FileProcessor
+
+        processor = FileProcessor(enable_ml=False)
+
+        async def process_all():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level="PRIVATE",
+                    )
+                    all_results.append({
+                        "file_path": str(file_path),
+                        "file_name": result.file_name,
+                        "risk_score": result.risk_score,
+                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "entity_counts": result.entity_counts,
+                        "total_entities": sum(result.entity_counts.values()),
+                    })
+                except Exception:
+                    pass
+            return all_results
+
+        results = asyncio.run(process_all())
+
+        # Apply filter
+        if where_filter:
+            results = filter_scan_results(results, where_filter)
+
+        # Sort by risk score descending
+        results.sort(key=lambda x: x["risk_score"], reverse=True)
+
+        # Calculate summary statistics
+        summary = {
+            "total_files": len(files),
+            "files_with_findings": len([r for r in results if r["total_entities"] > 0]),
+            "total_entities": sum(r["total_entities"] for r in results),
+            "by_tier": {
+                "CRITICAL": len([r for r in results if r["risk_tier"] == "CRITICAL"]),
+                "HIGH": len([r for r in results if r["risk_tier"] == "HIGH"]),
+                "MEDIUM": len([r for r in results if r["risk_tier"] == "MEDIUM"]),
+                "LOW": len([r for r in results if r["risk_tier"] == "LOW"]),
+                "MINIMAL": len([r for r in results if r["risk_tier"] == "MINIMAL"]),
+            },
+            "by_entity": {},
+        }
+
+        # Aggregate entity counts
+        for r in results:
+            for entity_type, count in r["entity_counts"].items():
+                summary["by_entity"][entity_type] = summary["by_entity"].get(entity_type, 0) + count
+
+        # Generate report
+        report_data = {
+            "title": title,
+            "generated_at": datetime.now().isoformat(),
+            "scan_path": str(target_path),
+            "filter": where_filter,
+            "summary": summary,
+            "findings": results,
+        }
+
+        def _generate_text():
+            lines = []
+            lines.append("=" * 70)
+            lines.append(title.center(70))
+            lines.append("=" * 70)
+            lines.append(f"\nGenerated: {report_data['generated_at']}")
+            lines.append(f"Scan Path: {report_data['scan_path']}")
+            if where_filter:
+                lines.append(f"Filter: {where_filter}")
+            lines.append("\n" + "-" * 70)
+            lines.append("SUMMARY")
+            lines.append("-" * 70)
+            lines.append(f"Total files scanned: {summary['total_files']}")
+            lines.append(f"Files with findings: {summary['files_with_findings']}")
+            lines.append(f"Total entities found: {summary['total_entities']}")
+            lines.append("\nBy Risk Tier:")
+            for tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "MINIMAL"]:
+                count = summary["by_tier"][tier]
+                if count > 0:
+                    lines.append(f"  {tier}: {count}")
+            if summary["by_entity"]:
+                lines.append("\nBy Entity Type:")
+                for entity, count in sorted(summary["by_entity"].items(), key=lambda x: -x[1]):
+                    lines.append(f"  {entity}: {count}")
+            if results:
+                lines.append("\n" + "-" * 70)
+                lines.append("FINDINGS")
+                lines.append("-" * 70)
+                for r in results[:50]:  # Limit to top 50 in text format
+                    lines.append(f"\n{r['file_path']}")
+                    lines.append(f"  Risk: {r['risk_score']} ({r['risk_tier']})")
+                    if r["entity_counts"]:
+                        entities_str = ", ".join(f"{k}:{v}" for k, v in r["entity_counts"].items())
+                        lines.append(f"  Entities: {entities_str}")
+                if len(results) > 50:
+                    lines.append(f"\n... and {len(results) - 50} more findings")
+            lines.append("\n" + "=" * 70)
+            return "\n".join(lines)
+
+        def _generate_html():
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        h1 {{ color: #333; }}
+        .summary {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+        .critical {{ color: #d32f2f; }}
+        .high {{ color: #f57c00; }}
+        .medium {{ color: #fbc02d; }}
+        .low {{ color: #388e3c; }}
+        table {{ border-collapse: collapse; width: 100%; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background: #4a90d9; color: white; }}
+        tr:nth-child(even) {{ background: #f9f9f9; }}
+    </style>
+</head>
+<body>
+    <h1>{title}</h1>
+    <p>Generated: {report_data['generated_at']}<br>
+    Scan Path: {report_data['scan_path']}</p>
+    {"<p>Filter: " + where_filter + "</p>" if where_filter else ""}
+    <div class="summary">
+        <h2>Summary</h2>
+        <p>Total files: {summary['total_files']}<br>
+        Files with findings: {summary['files_with_findings']}<br>
+        Total entities: {summary['total_entities']}</p>
+        <p>
+        <span class="critical">CRITICAL: {summary['by_tier']['CRITICAL']}</span> |
+        <span class="high">HIGH: {summary['by_tier']['HIGH']}</span> |
+        <span class="medium">MEDIUM: {summary['by_tier']['MEDIUM']}</span> |
+        <span class="low">LOW: {summary['by_tier']['LOW']}</span>
+        </p>
+    </div>
+    <h2>Findings</h2>
+    <table>
+        <tr><th>File</th><th>Score</th><th>Tier</th><th>Entities</th></tr>
+"""
+            for r in results:
+                tier_class = r['risk_tier'].lower()
+                entities = ", ".join(f"{k}:{v}" for k, v in r["entity_counts"].items()) or "-"
+                html += f"        <tr><td>{r['file_path']}</td><td>{r['risk_score']}</td>"
+                html += f"<td class='{tier_class}'>{r['risk_tier']}</td><td>{entities}</td></tr>\n"
+            html += """    </table>
+</body>
+</html>"""
+            return html
+
+        # Generate output
+        if fmt == "json":
+            content = json.dumps(report_data, indent=2, default=str)
+        elif fmt == "csv":
+            import csv
+            import io
+            output_io = io.StringIO()
+            writer = csv.writer(output_io)
+            writer.writerow(["file_path", "risk_score", "risk_tier", "entity_counts"])
+            for r in results:
+                entities = ";".join(f"{k}:{v}" for k, v in r["entity_counts"].items())
+                writer.writerow([r["file_path"], r["risk_score"], r["risk_tier"], entities])
+            content = output_io.getvalue()
+        elif fmt == "html":
+            content = _generate_html()
+        else:
+            content = _generate_text()
+
+        # Output
+        if output:
+            with open(output, "w") as f:
+                f.write(content)
+            click.echo(f"Report written to: {output}")
+        else:
+            click.echo(content)
+
+    except ImportError as e:
+        click.echo(f"Error: Required module not installed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error generating report: {e}", err=True)
+        sys.exit(1)
+
+
+# =============================================================================
+# HEATMAP COMMAND
+# =============================================================================
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--recursive", "-r", is_flag=True, help="Search directories recursively")
+@click.option("--depth", default=2, type=int, help="Directory depth for aggregation")
+@click.option("--format", "fmt", default="text", type=click.Choice(["text", "json"]),
+              help="Output format")
+def heatmap(path: str, recursive: bool, depth: int, fmt: str):
+    """Generate a risk heatmap by directory.
+
+    Shows aggregated risk scores by directory path.
+
+    Examples:
+        openlabels heatmap ./data -r
+        openlabels heatmap . -r --depth 3 --format json
+    """
+    from collections import defaultdict
+
+    target_path = Path(path).resolve()
+
+    # Collect files
+    if target_path.is_dir():
+        if recursive:
+            files = list(target_path.rglob("*"))
+        else:
+            files = list(target_path.glob("*"))
+        files = [f for f in files if f.is_file()]
+    else:
+        files = [target_path]
+
+    if not files:
+        click.echo("No files found", err=True)
+        return
+
+    click.echo(f"Scanning {len(files)} files for heatmap...", err=True)
+
+    try:
+        from openlabels.core.processor import FileProcessor
+
+        processor = FileProcessor(enable_ml=False)
+
+        async def process_all():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level="PRIVATE",
+                    )
+                    all_results.append({
+                        "file_path": file_path,
+                        "risk_score": result.risk_score,
+                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "total_entities": sum(result.entity_counts.values()),
+                    })
+                except Exception:
+                    pass
+            return all_results
+
+        results = asyncio.run(process_all())
+
+        # Aggregate by directory
+        dir_stats = defaultdict(lambda: {
+            "files": 0,
+            "total_score": 0,
+            "max_score": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "entities": 0,
+        })
+
+        for r in results:
+            # Get relative path from target
+            try:
+                rel_path = r["file_path"].relative_to(target_path)
+            except ValueError:
+                rel_path = r["file_path"]
+
+            # Get directory at specified depth
+            parts = rel_path.parts[:-1]  # Exclude filename
+            if len(parts) > depth:
+                parts = parts[:depth]
+            dir_key = str(Path(*parts)) if parts else "."
+
+            stats = dir_stats[dir_key]
+            stats["files"] += 1
+            stats["total_score"] += r["risk_score"]
+            stats["max_score"] = max(stats["max_score"], r["risk_score"])
+            stats["entities"] += r["total_entities"]
+            if r["risk_tier"] == "CRITICAL":
+                stats["critical"] += 1
+            elif r["risk_tier"] == "HIGH":
+                stats["high"] += 1
+            elif r["risk_tier"] == "MEDIUM":
+                stats["medium"] += 1
+
+        # Calculate averages and sort
+        heatmap_data = []
+        for dir_path, stats in dir_stats.items():
+            avg_score = stats["total_score"] / stats["files"] if stats["files"] > 0 else 0
+            heatmap_data.append({
+                "directory": dir_path,
+                "files": stats["files"],
+                "avg_score": round(avg_score, 1),
+                "max_score": stats["max_score"],
+                "critical": stats["critical"],
+                "high": stats["high"],
+                "medium": stats["medium"],
+                "entities": stats["entities"],
+            })
+
+        # Sort by max score descending
+        heatmap_data.sort(key=lambda x: (x["max_score"], x["avg_score"]), reverse=True)
+
+        if fmt == "json":
+            click.echo(json.dumps(heatmap_data, indent=2))
+        else:
+            # Text heatmap with visual indicators
+            click.echo("\nRisk Heatmap by Directory")
+            click.echo("=" * 80)
+            click.echo(f"{'Directory':<35} {'Files':<7} {'Avg':<6} {'Max':<6} {'C':<4} {'H':<4} {'M':<4}")
+            click.echo("-" * 80)
+
+            for h in heatmap_data:
+                # Visual risk indicator
+                if h["max_score"] >= 80:
+                    indicator = "[!!!!]"  # Critical
+                elif h["max_score"] >= 55:
+                    indicator = "[!!! ]"  # High
+                elif h["max_score"] >= 31:
+                    indicator = "[!!  ]"  # Medium
+                elif h["max_score"] >= 11:
+                    indicator = "[!   ]"  # Low
+                else:
+                    indicator = "[    ]"  # Minimal
+
+                dir_str = h["directory"]
+                if len(dir_str) > 34:
+                    dir_str = "..." + dir_str[-31:]
+
+                click.echo(f"{dir_str:<35} {h['files']:<7} {h['avg_score']:<6} {h['max_score']:<6} "
+                          f"{h['critical']:<4} {h['high']:<4} {h['medium']:<4} {indicator}")
+
+            click.echo("\nLegend: C=Critical, H=High, M=Medium")
+            click.echo(f"Total: {len(results)} files in {len(heatmap_data)} directories")
+
+    except ImportError as e:
+        click.echo(f"Error: Required module not installed: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error generating heatmap: {e}", err=True)
+        sys.exit(1)
+
+
+# =============================================================================
 # REMEDIATION COMMANDS
 # =============================================================================
 
 
 @cli.command()
-@click.argument("source", type=click.Path(exists=True))
-@click.argument("destination", type=click.Path())
+@click.argument("source", type=click.Path(exists=True), required=False)
+@click.argument("destination", type=click.Path(), required=False)
+@click.option("--where", "where_filter", callback=_validate_where_filter,
+              help='Filter to select files (e.g., "tier = CRITICAL AND has(SSN)")')
+@click.option("--scan-path", type=click.Path(exists=True), help="Path to scan when using --where")
+@click.option("-r", "--recursive", is_flag=True, help="Recursive scan when using --where")
 @click.option("--preserve-acls/--no-preserve-acls", default=True, help="Preserve ACLs during move")
 @click.option("--dry-run", is_flag=True, help="Preview without moving")
-def quarantine(source: str, destination: str, preserve_acls: bool, dry_run: bool):
-    """Quarantine a sensitive file to a secure location.
+def quarantine(source: Optional[str], destination: Optional[str], where_filter: Optional[str],
+               scan_path: Optional[str], recursive: bool, preserve_acls: bool, dry_run: bool):
+    """Quarantine sensitive files to a secure location.
 
-    Moves the file from SOURCE to DESTINATION, optionally preserving ACLs.
-    On Windows uses robocopy for ACL preservation, on Unix uses rsync.
+    Can quarantine a single file (source -> destination) or multiple files
+    matching a filter (--where with --scan-path).
 
     Examples:
         openlabels quarantine ./sensitive.xlsx ./quarantine/
-        openlabels quarantine ./file.docx /secure/vault/ --dry-run
+        openlabels quarantine --where "tier = CRITICAL" --scan-path ./data -r ./quarantine/ --dry-run
+        openlabels quarantine --where "has(SSN) AND score > 80" --scan-path . -r /secure/vault/
     """
     from openlabels.remediation import quarantine as do_quarantine
 
-    source_path = Path(source)
-    dest_path = Path(destination)
+    # Handle batch mode with --where
+    if where_filter:
+        if not scan_path:
+            click.echo("Error: --scan-path required when using --where", err=True)
+            sys.exit(1)
+        if not destination and not source:
+            click.echo("Error: destination required", err=True)
+            sys.exit(1)
 
-    if dry_run:
-        click.echo(f"DRY RUN: Would move {source_path} -> {dest_path}")
-        click.echo(f"  Preserve ACLs: {preserve_acls}")
+        dest_path = Path(destination if destination else source)
 
-    result = do_quarantine(
-        source=source_path,
-        destination=dest_path,
-        preserve_acls=preserve_acls,
-        dry_run=dry_run,
-    )
+        # Find matching files
+        from openlabels.cli.filter_executor import filter_scan_results
+        from openlabels.core.processor import FileProcessor
 
-    if result.success:
-        if dry_run:
-            click.echo("Dry run completed successfully")
+        target_path = Path(scan_path)
+        if target_path.is_dir():
+            if recursive:
+                files = list(target_path.rglob("*"))
+            else:
+                files = list(target_path.glob("*"))
+            files = [f for f in files if f.is_file()]
         else:
+            files = [target_path]
+
+        click.echo(f"Scanning {len(files)} files...", err=True)
+
+        processor = FileProcessor(enable_ml=False)
+
+        async def find_matches():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level="PRIVATE",
+                    )
+                    all_results.append({
+                        "file_path": str(file_path),
+                        "risk_score": result.risk_score,
+                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "entity_counts": result.entity_counts,
+                        "total_entities": sum(result.entity_counts.values()),
+                    })
+                except Exception:
+                    pass
+            return all_results
+
+        results = asyncio.run(find_matches())
+        matches = filter_scan_results(results, where_filter)
+
+        if not matches:
+            click.echo("No files match the filter")
+            return
+
+        click.echo(f"Found {len(matches)} matching files")
+
+        if dry_run:
+            click.echo("\nDRY RUN - Files that would be quarantined:")
+            for m in matches:
+                click.echo(f"  {m['file_path']} (score: {m['risk_score']}, tier: {m['risk_tier']})")
+            return
+
+        # Quarantine each file
+        success_count = 0
+        for m in matches:
+            result = do_quarantine(
+                source=Path(m["file_path"]),
+                destination=dest_path,
+                preserve_acls=preserve_acls,
+                dry_run=False,
+            )
+            if result.success:
+                click.echo(f"Quarantined: {m['file_path']}")
+                success_count += 1
+            else:
+                click.echo(f"Failed: {m['file_path']} - {result.error}", err=True)
+
+        click.echo(f"\nQuarantined {success_count}/{len(matches)} files to {dest_path}")
+
+    else:
+        # Single file mode
+        if not source or not destination:
+            click.echo("Error: SOURCE and DESTINATION required (or use --where with --scan-path)", err=True)
+            sys.exit(1)
+
+        source_path = Path(source)
+        dest_path = Path(destination)
+
+        if dry_run:
+            click.echo(f"DRY RUN: Would move {source_path} -> {dest_path}")
+            click.echo(f"  Preserve ACLs: {preserve_acls}")
+            return
+
+        result = do_quarantine(
+            source=source_path,
+            destination=dest_path,
+            preserve_acls=preserve_acls,
+            dry_run=dry_run,
+        )
+
+        if result.success:
             click.echo(f"Quarantined: {result.source_path}")
             click.echo(f"        To: {result.dest_path}")
             click.echo(f"        By: {result.performed_by}")
-    else:
-        click.echo(f"Error: {result.error}", err=True)
-        sys.exit(1)
+        else:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
 
 
 @cli.command("lock-down")
-@click.argument("file_path", type=click.Path(exists=True))
+@click.argument("file_path", type=click.Path(exists=True), required=False)
+@click.option("--where", "where_filter", callback=_validate_where_filter,
+              help='Filter to select files (e.g., "tier = CRITICAL")')
+@click.option("--scan-path", type=click.Path(exists=True), help="Path to scan when using --where")
+@click.option("-r", "--recursive", is_flag=True, help="Recursive scan when using --where")
 @click.option("--principals", multiple=True, help="Principals to grant access (repeatable)")
 @click.option("--keep-inheritance", is_flag=True, help="Keep permission inheritance")
 @click.option("--backup-acl", is_flag=True, help="Backup current ACL for rollback")
 @click.option("--dry-run", is_flag=True, help="Preview without changing permissions")
-def lock_down_cmd(file_path: str, principals: tuple, keep_inheritance: bool, backup_acl: bool, dry_run: bool):
+def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_path: Optional[str],
+                  recursive: bool, principals: tuple, keep_inheritance: bool, backup_acl: bool, dry_run: bool):
     """Lock down file permissions to restrict access.
 
-    Removes all permissions except for specified principals (defaults to
-    Administrators on Windows, root on Unix).
+    Can lock down a single file or multiple files matching a filter.
 
     Examples:
         openlabels lock-down ./sensitive.xlsx
-        openlabels lock-down ./file.docx --principals admin --principals secteam
-        openlabels lock-down ./file.txt --dry-run --backup-acl
+        openlabels lock-down --where "tier = CRITICAL" --scan-path ./data -r --dry-run
+        openlabels lock-down --where "has(SSN)" --scan-path . -r --principals admin
     """
     from openlabels.remediation import lock_down
 
-    path = Path(file_path)
     principal_list = list(principals) if principals else None
 
-    if dry_run:
-        click.echo(f"DRY RUN: Would lock down {path}")
-        if principal_list:
-            click.echo(f"  Allowed principals: {principal_list}")
-        click.echo(f"  Remove inheritance: {not keep_inheritance}")
+    # Handle batch mode with --where
+    if where_filter:
+        if not scan_path:
+            click.echo("Error: --scan-path required when using --where", err=True)
+            sys.exit(1)
 
-    result = lock_down(
-        path=path,
-        allowed_principals=principal_list,
-        remove_inheritance=not keep_inheritance,
-        backup_acl=backup_acl,
-        dry_run=dry_run,
-    )
+        from openlabels.cli.filter_executor import filter_scan_results
+        from openlabels.core.processor import FileProcessor
 
-    if result.success:
-        if dry_run:
-            click.echo("Dry run completed successfully")
+        target_path = Path(scan_path)
+        if target_path.is_dir():
+            if recursive:
+                files = list(target_path.rglob("*"))
+            else:
+                files = list(target_path.glob("*"))
+            files = [f for f in files if f.is_file()]
         else:
+            files = [target_path]
+
+        click.echo(f"Scanning {len(files)} files...", err=True)
+
+        processor = FileProcessor(enable_ml=False)
+
+        async def find_matches():
+            all_results = []
+            for fp in files:
+                try:
+                    with open(fp, "rb") as f:
+                        content = f.read()
+                    result = await processor.process_file(
+                        file_path=str(fp),
+                        content=content,
+                        exposure_level="PRIVATE",
+                    )
+                    all_results.append({
+                        "file_path": str(fp),
+                        "risk_score": result.risk_score,
+                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "entity_counts": result.entity_counts,
+                        "total_entities": sum(result.entity_counts.values()),
+                    })
+                except Exception:
+                    pass
+            return all_results
+
+        results = asyncio.run(find_matches())
+        matches = filter_scan_results(results, where_filter)
+
+        if not matches:
+            click.echo("No files match the filter")
+            return
+
+        click.echo(f"Found {len(matches)} matching files")
+
+        if dry_run:
+            click.echo("\nDRY RUN - Files that would be locked down:")
+            for m in matches:
+                click.echo(f"  {m['file_path']} (score: {m['risk_score']}, tier: {m['risk_tier']})")
+            if principal_list:
+                click.echo(f"\nAllowed principals: {principal_list}")
+            return
+
+        success_count = 0
+        for m in matches:
+            result = lock_down(
+                path=Path(m["file_path"]),
+                allowed_principals=principal_list,
+                remove_inheritance=not keep_inheritance,
+                backup_acl=backup_acl,
+                dry_run=False,
+            )
+            if result.success:
+                click.echo(f"Locked down: {m['file_path']}")
+                success_count += 1
+            else:
+                click.echo(f"Failed: {m['file_path']} - {result.error}", err=True)
+
+        click.echo(f"\nLocked down {success_count}/{len(matches)} files")
+
+    else:
+        # Single file mode
+        if not file_path:
+            click.echo("Error: FILE_PATH required (or use --where with --scan-path)", err=True)
+            sys.exit(1)
+
+        path = Path(file_path)
+
+        if dry_run:
+            click.echo(f"DRY RUN: Would lock down {path}")
+            if principal_list:
+                click.echo(f"  Allowed principals: {principal_list}")
+            click.echo(f"  Remove inheritance: {not keep_inheritance}")
+            return
+
+        result = lock_down(
+            path=path,
+            allowed_principals=principal_list,
+            remove_inheritance=not keep_inheritance,
+            backup_acl=backup_acl,
+            dry_run=dry_run,
+        )
+
+        if result.success:
             click.echo(f"Locked down: {result.source_path}")
             click.echo(f"  Principals: {', '.join(result.principals or [])}")
-        if result.previous_acl and backup_acl:
-            click.echo(f"  ACL backup saved (can be used for rollback)")
-    else:
-        click.echo(f"Error: {result.error}", err=True)
-        sys.exit(1)
+            if result.previous_acl and backup_acl:
+                click.echo(f"  ACL backup saved (can be used for rollback)")
+        else:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
 
 
 # =============================================================================
