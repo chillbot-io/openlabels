@@ -192,7 +192,8 @@ ForEach-Object {{
             if isinstance(access_mask, str):
                 try:
                     access_mask = int(access_mask, 16) if access_mask.startswith("0x") else int(access_mask)
-                except ValueError:
+                except ValueError as e:
+                    logger.debug(f"Failed to parse access mask '{access_mask}': {e}")
                     access_mask = 0
 
             action = _parse_windows_access_mask(access_mask)
@@ -324,8 +325,8 @@ def _parse_ausearch_csv(output: str, path: Path, limit: int) -> List[AccessEvent
             if event_time_str:
                 try:
                     ts = datetime.fromisoformat(event_time_str)
-                except ValueError:
-                    pass
+                except ValueError as e:
+                    logger.debug(f"Failed to parse timestamp '{event_time_str}': {e}")
 
             # Determine action from event type (parts[1])
             event_type = parts[1] if len(parts) > 1 else ""

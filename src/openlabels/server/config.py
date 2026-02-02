@@ -19,7 +19,9 @@ import yaml
 class ServerSettings(BaseSettings):
     """Server configuration."""
 
-    host: str = "0.0.0.0"
+    # Default to localhost for security. Set to "0.0.0.0" explicitly for production
+    # behind a reverse proxy (nginx, traefik, etc.)
+    host: str = "127.0.0.1"
     port: int = 8000
     workers: int = 4
     debug: bool = False
