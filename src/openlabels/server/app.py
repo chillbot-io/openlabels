@@ -22,8 +22,11 @@ from slowapi.middleware import SlowAPIMiddleware
 from openlabels import __version__
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, close_db
+from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.routes import (
     auth,
+    audit,
+    jobs,
     scans,
     results,
     targets,
@@ -85,6 +88,9 @@ def configure_middleware():
         app.add_middleware(SlowAPIMiddleware)
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # CSRF protection middleware
+    app.add_middleware(CSRFMiddleware)
+
 
 # Configure middleware
 configure_middleware()
@@ -145,6 +151,8 @@ async def api_info():
 
 # Include routers
 app.include_router(auth.router, tags=["Authentication"])  # /auth/* endpoints
+app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(scans.router, prefix="/api/scans", tags=["Scans"])
 app.include_router(results.router, prefix="/api/results", tags=["Results"])
 app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])

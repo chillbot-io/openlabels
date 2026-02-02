@@ -132,6 +132,7 @@ async def login(
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
+            secure=request.url.scheme == "https",
         )
         return response
 

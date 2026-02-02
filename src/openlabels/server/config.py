@@ -151,7 +151,17 @@ class CORSSettings(BaseSettings):
     )
     allow_credentials: bool = True
     allow_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-    allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+    allow_headers: list[str] = Field(
+        default_factory=lambda: [
+            "Accept",
+            "Accept-Language",
+            "Authorization",
+            "Content-Type",
+            "Origin",
+            "X-Request-ID",
+            "X-Requested-With",
+        ]
+    )
 
 
 class RateLimitSettings(BaseSettings):

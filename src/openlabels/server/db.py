@@ -79,6 +79,13 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Get the session factory for direct use (e.g., WebSocket handlers)."""
+    if _session_factory is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+    return _session_factory
+
+
 def run_migrations(revision: str, direction: str = "upgrade") -> None:
     """Run database migrations using Alembic."""
     from alembic import command

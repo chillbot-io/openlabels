@@ -3,7 +3,9 @@ API route modules.
 """
 
 from openlabels.server.routes import (
+    audit,
     auth,
+    jobs,
     scans,
     results,
     targets,
@@ -15,7 +17,9 @@ from openlabels.server.routes import (
 )
 
 __all__ = [
+    "audit",
     "auth",
+    "jobs",
     "scans",
     "results",
     "targets",
