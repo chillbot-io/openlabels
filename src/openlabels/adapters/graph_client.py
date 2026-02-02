@@ -14,7 +14,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -95,7 +95,7 @@ class DeltaToken:
 
     def is_expired(self, max_age_hours: int = 24) -> bool:
         """Check if delta token is too old to use."""
-        age = datetime.utcnow() - self.acquired_at
+        age = datetime.now(timezone.utc) - self.acquired_at
         return age > timedelta(hours=max_age_hours)
 
 
@@ -180,7 +180,7 @@ class GraphClient:
     async def _ensure_token(self) -> str:
         """Ensure we have a valid access token, refreshing if needed."""
         async with self._token_lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Check if token is still valid (with 60s buffer)
             if (

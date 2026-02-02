@@ -2,7 +2,7 @@
 Scan schedule management API endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -174,7 +174,7 @@ async def trigger_schedule(
     )
 
     # Update last run time
-    schedule.last_run_at = datetime.utcnow()
+    schedule.last_run_at = datetime.now(timezone.utc)
 
     return {
         "message": "Scan triggered",

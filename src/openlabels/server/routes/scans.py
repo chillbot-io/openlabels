@@ -2,7 +2,7 @@
 Scan management API endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -158,7 +158,7 @@ async def cancel_scan(
         raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
 
     job.status = "cancelled"
-    job.completed_at = datetime.utcnow()
+    job.completed_at = datetime.now(timezone.utc)
     await session.flush()
 
     # Note: The queue job will still execute, but the scan task checks
