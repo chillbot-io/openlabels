@@ -14,7 +14,7 @@ Flow:
 Sessions are stored in PostgreSQL for production reliability.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import secrets
 import logging
@@ -111,10 +111,21 @@ async def login(
 
     if settings.auth.provider == "none":
         # Dev mode - create fake session and redirect
+        # SECURITY: Only allow in debug mode to prevent accidental production use
+        if not settings.server.debug:
+            logger.error(
+                "SECURITY: AUTH_PROVIDER=none requires DEBUG=true. "
+                "Set AUTH_PROVIDER=azure_ad for production."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication not configured for production. Contact administrator.",
+            )
+        logger.warning("DEV MODE: Creating fake admin session - DO NOT USE IN PRODUCTION")
         session_id = _generate_session_id()
         session_data = {
             "access_token": "dev-token",
-            "expires_at": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
             "claims": {
                 "oid": "dev-user-oid",
                 "preferred_username": "dev@localhost",
@@ -246,7 +257,7 @@ async def auth_callback(
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),
         "id_token": result.get("id_token"),
-        "expires_at": (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
         "claims": id_token_claims,
     }
     # Store with user_id for logout-all functionality
@@ -338,7 +349,7 @@ async def get_current_user_info(
     expires_at_str = session_data.get("expires_at")
     if expires_at_str:
         expires_at = datetime.fromisoformat(expires_at_str)
-        if expires_at < datetime.utcnow():
+        if expires_at < datetime.now(timezone.utc):
             await session_store.delete(session_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -386,7 +397,7 @@ async def get_token(
     expires_at_str = session_data.get("expires_at")
     expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min
 
-    if expires_at < datetime.utcnow():
+    if expires_at < datetime.now(timezone.utc):
         # Try to refresh
         refresh_token = session_data.get("refresh_token")
         if refresh_token:
@@ -401,7 +412,7 @@ async def get_token(
                     new_expires_in = result.get("expires_in", 3600)
                     session_data["access_token"] = result["access_token"]
                     session_data["expires_at"] = (
-                        datetime.utcnow() + timedelta(seconds=new_expires_in)
+                        datetime.now(timezone.utc) + timedelta(seconds=new_expires_in)
                     ).isoformat()
                     if "refresh_token" in result:
                         session_data["refresh_token"] = result["refresh_token"]
@@ -429,7 +440,7 @@ async def get_token(
                 detail="Session expired, please login again",
             )
 
-    expires_in = int((expires_at - datetime.utcnow()).total_seconds())
+    expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
 
     return TokenResponse(
         access_token=session_data["access_token"],
@@ -462,7 +473,7 @@ async def auth_status(
             expires_at_str = session_data.get("expires_at")
             if expires_at_str:
                 expires_at = datetime.fromisoformat(expires_at_str)
-                if expires_at > datetime.utcnow():
+                if expires_at > datetime.now(timezone.utc):
                     authenticated = True
                     claims = session_data.get("claims", {})
                     user_info = {

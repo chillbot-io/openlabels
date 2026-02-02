@@ -9,7 +9,7 @@ Features:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
 from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
@@ -136,7 +136,7 @@ class OneDriveAdapter:
                         path=item.get("name", "unknown"),
                         name=item.get("name", "unknown"),
                         size=0,
-                        modified=datetime.utcnow(),
+                        modified=datetime.now(timezone.utc),
                         adapter=self.adapter_type,
                         item_id=item.get("id"),
                         user_id=user_id,
@@ -210,7 +210,7 @@ class OneDriveAdapter:
         if modified_str:
             modified = datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
         else:
-            modified = datetime.utcnow()
+            modified = datetime.now(timezone.utc)
 
         # Get owner info
         owner = None

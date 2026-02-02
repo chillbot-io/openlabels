@@ -8,7 +8,7 @@ Features:
 - Concurrent worker support via SELECT FOR UPDATE SKIP LOCKED
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -95,7 +95,7 @@ class JobQueue:
         Returns:
             Job model or None if no jobs available
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Find next available job
         query = (
@@ -137,7 +137,7 @@ class JobQueue:
             .where(JobQueueModel.id == job_id)
             .values(
                 status="completed",
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 result=result,
             )
         )
@@ -166,7 +166,7 @@ class JobQueue:
         if retry and job.retry_count < job.max_retries:
             # Calculate retry delay with exponential backoff
             delay = calculate_retry_delay(job.retry_count)
-            retry_at = datetime.utcnow() + delay
+            retry_at = datetime.now(timezone.utc) + delay
 
             job.status = "pending"
             job.retry_count += 1
@@ -177,7 +177,7 @@ class JobQueue:
         else:
             # Move to dead letter queue (failed status)
             job.status = "failed"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
             job.error = error
 
         await self.session.flush()
@@ -201,7 +201,7 @@ class JobQueue:
             return False
 
         job.status = "cancelled"
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         await self.session.flush()
         return True
 
@@ -374,7 +374,7 @@ class JobQueue:
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
         if older_than_days:
-            cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
             conditions.append(JobQueueModel.completed_at < cutoff)
 
         result = await self.session.execute(

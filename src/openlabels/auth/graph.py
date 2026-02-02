@@ -6,7 +6,7 @@ for accessing Graph API to resolve user information, including SID lookups.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
 
@@ -104,7 +104,7 @@ class GraphClient:
         """Get access token, refreshing if needed."""
         # Check if we have a valid cached token
         if self._access_token and self._token_expires:
-            if datetime.utcnow() < self._token_expires - timedelta(minutes=5):
+            if datetime.now(timezone.utc) < self._token_expires - timedelta(minutes=5):
                 return self._access_token
 
         # Acquire new token
@@ -117,7 +117,7 @@ class GraphClient:
         self._access_token = result["access_token"]
         # Token typically valid for 1 hour
         expires_in = result.get("expires_in", 3600)
-        self._token_expires = datetime.utcnow() + timedelta(seconds=expires_in)
+        self._token_expires = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
         logger.debug("Acquired new Graph API access token")
         return self._access_token

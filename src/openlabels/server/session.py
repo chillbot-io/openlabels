@@ -7,7 +7,7 @@ Replaces in-memory session storage for production use:
 - Automatic cleanup of expired sessions
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
 
@@ -43,7 +43,7 @@ class SessionStore:
         result = await self.db.execute(
             select(Session).where(
                 Session.id == session_id,
-                Session.expires_at > datetime.utcnow(),
+                Session.expires_at > datetime.now(timezone.utc),
             )
         )
         session = result.scalar_one_or_none()
@@ -70,7 +70,7 @@ class SessionStore:
             tenant_id: Optional tenant ID
             user_id: Optional user ID
         """
-        expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
         # Check if session exists
         result = await self.db.execute(
@@ -114,7 +114,7 @@ class SessionStore:
         Returns number of sessions removed.
         """
         result = await self.db.execute(
-            delete(Session).where(Session.expires_at < datetime.utcnow())
+            delete(Session).where(Session.expires_at < datetime.now(timezone.utc))
         )
         await self.db.flush()
 
@@ -144,7 +144,7 @@ class SessionStore:
         result = await self.db.execute(
             select(func.count(Session.id)).where(
                 Session.user_id == user_id,
-                Session.expires_at > datetime.utcnow(),
+                Session.expires_at > datetime.now(timezone.utc),
             )
         )
         return result.scalar() or 0
@@ -168,7 +168,7 @@ class PendingAuthStore:
 
         Returns None if not found or expired.
         """
-        cutoff = datetime.utcnow() - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
 
         result = await self.db.execute(
             select(PendingAuth).where(
@@ -216,7 +216,7 @@ class PendingAuthStore:
 
         Returns number of entries removed.
         """
-        cutoff = datetime.utcnow() - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
 
         result = await self.db.execute(
             delete(PendingAuth).where(PendingAuth.created_at < cutoff)
