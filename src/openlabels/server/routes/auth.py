@@ -416,7 +416,8 @@ async def get_token(
                     )
             except HTTPException:
                 raise
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Session validation error: {e}")
                 await session_store.delete(session_id)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
