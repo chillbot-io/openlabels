@@ -6,17 +6,21 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from openlabels.server.db import get_session
+from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.auth.dependencies import get_current_user, require_admin
 from openlabels.jobs import JobQueue
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class ScanCreate(BaseModel):
@@ -55,22 +59,24 @@ class ScanListResponse(BaseModel):
 
 
 @router.post("", response_model=ScanResponse, status_code=201)
+@limiter.limit(lambda: get_settings().rate_limit.scan_create_limit)
 async def create_scan(
-    request: ScanCreate,
+    request: Request,
+    scan_request: ScanCreate,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
 ):
     """Create a new scan job."""
     # Verify target exists
-    target = await session.get(ScanTarget, request.target_id)
+    target = await session.get(ScanTarget, scan_request.target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
 
     # Create scan job
     job = ScanJob(
         tenant_id=user.tenant_id,
-        target_id=request.target_id,
-        name=request.name or f"Scan: {target.name}",
+        target_id=scan_request.target_id,
+        name=scan_request.name or f"Scan: {target.name}",
         status="pending",
         created_by=user.id,
     )
@@ -153,7 +159,7 @@ async def cancel_scan(
 
     job.status = "cancelled"
     job.completed_at = datetime.utcnow()
+    await session.flush()
 
-    # Cancel any pending queue jobs for this scan
-    queue = JobQueue(session, user.tenant_id)
-    # Note: The worker will check job status before processing
+    # Note: The queue job will still execute, but the scan task checks
+    # job.status before processing and will exit early if cancelled.

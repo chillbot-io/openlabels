@@ -3,8 +3,6 @@ Text extractors for various file formats.
 
 Each extractor implements a common interface for extracting text content
 from files, with security protections against decompression bombs.
-
-Adapted from scrubiq for the openlabels classification pipeline.
 """
 
 import csv
@@ -422,6 +420,8 @@ class XLSXExtractor(BaseExtractor):
                 all_text.extend(sheet_rows)
                 all_text.append("")
 
+        # Store sheet count before closing workbook
+        sheet_count = len(wb.sheetnames) if hasattr(wb, 'sheetnames') else 1
         wb.close()
 
         # SECURITY: Final check on extraction ratio
@@ -435,7 +435,7 @@ class XLSXExtractor(BaseExtractor):
 
         return ExtractionResult(
             text="\n".join(all_text),
-            pages=len(wb.sheetnames) if hasattr(wb, 'sheetnames') else 1,
+            pages=sheet_count,
             warnings=warnings,
         )
 
@@ -685,10 +685,6 @@ class RTFExtractor(BaseExtractor):
                 pages=1,
                 warnings=[f"RTF extraction failed: {e}"],
             )
-
-
-# Registry of extractors for easy access
-_EXTRACTORS: List[BaseExtractor] = []
 
 
 def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] = None) -> Optional[BaseExtractor]:

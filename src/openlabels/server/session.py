@@ -1,0 +1,203 @@
+"""
+Database-backed session storage for OpenLabels.
+
+Replaces in-memory session storage for production use:
+- Sessions survive server restarts
+- Sessions work across multiple workers
+- Automatic cleanup of expired sessions
+"""
+
+from datetime import datetime, timedelta
+from typing import Optional
+import logging
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openlabels.server.models import Session, PendingAuth
+
+logger = logging.getLogger(__name__)
+
+
+class SessionStore:
+    """
+    Database-backed session storage.
+
+    Usage:
+        async with get_session() as db:
+            store = SessionStore(db)
+            await store.set("session_id", {"access_token": "...", "claims": {...}}, ttl=3600)
+            data = await store.get("session_id")
+            await store.delete("session_id")
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get(self, session_id: str) -> Optional[dict]:
+        """
+        Get session data by ID.
+
+        Returns None if session doesn't exist or is expired.
+        """
+        result = await self.db.execute(
+            select(Session).where(
+                Session.id == session_id,
+                Session.expires_at > datetime.utcnow(),
+            )
+        )
+        session = result.scalar_one_or_none()
+
+        if session:
+            return session.data
+        return None
+
+    async def set(
+        self,
+        session_id: str,
+        data: dict,
+        ttl: int,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> None:
+        """
+        Create or update a session.
+
+        Args:
+            session_id: Unique session identifier
+            data: Session data (tokens, claims, etc.)
+            ttl: Time-to-live in seconds
+            tenant_id: Optional tenant ID
+            user_id: Optional user ID
+        """
+        expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+
+        # Check if session exists
+        result = await self.db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing session
+            existing.data = data
+            existing.expires_at = expires_at
+        else:
+            # Create new session
+            session = Session(
+                id=session_id,
+                data=data,
+                expires_at=expires_at,
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
+            self.db.add(session)
+
+        await self.db.flush()
+
+    async def delete(self, session_id: str) -> bool:
+        """
+        Delete a session.
+
+        Returns True if session was deleted, False if it didn't exist.
+        """
+        result = await self.db.execute(
+            delete(Session).where(Session.id == session_id)
+        )
+        await self.db.flush()
+        return result.rowcount > 0
+
+    async def cleanup_expired(self) -> int:
+        """
+        Remove expired sessions.
+
+        Returns number of sessions removed.
+        """
+        result = await self.db.execute(
+            delete(Session).where(Session.expires_at < datetime.utcnow())
+        )
+        await self.db.flush()
+
+        count = result.rowcount
+        if count > 0:
+            logger.info(f"Cleaned up {count} expired sessions")
+        return count
+
+
+class PendingAuthStore:
+    """
+    Database-backed PKCE state storage for OAuth flow.
+
+    Entries are temporary and expire after 10 minutes.
+    """
+
+    AUTH_TIMEOUT_MINUTES = 10
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get(self, state: str) -> Optional[dict]:
+        """
+        Get pending auth data by state.
+
+        Returns None if not found or expired.
+        """
+        cutoff = datetime.utcnow() - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
+
+        result = await self.db.execute(
+            select(PendingAuth).where(
+                PendingAuth.state == state,
+                PendingAuth.created_at > cutoff,
+            )
+        )
+        pending = result.scalar_one_or_none()
+
+        if pending:
+            return {
+                "redirect_uri": pending.redirect_uri,
+                "callback_url": pending.callback_url,
+                "created_at": pending.created_at,
+            }
+        return None
+
+    async def set(self, state: str, redirect_uri: str, callback_url: str) -> None:
+        """
+        Store pending auth state.
+        """
+        pending = PendingAuth(
+            state=state,
+            redirect_uri=redirect_uri,
+            callback_url=callback_url,
+        )
+        self.db.add(pending)
+        await self.db.flush()
+
+    async def delete(self, state: str) -> bool:
+        """
+        Delete pending auth state (used after callback).
+
+        Returns True if deleted, False if not found.
+        """
+        result = await self.db.execute(
+            delete(PendingAuth).where(PendingAuth.state == state)
+        )
+        await self.db.flush()
+        return result.rowcount > 0
+
+    async def cleanup_expired(self) -> int:
+        """
+        Remove expired pending auth entries.
+
+        Returns number of entries removed.
+        """
+        cutoff = datetime.utcnow() - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
+
+        result = await self.db.execute(
+            delete(PendingAuth).where(PendingAuth.created_at < cutoff)
+        )
+        await self.db.flush()
+
+        count = result.rowcount
+        if count > 0:
+            logger.debug(f"Cleaned up {count} expired pending auth entries")
+        return count

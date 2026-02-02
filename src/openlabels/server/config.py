@@ -143,6 +143,33 @@ class LoggingSettings(BaseSettings):
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
+class CORSSettings(BaseSettings):
+    """CORS configuration for production security."""
+
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"]
+    )
+    allow_credentials: bool = True
+    allow_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+
+
+class RateLimitSettings(BaseSettings):
+    """Rate limiting configuration."""
+
+    enabled: bool = True
+    # Requests per minute by endpoint type
+    auth_limit: str = "10/minute"  # /auth/* endpoints
+    api_limit: str = "100/minute"  # General API
+    scan_create_limit: str = "20/minute"  # POST /api/scans
+
+
+class SecuritySettings(BaseSettings):
+    """Security middleware configuration."""
+
+    max_request_size_mb: int = 100  # Max request body size
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -159,6 +186,9 @@ class Settings(BaseSettings):
     labeling: LabelingSettings = Field(default_factory=LabelingSettings)
     detection: DetectionSettings = Field(default_factory=DetectionSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    cors: CORSSettings = Field(default_factory=CORSSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

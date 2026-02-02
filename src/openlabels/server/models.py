@@ -691,3 +691,56 @@ class FileAccessEvent(Base):
         # Note: For production with high volume, add:
         # {'postgresql_partition_by': 'RANGE (event_time)'},
     )
+
+
+# =============================================================================
+# SESSION MODELS
+# =============================================================================
+
+
+class Session(Base):
+    """
+    Database-backed session storage.
+
+    Replaces in-memory session dict for production use:
+    - Survives server restarts
+    - Works with multiple workers
+    - Supports session limits per user
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Secure token
+    tenant_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("tenants.id"))
+    user_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+
+    # Session data (tokens, claims)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Expiration
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('ix_sessions_expires', 'expires_at'),
+        Index('ix_sessions_user', 'user_id'),
+    )
+
+
+class PendingAuth(Base):
+    """
+    PKCE state storage for OAuth flow.
+
+    Temporary storage during login - entries expire after 10 minutes.
+    """
+
+    __tablename__ = "pending_auth"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    callback_url: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('ix_pending_auth_created', 'created_at'),
+    )
