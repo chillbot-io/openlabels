@@ -22,10 +22,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, FrozenSet, Optional, Set
 
+from openlabels.core.constants import DEFAULT_DICTIONARIES_DIR
+
 logger = logging.getLogger(__name__)
 
 # Directory containing dictionary files
-DICT_DIR = Path(__file__).parent
+DICT_DIR = DEFAULT_DICTIONARIES_DIR
 
 
 class DictionaryLoader:
