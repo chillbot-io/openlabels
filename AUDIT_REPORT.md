@@ -14,6 +14,25 @@ This codebase is a **poorly integrated frankenstein** of three separate projects
 
 ## CRITICAL ISSUES (Production Blockers)
 
+### 0. Missing `sys` Import Causes NameError (RUNTIME CRASH)
+
+**File:** `src/openlabels/adapters/filesystem.py`
+
+**Lines:** 359, 433, 438, 514
+
+```python
+async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
+    path = Path(file_info.path)
+    if sys.platform == "win32":  # NameError: name 'sys' is not defined
+        return self._get_windows_acl(path)
+```
+
+**Issue:** The `sys` module is used for platform detection (`sys.platform`) in the `get_acl`, `set_acl`, and `lockdown_file` methods, but `sys` is never imported at the top of the file. This will cause a `NameError` at runtime when these methods are called.
+
+**Fix:** Add `import sys` to the imports at the top of the file.
+
+---
+
 ### 1. CORS Wildcard with Credentials (SECURITY)
 
 **Files:**
@@ -225,17 +244,46 @@ Multiple license inconsistencies:
 
 Multiple files use `datetime.utcnow()` which is deprecated in Python 3.12+:
 - `src/openlabels/server/routes/auth.py` (multiple occurrences)
+- `src/openlabels/jobs/queue.py` (6 occurrences)
+- `src/openlabels/server/session.py` (6 occurrences)
+- `src/openlabels/adapters/graph_client.py` (2 occurrences)
+- `src/openlabels/auth/sid_resolver.py` (4 occurrences)
+- `src/openlabels/server/routes/health.py` (4 occurrences)
+- `src/openlabels/server/routes/dashboard.py` (4 occurrences)
+- `src/openlabels/server/routes/remediation.py` (5 occurrences)
+- And 20+ more files
+
+**Total:** 50+ occurrences across the codebase.
 - Should use `datetime.now(timezone.utc)` instead
+
+---
+
+### 15. Redundant Imports Inside Methods
+
+**File:** `src/openlabels/labeling/engine.py`
+
+```python
+# Line 15: already imports asyncio at top level
+import asyncio
+
+# Lines 263, 280, 286, 323, 332: redundantly imports asyncio again inside methods
+async def _get_access_token(self) -> str:
+    ...
+    import asyncio  # Redundant!
+    await asyncio.sleep(retry_after)
+```
+
+**Issue:** The `asyncio` module is imported at the top of the file but then re-imported inside multiple methods. While not a bug, this is a code smell indicating copy-paste development.
 
 ---
 
 ## LOW SEVERITY ISSUES
 
-### 15. Missing Type Hints
+### 16. Missing Type Hints
 
 Many public functions lack proper type hints, making the code harder to maintain and verify.
 
-### 16. Inconsistent Logging
+### 17. Inconsistent Logging
 
 Mix of:
 - `logger.debug()` / `logger.info()` / `logger.error()`
@@ -244,14 +292,14 @@ Mix of:
 
 No consistent logging strategy across the three packages.
 
-### 17. Magic Numbers
+### 18. Magic Numbers
 
 Hardcoded values without constants:
 - Session cookie max age: `60 * 60 * 24 * 7`
 - PKCE expiry: `timedelta(minutes=10)`
 - Various timeouts and limits
 
-### 18. Unused Imports
+### 19. Unused Imports
 
 Multiple files have `# noqa: F401` comments suppressing unused import warnings, suggesting code that was planned but never implemented.
 
@@ -259,7 +307,7 @@ Multiple files have `# noqa: F401` comments suppressing unused import warnings, 
 
 ## ARCHITECTURAL ISSUES
 
-### 19. No Shared Core
+### 20. No Shared Core
 
 The three packages should share:
 - Base types (`Span`, `Tier`, entity types)
@@ -269,7 +317,7 @@ The three packages should share:
 
 Instead, each package reinvents these independently.
 
-### 20. No Integration Tests
+### 21. No Integration Tests
 
 - `tests/` - Main package tests
 - `openrisk/tests/` - OpenRisk tests (separate)
@@ -277,7 +325,7 @@ Instead, each package reinvents these independently.
 
 No tests verify the packages work together.
 
-### 21. Mixed Async/Sync Patterns
+### 22. Mixed Async/Sync Patterns
 
 The codebase inconsistently uses:
 - `async def` functions that don't await anything
