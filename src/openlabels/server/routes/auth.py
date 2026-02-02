@@ -10,37 +10,36 @@ Flow:
 3. After login, redirected to /auth/callback with authorization code
 4. Server exchanges code for tokens
 5. User redirected to app with session established
+
+Sessions are stored in PostgreSQL for production reliability.
 """
 
 from datetime import datetime, timedelta
 from typing import Optional
-from urllib.parse import urlencode
 import secrets
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, Response, Depends, status
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi import APIRouter, HTTPException, Request, Depends, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from msal import ConfidentialClientApplication
+from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from openlabels.server.config import get_settings
-from openlabels.auth.oauth import TokenClaims
+from openlabels.server.db import get_session
+from openlabels.server.session import SessionStore, PendingAuthStore
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-# Session storage (in production, use Redis or database)
-# Maps session_id -> {access_token, refresh_token, expires_at, claims}
-_sessions: dict[str, dict] = {}
-
-# PKCE state storage (temporary, for login flow)
-# Maps state -> {code_verifier, redirect_uri, created_at}
-_pending_auth: dict[str, dict] = {}
+limiter = Limiter(key_func=get_remote_address)
 
 # Token cookie settings
 SESSION_COOKIE_NAME = "openlabels_session"
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+SESSION_TTL_SECONDS = SESSION_COOKIE_MAX_AGE
 
 
 class LoginResponse(BaseModel):
@@ -87,31 +86,12 @@ def _generate_session_id() -> str:
     return secrets.token_urlsafe(32)
 
 
-def _cleanup_expired_sessions():
-    """Remove expired sessions and pending auth states."""
-    now = datetime.utcnow()
-
-    # Clean sessions
-    expired_sessions = [
-        sid for sid, data in _sessions.items()
-        if data.get("expires_at", now) < now
-    ]
-    for sid in expired_sessions:
-        del _sessions[sid]
-
-    # Clean pending auth (expire after 10 minutes)
-    expired_auth = [
-        state for state, data in _pending_auth.items()
-        if now - data.get("created_at", now) > timedelta(minutes=10)
-    ]
-    for state in expired_auth:
-        del _pending_auth[state]
-
-
 @router.get("/login")
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def login(
     request: Request,
     redirect_uri: Optional[str] = None,
+    db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     """
     Initiate OAuth login flow.
@@ -122,14 +102,19 @@ async def login(
         redirect_uri: Where to redirect after login (default: /)
     """
     settings = get_settings()
-    _cleanup_expired_sessions()
+    session_store = SessionStore(db)
+    pending_store = PendingAuthStore(db)
+
+    # Cleanup expired entries periodically
+    await session_store.cleanup_expired()
+    await pending_store.cleanup_expired()
 
     if settings.auth.provider == "none":
         # Dev mode - create fake session and redirect
         session_id = _generate_session_id()
-        _sessions[session_id] = {
+        session_data = {
             "access_token": "dev-token",
-            "expires_at": datetime.utcnow() + timedelta(days=7),
+            "expires_at": (datetime.utcnow() + timedelta(days=7)).isoformat(),
             "claims": {
                 "oid": "dev-user-oid",
                 "preferred_username": "dev@localhost",
@@ -138,6 +123,7 @@ async def login(
                 "roles": ["admin"],
             },
         }
+        await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
 
         response = RedirectResponse(url=redirect_uri or "/", status_code=302)
         response.set_cookie(
@@ -151,18 +137,14 @@ async def login(
 
     msal_app = _get_msal_app()
 
-    # Generate state and PKCE verifier
+    # Generate state
     state = secrets.token_urlsafe(32)
 
     # Build callback URL
     callback_url = str(request.url_for("auth_callback"))
 
     # Store pending auth state
-    _pending_auth[state] = {
-        "redirect_uri": redirect_uri or "/",
-        "callback_url": callback_url,
-        "created_at": datetime.utcnow(),
-    }
+    await pending_store.set(state, redirect_uri or "/", callback_url)
 
     # Get authorization URL
     auth_url = msal_app.get_authorization_request_url(
@@ -175,12 +157,14 @@ async def login(
 
 
 @router.get("/callback")
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def auth_callback(
     request: Request,
     code: Optional[str] = None,
     state: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
+    db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     """
     OAuth callback endpoint.
@@ -207,13 +191,18 @@ async def auth_callback(
         )
 
     # Validate state
-    if state not in _pending_auth:
+    pending_store = PendingAuthStore(db)
+    pending = await pending_store.get(state)
+
+    if not pending:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state",
         )
 
-    pending = _pending_auth.pop(state)
+    # Remove pending state
+    await pending_store.delete(state)
+
     callback_url = pending["callback_url"]
     final_redirect = pending["redirect_uri"]
 
@@ -241,16 +230,18 @@ async def auth_callback(
         )
 
     # Create session
+    session_store = SessionStore(db)
     session_id = _generate_session_id()
     expires_in = result.get("expires_in", 3600)
 
-    _sessions[session_id] = {
+    session_data = {
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),
         "id_token": result.get("id_token"),
-        "expires_at": datetime.utcnow() + timedelta(seconds=expires_in),
+        "expires_at": (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
         "claims": result.get("id_token_claims", {}),
     }
+    await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
 
     # Redirect with session cookie
     response = RedirectResponse(url=final_redirect, status_code=302)
@@ -267,7 +258,10 @@ async def auth_callback(
 
 
 @router.get("/logout")
-async def logout(request: Request) -> RedirectResponse:
+async def logout(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
     """
     Log out the current user.
 
@@ -277,8 +271,9 @@ async def logout(request: Request) -> RedirectResponse:
 
     # Get and clear session
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if session_id and session_id in _sessions:
-        del _sessions[session_id]
+    if session_id:
+        session_store = SessionStore(db)
+        await session_store.delete(session_id)
 
     # Create response that clears cookie
     response = RedirectResponse(url="/", status_code=302)
@@ -296,7 +291,10 @@ async def logout(request: Request) -> RedirectResponse:
 
 
 @router.get("/me", response_model=UserInfoResponse)
-async def get_current_user_info(request: Request) -> UserInfoResponse:
+async def get_current_user_info(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> UserInfoResponse:
     """
     Get current user information.
 
@@ -304,23 +302,33 @@ async def get_current_user_info(request: Request) -> UserInfoResponse:
     """
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
 
-    if not session_id or session_id not in _sessions:
+    if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
 
-    session = _sessions[session_id]
+    session_store = SessionStore(db)
+    session_data = await session_store.get(session_id)
 
-    # Check expiration
-    if session.get("expires_at", datetime.min) < datetime.utcnow():
-        del _sessions[session_id]
+    if not session_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired",
+            detail="Session expired or invalid",
         )
 
-    claims = session.get("claims", {})
+    # Check token expiration
+    expires_at_str = session_data.get("expires_at")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str)
+        if expires_at < datetime.utcnow():
+            await session_store.delete(session_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired",
+            )
+
+    claims = session_data.get("claims", {})
 
     return UserInfoResponse(
         id=claims.get("oid", "unknown"),
@@ -332,7 +340,10 @@ async def get_current_user_info(request: Request) -> UserInfoResponse:
 
 
 @router.post("/token", response_model=TokenResponse)
-async def get_token(request: Request) -> TokenResponse:
+async def get_token(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> TokenResponse:
     """
     Get access token for API calls.
 
@@ -340,18 +351,27 @@ async def get_token(request: Request) -> TokenResponse:
     """
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
 
-    if not session_id or session_id not in _sessions:
+    if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
 
-    session = _sessions[session_id]
-    expires_at = session.get("expires_at", datetime.min)
+    session_store = SessionStore(db)
+    session_data = await session_store.get(session_id)
+
+    if not session_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid",
+        )
+
+    expires_at_str = session_data.get("expires_at")
+    expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min
 
     if expires_at < datetime.utcnow():
         # Try to refresh
-        refresh_token = session.get("refresh_token")
+        refresh_token = session_data.get("refresh_token")
         if refresh_token:
             try:
                 msal_app = _get_msal_app()
@@ -361,42 +381,51 @@ async def get_token(request: Request) -> TokenResponse:
                 )
 
                 if "access_token" in result:
-                    session["access_token"] = result["access_token"]
-                    session["expires_at"] = datetime.utcnow() + timedelta(
-                        seconds=result.get("expires_in", 3600)
-                    )
+                    new_expires_in = result.get("expires_in", 3600)
+                    session_data["access_token"] = result["access_token"]
+                    session_data["expires_at"] = (
+                        datetime.utcnow() + timedelta(seconds=new_expires_in)
+                    ).isoformat()
                     if "refresh_token" in result:
-                        session["refresh_token"] = result["refresh_token"]
+                        session_data["refresh_token"] = result["refresh_token"]
+
+                    await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+                    expires_at = datetime.fromisoformat(session_data["expires_at"])
                 else:
-                    del _sessions[session_id]
+                    await session_store.delete(session_id)
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Session expired, please login again",
                     )
+            except HTTPException:
+                raise
             except Exception:
-                del _sessions[session_id]
+                await session_store.delete(session_id)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Session expired, please login again",
                 )
         else:
-            del _sessions[session_id]
+            await session_store.delete(session_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Session expired, please login again",
             )
 
-    expires_in = int((session["expires_at"] - datetime.utcnow()).total_seconds())
+    expires_in = int((expires_at - datetime.utcnow()).total_seconds())
 
     return TokenResponse(
-        access_token=session["access_token"],
+        access_token=session_data["access_token"],
         expires_in=max(expires_in, 0),
         scope="User.Read openid profile email",
     )
 
 
 @router.get("/status")
-async def auth_status(request: Request) -> dict:
+async def auth_status(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> dict:
     """
     Check authentication status.
 
@@ -408,16 +437,22 @@ async def auth_status(request: Request) -> dict:
     authenticated = False
     user_info = None
 
-    if session_id and session_id in _sessions:
-        session = _sessions[session_id]
-        if session.get("expires_at", datetime.min) > datetime.utcnow():
-            authenticated = True
-            claims = session.get("claims", {})
-            user_info = {
-                "id": claims.get("oid"),
-                "email": claims.get("preferred_username"),
-                "name": claims.get("name"),
-            }
+    if session_id:
+        session_store = SessionStore(db)
+        session_data = await session_store.get(session_id)
+
+        if session_data:
+            expires_at_str = session_data.get("expires_at")
+            if expires_at_str:
+                expires_at = datetime.fromisoformat(expires_at_str)
+                if expires_at > datetime.utcnow():
+                    authenticated = True
+                    claims = session_data.get("claims", {})
+                    user_info = {
+                        "id": claims.get("oid"),
+                        "email": claims.get("preferred_username"),
+                        "name": claims.get("name"),
+                    }
 
     return {
         "authenticated": authenticated,
