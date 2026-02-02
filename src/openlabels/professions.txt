@@ -1,0 +1,298 @@
+# Healthcare Professions Dictionary for PHI Detection
+# Used to identify PROFESSION entity type per i2b2 2014 guidelines
+# Sources: BLS Occupational Outlook, AHIMA, CMS Provider Taxonomy
+# Format: One profession per line, case-insensitive matching
+
+# === PHYSICIANS ===
+physician
+doctor
+surgeon
+md
+do
+anesthesiologist
+cardiologist
+dermatologist
+endocrinologist
+gastroenterologist
+geriatrician
+hematologist
+hospitalist
+immunologist
+internist
+neonatologist
+nephrologist
+neurologist
+obstetrician
+gynecologist
+oncologist
+ophthalmologist
+orthopedist
+otolaryngologist
+pathologist
+pediatrician
+physiatrist
+psychiatrist
+pulmonologist
+radiologist
+rheumatologist
+urologist
+allergist
+intensivist
+palliative care physician
+sports medicine physician
+emergency medicine physician
+family medicine physician
+general practitioner
+
+# === NURSING ===
+nurse
+registered nurse
+rn
+licensed practical nurse
+lpn
+licensed vocational nurse
+lvn
+nurse practitioner
+np
+certified nurse midwife
+cnm
+nurse anesthetist
+crna
+clinical nurse specialist
+cns
+charge nurse
+head nurse
+staff nurse
+travel nurse
+school nurse
+public health nurse
+home health nurse
+hospice nurse
+oncology nurse
+pediatric nurse
+neonatal nurse
+icu nurse
+er nurse
+or nurse
+surgical nurse
+dialysis nurse
+infusion nurse
+wound care nurse
+case manager nurse
+
+# === PHYSICIAN ASSISTANTS ===
+physician assistant
+pa
+pa-c
+certified physician assistant
+
+# === THERAPY ===
+physical therapist
+pt
+physical therapy assistant
+pta
+occupational therapist
+ot
+occupational therapy assistant
+ota
+speech therapist
+speech pathologist
+speech language pathologist
+slp
+respiratory therapist
+rt
+recreation therapist
+music therapist
+art therapist
+massage therapist
+
+# === DENTAL ===
+dentist
+dds
+dmd
+oral surgeon
+orthodontist
+periodontist
+endodontist
+prosthodontist
+dental hygienist
+dental assistant
+dental technician
+
+# === PHARMACY ===
+pharmacist
+pharmd
+pharmacy technician
+pharmacy tech
+clinical pharmacist
+
+# === MENTAL HEALTH ===
+psychologist
+psychiatrist
+therapist
+counselor
+social worker
+lcsw
+lmsw
+clinical social worker
+mental health counselor
+marriage and family therapist
+mft
+substance abuse counselor
+addiction counselor
+behavioral health specialist
+
+# === LAB/DIAGNOSTICS ===
+lab technician
+laboratory technician
+medical technologist
+mt
+clinical laboratory scientist
+cls
+phlebotomist
+histotechnologist
+cytotechnologist
+microbiologist
+pathology assistant
+medical laboratory technician
+mlt
+
+# === IMAGING/RADIOLOGY ===
+radiologic technologist
+x-ray technician
+ct technologist
+mri technologist
+ultrasound technician
+sonographer
+mammographer
+nuclear medicine technologist
+radiation therapist
+
+# === EMERGENCY/PARAMEDIC ===
+paramedic
+emt
+emergency medical technician
+first responder
+flight paramedic
+firefighter paramedic
+
+# === SURGICAL ===
+surgical technologist
+surgical tech
+scrub tech
+surgical assistant
+perfusionist
+anesthesia technician
+
+# === MEDICAL SUPPORT ===
+medical assistant
+ma
+certified medical assistant
+cma
+registered medical assistant
+rma
+patient care technician
+pct
+nursing assistant
+cna
+certified nursing assistant
+home health aide
+hha
+personal care aide
+orderly
+unit secretary
+ward clerk
+
+# === ADMINISTRATION ===
+health information technician
+medical coder
+medical biller
+medical records clerk
+medical transcriptionist
+medical secretary
+practice manager
+office manager
+healthcare administrator
+hospital administrator
+medical director
+chief medical officer
+cmo
+chief nursing officer
+cno
+clinic manager
+department head
+nursing supervisor
+
+# === SPECIALIZED TECHNICIANS ===
+dialysis technician
+hemodialysis technician
+cardiac technician
+ekg technician
+ecg technician
+cardiovascular technologist
+neurodiagnostic technologist
+eeg technician
+polysomnographic technologist
+sleep technician
+ophthalmic technician
+optician
+audiologist
+hearing aid specialist
+
+# === NUTRITION ===
+dietitian
+nutritionist
+registered dietitian
+rd
+clinical dietitian
+
+# === OTHER CLINICAL ===
+chiropractor
+podiatrist
+optometrist
+acupuncturist
+midwife
+doula
+lactation consultant
+genetic counselor
+patient navigator
+care coordinator
+discharge planner
+utilization reviewer
+
+# === VETERINARY (for completeness) ===
+veterinarian
+vet
+veterinary technician
+vet tech
+
+# === RESEARCH ===
+clinical research coordinator
+research nurse
+research assistant
+principal investigator
+
+# === PUBLIC HEALTH ===
+epidemiologist
+biostatistician
+health educator
+community health worker
+infection preventionist
+quality improvement specialist
+
+# === ABBREVIATIONS/CREDENTIALS ===
+aprn
+arnp
+fnp
+anp
+gnp
+pnp
+acnp
+agacnp
+pmhnp
+whnp
+dnp
+phd
+msn
+bsn
+adn
