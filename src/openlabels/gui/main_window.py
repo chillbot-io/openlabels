@@ -37,6 +37,8 @@ if PYSIDE_AVAILABLE:
     from openlabels.gui.widgets.schedules_widget import SchedulesWidget
     from openlabels.gui.widgets.labels_widget import LabelsWidget
     from openlabels.gui.widgets.file_detail_widget import FileDetailWidget
+    from openlabels.gui.widgets.settings_widget import SettingsWidget
+    from openlabels.gui.widgets.monitoring_widget import MonitoringWidget
     from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
@@ -149,6 +151,8 @@ if PYSIDE_AVAILABLE:
             self.targets_widget = TargetsWidget()
             self.schedules_widget = SchedulesWidget()
             self.labels_widget = LabelsWidget()
+            self.monitoring_widget = MonitoringWidget()
+            self.settings_widget = SettingsWidget(server_url=self.server_url)
 
             # File detail panel (context card)
             self.file_detail_widget = FileDetailWidget()
@@ -165,7 +169,8 @@ if PYSIDE_AVAILABLE:
             self.tabs.addTab(self.targets_widget, "Targets")
             self.tabs.addTab(self.schedules_widget, "Schedules")
             self.tabs.addTab(self.labels_widget, "Labels")
-            self.tabs.addTab(self._create_settings_tab(), "Settings")
+            self.tabs.addTab(self.monitoring_widget, "Monitoring")
+            self.tabs.addTab(self.settings_widget, "Settings")
 
             # Connect signals
             self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -174,6 +179,8 @@ if PYSIDE_AVAILABLE:
             self.targets_widget.target_changed.connect(self._on_target_changed)
             self.schedules_widget.schedule_changed.connect(self._on_schedule_changed)
             self.labels_widget.label_rule_changed.connect(self._on_label_rule_changed)
+            self.monitoring_widget.refresh_requested.connect(self._on_refresh)
+            self.settings_widget.settings_changed.connect(self._on_settings_changed)
 
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
@@ -295,7 +302,16 @@ if PYSIDE_AVAILABLE:
 
         def _on_settings(self) -> None:
             """Handle settings action."""
-            self.tabs.setCurrentIndex(6)  # Switch to Settings tab
+            self.tabs.setCurrentIndex(7)  # Switch to Settings tab
+
+        def _on_settings_changed(self, settings: dict) -> None:
+            """Handle settings changed."""
+            logger.info(f"Settings changed: {settings}")
+            # Apply relevant settings
+            if "refresh_interval" in settings:
+                interval = settings["refresh_interval"] * 1000  # Convert to ms
+                self._refresh_timer.setInterval(interval)
+            self.statusBar().showMessage("Settings saved", 3000)
 
         def _on_refresh(self) -> None:
             """Handle manual refresh."""
@@ -422,21 +438,6 @@ if PYSIDE_AVAILABLE:
                     self.file_detail_widget.set_available_labels(labels)
             except Exception as e:
                 logger.warning(f"Failed to load labels: {e}")
-
-        def _create_settings_tab(self) -> QWidget:
-            """Create the settings tab."""
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-
-            # Server settings
-            server_layout = QHBoxLayout()
-            server_layout.addWidget(QLabel("Server URL:"))
-            server_layout.addWidget(QLabel(self.server_url))
-            server_layout.addStretch()
-            layout.addLayout(server_layout)
-
-            layout.addStretch()
-            return widget
 
         def closeEvent(self, event) -> None:
             """Handle window close."""
