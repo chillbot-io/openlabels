@@ -422,6 +422,8 @@ class XLSXExtractor(BaseExtractor):
                 all_text.extend(sheet_rows)
                 all_text.append("")
 
+        # Store sheet count before closing workbook
+        sheet_count = len(wb.sheetnames) if hasattr(wb, 'sheetnames') else 1
         wb.close()
 
         # SECURITY: Final check on extraction ratio
@@ -435,7 +437,7 @@ class XLSXExtractor(BaseExtractor):
 
         return ExtractionResult(
             text="\n".join(all_text),
-            pages=len(wb.sheetnames) if hasattr(wb, 'sheetnames') else 1,
+            pages=sheet_count,
             warnings=warnings,
         )
 

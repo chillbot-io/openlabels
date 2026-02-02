@@ -153,7 +153,7 @@ async def cancel_scan(
 
     job.status = "cancelled"
     job.completed_at = datetime.utcnow()
+    await session.flush()
 
-    # Cancel any pending queue jobs for this scan
-    queue = JobQueue(session, user.tenant_id)
-    # Note: The worker will check job status before processing
+    # Note: The queue job will still execute, but the scan task checks
+    # job.status before processing and will exit early if cancelled.

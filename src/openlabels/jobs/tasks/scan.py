@@ -82,6 +82,11 @@ async def execute_scan_task(
     if not job:
         raise ValueError(f"Job not found: {job_id}")
 
+    # Check if job was cancelled before we start
+    if job.status == "cancelled":
+        logger.info(f"Scan job {job_id} was cancelled before processing")
+        return {"status": "cancelled", "files_scanned": 0}
+
     target = await session.get(ScanTarget, job.target_id)
     if not target:
         raise ValueError(f"Target not found: {job.target_id}")
@@ -601,6 +606,11 @@ async def execute_parallel_scan_task(
     job = await session.get(ScanJob, job_id)
     if not job:
         raise ValueError(f"Job not found: {job_id}")
+
+    # Check if job was cancelled before we start
+    if job.status == "cancelled":
+        logger.info(f"Parallel scan job {job_id} was cancelled before processing")
+        return {"status": "cancelled", "files_scanned": 0}
 
     target = await session.get(ScanTarget, job.target_id)
     if not target:
