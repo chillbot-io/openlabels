@@ -161,7 +161,8 @@ class Scheduler:
         try:
             self._scheduler.pause_job(schedule_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to pause schedule {schedule_id}: {e}")
             return False
 
     def resume_schedule(self, schedule_id: str) -> bool:
@@ -171,7 +172,8 @@ class Scheduler:
         try:
             self._scheduler.resume_job(schedule_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to resume schedule {schedule_id}: {e}")
             return False
 
     def get_next_run(self, schedule_id: str) -> Optional[datetime]:
@@ -190,8 +192,8 @@ class Scheduler:
             job = self._scheduler.get_job(schedule_id)
             if job:
                 return job.next_run_time
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to get next run for {schedule_id}: {e}")
         return None
 
     def list_schedules(self) -> List[dict]:
@@ -230,7 +232,8 @@ def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
     try:
         trigger = CronTrigger.from_crontab(cron_expr)
         return trigger.get_next_fire_time(None, datetime.now(timezone.utc))
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to parse cron expression '{cron_expr}': {e}")
         return None
 
 

@@ -38,8 +38,8 @@ def get_worker_state() -> dict:
         try:
             with open(WORKER_STATE_FILE) as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to read worker state: {e}")
     return {}
 
 
