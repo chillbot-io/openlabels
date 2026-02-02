@@ -189,7 +189,7 @@ class OCREngine:
 
         Args:
             models_dir: Path to models directory containing rapidocr/ subfolder.
-                       Defaults to ~/.openlabels/models/
+                       Defaults to <project_root>/.openlabels/models/
         """
         self.models_dir = Path(models_dir) if models_dir else DEFAULT_MODELS_DIR
         self.rapidocr_dir = self.models_dir / "rapidocr"

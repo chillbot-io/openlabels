@@ -123,12 +123,13 @@ def config_set(key: str, value: str):
     """
     import yaml
     from pathlib import Path
+    from openlabels.core.constants import DATA_DIR
 
     # Determine config file location
     config_paths = [
         Path("config.yaml"),
         Path("config/config.yaml"),
-        Path.home() / ".openlabels" / "config.yaml",
+        DATA_DIR / "config.yaml",
     ]
 
     config_path = None
@@ -747,10 +748,10 @@ def status():
         logger.debug(f"Failed to check MIP availability: {e}")
 
     # Check ML models
-    models_dir = Path.home() / ".openlabels" / "models"
-    phi_bert = models_dir / "phi-bert" / "model.onnx"
-    pii_bert = models_dir / "pii-bert" / "model.onnx"
-    rapidocr = models_dir / "rapidocr" / "det.onnx"
+    from openlabels.core.constants import DEFAULT_MODELS_DIR
+    phi_bert = DEFAULT_MODELS_DIR / "phi-bert" / "model.onnx"
+    pii_bert = DEFAULT_MODELS_DIR / "pii-bert" / "model.onnx"
+    rapidocr = DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx"
 
     click.echo(f"\nML Models:")
     click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")

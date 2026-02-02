@@ -26,7 +26,11 @@ __all__ = [
     # OCR / Models
     "MODEL_LOAD_TIMEOUT",
     "OCR_READY_TIMEOUT",
+    # Data directories
+    "PROJECT_ROOT",
+    "DATA_DIR",
     "DEFAULT_MODELS_DIR",
+    "DEFAULT_DICTIONARIES_DIR",
 ]
 
 # --- DETECTION ---
@@ -105,11 +109,36 @@ MAX_EXTRACTION_RATIO = 100  # Max ratio of decompressed:compressed size
 MODEL_LOAD_TIMEOUT = 60.0  # seconds - timeout for loading ML models
 OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
 
-# Default directory for ML models (~/.openlabels/models/)
-# Models expected:
-#   - fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/, fastcoref.config.json
-#   - phi-bert/ (PHI-BERT int8 quantized)
-#   - pii-bert/ (PII-BERT int8 quantized)
-#   - rapidocr/ (det.onnx, rec.onnx, cls.onnx)
+# --- DATA DIRECTORIES ---
+# Project-relative paths under .openlabels/
+# Structure:
+#   <project_root>/.openlabels/
+#     models/
+#       fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/, fastcoref.config.json
+#       phi-bert/ (PHI-BERT int8 quantized)
+#       pii-bert/ (PII-BERT int8 quantized)
+#       rapidocr/ (det.onnx, rec.onnx, cls.onnx)
+#     dictionaries/
+#       diagnoses.txt, drugs.txt, facilities.txt, etc.
+
 from pathlib import Path
-DEFAULT_MODELS_DIR = Path.home() / ".openlabels" / "models"
+
+
+def _find_project_root() -> Path:
+    """Find the project root by looking for pyproject.toml."""
+    # Start from this file's location and walk up
+    current = Path(__file__).resolve().parent
+    for _ in range(10):  # Max 10 levels up
+        if (current / "pyproject.toml").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    # Fallback to home directory if not found
+    return Path.home() / "openlabels"
+
+
+PROJECT_ROOT = _find_project_root()
+DATA_DIR = PROJECT_ROOT / ".openlabels"
+DEFAULT_MODELS_DIR = DATA_DIR / "models"
+DEFAULT_DICTIONARIES_DIR = DATA_DIR / "dictionaries"
