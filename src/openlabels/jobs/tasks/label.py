@@ -171,7 +171,8 @@ async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
             from openlabels.server.config import get_settings
             settings = get_settings()
             mip_config = getattr(settings, "mip", None)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get MIP config: {e}")
             mip_config = None
 
         if not mip_config:
@@ -297,8 +298,8 @@ async def _apply_label_office_metadata(file_path: str, label: SensitivityLabel) 
         try:
             if temp_path.exists():
                 temp_path.unlink()
-        except Exception:
-            pass
+        except Exception as cleanup_err:
+            logger.debug(f"Failed to clean up temp file: {cleanup_err}")
         return {
             "success": False,
             "method": "office_metadata",
@@ -372,7 +373,8 @@ def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
 
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to update custom props XML, creating new: {e}")
         return _create_custom_props_xml(label)
 
 
@@ -396,7 +398,8 @@ def _update_content_types(content: bytes) -> bytes:
 
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to update content types: {e}")
         return content
 
 
