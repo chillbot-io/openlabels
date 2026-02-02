@@ -233,7 +233,7 @@ def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
         trigger = CronTrigger.from_crontab(cron_expr)
         return trigger.get_next_fire_time(None, datetime.now(timezone.utc))
     except Exception as e:
-        logger.debug(f"Failed to parse cron expression '{cron_expr}': {e}")
+        logger.debug(f"Invalid cron expression '{cron_expr}': {e}")
         return None
 
 

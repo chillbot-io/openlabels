@@ -260,7 +260,6 @@ class LabelingEngine:
                         # Rate limited - use Retry-After header if present
                         retry_after = int(response.headers.get("Retry-After", self._base_delay * (2 ** attempt)))
                         logger.warning(f"Rate limited, retrying after {retry_after}s")
-                        import asyncio
                         await asyncio.sleep(retry_after)
                         continue
 
@@ -277,13 +276,11 @@ class LabelingEngine:
                 last_error = e
                 if e.response.status_code >= 500:
                     # Server error - retry with backoff
-                    import asyncio
                     await asyncio.sleep(self._base_delay * (2 ** attempt))
                 else:
                     raise
             except httpx.RequestError as e:
                 last_error = e
-                import asyncio
                 await asyncio.sleep(self._base_delay * (2 ** attempt))
 
         raise Exception(f"Failed to get access token after {self._max_retries} retries: {last_error}")
@@ -320,7 +317,6 @@ class LabelingEngine:
                         # Rate limited
                         retry_after = int(response.headers.get("Retry-After", self._base_delay * (2 ** attempt)))
                         logger.warning(f"Graph API rate limited, retrying after {retry_after}s")
-                        import asyncio
                         await asyncio.sleep(retry_after)
                         continue
 
@@ -329,7 +325,6 @@ class LabelingEngine:
             except httpx.RequestError as e:
                 last_error = e
                 logger.warning(f"Graph API request failed (attempt {attempt + 1}): {e}")
-                import asyncio
                 await asyncio.sleep(self._base_delay * (2 ** attempt))
 
         raise Exception(f"Graph API request failed after {self._max_retries} retries: {last_error}")
@@ -941,7 +936,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     "name": data.get("label_name"),
                 }
             except Exception as e:
-                logger.debug(f"Failed to read sidecar file: {e}")
+                logger.debug(f"Failed to read sidecar label for {file_path}: {e}")
 
         # Check Office document metadata
         if ext in (".docx", ".xlsx", ".pptx"):
@@ -958,7 +953,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                                 "name": name_match.group(1) if name_match else None,
                             }
             except Exception as e:
-                logger.debug(f"Failed to read Office document metadata: {e}")
+                logger.debug(f"Failed to read Office metadata label for {file_path}: {e}")
 
         # Check PDF metadata
         if ext == ".pdf":
@@ -975,7 +970,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     if label_id:
                         return {"id": label_id, "name": label_name}
             except Exception as e:
-                logger.debug(f"Failed to read PDF metadata: {e}")
+                logger.debug(f"Failed to read PDF metadata label for {file_path}: {e}")
 
         return None
 

@@ -10,6 +10,7 @@ Security features:
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +53,7 @@ def get_client_ip(request: Request) -> str:
     return "127.0.0.1"
 from openlabels.server.db import init_db, close_db
 from openlabels.server.middleware.csrf import CSRFMiddleware
+from openlabels.server.logging import setup_logging, set_request_id, get_request_id
 from openlabels.server.routes import (
     auth,
     audit,
@@ -80,6 +82,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan - startup and shutdown handlers."""
     # Startup
     settings = get_settings()
+
+    # Configure structured logging
+    setup_logging(
+        level=settings.logging.level,
+        json_format=not settings.server.debug,  # JSON in production, readable in debug
+        log_file=settings.logging.file,
+    )
+
     await init_db(settings.database.url)
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
@@ -128,6 +138,21 @@ def configure_middleware():
 configure_middleware()
 
 
+# Request correlation ID middleware
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Add request correlation ID for tracing."""
+    # Use provided X-Request-ID or generate new one
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    set_request_id(request_id)
+
+    response = await call_next(request)
+
+    # Include request ID in response headers
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 # Request size limit middleware
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
@@ -153,14 +178,21 @@ async def limit_request_size(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions."""
-    logger.exception(f"Unhandled exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "internal_server_error",
-            "message": str(exc) if get_settings().server.debug else "An unexpected error occurred",
-        },
+    request_id = get_request_id()
+    logger.exception(
+        f"Unhandled exception: {exc}",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+        }
     )
+    error_response = {
+        "error": "internal_server_error",
+        "message": str(exc) if get_settings().server.debug else "An unexpected error occurred",
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+    return JSONResponse(status_code=500, content=error_response)
 
 
 # Health check

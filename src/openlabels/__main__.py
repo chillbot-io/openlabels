@@ -29,7 +29,7 @@ def cli():
 
 
 @cli.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to (use 0.0.0.0 for network access)")
+@click.option("--host", default="127.0.0.1", help="Host to bind to (use 0.0.0.0 for all interfaces)")
 @click.option("--port", default=8000, type=int, help="Port to bind to")
 @click.option("--workers", default=4, type=int, help="Number of worker processes")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")

@@ -5,8 +5,7 @@ All dashboard queries use SQL aggregation for performance at scale.
 Statistics are computed in PostgreSQL, not Python.
 """
 
-import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 

@@ -618,7 +618,7 @@ class MIPClient:
                 try:
                     handler.Dispose()
                 except Exception as e:
-                    logger.debug(f"Failed to dispose handler: {e}")
+                    logger.debug(f"Error disposing file handler: {e}")
 
     def _create_file_observer(self):
         """Create a file handler observer."""
@@ -728,7 +728,7 @@ class MIPClient:
                 try:
                     handler.Dispose()
                 except Exception as e:
-                    logger.debug(f"Failed to dispose handler: {e}")
+                    logger.debug(f"Error disposing file handler: {e}")
 
     async def get_file_label(self, file_path: str) -> Optional[SensitivityLabel]:
         """
@@ -791,7 +791,7 @@ class MIPClient:
                 try:
                     handler.Dispose()
                 except Exception as e:
-                    logger.debug(f"Failed to dispose handler: {e}")
+                    logger.debug(f"Error disposing file handler: {e}")
 
     async def is_file_protected(self, file_path: str) -> bool:
         """
@@ -815,7 +815,7 @@ class MIPClient:
             return result
 
         except Exception as e:
-            logger.debug(f"Failed to check file protection: {e}")
+            logger.debug(f"Error checking file protection for {file_path}: {e}")
             return False
 
     def _is_file_protected_sync(self, file_path: str) -> bool:
@@ -829,14 +829,14 @@ class MIPClient:
             return handler.Protection is not None if hasattr(handler, 'Protection') else False
 
         except Exception as e:
-            logger.debug(f"File protection check failed: {e}")
+            logger.debug(f"Error in sync protection check for {file_path}: {e}")
             return False
         finally:
             if handler:
                 try:
                     handler.Dispose()
                 except Exception as e:
-                    logger.debug(f"Failed to dispose handler: {e}")
+                    logger.debug(f"Error disposing file handler: {e}")
 
 
 def is_mip_available() -> bool:

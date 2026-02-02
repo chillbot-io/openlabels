@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.jobs.queue import JobQueue
-from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 router = APIRouter()
 
@@ -84,8 +84,8 @@ class PurgeRequest(BaseModel):
 @router.get("/stats", response_model=QueueStatsResponse)
 async def get_queue_stats(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> QueueStatsResponse:
     """
     Get job queue statistics.
 
@@ -102,8 +102,8 @@ async def list_failed_jobs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> PaginatedJobsResponse:
     """
     List failed jobs (dead letter queue).
 
@@ -130,8 +130,8 @@ async def list_failed_jobs(
 async def get_job(
     job_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> JobResponse:
     """Get job details."""
     queue = JobQueue(session, user.tenant_id)
     job = await queue.get_job(job_id)
@@ -147,8 +147,8 @@ async def requeue_job(
     job_id: UUID,
     request: RequeueRequest = RequeueRequest(),
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Requeue a failed job from the dead letter queue.
 
@@ -170,8 +170,8 @@ async def requeue_job(
 async def requeue_all_failed(
     request: RequeueAllRequest = RequeueAllRequest(),
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Requeue all failed jobs.
 
@@ -190,8 +190,8 @@ async def requeue_all_failed(
 async def purge_failed_jobs(
     request: PurgeRequest = PurgeRequest(),
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Delete failed jobs from the dead letter queue.
 
@@ -210,8 +210,8 @@ async def purge_failed_jobs(
 async def cancel_job(
     job_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Cancel a pending or running job.
 
@@ -252,8 +252,8 @@ class WorkerStatusResponse(BaseModel):
 
 @router.get("/workers/status", response_model=WorkerStatusResponse)
 async def get_worker_status(
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> WorkerStatusResponse:
     """
     Get current worker pool status.
 
@@ -276,8 +276,8 @@ async def get_worker_status(
 @router.post("/workers/config")
 async def update_worker_config(
     request: WorkerConfigRequest,
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Update worker pool configuration.
 

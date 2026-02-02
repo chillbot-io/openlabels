@@ -119,7 +119,17 @@ async def login(
             )
 
         # Dev mode - create fake session and redirect
-        logger.warning("Dev mode auth enabled - DO NOT USE IN PRODUCTION")
+        # SECURITY: Only allow in debug mode to prevent accidental production use
+        if not settings.server.debug:
+            logger.error(
+                "SECURITY: AUTH_PROVIDER=none requires DEBUG=true. "
+                "Set AUTH_PROVIDER=azure_ad for production."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication not configured for production. Contact administrator.",
+            )
+        logger.warning("DEV MODE: Creating fake admin session - DO NOT USE IN PRODUCTION")
         session_id = _generate_session_id()
         session_data = {
             "access_token": "dev-token",

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanResult
-from openlabels.auth.dependencies import get_current_user
+from openlabels.auth.dependencies import get_current_user, CurrentUser
 
 router = APIRouter()
 
@@ -85,8 +85,8 @@ async def list_results(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ResultListResponse:
     """List scan results with filtering and pagination."""
     query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
 
@@ -126,8 +126,8 @@ async def list_results(
 async def get_result_stats(
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ResultStats:
     """Get aggregated statistics for scan results."""
     base_query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
     if job_id:
@@ -176,8 +176,8 @@ async def export_results(
     job_id: UUID = Query(..., description="Job ID to export"),
     format: str = Query("csv", description="Export format (csv or json)"),
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
     """Export scan results as CSV or JSON."""
     query = select(ScanResult).where(
         ScanResult.tenant_id == user.tenant_id,
@@ -223,8 +223,8 @@ async def export_results(
 async def get_result(
     result_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ResultDetailResponse:
     """Get detailed scan result."""
     result = await session.get(ScanResult, result_id)
     if not result or result.tenant_id != user.tenant_id:
