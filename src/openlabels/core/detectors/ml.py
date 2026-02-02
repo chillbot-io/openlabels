@@ -94,8 +94,9 @@ def get_device_info() -> Dict[str, Any]:
         if info["cuda_available"]:
             info["device"] = "cuda"
     except ImportError:
-        pass
+        logger.debug("onnxruntime not installed, device info unavailable")
     except Exception as e:
+        logger.debug(f"Failed to get device info: {e}")
         info["error"] = str(e)
 
     return info

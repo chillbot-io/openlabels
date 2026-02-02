@@ -940,8 +940,8 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     "id": data.get("label_id"),
                     "name": data.get("label_name"),
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to read sidecar file: {e}")
 
         # Check Office document metadata
         if ext in (".docx", ".xlsx", ".pptx"):
@@ -957,8 +957,8 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                                 "id": label_match.group(1),
                                 "name": name_match.group(1) if name_match else None,
                             }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to read Office document metadata: {e}")
 
         # Check PDF metadata
         if ext == ".pdf":
@@ -974,8 +974,8 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     label_name = reader.metadata.get("/OpenLabels_LabelName")
                     if label_id:
                         return {"id": label_id, "name": label_name}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to read PDF metadata: {e}")
 
         return None
 

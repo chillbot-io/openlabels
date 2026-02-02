@@ -617,8 +617,8 @@ class MIPClient:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to dispose handler: {e}")
 
     def _create_file_observer(self):
         """Create a file handler observer."""
@@ -727,8 +727,8 @@ class MIPClient:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to dispose handler: {e}")
 
     async def get_file_label(self, file_path: str) -> Optional[SensitivityLabel]:
         """
@@ -790,8 +790,8 @@ class MIPClient:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to dispose handler: {e}")
 
     async def is_file_protected(self, file_path: str) -> bool:
         """
@@ -814,7 +814,8 @@ class MIPClient:
             )
             return result
 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to check file protection: {e}")
             return False
 
     def _is_file_protected_sync(self, file_path: str) -> bool:
@@ -827,14 +828,15 @@ class MIPClient:
             )
             return handler.Protection is not None if hasattr(handler, 'Protection') else False
 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"File protection check failed: {e}")
             return False
         finally:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to dispose handler: {e}")
 
 
 def is_mip_available() -> bool:

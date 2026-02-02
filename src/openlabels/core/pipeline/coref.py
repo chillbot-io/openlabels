@@ -142,8 +142,8 @@ def _get_onnx_session():
         try:
             if ort.get_device() == 'GPU':
                 providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        except (RuntimeError, AttributeError):
-            pass
+        except (RuntimeError, AttributeError) as e:
+            logger.debug(f"Could not detect GPU, using CPU: {e}")
 
         _ONNX_SESSION = ort.InferenceSession(str(onnx_path), providers=providers)
         logger.info(f"FastCoref ONNX loaded with providers: {_ONNX_SESSION.get_providers()}")
