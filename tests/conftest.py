@@ -39,14 +39,26 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip GUI tests if Qt is not available."""
-    if _qt_available:
-        return
+    """Skip tests based on available dependencies."""
+    import os
 
-    skip_qt = pytest.mark.skip(reason=_qt_skip_reason)
+    # Check for PostgreSQL availability
+    postgres_available = bool(os.getenv("TEST_DATABASE_URL"))
+
     for item in items:
-        if "test_gui" in item.nodeid or "gui" in item.keywords:
-            item.add_marker(skip_qt)
+        # Skip GUI tests if Qt is not available
+        if not _qt_available:
+            if "test_gui" in item.nodeid or "gui" in item.keywords:
+                item.add_marker(pytest.mark.skip(reason=_qt_skip_reason))
+
+        # Skip database integration tests if PostgreSQL is not available
+        if not postgres_available:
+            if "test_routes" in item.nodeid or "integration" in item.keywords:
+                item.add_marker(pytest.mark.skip(
+                    reason="PostgreSQL not available. Set TEST_DATABASE_URL or run: "
+                           "docker run -d --name test-postgres -e POSTGRES_PASSWORD=test "
+                           "-e POSTGRES_DB=openlabels_test -p 5432:5432 postgres:15"
+                ))
 
 
 if not _qt_available:
@@ -336,21 +348,44 @@ def event_loop():
 # DATABASE FIXTURES (for API tests)
 # =============================================================================
 
-@pytest.fixture
-async def test_db():
-    """
-    Create an in-memory SQLite database for testing.
+import os
 
+@pytest.fixture(scope="session")
+def database_url():
+    """
+    Get database URL for testing.
+
+    Uses TEST_DATABASE_URL env var if set (PostgreSQL),
+    otherwise returns None (tests requiring DB will be skipped).
+
+    To run with PostgreSQL locally:
+        docker run -d --name test-postgres \\
+            -e POSTGRES_PASSWORD=test \\
+            -e POSTGRES_DB=openlabels_test \\
+            -p 5432:5432 postgres:15
+
+        export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
+        pytest
+    """
+    return _postgres_url
+
+
+@pytest.fixture
+async def test_db(database_url):
+    """
+    Create a test database session.
+
+    Requires PostgreSQL (models use JSONB which SQLite doesn't support).
     Yields a session that rolls back after each test.
     """
+    if not database_url:
+        pytest.skip("PostgreSQL not available - set TEST_DATABASE_URL")
+
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker
     from openlabels.server.models import Base
 
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        echo=False,
-    )
+    engine = create_async_engine(database_url, echo=False)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -363,6 +398,10 @@ async def test_db():
         yield session
         await session.rollback()
 
+    # Clean up tables after test
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
     await engine.dispose()
 
 
@@ -372,6 +411,7 @@ async def test_client(test_db):
     Create a test client for API testing.
 
     Overrides the database dependency to use the test database.
+    Requires PostgreSQL.
     """
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
