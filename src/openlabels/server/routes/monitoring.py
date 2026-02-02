@@ -7,7 +7,7 @@ Provides:
 - Access statistics and anomaly detection
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -422,7 +422,7 @@ async def get_access_stats(
 
     Returns summary statistics about file access events.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     last_24h = now - timedelta(hours=24)
     last_7d = now - timedelta(days=7)
 
@@ -505,7 +505,7 @@ async def detect_access_anomalies(
     - Failed access attempts
     - Access to many sensitive files in short time
     """
-    since = datetime.utcnow() - timedelta(hours=hours)
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     anomalies = []
 

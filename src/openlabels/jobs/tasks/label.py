@@ -14,7 +14,7 @@ import logging
 import shutil
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Optional, Dict, Tuple
@@ -69,7 +69,7 @@ async def execute_label_task(
 
         if labeling_result["success"]:
             result.label_applied = True
-            result.label_applied_at = datetime.utcnow()
+            result.label_applied_at = datetime.now(timezone.utc)
             result.current_label_id = label_id
             result.current_label_name = label.name
             result.label_error = None
@@ -457,7 +457,7 @@ async def _apply_label_sidecar(file_path: str, label: SensitivityLabel) -> dict:
             "file": str(file_path),
             "label_id": label.id,
             "label_name": label.name,
-            "applied_at": datetime.utcnow().isoformat(),
+            "applied_at": datetime.now(timezone.utc).isoformat(),
             "applied_by": "OpenLabels",
         }
 

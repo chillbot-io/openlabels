@@ -19,10 +19,11 @@ import yaml
 class ServerSettings(BaseSettings):
     """Server configuration."""
 
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"  # Default to localhost for security; use 0.0.0.0 explicitly for network access
     port: int = 8000
     workers: int = 4
     debug: bool = False
+    environment: Literal["development", "staging", "production"] = "development"
 
 
 class DatabaseSettings(BaseSettings):

@@ -169,8 +169,8 @@ async def execute_scan_task(
                                         "reason": "User cancelled",
                                     },
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"Failed to send cancel notification: {e}")
 
                         return stats
 
@@ -379,8 +379,8 @@ async def execute_scan_task(
                         "files_scanned": stats.get("files_scanned", 0),
                     },
                 )
-            except Exception:
-                pass
+            except Exception as ws_err:
+                logger.debug(f"Failed to send failure notification: {ws_err}")
 
         raise
 

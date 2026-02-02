@@ -11,7 +11,7 @@ Security features:
 import base64
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -207,7 +207,7 @@ async def quarantine_file(
     # Build destination path
     import os
     file_name = os.path.basename(request.file_path)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     dest_path = f"{quarantine_dir}/{timestamp}_{file_name}"
 
     # Create remediation action record
@@ -236,7 +236,7 @@ async def quarantine_file(
                 path=request.file_path,
                 name=file_name,
                 size=0,
-                modified=datetime.utcnow(),
+                modified=datetime.now(timezone.utc),
                 adapter=adapter.adapter_type,
             )
 
@@ -318,7 +318,7 @@ async def lockdown_file(
                 path=request.file_path,
                 name=file_name,
                 size=0,
-                modified=datetime.utcnow(),
+                modified=datetime.now(timezone.utc),
                 adapter=adapter.adapter_type,
             )
 
@@ -428,7 +428,7 @@ async def rollback_action(
                     path=original.dest_path,
                     name=file_name,
                     size=0,
-                    modified=datetime.utcnow(),
+                    modified=datetime.now(timezone.utc),
                     adapter=adapter.adapter_type,
                 )
 
@@ -454,7 +454,7 @@ async def rollback_action(
                     path=original.source_path,
                     name=file_name,
                     size=0,
-                    modified=datetime.utcnow(),
+                    modified=datetime.now(timezone.utc),
                     adapter=adapter.adapter_type,
                 )
 

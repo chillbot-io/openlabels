@@ -5,7 +5,7 @@ All dashboard queries use SQL aggregation for performance at scale.
 Statistics are computed in PostgreSQL, not Python.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -124,7 +124,7 @@ async def get_trends(
     Uses SQL GROUP BY for efficient aggregation at scale.
     Results are grouped by date in PostgreSQL.
     """
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     # Use SQL aggregation with GROUP BY date
@@ -194,7 +194,7 @@ async def get_entity_trends(
 
     Returns counts by entity type per day, suitable for time series charts.
     """
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     # Get results with entity counts
@@ -286,7 +286,7 @@ async def get_access_heatmap(
     from openlabels.server.models import FileAccessEvent
 
     # Get access events from last 4 weeks
-    cutoff = datetime.utcnow() - timedelta(days=28)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=28)
 
     try:
         events_query = select(

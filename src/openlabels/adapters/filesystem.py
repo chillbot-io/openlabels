@@ -178,7 +178,8 @@ class FilesystemAdapter:
             owner_sid = sd.GetSecurityDescriptorOwner()
             name, domain, _ = win32security.LookupAccountSid(None, owner_sid)
             return f"{domain}\\{name}"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get Windows owner for {path}: {e}")
             return None
 
     def _get_posix_owner(self, path: Path) -> Optional[str]:
@@ -188,7 +189,8 @@ class FilesystemAdapter:
 
             stat_info = path.stat()
             return pwd.getpwuid(stat_info.st_uid).pw_name
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get POSIX owner for {path}: {e}")
             return None
 
     def _get_permissions(self, path: Path) -> dict:
@@ -219,7 +221,7 @@ class FilesystemAdapter:
                         name, domain, _ = win32security.LookupAccountSid(None, sid)
                         trustee = f"{domain}\\{name}"
                     except Exception:
-                        trustee = str(sid)
+                        trustee = str(sid)  # Fallback to SID string is acceptable
 
                     permissions["aces"].append({
                         "trustee": trustee,
@@ -227,7 +229,8 @@ class FilesystemAdapter:
                     })
 
             return permissions
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get Windows permissions for {path}: {e}")
             return {}
 
     def _get_posix_permissions(self, path: Path) -> dict:
@@ -248,7 +251,8 @@ class FilesystemAdapter:
                 "other_write": bool(mode & stat.S_IWOTH),
                 "other_exec": bool(mode & stat.S_IXOTH),
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get POSIX permissions for {path}: {e}")
             return {}
 
     def _calculate_exposure(self, path: Path) -> ExposureLevel:
@@ -293,7 +297,8 @@ class FilesystemAdapter:
             else:
                 return ExposureLevel.INTERNAL
 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to determine NTFS exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     def _get_posix_exposure(self, path: Path) -> ExposureLevel:
@@ -312,7 +317,8 @@ class FilesystemAdapter:
 
             return ExposureLevel.PRIVATE
 
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to determine POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     # Remediation methods
