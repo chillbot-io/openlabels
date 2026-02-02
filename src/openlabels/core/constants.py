@@ -114,9 +114,9 @@ OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
 # Structure:
 #   <project_root>/.openlabels/
 #     models/
-#       fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/, fastcoref.config.json
-#       phi-bert/ (PHI-BERT int8 quantized)
-#       pii-bert/ (PII-BERT int8 quantized)
+#       phi_bert_int8.onnx, phi_bert.tokenizer.json, phi_bert_tokenizer/
+#       pii_bert_int8.onnx, pii_bert.tokenizer.json, pii_bert_tokenizer/
+#       fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/
 #       rapidocr/ (det.onnx, rec.onnx, cls.onnx)
 #     dictionaries/
 #       diagnoses.txt, drugs.txt, facilities.txt, etc.

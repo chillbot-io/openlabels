@@ -749,14 +749,17 @@ def status():
 
     # Check ML models
     from openlabels.core.constants import DEFAULT_MODELS_DIR
-    phi_bert = DEFAULT_MODELS_DIR / "phi-bert" / "model.onnx"
-    pii_bert = DEFAULT_MODELS_DIR / "pii-bert" / "model.onnx"
-    rapidocr = DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx"
+    # PHI/PII-BERT: prefer INT8 quantized, fall back to original
+    phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
+               (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
+    pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
+               (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
+    rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
 
     click.echo(f"\nML Models:")
-    click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
-    click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
-    click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
+    click.echo(f"  PHI-BERT:  {'✓' if phi_bert else '✗'}")
+    click.echo(f"  PII-BERT:  {'✓' if pii_bert else '✗'}")
+    click.echo(f"  RapidOCR:  {'✓' if rapidocr else '✗'}")
 
     client.close()
 
