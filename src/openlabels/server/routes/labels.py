@@ -177,8 +177,8 @@ async def sync_labels(
         try:
             from openlabels.labeling.engine import get_label_cache
             get_label_cache().invalidate()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to invalidate label cache: {e}")
 
         return {
             "message": "Label sync completed",
@@ -215,7 +215,8 @@ async def get_sync_status(
     try:
         from openlabels.labeling.engine import get_label_cache
         cache_stats = get_label_cache().stats
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to get cache stats: {e}")
         cache_stats = None
 
     return {

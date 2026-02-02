@@ -11,11 +11,14 @@ Usage:
 
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
 
 import click
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -652,8 +655,8 @@ def status():
             click.echo(f"  Running:   {stats.get('running', 0)}")
             click.echo(f"  Completed: {stats.get('completed', 0)}")
             click.echo(f"  Failed:    {stats.get('failed', 0)}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to get job queue stats: {e}")
 
     # Get scan statistics
     try:
@@ -665,8 +668,8 @@ def status():
             click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
             click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
             click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to get dashboard summary: {e}")
 
     # Get monitored files count
     try:
@@ -675,9 +678,9 @@ def status():
         click.echo(f"\nMonitoring:")
         click.echo(f"  Files monitored:      {len(watched)}")
     except ImportError:
-        pass
-    except Exception:
-        pass
+        logger.debug("Monitoring module not installed")
+    except Exception as e:
+        logger.debug(f"Failed to get watched files: {e}")
 
     # Check MIP availability
     try:
@@ -689,8 +692,8 @@ def status():
             click.echo(f"\nMIP SDK:     ✗ Not available (Windows only)")
     except ImportError:
         click.echo(f"\nMIP SDK:     ✗ Not installed")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to check MIP availability: {e}")
 
     # Check ML models
     try:
@@ -703,8 +706,8 @@ def status():
         click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
         click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
         click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to check ML models: {e}")
 
     client.close()
 
@@ -1034,8 +1037,12 @@ def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
                         "exposure_level": "PRIVATE",
                         "owner": None,
                     })
-                except Exception:
-                    pass  # Skip files that can't be processed
+                except PermissionError:
+                    logger.debug(f"Permission denied: {file_path}")
+                except OSError as e:
+                    logger.debug(f"OS error processing {file_path}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to process {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1163,8 +1170,12 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
-                except Exception:
-                    pass
+                except PermissionError:
+                    logger.debug(f"Permission denied: {file_path}")
+                except OSError as e:
+                    logger.debug(f"OS error processing {file_path}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to process {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1391,8 +1402,12 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
                         "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
                         "total_entities": sum(result.entity_counts.values()),
                     })
-                except Exception:
-                    pass
+                except PermissionError:
+                    logger.debug(f"Permission denied: {file_path}")
+                except OSError as e:
+                    logger.debug(f"OS error processing {file_path}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to process {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1566,8 +1581,12 @@ def quarantine(source: Optional[str], destination: Optional[str], where_filter: 
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
-                except Exception:
-                    pass
+                except PermissionError:
+                    logger.debug(f"Permission denied: {file_path}")
+                except OSError as e:
+                    logger.debug(f"OS error processing {file_path}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to process {file_path}: {e}")
             return all_results
 
         results = asyncio.run(find_matches())
@@ -1698,8 +1717,12 @@ def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_pa
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
-                except Exception:
-                    pass
+                except PermissionError:
+                    logger.debug(f"Permission denied: {fp}")
+                except OSError as e:
+                    logger.debug(f"OS error processing {fp}: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to process {fp}: {e}")
             return all_results
 
         results = asyncio.run(find_matches())

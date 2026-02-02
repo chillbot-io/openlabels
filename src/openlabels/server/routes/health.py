@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -139,22 +139,22 @@ async def get_health_status(
 
     # Check ML models
     try:
-        from openlabels.core.detectors.ml import ONNXDetector
+        from openlabels.core.detectors.ml_onnx import PIIBertONNXDetector, PHIBertONNXDetector
         # Check if models are loadable
         models_available = []
         try:
-            detector = ONNXDetector(model_name="pii-bert")
-            if detector._model is not None:
+            detector = PIIBertONNXDetector()
+            if detector._session is not None:
                 models_available.append("PII-BERT")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"PII-BERT model not available: {e}")
 
         try:
-            detector = ONNXDetector(model_name="phi-bert")
-            if detector._model is not None:
+            detector = PHIBertONNXDetector()
+            if detector._session is not None:
                 models_available.append("PHI-BERT")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"PHI-BERT model not available: {e}")
 
         if models_available:
             status["ml"] = "healthy"
@@ -166,7 +166,7 @@ async def get_health_status(
         status["ml"] = "warning"
         status["ml_text"] = "Not installed"
     except Exception as e:
-        logger.debug(f"ML check: {e}")
+        logger.debug(f"ML check failed: {e}")
         status["ml"] = "warning"
         status["ml_text"] = "Not loaded"
 
@@ -182,7 +182,8 @@ async def get_health_status(
     except ImportError:
         status["mip"] = "warning"
         status["mip_text"] = "Not installed"
-    except Exception:
+    except Exception as e:
+        logger.debug(f"MIP SDK check failed: {e}")
         status["mip"] = "warning"
         status["mip_text"] = "Not available"
 
@@ -195,7 +196,8 @@ async def get_health_status(
     except ImportError:
         status["ocr"] = "warning"
         status["ocr_text"] = "Not installed"
-    except Exception:
+    except Exception as e:
+        logger.debug(f"OCR check failed: {e}")
         status["ocr"] = "warning"
         status["ocr_text"] = "Not available"
 
@@ -243,7 +245,3 @@ async def get_health_status(
     status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
-
-
-# Need Integer for cast
-from sqlalchemy import Integer

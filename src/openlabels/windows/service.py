@@ -126,7 +126,8 @@ class DockerManager:
                 timeout=10
             )
             return result.returncode == 0
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Docker availability check failed: {e}")
             return False
 
 

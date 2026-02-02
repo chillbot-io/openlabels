@@ -458,7 +458,8 @@ class APIWorker(QThread if PYSIDE_AVAILABLE else object):
                 # Try to parse JSON, fall back to text
                 try:
                     result = response.json()
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Response not JSON, using text: {e}")
                     result = response.text
 
                 self.completed.emit(result)

@@ -110,6 +110,14 @@ async def login(
     await pending_store.cleanup_expired()
 
     if settings.auth.provider == "none":
+        # SECURITY: Block dev mode auth in production environment
+        if settings.server.environment == "production":
+            logger.error("SECURITY: Dev mode auth (AUTH_PROVIDER=none) is disabled in production!")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication not configured. Set AUTH_PROVIDER=azure_ad for production.",
+            )
+
         # Dev mode - create fake session and redirect
         # SECURITY: Only allow in debug mode to prevent accidental production use
         if not settings.server.debug:
@@ -427,7 +435,8 @@ async def get_token(
                     )
             except HTTPException:
                 raise
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Session validation error: {e}")
                 await session_store.delete(session_id)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

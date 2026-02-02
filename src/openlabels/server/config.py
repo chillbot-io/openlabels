@@ -25,6 +25,7 @@ class ServerSettings(BaseSettings):
     port: int = 8000
     workers: int = 4
     debug: bool = False
+    environment: Literal["development", "staging", "production"] = "development"
 
 
 class DatabaseSettings(BaseSettings):
