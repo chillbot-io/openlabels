@@ -177,6 +177,145 @@ async def get_trends(
     return TrendResponse(points=points)
 
 
+class EntityTrendsResponse(BaseModel):
+    """Entity type trends over time for charts."""
+
+    series: dict[str, list[tuple[str, int]]]  # entity_type -> [(date, count), ...]
+
+
+@router.get("/entity-trends", response_model=EntityTrendsResponse)
+async def get_entity_trends(
+    days: int = Query(14, ge=1, le=90, description="Number of days to include"),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get entity type detection trends over time.
+
+    Returns counts by entity type per day, suitable for time series charts.
+    """
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    # Get results with entity counts
+    results_query = select(
+        ScanResult.scanned_at,
+        ScanResult.entity_counts,
+    ).where(
+        and_(
+            ScanResult.tenant_id == user.tenant_id,
+            ScanResult.scanned_at >= start_date,
+            ScanResult.entity_counts.isnot(None),
+        )
+    )
+
+    result = await session.execute(results_query)
+    rows = result.all()
+
+    # Aggregate by date and entity type
+    daily_counts: dict[str, dict[str, int]] = {}  # date -> {entity_type -> count}
+
+    for row in rows:
+        date_str = row.scanned_at.strftime("%Y-%m-%d")
+        if date_str not in daily_counts:
+            daily_counts[date_str] = {}
+
+        entity_counts = row.entity_counts or {}
+        for entity_type, count in entity_counts.items():
+            if entity_type not in daily_counts[date_str]:
+                daily_counts[date_str][entity_type] = 0
+            daily_counts[date_str][entity_type] += count
+
+    # Collect all entity types
+    all_entity_types = set()
+    for counts in daily_counts.values():
+        all_entity_types.update(counts.keys())
+
+    # Build series data - always include Total
+    series: dict[str, list[tuple[str, int]]] = {"Total": []}
+
+    # Add top entity types (by total count)
+    type_totals = {}
+    for entity_type in all_entity_types:
+        type_totals[entity_type] = sum(
+            daily_counts[d].get(entity_type, 0) for d in daily_counts
+        )
+
+    top_types = sorted(type_totals.keys(), key=lambda t: type_totals[t], reverse=True)[:6]
+
+    for entity_type in top_types:
+        series[entity_type] = []
+
+    # Fill in data for each date
+    current = start_date
+    while current <= end_date:
+        date_str = current.strftime("%Y-%m-%d")
+        day_counts = daily_counts.get(date_str, {})
+
+        # Total
+        total = sum(day_counts.values())
+        series["Total"].append((date_str, total))
+
+        # By type
+        for entity_type in top_types:
+            count = day_counts.get(entity_type, 0)
+            series[entity_type].append((date_str, count))
+
+        current += timedelta(days=1)
+
+    return EntityTrendsResponse(series=series)
+
+
+class AccessHeatmapResponse(BaseModel):
+    """File access heatmap data (7 days x 24 hours)."""
+
+    data: list[list[int]]  # 7x24 matrix
+
+
+@router.get("/access-heatmap", response_model=AccessHeatmapResponse)
+async def get_access_heatmap(
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get file access activity heatmap by hour and day of week.
+
+    Returns a 7x24 matrix where data[day][hour] = access count.
+    Day 0 = Monday, day 6 = Sunday.
+    """
+    from openlabels.server.models import FileAccessEvent
+
+    # Get access events from last 4 weeks
+    cutoff = datetime.utcnow() - timedelta(days=28)
+
+    try:
+        events_query = select(
+            FileAccessEvent.accessed_at,
+        ).where(
+            and_(
+                FileAccessEvent.tenant_id == user.tenant_id,
+                FileAccessEvent.accessed_at >= cutoff,
+            )
+        )
+
+        result = await session.execute(events_query)
+        rows = result.all()
+
+        # Build 7x24 matrix
+        heatmap = [[0] * 24 for _ in range(7)]
+
+        for row in rows:
+            day = row.accessed_at.weekday()
+            hour = row.accessed_at.hour
+            heatmap[day][hour] += 1
+
+    except Exception:
+        # FileAccessEvent table may not exist, return empty heatmap
+        heatmap = [[0] * 24 for _ in range(7)]
+
+    return AccessHeatmapResponse(data=heatmap)
+
+
 @router.get("/heatmap", response_model=HeatmapResponse)
 async def get_heatmap(
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),

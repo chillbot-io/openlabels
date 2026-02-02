@@ -66,6 +66,7 @@ from openlabels.server.routes import (
     users,
     remediation,
     monitoring,
+    health,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,4 +194,5 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(remediation.router, prefix="/api/remediation", tags=["Remediation"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(ws.router, tags=["WebSocket"])

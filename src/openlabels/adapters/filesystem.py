@@ -314,3 +314,248 @@ class FilesystemAdapter:
 
         except Exception:
             return ExposureLevel.PRIVATE
+
+    # Remediation methods
+
+    def supports_remediation(self) -> bool:
+        """Filesystem adapter supports remediation."""
+        return True
+
+    async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
+        """
+        Move a file to a new location (quarantine).
+
+        Args:
+            file_info: FileInfo of file to move
+            dest_path: Destination path
+
+        Returns:
+            True if successful
+        """
+        import shutil
+
+        source = Path(file_info.path)
+        dest = Path(dest_path)
+
+        try:
+            # Create destination directory if needed
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # Move the file
+            shutil.move(str(source), str(dest))
+            return True
+        except Exception as e:
+            logger.error(f"Failed to move {source} to {dest}: {e}")
+            return False
+
+    async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
+        """
+        Get ACL for a file.
+
+        Returns dict with platform-specific ACL info.
+        """
+        path = Path(file_info.path)
+
+        if sys.platform == "win32":
+            return self._get_windows_acl(path)
+        else:
+            return self._get_posix_acl(path)
+
+    def _get_windows_acl(self, path: Path) -> Optional[dict]:
+        """Get Windows ACL (DACL)."""
+        try:
+            import win32security
+            import ntsecuritycon
+
+            sd = win32security.GetFileSecurity(
+                str(path),
+                win32security.DACL_SECURITY_INFORMATION | win32security.OWNER_SECURITY_INFORMATION
+            )
+            dacl = sd.GetSecurityDescriptorDacl()
+            owner_sid = sd.GetSecurityDescriptorOwner()
+
+            # Convert owner SID to string
+            owner_str = win32security.ConvertSidToStringSid(owner_sid)
+
+            # Get ACEs
+            aces = []
+            if dacl:
+                for i in range(dacl.GetAceCount()):
+                    ace = dacl.GetAce(i)
+                    ace_type, ace_flags = ace[0]
+                    mask = ace[1]
+                    sid = ace[2]
+                    sid_str = win32security.ConvertSidToStringSid(sid)
+                    aces.append({
+                        "type": ace_type,
+                        "flags": ace_flags,
+                        "mask": mask,
+                        "sid": sid_str,
+                    })
+
+            return {
+                "platform": "windows",
+                "owner": owner_str,
+                "aces": aces,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get Windows ACL for {path}: {e}")
+            return None
+
+    def _get_posix_acl(self, path: Path) -> Optional[dict]:
+        """Get POSIX permissions."""
+        try:
+            stat_info = path.stat()
+            return {
+                "platform": "posix",
+                "mode": stat_info.st_mode,
+                "uid": stat_info.st_uid,
+                "gid": stat_info.st_gid,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get POSIX ACL for {path}: {e}")
+            return None
+
+    async def set_acl(self, file_info: FileInfo, acl: dict) -> bool:
+        """
+        Set ACL for a file.
+
+        Args:
+            file_info: FileInfo of file
+            acl: ACL dict from get_acl or custom
+
+        Returns:
+            True if successful
+        """
+        path = Path(file_info.path)
+        platform = acl.get("platform", "")
+
+        if platform == "windows" and sys.platform == "win32":
+            return self._set_windows_acl(path, acl)
+        elif platform == "posix":
+            return self._set_posix_acl(path, acl)
+        else:
+            logger.error(f"ACL platform mismatch: {platform} vs {sys.platform}")
+            return False
+
+    def _set_windows_acl(self, path: Path, acl: dict) -> bool:
+        """Set Windows ACL."""
+        try:
+            import win32security
+            import ntsecuritycon
+
+            # Create new DACL
+            dacl = win32security.ACL()
+
+            for ace_info in acl.get("aces", []):
+                sid = win32security.ConvertStringSidToSid(ace_info["sid"])
+                dacl.AddAccessAllowedAce(
+                    win32security.ACL_REVISION,
+                    ace_info["mask"],
+                    sid
+                )
+
+            # Create security descriptor and set DACL
+            sd = win32security.SECURITY_DESCRIPTOR()
+            sd.SetSecurityDescriptorDacl(True, dacl, False)
+
+            # Apply to file
+            win32security.SetFileSecurity(
+                str(path),
+                win32security.DACL_SECURITY_INFORMATION,
+                sd
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set Windows ACL for {path}: {e}")
+            return False
+
+    def _set_posix_acl(self, path: Path, acl: dict) -> bool:
+        """Set POSIX permissions."""
+        try:
+            import os
+
+            mode = acl.get("mode")
+            if mode is not None:
+                os.chmod(str(path), mode)
+
+            uid = acl.get("uid")
+            gid = acl.get("gid")
+            if uid is not None or gid is not None:
+                os.chown(str(path), uid or -1, gid or -1)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set POSIX ACL for {path}: {e}")
+            return False
+
+    async def lockdown_file(
+        self,
+        file_info: FileInfo,
+        allowed_sids: Optional[list[str]] = None,
+    ) -> tuple[bool, Optional[dict]]:
+        """
+        Lockdown a file by restricting permissions.
+
+        Args:
+            file_info: File to lockdown
+            allowed_sids: List of SIDs (Windows) or UIDs (POSIX) to allow access
+
+        Returns:
+            Tuple of (success, original_acl for rollback)
+        """
+        # Get original ACL first
+        original_acl = await self.get_acl(file_info)
+        if original_acl is None:
+            return False, None
+
+        path = Path(file_info.path)
+
+        if sys.platform == "win32":
+            success = self._lockdown_windows(path, allowed_sids or [])
+        else:
+            success = self._lockdown_posix(path)
+
+        return success, original_acl if success else None
+
+    def _lockdown_windows(self, path: Path, allowed_sids: list[str]) -> bool:
+        """Lockdown on Windows - restrict to specific SIDs."""
+        try:
+            import win32security
+            import ntsecuritycon
+
+            # Create new DACL with only allowed SIDs
+            dacl = win32security.ACL()
+
+            for sid_str in allowed_sids:
+                sid = win32security.ConvertStringSidToSid(sid_str)
+                # Grant full control to allowed principals
+                dacl.AddAccessAllowedAce(
+                    win32security.ACL_REVISION,
+                    ntsecuritycon.FILE_ALL_ACCESS,
+                    sid
+                )
+
+            # Apply
+            sd = win32security.SECURITY_DESCRIPTOR()
+            sd.SetSecurityDescriptorDacl(True, dacl, False)
+
+            win32security.SetFileSecurity(
+                str(path),
+                win32security.DACL_SECURITY_INFORMATION,
+                sd
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to lockdown {path}: {e}")
+            return False
+
+    def _lockdown_posix(self, path: Path) -> bool:
+        """Lockdown on POSIX - restrict to owner only (mode 600)."""
+        try:
+            import os
+            os.chmod(str(path), 0o600)  # Owner read/write only
+            return True
+        except Exception as e:
+            logger.error(f"Failed to lockdown {path}: {e}")
+            return False

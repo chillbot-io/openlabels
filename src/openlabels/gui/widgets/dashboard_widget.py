@@ -124,8 +124,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
         if CHARTS_AVAILABLE:
             self._chart_panel = ChartPanel()
             content_splitter.addWidget(self._chart_panel)
-            # Load sample data for demonstration
-            self._chart_panel.load_sample_data()
+            # Note: Chart data will be loaded by main_window from API
         else:
             # Placeholder if charts not available
             chart_placeholder = QLabel("Install pyqtgraph for charts:\npip install pyqtgraph")

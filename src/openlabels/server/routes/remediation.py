@@ -8,6 +8,9 @@ Security features:
 - Dry-run mode for testing without execution
 """
 
+import base64
+import json
+import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -24,8 +27,32 @@ from openlabels.server.models import (
     AuditLog,
 )
 from openlabels.auth.dependencies import require_admin
+from openlabels.adapters.base import FileInfo
+from openlabels.adapters.filesystem import FilesystemAdapter
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _get_adapter_for_path(file_path: str):
+    """
+    Get the appropriate adapter for a file path.
+
+    Currently only supports filesystem. Future: detect SharePoint/OneDrive URLs.
+    """
+    # For now, use filesystem adapter for all paths
+    # Future: check if path is a SharePoint/OneDrive URL
+    return FilesystemAdapter()
+
+
+def _encode_acl(acl: dict) -> str:
+    """Encode ACL dict to base64 string for storage."""
+    return base64.b64encode(json.dumps(acl).encode()).decode()
+
+
+def _decode_acl(encoded: str) -> dict:
+    """Decode base64 ACL string back to dict."""
+    return json.loads(base64.b64decode(encoded).decode())
 
 
 class QuarantineRequest(BaseModel):
@@ -197,12 +224,32 @@ async def quarantine_file(
     await session.flush()
 
     if not request.dry_run:
-        # TODO: Execute actual quarantine operation via adapter
-        # This would call the appropriate adapter (filesystem, SharePoint, OneDrive)
-        # to perform the actual file move operation
-        #
-        # For now, mark as pending - the job worker will process it
-        pass
+        # Execute actual quarantine operation via adapter
+        adapter = _get_adapter_for_path(request.file_path)
+
+        if not adapter.supports_remediation():
+            action.status = "failed"
+            action.error = "Adapter does not support remediation"
+        else:
+            # Create FileInfo for the source file
+            file_info = FileInfo(
+                path=request.file_path,
+                name=file_name,
+                size=0,
+                modified=datetime.utcnow(),
+                adapter=adapter.adapter_type,
+            )
+
+            # Execute move
+            success = await adapter.move_file(file_info, dest_path)
+
+            if success:
+                action.status = "completed"
+                logger.info(f"Quarantined {request.file_path} to {dest_path}")
+            else:
+                action.status = "failed"
+                action.error = "Failed to move file"
+                logger.error(f"Failed to quarantine {request.file_path}")
 
     # Log audit event
     audit = AuditLog(
@@ -215,6 +262,7 @@ async def quarantine_file(
             "dest_path": dest_path,
             "dry_run": request.dry_run,
             "action_id": str(action.id),
+            "status": action.status,
         },
     )
     session.add(audit)
@@ -256,13 +304,42 @@ async def lockdown_file(
     await session.flush()
 
     if not request.dry_run:
-        # TODO: Execute actual lockdown operation via adapter
-        # This would:
-        # 1. Get current ACL and store in previous_acl (base64 encoded)
-        # 2. Set new ACL with only allowed_principals
-        #
-        # For now, mark as pending - the job worker will process it
-        pass
+        # Execute actual lockdown operation via adapter
+        adapter = _get_adapter_for_path(request.file_path)
+
+        if not adapter.supports_remediation():
+            action.status = "failed"
+            action.error = "Adapter does not support remediation"
+        else:
+            import os
+            file_name = os.path.basename(request.file_path)
+
+            file_info = FileInfo(
+                path=request.file_path,
+                name=file_name,
+                size=0,
+                modified=datetime.utcnow(),
+                adapter=adapter.adapter_type,
+            )
+
+            # Get and save current ACL for rollback
+            original_acl = await adapter.get_acl(file_info)
+            if original_acl:
+                action.previous_acl = _encode_acl(original_acl)
+
+            # Execute lockdown
+            success, _ = await adapter.lockdown_file(
+                file_info,
+                allowed_sids=request.allowed_principals,
+            )
+
+            if success:
+                action.status = "completed"
+                logger.info(f"Locked down {request.file_path}")
+            else:
+                action.status = "failed"
+                action.error = "Failed to set permissions"
+                logger.error(f"Failed to lockdown {request.file_path}")
 
     # Log audit event
     audit = AuditLog(
@@ -275,6 +352,7 @@ async def lockdown_file(
             "allowed_principals": request.allowed_principals,
             "dry_run": request.dry_run,
             "action_id": str(action.id),
+            "status": action.status,
         },
     )
     session.add(audit)
@@ -334,12 +412,68 @@ async def rollback_action(
     session.add(rollback)
 
     if not request.dry_run:
-        # TODO: Execute actual rollback operation via adapter
-        # For quarantine: move file back from dest_path to source_path
-        # For lockdown: restore ACL from previous_acl
-        #
-        # On success, update original action status to rolled_back
-        original.status = "rolled_back"
+        # Execute actual rollback operation via adapter
+        adapter = _get_adapter_for_path(original.source_path)
+        rollback_success = False
+
+        if not adapter.supports_remediation():
+            rollback.status = "failed"
+            rollback.error = "Adapter does not support remediation"
+        elif original.action_type == "quarantine":
+            # Move file back from dest_path to source_path
+            if original.dest_path:
+                import os
+                file_name = os.path.basename(original.dest_path)
+                file_info = FileInfo(
+                    path=original.dest_path,
+                    name=file_name,
+                    size=0,
+                    modified=datetime.utcnow(),
+                    adapter=adapter.adapter_type,
+                )
+
+                rollback_success = await adapter.move_file(file_info, original.source_path)
+
+                if rollback_success:
+                    rollback.status = "completed"
+                    original.status = "rolled_back"
+                    logger.info(f"Rolled back quarantine: {original.dest_path} -> {original.source_path}")
+                else:
+                    rollback.status = "failed"
+                    rollback.error = "Failed to move file back"
+            else:
+                rollback.status = "failed"
+                rollback.error = "No destination path recorded"
+
+        elif original.action_type == "lockdown":
+            # Restore ACL from previous_acl
+            if original.previous_acl:
+                import os
+                file_name = os.path.basename(original.source_path)
+                file_info = FileInfo(
+                    path=original.source_path,
+                    name=file_name,
+                    size=0,
+                    modified=datetime.utcnow(),
+                    adapter=adapter.adapter_type,
+                )
+
+                original_acl = _decode_acl(original.previous_acl)
+                rollback_success = await adapter.set_acl(file_info, original_acl)
+
+                if rollback_success:
+                    rollback.status = "completed"
+                    original.status = "rolled_back"
+                    logger.info(f"Rolled back lockdown: restored ACL for {original.source_path}")
+                else:
+                    rollback.status = "failed"
+                    rollback.error = "Failed to restore permissions"
+            else:
+                rollback.status = "failed"
+                rollback.error = "No previous ACL recorded"
+        else:
+            rollback.status = "failed"
+            rollback.error = f"Unknown action type: {original.action_type}"
 
     await session.flush()
 

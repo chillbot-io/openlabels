@@ -217,3 +217,52 @@ class Adapter(Protocol):
             True if adapter can track changes incrementally
         """
         ...
+
+    # Remediation methods
+
+    async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
+        """
+        Move a file to a new location (for quarantine).
+
+        Args:
+            file_info: FileInfo object of the file to move
+            dest_path: Destination path
+
+        Returns:
+            True if move successful
+        """
+        ...
+
+    async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
+        """
+        Get the access control list for a file.
+
+        Args:
+            file_info: FileInfo object
+
+        Returns:
+            Dict containing ACL information, or None if not supported
+        """
+        ...
+
+    async def set_acl(self, file_info: FileInfo, acl: dict) -> bool:
+        """
+        Set the access control list for a file (for lockdown/rollback).
+
+        Args:
+            file_info: FileInfo object
+            acl: ACL dict to apply
+
+        Returns:
+            True if ACL applied successfully
+        """
+        ...
+
+    def supports_remediation(self) -> bool:
+        """
+        Check if adapter supports remediation operations.
+
+        Returns:
+            True if adapter can perform move_file, get_acl, set_acl
+        """
+        ...

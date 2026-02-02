@@ -186,9 +186,6 @@ if PYSIDE_AVAILABLE:
             self.health_widget.refresh_requested.connect(self._load_health_status)
             self.settings_widget.settings_changed.connect(self._on_settings_changed)
 
-            # Load sample data for health widget demo
-            self.health_widget.load_sample_data()
-
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
             statusbar = QStatusBar()
@@ -216,6 +213,8 @@ if PYSIDE_AVAILABLE:
             """Load initial data from the server."""
             self._check_connection()
             self._load_dashboard_stats()
+            self._load_dashboard_charts()
+            self._load_health_status()
             self._load_targets()
             self._load_schedules()
             self._load_labels()
@@ -267,6 +266,41 @@ if PYSIDE_AVAILABLE:
                     })
             except Exception as e:
                 logger.warning(f"Failed to load dashboard stats: {e}")
+
+        def _load_dashboard_charts(self) -> None:
+            """Load dashboard chart data (entity trends + access heatmap)."""
+            try:
+                import httpx
+
+                # Load entity trends for time series chart
+                response = httpx.get(
+                    f"{self.server_url}/api/dashboard/entity-trends",
+                    params={"days": 14},
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    series = data.get("series", {})
+                    # Convert to expected format: {name: [(date, count), ...]}
+                    chart_data = {}
+                    for name, points in series.items():
+                        chart_data[name] = [(p[0], p[1]) for p in points]
+                    self.dashboard_widget.update_time_series(chart_data)
+
+                # Load access heatmap
+                response = httpx.get(
+                    f"{self.server_url}/api/dashboard/access-heatmap",
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    heatmap = data.get("data", [[0]*24 for _ in range(7)])
+                    self.dashboard_widget.update_heat_map(heatmap)
+
+            except Exception as e:
+                logger.warning(f"Failed to load dashboard charts: {e}")
+                # Fall back to sample data if API fails
+                self.dashboard_widget.load_sample_charts()
 
         def _load_targets(self) -> None:
             """Load scan targets."""
