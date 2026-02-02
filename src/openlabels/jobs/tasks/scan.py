@@ -56,12 +56,34 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
     return _processor
 
 
+async def _check_cancellation(session: AsyncSession, job_id: UUID) -> bool:
+    """
+    Check if a job has been cancelled.
+
+    Refreshes the job from the database to get current status.
+    Returns True if job should stop (cancelled).
+    """
+    # Refresh job status from database
+    result = await session.execute(
+        select(ScanJob.status).where(ScanJob.id == job_id)
+    )
+    current_status = result.scalar_one_or_none()
+    return current_status == "cancelled"
+
+
+# How often to check for cancellation (every N files)
+CANCELLATION_CHECK_INTERVAL = 10
+
+
 async def execute_scan_task(
     session: AsyncSession,
     payload: dict,
 ) -> dict:
     """
     Execute a scan task with delta scanning support.
+
+    Supports mid-scan cancellation - checks job status periodically
+    and stops processing if cancelled.
 
     Args:
         session: Database session
@@ -127,6 +149,31 @@ async def execute_scan_task(
 
         async for file_info in adapter.list_files(target_path):
             try:
+                # Check for cancellation periodically
+                if stats["files_scanned"] % CANCELLATION_CHECK_INTERVAL == 0:
+                    if await _check_cancellation(session, job_id):
+                        logger.info(f"Scan job {job_id} cancelled mid-scan at {stats['files_scanned']} files")
+                        job.status = "cancelled"
+                        stats["status"] = "cancelled"
+                        await session.commit()
+
+                        # Stream cancellation via WebSocket
+                        if _ws_streaming_enabled:
+                            try:
+                                await send_scan_completed(
+                                    scan_id=job.id,
+                                    status="cancelled",
+                                    summary={
+                                        "files_scanned": stats["files_scanned"],
+                                        "files_with_pii": stats["files_with_pii"],
+                                        "reason": "User cancelled",
+                                    },
+                                )
+                            except Exception:
+                                pass
+
+                        return stats
+
                 seen_file_paths.add(file_info.path)
                 folder_path = get_folder_path(file_info.path)
 
@@ -628,11 +675,19 @@ async def execute_parallel_scan_task(
         "total_entities": 0,
         "errors": 0,
         "scan_mode": "parallel",
+        "cancelled": False,
     }
 
     async def result_handler(file_results: list[FileResult]) -> None:
         """Persist file results to database and stream via WebSocket."""
         nonlocal stats
+
+        # Check for cancellation at each batch
+        if await _check_cancellation(session, job_id):
+            logger.info(f"Parallel scan job {job_id} cancelled at {stats['files_scanned']} files")
+            stats["cancelled"] = True
+            stats["status"] = "cancelled"
+            return  # Stop processing results
 
         for result in file_results:
             try:

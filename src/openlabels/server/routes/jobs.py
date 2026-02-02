@@ -227,3 +227,82 @@ async def cancel_job(
         )
 
     return {"message": "Job cancelled successfully", "job_id": str(job_id)}
+
+
+# =============================================================================
+# Worker Pool Configuration
+# =============================================================================
+
+
+class WorkerConfigRequest(BaseModel):
+    """Request to update worker configuration."""
+
+    concurrency: int = Query(ge=1, le=32, description="Number of concurrent workers (1-32)")
+
+
+class WorkerStatusResponse(BaseModel):
+    """Worker status response."""
+
+    worker_id: Optional[str]
+    status: str
+    concurrency: int
+    target_concurrency: int
+    pid: Optional[int]
+
+
+@router.get("/workers/status", response_model=WorkerStatusResponse)
+async def get_worker_status(
+    user=Depends(require_admin),
+):
+    """
+    Get current worker pool status.
+
+    Returns the current worker configuration and status.
+    Admin access required.
+    """
+    from openlabels.jobs.worker import get_worker_state
+
+    state = get_worker_state()
+
+    return WorkerStatusResponse(
+        worker_id=state.get("worker_id"),
+        status=state.get("status", "unknown"),
+        concurrency=state.get("concurrency", 0),
+        target_concurrency=state.get("target_concurrency", 0),
+        pid=state.get("pid"),
+    )
+
+
+@router.post("/workers/config")
+async def update_worker_config(
+    request: WorkerConfigRequest,
+    user=Depends(require_admin),
+):
+    """
+    Update worker pool configuration.
+
+    Adjusts the number of concurrent workers at runtime.
+    Changes take effect within a few seconds.
+
+    Admin access required.
+    """
+    from openlabels.jobs.worker import set_worker_state, get_worker_state
+
+    current = get_worker_state()
+
+    if current.get("status") != "running":
+        raise HTTPException(
+            status_code=400,
+            detail="No worker is currently running",
+        )
+
+    old_concurrency = current.get("target_concurrency", 0)
+
+    # Update target concurrency
+    set_worker_state({"target_concurrency": request.concurrency})
+
+    return {
+        "message": f"Worker concurrency updated: {old_concurrency} -> {request.concurrency}",
+        "previous_concurrency": old_concurrency,
+        "new_concurrency": request.concurrency,
+    }

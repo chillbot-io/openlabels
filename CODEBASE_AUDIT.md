@@ -27,7 +27,7 @@ OpenLabels is a comprehensive data classification and auto-labeling platform wit
 | Authentication | Complete | 100% |
 | Adapters | Partial | 60% |
 | Labeling/MIP | Partial | 50% |
-| Jobs/Scheduling | Complete | 95% |
+| Jobs/Scheduling | Complete | 100% |
 | GUI | Scaffolded | 40% |
 
 ---
@@ -310,13 +310,13 @@ All adapters implement:
 7. WebSocket updates sent in real-time
 ```
 
-### Jobs Gaps
+### Jobs Gaps (All Fixed)
 
 1. ~~**No job retry logic**~~ - **FIXED**: Exponential backoff retry
 2. ~~**No dead letter queue**~~ - **FIXED**: DLQ with `/api/jobs/failed` endpoint
-3. **No job cancellation propagation** - Cancel flag not checked mid-scan
-4. **No priority queue** - All jobs equal priority (model supports it)
-5. **Worker pool not configurable** at runtime
+3. ~~**No job cancellation propagation**~~ - **FIXED**: Checks cancel flag every 10 files mid-scan
+4. ~~**No priority queue**~~ - **FIXED**: Jobs ordered by priority (already implemented in dequeue)
+5. ~~**Worker pool not configurable**~~ - **FIXED**: `/api/jobs/workers/config` endpoint for runtime adjustment
 
 ---
 
