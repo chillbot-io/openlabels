@@ -9,6 +9,7 @@ Detectors:
 - SecretsDetector: Detects API keys, tokens, credentials
 - FinancialDetector: Detects financial identifiers and crypto addresses
 - GovernmentDetector: Detects classification markings and government IDs
+- HyperscanDetector: SIMD-accelerated multi-pattern matching (10-100x faster)
 
 ML Detectors (optional, require additional dependencies):
 - PHIBertDetector: Stanford Clinical PHI-BERT (HuggingFace)
@@ -40,6 +41,13 @@ __all__ = [
     "PHI_BERT_LABELS",
     "PII_BERT_LABELS",
 ]
+
+# Hyperscan Detector - optional (requires hyperscan library)
+try:
+    from .hyperscan import HyperscanDetector, is_hyperscan_available
+    __all__.extend(["HyperscanDetector", "is_hyperscan_available"])
+except ImportError:
+    pass
 
 # ML Detectors - optional imports (require numpy, onnxruntime, transformers)
 # Import these explicitly when needed, e.g.:

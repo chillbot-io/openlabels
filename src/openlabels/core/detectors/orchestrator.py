@@ -6,6 +6,7 @@ deduplication and post-processing of results.
 
 Supports:
 - Pattern-based detectors (checksum, secrets, financial, government)
+- Hyperscan-accelerated detection (10-100x faster when available)
 - ML detectors (PHI-BERT, PII-BERT) with optional ONNX acceleration
 - Post-processing pipeline (coref, context enhancement)
 """
@@ -41,6 +42,7 @@ class DetectorOrchestrator:
     Features:
     - Runs detectors in parallel for performance
     - Supports pattern-based and ML-based detectors
+    - Optional Hyperscan acceleration (10-100x faster regex)
     - Handles deduplication across detectors
     - Higher tier detections take precedence
     - Optional post-processing pipeline (coref, context enhancement)
@@ -50,6 +52,9 @@ class DetectorOrchestrator:
         result = orchestrator.detect("My SSN is 123-45-6789")
         for span in result.spans:
             print(f"{span.entity_type}: {span.text}")
+
+        # With Hyperscan acceleration:
+        orchestrator = DetectorOrchestrator(enable_hyperscan=True)
 
         # With ML detectors:
         orchestrator = DetectorOrchestrator(
@@ -66,6 +71,7 @@ class DetectorOrchestrator:
         enable_financial: bool = True,
         enable_government: bool = True,
         enable_patterns: bool = True,
+        enable_hyperscan: bool = False,
         enable_ml: bool = False,
         ml_model_dir: Optional[Path] = None,
         use_onnx: bool = True,
@@ -83,6 +89,7 @@ class DetectorOrchestrator:
             enable_financial: Enable financial instruments detector
             enable_government: Enable government markings detector
             enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
+            enable_hyperscan: Enable Hyperscan-accelerated detector (10-100x faster)
             enable_ml: Enable ML-based detectors (requires model files)
             ml_model_dir: Directory containing ML model files
             use_onnx: Use ONNX-optimized ML detectors (faster)
@@ -96,6 +103,11 @@ class DetectorOrchestrator:
         self.enable_coref = enable_coref
         self.enable_context_enhancement = enable_context_enhancement
         self.detectors: List[BaseDetector] = []
+        self._using_hyperscan = False
+
+        # Initialize Hyperscan detector if enabled
+        if enable_hyperscan:
+            self._init_hyperscan_detector()
 
         # Initialize pattern-based detectors
         if enable_checksum:
@@ -123,7 +135,25 @@ class DetectorOrchestrator:
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "
             f"{[d.name for d in self.detectors]}"
+            f"{' (Hyperscan accelerated)' if self._using_hyperscan else ''}"
         )
+
+    def _init_hyperscan_detector(self) -> None:
+        """Initialize Hyperscan-accelerated detector."""
+        try:
+            from .hyperscan import HyperscanDetector, SUPPLEMENTAL_PATTERNS
+
+            hyperscan_detector = HyperscanDetector(
+                additional_patterns=SUPPLEMENTAL_PATTERNS
+            )
+            self.detectors.append(hyperscan_detector)
+            self._using_hyperscan = hyperscan_detector.using_hyperscan
+            logger.info(
+                f"Hyperscan detector initialized with {hyperscan_detector.pattern_count} patterns"
+                f" ({'SIMD-accelerated' if self._using_hyperscan else 'Python fallback'})"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize Hyperscan detector: {e}")
 
     def _init_ml_detectors(
         self,
@@ -377,6 +407,7 @@ def detect(
     text: str,
     enable_ml: bool = False,
     enable_patterns: bool = True,
+    enable_hyperscan: bool = False,
     ml_model_dir: Optional[Union[str, Path]] = None,
     use_onnx: bool = True,
     enable_coref: bool = False,
@@ -390,6 +421,7 @@ def detect(
         text: Text to scan
         enable_ml: Enable ML-based detectors (requires model files)
         enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
+        enable_hyperscan: Enable Hyperscan-accelerated detection (10-100x faster)
         ml_model_dir: Directory containing ML model files
         use_onnx: Use ONNX-optimized ML detectors (faster)
         enable_coref: Run coreference resolution on NAME entities
@@ -405,6 +437,7 @@ def detect(
     orchestrator = DetectorOrchestrator(
         enable_ml=enable_ml,
         enable_patterns=enable_patterns,
+        enable_hyperscan=enable_hyperscan,
         ml_model_dir=ml_model_dir,
         use_onnx=use_onnx,
         enable_coref=enable_coref,
