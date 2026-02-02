@@ -3,8 +3,13 @@ Background worker for scan operations.
 
 Runs scan tasks in a separate thread to keep UI responsive.
 Emits progress signals for UI updates.
+
+Supports two modes:
+- Polling mode: Periodically checks scan status via REST API
+- WebSocket mode: Real-time streaming updates (preferred)
 """
 
+import json
 import logging
 import time
 from typing import Optional, List, Dict, Any
@@ -18,6 +23,14 @@ try:
 except ImportError:
     HTTPX_AVAILABLE = False
 
+# Check for websockets
+try:
+    import websockets
+    import asyncio
+    WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    WEBSOCKETS_AVAILABLE = False
+
 try:
     from PySide6.QtCore import QThread, Signal, QObject
     PYSIDE_AVAILABLE = True
@@ -30,6 +43,10 @@ except ImportError:
 class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
     """
     Worker thread for running scans.
+
+    Supports two modes:
+    - WebSocket mode: Real-time streaming (preferred, uses websockets library)
+    - Polling mode: Periodic status checks (fallback)
 
     Signals:
         progress: Emitted with (current, total, message)
@@ -51,6 +68,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         target_id: str,
         server_url: str,
         parent: Optional[QObject] = None,
+        use_websocket: bool = True,
     ):
         """
         Initialize the scan worker.
@@ -59,6 +77,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
             target_id: ID of the scan target
             server_url: Base URL of the OpenLabels server
             parent: Parent QObject
+            use_websocket: Use WebSocket streaming if available
         """
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
@@ -67,6 +86,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         super().__init__(parent)
         self.target_id = target_id
         self.server_url = server_url.rstrip("/")
+        self.use_websocket = use_websocket and WEBSOCKETS_AVAILABLE
         self._cancelled = False
         self._scan_id: Optional[str] = None
         self._results: List[Dict] = []
@@ -102,73 +122,160 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
                     self.error.emit("No scan ID returned")
                     return
 
-                self.progress.emit(5, 100, "Scan created, waiting for results...")
+                self.progress.emit(5, 100, "Scan created, connecting...")
 
-                # Poll for scan status
-                poll_interval = 2.0  # seconds
-                while True:
-                    if self._cancelled:
-                        self._cancel_scan(client)
-                        self.cancelled.emit()
-                        return
-
-                    # Get scan status
-                    status_response = client.get(
-                        f"{self.server_url}/api/scans/{self._scan_id}"
-                    )
-
-                    if status_response.status_code != 200:
-                        self.error.emit(f"Failed to get scan status: {status_response.status_code}")
-                        return
-
-                    status_data = status_response.json()
-                    status = status_data.get("status", "unknown")
-
-                    # Update progress
-                    progress = status_data.get("progress", {})
-                    current = progress.get("files_scanned", 0)
-                    total = progress.get("files_total", 100)
-                    current_file = progress.get("current_file", "")
-
-                    # Calculate percentage (reserve 5% for init, 5% for completion)
-                    if total > 0:
-                        pct = 5 + int(90 * current / total)
-                    else:
-                        pct = 50
-
-                    self.progress.emit(pct, 100, f"Scanning: {current_file[:50]}")
-
-                    # Check if completed
-                    if status in ("completed", "failed", "cancelled"):
-                        break
-
-                    time.sleep(poll_interval)
-
-                # Fetch results
-                self.progress.emit(95, 100, "Fetching results...")
-
-                results_response = client.get(
-                    f"{self.server_url}/api/results",
-                    params={"job_id": self._scan_id},
-                )
-
-                if results_response.status_code == 200:
-                    results_data = results_response.json()
-                    self._results = results_data.get("items", [])
-
-                    # Emit individual file results
-                    for result in self._results:
-                        self.file_scanned.emit(
-                            result.get("file_path", ""),
-                            result,
-                        )
-
-                self.progress.emit(100, 100, "Scan complete")
-                self.completed.emit(self._results)
+                # Use WebSocket for real-time updates if available
+                if self.use_websocket:
+                    self._run_websocket_mode(client)
+                else:
+                    self._run_polling_mode(client)
 
         except Exception as e:
             logger.error(f"Scan error: {e}")
             self.error.emit(str(e))
+
+    def _run_websocket_mode(self, client: "httpx.Client") -> None:
+        """Run scan with WebSocket streaming for real-time updates."""
+        import asyncio
+
+        async def websocket_handler():
+            # Convert HTTP URL to WebSocket URL
+            ws_url = self.server_url.replace("http://", "ws://").replace("https://", "wss://")
+            ws_url = f"{ws_url}/ws/scans/{self._scan_id}"
+
+            try:
+                async with websockets.connect(ws_url, ping_interval=20) as ws:
+                    self.progress.emit(10, 100, "Connected, receiving results...")
+
+                    while not self._cancelled:
+                        try:
+                            message = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                            data = json.loads(message)
+
+                            msg_type = data.get("type")
+
+                            if msg_type == "file_result":
+                                # Individual file result
+                                file_result = {
+                                    "file_path": data.get("file_path"),
+                                    "risk_score": data.get("risk_score"),
+                                    "risk_tier": data.get("risk_tier"),
+                                    "entity_counts": data.get("entity_counts", {}),
+                                }
+                                self._results.append(file_result)
+                                self.file_scanned.emit(
+                                    data.get("file_path", ""),
+                                    file_result,
+                                )
+
+                            elif msg_type == "progress":
+                                # Progress update
+                                progress = data.get("progress", {})
+                                files_scanned = progress.get("files_scanned", 0)
+                                current_file = progress.get("current_file", "")
+                                # Estimate progress (10-90% for scanning)
+                                pct = min(90, 10 + files_scanned)
+                                self.progress.emit(pct, 100, f"Scanning: {current_file[:40]}")
+
+                            elif msg_type == "completed":
+                                # Scan completed
+                                status = data.get("status", "completed")
+                                summary = data.get("summary", {})
+                                self.progress.emit(100, 100, f"Complete: {status}")
+                                break
+
+                            elif msg_type == "heartbeat":
+                                # Keep-alive, send ping
+                                await ws.send("ping")
+
+                        except asyncio.TimeoutError:
+                            # Check if cancelled
+                            if self._cancelled:
+                                self._cancel_scan(client)
+                                self.cancelled.emit()
+                                return
+                            continue
+
+            except Exception as e:
+                logger.warning(f"WebSocket error, falling back to polling: {e}")
+                # Fall back to polling mode
+                self._run_polling_mode(client)
+                return
+
+        # Run async WebSocket handler
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(websocket_handler())
+        finally:
+            loop.close()
+
+        if not self._cancelled:
+            self.completed.emit(self._results)
+
+    def _run_polling_mode(self, client: "httpx.Client") -> None:
+        """Run scan with periodic polling for status updates."""
+        poll_interval = 2.0  # seconds
+
+        while True:
+            if self._cancelled:
+                self._cancel_scan(client)
+                self.cancelled.emit()
+                return
+
+            # Get scan status
+            status_response = client.get(
+                f"{self.server_url}/api/scans/{self._scan_id}"
+            )
+
+            if status_response.status_code != 200:
+                self.error.emit(f"Failed to get scan status: {status_response.status_code}")
+                return
+
+            status_data = status_response.json()
+            status = status_data.get("status", "unknown")
+
+            # Update progress
+            progress = status_data.get("progress", {})
+            current = progress.get("files_scanned", 0)
+            total = progress.get("files_total", 100)
+            current_file = progress.get("current_file", "")
+
+            # Calculate percentage (reserve 5% for init, 5% for completion)
+            if total > 0:
+                pct = 5 + int(90 * current / total)
+            else:
+                pct = 50
+
+            self.progress.emit(pct, 100, f"Scanning: {current_file[:50]}")
+
+            # Check if completed
+            if status in ("completed", "failed", "cancelled"):
+                break
+
+            time.sleep(poll_interval)
+
+        # Fetch results
+        self.progress.emit(95, 100, "Fetching results...")
+
+        results_response = client.get(
+            f"{self.server_url}/api/results",
+            params={"job_id": self._scan_id},
+        )
+
+        if results_response.status_code == 200:
+            results_data = results_response.json()
+            self._results = results_data.get("items", [])
+
+            # Emit individual file results
+            for result in self._results:
+                self.file_scanned.emit(
+                    result.get("file_path", ""),
+                    result,
+                )
+
+        self.progress.emit(100, 100, "Scan complete")
+        self.completed.emit(self._results)
 
     def _cancel_scan(self, client: "httpx.Client") -> None:
         """Cancel the running scan."""

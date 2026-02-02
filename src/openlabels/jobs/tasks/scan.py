@@ -3,8 +3,13 @@ Scan task implementation.
 
 Integrates the detection engine with the job system to scan files
 for sensitive data and compute risk scores.
+
+Supports two execution modes:
+- Sequential: Traditional file-by-file processing (default)
+- Parallel: Uses agent pool for multi-core classification
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,6 +26,18 @@ from openlabels.core.processor import FileProcessor
 from openlabels.labeling.engine import LabelingEngine
 
 logger = logging.getLogger(__name__)
+
+# WebSocket streaming support
+_ws_streaming_enabled = True
+try:
+    from openlabels.server.routes.ws import (
+        send_scan_progress,
+        send_scan_file_result,
+        send_scan_completed,
+    )
+except ImportError:
+    _ws_streaming_enabled = False
+    logger.debug("WebSocket streaming not available")
 
 # Global processor instance (reuse for efficiency)
 _processor: Optional[FileProcessor] = None
@@ -193,6 +210,35 @@ async def execute_scan_task(
                     "files_skipped": stats["files_skipped"],
                 }
 
+                # Stream file result via WebSocket
+                if _ws_streaming_enabled:
+                    try:
+                        await send_scan_file_result(
+                            scan_id=job.id,
+                            file_path=file_info.path,
+                            risk_score=result["risk_score"],
+                            risk_tier=result["risk_tier"],
+                            entity_counts=result["entity_counts"],
+                        )
+                    except Exception as ws_err:
+                        logger.debug(f"WebSocket broadcast failed: {ws_err}")
+
+                # Stream progress periodically (every 10 files)
+                if stats["files_scanned"] % 10 == 0 and _ws_streaming_enabled:
+                    try:
+                        await send_scan_progress(
+                            scan_id=job.id,
+                            status="running",
+                            progress={
+                                "files_scanned": stats["files_scanned"],
+                                "files_with_pii": stats["files_with_pii"],
+                                "files_skipped": stats["files_skipped"],
+                                "current_file": file_info.name,
+                            },
+                        )
+                    except Exception as ws_err:
+                        logger.debug(f"WebSocket progress failed: {ws_err}")
+
                 # Commit periodically
                 if stats["files_scanned"] % 100 == 0:
                     await session.commit()
@@ -228,6 +274,30 @@ async def execute_scan_task(
         job.status = "completed"
         await session.commit()
 
+        # Stream completion via WebSocket
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="completed",
+                    summary={
+                        "files_scanned": stats["files_scanned"],
+                        "files_with_pii": stats["files_with_pii"],
+                        "files_skipped": stats["files_skipped"],
+                        "total_entities": stats["total_entities"],
+                        "scan_mode": stats["scan_mode"],
+                        "risk_breakdown": {
+                            "critical": stats["critical_count"],
+                            "high": stats["high_count"],
+                            "medium": stats["medium_count"],
+                            "low": stats["low_count"],
+                            "minimal": stats["minimal_count"],
+                        },
+                    },
+                )
+            except Exception as ws_err:
+                logger.debug(f"WebSocket completion failed: {ws_err}")
+
         # Auto-labeling if enabled
         settings = get_settings()
         if settings.labeling.enabled and settings.labeling.mode == "auto":
@@ -245,6 +315,21 @@ async def execute_scan_task(
         job.status = "failed"
         job.error = str(e)
         await session.commit()
+
+        # Stream failure via WebSocket
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="failed",
+                    summary={
+                        "error": str(e),
+                        "files_scanned": stats.get("files_scanned", 0),
+                    },
+                )
+            except Exception:
+                pass
+
         raise
 
 
@@ -485,3 +570,195 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
             "exposure_multiplier": 1.0,
             "error": str(e),
         }
+
+
+async def execute_parallel_scan_task(
+    session: AsyncSession,
+    payload: dict,
+) -> dict:
+    """
+    Execute a scan task using parallel agent pool.
+
+    This mode spawns multiple classification agents for CPU-bound
+    workloads, providing significant speedup on multi-core systems.
+
+    Args:
+        session: Database session
+        payload: Task payload containing:
+            - job_id: UUID of the scan job
+            - num_agents: Number of parallel agents (0 = auto-detect)
+            - force_full_scan: bool (optional)
+
+    Returns:
+        Result dictionary with scan statistics
+    """
+    from openlabels.core.agents import AgentPool, AgentPoolConfig, FileResult
+
+    job_id = UUID(payload["job_id"])
+    num_agents = payload.get("num_agents", 0)
+    force_full_scan = payload.get("force_full_scan", False)
+
+    job = await session.get(ScanJob, job_id)
+    if not job:
+        raise ValueError(f"Job not found: {job_id}")
+
+    target = await session.get(ScanTarget, job.target_id)
+    if not target:
+        raise ValueError(f"Target not found: {job.target_id}")
+
+    # Update job status
+    job.status = "running"
+    job.progress = {"mode": "parallel", "num_agents": num_agents}
+    await session.flush()
+
+    # Track statistics
+    stats = {
+        "files_scanned": 0,
+        "files_with_pii": 0,
+        "total_entities": 0,
+        "errors": 0,
+        "scan_mode": "parallel",
+    }
+
+    async def result_handler(file_results: list[FileResult]) -> None:
+        """Persist file results to database and stream via WebSocket."""
+        nonlocal stats
+
+        for result in file_results:
+            try:
+                # Calculate risk tier based on entity counts
+                total = result.total_entities
+                if total >= 20:
+                    risk_tier = "CRITICAL"
+                elif total >= 10:
+                    risk_tier = "HIGH"
+                elif total >= 5:
+                    risk_tier = "MEDIUM"
+                elif total >= 1:
+                    risk_tier = "LOW"
+                else:
+                    risk_tier = "MINIMAL"
+
+                # Create scan result record
+                scan_result = ScanResult(
+                    tenant_id=job.tenant_id,
+                    job_id=job.id,
+                    file_path=result.file_path,
+                    file_name=result.file_path.split("/")[-1],
+                    risk_tier=risk_tier,
+                    entity_counts=result.entity_counts,
+                    total_entities=result.total_entities,
+                    exposure_level="PRIVATE",  # Will be updated from adapter
+                )
+                session.add(scan_result)
+
+                # Update stats
+                stats["files_scanned"] += 1
+                if result.total_entities > 0:
+                    stats["files_with_pii"] += 1
+                stats["total_entities"] += result.total_entities
+                if result.has_errors:
+                    stats["errors"] += len(result.errors)
+
+                # Stream via WebSocket
+                if _ws_streaming_enabled:
+                    try:
+                        await send_scan_file_result(
+                            scan_id=job.id,
+                            file_path=result.file_path,
+                            risk_score=result.total_entities * 10,  # Simple score
+                            risk_tier=risk_tier,
+                            entity_counts=result.entity_counts,
+                        )
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"Failed to persist result for {result.file_path}: {e}")
+                stats["errors"] += 1
+
+        # Commit batch
+        await session.commit()
+
+        # Update job progress
+        job.files_scanned = stats["files_scanned"]
+        job.files_with_pii = stats["files_with_pii"]
+        job.progress = {
+            "mode": "parallel",
+            "files_scanned": stats["files_scanned"],
+            "files_with_pii": stats["files_with_pii"],
+        }
+
+        # Stream progress
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_progress(
+                    scan_id=job.id,
+                    status="running",
+                    progress=job.progress,
+                )
+            except Exception:
+                pass
+
+    try:
+        from openlabels.core.agents import ScanOrchestrator, AgentPoolConfig
+
+        # Configure agent pool
+        pool_config = AgentPoolConfig(
+            num_agents=num_agents,  # 0 = auto-detect
+            result_batch_size=25,
+            result_batch_timeout=1.0,
+        )
+
+        # Create orchestrator with result handler
+        orchestrator = ScanOrchestrator(
+            pool_config=pool_config,
+            result_handler=result_handler,
+        )
+
+        # Get target path
+        target_path = target.config.get("path") or target.config.get("site_id", ".")
+
+        # Run the parallel scan
+        pool_stats = await orchestrator.scan_directory(
+            path=target_path,
+            recursive=True,
+        )
+
+        # Update final stats from pool
+        stats["throughput_per_sec"] = pool_stats.throughput_per_second
+        stats["avg_processing_ms"] = pool_stats.avg_processing_ms
+
+        # Mark completed
+        job.status = "completed"
+        await session.commit()
+
+        # Stream completion
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="completed",
+                    summary=stats,
+                )
+            except Exception:
+                pass
+
+        return stats
+
+    except Exception as e:
+        job.status = "failed"
+        job.error = str(e)
+        await session.commit()
+
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="failed",
+                    summary={"error": str(e)},
+                )
+            except Exception:
+                pass
+
+        raise
