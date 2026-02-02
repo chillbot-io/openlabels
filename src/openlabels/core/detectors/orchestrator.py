@@ -22,6 +22,8 @@ from .checksum import ChecksumDetector
 from .secrets import SecretsDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
+from .patterns import PatternDetector
+from .additional_patterns import AdditionalPatternDetector
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,7 @@ class DetectorOrchestrator:
         enable_secrets: bool = True,
         enable_financial: bool = True,
         enable_government: bool = True,
+        enable_patterns: bool = True,
         enable_ml: bool = False,
         ml_model_dir: Optional[Path] = None,
         use_onnx: bool = True,
@@ -79,6 +82,7 @@ class DetectorOrchestrator:
             enable_secrets: Enable secrets/credentials detector
             enable_financial: Enable financial instruments detector
             enable_government: Enable government markings detector
+            enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
             enable_ml: Enable ML-based detectors (requires model files)
             ml_model_dir: Directory containing ML model files
             use_onnx: Use ONNX-optimized ML detectors (faster)
@@ -102,6 +106,9 @@ class DetectorOrchestrator:
             self.detectors.append(FinancialDetector())
         if enable_government:
             self.detectors.append(GovernmentDetector())
+        if enable_patterns:
+            self.detectors.append(PatternDetector())
+            self.detectors.append(AdditionalPatternDetector())
 
         # Initialize ML detectors if enabled
         if enable_ml:
@@ -369,6 +376,7 @@ class DetectorOrchestrator:
 def detect(
     text: str,
     enable_ml: bool = False,
+    enable_patterns: bool = True,
     ml_model_dir: Optional[Union[str, Path]] = None,
     use_onnx: bool = True,
     enable_coref: bool = False,
@@ -381,6 +389,7 @@ def detect(
     Args:
         text: Text to scan
         enable_ml: Enable ML-based detectors (requires model files)
+        enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
         ml_model_dir: Directory containing ML model files
         use_onnx: Use ONNX-optimized ML detectors (faster)
         enable_coref: Run coreference resolution on NAME entities
@@ -395,6 +404,7 @@ def detect(
 
     orchestrator = DetectorOrchestrator(
         enable_ml=enable_ml,
+        enable_patterns=enable_patterns,
         ml_model_dir=ml_model_dir,
         use_onnx=use_onnx,
         enable_coref=enable_coref,
