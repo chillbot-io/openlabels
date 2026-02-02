@@ -90,7 +90,7 @@ class DeltaToken:
 
     delta_link: str
     resource_path: str
-    acquired_at: datetime = field(default_factory=datetime.utcnow)
+    acquired_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     item_count: int = 0
 
     def is_expired(self, max_age_hours: int = 24) -> bool:
