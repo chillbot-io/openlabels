@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
-from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue
 
 logger = logging.getLogger(__name__)
@@ -88,8 +88,8 @@ class ApplyLabelRequest(BaseModel):
 @router.get("", response_model=list[LabelResponse])
 async def list_labels(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> list[LabelResponse]:
     """List available sensitivity labels."""
     query = select(SensitivityLabel).where(
         SensitivityLabel.tenant_id == user.tenant_id
@@ -110,8 +110,8 @@ class LabelSyncRequest(BaseModel):
 async def sync_labels(
     request: Optional[LabelSyncRequest] = None,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """
     Sync sensitivity labels from Microsoft 365.
 
@@ -198,8 +198,8 @@ async def sync_labels(
 @router.get("/sync/status")
 async def get_sync_status(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
     """Get label sync status including last sync time and counts."""
     # Get label count and last sync time
     query = select(
@@ -227,8 +227,8 @@ async def get_sync_status(
 
 @router.post("/cache/invalidate", status_code=200)
 async def invalidate_label_cache(
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """Invalidate the label cache, forcing a refresh on next access."""
     try:
         from openlabels.labeling.engine import get_label_cache
@@ -244,8 +244,8 @@ async def invalidate_label_cache(
 @router.get("/rules", response_model=list[LabelRuleResponse])
 async def list_label_rules(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> list[LabelRuleResponse]:
     """List label mapping rules."""
     query = select(LabelRule).where(
         LabelRule.tenant_id == user.tenant_id
@@ -269,8 +269,8 @@ async def list_label_rules(
 async def create_label_rule(
     request: LabelRuleCreate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> LabelRuleResponse:
     """Create a label mapping rule."""
     if request.rule_type not in ("risk_tier", "entity_type"):
         raise HTTPException(status_code=400, detail="Invalid rule type")
@@ -300,8 +300,8 @@ async def create_label_rule(
 async def delete_label_rule(
     rule_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> None:
     """Delete a label rule."""
     rule = await session.get(LabelRule, rule_id)
     if not rule or rule.tenant_id != user.tenant_id:
@@ -314,8 +314,8 @@ async def delete_label_rule(
 async def apply_label(
     request: ApplyLabelRequest,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """Apply a sensitivity label to a file."""
     result = await session.get(ScanResult, request.result_id)
     if not result or result.tenant_id != user.tenant_id:

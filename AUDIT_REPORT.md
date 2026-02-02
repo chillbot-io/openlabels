@@ -190,18 +190,35 @@ Removed all 5 redundant `import asyncio` statements from inside methods in `src/
 
 ## LOW SEVERITY ISSUES
 
-### 16. Missing Type Hints
+### 16. ~~Missing Type Hints~~ RESOLVED
 
-Many public functions lack proper type hints, making the code harder to maintain and verify.
+**Status:** ✅ FIXED
 
-### 17. Inconsistent Logging
+Added proper type hints to all API route functions in:
+- `src/openlabels/server/routes/scans.py`
+- `src/openlabels/server/routes/targets.py`
+- `src/openlabels/server/routes/jobs.py`
+- `src/openlabels/server/routes/results.py`
+- `src/openlabels/server/routes/labels.py`
+- `src/openlabels/server/routes/schedules.py`
 
-Mix of:
-- `logger.debug()` / `logger.info()` / `logger.error()`
-- `print()` statements
-- Silent `pass` blocks
+All endpoints now have explicit return types and `CurrentUser` type annotations.
 
-No consistent logging strategy across the three packages.
+### 17. ~~Inconsistent Logging~~ RESOLVED
+
+**Status:** ✅ FIXED
+
+Added structured logging module at `src/openlabels/server/logging.py`:
+- JSON-formatted logs for production (machine-readable)
+- Human-readable colored logs for development
+- Request correlation ID support via `X-Request-ID` header
+- Context logger for including tenant/job context
+- Automatic log file support via settings
+
+Integration in `src/openlabels/server/app.py`:
+- Logging configured at startup based on settings
+- Request ID middleware adds correlation IDs to all requests
+- Error responses include request ID for debugging
 
 ### 18. Magic Numbers
 
@@ -260,7 +277,7 @@ The codebase inconsistently uses:
 6. ~~Create shared `openlabels-core` package~~ ✅ DONE
 7. ~~Deduplicate detector implementations~~ ✅ DONE
 8. **Add integration tests** - More end-to-end workflow tests needed
-9. **Fix logging** - Replace prints with proper logging, add structured logs
+9. ~~Fix logging~~ ✅ DONE - Structured logging with JSON format and request correlation
 10. **Security audit** - Review all auth flows, input validation, output encoding
 
 ### Long-term
@@ -297,10 +314,11 @@ This codebase has been **successfully consolidated** from three separate project
 - ✅ Silent exception handling fixed with logging (commit `693ad6b`)
 - ✅ Default host changed to 127.0.0.1 (commit `693ad6b`)
 - ✅ Redundant imports removed (commit `693ad6b`)
+- ✅ Type hints added to all API routes
+- ✅ Structured logging with JSON format and request correlation IDs
 
 **Remaining work (low priority):**
 1. Add more integration tests
-2. Improve type hints coverage
-3. Consider structured logging
+2. Security audit of auth flows
 
-Total estimated remaining work: **1-2 days** for a competent team.
+Total estimated remaining work: **1 day** for a competent team.

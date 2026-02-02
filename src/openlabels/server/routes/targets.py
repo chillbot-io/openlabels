@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanTarget
-from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 router = APIRouter()
 
@@ -62,8 +62,8 @@ async def list_targets(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> PaginatedTargetsResponse:
     """List configured scan targets with pagination."""
     # Base query with tenant filter
     base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
@@ -98,8 +98,8 @@ async def list_targets(
 async def create_target(
     request: TargetCreate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> TargetResponse:
     """Create a new scan target."""
     if request.adapter not in ("filesystem", "sharepoint", "onedrive"):
         raise HTTPException(status_code=400, detail="Invalid adapter type")
@@ -120,8 +120,8 @@ async def create_target(
 async def get_target(
     target_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> TargetResponse:
     """Get scan target details."""
     target = await session.get(ScanTarget, target_id)
     if not target or target.tenant_id != user.tenant_id:
@@ -134,8 +134,8 @@ async def update_target(
     target_id: UUID,
     request: TargetUpdate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> TargetResponse:
     """Update a scan target."""
     target = await session.get(ScanTarget, target_id)
     if not target or target.tenant_id != user.tenant_id:
@@ -155,8 +155,8 @@ async def update_target(
 async def delete_target(
     target_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> None:
     """Delete a scan target."""
     target = await session.get(ScanTarget, target_id)
     if not target or target.tenant_id != user.tenant_id:

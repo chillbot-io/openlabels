@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
-from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue, parse_cron_expression
 
 router = APIRouter()
@@ -53,8 +53,8 @@ class ScheduleResponse(BaseModel):
 @router.get("", response_model=list[ScheduleResponse])
 async def list_schedules(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> list[ScheduleResponse]:
     """List configured scan schedules."""
     query = select(ScanSchedule).where(ScanSchedule.tenant_id == user.tenant_id)
     result = await session.execute(query)
@@ -66,8 +66,8 @@ async def list_schedules(
 async def create_schedule(
     request: ScheduleCreate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> ScheduleResponse:
     """Create a new scan schedule."""
     # Verify target exists
     target = await session.get(ScanTarget, request.target_id)
@@ -95,8 +95,8 @@ async def create_schedule(
 async def get_schedule(
     schedule_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ScheduleResponse:
     """Get schedule details."""
     schedule = await session.get(ScanSchedule, schedule_id)
     if not schedule or schedule.tenant_id != user.tenant_id:
@@ -109,8 +109,8 @@ async def update_schedule(
     schedule_id: UUID,
     request: ScheduleUpdate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> ScheduleResponse:
     """Update a scan schedule."""
     schedule = await session.get(ScanSchedule, schedule_id)
     if not schedule or schedule.tenant_id != user.tenant_id:
@@ -132,8 +132,8 @@ async def update_schedule(
 async def delete_schedule(
     schedule_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> None:
     """Delete a scan schedule."""
     schedule = await session.get(ScanSchedule, schedule_id)
     if not schedule or schedule.tenant_id != user.tenant_id:
@@ -146,8 +146,8 @@ async def delete_schedule(
 async def trigger_schedule(
     schedule_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
     """Trigger an immediate run of a schedule."""
     schedule = await session.get(ScanSchedule, schedule_id)
     if not schedule or schedule.tenant_id != user.tenant_id:

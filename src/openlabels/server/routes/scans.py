@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 from openlabels.server.db import get_session
 from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanTarget
-from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue
 
 router = APIRouter()
@@ -64,8 +64,8 @@ async def create_scan(
     request: Request,
     scan_request: ScanCreate,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> ScanResponse:
     """Create a new scan job."""
     # Verify target exists
     target = await session.get(ScanTarget, scan_request.target_id)
@@ -100,8 +100,8 @@ async def list_scans(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanListResponse:
     """List scan jobs."""
     query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
 
@@ -134,8 +134,8 @@ async def list_scans(
 async def get_scan(
     scan_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
-):
+    user: CurrentUser = Depends(get_current_user),
+) -> ScanResponse:
     """Get scan job details."""
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
@@ -147,8 +147,8 @@ async def get_scan(
 async def cancel_scan(
     scan_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user=Depends(require_admin),
-):
+    user: CurrentUser = Depends(require_admin),
+) -> None:
     """Cancel a running scan."""
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
