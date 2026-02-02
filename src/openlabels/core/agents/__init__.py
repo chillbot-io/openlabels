@@ -5,7 +5,13 @@ Agents are isolated worker processes, each with their own model instance.
 This enables true parallelism on multi-core systems.
 """
 
-from openlabels.core.agents.pool import AgentPool, AgentPoolConfig
+from openlabels.core.agents.pool import (
+    AgentPool,
+    AgentPoolConfig,
+    FileResult,
+    ResultHandler,
+    ScanOrchestrator,
+)
 from openlabels.core.agents.worker import ClassificationAgent, AgentResult
 
 __all__ = [
@@ -13,4 +19,7 @@ __all__ = [
     "AgentPoolConfig",
     "ClassificationAgent",
     "AgentResult",
+    "FileResult",
+    "ResultHandler",
+    "ScanOrchestrator",
 ]

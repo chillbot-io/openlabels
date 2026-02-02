@@ -14,9 +14,10 @@ import multiprocessing as mp
 import os
 import psutil
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import AsyncIterator, Callable, Optional
+from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from openlabels.core.agents.worker import (
     AgentResult,
@@ -31,6 +32,26 @@ logger = logging.getLogger(__name__)
 # Memory footprint per agent (NER model + overhead)
 AGENT_MEMORY_MB = 400  # ~350MB model + 50MB overhead
 MIN_SYSTEM_MEMORY_MB = 2048  # Keep 2GB free for OS
+
+
+@dataclass
+class FileResult:
+    """Aggregated result for a complete file (all chunks combined)."""
+
+    file_path: str
+    entity_counts: dict[str, int]
+    total_entities: int
+    total_processing_ms: float
+    chunk_count: int
+    errors: list[str]
+
+    @property
+    def has_errors(self) -> bool:
+        return len(self.errors) > 0
+
+
+# Type for result handler callback (async function that persists results)
+ResultHandler = Callable[[list[FileResult]], Awaitable[None]]
 
 
 class PoolState(str, Enum):
@@ -413,12 +434,18 @@ class ScanOrchestrator:
         self,
         pool_config: Optional[AgentPoolConfig] = None,
         policy_engine: Optional[object] = None,  # PolicyEngine type
+        result_handler: Optional[ResultHandler] = None,
     ):
         self.pool_config = pool_config or AgentPoolConfig()
         self.policy_engine = policy_engine
+        self.result_handler = result_handler
 
         # Bounded queues for pipeline stages
         self._extract_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+
+        # Track chunks per file for aggregation
+        self._file_chunks: dict[str, int] = {}  # file_path -> expected chunk count
+        self._file_results: dict[str, list[AgentResult]] = defaultdict(list)
 
     async def scan_directory(
         self,
@@ -498,7 +525,7 @@ class ScanOrchestrator:
 
     async def _extract_and_submit(self, pool: AgentPool) -> None:
         """Extract text from files and submit to agent pool."""
-        from openlabels.core.extraction import extract_text
+        from openlabels.core.extractors import extract_text
         from openlabels.core.pipeline.chunking import TextChunker
 
         chunker = TextChunker()
@@ -509,14 +536,22 @@ class ScanOrchestrator:
                 break
 
             try:
-                # Extract text (this is I/O bound for most files)
-                text = await asyncio.to_thread(extract_text, file_path)
+                # Read file content
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+
+                # Extract text (this uses our secure extractors)
+                result = extract_text(content, file_path)
+                text = result.text
 
                 if not text or not text.strip():
                     continue
 
                 # Chunk the text
                 chunks = chunker.chunk(text)
+
+                # Track expected chunk count for aggregation
+                self._file_chunks[file_path] = len(chunks)
 
                 # Submit each chunk as a work item
                 for i, chunk in enumerate(chunks):
@@ -539,20 +574,76 @@ class ScanOrchestrator:
         pool: AgentPool,
         on_result: Optional[Callable[[AgentResult], None]],
     ) -> None:
-        """Collect results and apply policy evaluation."""
+        """Collect results, aggregate by file, and persist."""
+        completed_files: list[FileResult] = []
+
         async for batch in pool.results_batched():
             for result in batch:
-                # Apply policy evaluation if configured
-                if self.policy_engine and result.entities:
-                    # policy_result = self.policy_engine.evaluate(result.entities)
-                    # result.metadata['policies'] = policy_result
-                    pass
+                # Collect chunk result
+                self._file_results[result.file_path].append(result)
 
-                # Call user callback
+                # Check if all chunks for this file are complete
+                expected_chunks = self._file_chunks.get(result.file_path, 1)
+                collected_chunks = len(self._file_results[result.file_path])
+
+                if collected_chunks >= expected_chunks:
+                    # Aggregate all chunks into single file result
+                    file_result = self._aggregate_file_results(result.file_path)
+                    completed_files.append(file_result)
+
+                    # Clean up tracking
+                    del self._file_results[result.file_path]
+                    if result.file_path in self._file_chunks:
+                        del self._file_chunks[result.file_path]
+
+                # Call user callback for each chunk result
                 if on_result:
                     on_result(result)
 
-            # TODO: Batch insert to database
-            logger.debug(f"Collected batch of {len(batch)} results")
+            # Persist batch of completed files
+            if completed_files and self.result_handler:
+                try:
+                    await self.result_handler(completed_files)
+                    logger.debug(f"Persisted {len(completed_files)} file results")
+                except Exception as e:
+                    logger.error(f"Failed to persist results: {e}")
+
+                completed_files = []
+
+            logger.debug(f"Collected batch of {len(batch)} chunk results")
+
+        # Persist any remaining completed files
+        if completed_files and self.result_handler:
+            try:
+                await self.result_handler(completed_files)
+            except Exception as e:
+                logger.error(f"Failed to persist final results: {e}")
 
         logger.debug("Collector completed")
+
+    def _aggregate_file_results(self, file_path: str) -> FileResult:
+        """Aggregate all chunk results for a file into a single FileResult."""
+        chunk_results = self._file_results.get(file_path, [])
+
+        # Aggregate entity counts
+        entity_counts: dict[str, int] = defaultdict(int)
+        total_processing_ms = 0.0
+        errors: list[str] = []
+
+        for chunk in chunk_results:
+            total_processing_ms += chunk.processing_time_ms
+
+            if chunk.error:
+                errors.append(f"Chunk {chunk.chunk_index}: {chunk.error}")
+
+            for entity in chunk.entities:
+                entity_counts[entity.entity_type] += 1
+
+        return FileResult(
+            file_path=file_path,
+            entity_counts=dict(entity_counts),
+            total_entities=sum(entity_counts.values()),
+            total_processing_ms=total_processing_ms,
+            chunk_count=len(chunk_results),
+            errors=errors,
+        )

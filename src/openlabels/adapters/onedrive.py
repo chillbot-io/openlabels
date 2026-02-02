@@ -2,7 +2,7 @@
 OneDrive for Business adapter via Microsoft Graph API.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import AsyncIterator, Optional
 
 import httpx
@@ -57,7 +57,9 @@ class OneDriveAdapter:
             data = response.json()
 
             self._access_token = data["access_token"]
-            self._token_expires = datetime.utcnow()
+            # Parse expires_in (seconds) with 60s buffer for clock skew
+            expires_in = data.get("expires_in", 3600)
+            self._token_expires = datetime.utcnow() + timedelta(seconds=expires_in - 60)
 
             return self._access_token
 
