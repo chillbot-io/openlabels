@@ -1,0 +1,380 @@
+# Clinical Workflow Terms
+# High-signal medical terminology for detecting healthcare context
+# Used to trigger PHI+PII detection pipeline escalation
+# Source: Standard medical terminology (public domain factual terms)
+# Format: One term per line, case-insensitive matching
+
+# === CLINICAL DOCUMENTS ===
+discharge summary
+admission note
+progress note
+history and physical
+h&p
+soap note
+operative report
+operative note
+op note
+consultation note
+consult note
+pathology report
+path report
+radiology report
+imaging report
+laboratory report
+lab report
+nursing assessment
+nursing note
+vital signs
+vitals
+medication list
+med list
+problem list
+medication reconciliation
+med rec
+treatment plan
+care plan
+plan of care
+physician order
+medical record
+patient record
+health record
+ehr
+emr
+chart
+medical chart
+patient chart
+
+# === CLINICAL PROCEDURES ===
+intubation
+extubation
+catheterization
+catheter insertion
+dialysis
+hemodialysis
+peritoneal dialysis
+transfusion
+blood transfusion
+infusion
+iv infusion
+injection
+vaccination
+immunization
+biopsy
+aspiration
+drainage
+incision
+excision
+resection
+amputation
+transplant
+transplantation
+debridement
+suture
+suturing
+wound care
+dressing change
+lumbar puncture
+spinal tap
+thoracentesis
+paracentesis
+bronchoscopy
+colonoscopy
+endoscopy
+laparoscopy
+arthroscopy
+angiography
+angioplasty
+stent placement
+pacemaker
+defibrillator
+ventilator
+mechanical ventilation
+cpap
+bipap
+oxygen therapy
+chemotherapy
+radiation therapy
+radiotherapy
+physical therapy
+occupational therapy
+speech therapy
+rehabilitation
+
+# === CLINICAL WORKFLOW ===
+admission
+admitting
+admitted
+discharge
+discharged
+discharging
+transfer
+transferred
+referral
+referred
+consult
+consultation
+follow up
+follow-up
+followup
+chief complaint
+presenting complaint
+history of present illness
+hpi
+past medical history
+pmh
+family history
+fhx
+social history
+shx
+review of systems
+ros
+physical examination
+physical exam
+assessment
+diagnosis
+differential diagnosis
+impression
+prognosis
+treatment
+therapy
+medication
+prescription
+dosage
+dose
+administered
+administration
+monitoring
+observation
+inpatient
+outpatient
+ambulatory
+emergency
+emergent
+urgent
+elective
+routine
+stat
+critical
+acute
+chronic
+stable
+unstable
+improving
+deteriorating
+worsening
+resolved
+unresolved
+pending
+confirmed
+
+# === CLINICAL ASSESSMENTS ===
+glasgow coma scale
+gcs
+pain scale
+fall risk
+pressure ulcer
+bedsore
+decubitus
+sepsis
+shock
+cardiac arrest
+code blue
+rapid response
+resuscitation
+cpr
+aed
+triage
+acuity
+severity
+staging
+grading
+
+# === CLINICAL ABBREVIATIONS ===
+dx
+rx
+hx
+tx
+sx
+fx
+px
+pt
+pts
+prn
+bid
+tid
+qid
+qhs
+ac
+pc
+po
+iv
+im
+sq
+subq
+npo
+dnr
+dni
+and
+cad
+chf
+copd
+dm
+htn
+cva
+mi
+dvt
+pe
+uti
+uri
+gi
+gi bleed
+gib
+
+# === PROVIDER INTERACTIONS ===
+attending
+attending physician
+resident
+intern
+fellow
+on call
+rounds
+bedside
+beside manner
+informed consent
+hipaa
+phi
+pii
+confidential
+protected health information
+
+# === COMMON DISEASE NAMES ===
+# High-frequency disease terms for context detection
+diabetes
+diabetic
+hypertension
+hypertensive
+cancer
+carcinoma
+melanoma
+leukemia
+lymphoma
+asthma
+pneumonia
+bronchitis
+arthritis
+alzheimer
+dementia
+parkinson
+epilepsy
+seizure
+stroke
+aneurysm
+embolism
+thrombosis
+sepsis
+septic
+hepatitis
+cirrhosis
+pancreatitis
+colitis
+crohn
+ulcerative
+fibromyalgia
+lupus
+sclerosis
+neuropathy
+myopathy
+cardiomyopathy
+arrhythmia
+tachycardia
+bradycardia
+fibrillation
+infarction
+ischemia
+angina
+edema
+anemia
+hemophilia
+osteoporosis
+fracture
+concussion
+hernia
+appendicitis
+cholecystitis
+diverticulitis
+gastritis
+esophagitis
+
+# === COMMON DRUG NAMES ===
+# High-frequency medications for context detection
+metformin
+insulin
+lisinopril
+amlodipine
+atorvastatin
+simvastatin
+omeprazole
+losartan
+gabapentin
+hydrocodone
+acetaminophen
+ibuprofen
+aspirin
+warfarin
+heparin
+prednisone
+amoxicillin
+azithromycin
+ciprofloxacin
+levothyroxine
+albuterol
+fluticasone
+montelukast
+sertraline
+escitalopram
+fluoxetine
+duloxetine
+alprazolam
+lorazepam
+zolpidem
+oxycodone
+tramadol
+morphine
+fentanyl
+naloxone
+epinephrine
+nitroglycerin
+furosemide
+metoprolol
+carvedilol
+
+# === CLINICAL MEASUREMENTS ===
+blood pressure
+bp
+heart rate
+hr
+pulse
+respiratory rate
+rr
+temperature
+temp
+oxygen saturation
+o2 sat
+spo2
+weight
+height
+bmi
+body mass index
+intake
+output
+i&o
+
+# === MEDICAL RECORD IDENTIFIERS ===
+medical record number
+mrn
+patient id
+patient identifier
+account number
+encounter number
+visit number
+case number

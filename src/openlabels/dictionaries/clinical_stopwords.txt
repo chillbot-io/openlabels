@@ -1,0 +1,76 @@
+# Clinical Stopwords
+# Common terms that cause false positives when matching medical content
+# These should be EXCLUDED from triggering medical context detection
+# unless they appear with other strong medical indicators
+# Format: One term per line, case-insensitive matching
+
+# === COMMON ENGLISH WORDS ===
+# These are too ambiguous on their own
+patient
+patients
+doctor
+doctors
+hospital
+medical
+health
+care
+treatment
+condition
+normal
+test
+tests
+result
+results
+report
+positive
+negative
+history
+record
+records
+status
+level
+levels
+value
+values
+rate
+range
+count
+number
+
+# === AMBIGUOUS ABBREVIATIONS ===
+# These could mean many things
+or
+and
+for
+per
+with
+from
+as
+to
+at
+in
+on
+by
+
+# === COMMON FALSE POSITIVE TRIGGERS ===
+# Terms that appear in non-medical contexts frequently
+general
+service
+services
+center
+clinic
+office
+department
+unit
+group
+system
+program
+plan
+review
+assessment
+management
+support
+information
+data
+date
+time
