@@ -469,6 +469,246 @@ def labels_sync():
         client.close()
 
 
+@labels.command("apply")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--label", required=True, help="Label name or ID to apply")
+@click.option("--justification", help="Justification for downgrade (if applicable)")
+@click.option("--dry-run", is_flag=True, help="Preview without applying")
+def labels_apply(file_path: str, label: str, justification: Optional[str], dry_run: bool):
+    """Apply a sensitivity label to a file.
+
+    Uses the MIP SDK on Windows, or records the label in the database on other platforms.
+
+    Examples:
+        openlabels labels apply ./document.docx --label "Confidential"
+        openlabels labels apply ./data.xlsx --label "Highly Confidential" --dry-run
+    """
+    path = Path(file_path)
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would apply label '{label}' to {path}")
+        return
+
+    try:
+        from openlabels.labeling import LabelingEngine, get_label_cache
+
+        # Try to get label from cache first
+        cache = get_label_cache()
+        cached_label = cache.get_by_name(label)
+
+        if cached_label:
+            label_id = cached_label.label_id
+            label_name = cached_label.name
+        else:
+            # Assume it's a label ID
+            label_id = label
+            label_name = label
+
+        engine = LabelingEngine()
+
+        click.echo(f"Applying label '{label_name}' to {path}...")
+        result = asyncio.run(engine.apply_label(
+            file_path=path,
+            label_id=label_id,
+            justification=justification,
+        ))
+
+        if result.success:
+            click.echo(f"Label applied: {label_name}")
+            if result.method:
+                click.echo(f"  Method: {result.method}")
+        else:
+            click.echo(f"Failed to apply label: {result.error}", err=True)
+            sys.exit(1)
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error applying label: {e}", err=True)
+        sys.exit(1)
+
+
+@labels.command("remove")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--justification", help="Justification for label removal")
+@click.option("--dry-run", is_flag=True, help="Preview without removing")
+def labels_remove(file_path: str, justification: Optional[str], dry_run: bool):
+    """Remove a sensitivity label from a file.
+
+    Examples:
+        openlabels labels remove ./document.docx
+        openlabels labels remove ./data.xlsx --justification "Data declassified"
+    """
+    path = Path(file_path)
+
+    if dry_run:
+        click.echo(f"DRY RUN: Would remove label from {path}")
+        return
+
+    try:
+        from openlabels.labeling import LabelingEngine
+
+        engine = LabelingEngine()
+
+        click.echo(f"Removing label from {path}...")
+        result = asyncio.run(engine.remove_label(
+            file_path=path,
+            justification=justification,
+        ))
+
+        if result.success:
+            click.echo("Label removed successfully")
+        else:
+            click.echo(f"Failed to remove label: {result.error}", err=True)
+            sys.exit(1)
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error removing label: {e}", err=True)
+        sys.exit(1)
+
+
+@labels.command("info")
+@click.argument("file_path", type=click.Path(exists=True))
+def labels_info(file_path: str):
+    """Show label information for a file.
+
+    Examples:
+        openlabels labels info ./document.docx
+    """
+    path = Path(file_path)
+
+    try:
+        from openlabels.labeling import LabelingEngine
+
+        engine = LabelingEngine()
+
+        result = asyncio.run(engine.get_label_info(file_path=path))
+
+        click.echo(f"File: {path}")
+        click.echo("-" * 50)
+
+        if result.has_label:
+            click.echo(f"Label:       {result.label_name or result.label_id}")
+            click.echo(f"Label ID:    {result.label_id}")
+            if result.applied_at:
+                click.echo(f"Applied:     {result.applied_at}")
+            if result.applied_by:
+                click.echo(f"Applied by:  {result.applied_by}")
+            if result.protection:
+                click.echo(f"Protection:  {result.protection}")
+        else:
+            click.echo("No sensitivity label applied")
+
+    except ImportError as e:
+        click.echo(f"Error: Labeling module not available: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error getting label info: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def status():
+    """Show OpenLabels system status.
+
+    Displays server connectivity, database status, job queue, and monitoring info.
+
+    Examples:
+        openlabels status
+    """
+    client = _get_httpx_client()
+    server = _get_server_url()
+
+    click.echo("OpenLabels Status")
+    click.echo("=" * 50)
+
+    # Check server health
+    try:
+        response = client.get(f"{server}/health", timeout=5.0)
+        if response.status_code == 200:
+            health = response.json()
+            click.echo(f"Server:      ✓ Online ({server})")
+            click.echo(f"  Version:   {health.get('version', 'unknown')}")
+            click.echo(f"  Database:  {health.get('database', 'unknown')}")
+        else:
+            click.echo(f"Server:      ✗ Unhealthy (status {response.status_code})")
+    except Exception as e:
+        click.echo(f"Server:      ✗ Offline ({e})")
+        click.echo("\nCannot retrieve additional status without server connection.")
+        client.close()
+        return
+
+    # Get job queue status
+    try:
+        response = client.get(f"{server}/api/jobs/stats")
+        if response.status_code == 200:
+            stats = response.json()
+            click.echo(f"\nJob Queue:")
+            click.echo(f"  Pending:   {stats.get('pending', 0)}")
+            click.echo(f"  Running:   {stats.get('running', 0)}")
+            click.echo(f"  Completed: {stats.get('completed', 0)}")
+            click.echo(f"  Failed:    {stats.get('failed', 0)}")
+    except Exception:
+        pass
+
+    # Get scan statistics
+    try:
+        response = client.get(f"{server}/api/dashboard/summary")
+        if response.status_code == 200:
+            summary = response.json()
+            click.echo(f"\nScan Summary:")
+            click.echo(f"  Total files scanned:  {summary.get('total_files', 0):,}")
+            click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
+            click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
+            click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
+    except Exception:
+        pass
+
+    # Get monitored files count
+    try:
+        from openlabels.monitoring import get_watched_files
+        watched = get_watched_files()
+        click.echo(f"\nMonitoring:")
+        click.echo(f"  Files monitored:      {len(watched)}")
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Check MIP availability
+    try:
+        from openlabels.labeling.mip import MIPClient
+        mip = MIPClient()
+        if mip.is_available():
+            click.echo(f"\nMIP SDK:     ✓ Available")
+        else:
+            click.echo(f"\nMIP SDK:     ✗ Not available (Windows only)")
+    except ImportError:
+        click.echo(f"\nMIP SDK:     ✗ Not installed")
+    except Exception:
+        pass
+
+    # Check ML models
+    try:
+        models_dir = Path.home() / ".openlabels" / "models"
+        phi_bert = models_dir / "phi-bert" / "model.onnx"
+        pii_bert = models_dir / "pii-bert" / "model.onnx"
+        rapidocr = models_dir / "rapidocr" / "det.onnx"
+
+        click.echo(f"\nML Models:")
+        click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
+        click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
+        click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
+    except Exception:
+        pass
+
+    client.close()
+
+
 @cli.command()
 @click.option("--output", default="./backup", help="Output directory")
 def backup(output: str):
@@ -589,43 +829,104 @@ def export_results(job: str, fmt: str, output: str):
 
 
 @cli.command()
-@click.argument("file_path", type=click.Path(exists=True))
+@click.argument("path", type=click.Path(exists=True))
 @click.option("--exposure", default="PRIVATE", type=click.Choice(["PRIVATE", "INTERNAL", "ORG_WIDE", "PUBLIC"]))
 @click.option("--enable-ml", is_flag=True, help="Enable ML-based detectors")
-def classify(file_path: str, exposure: str, enable_ml: bool):
-    """Classify a single file locally (no server required)."""
-    click.echo(f"Classifying: {file_path}")
+@click.option("--recursive", "-r", is_flag=True, help="Scan directories recursively")
+@click.option("--output", "-o", help="Output file for results (JSON)")
+@click.option("--min-score", default=0, type=int, help="Minimum risk score to report")
+def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output: Optional[str], min_score: int):
+    """Classify files locally (no server required).
+
+    Can classify a single file or a directory of files.
+
+    Examples:
+        openlabels classify ./document.docx
+        openlabels classify ./data/ --recursive --output results.json
+        openlabels classify ./folder/ -r --min-score 50
+    """
+    target_path = Path(path)
+
+    if target_path.is_dir():
+        if recursive:
+            files = list(target_path.rglob("*"))
+        else:
+            files = list(target_path.glob("*"))
+        files = [f for f in files if f.is_file()]
+        click.echo(f"Classifying {len(files)} files...")
+    else:
+        files = [target_path]
+        click.echo(f"Classifying: {path}")
 
     try:
         from openlabels.core.processor import FileProcessor
 
         processor = FileProcessor(enable_ml=enable_ml)
+        results = []
 
-        with open(file_path, "rb") as f:
-            content = f.read()
+        async def process_all():
+            all_results = []
+            for file_path in files:
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
 
-        # Run async processor
-        result = asyncio.run(
-            processor.process_file(
-                file_path=file_path,
-                content=content,
-                exposure_level=exposure,
-            )
-        )
+                    result = await processor.process_file(
+                        file_path=str(file_path),
+                        content=content,
+                        exposure_level=exposure,
+                    )
+                    all_results.append(result)
+                except Exception as e:
+                    click.echo(f"Error processing {file_path}: {e}", err=True)
+            return all_results
 
-        click.echo(f"\nResults for: {result.file_name}")
-        click.echo("-" * 50)
-        click.echo(f"Risk Score: {result.risk_score}")
-        click.echo(f"Risk Tier:  {result.risk_tier.value}")
-        click.echo(f"Entities:   {sum(result.entity_counts.values())}")
+        results = asyncio.run(process_all())
 
-        if result.entity_counts:
-            click.echo("\nDetected Entities:")
-            for entity_type, count in sorted(result.entity_counts.items(), key=lambda x: -x[1]):
-                click.echo(f"  {entity_type}: {count}")
+        # Filter by min_score
+        results = [r for r in results if r.risk_score >= min_score]
 
-        if result.error:
-            click.echo(f"\nError: {result.error}", err=True)
+        # Output results
+        if output:
+            # JSON output
+            output_data = []
+            for result in results:
+                output_data.append({
+                    "file": result.file_name,
+                    "risk_score": result.risk_score,
+                    "risk_tier": result.risk_tier.value,
+                    "entity_counts": result.entity_counts,
+                    "error": result.error,
+                })
+            with open(output, "w") as f:
+                json.dump(output_data, f, indent=2)
+            click.echo(f"\nResults written to: {output}")
+            click.echo(f"Files processed: {len(results)}")
+            click.echo(f"Files with risk >= {min_score}: {len([r for r in results if r.risk_score >= min_score])}")
+        else:
+            # Console output
+            for result in results:
+                click.echo(f"\n{'=' * 50}")
+                click.echo(f"File: {result.file_name}")
+                click.echo("-" * 50)
+                click.echo(f"Risk Score: {result.risk_score}")
+                click.echo(f"Risk Tier:  {result.risk_tier.value}")
+                click.echo(f"Entities:   {sum(result.entity_counts.values())}")
+
+                if result.entity_counts:
+                    click.echo("\nDetected Entities:")
+                    for entity_type, count in sorted(result.entity_counts.items(), key=lambda x: -x[1]):
+                        click.echo(f"  {entity_type}: {count}")
+
+                if result.error:
+                    click.echo(f"\nError: {result.error}", err=True)
+
+            if len(results) > 1:
+                click.echo(f"\n{'=' * 50}")
+                click.echo(f"Summary: {len(results)} files processed")
+                high_risk = [r for r in results if r.risk_score >= 55]
+                if high_risk:
+                    click.echo(f"High/Critical risk: {len(high_risk)} files")
 
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
