@@ -237,8 +237,6 @@ FastAPI Server
 | **Filesystem** | Complete | Local/network paths, async enumeration |
 | **SharePoint** | Partial | Graph API, site enumeration |
 | **OneDrive** | Partial | Graph API, user enumeration |
-| **S3** | Model only | Not implemented |
-| **Azure Blob** | Model only | Not implemented |
 
 ### Adapter Protocol
 
@@ -250,11 +248,9 @@ All adapters implement:
 
 ### Adapter Gaps
 
-1. **S3 adapter** - Only model, no implementation
-2. **Azure Blob adapter** - Only model, no implementation
-3. **Delta scanning** - Partially implemented
-4. **No credential caching** for cloud adapters
-5. **No retry logic** for transient failures
+1. **Delta scanning** - Partially implemented
+2. **No credential caching** for cloud adapters
+3. **No retry logic** for transient failures
 
 ---
 
@@ -437,11 +433,11 @@ Coverage: 32% (12,343 statements, 8,342 missed)
 
 ### Medium Priority
 
-1. **Implement S3/Azure Blob adapters** - Complete cloud support
-2. **Add integration tests** - End-to-end validation
-3. **Dashboard query optimization** - Use SQL aggregation
-4. **Add metrics collection** - Observability
-5. **Complete CLI commands** - Export, status, label
+1. **Add integration tests** - End-to-end validation
+2. **Dashboard query optimization** - Use SQL aggregation
+3. **Add metrics collection** - Observability
+4. **Complete CLI commands** - Export, status, label
+5. **Complete SharePoint/OneDrive adapters** - Full Graph API support
 
 ### Low Priority
 
