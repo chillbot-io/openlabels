@@ -11,6 +11,7 @@ from openlabels.server.routes import (
     labels,
     dashboard,
     ws,
+    users,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "labels",
     "dashboard",
     "ws",
+    "users",
 ]

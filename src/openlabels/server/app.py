@@ -31,6 +31,7 @@ from openlabels.server.routes import (
     labels,
     dashboard,
     ws,
+    users,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,5 +150,6 @@ app.include_router(results.router, prefix="/api/results", tags=["Results"])
 app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
 app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"])
 app.include_router(labels.router, prefix="/api/labels", tags=["Labels"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(ws.router, tags=["WebSocket"])
