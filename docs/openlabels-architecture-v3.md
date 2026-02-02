@@ -199,6 +199,12 @@ Same content, different risk. Only OpenLabels captures this.
 │                                 │                                           │
 │                                 ▼                                           │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    Tiered Pipeline                                   │   │
+│  │    (intelligent escalation based on content and confidence)         │   │
+│  └──────────────────────────────┬──────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                    Context Enhancer                                  │   │
 │  │    (deny lists, hotwords, pattern exclusions)                       │   │
 │  └──────────────────────────────┬──────────────────────────────────────┘   │
@@ -221,6 +227,108 @@ Same content, different risk. Only OpenLabels captures this.
 | PDF | .pdf | pdfplumber/PyMuPDF + OCR fallback |
 | Images | .png, .jpg, .jpeg, .tiff, .bmp, .gif, .webp | RapidOCR |
 | Archives | .zip, .tar, .gz | Recursive expansion |
+
+### Tiered Detection Pipeline
+
+The tiered pipeline optimizes detection by avoiding unnecessary ML processing:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         TIERED DETECTION PIPELINE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  STAGE 1: FAST TRIAGE (always runs)                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  • Checksum detectors (SSN, CC, NPI, IBAN, VIN)                     │   │
+│  │  • Secrets detector (API keys, tokens, passwords)                    │   │
+│  │  • Financial detector (CUSIP, ISIN, crypto)                         │   │
+│  │  • Government detector (classifications, CAGE codes)                │   │
+│  │  • Pattern detector (names, dates, phones, emails)                  │   │
+│  │  • Hyperscan acceleration (optional, 10-100x faster)                │   │
+│  └────────────────────────────────┬────────────────────────────────────┘   │
+│                                   │                                         │
+│                                   ▼                                         │
+│                    ┌──────────────────────────┐                             │
+│                    │    ESCALATION CHECK      │                             │
+│                    │  • confidence < 0.7?     │                             │
+│                    │  • medical context?      │                             │
+│                    │  • ML-beneficial type?   │                             │
+│                    └─────────┬────────────────┘                             │
+│                              │                                              │
+│              ┌───────────────┴───────────────┐                              │
+│              │ No                         Yes │                              │
+│              ▼                               ▼                              │
+│      ┌───────────┐            ┌─────────────────────────────────────┐      │
+│      │   DONE    │            │  STAGE 2: ML ESCALATION             │      │
+│      │ (Stage 1  │            │  • Medical? → PHI-BERT + PII-BERT   │      │
+│      │  results) │            │  • Non-medical? → PII-BERT only     │      │
+│      └───────────┘            │  • Coreference (disabled by default)│      │
+│                               └─────────────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- **Escalation threshold**: 0.7 confidence (configurable)
+- **Medical context detection**: Uses dictionaries to identify clinical content
+- **Dual BERT for medical**: PHI-BERT alone misses standard PII in clinical docs
+- **OCR optimization**: Quick text check before full OCR pipeline
+
+**Usage:**
+
+```python
+from openlabels.core.pipeline import TieredPipeline, create_pipeline
+
+# Create pipeline with medical context auto-detection
+pipeline = create_pipeline(auto_detect_medical=True)
+
+# Detect PII/PHI
+result = pipeline.detect(text)
+print(f"Stages executed: {result.stages_executed}")
+print(f"Medical context: {result.medical_context_detected}")
+print(f"Entities: {result.result.entity_counts}")
+
+# For images with OCR optimization
+result = pipeline.detect_image("document.png")
+```
+
+### Medical Dictionaries
+
+The `dictionaries/` module provides 380,000+ medical and clinical terms for context detection:
+
+| Dictionary | Terms | Source |
+|------------|-------|--------|
+| diagnoses.txt | 97,444 | ICD-10-CM |
+| drugs.txt | 53,607 | FDA NDC |
+| facilities.txt | 65,642 | CMS Providers |
+| lab_tests.txt | 157,595 | LOINC |
+| professions.txt | 253 | Healthcare roles |
+| clinical_workflow.txt | 258 | High-signal terms |
+| us_cities.txt | 2,820 | US Census |
+| us_counties.txt | 1,786 | US Census |
+| us_states.txt | 58 | US states/territories |
+| payers.txt | 78 | Insurance companies |
+| clinical_stopwords.txt | 62 | False positive filters |
+
+**Dictionary Loader:**
+
+```python
+from openlabels.dictionaries import get_dictionary_loader
+
+loader = get_dictionary_loader()
+
+# Check if term exists
+if loader.contains("drugs", "metformin"):
+    print("Found drug")
+
+# Detect medical context (used by tiered pipeline)
+if loader.has_medical_context("Patient diagnosed with diabetes"):
+    print("Medical context detected - escalate to PHI+PII analysis")
+
+# Get detailed medical indicators
+indicators = loader.get_medical_indicators(text)
+# {'workflow': {'discharge summary', 'diagnosis'}, 'professions': set(), ...}
+```
 
 ---
 
@@ -647,6 +755,8 @@ openlabels/
 │   │   │   └── ml_onnx.py           # BERT detectors
 │   │   │
 │   │   ├── pipeline/
+│   │   │   ├── __init__.py          # Pipeline exports
+│   │   │   ├── tiered.py            # Tiered detection pipeline ✓ NEW
 │   │   │   ├── context_enhancer.py  # False positive filtering ✓
 │   │   │   ├── entity_resolver.py   # Merge identical values ✓
 │   │   │   ├── span_validation.py   # Span boundary validation ✓
@@ -654,6 +764,19 @@ openlabels/
 │   │   │
 │   │   └── scoring/
 │   │       └── scorer.py            # Risk scoring engine ✓
+│   │
+│   ├── dictionaries/                # NEW - Medical/clinical term dictionaries
+│   │   ├── __init__.py              # DictionaryLoader class ✓
+│   │   ├── diagnoses.txt            # 97K ICD-10-CM diagnoses
+│   │   ├── drugs.txt                # 54K FDA NDC drugs
+│   │   ├── facilities.txt           # 66K CMS providers
+│   │   ├── lab_tests.txt            # 158K LOINC lab tests
+│   │   ├── professions.txt          # Healthcare roles
+│   │   ├── clinical_workflow.txt    # High-signal medical terms
+│   │   ├── clinical_stopwords.txt   # False positive filters
+│   │   ├── us_cities.txt            # US cities
+│   │   ├── us_counties.txt          # US counties
+│   │   └── us_states.txt            # US states
 │   │
 │   ├── remediation/                 # NEW
 │   │   ├── __init__.py
@@ -713,17 +836,18 @@ openlabels/
 | Span validation | ✓ | 25 |
 | Risk scorer | ✓ | 51 |
 | **OCR (RapidOCR)** | ✓ | 39 |
-| **Total** | | **384 tests passing** |
+| **Tiered Pipeline** | ✓ | - |
+| **Medical Dictionaries** | ✓ | - |
+| **Total** | | **754 tests passing** |
 
 ### In Progress
 
 | Component | Status | Priority |
 |-----------|--------|----------|
-| Remediation: Quarantine | Planned | High |
-| Remediation: Permission Lockdown | Planned | High |
-| Remediation: Targeted Monitoring | Planned | High |
+| GUI widgets | Scaffolded | Medium |
+| CLI commands (label, export, status) | Planned | Medium |
 | ML detectors (PHI-BERT, PII-BERT) | Scaffolded | Medium |
-| Coreference resolution (FastCoref) | Scaffolded | Medium |
+| Coreference resolution (FastCoref) | Scaffolded | Low |
 
 ### Test Coverage
 

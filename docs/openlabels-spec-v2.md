@@ -64,6 +64,8 @@ OpenLabels separates three concerns:
 | **Targeted Monitoring** | SACL-based access monitoring for flagged files |
 | **OCR Specification** | RapidOCR integration for images and scanned PDFs |
 | **ML Model Paths** | Standardized model directory structure |
+| **Tiered Detection** | Multi-stage pipeline with intelligent ML escalation |
+| **Medical Dictionaries** | 380K+ terms for clinical context detection |
 
 ---
 
@@ -315,6 +317,53 @@ final_score = min(100, content_score × exposure_multiplier)
 | INTERNAL | 1.2 |
 | ORG_WIDE | 1.8 |
 | PUBLIC | 2.5 |
+
+### 7.4 Tiered Detection Pipeline
+
+To optimize performance, implementations SHOULD use a tiered detection approach:
+
+#### 7.4.1 Stage 1: Fast Triage (Required)
+
+All content MUST pass through Stage 1 detectors:
+- Checksum-validated patterns (SSN, credit cards, NPI, IBAN)
+- Secret/credential patterns (API keys, tokens)
+- Financial patterns (CUSIP, ISIN, crypto addresses)
+- Government markings (classifications, CAGE codes)
+- General regex patterns (names, dates, phones, emails)
+
+#### 7.4.2 Stage 2: ML Escalation (Conditional)
+
+ML detectors SHOULD only run when:
+- Any Stage 1 span has confidence < 0.7 (escalation threshold)
+- Medical context is detected in content
+- Entity types that benefit from ML refinement are present
+
+#### 7.4.3 Stage 3: Deep Analysis (Medical Context)
+
+When medical context is detected:
+- MUST run both PHI-BERT and PII-BERT
+- PHI-BERT alone misses standard PII in clinical documents
+- Dual analysis catches both clinical entities and general PII
+
+#### 7.4.4 Medical Context Detection
+
+Medical context SHOULD be detected using dictionary-based keyword matching:
+
+| Dictionary | Purpose | Example Terms |
+|------------|---------|---------------|
+| diagnoses | ICD-10-CM codes | diabetes, hypertension, carcinoma |
+| drugs | FDA NDC medications | metformin, lisinopril, atorvastatin |
+| clinical_workflow | High-signal terms | discharge summary, prognosis, intubation |
+| professions | Healthcare roles | physician, nurse practitioner |
+
+Implementations SHOULD provide at least 50,000 medical terms for reliable context detection.
+
+#### 7.4.5 OCR Optimization
+
+For image files, implementations SHOULD:
+1. Perform quick text detection check before full OCR
+2. Skip OCR pipeline if no text regions detected
+3. Use lazy model loading to reduce startup time
 
 ---
 
