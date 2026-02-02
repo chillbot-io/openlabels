@@ -3,8 +3,6 @@ Text extractors for various file formats.
 
 Each extractor implements a common interface for extracting text content
 from files, with security protections against decompression bombs.
-
-Adapted from scrubiq for the openlabels classification pipeline.
 """
 
 import csv
@@ -687,10 +685,6 @@ class RTFExtractor(BaseExtractor):
                 pages=1,
                 warnings=[f"RTF extraction failed: {e}"],
             )
-
-
-# Registry of extractors for easy access
-_EXTRACTORS: List[BaseExtractor] = []
 
 
 def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] = None) -> Optional[BaseExtractor]:
