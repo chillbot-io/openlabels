@@ -48,8 +48,8 @@ class TestSharePointAdapter:
         assert hasattr(adapter, 'client_id')
 
     @pytest.mark.asyncio
-    async def test_list_files_mocked(self):
-        """Test listing files with mocked Graph API."""
+    async def test_list_files_method_exists(self):
+        """Test that list_files method exists on SharePointAdapter."""
         from openlabels.adapters.sharepoint import SharePointAdapter
 
         adapter = SharePointAdapter(
@@ -58,31 +58,12 @@ class TestSharePointAdapter:
             client_secret="test-secret",
         )
 
-        # Mock the HTTP client
-        mock_response = {
-            "value": [
-                {
-                    "id": "file1",
-                    "name": "document.docx",
-                    "size": 1024,
-                    "lastModifiedDateTime": "2024-01-01T00:00:00Z",
-                    "webUrl": "https://tenant.sharepoint.com/doc.docx",
-                },
-            ],
-            "@odata.nextLink": None,
-        }
-
-        with patch.object(adapter, '_get_token', return_value="test-token"):
-            with patch('httpx.AsyncClient') as mock_client:
-                mock_instance = AsyncMock()
-                mock_client.return_value.__aenter__.return_value = mock_instance
-                mock_instance.get.return_value = MagicMock(
-                    status_code=200,
-                    json=lambda: mock_response
-                )
-
-                # This tests that the adapter has proper list_files method
-                # Actual behavior depends on implementation
+        # Verify the adapter has the expected methods
+        assert hasattr(adapter, 'list_files')
+        assert hasattr(adapter, 'list_sites')
+        assert hasattr(adapter, '_get_client')
+        assert adapter.adapter_type == "sharepoint"
+        assert adapter.supports_delta() is True
 
 
 class TestSharePointExposureMapping:

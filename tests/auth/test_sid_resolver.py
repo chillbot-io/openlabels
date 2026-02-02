@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Import directly to avoid loading oauth which has cryptography dependencies
@@ -178,7 +178,7 @@ class TestCaching:
             user_principal_name="jsmith@contoso.com",
             resolution_source="graph_api",
         )
-        resolver._cache["S-1-5-21-123-456-789-1234"] = (cached_user, datetime.utcnow())
+        resolver._cache["S-1-5-21-123-456-789-1234"] = (cached_user, datetime.now(timezone.utc))
 
         # Second resolution should hit cache
         result2 = resolver.resolve_sync("S-1-5-21-123-456-789-1234")
@@ -195,7 +195,7 @@ class TestCaching:
             display_name="Old Name",
             resolution_source="graph_api",
         )
-        expired_time = datetime.utcnow() - timedelta(hours=2)
+        expired_time = datetime.now(timezone.utc) - timedelta(hours=2)
         resolver._cache["S-1-5-21-123-456-789-1234"] = (old_user, expired_time)
 
         # Should not hit cache
@@ -210,11 +210,11 @@ class TestCaching:
         # Add some entries
         for i in range(5):
             user = ResolvedUser(sid=f"S-1-5-21-{i}", display_name=f"User {i}")
-            resolver._cache[f"S-1-5-21-{i}"] = (user, datetime.utcnow())
+            resolver._cache[f"S-1-5-21-{i}"] = (user, datetime.now(timezone.utc))
 
         # Add expired entry
         old_user = ResolvedUser(sid="S-1-5-21-old", display_name="Old")
-        expired_time = datetime.utcnow() - timedelta(hours=100)
+        expired_time = datetime.now(timezone.utc) - timedelta(hours=100)
         resolver._cache["S-1-5-21-old"] = (old_user, expired_time)
 
         stats = resolver.get_cache_stats()
@@ -228,7 +228,7 @@ class TestCaching:
 
         # Add entry
         user = ResolvedUser(sid="S-1-5-21-test", display_name="Test")
-        resolver._cache["S-1-5-21-test"] = (user, datetime.utcnow())
+        resolver._cache["S-1-5-21-test"] = (user, datetime.now(timezone.utc))
 
         assert len(resolver._cache) == 1
 

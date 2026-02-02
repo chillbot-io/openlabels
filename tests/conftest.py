@@ -367,7 +367,7 @@ def database_url():
         export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
         pytest
     """
-    return _postgres_url
+    return os.getenv("TEST_DATABASE_URL")
 
 
 @pytest.fixture
