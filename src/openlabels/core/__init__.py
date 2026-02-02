@@ -56,6 +56,20 @@ from .processor import (
     process_file,
 )
 
+from .extractors import (
+    BaseExtractor,
+    ExtractionResult,
+    PageInfo,
+    PDFExtractor,
+    DOCXExtractor,
+    XLSXExtractor,
+    ImageExtractor,
+    TextExtractor,
+    RTFExtractor,
+    extract_text,
+    get_extractor,
+)
+
 from .pipeline import (
     resolve_coreferences,
     is_onnx_available,
@@ -101,6 +115,18 @@ __all__ = [
     "FileProcessor",
     "FileClassification",
     "process_file",
+    # Extractors
+    "BaseExtractor",
+    "ExtractionResult",
+    "PageInfo",
+    "PDFExtractor",
+    "DOCXExtractor",
+    "XLSXExtractor",
+    "ImageExtractor",
+    "TextExtractor",
+    "RTFExtractor",
+    "extract_text",
+    "get_extractor",
     # Pipeline
     "resolve_coreferences",
     "is_onnx_available",

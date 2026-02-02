@@ -6,7 +6,7 @@ to scan files and produce classification results.
 
 Pipeline:
     1. Fetch file content via adapter
-    2. Extract text (based on file type)
+    2. Extract text (based on file type) - with decompression bomb protection
     3. Run detection engine
     4. Score entities
     5. Return classification result
@@ -24,11 +24,9 @@ from .types import Span, DetectionResult, ScoringResult, RiskTier
 from .detectors.orchestrator import DetectorOrchestrator
 from .scoring.scorer import score
 from .constants import DEFAULT_MODELS_DIR
+from .extractors import extract_text as _extract_text_from_file, ExtractionResult
 
 logger = logging.getLogger(__name__)
-
-# Minimum native text length to consider PDF as text-based (not scanned)
-MIN_NATIVE_TEXT_LENGTH = 20
 
 
 # Supported text-based file extensions
@@ -255,7 +253,12 @@ class FileProcessor:
 
     async def _extract_text(self, content: bytes, file_path: str) -> str:
         """
-        Extract text from file content.
+        Extract text from file content using secure extractors.
+
+        Features:
+        - Decompression bomb protection for DOCX/XLSX
+        - Page limits for PDFs to prevent DoS
+        - OCR fallback for scanned documents
 
         Args:
             content: Raw file bytes
@@ -266,24 +269,36 @@ class FileProcessor:
         """
         ext = Path(file_path).suffix.lower()
 
-        # Plain text files
+        # Plain text files - handle directly (fast path)
         if ext in TEXT_EXTENSIONS:
             return await self._decode_text(content)
 
-        # Office documents
-        if ext in OFFICE_EXTENSIONS:
-            return await self._extract_office(content, ext)
+        # Use secure extractors for all other formats
+        try:
+            result = _extract_text_from_file(
+                content=content,
+                filename=file_path,
+                ocr_engine=self._ocr_engine,
+            )
 
-        # PDFs (with OCR fallback for scanned documents)
-        if ext in PDF_EXTENSIONS:
-            return await self._extract_pdf(content)
+            if result.warnings:
+                for warning in result.warnings:
+                    logger.warning(f"{file_path}: {warning}")
 
-        # Image files (require OCR)
-        if ext in IMAGE_EXTENSIONS:
-            return await self._extract_image(content)
+            return result.text
 
-        # Unknown - try as text
-        return await self._decode_text(content)
+        except ValueError as e:
+            # Decompression bomb or other security issue
+            logger.error(f"Security error extracting {file_path}: {e}")
+            raise
+        except ImportError as e:
+            # Missing library - try fallback
+            logger.warning(f"Missing library for {file_path}: {e}")
+            return await self._decode_text(content)
+        except Exception as e:
+            logger.error(f"Extraction failed for {file_path}: {e}")
+            # Fall back to trying as text
+            return await self._decode_text(content)
 
     async def _extract_image(self, content: bytes) -> str:
         """
