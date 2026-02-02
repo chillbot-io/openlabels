@@ -23,6 +23,7 @@ try:
     from .file_detail_widget import FileDetailWidget, RiskGauge
     from .settings_widget import SettingsWidget
     from .monitoring_widget import MonitoringWidget, AddMonitoringDialog
+    from .charts_widget import HeatMapChart, SensitiveDataChart, ChartPanel
 
     __all__ = [
         "ScanWidget",
@@ -40,7 +41,10 @@ try:
         "SettingsWidget",
         "MonitoringWidget",
         "AddMonitoringDialog",
+        "HeatMapChart",
+        "SensitiveDataChart",
+        "ChartPanel",
     ]
 except ImportError:
-    # PySide6 not available
+    # PySide6 or pyqtgraph not available
     __all__ = []

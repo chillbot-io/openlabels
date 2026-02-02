@@ -5,18 +5,18 @@ Displays:
 - Risk tier distribution
 - Scan statistics
 - Recent activity
-- Trend charts
+- Trend charts (sensitive data over time, access heat map)
 """
 
 import logging
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
-        QFrame, QGroupBox, QScrollArea,
+        QFrame, QGroupBox, QScrollArea, QSplitter, QTabWidget,
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont
@@ -24,6 +24,14 @@ try:
 except ImportError:
     PYSIDE_AVAILABLE = False
     QWidget = object
+
+# Import chart widgets (may fail if pyqtgraph not installed)
+CHARTS_AVAILABLE = False
+try:
+    from .charts_widget import ChartPanel, HeatMapChart, SensitiveDataChart
+    CHARTS_AVAILABLE = True
+except ImportError:
+    logger.info("Charts not available - install pyqtgraph for visualizations")
 
 
 class StatCard(QFrame if PYSIDE_AVAILABLE else object):
@@ -109,6 +117,28 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
         stats_layout.addStretch()
         layout.addLayout(stats_layout)
 
+        # Main content: charts on left, risk/activity on right
+        content_splitter = QSplitter(Qt.Horizontal)
+
+        # Left side: Charts (if available)
+        if CHARTS_AVAILABLE:
+            self._chart_panel = ChartPanel()
+            content_splitter.addWidget(self._chart_panel)
+            # Load sample data for demonstration
+            self._chart_panel.load_sample_data()
+        else:
+            # Placeholder if charts not available
+            chart_placeholder = QLabel("Install pyqtgraph for charts:\npip install pyqtgraph")
+            chart_placeholder.setAlignment(Qt.AlignCenter)
+            chart_placeholder.setStyleSheet("color: #888; font-style: italic;")
+            content_splitter.addWidget(chart_placeholder)
+            self._chart_panel = None
+
+        # Right side: Risk distribution + Recent activity
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
         # Risk distribution
         risk_group = QGroupBox("Risk Distribution")
         risk_layout = QGridLayout(risk_group)
@@ -138,7 +168,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
 
             self._risk_labels[tier] = (count_label, bar)
 
-        layout.addWidget(risk_group)
+        right_layout.addWidget(risk_group)
 
         # Recent activity
         activity_group = QGroupBox("Recent Activity")
@@ -148,9 +178,15 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._activity_label.setStyleSheet("color: #666;")
         activity_layout.addWidget(self._activity_label)
 
-        layout.addWidget(activity_group)
+        right_layout.addWidget(activity_group)
+        right_layout.addStretch()
 
-        layout.addStretch()
+        content_splitter.addWidget(right_widget)
+
+        # Set splitter proportions (70% charts, 30% stats)
+        content_splitter.setSizes([700, 300])
+
+        layout.addWidget(content_splitter, stretch=1)
 
     def update_stats(self, stats: Dict) -> None:
         """Update dashboard statistics."""
@@ -184,3 +220,32 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
                 lines = current.split("\n")[:9]  # Keep last 10
                 lines.insert(0, message)
                 self._activity_label.setText("\n".join(lines))
+
+    def update_time_series(self, data: Dict[str, List[Tuple[str, int]]]) -> None:
+        """
+        Update the sensitive data over time chart.
+
+        Args:
+            data: Dictionary mapping series name to list of (date_str, count) tuples.
+                  Example: {"Total": [("2024-01-01", 50), ("2024-01-02", 75)],
+                           "SSN": [("2024-01-01", 10), ...]}
+        """
+        if PYSIDE_AVAILABLE and CHARTS_AVAILABLE and self._chart_panel:
+            self._chart_panel.set_time_series_data(data)
+
+    def update_heat_map(self, data: List[List[int]]) -> None:
+        """
+        Update the access activity heat map.
+
+        Args:
+            data: 7x24 matrix where data[day][hour] = count
+                  day 0 = Monday, day 6 = Sunday
+                  hour 0 = midnight, hour 23 = 11 PM
+        """
+        if PYSIDE_AVAILABLE and CHARTS_AVAILABLE and self._chart_panel:
+            self._chart_panel.set_heat_map_data(data)
+
+    def load_sample_charts(self) -> None:
+        """Load sample data into charts for demonstration."""
+        if PYSIDE_AVAILABLE and CHARTS_AVAILABLE and self._chart_panel:
+            self._chart_panel.load_sample_data()
