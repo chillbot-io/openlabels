@@ -687,6 +687,410 @@ class RTFExtractor(BaseExtractor):
             )
 
 
+class PPTXExtractor(BaseExtractor):
+    """
+    PowerPoint extractor for PPTX files.
+
+    Extracts text from:
+    - Slide content (text boxes, shapes)
+    - Speaker notes
+    - Tables
+    """
+
+    def can_handle(self, content_type: str, extension: str) -> bool:
+        return (
+            content_type in (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "application/vnd.ms-powerpoint",
+            ) or
+            extension in (".pptx", ".ppt")
+        )
+
+    def extract(self, content: bytes, filename: str) -> ExtractionResult:
+        ext = Path(filename).suffix.lower()
+
+        if ext == ".ppt":
+            return self._extract_legacy_ppt(content, filename)
+
+        try:
+            from pptx import Presentation
+        except ImportError:
+            raise ImportError("python-pptx not installed. Run: pip install python-pptx")
+
+        prs = Presentation(io.BytesIO(content))
+
+        slides_text = []
+        warnings = []
+        total_chars = 0
+
+        for slide_num, slide in enumerate(prs.slides):
+            slide_content = []
+
+            # Extract text from shapes
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_content.append(shape.text.strip())
+                    total_chars += len(shape.text)
+
+                # Extract from tables
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        row_text = []
+                        for cell in row.cells:
+                            if cell.text.strip():
+                                row_text.append(cell.text.strip())
+                                total_chars += len(cell.text)
+                        if row_text:
+                            slide_content.append(" | ".join(row_text))
+
+                # SECURITY: Check for decompression bomb
+                if total_chars > MAX_DECOMPRESSED_SIZE:
+                    raise ValueError(
+                        f"Decompression bomb detected: extracted content exceeds "
+                        f"{MAX_DECOMPRESSED_SIZE // (1024*1024)}MB limit"
+                    )
+
+            # Extract speaker notes
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+                if notes:
+                    slide_content.append(f"[Notes: {notes}]")
+                    total_chars += len(notes)
+
+            if slide_content:
+                slides_text.append(f"[Slide {slide_num + 1}]\n" + "\n".join(slide_content))
+
+        return ExtractionResult(
+            text="\n\n".join(slides_text),
+            pages=len(prs.slides),
+            warnings=warnings,
+        )
+
+    def _extract_legacy_ppt(self, content: bytes, filename: str) -> ExtractionResult:
+        """Extract from legacy .ppt format. Limited support."""
+        # Legacy .ppt is a binary format - basic extraction
+        try:
+            text = content.decode("latin-1", errors="ignore")
+            # Filter to printable characters
+            printable = "".join(
+                c if c.isprintable() or c in "\n\r\t" else " "
+                for c in text
+            )
+            # Clean up whitespace and filter short lines
+            lines = [line.strip() for line in printable.split("\n")]
+            lines = [line for line in lines if line and len(line) > 3]
+
+            return ExtractionResult(
+                text="\n".join(lines),
+                pages=1,
+                warnings=["Legacy .ppt format - extraction may be incomplete"],
+            )
+        except Exception as e:
+            return ExtractionResult(
+                text="",
+                pages=1,
+                warnings=[f"Failed to extract from legacy .ppt: {e}"],
+            )
+
+
+class EmailExtractor(BaseExtractor):
+    """
+    Email extractor for MSG (Outlook) and EML (MIME) files.
+
+    Extracts:
+    - Subject, From, To, CC, Date headers
+    - Plain text body
+    - HTML body (converted to text)
+    - Attachment names (not content - attachments processed separately)
+    """
+
+    def can_handle(self, content_type: str, extension: str) -> bool:
+        return (
+            content_type in (
+                "application/vnd.ms-outlook",
+                "message/rfc822",
+            ) or
+            extension in (".msg", ".eml")
+        )
+
+    def extract(self, content: bytes, filename: str) -> ExtractionResult:
+        ext = Path(filename).suffix.lower()
+
+        if ext == ".msg":
+            return self._extract_msg(content, filename)
+        else:
+            return self._extract_eml(content, filename)
+
+    def _extract_msg(self, content: bytes, filename: str) -> ExtractionResult:
+        """Extract from Outlook MSG file."""
+        try:
+            import extract_msg
+        except ImportError:
+            raise ImportError("extract-msg not installed. Run: pip install extract-msg")
+
+        try:
+            msg = extract_msg.Message(io.BytesIO(content))
+
+            parts = []
+
+            # Headers
+            if msg.subject:
+                parts.append(f"Subject: {msg.subject}")
+            if msg.sender:
+                parts.append(f"From: {msg.sender}")
+            if msg.to:
+                parts.append(f"To: {msg.to}")
+            if msg.cc:
+                parts.append(f"CC: {msg.cc}")
+            if msg.date:
+                parts.append(f"Date: {msg.date}")
+
+            parts.append("")  # Blank line before body
+
+            # Body - prefer plain text
+            if msg.body:
+                parts.append(msg.body)
+            elif msg.htmlBody:
+                # Convert HTML to text
+                parts.append(self._html_to_text(msg.htmlBody))
+
+            # List attachments (names only)
+            if msg.attachments:
+                parts.append("\n[Attachments]")
+                for att in msg.attachments:
+                    if hasattr(att, 'longFilename') and att.longFilename:
+                        parts.append(f"- {att.longFilename}")
+                    elif hasattr(att, 'shortFilename') and att.shortFilename:
+                        parts.append(f"- {att.shortFilename}")
+
+            msg.close()
+
+            return ExtractionResult(
+                text="\n".join(parts),
+                pages=1,
+            )
+
+        except Exception as e:
+            return ExtractionResult(
+                text="",
+                pages=1,
+                warnings=[f"MSG extraction failed: {e}"],
+            )
+
+    def _extract_eml(self, content: bytes, filename: str) -> ExtractionResult:
+        """Extract from EML (MIME) file."""
+        import email
+        from email.policy import default
+
+        try:
+            msg = email.message_from_bytes(content, policy=default)
+
+            parts = []
+
+            # Headers
+            if msg["subject"]:
+                parts.append(f"Subject: {msg['subject']}")
+            if msg["from"]:
+                parts.append(f"From: {msg['from']}")
+            if msg["to"]:
+                parts.append(f"To: {msg['to']}")
+            if msg["cc"]:
+                parts.append(f"CC: {msg['cc']}")
+            if msg["date"]:
+                parts.append(f"Date: {msg['date']}")
+
+            parts.append("")  # Blank line before body
+
+            # Extract body
+            body_text = None
+            body_html = None
+            attachments = []
+
+            if msg.is_multipart():
+                for part in msg.walk():
+                    content_type = part.get_content_type()
+                    content_disposition = str(part.get("Content-Disposition", ""))
+
+                    # Skip attachments for body extraction
+                    if "attachment" in content_disposition:
+                        filename_part = part.get_filename()
+                        if filename_part:
+                            attachments.append(filename_part)
+                        continue
+
+                    if content_type == "text/plain" and not body_text:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body_text = payload.decode(
+                                part.get_content_charset() or "utf-8",
+                                errors="replace"
+                            )
+                    elif content_type == "text/html" and not body_html:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            body_html = payload.decode(
+                                part.get_content_charset() or "utf-8",
+                                errors="replace"
+                            )
+            else:
+                # Single part message
+                content_type = msg.get_content_type()
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    text = payload.decode(
+                        msg.get_content_charset() or "utf-8",
+                        errors="replace"
+                    )
+                    if content_type == "text/html":
+                        body_html = text
+                    else:
+                        body_text = text
+
+            # Prefer plain text over HTML
+            if body_text:
+                parts.append(body_text)
+            elif body_html:
+                parts.append(self._html_to_text(body_html))
+
+            # List attachments
+            if attachments:
+                parts.append("\n[Attachments]")
+                for att in attachments:
+                    parts.append(f"- {att}")
+
+            return ExtractionResult(
+                text="\n".join(parts),
+                pages=1,
+            )
+
+        except Exception as e:
+            return ExtractionResult(
+                text="",
+                pages=1,
+                warnings=[f"EML extraction failed: {e}"],
+            )
+
+    def _html_to_text(self, html: str) -> str:
+        """Convert HTML to plain text."""
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Remove script and style elements
+            for element in soup(["script", "style", "head", "meta", "link"]):
+                element.decompose()
+
+            # Get text
+            text = soup.get_text(separator="\n")
+
+            # Clean up whitespace
+            lines = [line.strip() for line in text.splitlines()]
+            text = "\n".join(line for line in lines if line)
+
+            return text
+        except ImportError:
+            # Fallback: basic tag stripping
+            import re
+            text = re.sub(r'<[^>]+>', ' ', html)
+            text = re.sub(r'\s+', ' ', text)
+            return text.strip()
+
+
+class HTMLExtractor(BaseExtractor):
+    """
+    HTML/web page text extractor.
+
+    Extracts visible text content, excluding scripts, styles, and metadata.
+    Preserves basic structure through whitespace.
+    """
+
+    def can_handle(self, content_type: str, extension: str) -> bool:
+        return (
+            content_type in ("text/html", "application/xhtml+xml") or
+            extension in (".html", ".htm", ".xhtml")
+        )
+
+    def extract(self, content: bytes, filename: str) -> ExtractionResult:
+        # Try to decode with various encodings
+        text_content = None
+        for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+            try:
+                text_content = content.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if text_content is None:
+            return ExtractionResult(
+                text="",
+                pages=1,
+                warnings=["Failed to decode HTML file"],
+            )
+
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(text_content, "html.parser")
+
+            # Extract title
+            title = ""
+            if soup.title and soup.title.string:
+                title = f"Title: {soup.title.string.strip()}\n\n"
+
+            # Remove non-content elements
+            for element in soup(["script", "style", "head", "meta", "link", "noscript"]):
+                element.decompose()
+
+            # Extract text with structure
+            text_parts = []
+
+            # Process headings specially
+            for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+                heading_text = heading.get_text(strip=True)
+                if heading_text:
+                    text_parts.append(f"\n{heading_text}\n")
+                heading.decompose()
+
+            # Get remaining text
+            body_text = soup.get_text(separator="\n")
+
+            # Clean up whitespace
+            lines = [line.strip() for line in body_text.splitlines()]
+            body_text = "\n".join(line for line in lines if line)
+
+            text_parts.append(body_text)
+
+            return ExtractionResult(
+                text=title + "\n".join(text_parts),
+                pages=1,
+            )
+
+        except ImportError:
+            # Fallback: basic tag stripping without BeautifulSoup
+            import re
+
+            # Remove script and style content
+            text = re.sub(r'<script[^>]*>.*?</script>', '', text_content, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+            # Remove all HTML tags
+            text = re.sub(r'<[^>]+>', ' ', text)
+
+            # Decode HTML entities
+            import html
+            text = html.unescape(text)
+
+            # Clean up whitespace
+            text = re.sub(r'\s+', ' ', text)
+            lines = [line.strip() for line in text.split('. ')]
+            text = ".\n".join(line for line in lines if line)
+
+            return ExtractionResult(
+                text=text,
+                pages=1,
+                warnings=["BeautifulSoup not available - using basic extraction"],
+            )
+
+
 def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] = None) -> Optional[BaseExtractor]:
     """
     Get an appropriate extractor for the given file type.
@@ -704,6 +1108,9 @@ def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] =
         PDFExtractor(ocr_engine=ocr_engine),
         DOCXExtractor(),
         XLSXExtractor(),
+        PPTXExtractor(),
+        EmailExtractor(),
+        HTMLExtractor(),
         ImageExtractor(ocr_engine=ocr_engine),
         TextExtractor(),
         RTFExtractor(),
