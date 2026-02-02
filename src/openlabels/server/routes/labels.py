@@ -1,15 +1,22 @@
 """
 Sensitivity label management API endpoints.
+
+Provides:
+- List sensitivity labels from database
+- Sync labels from Microsoft 365 (immediate or background job)
+- Label rules for auto-labeling
+- Apply/remove labels from files
+- Label cache management
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -27,6 +34,11 @@ except ImportError:
     HTTPX_AVAILABLE = False
 
 router = APIRouter()
+
+
+# =============================================================================
+# REQUEST/RESPONSE MODELS
+# =============================================================================
 
 
 class LabelResponse(BaseModel):
@@ -87,106 +99,91 @@ async def list_labels(
     return [LabelResponse.model_validate(l) for l in labels]
 
 
+class LabelSyncRequest(BaseModel):
+    """Request body for label sync options."""
+
+    background: bool = False  # Run as background job
+    remove_stale: bool = False  # Remove labels not in M365
+
+
 @router.post("/sync", status_code=202)
 async def sync_labels(
+    request: Optional[LabelSyncRequest] = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
 ):
-    """Sync sensitivity labels from Microsoft 365."""
+    """
+    Sync sensitivity labels from Microsoft 365.
+
+    Options:
+    - background: If true, runs sync as a background job (returns immediately)
+    - remove_stale: If true, removes labels from DB that no longer exist in M365
+    """
     if not HTTPX_AVAILABLE:
         raise HTTPException(
             status_code=503,
             detail="httpx not installed - cannot sync labels"
         )
 
+    request = request or LabelSyncRequest()
+
     try:
         from openlabels.server.config import get_settings
         settings = get_settings()
-        graph_config = getattr(settings, "graph", None)
+        auth = settings.auth
 
-        if not graph_config:
+        # Check Azure AD configuration
+        if auth.provider != "azure_ad" or not all([auth.tenant_id, auth.client_id, auth.client_secret]):
             raise HTTPException(
                 status_code=503,
-                detail="Graph API not configured"
+                detail="Azure AD not configured - cannot sync labels from M365"
             )
 
-        # Get access token
-        async with httpx.AsyncClient() as client:
-            token_response = await client.post(
-                f"https://login.microsoftonline.com/{graph_config.tenant_id}/oauth2/v2.0/token",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": graph_config.client_id,
-                    "client_secret": graph_config.client_secret,
-                    "scope": "https://graph.microsoft.com/.default",
+        # If background mode, enqueue as job
+        if request.background:
+            queue = JobQueue(session, user.tenant_id)
+            job_id = await queue.enqueue(
+                task_type="label_sync",
+                payload={
+                    "tenant_id": str(user.tenant_id),
+                    "azure_tenant_id": auth.tenant_id,
+                    "client_id": auth.client_id,
+                    "client_secret": auth.client_secret,
+                    "remove_stale": request.remove_stale,
                 },
-                timeout=30.0,
+                priority=70,  # High priority
             )
-
-            if token_response.status_code != 200:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Failed to authenticate with Graph API"
-                )
-
-            token = token_response.json().get("access_token")
-
-            # Fetch sensitivity labels
-            labels_response = await client.get(
-                "https://graph.microsoft.com/v1.0/informationProtection/policy/labels",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30.0,
-            )
-
-            if labels_response.status_code != 200:
-                logger.error(f"Graph API error: {labels_response.text[:500]}")
-                raise HTTPException(
-                    status_code=503,
-                    detail="Failed to fetch labels from Graph API"
-                )
-
-            labels_data = labels_response.json().get("value", [])
-
-            # Sync labels to database
-            synced_count = 0
-            for label_data in labels_data:
-                label_id = label_data.get("id")
-                if not label_id:
-                    continue
-
-                # Check if label exists
-                existing = await session.get(SensitivityLabel, label_id)
-
-                if existing:
-                    # Update existing label
-                    existing.name = label_data.get("name", existing.name)
-                    existing.description = label_data.get("description")
-                    existing.color = label_data.get("color")
-                    existing.priority = label_data.get("priority", 0)
-                    existing.parent_id = label_data.get("parent", {}).get("id")
-                    existing.synced_at = datetime.utcnow()
-                else:
-                    # Create new label
-                    new_label = SensitivityLabel(
-                        id=label_id,
-                        tenant_id=user.tenant_id,
-                        name=label_data.get("name", "Unknown"),
-                        description=label_data.get("description"),
-                        color=label_data.get("color"),
-                        priority=label_data.get("priority", 0),
-                        parent_id=label_data.get("parent", {}).get("id"),
-                        synced_at=datetime.utcnow(),
-                    )
-                    session.add(new_label)
-
-                synced_count += 1
-
-            await session.flush()
-
             return {
-                "message": "Label sync completed",
-                "labels_synced": synced_count,
+                "message": "Label sync job queued",
+                "job_id": str(job_id),
+                "background": True,
             }
+
+        # Immediate sync
+        from openlabels.jobs.tasks.label_sync import sync_labels_from_graph
+
+        result = await sync_labels_from_graph(
+            session=session,
+            tenant_id=user.tenant_id,
+            azure_tenant_id=auth.tenant_id,
+            client_id=auth.client_id,
+            client_secret=auth.client_secret,
+            remove_stale=request.remove_stale,
+        )
+
+        await session.commit()
+
+        # Invalidate label cache after sync
+        try:
+            from openlabels.labeling.engine import get_label_cache
+            get_label_cache().invalidate()
+        except Exception:
+            pass
+
+        return {
+            "message": "Label sync completed",
+            **result.to_dict(),
+        }
 
     except HTTPException:
         raise
@@ -195,6 +192,52 @@ async def sync_labels(
         raise HTTPException(
             status_code=500,
             detail=f"Label sync failed: {str(e)}"
+        )
+
+
+@router.get("/sync/status")
+async def get_sync_status(
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Get label sync status including last sync time and counts."""
+    # Get label count and last sync time
+    query = select(
+        func.count(SensitivityLabel.id),
+        func.max(SensitivityLabel.synced_at),
+    ).where(SensitivityLabel.tenant_id == user.tenant_id)
+
+    result = await session.execute(query)
+    row = result.one()
+    label_count, last_synced = row
+
+    # Get cache status
+    try:
+        from openlabels.labeling.engine import get_label_cache
+        cache_stats = get_label_cache().stats
+    except Exception:
+        cache_stats = None
+
+    return {
+        "label_count": label_count or 0,
+        "last_synced_at": last_synced.isoformat() if last_synced else None,
+        "cache": cache_stats,
+    }
+
+
+@router.post("/cache/invalidate", status_code=200)
+async def invalidate_label_cache(
+    user=Depends(require_admin),
+):
+    """Invalidate the label cache, forcing a refresh on next access."""
+    try:
+        from openlabels.labeling.engine import get_label_cache
+        get_label_cache().invalidate()
+        return {"message": "Label cache invalidated"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to invalidate cache: {e}"
         )
 
 

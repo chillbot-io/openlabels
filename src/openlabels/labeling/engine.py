@@ -1,10 +1,22 @@
 """
 Unified labeling engine interface.
+
+Provides a unified interface for applying MIP sensitivity labels across:
+- Local files (MIP SDK or metadata fallback)
+- SharePoint/OneDrive (Microsoft Graph API)
+
+Features:
+- Label caching with TTL for performance
+- Automatic fallback chain (MIP SDK -> Office metadata -> PDF metadata -> Sidecar)
+- Retry logic with exponential backoff
+- Thread-safe singleton pattern for caching
 """
 
+import asyncio
 import io
 import json
 import logging
+import threading
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,6 +29,157 @@ from openlabels.adapters.base import FileInfo
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# LABEL CACHE
+# =============================================================================
+
+
+@dataclass
+class CachedLabel:
+    """A cached sensitivity label."""
+
+    id: str
+    name: str
+    description: str
+    color: str
+    priority: int
+    parent_id: Optional[str]
+    cached_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "color": self.color,
+            "priority": self.priority,
+            "parent_id": self.parent_id,
+        }
+
+
+class LabelCache:
+    """
+    Thread-safe cache for sensitivity labels.
+
+    Caches labels fetched from Graph API to reduce API calls.
+    Uses TTL-based expiration.
+    """
+
+    _instance: Optional["LabelCache"] = None
+    _lock = threading.Lock()
+
+    def __new__(cls) -> "LabelCache":
+        """Singleton pattern."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        self._labels: dict[str, CachedLabel] = {}
+        self._labels_by_name: dict[str, str] = {}  # name -> id mapping
+        self._last_refresh: Optional[datetime] = None
+        self._ttl_seconds = 300  # 5 minutes default
+        self._max_labels = 1000
+        self._cache_lock = threading.RLock()
+        self._initialized = True
+
+    def configure(self, ttl_seconds: int = 300, max_labels: int = 1000) -> None:
+        """Configure cache parameters."""
+        with self._cache_lock:
+            self._ttl_seconds = ttl_seconds
+            self._max_labels = max_labels
+
+    def is_expired(self) -> bool:
+        """Check if cache has expired."""
+        if self._last_refresh is None:
+            return True
+        age = (datetime.now(timezone.utc) - self._last_refresh).total_seconds()
+        return age > self._ttl_seconds
+
+    def get(self, label_id: str) -> Optional[CachedLabel]:
+        """Get a label by ID."""
+        with self._cache_lock:
+            if self.is_expired():
+                return None
+            return self._labels.get(label_id)
+
+    def get_by_name(self, name: str) -> Optional[CachedLabel]:
+        """Get a label by name."""
+        with self._cache_lock:
+            if self.is_expired():
+                return None
+            label_id = self._labels_by_name.get(name)
+            if label_id:
+                return self._labels.get(label_id)
+            return None
+
+    def get_all(self) -> list[CachedLabel]:
+        """Get all cached labels."""
+        with self._cache_lock:
+            if self.is_expired():
+                return []
+            return list(self._labels.values())
+
+    def set(self, labels: list[dict]) -> None:
+        """Set labels in cache (replaces all)."""
+        with self._cache_lock:
+            self._labels.clear()
+            self._labels_by_name.clear()
+
+            for label_data in labels[:self._max_labels]:
+                label = CachedLabel(
+                    id=label_data.get("id", ""),
+                    name=label_data.get("name", ""),
+                    description=label_data.get("description", ""),
+                    color=label_data.get("color", ""),
+                    priority=label_data.get("priority", 0),
+                    parent_id=label_data.get("parent_id"),
+                )
+                self._labels[label.id] = label
+                self._labels_by_name[label.name] = label.id
+
+            self._last_refresh = datetime.now(timezone.utc)
+            logger.debug(f"Cached {len(self._labels)} labels")
+
+    def invalidate(self) -> None:
+        """Clear the cache."""
+        with self._cache_lock:
+            self._labels.clear()
+            self._labels_by_name.clear()
+            self._last_refresh = None
+
+    @property
+    def stats(self) -> dict:
+        """Get cache statistics."""
+        with self._cache_lock:
+            return {
+                "label_count": len(self._labels),
+                "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,
+                "ttl_seconds": self._ttl_seconds,
+                "is_expired": self.is_expired(),
+            }
+
+
+# Global cache instance
+_label_cache = LabelCache()
+
+
+def get_label_cache() -> LabelCache:
+    """Get the global label cache instance."""
+    return _label_cache
+
+
+# =============================================================================
+# LABELING RESULT
+# =============================================================================
 
 
 @dataclass
@@ -662,19 +825,30 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
         except Exception as e:
             return LabelResult(success=False, error=str(e))
 
-    async def get_available_labels(self) -> list[dict]:
+    async def get_available_labels(self, use_cache: bool = True) -> list[dict]:
         """
         Get available sensitivity labels from M365.
+
+        Args:
+            use_cache: Whether to use cached labels (default True)
 
         Returns:
             List of label dictionaries with id, name, description, color, priority
         """
+        # Check cache first
+        if use_cache and not _label_cache.is_expired():
+            cached = _label_cache.get_all()
+            if cached:
+                return [label.to_dict() for label in cached]
+
         try:
             response = await self._graph_request("GET", "/informationProtection/policy/labels")
 
             if response.status_code != 200:
                 logger.error(f"Failed to fetch labels: {response.text}")
-                return []
+                # Return cached labels even if expired, if API fails
+                cached = _label_cache.get_all()
+                return [label.to_dict() for label in cached] if cached else []
 
             data = response.json()
             labels = []
@@ -689,11 +863,51 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     "parent_id": label.get("parent", {}).get("id") if label.get("parent") else None,
                 })
 
+            # Update cache
+            _label_cache.set(labels)
+
             return labels
 
         except Exception as e:
             logger.error(f"Failed to get available labels: {e}")
-            return []
+            # Return cached labels even if expired, if API fails
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+
+    def get_cached_label(self, label_id: str) -> Optional[dict]:
+        """
+        Get a label from cache by ID.
+
+        Args:
+            label_id: The label GUID
+
+        Returns:
+            Label dict if cached, None otherwise
+        """
+        cached = _label_cache.get(label_id)
+        return cached.to_dict() if cached else None
+
+    def get_cached_label_by_name(self, name: str) -> Optional[dict]:
+        """
+        Get a label from cache by name.
+
+        Args:
+            name: The label name
+
+        Returns:
+            Label dict if cached, None otherwise
+        """
+        cached = _label_cache.get_by_name(name)
+        return cached.to_dict() if cached else None
+
+    def invalidate_label_cache(self) -> None:
+        """Invalidate the label cache, forcing a refresh on next access."""
+        _label_cache.invalidate()
+
+    @property
+    def label_cache_stats(self) -> dict:
+        """Get label cache statistics."""
+        return _label_cache.stats
 
     async def get_current_label(self, file_info: FileInfo) -> Optional[dict]:
         """

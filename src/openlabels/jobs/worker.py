@@ -21,6 +21,7 @@ from openlabels.server.db import init_db, get_session_context
 from openlabels.jobs.queue import JobQueue
 from openlabels.jobs.tasks.scan import execute_scan_task
 from openlabels.jobs.tasks.label import execute_label_task
+from openlabels.jobs.tasks.label_sync import execute_label_sync_task
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,8 @@ class Worker:
                 result = await execute_scan_task(session, job.payload)
             elif job.task_type == "label":
                 result = await execute_label_task(session, job.payload)
+            elif job.task_type == "label_sync":
+                result = await execute_label_sync_task(session, job.payload)
             else:
                 raise ValueError(f"Unknown task type: {job.task_type}")
 
