@@ -1,45 +1,103 @@
 # OpenLabels
 
-Unified platform for PII/PHI detection, redaction, and risk scoring.
+Enterprise sensitivity labeling and PII detection for Microsoft 365 environments.
 
-## Packages
+## Overview
 
-| Package | Purpose | History |
-|---------|---------|---------|
-| [**openrisk/**](./openrisk/) | Risk scanning & scoring (0-100) for files. Detects 50+ entity types, validates with checksums, integrates with AWS Macie / Google DLP / Azure Purview. | [Original repo](https://github.com/chillbot-io/OpenRisk) |
-| [**scrubiq/**](./scrubiq/) | Real-time redaction with conversation awareness. Entity tracking across turns, coreference resolution, fuzzy name matching. | [Original repo](https://github.com/chillbot-io/scrubiq) |
+OpenLabels scans SharePoint, OneDrive, and file shares to detect sensitive data and automatically apply Microsoft Information Protection (MIP) sensitivity labels.
+
+**Key Features:**
+- Detect 50+ PII/PHI entity types (SSN, credit cards, health records, secrets, etc.)
+- Integrate with Microsoft Purview sensitivity labels
+- Scan SharePoint Online, OneDrive for Business, and Windows file shares
+- Risk scoring (0-100) with tier-based label recommendations
+- Real-time WebSocket progress updates
+- OCR for scanned documents and images
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Windows Server                                         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  OpenLabels Windows App                           │  │
+│  │  - GUI (PySide6)                                  │  │
+│  │  - MIP SDK integration                            │  │
+│  │  - Windows Service                                │  │
+│  └───────────────────────────────────────────────────┘  │
+│                         │                                │
+│                         ▼                                │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Docker (backend)                                 │  │
+│  │  - FastAPI server                                 │  │
+│  │  - PostgreSQL database                            │  │
+│  │  - Detection engine                               │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Quick Start
 
-```python
-# Risk scoring
-from openlabels import Client
-result = Client().score_file("patients.csv")
-print(f"Risk: {result.score}/100 ({result.tier})")
-
-# Redaction
-from scrubiq import redact
-print(redact("Call John Smith at 555-123-4567"))
-# Call [NAME_1] at [PHONE_1]
-```
-
-## Installation
+### Development
 
 ```bash
-# OpenRisk
-pip install openlabels
+# Install dependencies
+pip install -e ".[dev]"
 
-# ScrubIQ
-pip install scrubiq
+# Run tests
+pytest
+
+# Start server (development)
+uvicorn openlabels.server.app:app --reload
 ```
+
+### Production (Docker)
+
+```bash
+docker-compose up -d
+```
+
+## Configuration
+
+Set environment variables or create `config.yaml`:
+
+```yaml
+auth:
+  provider: azure_ad
+  tenant_id: "your-tenant-id"
+  client_id: "your-client-id"
+  client_secret: "your-secret"
+
+database:
+  url: "postgresql+asyncpg://localhost/openlabels"
+
+adapters:
+  sharepoint:
+    enabled: true
+  onedrive:
+    enabled: true
+  filesystem:
+    enabled: true
+```
+
+## Azure AD Setup
+
+Required API permissions (Application type):
+- `Sites.Read.All` - Read SharePoint sites
+- `Files.Read.All` - Read files
+- `User.Read.All` - Read user profiles
+- `InformationProtectionPolicy.Read.All` - Read sensitivity labels
+
+For labeling:
+- `Sites.ReadWrite.All` - Write to SharePoint
+- `Files.ReadWrite.All` - Write files
 
 ## Documentation
 
-- [OpenRisk README](./openrisk/README.md)
-- [ScrubIQ README](./scrubiq/README.md)
-- [OpenLabels Specification](./openrisk/docs/openlabels-spec-v1.md)
-- [Architecture Overview](./openrisk/docs/openlabels-architecture-v2.md)
+- [Production Readiness Plan](./docs/PRODUCTION_PLAN.md)
+- [Server Architecture](./docs/openlabels-server-architecture-v1.md)
+- [Audit Report](./docs/AUDIT_REPORT.md)
 
 ## License
 
-Apache-2.0 (OpenRisk) | MIT (ScrubIQ)
+Apache-2.0
