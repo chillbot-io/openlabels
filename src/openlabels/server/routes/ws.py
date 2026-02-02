@@ -5,7 +5,7 @@ Security: WebSocket connections are authenticated using the same session
 cookie as HTTP requests. Unauthenticated connections are rejected.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 import asyncio
@@ -143,7 +143,7 @@ async def authenticate_websocket(
         expires_at_str = session_data.get("expires_at")
         if expires_at_str:
             expires_at = datetime.fromisoformat(expires_at_str)
-            if expires_at < datetime.utcnow():
+            if expires_at < datetime.now(timezone.utc):
                 logger.warning("WebSocket connection rejected: expired session")
                 return None
 

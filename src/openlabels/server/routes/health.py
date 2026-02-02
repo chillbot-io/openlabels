@@ -7,7 +7,7 @@ Provides comprehensive system health information for monitoring dashboards.
 import logging
 import platform
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -54,7 +54,7 @@ class HealthStatus(BaseModel):
 
 
 # Track server start time for uptime
-_server_start_time = datetime.utcnow()
+_server_start_time = datetime.now(timezone.utc)
 
 
 @router.get("/status", response_model=HealthStatus)
@@ -203,7 +203,7 @@ async def get_health_status(
 
     # Get scan statistics
     try:
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         today_start = datetime.combine(today, datetime.min.time())
 
         # Scans today
@@ -222,7 +222,7 @@ async def get_health_status(
         status["files_processed"] = result.scalar() or 0
 
         # Success rate (completed vs failed scans in last 7 days)
-        week_ago = datetime.utcnow() - timedelta(days=7)
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
         success_query = select(
             func.count().label("total"),
             func.sum(func.cast(ScanJob.status == "completed", Integer)).label("completed"),
@@ -242,6 +242,6 @@ async def get_health_status(
     # Add system info
     status["python_version"] = platform.python_version()
     status["platform"] = platform.system()
-    status["uptime_seconds"] = int((datetime.utcnow() - _server_start_time).total_seconds())
+    status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)

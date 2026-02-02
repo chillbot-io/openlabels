@@ -12,7 +12,7 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Optional
 import logging
@@ -176,7 +176,7 @@ class SIDResolver:
         """Check if SID is in cache and not expired."""
         if sid in self._cache:
             user, cached_at = self._cache[sid]
-            if datetime.utcnow() - cached_at < self.cache_ttl:
+            if datetime.now(timezone.utc) - cached_at < self.cache_ttl:
                 user.resolution_source = "cache"
                 return user
             else:
@@ -193,7 +193,7 @@ class SIDResolver:
             for sid, _ in entries[: self.max_cache_size // 10]:
                 del self._cache[sid]
 
-        self._cache[user.sid] = (user, datetime.utcnow())
+        self._cache[user.sid] = (user, datetime.now(timezone.utc))
 
     async def resolve(self, sid: str) -> ResolvedUser:
         """
@@ -261,7 +261,7 @@ class SIDResolver:
             resolution_source="fallback",
         )
         # Cache fallback briefly (1 hour) to avoid repeated failed lookups
-        self._cache[sid] = (fallback, datetime.utcnow())
+        self._cache[sid] = (fallback, datetime.now(timezone.utc))
         return fallback
 
     async def resolve_batch(self, sids: list[str]) -> dict[str, ResolvedUser]:
@@ -311,7 +311,7 @@ class SIDResolver:
 
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         valid = sum(1 for _, (_, ts) in self._cache.items() if now - ts < self.cache_ttl)
         return {
             "total_entries": len(self._cache),
