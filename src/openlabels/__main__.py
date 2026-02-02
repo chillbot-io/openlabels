@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -238,8 +239,12 @@ def user_list():
             click.echo("Error: Authentication required. Set OPENLABELS_API_KEY", err=True)
         else:
             click.echo(f"Error: {response.status_code}", err=True)
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -262,8 +267,12 @@ def user_create(email: str, role: str):
             click.echo(f"Created user: {user.get('email')}")
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -293,8 +302,12 @@ def target_list():
                 click.echo(f"{name:<25} {adapter:<12} {path:<40}")
         else:
             click.echo(f"Error: {response.status_code}", err=True)
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -322,8 +335,12 @@ def target_add(name: str, adapter: str, path: str):
             click.echo(f"Created target: {target.get('name')} (ID: {target.get('id')})")
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -368,8 +385,12 @@ def scan_start(target_name: str):
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -396,8 +417,12 @@ def scan_status(job_id: str):
         else:
             click.echo(f"Error: {response.status_code}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -416,8 +441,12 @@ def scan_cancel(job_id: str):
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -445,8 +474,12 @@ def labels_list():
         else:
             click.echo(f"Error: {response.status_code}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -466,8 +499,12 @@ def labels_sync():
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error connecting to server: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
     finally:
         client.close()
 
@@ -527,8 +564,11 @@ def labels_apply(file_path: str, label: str, justification: Optional[str], dry_r
     except ImportError as e:
         click.echo(f"Error: Labeling module not available: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error applying label: {e}", err=True)
+    except PermissionError as e:
+        click.echo(f"Error: Permission denied accessing file: {e}", err=True)
+        sys.exit(1)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -569,8 +609,11 @@ def labels_remove(file_path: str, justification: Optional[str], dry_run: bool):
     except ImportError as e:
         click.echo(f"Error: Labeling module not available: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error removing label: {e}", err=True)
+    except PermissionError as e:
+        click.echo(f"Error: Permission denied accessing file: {e}", err=True)
+        sys.exit(1)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -609,8 +652,11 @@ def labels_info(file_path: str):
     except ImportError as e:
         click.echo(f"Error: Labeling module not available: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error getting label info: {e}", err=True)
+    except PermissionError as e:
+        click.echo(f"Error: Permission denied accessing file: {e}", err=True)
+        sys.exit(1)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -639,8 +685,13 @@ def status():
             click.echo(f"  Database:  {health.get('database', 'unknown')}")
         else:
             click.echo(f"Server:      ✗ Unhealthy (status {response.status_code})")
-    except Exception as e:
-        click.echo(f"Server:      ✗ Offline ({e})")
+    except httpx.TimeoutException:
+        click.echo(f"Server:      ✗ Offline (connection timed out)")
+        click.echo("\nCannot retrieve additional status without server connection.")
+        client.close()
+        return
+    except httpx.ConnectError as e:
+        click.echo(f"Server:      ✗ Offline (cannot connect: {e})")
         click.echo("\nCannot retrieve additional status without server connection.")
         client.close()
         return
@@ -655,7 +706,7 @@ def status():
             click.echo(f"  Running:   {stats.get('running', 0)}")
             click.echo(f"  Completed: {stats.get('completed', 0)}")
             click.echo(f"  Failed:    {stats.get('failed', 0)}")
-    except Exception as e:
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         logger.debug(f"Failed to get job queue stats: {e}")
 
     # Get scan statistics
@@ -668,7 +719,7 @@ def status():
             click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
             click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
             click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
-    except Exception as e:
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         logger.debug(f"Failed to get dashboard summary: {e}")
 
     # Get monitored files count
@@ -679,7 +730,7 @@ def status():
         click.echo(f"  Files monitored:      {len(watched)}")
     except ImportError:
         logger.debug("Monitoring module not installed")
-    except Exception as e:
+    except OSError as e:
         logger.debug(f"Failed to get watched files: {e}")
 
     # Check MIP availability
@@ -692,22 +743,19 @@ def status():
             click.echo(f"\nMIP SDK:     ✗ Not available (Windows only)")
     except ImportError:
         click.echo(f"\nMIP SDK:     ✗ Not installed")
-    except Exception as e:
+    except RuntimeError as e:
         logger.debug(f"Failed to check MIP availability: {e}")
 
     # Check ML models
-    try:
-        models_dir = Path.home() / ".openlabels" / "models"
-        phi_bert = models_dir / "phi-bert" / "model.onnx"
-        pii_bert = models_dir / "pii-bert" / "model.onnx"
-        rapidocr = models_dir / "rapidocr" / "det.onnx"
+    models_dir = Path.home() / ".openlabels" / "models"
+    phi_bert = models_dir / "phi-bert" / "model.onnx"
+    pii_bert = models_dir / "pii-bert" / "model.onnx"
+    rapidocr = models_dir / "rapidocr" / "det.onnx"
 
-        click.echo(f"\nML Models:")
-        click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
-        click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
-        click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
-    except Exception as e:
-        logger.debug(f"Failed to check ML models: {e}")
+    click.echo(f"\nML Models:")
+    click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
+    click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
+    click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
 
     client.close()
 
@@ -743,13 +791,17 @@ def backup(output: str):
                     with open(backup_dir / f"{endpoint.replace('/', '_')}.json", "w") as f:
                         json.dump(response.json(), f, indent=2)
                     click.echo(f"  Exported: {endpoint}")
-            except Exception as e:
-                click.echo(f"  Failed to export {endpoint}: {e}", err=True)
+            except httpx.TimeoutException:
+                click.echo(f"  Failed to export {endpoint}: request timed out", err=True)
+            except httpx.ConnectError:
+                click.echo(f"  Failed to export {endpoint}: cannot connect to server", err=True)
+            except httpx.HTTPStatusError as e:
+                click.echo(f"  Failed to export {endpoint}: HTTP {e.response.status_code}", err=True)
 
         click.echo(f"Backup created: {backup_dir}")
 
-    except Exception as e:
-        click.echo(f"Backup failed: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Backup failed: file system error: {e}", err=True)
     finally:
         client.close()
 
@@ -786,13 +838,19 @@ def restore(from_path: str):
                 else:
                     click.echo(f"  Skipped: {file.name} (not a list)")
 
-            except Exception as e:
-                click.echo(f"  Failed to restore {file.name}: {e}", err=True)
+            except json.JSONDecodeError as e:
+                click.echo(f"  Failed to restore {file.name}: invalid JSON: {e}", err=True)
+            except httpx.TimeoutException:
+                click.echo(f"  Failed to restore {file.name}: request timed out", err=True)
+            except httpx.ConnectError:
+                click.echo(f"  Failed to restore {file.name}: cannot connect to server", err=True)
+            except httpx.HTTPStatusError as e:
+                click.echo(f"  Failed to restore {file.name}: HTTP {e.response.status_code}", err=True)
 
         click.echo("Restore completed")
 
-    except Exception as e:
-        click.echo(f"Restore failed: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Restore failed: file system error: {e}", err=True)
     finally:
         client.close()
 
@@ -825,8 +883,14 @@ def export_results(job: str, fmt: str, output: str):
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
-    except Exception as e:
-        click.echo(f"Error exporting results: {e}", err=True)
+    except httpx.TimeoutException:
+        click.echo("Error: Request timed out connecting to server", err=True)
+    except httpx.ConnectError as e:
+        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
+    except httpx.HTTPStatusError as e:
+        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
+    except OSError as e:
+        click.echo(f"Error: Cannot write to output file: {e}", err=True)
     finally:
         client.close()
 
@@ -880,7 +944,13 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
                         exposure_level=exposure,
                     )
                     all_results.append(result)
-                except Exception as e:
+                except PermissionError:
+                    click.echo(f"Error: Permission denied: {file_path}", err=True)
+                except OSError as e:
+                    click.echo(f"Error reading {file_path}: {e}", err=True)
+                except UnicodeDecodeError as e:
+                    click.echo(f"Error decoding {file_path}: {e}", err=True)
+                except ValueError as e:
                     click.echo(f"Error processing {file_path}: {e}", err=True)
             return all_results
 
@@ -933,8 +1003,8 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
 
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
-    except Exception as e:
-        click.echo(f"Error classifying file: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
 
 
 # =============================================================================
@@ -1041,8 +1111,10 @@ def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
                     logger.debug(f"Permission denied: {file_path}")
                 except OSError as e:
                     logger.debug(f"OS error processing {file_path}: {e}")
-                except Exception as e:
-                    logger.debug(f"Failed to process {file_path}: {e}")
+                except UnicodeDecodeError as e:
+                    logger.debug(f"Encoding error processing {file_path}: {e}")
+                except ValueError as e:
+                    logger.debug(f"Value error processing {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1097,8 +1169,8 @@ def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -1174,8 +1246,10 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
                     logger.debug(f"Permission denied: {file_path}")
                 except OSError as e:
                     logger.debug(f"OS error processing {file_path}: {e}")
-                except Exception as e:
-                    logger.debug(f"Failed to process {file_path}: {e}")
+                except UnicodeDecodeError as e:
+                    logger.debug(f"Encoding error processing {file_path}: {e}")
+                except ValueError as e:
+                    logger.debug(f"Value error processing {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1335,8 +1409,8 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error generating report: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -1406,8 +1480,10 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
                     logger.debug(f"Permission denied: {file_path}")
                 except OSError as e:
                     logger.debug(f"OS error processing {file_path}: {e}")
-                except Exception as e:
-                    logger.debug(f"Failed to process {file_path}: {e}")
+                except UnicodeDecodeError as e:
+                    logger.debug(f"Encoding error processing {file_path}: {e}")
+                except ValueError as e:
+                    logger.debug(f"Value error processing {file_path}: {e}")
             return all_results
 
         results = asyncio.run(process_all())
@@ -1501,8 +1577,8 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
     except ImportError as e:
         click.echo(f"Error: Required module not installed: {e}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error generating heatmap: {e}", err=True)
+    except OSError as e:
+        click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
 
 
@@ -1585,8 +1661,10 @@ def quarantine(source: Optional[str], destination: Optional[str], where_filter: 
                     logger.debug(f"Permission denied: {file_path}")
                 except OSError as e:
                     logger.debug(f"OS error processing {file_path}: {e}")
-                except Exception as e:
-                    logger.debug(f"Failed to process {file_path}: {e}")
+                except UnicodeDecodeError as e:
+                    logger.debug(f"Encoding error processing {file_path}: {e}")
+                except ValueError as e:
+                    logger.debug(f"Value error processing {file_path}: {e}")
             return all_results
 
         results = asyncio.run(find_matches())
@@ -1721,8 +1799,10 @@ def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_pa
                     logger.debug(f"Permission denied: {fp}")
                 except OSError as e:
                     logger.debug(f"OS error processing {fp}: {e}")
-                except Exception as e:
-                    logger.debug(f"Failed to process {fp}: {e}")
+                except UnicodeDecodeError as e:
+                    logger.debug(f"Encoding error processing {fp}: {e}")
+                except ValueError as e:
+                    logger.debug(f"Value error processing {fp}: {e}")
             return all_results
 
         results = asyncio.run(find_matches())

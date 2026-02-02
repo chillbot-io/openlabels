@@ -169,7 +169,7 @@ async def execute_scan_task(
                                         "reason": "User cancelled",
                                     },
                                 )
-                            except Exception as e:
+                            except (ConnectionError, OSError) as e:
                                 logger.debug(f"Failed to send scan cancelled event: {e}")
 
                         return stats
@@ -272,7 +272,7 @@ async def execute_scan_task(
                             risk_tier=result["risk_tier"],
                             entity_counts=result["entity_counts"],
                         )
-                    except Exception as ws_err:
+                    except (ConnectionError, OSError) as ws_err:
                         logger.debug(f"WebSocket broadcast failed: {ws_err}")
 
                 # Stream progress periodically (every 10 files)
@@ -288,15 +288,24 @@ async def execute_scan_task(
                                 "current_file": file_info.name,
                             },
                         )
-                    except Exception as ws_err:
+                    except (ConnectionError, OSError) as ws_err:
                         logger.debug(f"WebSocket progress failed: {ws_err}")
 
                 # Commit periodically
                 if stats["files_scanned"] % 100 == 0:
                     await session.commit()
 
-            except Exception as e:
-                logger.warning(f"Error scanning file {file_info.path}: {e}")
+            except PermissionError as e:
+                logger.warning(f"Permission denied scanning file {file_info.path}: {e}")
+                continue
+            except OSError as e:
+                logger.warning(f"OS error scanning file {file_info.path}: {e}")
+                continue
+            except UnicodeDecodeError as e:
+                logger.warning(f"Encoding error scanning file {file_info.path}: {e}")
+                continue
+            except ValueError as e:
+                logger.warning(f"Value error scanning file {file_info.path}: {e}")
                 continue
 
         # Update folder inventory
@@ -347,7 +356,7 @@ async def execute_scan_task(
                         },
                     },
                 )
-            except Exception as ws_err:
+            except (ConnectionError, OSError) as ws_err:
                 logger.debug(f"WebSocket completion failed: {ws_err}")
 
         # Auto-labeling if enabled
@@ -357,15 +366,21 @@ async def execute_scan_task(
                 auto_label_stats = await _auto_label_results(session, job)
                 stats["auto_labeled"] = auto_label_stats.get("labeled", 0)
                 stats["auto_label_errors"] = auto_label_stats.get("errors", 0)
-            except Exception as e:
-                logger.error(f"Auto-labeling failed: {e}")
+            except PermissionError as e:
+                logger.error(f"Auto-labeling failed - permission denied: {e}")
+                stats["auto_label_error"] = str(e)
+            except OSError as e:
+                logger.error(f"Auto-labeling failed - OS error: {e}")
+                stats["auto_label_error"] = str(e)
+            except RuntimeError as e:
+                logger.error(f"Auto-labeling failed - runtime error: {e}")
                 stats["auto_label_error"] = str(e)
 
         return stats
 
-    except Exception as e:
+    except PermissionError as e:
         job.status = "failed"
-        job.error = str(e)
+        job.error = f"Permission denied: {e}"
         await session.commit()
 
         # Stream failure via WebSocket
@@ -375,12 +390,32 @@ async def execute_scan_task(
                     scan_id=job.id,
                     status="failed",
                     summary={
-                        "error": str(e),
+                        "error": f"Permission denied: {e}",
                         "files_scanned": stats.get("files_scanned", 0),
                     },
                 )
-            except Exception as e:
-                logger.debug(f"Failed to send scan failed event: {e}")
+            except (ConnectionError, OSError) as ws_err:
+                logger.debug(f"Failed to send scan failed event: {ws_err}")
+
+        raise
+
+    except OSError as e:
+        job.status = "failed"
+        job.error = f"OS error: {e}"
+        await session.commit()
+
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="failed",
+                    summary={
+                        "error": f"OS error: {e}",
+                        "files_scanned": stats.get("files_scanned", 0),
+                    },
+                )
+            except (ConnectionError, OSError) as ws_err:
+                logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise
 
@@ -545,9 +580,15 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                 stats["errors"] += 1
                 logger.warning(f"Failed to label {result.file_path}: {label_result.error}")
 
-        except Exception as e:
+        except PermissionError as e:
             stats["errors"] += 1
-            logger.error(f"Error auto-labeling {result.file_path}: {e}")
+            logger.error(f"Permission denied auto-labeling {result.file_path}: {e}")
+        except OSError as e:
+            stats["errors"] += 1
+            logger.error(f"OS error auto-labeling {result.file_path}: {e}")
+        except RuntimeError as e:
+            stats["errors"] += 1
+            logger.error(f"Runtime error auto-labeling {result.file_path}: {e}")
 
     await session.commit()
     return stats
@@ -611,8 +652,8 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
             "error": result.error,
         }
 
-    except Exception as e:
-        logger.error(f"Detection failed for {file_info.path}: {e}")
+    except UnicodeDecodeError as e:
+        logger.error(f"Encoding error during detection for {file_info.path}: {e}")
         return {
             "risk_score": 0,
             "risk_tier": "MINIMAL",
@@ -620,7 +661,29 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
             "total_entities": 0,
             "content_score": 0.0,
             "exposure_multiplier": 1.0,
-            "error": str(e),
+            "error": f"Encoding error: {e}",
+        }
+    except ValueError as e:
+        logger.error(f"Value error during detection for {file_info.path}: {e}")
+        return {
+            "risk_score": 0,
+            "risk_tier": "MINIMAL",
+            "entity_counts": {},
+            "total_entities": 0,
+            "content_score": 0.0,
+            "exposure_multiplier": 1.0,
+            "error": f"Value error: {e}",
+        }
+    except OSError as e:
+        logger.error(f"OS error during detection for {file_info.path}: {e}")
+        return {
+            "risk_score": 0,
+            "risk_tier": "MINIMAL",
+            "entity_counts": {},
+            "total_entities": 0,
+            "content_score": 0.0,
+            "exposure_multiplier": 1.0,
+            "error": f"OS error: {e}",
         }
 
 
@@ -735,11 +798,14 @@ async def execute_parallel_scan_task(
                             risk_tier=risk_tier,
                             entity_counts=result.entity_counts,
                         )
-                    except Exception as e:
+                    except (ConnectionError, OSError) as e:
                         logger.debug(f"Failed to send file result event: {e}")
 
-            except Exception as e:
-                logger.error(f"Failed to persist result for {result.file_path}: {e}")
+            except PermissionError as e:
+                logger.error(f"Permission denied persisting result for {result.file_path}: {e}")
+                stats["errors"] += 1
+            except OSError as e:
+                logger.error(f"OS error persisting result for {result.file_path}: {e}")
                 stats["errors"] += 1
 
         # Commit batch
@@ -762,7 +828,7 @@ async def execute_parallel_scan_task(
                     status="running",
                     progress=job.progress,
                 )
-            except Exception as e:
+            except (ConnectionError, OSError) as e:
                 logger.debug(f"Failed to send scan progress event: {e}")
 
     try:
@@ -806,14 +872,14 @@ async def execute_parallel_scan_task(
                     status="completed",
                     summary=stats,
                 )
-            except Exception as e:
+            except (ConnectionError, OSError) as e:
                 logger.debug(f"Failed to send scan completed event: {e}")
 
         return stats
 
-    except Exception as e:
+    except PermissionError as e:
         job.status = "failed"
-        job.error = str(e)
+        job.error = f"Permission denied: {e}"
         await session.commit()
 
         if _ws_streaming_enabled:
@@ -821,9 +887,43 @@ async def execute_parallel_scan_task(
                 await send_scan_completed(
                     scan_id=job.id,
                     status="failed",
-                    summary={"error": str(e)},
+                    summary={"error": f"Permission denied: {e}"},
                 )
-            except Exception as ws_err:
+            except (ConnectionError, OSError) as ws_err:
+                logger.debug(f"Failed to send scan failed event: {ws_err}")
+
+        raise
+
+    except OSError as e:
+        job.status = "failed"
+        job.error = f"OS error: {e}"
+        await session.commit()
+
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="failed",
+                    summary={"error": f"OS error: {e}"},
+                )
+            except (ConnectionError, OSError) as ws_err:
+                logger.debug(f"Failed to send scan failed event: {ws_err}")
+
+        raise
+
+    except RuntimeError as e:
+        job.status = "failed"
+        job.error = f"Runtime error: {e}"
+        await session.commit()
+
+        if _ws_streaming_enabled:
+            try:
+                await send_scan_completed(
+                    scan_id=job.id,
+                    status="failed",
+                    summary={"error": f"Runtime error: {e}"},
+                )
+            except (ConnectionError, OSError) as ws_err:
                 logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise

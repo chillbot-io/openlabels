@@ -382,8 +382,12 @@ class LabelingEngine:
                         label_name=label_name,
                         method="mip_sdk",
                     )
-        except Exception as e:
-            logger.debug(f"MIP SDK not available: {e}")
+        except ImportError as e:
+            logger.debug(f"MIP SDK not installed: {e}")
+        except RuntimeError as e:
+            logger.debug(f"MIP SDK runtime error: {e}")
+        except OSError as e:
+            logger.debug(f"MIP SDK OS error: {e}")
 
         # Fallback to metadata-based labeling
         path = Path(file_path)
@@ -474,8 +478,14 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                 method="office_metadata",
             )
 
-        except Exception as e:
-            logger.error(f"Failed to apply Office metadata label: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied applying Office metadata label: {e}")
+            return await self._apply_sidecar(file_path, label_id, label_name)
+        except OSError as e:
+            logger.error(f"OS error applying Office metadata label: {e}")
+            return await self._apply_sidecar(file_path, label_id, label_name)
+        except zipfile.BadZipFile as e:
+            logger.error(f"Invalid Office file format: {e}")
             return await self._apply_sidecar(file_path, label_id, label_name)
 
     async def _apply_pdf_metadata(
@@ -546,8 +556,14 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     method="pdf_metadata",
                 )
 
-        except Exception as e:
-            logger.error(f"Failed to apply PDF metadata label: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied applying PDF metadata label: {e}")
+            return await self._apply_sidecar(file_path, label_id, label_name)
+        except OSError as e:
+            logger.error(f"OS error applying PDF metadata label: {e}")
+            return await self._apply_sidecar(file_path, label_id, label_name)
+        except ValueError as e:
+            logger.error(f"Invalid PDF format: {e}")
             return await self._apply_sidecar(file_path, label_id, label_name)
 
     async def _apply_sidecar(
@@ -576,11 +592,17 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                 method="sidecar",
             )
 
-        except Exception as e:
+        except PermissionError as e:
             return LabelResult(
                 success=False,
                 label_id=label_id,
-                error=f"Failed to create sidecar file: {e}",
+                error=f"Permission denied creating sidecar file: {e}",
+            )
+        except OSError as e:
+            return LabelResult(
+                success=False,
+                label_id=label_id,
+                error=f"OS error creating sidecar file: {e}",
             )
 
     async def _apply_graph_label(
@@ -652,12 +674,26 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     error=f"Graph API error: {error_msg}",
                 )
 
-        except Exception as e:
-            logger.error(f"Failed to apply Graph API label: {e}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout applying Graph API label: {e}")
             return LabelResult(
                 success=False,
                 label_id=label_id,
-                error=str(e),
+                error=f"Request timed out: {e}",
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error applying Graph API label: {e}")
+            return LabelResult(
+                success=False,
+                label_id=label_id,
+                error=f"Connection error: {e}",
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error applying Graph API label: {e}")
+            return LabelResult(
+                success=False,
+                label_id=label_id,
+                error=f"HTTP error {e.response.status_code}",
             )
 
     async def _resolve_share_url(self, url: str) -> Optional[str]:
@@ -682,8 +718,14 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 
             return None
 
-        except Exception as e:
-            logger.error(f"Failed to resolve share URL: {e}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout resolving share URL: {e}")
+            return None
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error resolving share URL: {e}")
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error resolving share URL: {e}")
             return None
 
     async def remove_label(self, file_info: FileInfo) -> LabelResult:
@@ -757,8 +799,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 
             return LabelResult(success=True, method="office_metadata_removed")
 
-        except Exception as e:
-            return LabelResult(success=False, error=f"Failed to remove Office label: {e}")
+        except PermissionError as e:
+            return LabelResult(success=False, error=f"Permission denied removing Office label: {e}")
+        except OSError as e:
+            return LabelResult(success=False, error=f"OS error removing Office label: {e}")
+        except zipfile.BadZipFile as e:
+            return LabelResult(success=False, error=f"Invalid Office file format: {e}")
 
     async def _remove_pdf_label(self, file_path: str) -> LabelResult:
         """Remove label from PDF metadata."""
@@ -787,8 +833,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 
             return LabelResult(success=True, method="pdf_metadata_removed")
 
-        except Exception as e:
-            return LabelResult(success=False, error=f"Failed to remove PDF label: {e}")
+        except PermissionError as e:
+            return LabelResult(success=False, error=f"Permission denied removing PDF label: {e}")
+        except OSError as e:
+            return LabelResult(success=False, error=f"OS error removing PDF label: {e}")
+        except ValueError as e:
+            return LabelResult(success=False, error=f"Invalid PDF format: {e}")
 
     async def _remove_graph_label(self, file_info: FileInfo) -> LabelResult:
         """Remove label from SharePoint/OneDrive file via Graph API."""
@@ -817,8 +867,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                 error_msg = error_data.get("error", {}).get("message", response.text)
                 return LabelResult(success=False, error=f"Graph API error: {error_msg}")
 
-        except Exception as e:
-            return LabelResult(success=False, error=str(e))
+        except httpx.TimeoutException as e:
+            return LabelResult(success=False, error=f"Request timed out: {e}")
+        except httpx.ConnectError as e:
+            return LabelResult(success=False, error=f"Connection error: {e}")
+        except httpx.HTTPStatusError as e:
+            return LabelResult(success=False, error=f"HTTP error {e.response.status_code}")
 
     async def get_available_labels(self, use_cache: bool = True) -> list[dict]:
         """
@@ -863,9 +917,16 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 
             return labels
 
-        except Exception as e:
-            logger.error(f"Failed to get available labels: {e}")
-            # Return cached labels even if expired, if API fails
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout getting available labels: {e}")
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error getting available labels: {e}")
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error getting available labels: {e}")
             cached = _label_cache.get_all()
             return [label.to_dict() for label in cached] if cached else []
 
@@ -935,8 +996,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     "id": data.get("label_id"),
                     "name": data.get("label_name"),
                 }
-            except Exception as e:
-                logger.debug(f"Failed to read sidecar label for {file_path}: {e}")
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading sidecar label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading sidecar label for {file_path}: {e}")
+            except json.JSONDecodeError as e:
+                logger.debug(f"Invalid JSON in sidecar for {file_path}: {e}")
 
         # Check Office document metadata
         if ext in (".docx", ".xlsx", ".pptx"):
@@ -952,8 +1017,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                                 "id": label_match.group(1),
                                 "name": name_match.group(1) if name_match else None,
                             }
-            except Exception as e:
-                logger.debug(f"Failed to read Office metadata label for {file_path}: {e}")
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading Office metadata label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading Office metadata label for {file_path}: {e}")
+            except zipfile.BadZipFile as e:
+                logger.debug(f"Invalid Office file format for {file_path}: {e}")
 
         # Check PDF metadata
         if ext == ".pdf":
@@ -969,8 +1038,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     label_name = reader.metadata.get("/OpenLabels_LabelName")
                     if label_id:
                         return {"id": label_id, "name": label_name}
-            except Exception as e:
-                logger.debug(f"Failed to read PDF metadata label for {file_path}: {e}")
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading PDF metadata label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading PDF metadata label for {file_path}: {e}")
+            except ValueError as e:
+                logger.debug(f"Invalid PDF format for {file_path}: {e}")
 
         return None
 
@@ -1004,6 +1077,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 
             return None
 
-        except Exception as e:
-            logger.error(f"Failed to get Graph label: {e}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout getting Graph label: {e}")
+            return None
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error getting Graph label: {e}")
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error getting Graph label: {e}")
             return None

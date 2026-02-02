@@ -179,8 +179,14 @@ class FilesystemAdapter:
             owner_sid = sd.GetSecurityDescriptorOwner()
             name, domain, _ = win32security.LookupAccountSid(None, owner_sid)
             return f"{domain}\\{name}"
-        except Exception as e:
-            logger.debug(f"Failed to get Windows owner for {path}: {e}")
+        except ImportError:
+            logger.debug("win32security not installed, cannot get Windows owner")
+            return None
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting Windows owner for {path}: {e}")
+            return None
+        except OSError as e:
+            logger.debug(f"OS error getting Windows owner for {path}: {e}")
             return None
 
     def _get_posix_owner(self, path: Path) -> Optional[str]:
@@ -190,8 +196,17 @@ class FilesystemAdapter:
 
             stat_info = path.stat()
             return pwd.getpwuid(stat_info.st_uid).pw_name
-        except Exception as e:
-            logger.debug(f"Failed to get POSIX owner for {path}: {e}")
+        except ImportError:
+            logger.debug("pwd module not available (non-POSIX system)")
+            return None
+        except KeyError as e:
+            logger.debug(f"UID not found in passwd database for {path}: {e}")
+            return None
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting POSIX owner for {path}: {e}")
+            return None
+        except OSError as e:
+            logger.debug(f"OS error getting POSIX owner for {path}: {e}")
             return None
 
     def _get_permissions(self, path: Path) -> dict:
@@ -231,8 +246,14 @@ class FilesystemAdapter:
                     })
 
             return permissions
-        except Exception as e:
-            logger.debug(f"Failed to get Windows permissions for {path}: {e}")
+        except ImportError:
+            logger.debug("win32security not installed, cannot get Windows permissions")
+            return {}
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting Windows permissions for {path}: {e}")
+            return {}
+        except OSError as e:
+            logger.debug(f"OS error getting Windows permissions for {path}: {e}")
             return {}
 
     def _get_posix_permissions(self, path: Path) -> dict:
@@ -253,8 +274,11 @@ class FilesystemAdapter:
                 "other_write": bool(mode & stat.S_IWOTH),
                 "other_exec": bool(mode & stat.S_IXOTH),
             }
-        except Exception as e:
-            logger.debug(f"Failed to get POSIX permissions for {path}: {e}")
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting POSIX permissions for {path}: {e}")
+            return {}
+        except OSError as e:
+            logger.debug(f"OS error getting POSIX permissions for {path}: {e}")
             return {}
 
     def _calculate_exposure(self, path: Path) -> ExposureLevel:
@@ -299,8 +323,14 @@ class FilesystemAdapter:
             else:
                 return ExposureLevel.INTERNAL
 
-        except Exception as e:
-            logger.debug(f"Failed to get NTFS exposure for {path}: {e}")
+        except ImportError:
+            logger.debug("win32security not installed, cannot determine NTFS exposure")
+            return ExposureLevel.PRIVATE
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting NTFS exposure for {path}: {e}")
+            return ExposureLevel.PRIVATE
+        except OSError as e:
+            logger.debug(f"OS error getting NTFS exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     def _get_posix_exposure(self, path: Path) -> ExposureLevel:
@@ -319,8 +349,11 @@ class FilesystemAdapter:
 
             return ExposureLevel.PRIVATE
 
-        except Exception as e:
-            logger.debug(f"Failed to get POSIX exposure for {path}: {e}")
+        except PermissionError as e:
+            logger.debug(f"Permission denied getting POSIX exposure for {path}: {e}")
+            return ExposureLevel.PRIVATE
+        except OSError as e:
+            logger.debug(f"OS error getting POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     # Remediation methods
@@ -352,8 +385,14 @@ class FilesystemAdapter:
             # Move the file
             shutil.move(str(source), str(dest))
             return True
-        except Exception as e:
-            logger.error(f"Failed to move {source} to {dest}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied moving {source} to {dest}: {e}")
+            return False
+        except FileNotFoundError as e:
+            logger.error(f"File not found moving {source} to {dest}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"OS error moving {source} to {dest}: {e}")
             return False
 
     async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
@@ -406,8 +445,14 @@ class FilesystemAdapter:
                 "owner": owner_str,
                 "aces": aces,
             }
-        except Exception as e:
-            logger.error(f"Failed to get Windows ACL for {path}: {e}")
+        except ImportError:
+            logger.error("win32security not installed, cannot get Windows ACL")
+            return None
+        except PermissionError as e:
+            logger.error(f"Permission denied getting Windows ACL for {path}: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"OS error getting Windows ACL for {path}: {e}")
             return None
 
     def _get_posix_acl(self, path: Path) -> Optional[dict]:
@@ -420,8 +465,11 @@ class FilesystemAdapter:
                 "uid": stat_info.st_uid,
                 "gid": stat_info.st_gid,
             }
-        except Exception as e:
-            logger.error(f"Failed to get POSIX ACL for {path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied getting POSIX ACL for {path}: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"OS error getting POSIX ACL for {path}: {e}")
             return None
 
     async def set_acl(self, file_info: FileInfo, acl: dict) -> bool:
@@ -474,8 +522,14 @@ class FilesystemAdapter:
                 sd
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to set Windows ACL for {path}: {e}")
+        except ImportError:
+            logger.error("win32security not installed, cannot set Windows ACL")
+            return False
+        except PermissionError as e:
+            logger.error(f"Permission denied setting Windows ACL for {path}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"OS error setting Windows ACL for {path}: {e}")
             return False
 
     def _set_posix_acl(self, path: Path, acl: dict) -> bool:
@@ -493,8 +547,11 @@ class FilesystemAdapter:
                 os.chown(str(path), uid or -1, gid or -1)
 
             return True
-        except Exception as e:
-            logger.error(f"Failed to set POSIX ACL for {path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied setting POSIX ACL for {path}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"OS error setting POSIX ACL for {path}: {e}")
             return False
 
     async def lockdown_file(
@@ -554,8 +611,14 @@ class FilesystemAdapter:
                 sd
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to lockdown {path}: {e}")
+        except ImportError:
+            logger.error("win32security not installed, cannot lockdown Windows file")
+            return False
+        except PermissionError as e:
+            logger.error(f"Permission denied locking down {path}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"OS error locking down {path}: {e}")
             return False
 
     def _lockdown_posix(self, path: Path) -> bool:
@@ -564,6 +627,9 @@ class FilesystemAdapter:
             import os
             os.chmod(str(path), 0o600)  # Owner read/write only
             return True
-        except Exception as e:
-            logger.error(f"Failed to lockdown {path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied locking down {path}: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"OS error locking down {path}: {e}")
             return False

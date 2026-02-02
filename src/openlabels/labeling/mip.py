@@ -140,8 +140,15 @@ def _load_mip_assemblies(mip_sdk_path: Path) -> bool:
         logger.info("MIP SDK assemblies loaded successfully")
         return True
 
-    except Exception as e:
-        logger.error(f"Failed to load MIP assemblies: {e}")
+    except FileNotFoundError as e:
+        logger.error(f"MIP assembly file not found: {e}")
+        return False
+    except OSError as e:
+        logger.error(f"Failed to load MIP assemblies - OS error: {e}")
+        return False
+    except RuntimeError as e:
+        # pythonnet/CLR runtime errors
+        logger.error(f"Failed to load MIP assemblies - CLR error: {e}")
         return False
 
 
@@ -197,8 +204,14 @@ class AuthDelegateImpl:
                 logger.error(f"Failed to acquire token: {error}")
                 return ""
 
-        except Exception as e:
-            logger.error(f"Token acquisition failed: {e}")
+        except ImportError as e:
+            logger.error(f"MSAL library not installed: {e}")
+            return ""
+        except ValueError as e:
+            logger.error(f"Invalid MSAL configuration: {e}")
+            return ""
+        except ConnectionError as e:
+            logger.error(f"Network error during token acquisition: {e}")
             return ""
 
 
@@ -290,8 +303,12 @@ class MIPClient:
 
             return success
 
-        except Exception as e:
-            logger.error(f"Failed to initialize MIP SDK: {e}")
+        except RuntimeError as e:
+            # CLR/pythonnet runtime errors
+            logger.error(f"Failed to initialize MIP SDK - runtime error: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"Failed to initialize MIP SDK - OS error: {e}")
             return False
 
     def _initialize_sync(self) -> bool:
@@ -361,8 +378,15 @@ class MIPClient:
             self._initialized = True
             return True
 
-        except Exception as e:
-            logger.error(f"MIP initialization failed: {e}")
+        except ImportError as e:
+            logger.error(f"MIP initialization failed - missing .NET assembly: {e}")
+            return False
+        except RuntimeError as e:
+            # CLR/pythonnet runtime errors
+            logger.error(f"MIP initialization failed - CLR runtime error: {e}")
+            return False
+        except AttributeError as e:
+            logger.error(f"MIP initialization failed - API mismatch: {e}")
             return False
 
     def _create_consent_delegate(self):
@@ -384,8 +408,10 @@ class MIPClient:
             try:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._shutdown_sync)
-            except Exception as e:
-                logger.warning(f"Error during MIP shutdown: {e}")
+            except RuntimeError as e:
+                logger.warning(f"CLR error during MIP shutdown: {e}")
+            except OSError as e:
+                logger.warning(f"OS error during MIP shutdown: {e}")
 
         self._file_engine = None
         self._file_profile = None
@@ -421,8 +447,11 @@ class MIPClient:
             self._labels = labels
             return labels
 
-        except Exception as e:
-            logger.error(f"Failed to get labels: {e}")
+        except RuntimeError as e:
+            logger.error(f"Failed to get labels - CLR error: {e}")
+            return []
+        except AttributeError as e:
+            logger.error(f"Failed to get labels - API mismatch: {e}")
             return []
 
     def _get_labels_sync(self) -> List[SensitivityLabel]:
@@ -524,13 +553,29 @@ class MIPClient:
             )
             return result
 
-        except Exception as e:
-            logger.error(f"Failed to apply label to {file_path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied applying label to {file_path}: {e}")
             return LabelingResult(
                 success=False,
                 file_path=file_path,
                 label_id=label_id,
-                error=str(e),
+                error=f"Permission denied: {e}",
+            )
+        except OSError as e:
+            logger.error(f"OS error applying label to {file_path}: {e}")
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                label_id=label_id,
+                error=f"OS error: {e}",
+            )
+        except RuntimeError as e:
+            logger.error(f"CLR error applying label to {file_path}: {e}")
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                label_id=label_id,
+                error=f"CLR runtime error: {e}",
             )
 
     def _apply_label_sync(
@@ -605,19 +650,33 @@ class MIPClient:
                     error="Commit returned false",
                 )
 
-        except Exception as e:
+        except PermissionError as e:
             return LabelingResult(
                 success=False,
                 file_path=file_path,
                 label_id=label_id,
-                error=str(e),
+                error=f"Permission denied: {e}",
+            )
+        except OSError as e:
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                label_id=label_id,
+                error=f"OS error: {e}",
+            )
+        except RuntimeError as e:
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                label_id=label_id,
+                error=f"CLR runtime error: {e}",
             )
         finally:
             # Clean up handler
             if handler:
                 try:
                     handler.Dispose()
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
 
     def _create_file_observer(self):
@@ -665,12 +724,26 @@ class MIPClient:
             )
             return result
 
-        except Exception as e:
-            logger.error(f"Failed to remove label from {file_path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied removing label from {file_path}: {e}")
             return LabelingResult(
                 success=False,
                 file_path=file_path,
-                error=str(e),
+                error=f"Permission denied: {e}",
+            )
+        except OSError as e:
+            logger.error(f"OS error removing label from {file_path}: {e}")
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                error=f"OS error: {e}",
+            )
+        except RuntimeError as e:
+            logger.error(f"CLR error removing label from {file_path}: {e}")
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                error=f"CLR runtime error: {e}",
             )
 
     def _remove_label_sync(self, file_path: str) -> LabelingResult:
@@ -717,17 +790,29 @@ class MIPClient:
                     error="Commit returned false",
                 )
 
-        except Exception as e:
+        except PermissionError as e:
             return LabelingResult(
                 success=False,
                 file_path=file_path,
-                error=str(e),
+                error=f"Permission denied: {e}",
+            )
+        except OSError as e:
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                error=f"OS error: {e}",
+            )
+        except RuntimeError as e:
+            return LabelingResult(
+                success=False,
+                file_path=file_path,
+                error=f"CLR runtime error: {e}",
             )
         finally:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
 
     async def get_file_label(self, file_path: str) -> Optional[SensitivityLabel]:
@@ -754,8 +839,14 @@ class MIPClient:
             )
             return label
 
-        except Exception as e:
-            logger.error(f"Failed to get label from {file_path}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied reading label from {file_path}: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"OS error reading label from {file_path}: {e}")
+            return None
+        except RuntimeError as e:
+            logger.error(f"CLR error reading label from {file_path}: {e}")
             return None
 
     def _get_file_label_sync(self, file_path: str) -> Optional[SensitivityLabel]:
@@ -783,14 +874,23 @@ class MIPClient:
                 is_active=mip_label.IsActive if hasattr(mip_label, 'IsActive') else True,
             )
 
-        except Exception as e:
-            logger.error(f"Failed to read label: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied reading label: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"OS error reading label: {e}")
+            return None
+        except RuntimeError as e:
+            logger.error(f"CLR error reading label: {e}")
+            return None
+        except AttributeError as e:
+            logger.error(f"API mismatch reading label: {e}")
             return None
         finally:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
 
     async def is_file_protected(self, file_path: str) -> bool:
@@ -814,8 +914,14 @@ class MIPClient:
             )
             return result
 
-        except Exception as e:
-            logger.debug(f"Error checking file protection for {file_path}: {e}")
+        except PermissionError as e:
+            logger.debug(f"Permission denied checking file protection for {file_path}: {e}")
+            return False
+        except OSError as e:
+            logger.debug(f"OS error checking file protection for {file_path}: {e}")
+            return False
+        except RuntimeError as e:
+            logger.debug(f"CLR error checking file protection for {file_path}: {e}")
             return False
 
     def _is_file_protected_sync(self, file_path: str) -> bool:
@@ -828,14 +934,20 @@ class MIPClient:
             )
             return handler.Protection is not None if hasattr(handler, 'Protection') else False
 
-        except Exception as e:
-            logger.debug(f"Error in sync protection check for {file_path}: {e}")
+        except PermissionError as e:
+            logger.debug(f"Permission denied in sync protection check for {file_path}: {e}")
+            return False
+        except OSError as e:
+            logger.debug(f"OS error in sync protection check for {file_path}: {e}")
+            return False
+        except RuntimeError as e:
+            logger.debug(f"CLR error in sync protection check for {file_path}: {e}")
             return False
         finally:
             if handler:
                 try:
                     handler.Dispose()
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
 
 
