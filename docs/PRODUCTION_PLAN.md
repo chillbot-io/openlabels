@@ -1,6 +1,8 @@
 # Production Readiness Plan
 
-**Total Estimated Effort:** 60-80 hours
+**Total Estimated Effort:** 50-65 hours
+
+**Architecture Note:** This is a single-server deployment with multiple worker processes. The PostgreSQL job queue handles scan-level orchestration (low volume - maybe 10-100 jobs/day). File processing happens in-memory within workers using ThreadPoolExecutor/asyncio. No external message broker needed.
 
 ---
 
@@ -28,30 +30,33 @@ The function ends without committing or returning. Add proper cleanup.
 ## Phase 2: Security Fixes (HIGH - Week 1)
 
 ### 2.1 Replace In-Memory Session Storage
-**Time:** 4-6 hours
+**Time:** 2-3 hours
+
+Use existing PostgreSQL - no new dependencies needed.
+
+**Add table to schema:**
+```sql
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    tenant_id UUID REFERENCES tenants(id),
+    data JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+```
 
 **Create:** `src/openlabels/server/session.py`
-
 ```python
-class SessionStore(Protocol):
+class DatabaseSessionStore:
     async def get(self, session_id: str) -> dict | None: ...
     async def set(self, session_id: str, data: dict, ttl: int) -> None: ...
     async def delete(self, session_id: str) -> None: ...
-
-class RedisSessionStore(SessionStore):
-    ...
-
-class DatabaseSessionStore(SessionStore):
-    ...
+    async def cleanup_expired(self) -> int: ...  # Called periodically
 ```
 
-**Add to config.py:**
-```python
-class SessionSettings(BaseSettings):
-    backend: Literal["redis", "database", "memory"] = "redis"
-    redis_url: str = "redis://localhost:6379"
-    session_ttl_seconds: int = 604800  # 7 days
-```
+**Update:** `src/openlabels/server/routes/auth.py` to use DatabaseSessionStore instead of dict.
 
 ### 2.2 Configure Proper CORS
 **Time:** 1 hour
@@ -182,7 +187,7 @@ Add logging instead of silent `pass`.
 ## Phase 6: Observability (MEDIUM - Week 4+)
 
 ### 6.1 Enhanced Health Check (2 hours)
-Add dependency checks (database, redis) to `/health` endpoint.
+Add dependency checks (database connectivity) to `/health` endpoint.
 
 ### 6.2 Structured Logging (3-4 hours)
 Replace basic logging with `structlog`. Add request ID middleware.
@@ -196,9 +201,6 @@ Add `/api/v1/` prefix. Maintain `/api/` as alias for latest.
 
 ```toml
 [project.optional-dependencies]
-redis = [
-    "redis>=5.0.0",
-]
 production = [
     "slowapi>=0.1.9",
     "structlog>=23.2.0",
@@ -212,7 +214,7 @@ production = [
 | Week | Tasks | Time |
 |------|-------|------|
 | **Day 1** | Phase 1 (Critical bugs) | 1 hour |
-| **Week 1** | Phase 2 (Security) | 8-10 hours |
+| **Week 1** | Phase 2 (Security) | 6-8 hours |
 | **Week 1-2** | Phase 3 (Missing features) | 6-7 hours |
 | **Week 2** | Phase 4 (Cleanup) | 3-4 hours |
 | **Week 2-4** | Phase 5 (Tests) | 40-50 hours |
