@@ -14,38 +14,23 @@ The OpenLabels codebase is generally well-structured with comprehensive function
 
 ## 1. CRITICAL ISSUES (Potential Bugs/Errors)
 
-### 1.1 Missing Import in health.py (Line 249)
+### 1.1 Missing Import in health.py (Line 249) - **FIXED**
 
 **File:** `src/openlabels/server/routes/health.py:249`
 
-```python
-# Import is at the BOTTOM of the file after it's used
-from sqlalchemy import Integer  # Line 249
-```
+~~`Integer` was imported at the bottom of the file but used earlier. This would cause a `NameError` at runtime.~~
 
-**Issue:** `Integer` is imported at the bottom of the file but used earlier in lines 110-111 and 226. This will cause a `NameError` at runtime.
-
-**Lines using Integer before import:**
-- Line 110: `func.cast(JobQueue.status == "pending", Integer)`
-- Line 111: `func.cast(JobQueue.status == "failed", Integer)`
-- Line 226: `func.cast(ScanJob.status == "completed", Integer)`
+**Fix:** Moved `Integer` import to top of file with other sqlalchemy imports.
 
 ---
 
-### 1.2 Incorrect ML Detector Import in health.py (Line 142)
+### 1.2 Incorrect ML Detector Import in health.py (Line 142) - **FIXED**
 
 **File:** `src/openlabels/server/routes/health.py:142-154`
 
-```python
-from openlabels.core.detectors.ml import ONNXDetector
-# ...
-detector = ONNXDetector(model_name="pii-bert")
-```
+~~The import tried to get non-existent `ONNXDetector` from `ml.py`.~~
 
-**Issue:** The import tries to get `ONNXDetector` from `ml.py`, but:
-1. `ml.py` contains `MLDetector`, `PHIBertDetector`, and `PIIBertDetector` - not `ONNXDetector`
-2. The ONNX detectors are in `ml_onnx.py` as `PHIBertONNXDetector` and `PIIBertONNXDetector`
-3. These detectors don't accept `model_name` parameter
+**Fix:** Changed to import correct classes `PIIBertONNXDetector` and `PHIBertONNXDetector` from `ml_onnx.py`.
 
 ---
 
@@ -85,15 +70,22 @@ The variable `file_name` is computed but never used in the lockdown flow.
 
 ### 2.1 Broad Exception Handling
 
-The codebase has **200+ instances** of bare `except Exception:` or `except Exception as e:` patterns. While defensive programming is good, many silently swallow errors:
+The codebase had **200+ instances** of bare `except Exception:` or `except Exception as e:` patterns.
 
-**Examples from `__main__.py`:**
-```python
-except Exception:  # Line 655, 668, 679, 692, 706 - silent swallowing
-    pass
-```
+**STATUS: PARTIALLY FIXED**
 
-**Recommendation:** Add logging or more specific exception types.
+Fixed exception handling in:
+- `__main__.py` - 11 instances fixed with proper logging
+- `server/routes/health.py` - Fixed Integer import bug, corrected ML detector import
+- `server/routes/labels.py` - Added logging
+- `server/routes/ws.py` - Added logging
+- `server/routes/auth.py` - Added logging
+- `server/routes/dashboard.py` - Added logger and logging
+- `adapters/filesystem.py` - 7 instances fixed with debug logging
+- `jobs/scheduler.py` - 4 instances fixed with debug logging
+- `jobs/worker.py` - 1 instance fixed
+
+**Remaining to fix:** Core modules, GUI/labeling/monitoring modules
 
 ---
 
