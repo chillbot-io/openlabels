@@ -25,7 +25,7 @@ OpenLabels is a comprehensive data classification and auto-labeling platform wit
 | Scoring Engine | Complete | 100% |
 | Server/API | Complete | 100% |
 | Authentication | Complete | 100% |
-| Adapters | Partial | 60% |
+| Adapters | Complete | 100% |
 | Labeling/MIP | Partial | 50% |
 | Jobs/Scheduling | Complete | 100% |
 | GUI | Scaffolded | 40% |
@@ -238,23 +238,28 @@ FastAPI Server
 
 | Adapter | Status | Features |
 |---------|--------|----------|
-| **Filesystem** | Complete | Local/network paths, async enumeration |
-| **SharePoint** | Partial | Graph API, site enumeration |
-| **OneDrive** | Partial | Graph API, user enumeration |
+| **Filesystem** | Complete | Local/network paths, async enumeration, filtering |
+| **SharePoint** | Complete | Graph API, delta queries, rate limiting, connection pooling |
+| **OneDrive** | Complete | Graph API, delta queries, rate limiting, connection pooling |
 
 ### Adapter Protocol
 
 All adapters implement:
-- `enumerate()` - List files
-- `read()` - Get file content
+- `list_files()` - List files with filtering support
+- `read_file()` - Get file content
 - `supports_delta()` - Delta scan capability
-- `get_permissions()` - File permissions
+- `get_metadata()` - File metadata refresh
+- `test_connection()` - Connection validation
 
-### Adapter Gaps
+### Adapter Features (All Implemented)
 
-1. **Delta scanning** - Partially implemented
-2. **No credential caching** for cloud adapters
-3. **No retry logic** for transient failures
+1. ~~**Delta scanning**~~ - **FIXED**: Graph API delta tokens for incremental sync
+2. ~~**No credential caching**~~ - **FIXED**: Token management with auto-refresh (60s buffer)
+3. ~~**No retry logic**~~ - **FIXED**: Exponential backoff, 429 handling, Retry-After support
+4. **File filtering** - Exclude by extension, path pattern, owner account
+5. **Rate limiting** - Token bucket (100 req/sec default) with adaptive backoff
+6. **Connection pooling** - HTTP/2 multiplexing via httpx (100 connections)
+7. **CSV row limit** - Increased to 100,000 rows for large spreadsheets
 
 ---
 

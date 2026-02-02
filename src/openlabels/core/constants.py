@@ -92,7 +92,7 @@ DETECTOR_TIMEOUT = 120.0  # seconds
 
 # --- FILE PROCESSING & SECURITY ---
 MAX_DOCUMENT_PAGES = 50  # Maximum pages to process per document (prevents DoS)
-MAX_SPREADSHEET_ROWS = 10000  # Per-sheet row limit
+MAX_SPREADSHEET_ROWS = 100000  # Per-sheet row limit (increased for CSV processing)
 MIN_NATIVE_TEXT_LENGTH = 20  # Below this, assume scanned/image-based
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB file upload limit
 

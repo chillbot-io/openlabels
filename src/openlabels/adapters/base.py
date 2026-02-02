@@ -1,11 +1,19 @@
 """
 Base adapter protocol and common types.
+
+Provides:
+- FileInfo dataclass for normalized file metadata
+- ExposureLevel enum for access classification
+- FilterConfig for file/account filtering
+- Adapter protocol defining the contract for all adapters
 """
 
+import fnmatch
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Protocol, AsyncIterator, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ExposureLevel(str, Enum):
@@ -15,6 +23,105 @@ class ExposureLevel(str, Enum):
     INTERNAL = "INTERNAL"  # Specific users/groups
     ORG_WIDE = "ORG_WIDE"  # All organization members
     PUBLIC = "PUBLIC"  # Anyone with link / anonymous
+
+
+@dataclass
+class FilterConfig:
+    """
+    Configuration for filtering files during enumeration.
+
+    Supports:
+    - File extension exclusions (e.g., .tmp, .log)
+    - Path pattern exclusions (e.g., node_modules/*, .git/*)
+    - Account/owner exclusions (e.g., service accounts)
+    - Size limits (min/max bytes)
+    """
+
+    # File extensions to exclude (without dot, case-insensitive)
+    exclude_extensions: list[str] = field(default_factory=list)
+
+    # Path patterns to exclude (glob-style: *, ?, [seq])
+    exclude_patterns: list[str] = field(default_factory=list)
+
+    # Accounts/owners to exclude (exact match or pattern)
+    exclude_accounts: list[str] = field(default_factory=list)
+
+    # Size limits (None = no limit)
+    min_size_bytes: Optional[int] = None
+    max_size_bytes: Optional[int] = None
+
+    # Common presets that can be enabled
+    exclude_temp_files: bool = True
+    exclude_system_dirs: bool = True
+
+    def __post_init__(self):
+        """Apply presets after initialization."""
+        if self.exclude_temp_files:
+            self.exclude_extensions.extend([
+                "tmp", "temp", "bak", "swp", "swo", "pyc", "pyo",
+                "class", "o", "obj", "cache",
+            ])
+
+        if self.exclude_system_dirs:
+            self.exclude_patterns.extend([
+                ".git/*", ".svn/*", ".hg/*",
+                "node_modules/*", "__pycache__/*",
+                ".venv/*", "venv/*", ".env/*",
+                "*.egg-info/*", "dist/*", "build/*",
+                ".tox/*", ".pytest_cache/*",
+            ])
+
+        # Normalize extensions (lowercase, no dot)
+        self.exclude_extensions = [
+            ext.lower().lstrip(".") for ext in self.exclude_extensions
+        ]
+
+    def should_include(self, file_info: "FileInfo") -> bool:
+        """
+        Check if a file should be included based on filter rules.
+
+        Args:
+            file_info: File to check
+
+        Returns:
+            True if file passes all filters, False to exclude
+        """
+        # Check extension
+        if self.exclude_extensions:
+            ext = file_info.name.rsplit(".", 1)[-1].lower() if "." in file_info.name else ""
+            if ext in self.exclude_extensions:
+                return False
+
+        # Check path patterns
+        for pattern in self.exclude_patterns:
+            if fnmatch.fnmatch(file_info.path, pattern):
+                return False
+            # Also check if any path component matches
+            if fnmatch.fnmatch(file_info.path, f"*/{pattern}"):
+                return False
+
+        # Check account exclusion
+        if self.exclude_accounts and file_info.owner:
+            owner_lower = file_info.owner.lower()
+            for account in self.exclude_accounts:
+                # Support both exact match and pattern
+                if account.lower() == owner_lower:
+                    return False
+                if "*" in account or "?" in account:
+                    if fnmatch.fnmatch(owner_lower, account.lower()):
+                        return False
+
+        # Check size limits
+        if self.min_size_bytes is not None and file_info.size < self.min_size_bytes:
+            return False
+        if self.max_size_bytes is not None and file_info.size > self.max_size_bytes:
+            return False
+
+        return True
+
+
+# Default filter configuration
+DEFAULT_FILTER = FilterConfig()
 
 
 @dataclass
@@ -35,6 +142,9 @@ class FileInfo:
     site_id: Optional[str] = None  # For SharePoint
     user_id: Optional[str] = None  # For OneDrive
 
+    # Delta tracking
+    change_type: Optional[str] = None  # 'created', 'modified', 'deleted' for delta queries
+
 
 class Adapter(Protocol):
     """Protocol for storage adapters."""
@@ -48,6 +158,7 @@ class Adapter(Protocol):
         self,
         target: str,
         recursive: bool = True,
+        filter_config: Optional[FilterConfig] = None,
     ) -> AsyncIterator[FileInfo]:
         """
         List files in the target location.
@@ -55,9 +166,10 @@ class Adapter(Protocol):
         Args:
             target: Path, URL, or identifier of the location to scan
             recursive: Whether to scan subdirectories
+            filter_config: Optional filter configuration for exclusions
 
         Yields:
-            FileInfo objects for each file found
+            FileInfo objects for each file found (after filtering)
         """
         ...
 
@@ -94,5 +206,14 @@ class Adapter(Protocol):
 
         Returns:
             True if connection successful
+        """
+        ...
+
+    def supports_delta(self) -> bool:
+        """
+        Check if adapter supports delta/incremental queries.
+
+        Returns:
+            True if adapter can track changes incrementally
         """
         ...

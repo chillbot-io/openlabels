@@ -1,7 +1,15 @@
 """
 Filesystem adapter for local and network file systems.
+
+Features:
+- Async file enumeration with aiofiles
+- File/account filtering support
+- NTFS permission extraction (Windows)
+- POSIX permission extraction (Linux/Mac)
+- Exposure level calculation from permissions
 """
 
+import logging
 import os
 import platform
 import stat
@@ -12,11 +20,17 @@ from typing import AsyncIterator, Optional
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel
+from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
+
+logger = logging.getLogger(__name__)
 
 
 class FilesystemAdapter:
-    """Adapter for local and network filesystem scanning."""
+    """
+    Adapter for local and network filesystem scanning.
+
+    Supports filtering by file type, path patterns, and account exclusions.
+    """
 
     def __init__(self, service_account: Optional[str] = None):
         """
@@ -32,12 +46,28 @@ class FilesystemAdapter:
     def adapter_type(self) -> str:
         return "filesystem"
 
+    def supports_delta(self) -> bool:
+        """Filesystem doesn't support delta queries (uses hash-based detection)."""
+        return False
+
     async def list_files(
         self,
         target: str,
         recursive: bool = True,
+        filter_config: Optional[FilterConfig] = None,
     ) -> AsyncIterator[FileInfo]:
-        """List files in a directory."""
+        """
+        List files in a directory.
+
+        Args:
+            target: Directory path to scan
+            recursive: Whether to scan subdirectories
+            filter_config: Optional filter for file/account exclusions
+
+        Yields:
+            FileInfo objects for each file (after filtering)
+        """
+        filter_config = filter_config or DEFAULT_FILTER
         target_path = Path(target)
 
         if not target_path.exists():
@@ -46,26 +76,27 @@ class FilesystemAdapter:
         if not target_path.is_dir():
             raise ValueError(f"Target path is not a directory: {target}")
 
-        async for file_info in self._walk_directory(target_path, recursive):
+        async for file_info in self._walk_directory(target_path, recursive, filter_config):
             yield file_info
 
     async def _walk_directory(
         self,
         directory: Path,
         recursive: bool,
+        filter_config: FilterConfig,
     ) -> AsyncIterator[FileInfo]:
-        """Recursively walk a directory."""
+        """Recursively walk a directory with filtering."""
         try:
             entries = list(directory.iterdir())
         except PermissionError:
-            # Log and skip directories we can't access
+            logger.debug(f"Permission denied: {directory}")
             return
 
         for entry in entries:
             try:
                 if entry.is_file():
                     stat_info = entry.stat()
-                    yield FileInfo(
+                    file_info = FileInfo(
                         path=str(entry.absolute()),
                         name=entry.name,
                         size=stat_info.st_size,
@@ -75,11 +106,27 @@ class FilesystemAdapter:
                         exposure=self._calculate_exposure(entry),
                         adapter=self.adapter_type,
                     )
-                elif entry.is_dir() and recursive:
-                    async for file_info in self._walk_directory(entry, recursive):
+
+                    # Apply filter
+                    if filter_config.should_include(file_info):
                         yield file_info
-            except (PermissionError, OSError):
-                # Skip files we can't access
+
+                elif entry.is_dir() and recursive:
+                    # Check if directory should be skipped by pattern
+                    dir_path = str(entry.absolute())
+                    skip_dir = False
+                    for pattern in filter_config.exclude_patterns:
+                        # Check if directory name matches exclusion pattern
+                        if entry.name in pattern.replace("/*", "").replace("*", ""):
+                            skip_dir = True
+                            break
+
+                    if not skip_dir:
+                        async for file_info in self._walk_directory(entry, recursive, filter_config):
+                            yield file_info
+
+            except (PermissionError, OSError) as e:
+                logger.debug(f"Cannot access {entry}: {e}")
                 continue
 
     async def read_file(self, file_info: FileInfo) -> bytes:
