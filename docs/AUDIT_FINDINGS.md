@@ -88,6 +88,11 @@ All bare exception handlers have been updated with proper logging:
 - `adapters/filesystem.py` - 7 instances fixed with debug logging
 - `jobs/scheduler.py` - 4 instances fixed with debug logging
 - `jobs/worker.py` - 1 instance fixed
+- `jobs/tasks/scan.py` - 6 instances fixed (WebSocket streaming events)
+- `jobs/tasks/label.py` - 4 instances fixed (MIP config, XML parsing, temp file cleanup)
+
+**Server:**
+- `server/db.py` - 2 instances fixed (session rollbacks)
 
 **Core Modules:**
 - `core/agents/pool.py` - 3 instances fixed (CPU/memory detection, result collection)
@@ -98,6 +103,10 @@ All bare exception handlers have been updated with proper logging:
 - `gui/workers/scan_worker.py` - 1 instance fixed (JSON parsing fallback)
 - `labeling/engine.py` - 3 instances fixed (sidecar/Office/PDF metadata)
 - `labeling/mip.py` - 5 instances fixed (MIP handler disposal, protection checks)
+
+**Windows:**
+- `windows/tray.py` - 1 instance fixed (Docker container check)
+- `windows/service.py` - 1 instance fixed (Docker availability check)
 
 ---
 
