@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import Session, PendingAuth
@@ -122,6 +122,32 @@ class SessionStore:
         if count > 0:
             logger.info(f"Cleaned up {count} expired sessions")
         return count
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        """
+        Delete all sessions for a specific user.
+
+        Used for logout-all functionality.
+        Returns number of sessions deleted.
+        """
+        result = await self.db.execute(
+            delete(Session).where(Session.user_id == user_id)
+        )
+        await self.db.flush()
+        count = result.rowcount
+        if count > 0:
+            logger.info(f"Deleted {count} sessions for user {user_id}")
+        return count
+
+    async def count_user_sessions(self, user_id: str) -> int:
+        """Count active sessions for a user."""
+        result = await self.db.execute(
+            select(func.count(Session.id)).where(
+                Session.user_id == user_id,
+                Session.expires_at > datetime.utcnow(),
+            )
+        )
+        return result.scalar() or 0
 
 
 class PendingAuthStore:

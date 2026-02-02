@@ -1,5 +1,8 @@
 """
 Dashboard API endpoints for statistics and visualizations.
+
+All dashboard queries use SQL aggregation for performance at scale.
+Statistics are computed in PostgreSQL, not Python.
 """
 
 from datetime import datetime, timedelta
@@ -8,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, cast, Date, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -67,38 +70,44 @@ async def get_overall_stats(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """Get overall dashboard statistics."""
-    # Count scans
-    scan_query = select(func.count()).where(ScanJob.tenant_id == user.tenant_id)
-    result = await session.execute(scan_query)
-    total_scans = result.scalar() or 0
+    """
+    Get overall dashboard statistics.
 
-    # Count active scans
-    active_query = select(func.count()).where(
-        ScanJob.tenant_id == user.tenant_id,
-        ScanJob.status.in_(["pending", "running"]),
-    )
-    result = await session.execute(active_query)
-    active_scans = result.scalar() or 0
+    Uses SQL aggregation for efficient computation at scale.
+    All counts are computed in PostgreSQL, not Python.
+    """
+    # Count total and active scans in one query
+    scan_stats_query = select(
+        func.count().label("total"),
+        func.sum(
+            case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+        ).label("active"),
+    ).where(ScanJob.tenant_id == user.tenant_id)
 
-    # Get result stats
-    result_query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
-    result = await session.execute(result_query)
-    results = result.scalars().all()
+    result = await session.execute(scan_stats_query)
+    scan_row = result.one()
+    total_scans = scan_row.total or 0
+    active_scans = scan_row.active or 0
 
-    total_files = len(results)
-    files_with_pii = sum(1 for r in results if r.total_entities > 0)
-    labels_applied = sum(1 for r in results if r.label_applied)
-    critical_files = sum(1 for r in results if r.risk_tier == "CRITICAL")
-    high_files = sum(1 for r in results if r.risk_tier == "HIGH")
+    # Get all result stats in one aggregation query
+    result_stats_query = select(
+        func.count().label("total_files"),
+        func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+        func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
+        func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
+        func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label("high_files"),
+    ).where(ScanResult.tenant_id == user.tenant_id)
+
+    result = await session.execute(result_stats_query)
+    stats_row = result.one()
 
     return OverallStats(
         total_scans=total_scans,
-        total_files_scanned=total_files,
-        files_with_pii=files_with_pii,
-        labels_applied=labels_applied,
-        critical_files=critical_files,
-        high_files=high_files,
+        total_files_scanned=stats_row.total_files or 0,
+        files_with_pii=stats_row.files_with_pii or 0,
+        labels_applied=stats_row.labels_applied or 0,
+        critical_files=stats_row.critical_files or 0,
+        high_files=stats_row.high_files or 0,
         active_scans=active_scans,
     )
 
@@ -109,35 +118,50 @@ async def get_trends(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """Get trend data over time."""
+    """
+    Get trend data over time.
+
+    Uses SQL GROUP BY for efficient aggregation at scale.
+    Results are grouped by date in PostgreSQL.
+    """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
 
-    # Get results in date range
-    query = select(ScanResult).where(
-        ScanResult.tenant_id == user.tenant_id,
-        ScanResult.scanned_at >= start_date,
+    # Use SQL aggregation with GROUP BY date
+    # Cast scanned_at to date for grouping
+    scan_date = cast(ScanResult.scanned_at, Date)
+
+    trend_query = (
+        select(
+            scan_date.label("scan_date"),
+            func.count().label("files_scanned"),
+            func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+            func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
+        )
+        .where(
+            and_(
+                ScanResult.tenant_id == user.tenant_id,
+                ScanResult.scanned_at >= start_date,
+            )
+        )
+        .group_by(scan_date)
+        .order_by(scan_date)
     )
-    result = await session.execute(query)
-    results = result.scalars().all()
 
-    # Group by date
-    daily_stats: dict[str, dict] = {}
-    for r in results:
-        date_str = r.scanned_at.strftime("%Y-%m-%d")
-        if date_str not in daily_stats:
-            daily_stats[date_str] = {
-                "files_scanned": 0,
-                "files_with_pii": 0,
-                "labels_applied": 0,
-            }
-        daily_stats[date_str]["files_scanned"] += 1
-        if r.total_entities > 0:
-            daily_stats[date_str]["files_with_pii"] += 1
-        if r.label_applied:
-            daily_stats[date_str]["labels_applied"] += 1
+    result = await session.execute(trend_query)
+    rows = result.all()
 
-    # Fill in missing dates
+    # Convert to dict for easy lookup
+    daily_stats = {
+        row.scan_date.strftime("%Y-%m-%d"): {
+            "files_scanned": row.files_scanned or 0,
+            "files_with_pii": row.files_with_pii or 0,
+            "labels_applied": row.labels_applied or 0,
+        }
+        for row in rows
+    }
+
+    # Fill in missing dates with zeros
     points = []
     current = start_date
     while current <= end_date:

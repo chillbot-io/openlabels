@@ -14,6 +14,8 @@ from openlabels.server.routes import (
     dashboard,
     ws,
     users,
+    remediation,
+    monitoring,
 )
 
 __all__ = [
@@ -28,4 +30,6 @@ __all__ = [
     "dashboard",
     "ws",
     "users",
+    "remediation",
+    "monitoring",
 ]

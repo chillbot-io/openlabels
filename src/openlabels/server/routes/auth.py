@@ -25,16 +25,16 @@ from pydantic import BaseModel
 from msal import ConfidentialClientApplication
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from openlabels.server.config import get_settings
+from openlabels.server.app import get_client_ip
 from openlabels.server.db import get_session
 from openlabels.server.session import SessionStore, PendingAuthStore
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 
 # Token cookie settings
 SESSION_COOKIE_NAME = "openlabels_session"
@@ -123,7 +123,13 @@ async def login(
                 "roles": ["admin"],
             },
         }
-        await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+        await session_store.set(
+            session_id,
+            session_data,
+            SESSION_TTL_SECONDS,
+            tenant_id="dev-tenant",
+            user_id="dev-user-oid",
+        )
 
         response = RedirectResponse(url=redirect_uri or "/", status_code=302)
         response.set_cookie(
@@ -235,14 +241,24 @@ async def auth_callback(
     session_id = _generate_session_id()
     expires_in = result.get("expires_in", 3600)
 
+    id_token_claims = result.get("id_token_claims", {})
     session_data = {
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),
         "id_token": result.get("id_token"),
         "expires_at": (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
-        "claims": result.get("id_token_claims", {}),
+        "claims": id_token_claims,
     }
-    await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+    # Store with user_id for logout-all functionality
+    user_id = id_token_claims.get("oid")
+    tenant_id = id_token_claims.get("tid")
+    await session_store.set(
+        session_id,
+        session_data,
+        SESSION_TTL_SECONDS,
+        tenant_id=tenant_id,
+        user_id=user_id,
+    )
 
     # Redirect with session cookie
     response = RedirectResponse(url=final_redirect, status_code=302)
@@ -460,4 +476,84 @@ async def auth_status(
         "provider": settings.auth.provider,
         "user": user_info,
         "login_url": "/auth/login" if not authenticated else None,
+    }
+
+
+@router.post("/revoke")
+async def revoke_token(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """
+    Revoke the current session token.
+
+    This invalidates the current session immediately.
+    For API clients that want to explicitly revoke their token.
+    """
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    session_store = SessionStore(db)
+    deleted = await session_store.delete(session_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found or already revoked",
+        )
+
+    return {"status": "revoked", "message": "Session has been revoked"}
+
+
+@router.post("/logout-all")
+async def logout_all_sessions(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """
+    Log out all sessions for the current user.
+
+    Useful when user suspects account compromise or wants to
+    force re-authentication on all devices.
+    """
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    session_store = SessionStore(db)
+    session_data = await session_store.get(session_id)
+
+    if not session_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid",
+        )
+
+    # Get user ID from claims
+    claims = session_data.get("claims", {})
+    user_id = claims.get("oid")
+
+    if not user_id:
+        # If no user_id in claims, just delete current session
+        await session_store.delete(session_id)
+        return {"status": "success", "sessions_revoked": 1}
+
+    # Delete all sessions for this user
+    count = await session_store.delete_all_for_user(user_id)
+
+    logger.info(f"User {user_id} logged out of {count} sessions")
+
+    return {
+        "status": "success",
+        "sessions_revoked": count,
+        "message": f"Logged out of {count} session(s) across all devices",
     }
