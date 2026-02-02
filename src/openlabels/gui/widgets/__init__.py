@@ -24,6 +24,7 @@ try:
     from .settings_widget import SettingsWidget
     from .monitoring_widget import MonitoringWidget, AddMonitoringDialog
     from .charts_widget import HeatMapChart, SensitiveDataChart, ChartPanel
+    from .health_widget import HealthWidget, StatusIndicator
 
     __all__ = [
         "ScanWidget",
@@ -44,6 +45,8 @@ try:
         "HeatMapChart",
         "SensitiveDataChart",
         "ChartPanel",
+        "HealthWidget",
+        "StatusIndicator",
     ]
 except ImportError:
     # PySide6 or pyqtgraph not available

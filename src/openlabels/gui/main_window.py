@@ -39,6 +39,7 @@ if PYSIDE_AVAILABLE:
     from openlabels.gui.widgets.file_detail_widget import FileDetailWidget
     from openlabels.gui.widgets.settings_widget import SettingsWidget
     from openlabels.gui.widgets.monitoring_widget import MonitoringWidget
+    from openlabels.gui.widgets.health_widget import HealthWidget
     from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
@@ -152,6 +153,7 @@ if PYSIDE_AVAILABLE:
             self.schedules_widget = SchedulesWidget()
             self.labels_widget = LabelsWidget()
             self.monitoring_widget = MonitoringWidget()
+            self.health_widget = HealthWidget()
             self.settings_widget = SettingsWidget(server_url=self.server_url)
 
             # File detail panel (context card)
@@ -170,6 +172,7 @@ if PYSIDE_AVAILABLE:
             self.tabs.addTab(self.schedules_widget, "Schedules")
             self.tabs.addTab(self.labels_widget, "Labels")
             self.tabs.addTab(self.monitoring_widget, "Monitoring")
+            self.tabs.addTab(self.health_widget, "Health")
             self.tabs.addTab(self.settings_widget, "Settings")
 
             # Connect signals
@@ -180,7 +183,11 @@ if PYSIDE_AVAILABLE:
             self.schedules_widget.schedule_changed.connect(self._on_schedule_changed)
             self.labels_widget.label_rule_changed.connect(self._on_label_rule_changed)
             self.monitoring_widget.refresh_requested.connect(self._on_refresh)
+            self.health_widget.refresh_requested.connect(self._load_health_status)
             self.settings_widget.settings_changed.connect(self._on_settings_changed)
+
+            # Load sample data for health widget demo
+            self.health_widget.load_sample_data()
 
         def _setup_statusbar(self) -> None:
             """Set up the status bar."""
@@ -302,7 +309,7 @@ if PYSIDE_AVAILABLE:
 
         def _on_settings(self) -> None:
             """Handle settings action."""
-            self.tabs.setCurrentIndex(7)  # Switch to Settings tab
+            self.tabs.setCurrentIndex(8)  # Switch to Settings tab
 
         def _on_settings_changed(self, settings: dict) -> None:
             """Handle settings changed."""
@@ -438,6 +445,29 @@ if PYSIDE_AVAILABLE:
                     self.file_detail_widget.set_available_labels(labels)
             except Exception as e:
                 logger.warning(f"Failed to load labels: {e}")
+
+        def _load_health_status(self) -> None:
+            """Load system health status from server."""
+            try:
+                import httpx
+                response = httpx.get(
+                    f"{self.server_url}/api/health/status",
+                    timeout=5.0,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    self.health_widget.update_status(data)
+            except Exception as e:
+                # Show connection error in health widget
+                self.health_widget.update_status({
+                    "api": "error", "api_text": "Not connected",
+                    "db": "unknown", "db_text": "",
+                    "queue": "unknown", "queue_text": "",
+                    "ml": "unknown", "ml_text": "",
+                    "mip": "unknown", "mip_text": "",
+                    "ocr": "unknown", "ocr_text": "",
+                })
+                self.health_widget.add_error("Connection", str(e))
 
         def closeEvent(self, event) -> None:
             """Handle window close."""
