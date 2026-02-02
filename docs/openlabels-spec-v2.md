@@ -379,23 +379,35 @@ Quarantine moves sensitive files to a secure location while preserving metadata.
 - MUST support resumable transfers for large files
 - MUST create audit log entry
 - MUST update Label Set with remediation status
-- SHOULD use platform-native tools (robocopy on Windows)
+- MAY use platform-native tools or standard libraries
 
-#### 8.1.2 Windows Implementation
+#### 8.1.2 Reference Implementation
 
+The OpenLabels reference implementation uses adapter-based file operations:
+
+```python
+from openlabels.remediation import quarantine
+
+result = quarantine(
+    source=Path("/data/sensitive/ssn_list.xlsx"),
+    destination=Path("/quarantine/"),
+    preserve_acls=True,
+)
+```
+
+**Windows:** Uses `shutil.move` with `win32security` for ACL preservation
+**Linux:** Uses `shutil.move` with `os.chmod`/`os.chown` for permission preservation
+
+#### 8.1.3 Alternative: Platform-Native Tools
+
+For production deployments requiring advanced features (resumable transfers, retry logic):
+
+**Windows:**
 ```bash
 robocopy <source_dir> <dest_dir> <filename> /COPY:DATSOU /MOVE /R:3 /W:5 /LOG+:quarantine.log
 ```
 
-Flags:
-- `/COPY:DATSOU` - Copy Data, Attributes, Timestamps, Security, Owner, aUditing
-- `/MOVE` - Move files (delete from source after copy)
-- `/R:3` - Retry 3 times
-- `/W:5` - Wait 5 seconds between retries
-- `/LOG+` - Append to log file
-
-#### 8.1.3 Linux Implementation
-
+**Linux:**
 ```bash
 rsync -avX --remove-source-files <source> <dest>
 ```
@@ -425,8 +437,27 @@ Permission lockdown restricts file access to a minimal set of principals.
 - MUST optionally remove inheritance
 - MUST create audit log entry
 - MUST update Label Set with remediation status
+- SHOULD save original ACL for rollback support
 
-#### 8.2.2 Windows Implementation
+#### 8.2.2 Reference Implementation
+
+The OpenLabels reference implementation uses direct API calls:
+
+```python
+from openlabels.remediation import lock_down
+
+result = lock_down(
+    path=Path("/data/sensitive/ssn_list.xlsx"),
+    allowed_principals=["BUILTIN\\Administrators"],
+    remove_inheritance=True,
+    backup_acl=True,  # Save original for rollback
+)
+```
+
+**Windows:** Uses `win32security` API for DACL manipulation
+**Linux:** Uses `os.chmod(path, 0o600)` and `os.chown` for ownership
+
+#### 8.2.3 Alternative: Windows Command Line
 
 ```powershell
 # Remove all existing permissions
@@ -454,7 +485,7 @@ $acl.AddAccessRule($rule)
 Set-Acl <path> $acl
 ```
 
-#### 8.2.3 Linux Implementation
+#### 8.2.4 Alternative: Linux Command Line
 
 ```bash
 # Remove all ACLs
@@ -943,6 +974,57 @@ Core categories:
 |---------|------|---------|
 | 1.0.0-draft | 2026-01 | Initial draft |
 | 2.0.0-draft | 2026-02 | Added remediation, monitoring, OCR specifications |
+
+---
+
+## Appendix D: Implementation Notes
+
+This section documents the current state of the OpenLabels reference implementation relative to this specification.
+
+### D.1 Label Portability (Sections 4-5)
+
+**Spec:** Labels can be embedded in file metadata (XMP, custom properties) or stored as virtual labels in extended attributes.
+
+**Current Implementation:** Labels are stored in the PostgreSQL database (`scan_results` table). File-embedded label storage is planned for a future release.
+
+### D.2 Database Schema (Section 6)
+
+**Spec:** Defines `label_objects`, `label_versions`, `watch_list`, `access_events`, `remediation_log` tables.
+
+**Current Implementation:** Uses a more comprehensive schema with:
+- `scan_results` - Per-file scan results with risk scoring
+- `file_inventory` - Sensitive file tracking for delta scans
+- `folder_inventory` - Folder-level inventory
+- `remediation_actions` - Remediation audit trail
+- `monitored_files` - Watch list for access monitoring
+- `file_access_events` - Access event storage
+
+See `src/openlabels/server/models.py` for the full schema.
+
+### D.3 CLI Filter Grammar
+
+**Spec:** Not specified in this document.
+
+**Current Implementation:** Full filter grammar support:
+```
+filter      = or_expr
+or_expr     = and_expr (OR and_expr)*
+and_expr    = condition (AND condition)*
+condition   = comparison | function_call | "(" filter ")" | NOT condition
+comparison  = field operator value
+function_call = has(entity) | missing(field) | count(entity) operator value
+```
+
+Example: `openlabels find ./data -r --where "score > 75 AND has(SSN)"`
+
+### D.4 Adapters
+
+**Spec:** Not specified in this document.
+
+**Current Implementation:** Three adapters available:
+- `FilesystemAdapter` - Local filesystem with full remediation support
+- `SharePointAdapter` - SharePoint Online via Microsoft Graph
+- `OneDriveAdapter` - OneDrive via Microsoft Graph
 
 ---
 

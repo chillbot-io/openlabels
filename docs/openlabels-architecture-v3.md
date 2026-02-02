@@ -453,11 +453,11 @@ OpenLabels provides three remediation actions for sensitive files:
 
 Move sensitive files to a secure quarantine location while preserving metadata.
 
-**Implementation:** Uses `robocopy` on Windows for:
-- ACL preservation
-- Resumable transfers
-- Retry logic on network errors
-- Full audit trail
+**Implementation:** Uses adapter-based file operations:
+- `shutil.move` with directory creation
+- ACL preservation via `win32security` (Windows) or stat/chown (Linux)
+- Full audit trail in database
+- Rollback support
 
 ```python
 from openlabels.remediation import quarantine
@@ -466,14 +466,18 @@ result = quarantine(
     source="/data/sensitive/ssn_list.xlsx",
     destination="/quarantine/2026-02/",
     preserve_acls=True,
-    create_audit_log=True,
 )
 # File moved, original location logged, ACLs preserved
 ```
 
-**CLI:**
+**CLI (single file):**
 ```bash
-openlabels quarantine /data/sensitive --where "score > 75" --to /quarantine/
+openlabels quarantine ./sensitive.xlsx ./quarantine/
+```
+
+**CLI (batch with filter):**
+```bash
+openlabels quarantine --where "score > 75" --scan-path /data -r /quarantine/ --dry-run
 ```
 
 ### 2. Permission Lockdown (ACL Reduction)
@@ -481,8 +485,9 @@ openlabels quarantine /data/sensitive --where "score > 75" --to /quarantine/
 Restrict file access to a minimal set of principals (default: Local Administrators only).
 
 **Implementation:**
-- Windows: `icacls` / `Set-Acl` PowerShell
-- Linux: `setfacl` / `chmod`
+- Windows: `win32security` API for DACL manipulation
+- Linux: `os.chmod` / `os.chown` for POSIX permissions
+- Original ACL saved for rollback
 
 ```python
 from openlabels.remediation import lock_down
@@ -491,13 +496,19 @@ result = lock_down(
     path="/data/sensitive/ssn_list.xlsx",
     allowed_principals=["BUILTIN\\Administrators"],
     remove_inheritance=True,
+    backup_acl=True,  # Save original for rollback
 )
 # All existing ACEs removed, only Administrators can access
 ```
 
-**CLI:**
+**CLI (single file):**
 ```bash
-openlabels lock-down /data/sensitive --where "score > 80" --allow "Administrators"
+openlabels lock-down ./sensitive.xlsx --principals "Administrators"
+```
+
+**CLI (batch with filter):**
+```bash
+openlabels lock-down --where "has(SSN) AND tier = CRITICAL" --scan-path /hr -r --dry-run
 ```
 
 ### 3. Targeted Monitoring
@@ -620,34 +631,65 @@ CREATE TABLE access_events (
 
 ## Adapters
 
-### Labeler Adapters
+### Implemented Adapters
 
-Read metadata and existing classifications from external sources:
+| Adapter | Source | Capabilities |
+|---------|--------|--------------|
+| FilesystemAdapter | Local filesystem | File enumeration, content reading, ACL get/set, file move, remediation support |
+| SharePointAdapter | SharePoint Online | Site enumeration, file listing, content download via Graph API |
+| OneDriveAdapter | OneDrive | User drive enumeration, file operations via Graph API |
 
-| Adapter | Source | What It Reads |
-|---------|--------|---------------|
-| MacieAdapter | AWS | Macie findings + S3 bucket/object metadata |
-| DLPAdapter | GCP | DLP findings + GCS metadata |
-| PurviewAdapter | Azure | Purview classifications + Blob metadata |
-| NTFSAdapter | Windows | ACLs, permissions, EFS encryption status |
-| NFSAdapter | Linux | POSIX permissions, exports |
-| M365Adapter | Microsoft | SharePoint/OneDrive permissions |
+### Adapter Protocol
 
-### Scanner Adapter
-
-Analyzes content directly using patterns, checksums, ML, and OCR:
+All adapters implement the base protocol with remediation support:
 
 ```python
-class ScannerAdapter:
-    def __init__(
-        self,
-        enable_ocr: bool = True,
-        enable_ml: bool = False,
-        ml_model_dir: Path = None,
-    ):
-        self.orchestrator = DetectorOrchestrator(enable_ml=enable_ml)
-        self.ocr_engine = OCREngine(models_dir=ml_model_dir) if enable_ocr else None
+from openlabels.adapters.base import Adapter, FileInfo
+
+class Adapter(Protocol):
+    # Core operations
+    async def list_files(self, path: str, recursive: bool = False) -> AsyncIterator[FileInfo]
+    async def read_file(self, file_info: FileInfo) -> bytes
+    async def get_metadata(self, file_info: FileInfo) -> dict
+
+    # Remediation operations (optional)
+    async def move_file(self, file_info: FileInfo, dest_path: str) -> bool
+    async def get_acl(self, file_info: FileInfo) -> Optional[dict]
+    async def set_acl(self, file_info: FileInfo, acl: dict) -> bool
+    def supports_remediation(self) -> bool
 ```
+
+### FilesystemAdapter Remediation
+
+The FilesystemAdapter provides full remediation support:
+
+```python
+from openlabels.adapters.filesystem import FilesystemAdapter
+
+adapter = FilesystemAdapter()
+
+# Move file (quarantine)
+success = await adapter.move_file(file_info, "/quarantine/")
+
+# Get current ACL
+acl = await adapter.get_acl(file_info)
+# Windows: Returns serialized DACL via win32security
+# Linux: Returns {"mode": 0o644, "uid": 1000, "gid": 1000}
+
+# Set restrictive ACL (lockdown)
+await adapter.set_acl(file_info, restricted_acl)
+
+# Lockdown with original ACL backup
+success, original_acl = await adapter.lockdown_file(file_info, allowed_sids=["S-1-5-32-544"])
+```
+
+### Planned Adapters (Future)
+
+| Adapter | Source | Status |
+|---------|--------|--------|
+| MacieAdapter | AWS Macie + S3 | Planned |
+| DLPAdapter | GCP DLP + GCS | Planned |
+| PurviewAdapter | Azure Purview + Blob | Planned |
 
 ---
 
@@ -656,69 +698,117 @@ class ScannerAdapter:
 ### Commands
 
 ```bash
-# Scan and score
-openlabels scan <path>
-openlabels scan s3://bucket/prefix
-openlabels scan /mnt/fileshare --recursive
+# Server and GUI
+openlabels serve [--host HOST] [--port PORT] [--workers N]
+openlabels gui [--server URL]
+openlabels worker [--concurrency N]
+
+# Local classification (no server required)
+openlabels classify <path> [-r] [--enable-ml] [--output results.json]
 
 # Find with filters
-openlabels find <path> --where "<filter>"
+openlabels find <path> --where "<filter>" [-r] [--format table|json|csv|paths]
 
-# Remediation actions
-openlabels quarantine <path> --where "<filter>" --to <dest>
-openlabels lock-down <path> --where "<filter>" --allow "Administrators"
-openlabels monitor <path> --where "<filter>"
+# Remediation actions (single file or batch with --where)
+openlabels quarantine <source> <dest>
+openlabels quarantine --where "<filter>" --scan-path <path> -r <dest>
+openlabels lock-down <file>
+openlabels lock-down --where "<filter>" --scan-path <path> -r [--principals admin]
 
-# Monitoring queries
-openlabels access-history <path> --days 30
-openlabels who-accessed <path>
+# Monitoring commands
+openlabels monitor enable <file> [--risk-tier HIGH]
+openlabels monitor disable <file>
+openlabels monitor list [--json]
+openlabels monitor history <file> [--days 30]
+openlabels monitor status <file>
 
 # Reporting
-openlabels report <path> --format json|csv|html
-openlabels heatmap <path>
+openlabels report <path> [-r] [--where "<filter>"] [--format text|json|csv|html] [-o report.html]
+openlabels heatmap <path> [-r] [--depth 2] [--format text|json]
+
+# System status
+openlabels status
+
+# Label management
+openlabels labels list
+openlabels labels sync
+openlabels labels apply <file> --label "Confidential"
+openlabels labels remove <file>
+openlabels labels info <file>
+
+# Target and scan management
+openlabels target list
+openlabels target add <name> --adapter filesystem --path /data
+openlabels scan start <target_name>
+openlabels scan status <job_id>
+openlabels scan cancel <job_id>
+
+# Configuration
+openlabels config show
+openlabels config set <key> <value>
+openlabels db upgrade
 ```
 
 ### Filter Grammar
 
+The filter grammar supports logical expressions for querying scan results:
+
 ```
-<filter>     := <condition> (AND|OR <condition>)*
-<condition>  := <field> <operator> <value>
-             | has(<entity_type>)
-             | missing(<field>)
-
-<field>      := score | exposure | encryption | last_accessed
-             | last_modified | size | entity_count | source
-
-<operator>   := = | != | > | < | >= | <= | contains | matches
-
-<value>      := <number> | <duration> | <enum> | <string>
-<duration>   := <number>(d|w|m|y)  # days, weeks, months, years
+filter      = or_expr
+or_expr     = and_expr (OR and_expr)*
+and_expr    = condition (AND condition)*
+condition   = comparison | function_call | "(" filter ")" | NOT condition
+comparison  = field operator value
+field       = identifier (score, tier, path, exposure, owner, etc.)
+operator    = "=" | "!=" | ">" | "<" | ">=" | "<=" | "~" (regex) | "contains"
+value       = string | number | identifier
+function_call = "has(" entity_type ")" | "missing(" field ")" | "count(" entity_type ")" operator value
 ```
+
+**Supported Fields:**
+- `score` / `risk_score` - Risk score (0-100)
+- `tier` / `risk_tier` - Risk tier (CRITICAL, HIGH, MEDIUM, LOW, MINIMAL)
+- `path` / `file_path` - File path
+- `name` / `file_name` - File name
+- `exposure` / `exposure_level` - Exposure level (PRIVATE, INTERNAL, ORG_WIDE, PUBLIC)
+- `owner` - File owner
+- `entities` / `total_entities` - Total entity count
+
+**Functions:**
+- `has(SSN)` - True if entity type exists with count > 0
+- `missing(owner)` - True if field is null or empty
+- `count(SSN) >= 10` - Compare entity type count
 
 ### Examples
 
 ```bash
+# Find high-risk files
+openlabels find ./data -r --where "score > 75"
+
+# Find files with SSNs at critical tier
+openlabels find . -r --where "has(SSN) AND tier = CRITICAL"
+
+# Find Excel files with credit cards
+openlabels find ./docs -r --where "path ~ '.*\\.xlsx$' AND has(CREDIT_CARD)"
+
+# Find files with 10+ SSNs
+openlabels find ./hr -r --where "count(SSN) >= 10"
+
 # Quarantine high-risk public data
-openlabels quarantine /data \
-  --where "score > 75 AND exposure = public" \
-  --to /quarantine/
+openlabels quarantine --where "score > 75 AND exposure = PUBLIC" \
+  --scan-path /data -r /quarantine/
 
 # Lock down all files with SSNs
-openlabels lock-down /hr \
-  --where "has(SSN)" \
-  --allow "HR_Admins"
+openlabels lock-down --where "has(SSN)" --scan-path /hr -r --principals "HR_Admins"
 
-# See who accessed sensitive files in last week
-openlabels access-history /data/sensitive --days 7
+# Generate HTML report for critical files
+openlabels report ./data -r --where "tier = CRITICAL" --format html -o report.html
 
-# Complex query
-openlabels find . --where "
-  score > 75
-  AND exposure >= org_wide
-  AND last_accessed > 1y
-  AND (has(SSN) OR has(CREDIT_CARD))
-  AND encryption = none
-"
+# Generate risk heatmap
+openlabels heatmap ./data -r --depth 3
+
+# Check access history
+openlabels monitor history ./sensitive.xlsx --days 30
 ```
 
 ---
@@ -738,6 +828,12 @@ openlabels/
 │
 ├── src/openlabels/
 │   ├── __init__.py
+│   ├── __main__.py                  # CLI entry point ✓
+│   │
+│   ├── cli/                         # CLI utilities ✓
+│   │   ├── __init__.py
+│   │   ├── filter_parser.py         # Filter grammar parser ✓
+│   │   └── filter_executor.py       # Filter evaluation ✓
 │   │
 │   ├── core/
 │   │   ├── __init__.py
@@ -756,7 +852,7 @@ openlabels/
 │   │   │
 │   │   ├── pipeline/
 │   │   │   ├── __init__.py          # Pipeline exports
-│   │   │   ├── tiered.py            # Tiered detection pipeline ✓ NEW
+│   │   │   ├── tiered.py            # Tiered detection pipeline ✓
 │   │   │   ├── context_enhancer.py  # False positive filtering ✓
 │   │   │   ├── entity_resolver.py   # Merge identical values ✓
 │   │   │   ├── span_validation.py   # Span boundary validation ✓
@@ -765,39 +861,66 @@ openlabels/
 │   │   └── scoring/
 │   │       └── scorer.py            # Risk scoring engine ✓
 │   │
-│   ├── dictionaries/                # NEW - Medical/clinical term dictionaries
-│   │   ├── __init__.py              # DictionaryLoader class ✓
+│   ├── dictionaries/                # Medical/clinical term dictionaries ✓
+│   │   ├── __init__.py              # DictionaryLoader class
 │   │   ├── diagnoses.txt            # 97K ICD-10-CM diagnoses
 │   │   ├── drugs.txt                # 54K FDA NDC drugs
 │   │   ├── facilities.txt           # 66K CMS providers
 │   │   ├── lab_tests.txt            # 158K LOINC lab tests
 │   │   ├── professions.txt          # Healthcare roles
 │   │   ├── clinical_workflow.txt    # High-signal medical terms
-│   │   ├── clinical_stopwords.txt   # False positive filters
-│   │   ├── us_cities.txt            # US cities
-│   │   ├── us_counties.txt          # US counties
-│   │   └── us_states.txt            # US states
+│   │   └── ...                      # Additional location dictionaries
 │   │
-│   ├── remediation/                 # NEW
+│   ├── remediation/                 # Remediation actions ✓
+│   │   ├── __init__.py              # quarantine, lock_down exports
+│   │   ├── quarantine.py            # File migration
+│   │   └── permissions.py           # ACL lockdown
+│   │
+│   ├── monitoring/                  # Access monitoring ✓
+│   │   ├── __init__.py              # enable_monitoring, get_access_history exports
+│   │   ├── base.py                  # Types and models
+│   │   ├── registry.py              # Watch list management
+│   │   └── history.py               # Audit log queries (Windows/Linux)
+│   │
+│   ├── labeling/                    # MIP SDK integration ✓
 │   │   ├── __init__.py
-│   │   ├── quarantine.py            # robocopy-based file migration
-│   │   ├── permissions.py           # ACL lockdown (icacls/setfacl)
-│   │   └── monitoring.py            # SACL management + audit queries
+│   │   ├── engine.py                # LabelingEngine
+│   │   └── mip.py                   # MIP SDK wrapper (Windows)
 │   │
-│   ├── adapters/
-│   │   ├── base.py
-│   │   ├── filesystem.py
-│   │   ├── onedrive.py
-│   │   └── sharepoint.py
+│   ├── adapters/                    # Storage adapters ✓
+│   │   ├── base.py                  # Protocol + FileInfo
+│   │   ├── filesystem.py            # Local filesystem with remediation ✓
+│   │   ├── onedrive.py              # OneDrive via Graph API
+│   │   └── sharepoint.py            # SharePoint via Graph API
 │   │
-│   ├── server/
-│   │   ├── app.py                   # FastAPI application
-│   │   ├── models.py                # SQLAlchemy models
+│   ├── server/                      # FastAPI server ✓
+│   │   ├── app.py                   # Application factory
+│   │   ├── config.py                # Settings
+│   │   ├── db.py                    # Database session
+│   │   ├── models.py                # SQLAlchemy models (full schema)
 │   │   └── routes/
+│   │       ├── __init__.py
+│   │       ├── auth.py              # Authentication
+│   │       ├── scans.py             # Scan management
+│   │       ├── results.py           # Scan results
+│   │       ├── dashboard.py         # Dashboard endpoints ✓
+│   │       ├── remediation.py       # Remediation endpoints ✓
+│   │       └── health.py            # Health/status endpoint ✓
 │   │
-│   └── gui/
-│       ├── main_window.py           # PyQt6 main window
-│       └── widgets/
+│   ├── gui/                         # PyQt6 GUI ✓
+│   │   ├── main.py                  # Application entry
+│   │   ├── main_window.py           # Main window with tabs
+│   │   └── widgets/
+│   │       ├── dashboard_widget.py  # Dashboard tab ✓
+│   │       ├── settings_widget.py   # Settings tab ✓
+│   │       ├── monitoring_widget.py # Monitoring tab ✓
+│   │       ├── health_widget.py     # Health tab ✓
+│   │       └── charts/
+│   │           ├── heat_map_chart.py      # Access heatmap ✓
+│   │           └── sensitive_data_chart.py # Entity trends ✓
+│   │
+│   └── jobs/                        # Background jobs
+│       └── worker.py                # Job worker
 │
 ├── tests/
 │   ├── core/
@@ -814,8 +937,11 @@ openlabels/
 │       ├── test_entity_resolver.py  # 25 tests ✓
 │       └── test_span_validation.py  # 25 tests ✓
 │
-└── data/
-    └── models/                      # Downloaded models go here
+└── ~/.openlabels/models/            # ML models directory (user home)
+    ├── phi-bert/
+    ├── pii-bert/
+    ├── fastcoref/
+    └── rapidocr/
 ```
 
 ---
@@ -835,19 +961,24 @@ openlabels/
 | Entity resolver | ✓ | 25 |
 | Span validation | ✓ | 25 |
 | Risk scorer | ✓ | 51 |
-| **OCR (RapidOCR)** | ✓ | 39 |
-| **Tiered Pipeline** | ✓ | - |
-| **Medical Dictionaries** | ✓ | - |
-| **Total** | | **754 tests passing** |
+| OCR (RapidOCR) | ✓ | 39 |
+| Tiered Pipeline | ✓ | - |
+| Medical Dictionaries | ✓ | - |
+| **CLI with filter grammar** | ✓ | - |
+| **GUI (Dashboard, Settings, Monitoring, Health, Charts)** | ✓ | - |
+| **Server routes (health, dashboard, remediation)** | ✓ | - |
+| **Remediation (quarantine, lock-down)** | ✓ | - |
+| **Monitoring (enable, disable, history)** | ✓ | - |
+| **Adapters (filesystem with remediation)** | ✓ | - |
+| **Total** | | **754+ tests** |
 
 ### In Progress
 
 | Component | Status | Priority |
 |-----------|--------|----------|
-| GUI widgets | Scaffolded | Medium |
-| CLI commands (label, export, status) | Planned | Medium |
 | ML detectors (PHI-BERT, PII-BERT) | Scaffolded | Medium |
 | Coreference resolution (FastCoref) | Scaffolded | Low |
+| Cloud DLP adapters (Macie, Purview) | Planned | Low |
 
 ### Test Coverage
 
@@ -859,7 +990,7 @@ openlabels/
 | secrets.py | 92% |
 | span_validation.py | 91% |
 | context_enhancer.py | 52% |
-| **Overall** | **18%** (GUI/server untested) |
+| **Overall** | **~32%** |
 
 ---
 
