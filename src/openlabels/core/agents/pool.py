@@ -105,7 +105,8 @@ class AgentPoolConfig:
         # Get CPU count (physical cores, not hyperthreads for CPU-bound work)
         try:
             cpu_count = psutil.cpu_count(logical=False) or os.cpu_count() or 4
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get physical CPU count: {e}")
             cpu_count = os.cpu_count() or 4
 
         # Get available memory
@@ -114,7 +115,8 @@ class AgentPoolConfig:
             available_mb = mem.available // (1024 * 1024)
             usable_mb = available_mb - MIN_SYSTEM_MEMORY_MB
             memory_agents = max(1, usable_mb // AGENT_MEMORY_MB)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get available memory: {e}")
             memory_agents = cpu_count
 
         # Use minimum of CPU and memory constraints
@@ -334,9 +336,9 @@ class AgentPool:
                 # Forward to async queue
                 await self._result_queue.put(result)
 
-            except Exception:
+            except Exception as e:
                 # Queue.get timeout or other error, continue
-                pass
+                logger.debug(f"Result collection interrupted: {e}")
 
     async def results(self) -> AsyncIterator[AgentResult]:
         """

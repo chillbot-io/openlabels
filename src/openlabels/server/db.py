@@ -2,6 +2,7 @@
 Database connection and session management.
 """
 
+import logging
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
 )
 from sqlalchemy.orm import DeclarativeBase
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -59,7 +62,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Session error, rolling back: {e}")
             await session.rollback()
             raise
 
@@ -74,7 +78,8 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Session error, rolling back: {e}")
             await session.rollback()
             raise
 

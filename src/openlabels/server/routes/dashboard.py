@@ -5,11 +5,14 @@ All dashboard queries use SQL aggregation for performance at scale.
 Statistics are computed in PostgreSQL, not Python.
 """
 
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, cast, Date, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -309,8 +312,9 @@ async def get_access_heatmap(
             hour = row.accessed_at.hour
             heatmap[day][hour] += 1
 
-    except Exception:
+    except Exception as e:
         # FileAccessEvent table may not exist, return empty heatmap
+        logger.debug(f"Access heatmap query failed (table may not exist): {e}")
         heatmap = [[0] * 24 for _ in range(7)]
 
     return AccessHeatmapResponse(data=heatmap)

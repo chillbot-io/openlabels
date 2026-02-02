@@ -220,8 +220,9 @@ class FilesystemAdapter:
                     try:
                         name, domain, _ = win32security.LookupAccountSid(None, sid)
                         trustee = f"{domain}\\{name}"
-                    except Exception:
-                        trustee = str(sid)  # Fallback to SID string is acceptable
+                    except Exception as e:
+                        logger.debug(f"Failed to lookup SID {sid}: {e}")
+                        trustee = str(sid)
 
                     permissions["aces"].append({
                         "trustee": trustee,
@@ -298,7 +299,7 @@ class FilesystemAdapter:
                 return ExposureLevel.INTERNAL
 
         except Exception as e:
-            logger.debug(f"Failed to determine NTFS exposure for {path}: {e}")
+            logger.debug(f"Failed to get NTFS exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     def _get_posix_exposure(self, path: Path) -> ExposureLevel:
@@ -318,7 +319,7 @@ class FilesystemAdapter:
             return ExposureLevel.PRIVATE
 
         except Exception as e:
-            logger.debug(f"Failed to determine POSIX exposure for {path}: {e}")
+            logger.debug(f"Failed to get POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
     # Remediation methods

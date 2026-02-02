@@ -57,7 +57,8 @@ class StatusChecker:
                 timeout=10
             )
             return bool(result.stdout.strip())
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Docker check failed: {e}")
             return False
 
 

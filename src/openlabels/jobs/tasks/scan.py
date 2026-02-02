@@ -170,7 +170,7 @@ async def execute_scan_task(
                                     },
                                 )
                             except Exception as e:
-                                logger.debug(f"Failed to send cancel notification: {e}")
+                                logger.debug(f"Failed to send scan cancelled event: {e}")
 
                         return stats
 
@@ -379,8 +379,8 @@ async def execute_scan_task(
                         "files_scanned": stats.get("files_scanned", 0),
                     },
                 )
-            except Exception as ws_err:
-                logger.debug(f"Failed to send failure notification: {ws_err}")
+            except Exception as e:
+                logger.debug(f"Failed to send scan failed event: {e}")
 
         raise
 
@@ -735,8 +735,8 @@ async def execute_parallel_scan_task(
                             risk_tier=risk_tier,
                             entity_counts=result.entity_counts,
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to send file result event: {e}")
 
             except Exception as e:
                 logger.error(f"Failed to persist result for {result.file_path}: {e}")
@@ -762,8 +762,8 @@ async def execute_parallel_scan_task(
                     status="running",
                     progress=job.progress,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to send scan progress event: {e}")
 
     try:
         from openlabels.core.agents import ScanOrchestrator, AgentPoolConfig
@@ -806,8 +806,8 @@ async def execute_parallel_scan_task(
                     status="completed",
                     summary=stats,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to send scan completed event: {e}")
 
         return stats
 
@@ -823,7 +823,7 @@ async def execute_parallel_scan_task(
                     status="failed",
                     summary={"error": str(e)},
                 )
-            except Exception:
-                pass
+            except Exception as ws_err:
+                logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise

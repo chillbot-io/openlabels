@@ -941,7 +941,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     "name": data.get("label_name"),
                 }
             except Exception as e:
-                logger.debug(f"Failed to read sidecar file {sidecar_path}: {e}")
+                logger.debug(f"Failed to read sidecar file: {e}")
 
         # Check Office document metadata
         if ext in (".docx", ".xlsx", ".pptx"):
@@ -958,7 +958,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                                 "name": name_match.group(1) if name_match else None,
                             }
             except Exception as e:
-                logger.debug(f"Failed to read Office metadata from {file_path}: {e}")
+                logger.debug(f"Failed to read Office document metadata: {e}")
 
         # Check PDF metadata
         if ext == ".pdf":
@@ -975,7 +975,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                     if label_id:
                         return {"id": label_id, "name": label_name}
             except Exception as e:
-                logger.debug(f"Failed to read PDF metadata from {file_path}: {e}")
+                logger.debug(f"Failed to read PDF metadata: {e}")
 
         return None
 

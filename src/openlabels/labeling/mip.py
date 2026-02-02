@@ -815,7 +815,7 @@ class MIPClient:
             return result
 
         except Exception as e:
-            logger.debug(f"Protection check failed for {file_path}: {e}")
+            logger.debug(f"Failed to check file protection: {e}")
             return False
 
     def _is_file_protected_sync(self, file_path: str) -> bool:
@@ -829,7 +829,7 @@ class MIPClient:
             return handler.Protection is not None if hasattr(handler, 'Protection') else False
 
         except Exception as e:
-            logger.debug(f"Sync protection check failed for {file_path}: {e}")
+            logger.debug(f"File protection check failed: {e}")
             return False
         finally:
             if handler:

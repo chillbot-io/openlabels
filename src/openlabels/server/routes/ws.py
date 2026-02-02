@@ -70,8 +70,8 @@ class ConnectionManager:
             for conn in self.active_connections[scan_id]:
                 try:
                     await conn.websocket.send_json(message)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to send WebSocket message: {e}")
 
 
 manager = ConnectionManager()

@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This document defines OpenLabels, a portable format for data sensitivity labels with integrated remediation and monitoring capabilities. OpenLabels enables interoperable labeling of sensitive data across platforms, tools, and organizational boundaries, with the ability to take action on high-risk findings.
+This document defines OpenLabels, a data sensitivity detection and risk scoring system with integrated remediation and monitoring capabilities. OpenLabels enables detection and classification of sensitive data across platforms, with the ability to apply Microsoft Information Protection (MIP) labels and take action on high-risk findings.
 
 ---
 
@@ -19,7 +19,7 @@ This document defines OpenLabels, a portable format for data sensitivity labels 
 2. [Terminology](#2-terminology)
 3. [Data Model](#3-data-model)
 4. [Serialization](#4-serialization)
-5. [Transport](#5-transport)
+5. [Storage](#5-storage)
 6. [Index](#6-index)
 7. [Algorithms](#7-algorithms)
 8. [Remediation](#8-remediation)
@@ -37,24 +37,24 @@ This document defines OpenLabels, a portable format for data sensitivity labels 
 
 ### 1.1 Purpose
 
-OpenLabels defines a standard format for describing sensitive data detected within files or data streams, along with specifications for taking remediation actions and monitoring access to sensitive files. The format is designed to be:
+OpenLabels defines a system for detecting sensitive data within files and data streams, scoring risk, and taking remediation actions. The system is designed to be:
 
-- **Portable**: Labels travel with data across systems
-- **Interoperable**: Multiple implementations can read/write labels
+- **Comprehensive**: Detects 50+ PII/PHI entity types with multi-stage detection
 - **Actionable**: Remediation and monitoring capabilities built-in
+- **Integrated**: Applies Microsoft Information Protection (MIP) labels based on risk
 - **Extensible**: New entity types can be registered
 
 ### 1.2 Design Principles
 
 ```
-LABELS ARE THE PRIMITIVE. RISK IS DERIVED. ACTION IS OPTIONAL.
+DETECTION IS THE FOUNDATION. RISK IS DERIVED. ACTION IS OPTIONAL.
 ```
 
 OpenLabels separates three concerns:
 
-1. **Labels**: Describe what sensitive data is present (portable, travels with data)
-2. **Risk**: Computed locally from labels plus exposure context (not portable)
-3. **Action**: Remediation and monitoring based on risk (optional, local)
+1. **Detection**: Identify what sensitive data is present in files
+2. **Risk**: Computed from detected entities plus exposure context
+3. **Action**: Remediation, monitoring, and MIP labeling based on risk
 
 ### 1.3 What's New in v2.0
 
@@ -194,32 +194,20 @@ Readers MUST ignore unrecognized fields without error. This enables forward comp
 
 ---
 
-## 5. Transport
+## 5. Storage
 
-### 5.1 Embedded Labels
+### 5.1 Database Storage
 
-For files with native metadata support:
+All scan results and label data are stored in the PostgreSQL database. The `scan_results` table contains detection findings, risk scores, and entity counts for each scanned file.
 
-| Format | Metadata Location |
-|--------|-------------------|
-| PDF | XMP metadata (`http://openlabels.dev/ns/2.0/`) |
-| DOCX/XLSX/PPTX | Custom Document Properties |
-| JPEG/PNG/TIFF | XMP metadata |
+### 5.2 MIP Label Integration
 
-### 5.2 Virtual Labels
+For Microsoft 365 environments, OpenLabels integrates with Microsoft Information Protection (MIP) to apply sensitivity labels based on detection results and risk scores.
 
-For files without native metadata, a pointer is stored in extended attributes:
-
-| Platform | Attribute Name |
-|----------|----------------|
-| Linux | `user.openlabels` |
-| macOS | `com.openlabels.label` |
-| Windows | NTFS ADS `openlabels` |
-| S3 | `x-amz-meta-openlabels` |
-
-Value format: `labelID:content_hash`
-
-Example: `ol_7f3a9b2c4d5e:e3b0c44298fc`
+| Platform | Label Method |
+|----------|--------------|
+| SharePoint/OneDrive | Microsoft Graph API |
+| Local files (Windows) | MIP SDK via pythonnet |
 
 ---
 
@@ -701,10 +689,8 @@ For PDFs where native text extraction yields minimal text:
 
 A conforming Reader MUST:
 1. Parse any valid Label Set JSON (v1 or v2)
-2. Read embedded labels from PDF, DOCX, and images
-3. Read virtual labels from extended attributes
-4. Resolve virtual labels via index lookup
-5. Ignore unknown fields without error
+2. Query scan results from the database index
+3. Ignore unknown fields without error
 
 ### 11.3 Writer Requirements
 
@@ -713,9 +699,7 @@ A conforming Writer MUST:
 2. Set `v` field to `2`
 3. Generate labelID per Section 3.1
 4. Compute content_hash per Section 7
-5. Write embedded labels for supported file types
-6. Write virtual labels for unsupported file types
-7. Store Label Sets in index for virtual labels
+5. Store scan results in the database index
 
 ### 11.4 Remediator Requirements
 
