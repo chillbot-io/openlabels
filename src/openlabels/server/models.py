@@ -263,6 +263,7 @@ class ScanJob(Base):
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     schedule_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("scan_schedules.id"))
     target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    target_name: Mapped[Optional[str]] = mapped_column(String(255))  # Denormalized for display/history
     name: Mapped[Optional[str]] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(JobStatusEnum, default="pending")
     progress: Mapped[Optional[dict]] = mapped_column(JSONB)  # {files_scanned, files_total, current_file}

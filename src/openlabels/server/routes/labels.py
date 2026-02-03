@@ -293,8 +293,7 @@ async def create_label_rule(
     await session.flush()
 
     response = LabelRuleResponse.model_validate(rule)
-    response.label_name = label.name
-    return response
+    return response.model_copy(update={"label_name": label.name})
 
 
 @router.delete("/rules/{rule_id}", status_code=204)

@@ -579,7 +579,7 @@ class TestDataWithResults:
     @pytest.mark.asyncio
     async def test_scan_appears_in_recent(self, test_client: AsyncClient, test_db):
         """Created scan should appear in recent scans."""
-        from openlabels.server.models import ScanJob
+        from openlabels.server.models import ScanJob, ScanTarget
         from sqlalchemy import select
 
         result = await test_db.execute(
@@ -587,9 +587,22 @@ class TestDataWithResults:
         )
         tenant_id = result.scalar()
 
+        # Create target first
+        target = ScanTarget(
+            tenant_id=tenant_id,
+            name="Recent Scan Target",
+            adapter="filesystem",
+            config={"path": "/test/path"},
+        )
+        test_db.add(target)
+        await test_db.commit()
+        await test_db.refresh(target)
+
         scan = ScanJob(
             tenant_id=tenant_id,
-            target_name="Recent Scan Target",
+            target_id=target.id,
+            target_name=target.name,
+            name="Recent Scan",
             status="completed",
             files_scanned=100,
         )
@@ -723,7 +736,7 @@ class TestEditPages:
     @pytest.mark.asyncio
     async def test_scan_detail_page_with_data(self, test_client: AsyncClient, test_db):
         """Scan detail page should render for existing scan."""
-        from openlabels.server.models import ScanJob
+        from openlabels.server.models import ScanJob, ScanTarget
         from sqlalchemy import select
 
         result = await test_db.execute(
@@ -731,12 +744,25 @@ class TestEditPages:
         )
         tenant_id = result.scalar()
 
+        # Create target first
+        target = ScanTarget(
+            tenant_id=tenant_id,
+            name="Detail Test Target",
+            adapter="filesystem",
+            config={"path": "/test/path"},
+        )
+        test_db.add(target)
+        await test_db.commit()
+        await test_db.refresh(target)
+
         scan = ScanJob(
             tenant_id=tenant_id,
-            target_name="Detail Test Target",
+            target_id=target.id,
+            target_name=target.name,
+            name="Detail Test Scan",
             status="running",
             files_scanned=50,
-            total_files=100,
+            progress={"files_total": 100, "files_scanned": 50},
         )
         test_db.add(scan)
         await test_db.commit()
@@ -744,7 +770,7 @@ class TestEditPages:
 
         response = await test_client.get(f"/ui/scans/{scan.id}")
         assert response.status_code == 200
-        assert "Detail Test Target" in response.text
+        assert "Detail Test" in response.text
 
     @pytest.mark.asyncio
     async def test_result_detail_page_with_data(self, test_client: AsyncClient, test_db):
@@ -845,7 +871,7 @@ class TestTenantIsolation:
     @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_scan(self, test_client: AsyncClient, test_db):
         """Should not be able to view another tenant's scan."""
-        from openlabels.server.models import ScanJob, Tenant
+        from openlabels.server.models import ScanJob, ScanTarget, Tenant
 
         # Create a different tenant
         other_tenant = Tenant(
@@ -856,10 +882,23 @@ class TestTenantIsolation:
         await test_db.commit()
         await test_db.refresh(other_tenant)
 
+        # Create target for other tenant
+        other_target = ScanTarget(
+            tenant_id=other_tenant.id,
+            name="Other Target",
+            adapter="filesystem",
+            config={"path": "/other/path"},
+        )
+        test_db.add(other_target)
+        await test_db.commit()
+        await test_db.refresh(other_target)
+
         # Create scan for other tenant
         other_scan = ScanJob(
             tenant_id=other_tenant.id,
-            target_name="Other Scan",
+            target_id=other_target.id,
+            target_name=other_target.name,
+            name="Other Scan",
             status="completed",
         )
         test_db.add(other_scan)

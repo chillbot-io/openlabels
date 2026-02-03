@@ -356,7 +356,7 @@ class TestHealthScanStatistics:
                 file_path=f"/test/file_{i}.txt",
                 file_name=f"file_{i}.txt",
                 risk_score=50,
-                risk_tier="MODERATE",
+                risk_tier="MEDIUM",
                 entity_counts={},
                 total_entities=0,
             )

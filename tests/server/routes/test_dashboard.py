@@ -193,7 +193,7 @@ class TestOverallStats:
                 file_path=f"/test/clean_file_{i}.txt",
                 file_name=f"clean_file_{i}.txt",
                 risk_score=0,
-                risk_tier="NONE",
+                risk_tier="MINIMAL",
                 entity_counts={},
                 total_entities=0,  # No PII
             )
@@ -226,7 +226,7 @@ class TestOverallStats:
         await session.flush()
 
         # Add results with different risk tiers
-        for tier, count in [("CRITICAL", 2), ("HIGH", 3), ("MODERATE", 4), ("LOW", 5)]:
+        for tier, count in [("CRITICAL", 2), ("HIGH", 3), ("MEDIUM", 4), ("LOW", 5)]:
             for i in range(count):
                 result = ScanResult(
                     id=uuid4(),
@@ -276,7 +276,7 @@ class TestOverallStats:
                 file_path=f"/test/labeled_{i}.txt",
                 file_name=f"labeled_{i}.txt",
                 risk_score=50,
-                risk_tier="MODERATE",
+                risk_tier="MEDIUM",
                 entity_counts={},
                 total_entities=1,
                 label_applied=True,  # Label applied
@@ -291,7 +291,7 @@ class TestOverallStats:
                 file_path=f"/test/unlabeled_{i}.txt",
                 file_name=f"unlabeled_{i}.txt",
                 risk_score=50,
-                risk_tier="MODERATE",
+                risk_tier="MEDIUM",
                 entity_counts={},
                 total_entities=1,
                 label_applied=False,  # No label
@@ -399,7 +399,7 @@ class TestTrends:
                 file_path=f"/test/today_{i}.txt",
                 file_name=f"today_{i}.txt",
                 risk_score=50,
-                risk_tier="MODERATE",
+                risk_tier="MEDIUM",
                 entity_counts={"SSN": 1},
                 total_entities=1,
                 scanned_at=now,
@@ -625,7 +625,7 @@ class TestHeatmap:
             file_path="/job1/file.txt",
             file_name="file.txt",
             risk_score=50,
-            risk_tier="MODERATE",
+            risk_tier="MEDIUM",
             entity_counts={},
             total_entities=1,
         )
@@ -639,7 +639,7 @@ class TestHeatmap:
             file_path="/job2/file.txt",
             file_name="file.txt",
             risk_score=50,
-            risk_tier="MODERATE",
+            risk_tier="MEDIUM",
             entity_counts={},
             total_entities=1,
         )
