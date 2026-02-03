@@ -37,6 +37,7 @@ async def setup_scans_data(test_db):
         created_by=user.id,
     )
     test_db.add(target)
+    await test_db.flush()  # Flush to ensure target exists before creating scans
 
     # Create scan jobs with various statuses
     scans = []
