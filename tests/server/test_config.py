@@ -12,8 +12,7 @@ class TestServerSettings:
         from openlabels.server.config import Settings
 
         settings = Settings()
-        # Default is localhost for security; set to "0.0.0.0" for production
-        assert settings.server.host == "127.0.0.1"
+        assert settings.server.host == "127.0.0.1"  # Secure default - localhost only
         assert settings.server.port == 8000
 
     def test_database_url_default(self):
