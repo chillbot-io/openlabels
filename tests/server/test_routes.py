@@ -17,27 +17,17 @@ from datetime import datetime
 @pytest.fixture
 async def setup_test_data(test_db):
     """Set up test data for route tests."""
+    from sqlalchemy import select
     from openlabels.server.models import (
         Tenant, User, ScanTarget, AuditLog, JobQueue as JobQueueModel,
     )
 
-    # Create a test tenant
-    tenant = Tenant(
-        id=uuid4(),
-        name="Test Tenant",
-        azure_tenant_id="dev-tenant",
-    )
-    test_db.add(tenant)
+    # Get the existing tenant and user created by test_client fixture
+    result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+    tenant = result.scalar_one()
 
-    # Create a test user
-    user = User(
-        id=uuid4(),
-        tenant_id=tenant.id,
-        email="dev@localhost",
-        name="Development User",
-        role="admin",
-    )
-    test_db.add(user)
+    result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
+    user = result.scalar_one()
 
     # Create some scan targets
     target1 = ScanTarget(
