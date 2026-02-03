@@ -48,8 +48,8 @@ class TestSharePointAdapter:
         assert hasattr(adapter, 'client_id')
 
     @pytest.mark.asyncio
-    async def test_list_files_mocked(self):
-        """Test listing files with mocked Graph API."""
+    async def test_list_files_method_exists(self):
+        """Test that list_files method exists on SharePointAdapter."""
         from openlabels.adapters.sharepoint import SharePointAdapter
 
         adapter = SharePointAdapter(

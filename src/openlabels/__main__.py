@@ -123,12 +123,13 @@ def config_set(key: str, value: str):
     """
     import yaml
     from pathlib import Path
+    from openlabels.core.constants import DATA_DIR
 
     # Determine config file location
     config_paths = [
         Path("config.yaml"),
         Path("config/config.yaml"),
-        Path.home() / ".openlabels" / "config.yaml",
+        DATA_DIR / "config.yaml",
     ]
 
     config_path = None
@@ -747,15 +748,18 @@ def status():
         logger.debug(f"Failed to check MIP availability: {e}")
 
     # Check ML models
-    models_dir = Path.home() / ".openlabels" / "models"
-    phi_bert = models_dir / "phi-bert" / "model.onnx"
-    pii_bert = models_dir / "pii-bert" / "model.onnx"
-    rapidocr = models_dir / "rapidocr" / "det.onnx"
+    from openlabels.core.constants import DEFAULT_MODELS_DIR
+    # PHI/PII-BERT: prefer INT8 quantized, fall back to original
+    phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
+               (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
+    pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
+               (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
+    rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
 
     click.echo(f"\nML Models:")
-    click.echo(f"  PHI-BERT:  {'✓' if phi_bert.exists() else '✗'}")
-    click.echo(f"  PII-BERT:  {'✓' if pii_bert.exists() else '✗'}")
-    click.echo(f"  RapidOCR:  {'✓' if rapidocr.exists() else '✗'}")
+    click.echo(f"  PHI-BERT:  {'✓' if phi_bert else '✗'}")
+    click.echo(f"  PII-BERT:  {'✓' if pii_bert else '✗'}")
+    click.echo(f"  RapidOCR:  {'✓' if rapidocr else '✗'}")
 
     client.close()
 

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Schedules - OpenLabels{% endblock %}
+{% block page_title %}Scan Schedules{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header with actions -->
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-sm text-gray-500">Configure automated scan schedules using cron expressions</p>
+        </div>
+        <a
+            href="/ui/schedules/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+        >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            </svg>
+            New Schedule
+        </a>
+    </div>
+
+    <!-- Schedules list -->
+    <div class="bg-white rounded-lg shadow">
+        <div
+            id="schedules-list"
+            hx-get="/ui/partials/schedules-list"
+            hx-trigger="load, refreshSchedules from:body"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/schedules_list.html" %}
+        </div>
+    </div>
+
+    <!-- Cron Help -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Cron Expression Reference</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+                <h4 class="font-medium text-gray-700 mb-2">Format</h4>
+                <code class="block bg-gray-100 p-2 rounded">minute hour day month weekday</code>
+                <ul class="mt-2 space-y-1 text-gray-600">
+                    <li><code>*</code> - any value</li>
+                    <li><code>*/n</code> - every n units</li>
+                    <li><code>n,m</code> - specific values</li>
+                    <li><code>n-m</code> - range of values</li>
+                </ul>
+            </div>
+            <div>
+                <h4 class="font-medium text-gray-700 mb-2">Examples</h4>
+                <ul class="space-y-1 text-gray-600">
+                    <li><code>0 * * * *</code> - Every hour</li>
+                    <li><code>0 0 * * *</code> - Daily at midnight</li>
+                    <li><code>0 9 * * 1-5</code> - Weekdays at 9 AM</li>
+                    <li><code>0 0 * * 0</code> - Weekly on Sunday</li>
+                    <li><code>0 0 1 * *</code> - Monthly on the 1st</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

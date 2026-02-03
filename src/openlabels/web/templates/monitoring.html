@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring - OpenLabels{% endblock %}
+{% block page_title %}Monitoring{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- System Health -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div
+            class="bg-white overflow-hidden shadow rounded-lg"
+            hx-get="/ui/partials/system-health"
+            hx-trigger="load, every 30s"
+            hx-swap="innerHTML"
+        >
+            <div class="p-5">
+                <div class="animate-pulse flex space-x-4">
+                    <div class="flex-1 space-y-4 py-1">
+                        <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                        <div class="h-8 bg-gray-200 rounded w-1/2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900">Activity Log</h3>
+                <div class="flex space-x-2">
+                    <select
+                        id="action-filter"
+                        name="action"
+                        class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
+                        hx-get="/ui/partials/activity-log"
+                        hx-target="#activity-log"
+                        hx-trigger="change"
+                    >
+                        <option value="">All Actions</option>
+                        <option value="scan_started">Scan Started</option>
+                        <option value="scan_completed">Scan Completed</option>
+                        <option value="scan_failed">Scan Failed</option>
+                        <option value="label_applied">Label Applied</option>
+                        <option value="target_created">Target Created</option>
+                        <option value="target_deleted">Target Deleted</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div
+            id="activity-log"
+            hx-get="/ui/partials/activity-log"
+            hx-trigger="load, every 30s"
+            hx-swap="innerHTML"
+            class="divide-y divide-gray-200 max-h-96 overflow-y-auto"
+        >
+            {% include "partials/activity_log.html" %}
+        </div>
+    </div>
+
+    <!-- Job Queue Status -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900">Job Queue</h3>
+                <button
+                    type="button"
+                    class="text-sm text-primary-600 hover:text-primary-800"
+                    hx-post="/api/jobs/requeue-all"
+                    hx-confirm="Requeue all failed jobs?"
+                >
+                    Requeue Failed Jobs
+                </button>
+            </div>
+        </div>
+        <div
+            id="job-queue"
+            hx-get="/ui/partials/job-queue"
+            hx-trigger="load, every 15s"
+            hx-swap="innerHTML"
+            class="p-4"
+        >
+            {% include "partials/job_queue.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

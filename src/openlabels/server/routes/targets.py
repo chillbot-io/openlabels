@@ -5,7 +5,8 @@ Scan target management API endpoints.
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -151,15 +152,30 @@ async def update_target(
     return target
 
 
-@router.delete("/{target_id}", status_code=204)
+@router.delete("/{target_id}")
 async def delete_target(
     target_id: UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
-) -> None:
+):
     """Delete a scan target."""
     target = await session.get(ScanTarget, target_id)
     if not target or target.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Target not found")
 
+    target_name = target.name
     await session.delete(target)
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
+            },
+        )
+
+    # Regular REST response
+    return Response(status_code=204)

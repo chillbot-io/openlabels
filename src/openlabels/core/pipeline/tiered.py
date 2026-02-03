@@ -221,7 +221,8 @@ class TieredPipeline:
 
         model_dir = self.config.ml_model_dir
         if model_dir is None:
-            model_dir = Path.home() / ".openlabels" / "models"
+            from openlabels.core.constants import DEFAULT_MODELS_DIR
+            model_dir = DEFAULT_MODELS_DIR
         model_dir = Path(model_dir).expanduser()
 
         if not model_dir.exists():

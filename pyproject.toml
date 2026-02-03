@@ -40,6 +40,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "jinja2>=3.1.0",  # HTML templating for web UI
 
     # Database
     "sqlalchemy>=2.0.0",
@@ -99,17 +100,23 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
+    "pytest-env>=1.1.0",  # Set env vars in pyproject.toml for tests
     "ruff>=0.1.0",
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
+    # OCR testing dependencies
+    "rapidocr-onnxruntime>=1.3.0",
+    # High-performance regex (optional, may need system libs)
+    "hyperscan>=0.7.0",
 ]
 # SIMD-accelerated regex for high-performance pattern matching
 hyperscan = [
     "hyperscan>=0.7.0",  # Intel Hyperscan - 10-100x faster regex
 ]
-# OCR support (requires tesseract binary on system)
+# OCR support
 ocr = [
-    "pytesseract>=0.3.10",  # Python wrapper for Tesseract OCR
+    "pytesseract>=0.3.10",  # Python wrapper for Tesseract OCR (requires tesseract binary)
+    "rapidocr-onnxruntime>=1.3.0",  # ONNX-based OCR (no external binary needed)
 ]
 all = [
     "openlabels[gui,mip,windows,dev,hyperscan,ocr]",
@@ -174,3 +181,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --cov=openlabels --cov-report=term-missing"
+env = [
+    # PostgreSQL test database - set to your local container
+    # Default assumes: docker run -d --name test-postgres -e POSTGRES_PASSWORD=test -e POSTGRES_DB=openlabels_test -p 5432:5432 postgres:15
+    "TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test",
+]

@@ -257,10 +257,11 @@ def load_yaml_config(path: Path | None = None) -> dict:
     """Load configuration from YAML file."""
     if path is None:
         # Look for config.yaml in standard locations
+        from openlabels.core.constants import DATA_DIR
         candidates = [
             Path("config.yaml"),
             Path("config/config.yaml"),
-            Path.home() / ".openlabels" / "config.yaml",
+            DATA_DIR / "config.yaml",
             Path("/etc/openlabels/config.yaml"),
         ]
         for candidate in candidates:

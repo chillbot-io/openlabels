@@ -144,12 +144,12 @@ async def get_scan(
 
 
 @router.delete("/{scan_id}", status_code=204)
-async def cancel_scan(
+async def delete_scan(
     scan_id: UUID,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
 ) -> None:
-    """Cancel a running scan."""
+    """Cancel a running scan (DELETE method)."""
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -161,5 +161,91 @@ async def cancel_scan(
     job.completed_at = datetime.now(timezone.utc)
     await session.flush()
 
-    # Note: The queue job will still execute, but the scan task checks
-    # job.status before processing and will exit early if cancelled.
+
+@router.post("/{scan_id}/cancel")
+async def cancel_scan(
+    scan_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Cancel a running scan (POST method for HTMX)."""
+    from fastapi.responses import HTMLResponse, Response
+
+    job = await session.get(ScanJob, scan_id)
+    if not job or job.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    if job.status not in ("pending", "running"):
+        raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+
+    job.status = "cancelled"
+    job.completed_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": '{"notify": {"message": "Scan cancelled", "type": "success"}, "refreshScans": true}',
+            },
+        )
+
+    return Response(status_code=204)
+
+
+@router.post("/{scan_id}/retry")
+async def retry_scan(
+    scan_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Retry a failed scan by creating a new scan job."""
+    from fastapi.responses import HTMLResponse, Response
+
+    job = await session.get(ScanJob, scan_id)
+    if not job or job.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    if job.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=400, detail="Only failed or cancelled scans can be retried")
+
+    # Get the target
+    target = await session.get(ScanTarget, job.target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target no longer exists")
+
+    # Create a new scan job
+    new_job = ScanJob(
+        tenant_id=user.tenant_id,
+        target_id=job.target_id,
+        target_name=target.name,
+        name=f"{job.name} (retry)",
+        status="pending",
+        created_by=user.id,
+    )
+    session.add(new_job)
+    await session.flush()
+
+    # Enqueue the job
+    queue = JobQueue(session, user.tenant_id)
+    await queue.enqueue(
+        task_type="scan",
+        payload={"job_id": str(new_job.id)},
+        priority=60,  # Slightly higher priority for retries
+    )
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
+            },
+        )
+
+    return {"message": "Scan retry created", "new_job_id": str(new_job.id)}

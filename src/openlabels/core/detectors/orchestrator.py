@@ -57,9 +57,10 @@ class DetectorOrchestrator:
         orchestrator = DetectorOrchestrator(enable_hyperscan=True)
 
         # With ML detectors:
+        from openlabels.core.constants import DEFAULT_MODELS_DIR
         orchestrator = DetectorOrchestrator(
             enable_ml=True,
-            ml_model_dir=Path("~/.openlabels/models"),
+            ml_model_dir=DEFAULT_MODELS_DIR,
             use_onnx=True,
         )
     """
@@ -162,7 +163,8 @@ class DetectorOrchestrator:
     ) -> None:
         """Initialize ML-based detectors."""
         if model_dir is None:
-            model_dir = Path.home() / ".openlabels" / "models"
+            from openlabels.core.constants import DEFAULT_MODELS_DIR
+            model_dir = DEFAULT_MODELS_DIR
 
         model_dir = Path(model_dir).expanduser()
 
