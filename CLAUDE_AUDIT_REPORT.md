@@ -161,6 +161,11 @@ Note: These are documented in the spec's "Appendix D: Implementation Notes" as p
 1. **~~Update deprecated datetime usage~~** in `graph_client.py:93`: **FIXED**
    - Changed `datetime.utcnow` to `datetime.now(timezone.utc)` for Python 3.12+ compatibility
 
+2. **~~Fix Hyperscan matcher SOM_LEFTMOST flag incompatibility~~**: **FIXED**
+   - Hyperscan's `SOM_LEFTMOST` flag requires streaming mode, not block mode
+   - Removed the flag and added Python regex for match text extraction
+   - Added proper fallback handling when Hyperscan compilation fails
+
 ### Priority 2 (Nice to Have)
 
 1. **Add UUID7 fallback wrapper** for clarity:
