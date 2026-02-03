@@ -372,15 +372,47 @@ async def test_client(test_db):
     Create a test client for API testing.
 
     Overrides the database dependency to use the test database.
+    Also overrides authentication to use a mock user for testing.
     """
+    from uuid import UUID
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
     from openlabels.server.db import get_session
+    from openlabels.auth.dependencies import get_current_user, CurrentUser
+    from openlabels.server.models import Tenant, User
+
+    # Create test tenant and user in the database
+    test_tenant = Tenant(
+        name="Test Tenant",
+        azure_tenant_id="test-tenant-id",
+    )
+    test_db.add(test_tenant)
+    await test_db.flush()
+
+    test_user = User(
+        tenant_id=test_tenant.id,
+        email="test@localhost",
+        name="Test User",
+        role="admin",
+    )
+    test_db.add(test_user)
+    await test_db.commit()
 
     async def override_get_session():
         yield test_db
 
+    async def override_get_current_user():
+        """Return a mock current user for testing."""
+        return CurrentUser(
+            id=str(test_user.id),
+            tenant_id=str(test_tenant.id),
+            email=test_user.email,
+            name=test_user.name,
+            role=test_user.role,
+        )
+
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -11,7 +11,7 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | Core/_rust | 3 | Not Started |
 | GUI | 17 | Not Started |
 | Jobs | 8 | **Completed** (251 tests) |
-| Server routes | 16 | Not Started |
+| Server routes | 16 | **In Progress** (121 tests for 5 routes) |
 | Server other | 2 | Not Started |
 | Web | 2 | Not Started |
 | Windows | 3 | Not Started |
@@ -91,22 +91,22 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/server/routes/__init__.py` | 2 | 0% | Routes init |
-| `src/openlabels/server/routes/audit.py` | 76 | 0% | Audit log endpoints |
-| `src/openlabels/server/routes/auth.py` | 218 | 0% | Auth endpoints |
-| `src/openlabels/server/routes/dashboard.py` | 159 | 0% | Dashboard endpoints |
-| `src/openlabels/server/routes/health.py` | 141 | 0% | Health endpoints |
-| `src/openlabels/server/routes/jobs.py` | 112 | 0% | Jobs endpoints |
-| `src/openlabels/server/routes/labels.py` | 196 | 0% | Labels endpoints |
-| `src/openlabels/server/routes/monitoring.py` | 186 | 0% | Monitoring endpoints |
-| `src/openlabels/server/routes/remediation.py` | 191 | 0% | Remediation endpoints |
-| `src/openlabels/server/routes/results.py` | 186 | 0% | Results endpoints |
-| `src/openlabels/server/routes/scans.py` | 114 | 0% | Scans endpoints |
-| `src/openlabels/server/routes/schedules.py` | 90 | 0% | Schedules endpoints |
+| `src/openlabels/server/routes/__init__.py` | 2 | 100% | Routes init - TESTED |
+| `src/openlabels/server/routes/audit.py` | 76 | ~80% | Audit log endpoints - TESTED (30 tests) |
+| `src/openlabels/server/routes/auth.py` | 218 | ~25% | Auth endpoints - partial coverage |
+| `src/openlabels/server/routes/dashboard.py` | 159 | ~30% | Dashboard endpoints - partial coverage |
+| `src/openlabels/server/routes/health.py` | 141 | ~75% | Health endpoints - TESTED (24 tests) |
+| `src/openlabels/server/routes/jobs.py` | 112 | ~85% | Jobs endpoints - TESTED (28 tests) |
+| `src/openlabels/server/routes/labels.py` | 196 | ~40% | Labels endpoints - partial coverage |
+| `src/openlabels/server/routes/monitoring.py` | 186 | ~40% | Monitoring endpoints - partial coverage |
+| `src/openlabels/server/routes/remediation.py` | 191 | ~30% | Remediation endpoints - partial coverage |
+| `src/openlabels/server/routes/results.py` | 186 | ~50% | Results endpoints - partial coverage |
+| `src/openlabels/server/routes/scans.py` | 114 | ~85% | Scans endpoints - TESTED (18 tests) |
+| `src/openlabels/server/routes/schedules.py` | 90 | ~50% | Schedules endpoints - partial coverage |
 | `src/openlabels/server/routes/settings.py` | 33 | 0% | Settings endpoints |
-| `src/openlabels/server/routes/targets.py` | 83 | 0% | Targets endpoints |
-| `src/openlabels/server/routes/users.py` | 76 | 0% | Users endpoints |
-| `src/openlabels/server/routes/ws.py` | 131 | 0% | WebSocket endpoints |
+| `src/openlabels/server/routes/targets.py` | 83 | ~85% | Targets endpoints - TESTED (21 tests) |
+| `src/openlabels/server/routes/users.py` | 76 | ~55% | Users endpoints - partial coverage |
+| `src/openlabels/server/routes/ws.py` | 131 | ~25% | WebSocket endpoints - partial coverage |
 
 ---
 
