@@ -424,7 +424,7 @@ async def test_client(test_db):
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
     from openlabels.server.db import get_session
-    from openlabels.auth.dependencies import get_current_user, CurrentUser
+    from openlabels.auth.dependencies import get_current_user, get_optional_user, CurrentUser
     from openlabels.server.models import Tenant, User
 
     # Create test tenant and user in the database
@@ -447,18 +447,27 @@ async def test_client(test_db):
     async def override_get_session():
         yield test_db
 
-    async def override_get_current_user():
-        """Return a mock current user for testing."""
+    def _create_test_current_user():
+        """Create a CurrentUser from the test user."""
         return CurrentUser(
-            id=str(test_user.id),
-            tenant_id=str(test_tenant.id),
+            id=test_user.id,
+            tenant_id=test_tenant.id,
             email=test_user.email,
             name=test_user.name,
             role=test_user.role,
         )
 
+    async def override_get_current_user():
+        """Return a mock current user for testing."""
+        return _create_test_current_user()
+
+    async def override_get_optional_user():
+        """Return a mock current user for testing (for optional auth routes)."""
+        return _create_test_current_user()
+
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_optional_user] = override_get_optional_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -71,13 +71,30 @@ templates.env.filters["relative_time"] = format_relative_time
 templates.env.filters["truncate"] = truncate_string
 
 
+# Default empty values for dashboard partials (HTMX will load actual data)
+_DEFAULT_STATS = {
+    "total_files": 0,
+    "total_findings": 0,
+    "critical_findings": 0,
+    "active_scans": 0,
+}
+
+
 # Page routes
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Redirect to dashboard."""
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "active_page": "dashboard"},
+        {
+            "request": request,
+            "active_page": "dashboard",
+            "stats": _DEFAULT_STATS,
+            "recent_scans": [],
+            "findings": [],
+            "risk_distribution": [],
+            "activity": [],
+        },
     )
 
 
@@ -86,7 +103,15 @@ async def dashboard(request: Request):
     """Dashboard page."""
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "active_page": "dashboard"},
+        {
+            "request": request,
+            "active_page": "dashboard",
+            "stats": _DEFAULT_STATS,
+            "recent_scans": [],
+            "findings": [],
+            "risk_distribution": [],
+            "activity": [],
+        },
     )
 
 

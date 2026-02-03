@@ -17,7 +17,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -506,22 +506,22 @@ async def get_remediation_stats(
     stats_query = select(
         func.count().label("total"),
         func.sum(
-            func.case((RemediationAction.action_type == "quarantine", 1), else_=0)
+            case((RemediationAction.action_type == "quarantine", 1), else_=0)
         ).label("quarantine_count"),
         func.sum(
-            func.case((RemediationAction.action_type == "lockdown", 1), else_=0)
+            case((RemediationAction.action_type == "lockdown", 1), else_=0)
         ).label("lockdown_count"),
         func.sum(
-            func.case((RemediationAction.action_type == "rollback", 1), else_=0)
+            case((RemediationAction.action_type == "rollback", 1), else_=0)
         ).label("rollback_count"),
         func.sum(
-            func.case((RemediationAction.status == "completed", 1), else_=0)
+            case((RemediationAction.status == "completed", 1), else_=0)
         ).label("completed"),
         func.sum(
-            func.case((RemediationAction.status == "failed", 1), else_=0)
+            case((RemediationAction.status == "failed", 1), else_=0)
         ).label("failed"),
         func.sum(
-            func.case((RemediationAction.status == "pending", 1), else_=0)
+            case((RemediationAction.status == "pending", 1), else_=0)
         ).label("pending"),
     ).where(RemediationAction.tenant_id == user.tenant_id)
 

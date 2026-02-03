@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -430,10 +430,10 @@ async def get_access_stats(
     stats_query = select(
         func.count().label("total"),
         func.sum(
-            func.case((FileAccessEvent.event_time >= last_24h, 1), else_=0)
+            case((FileAccessEvent.event_time >= last_24h, 1), else_=0)
         ).label("last_24h"),
         func.sum(
-            func.case((FileAccessEvent.event_time >= last_7d, 1), else_=0)
+            case((FileAccessEvent.event_time >= last_7d, 1), else_=0)
         ).label("last_7d"),
     ).where(FileAccessEvent.tenant_id == user.tenant_id)
 
