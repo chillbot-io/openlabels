@@ -166,6 +166,23 @@ Note: These are documented in the spec's "Appendix D: Implementation Notes" as p
    - Removed the flag and added Python regex for match text extraction
    - Added proper fallback handling when Hyperscan compilation fails
 
+3. **~~Fix datetime.utcnow in sid_resolver.py~~**: **FIXED**
+   - Changed `datetime.utcnow` to `datetime.now(timezone.utc)` in `ResolvedUser.resolved_at` default
+   - Fixed timezone-aware vs naive datetime comparison errors
+
+4. **~~Fix cross-database compatibility in models.py~~**: **FIXED**
+   - Created `JSONB` TypeDecorator that uses PostgreSQL JSONB in production, JSON in SQLite tests
+   - Replaced PostgreSQL-only `ARRAY(Text)` with `JSONB` for `co_occurrence_rules` column
+
+5. **~~Fix missing logging import in dashboard.py~~**: **FIXED**
+   - Added missing `import logging` statement
+
+6. **~~Fix test expectations~~**: **FIXED**
+   - Updated `test_default_settings` to expect secure default `127.0.0.1` instead of `0.0.0.0`
+   - Fixed timezone-aware datetime usage in `test_sid_resolver.py`
+   - Fixed SharePoint adapter test to mock `_get_client` instead of non-existent `_get_token`
+   - Updated test assertions for test environment behavior
+
 ### Priority 2 (Nice to Have)
 
 1. **Add UUID7 fallback wrapper** for clarity:

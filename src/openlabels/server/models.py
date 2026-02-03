@@ -22,13 +22,34 @@ from sqlalchemy import (
     String,
     Text,
     BigInteger,
-    ARRAY,
+    JSON,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
+from sqlalchemy.dialects.postgresql import UUID, JSONB as PG_JSONB, ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
+
+
+# =============================================================================
+# CROSS-DATABASE JSON TYPE
+# =============================================================================
+
+class JSONB(TypeDecorator):
+    """
+    Cross-database JSON type.
+
+    Uses PostgreSQL JSONB when available (for performance and indexing),
+    falls back to standard JSON for SQLite testing.
+    """
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_JSONB())
+        return dialect.type_descriptor(JSON())
 
 # =============================================================================
 # UUID v7 GENERATION
@@ -288,7 +309,7 @@ class ScanResult(Base):
     # Score breakdown
     content_score: Mapped[Optional[float]] = mapped_column(Float)
     exposure_multiplier: Mapped[Optional[float]] = mapped_column(Float)
-    co_occurrence_rules: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
+    co_occurrence_rules: Mapped[Optional[list[str]]] = mapped_column(JSONB)  # List stored as JSON for cross-db compat
 
     # Exposure
     exposure_level: Mapped[Optional[str]] = mapped_column(ExposureLevelEnum)
