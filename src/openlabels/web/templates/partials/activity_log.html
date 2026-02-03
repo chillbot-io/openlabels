@@ -1,0 +1,62 @@
+{% if activity_logs %}
+<ul class="divide-y divide-gray-200">
+    {% for log in activity_logs %}
+    <li class="px-4 py-4 hover:bg-gray-50">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center min-w-0">
+                <div class="flex-shrink-0">
+                    <span class="h-8 w-8 rounded-full flex items-center justify-center
+                        {% if 'completed' in log.action %}bg-green-100
+                        {% elif 'failed' in log.action %}bg-red-100
+                        {% elif 'started' in log.action %}bg-blue-100
+                        {% elif 'created' in log.action %}bg-purple-100
+                        {% elif 'deleted' in log.action %}bg-gray-100
+                        {% else %}bg-gray-100{% endif %}">
+                        {% if 'completed' in log.action %}
+                        <svg class="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        {% elif 'failed' in log.action %}
+                        <svg class="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        {% elif 'started' in log.action %}
+                        <svg class="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        {% else %}
+                        <svg class="h-4 w-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="ml-4 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 truncate">
+                        {{ log.action | replace('_', ' ') | title }}
+                    </p>
+                    <p class="text-sm text-gray-500 truncate">
+                        {% if log.details %}
+                            {{ log.details.name or log.details.file_path or log.details | string | truncate(60) }}
+                        {% else %}
+                            {{ log.resource_type | title }} {{ log.resource_id | string | truncate(8) }}
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+            <div class="ml-4 flex-shrink-0 flex items-center">
+                <span class="text-xs text-gray-500">{{ log.created_at | relative_time }}</span>
+                {% if log.user_email %}
+                <span class="ml-2 text-xs text-gray-400">by {{ log.user_email }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="text-center py-8 text-gray-500">
+    <p>No activity recorded</p>
+</div>
+{% endif %}

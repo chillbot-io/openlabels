@@ -1,0 +1,168 @@
+{% if targets %}
+<div class="overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adapter</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for target in targets %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">{{ target.name }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        {% if target.adapter == 'filesystem' %}bg-gray-100 text-gray-800
+                        {% elif target.adapter == 'sharepoint' %}bg-blue-100 text-blue-800
+                        {% elif target.adapter == 'onedrive' %}bg-indigo-100 text-indigo-800
+                        {% elif target.adapter == 'azure_blob' %}bg-purple-100 text-purple-800
+                        {% elif target.adapter == 's3' %}bg-orange-100 text-orange-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {{ target.adapter }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if target.enabled %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span class="w-2 h-2 mr-1 rounded-full bg-green-400"></span>
+                        Enabled
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        <span class="w-2 h-2 mr-1 rounded-full bg-gray-400"></span>
+                        Disabled
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ target.created_at | relative_time }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex items-center justify-end space-x-2">
+                        <a href="/ui/targets/{{ target.id }}" class="text-primary-600 hover:text-primary-900">Edit</a>
+                        <button
+                            type="button"
+                            class="text-red-600 hover:text-red-900"
+                            hx-delete="/api/targets/{{ target.id }}"
+                            hx-confirm="Are you sure you want to delete this target?"
+                            hx-target="#targets-list"
+                            hx-swap="innerHTML"
+                            hx-trigger="click"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        <div class="flex-1 flex justify-between sm:hidden">
+            {% if page > 1 %}
+            <button
+                hx-get="/ui/partials/targets-list?page={{ page - 1 }}"
+                hx-target="#targets-list"
+                class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+                Previous
+            </button>
+            {% endif %}
+            {% if page < total_pages %}
+            <button
+                hx-get="/ui/partials/targets-list?page={{ page + 1 }}"
+                hx-target="#targets-list"
+                class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+                Next
+            </button>
+            {% endif %}
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm text-gray-700">
+                    Showing <span class="font-medium">{{ (page - 1) * page_size + 1 }}</span> to
+                    <span class="font-medium">{{ [page * page_size, total] | min }}</span> of
+                    <span class="font-medium">{{ total }}</span> results
+                </p>
+            </div>
+            <div>
+                <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                    {% if page > 1 %}
+                    <button
+                        hx-get="/ui/partials/targets-list?page={{ page - 1 }}"
+                        hx-target="#targets-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        <span class="sr-only">Previous</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                    {% endif %}
+
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}
+                        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-primary-50 text-sm font-medium text-primary-600">
+                            {{ p }}
+                        </span>
+                        {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                        <button
+                            hx-get="/ui/partials/targets-list?page={{ p }}"
+                            hx-target="#targets-list"
+                            class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                            {{ p }}
+                        </button>
+                        {% elif p == page - 3 or p == page + 3 %}
+                        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page < total_pages %}
+                    <button
+                        hx-get="/ui/partials/targets-list?page={{ page + 1 }}"
+                        hx-target="#targets-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        <span class="sr-only">Next</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                    {% endif %}
+                </nav>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+    </svg>
+    <h3 class="mt-2 text-sm font-medium text-gray-900">No targets configured</h3>
+    <p class="mt-1 text-sm text-gray-500">Get started by adding your first scan target.</p>
+    <div class="mt-6">
+        <a
+            href="/ui/targets/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+        >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            </svg>
+            Add Target
+        </a>
+    </div>
+</div>
+{% endif %}

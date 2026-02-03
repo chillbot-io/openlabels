@@ -1,0 +1,145 @@
+{% if scans %}
+<div class="overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for scan in scans %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">{{ scan.target_name }}</div>
+                    <div class="text-sm text-gray-500">{{ scan.id[:8] }}...</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        {% if scan.status == 'completed' %}bg-green-100 text-green-800
+                        {% elif scan.status == 'running' %}bg-yellow-100 text-yellow-800
+                        {% elif scan.status == 'pending' %}bg-blue-100 text-blue-800
+                        {% elif scan.status == 'failed' %}bg-red-100 text-red-800
+                        {% elif scan.status == 'cancelled' %}bg-gray-100 text-gray-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {% if scan.status == 'running' %}
+                        <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {% endif %}
+                        {{ scan.status | title }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if scan.status == 'running' or scan.status == 'completed' %}
+                    <div class="flex items-center">
+                        <div class="flex-1 mr-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                    class="h-2 rounded-full {% if scan.status == 'completed' %}bg-green-500{% else %}bg-primary-500{% endif %}"
+                                    style="width: {{ scan.progress | default(0) }}%"
+                                ></div>
+                            </div>
+                        </div>
+                        <span class="text-sm text-gray-500">{{ scan.files_scanned | default(0) }} files</span>
+                    </div>
+                    {% else %}
+                    <span class="text-sm text-gray-500">-</span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ scan.created_at | relative_time }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex items-center justify-end space-x-2">
+                        {% if scan.status == 'completed' %}
+                        <a href="/ui/results?scan_id={{ scan.id }}" class="text-primary-600 hover:text-primary-900">View Results</a>
+                        {% elif scan.status == 'running' %}
+                        <button
+                            type="button"
+                            class="text-yellow-600 hover:text-yellow-900"
+                            hx-post="/api/scans/{{ scan.id }}/cancel"
+                            hx-target="#scans-list"
+                            hx-swap="innerHTML"
+                        >
+                            Cancel
+                        </button>
+                        {% elif scan.status == 'failed' %}
+                        <button
+                            type="button"
+                            class="text-primary-600 hover:text-primary-900"
+                            hx-post="/api/scans/{{ scan.id }}/retry"
+                            hx-target="#scans-list"
+                            hx-swap="innerHTML"
+                        >
+                            Retry
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm text-gray-700">
+                    Showing <span class="font-medium">{{ (page - 1) * page_size + 1 }}</span> to
+                    <span class="font-medium">{{ [page * page_size, total] | min }}</span> of
+                    <span class="font-medium">{{ total }}</span> results
+                </p>
+            </div>
+            <div>
+                <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    {% if page > 1 %}
+                    <button
+                        hx-get="/ui/partials/scans-list?page={{ page - 1 }}"
+                        hx-target="#scans-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        Previous
+                    </button>
+                    {% endif %}
+                    {% if page < total_pages %}
+                    <button
+                        hx-get="/ui/partials/scans-list?page={{ page + 1 }}"
+                        hx-target="#scans-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        Next
+                    </button>
+                    {% endif %}
+                </nav>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="text-center py-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+    </svg>
+    <h3 class="mt-2 text-sm font-medium text-gray-900">No scans found</h3>
+    <p class="mt-1 text-sm text-gray-500">Get started by running your first scan.</p>
+    <div class="mt-6">
+        <a
+            href="/ui/scans/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+        >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            New Scan
+        </a>
+    </div>
+</div>
+{% endif %}

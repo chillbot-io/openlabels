@@ -344,3 +344,130 @@ async def apply_label(
         "result_id": str(request.result_id),
         "label_id": request.label_id,
     }
+
+
+# =============================================================================
+# LABEL MAPPINGS (simplified interface for web UI)
+# =============================================================================
+
+
+class LabelMappingsResponse(BaseModel):
+    """Label mappings for each risk tier."""
+
+    CRITICAL: Optional[str] = None
+    HIGH: Optional[str] = None
+    MEDIUM: Optional[str] = None
+    LOW: Optional[str] = None
+    labels: list[LabelResponse] = []
+
+
+class LabelMappingsUpdate(BaseModel):
+    """Request to update label mappings."""
+
+    CRITICAL: Optional[str] = None
+    HIGH: Optional[str] = None
+    MEDIUM: Optional[str] = None
+    LOW: Optional[str] = None
+
+
+@router.get("/mappings", response_model=LabelMappingsResponse)
+async def get_label_mappings(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
+) -> LabelMappingsResponse:
+    """Get label mappings for each risk tier."""
+    # Get all rules for risk_tier type
+    query = select(LabelRule).where(
+        LabelRule.tenant_id == user.tenant_id,
+        LabelRule.rule_type == "risk_tier",
+    )
+    result = await session.execute(query)
+    rules = result.scalars().all()
+
+    # Build mappings dict
+    mappings = {}
+    for rule in rules:
+        mappings[rule.match_value] = rule.label_id
+
+    # Get available labels
+    label_query = select(SensitivityLabel).where(
+        SensitivityLabel.tenant_id == user.tenant_id
+    ).order_by(SensitivityLabel.priority)
+    label_result = await session.execute(label_query)
+    labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
+
+    return LabelMappingsResponse(
+        CRITICAL=mappings.get("CRITICAL"),
+        HIGH=mappings.get("HIGH"),
+        MEDIUM=mappings.get("MEDIUM"),
+        LOW=mappings.get("LOW"),
+        labels=labels,
+    )
+
+
+from fastapi import Request
+from fastapi.responses import HTMLResponse
+
+
+@router.post("/mappings")
+async def update_label_mappings(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Update label mappings for risk tiers."""
+    # Try to get JSON body, fallback to form data
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        data = await request.json()
+    else:
+        form = await request.form()
+        data = {
+            "CRITICAL": form.get("CRITICAL") or None,
+            "HIGH": form.get("HIGH") or None,
+            "MEDIUM": form.get("MEDIUM") or None,
+            "LOW": form.get("LOW") or None,
+        }
+
+    # Delete existing risk_tier rules
+    existing_query = select(LabelRule).where(
+        LabelRule.tenant_id == user.tenant_id,
+        LabelRule.rule_type == "risk_tier",
+    )
+    existing_result = await session.execute(existing_query)
+    for rule in existing_result.scalars().all():
+        await session.delete(rule)
+
+    # Create new rules for non-empty mappings
+    priority = 100
+    for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        label_id = data.get(risk_tier)
+        if label_id:
+            # Verify label exists
+            label = await session.get(SensitivityLabel, label_id)
+            if label and label.tenant_id == user.tenant_id:
+                rule = LabelRule(
+                    tenant_id=user.tenant_id,
+                    rule_type="risk_tier",
+                    match_value=risk_tier,
+                    label_id=label_id,
+                    priority=priority,
+                    created_by=user.id,
+                )
+                session.add(rule)
+        priority -= 10
+
+    await session.flush()
+
+    # Check if HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
+            },
+        )
+
+    return {"message": "Label mappings updated"}
