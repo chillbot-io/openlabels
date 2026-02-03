@@ -256,7 +256,7 @@ class TestTargetCRUD:
             "/ui/targets",
             data={
                 "name": "Test Target",
-                "adapter": "local",
+                "adapter": "filesystem",
                 "enabled": "on",
                 "config[path]": "/data/test",
             },
@@ -297,7 +297,7 @@ class TestTargetCRUD:
                 )
             )).scalar(),
             name="Edit Test Target",
-            adapter="local",
+            adapter="filesystem",
             config={"path": "/data"},
             enabled=True,
         )
@@ -310,7 +310,7 @@ class TestTargetCRUD:
             f"/ui/targets/{target.id}",
             data={
                 "name": "Updated Target Name",
-                "adapter": "local",
+                "adapter": "filesystem",
                 "enabled": "on",
                 "config[path]": "/new/path",
             },
@@ -343,7 +343,8 @@ class TestScheduleCRUD:
         target = ScanTarget(
             tenant_id=tenant_id,
             name="Schedule Test Target",
-            adapter="local",
+            adapter="filesystem",
+            config={"path": "/test/schedule"},
             enabled=True,
         )
         test_db.add(target)
@@ -393,7 +394,8 @@ class TestScanCreation:
         target = ScanTarget(
             tenant_id=tenant_id,
             name="Scan Test Target",
-            adapter="local",
+            adapter="filesystem",
+            config={"path": "/test/scan"},
             enabled=True,
         )
         test_db.add(target)
@@ -567,6 +569,7 @@ class TestDataWithResults:
             tenant_id=tenant_id,
             name="Visible Target",
             adapter="onedrive",
+            config={"drive_id": "test-drive"},
             enabled=True,
         )
         test_db.add(target)
@@ -628,7 +631,8 @@ class TestDataWithResults:
         target = ScanTarget(
             tenant_id=tenant_id,
             name="Schedule Target",
-            adapter="local",
+            adapter="filesystem",
+            config={"path": "/test/schedule-target"},
             enabled=True,
         )
         test_db.add(target)
@@ -653,7 +657,7 @@ class TestDataWithResults:
     @pytest.mark.asyncio
     async def test_result_appears_in_list(self, test_client: AsyncClient, test_db):
         """Created result should appear in results list."""
-        from openlabels.server.models import ScanResult
+        from openlabels.server.models import ScanResult, ScanTarget, ScanJob
         from sqlalchemy import select
 
         result = await test_db.execute(
@@ -661,12 +665,37 @@ class TestDataWithResults:
         )
         tenant_id = result.scalar()
 
+        # Create target and job first (required for ScanResult)
+        target = ScanTarget(
+            tenant_id=tenant_id,
+            name="Result Test Target",
+            adapter="filesystem",
+            config={"path": "/test/results"},
+            enabled=True,
+        )
+        test_db.add(target)
+        await test_db.commit()
+        await test_db.refresh(target)
+
+        job = ScanJob(
+            tenant_id=tenant_id,
+            target_id=target.id,
+            name="Result Test Job",
+            status="completed",
+        )
+        test_db.add(job)
+        await test_db.commit()
+        await test_db.refresh(job)
+
         scan_result = ScanResult(
             tenant_id=tenant_id,
+            job_id=job.id,
             file_path="/test/visible_file.docx",
+            file_name="visible_file.docx",
             risk_tier="HIGH",
-            risk_score=85.0,
+            risk_score=85,
             total_entities=5,
+            entity_counts={"SSN": 3, "EMAIL": 2},
         )
         test_db.add(scan_result)
         await test_db.commit()
@@ -678,7 +707,7 @@ class TestDataWithResults:
     @pytest.mark.asyncio
     async def test_dashboard_stats_with_data(self, test_client: AsyncClient, test_db):
         """Dashboard stats should reflect actual data."""
-        from openlabels.server.models import ScanResult
+        from openlabels.server.models import ScanResult, ScanTarget, ScanJob
         from sqlalchemy import select
 
         result = await test_db.execute(
@@ -686,14 +715,39 @@ class TestDataWithResults:
         )
         tenant_id = result.scalar()
 
+        # Create target and job first (required for ScanResult)
+        target = ScanTarget(
+            tenant_id=tenant_id,
+            name="Stats Test Target",
+            adapter="filesystem",
+            config={"path": "/test/stats"},
+            enabled=True,
+        )
+        test_db.add(target)
+        await test_db.commit()
+        await test_db.refresh(target)
+
+        job = ScanJob(
+            tenant_id=tenant_id,
+            target_id=target.id,
+            name="Stats Test Job",
+            status="completed",
+        )
+        test_db.add(job)
+        await test_db.commit()
+        await test_db.refresh(job)
+
         # Create multiple results
         for i in range(3):
             scan_result = ScanResult(
                 tenant_id=tenant_id,
+                job_id=job.id,
                 file_path=f"/test/file_{i}.docx",
+                file_name=f"file_{i}.docx",
                 risk_tier="CRITICAL" if i == 0 else "MEDIUM",
-                risk_score=90.0 if i == 0 else 50.0,
+                risk_score=90 if i == 0 else 50,
                 total_entities=i + 1,
+                entity_counts={"SSN": i + 1},
             )
             test_db.add(scan_result)
         await test_db.commit()
@@ -775,7 +829,7 @@ class TestEditPages:
     @pytest.mark.asyncio
     async def test_result_detail_page_with_data(self, test_client: AsyncClient, test_db):
         """Result detail page should render for existing result."""
-        from openlabels.server.models import ScanResult
+        from openlabels.server.models import ScanResult, ScanTarget, ScanJob
         from sqlalchemy import select
 
         result = await test_db.execute(
@@ -783,11 +837,35 @@ class TestEditPages:
         )
         tenant_id = result.scalar()
 
+        # Create target and job first (required for ScanResult)
+        target = ScanTarget(
+            tenant_id=tenant_id,
+            name="Detail Result Target",
+            adapter="filesystem",
+            config={"path": "/test/detail"},
+            enabled=True,
+        )
+        test_db.add(target)
+        await test_db.commit()
+        await test_db.refresh(target)
+
+        job = ScanJob(
+            tenant_id=tenant_id,
+            target_id=target.id,
+            name="Detail Result Job",
+            status="completed",
+        )
+        test_db.add(job)
+        await test_db.commit()
+        await test_db.refresh(job)
+
         scan_result = ScanResult(
             tenant_id=tenant_id,
+            job_id=job.id,
             file_path="/test/detail_test.pdf",
+            file_name="detail_test.pdf",
             risk_tier="HIGH",
-            risk_score=75.0,
+            risk_score=75,
             total_entities=10,
             entity_counts={"SSN": 3, "EMAIL": 7},
         )
@@ -813,7 +891,8 @@ class TestEditPages:
         target = ScanTarget(
             tenant_id=tenant_id,
             name="Edit Schedule Target",
-            adapter="local",
+            adapter="filesystem",
+            config={"path": "/test/edit-schedule"},
             enabled=True,
         )
         test_db.add(target)
@@ -857,7 +936,8 @@ class TestTenantIsolation:
         other_target = ScanTarget(
             tenant_id=other_tenant.id,
             name="Other Tenant Target",
-            adapter="local",
+            adapter="filesystem",
+            config={"path": "/other/tenant/path"},
             enabled=True,
         )
         test_db.add(other_target)

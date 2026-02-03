@@ -477,7 +477,7 @@ class TestUpdateFolderInventory:
 
         result = await service.update_folder_inventory(
             folder_path="/test",
-            adapter="local",
+            adapter="filesystem",
             job_id=job_id,
             file_count=10,
             total_size=1024,
@@ -505,7 +505,7 @@ class TestUpdateFolderInventory:
 
             result = await service.update_folder_inventory(
                 folder_path="/new/folder",
-                adapter="local",
+                adapter="filesystem",
                 job_id=job_id,
                 file_count=5,
             )
@@ -523,7 +523,7 @@ class TestUpdateFolderInventory:
         before = datetime.now(timezone.utc)
         await service.update_folder_inventory(
             folder_path="/test",
-            adapter="local",
+            adapter="filesystem",
             job_id=uuid4(),
         )
         after = datetime.now(timezone.utc)
