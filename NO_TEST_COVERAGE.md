@@ -8,7 +8,7 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 |----------|-------|--------|
 | Auth | 3 | **Completed** (72 tests) |
 | Client | 2 | **Completed** (34 tests) |
-| Core/_rust | 3 | Not Started |
+| Core/_rust | 3 | **In Progress** (95 tests) |
 | GUI | 17 | Not Started |
 | Jobs | 8 | **Completed** (251 tests) |
 | Server routes | 16 | **In Progress** (431 tests for 13 routes) |
@@ -42,9 +42,9 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/core/_rust/__init__.py` | 86 | 0% | Rust binding loader |
-| `src/openlabels/core/_rust/patterns_py.py` | 1 | 0% | Pattern fallback |
-| `src/openlabels/core/_rust/validators_py.py` | 120 | 0% | Validator fallback |
+| `src/openlabels/core/_rust/__init__.py` | 86 | ~80% | Rust binding loader - TESTED (45 tests) |
+| `src/openlabels/core/_rust/patterns_py.py` | 1 | ~90% | Pattern fallback - TESTED (8 tests) |
+| `src/openlabels/core/_rust/validators_py.py` | 120 | ~85% | Validator fallback - TESTED (42 tests) |
 
 ---
 
@@ -157,3 +157,9 @@ Added comprehensive tests for server infrastructure and 3 more routes:
 - **labels.py**: 40 tests covering label CRUD, sync status, rules, mappings
 - **monitoring.py**: 40 tests covering monitored files, access events, anomaly detection
 - **results.py**: 45 tests covering results listing, stats, export, rescan actions
+
+### 2026-02-03 - Core Rust Bindings
+Added comprehensive tests for pattern matching and validation:
+- **_rust/__init__.py**: 45 tests covering PatternMatcherWrapper, MatchResult, find_matches, batch processing
+- **validators_py.py**: 42 tests covering all validators (Luhn, SSN, phone, email, IPv4, IBAN, NPI, CUSIP, ISIN)
+- **patterns_py.py**: 8 tests covering BUILTIN_PATTERNS definitions and regex validation
