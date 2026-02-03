@@ -441,16 +441,21 @@ class HyperscanMatcher:
             # Use SOM_HORIZON_LARGE mode to support SOM_LEFTMOST flag on patterns
             # This allows Hyperscan to report start-of-match positions
             mode = hyperscan.HS_MODE_BLOCK | hyperscan.HS_MODE_SOM_HORIZON_LARGE
+            import sys
+            print(f"DEBUG: Hyperscan mode = {mode} (BLOCK={hyperscan.HS_MODE_BLOCK}, SOM_LARGE={hyperscan.HS_MODE_SOM_HORIZON_LARGE})", file=sys.stderr)
             self._db = hyperscan.Database(mode=mode)
             self._db.compile(
                 expressions=expressions,
                 flags=flags,
                 ids=ids,
             )
+            print(f"DEBUG: Compiled {len(expressions)} patterns successfully", file=sys.stderr)
             self._scratch = hyperscan.Scratch(self._db)
             self._compiled = True
             logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database")
         except Exception as e:
+            import sys
+            print(f"DEBUG: Compile error: {e}", file=sys.stderr)
             logger.error(f"Failed to compile Hyperscan database: {e}")
             if self._use_fallback:
                 self._compile_fallback()
@@ -500,11 +505,14 @@ class HyperscanMatcher:
         """Scan using Hyperscan."""
         matches: list[PatternMatch] = []
         text_bytes = text.encode('utf-8')
+        callback_count = [0]  # Use list to allow mutation in nested function
 
         # Callback for each match
         def on_match(id: int, start: int, end: int, flags: int, context: None) -> Optional[bool]:
+            callback_count[0] += 1
             pattern = self._pattern_map.get(id)
             if not pattern:
+                logger.debug(f"on_match: Unknown pattern id {id}")
                 return None
 
             # Convert byte offsets to character offsets (handle UTF-8)
@@ -512,9 +520,12 @@ class HyperscanMatcher:
             char_end = len(text_bytes[:end].decode('utf-8', errors='replace'))
             matched_text = text[char_start:char_end]
 
+            logger.debug(f"on_match: id={id}, start={start}, end={end}, matched='{matched_text}'")
+
             # Run validator if defined
             validator = VALIDATORS.get(pattern.name)
             if validator and not validator(matched_text):
+                logger.debug(f"on_match: Validator failed for {pattern.name}")
                 return None  # Failed validation, skip
 
             matches.append(PatternMatch(
@@ -531,8 +542,14 @@ class HyperscanMatcher:
 
         try:
             self._db.scan(text_bytes, match_event_handler=on_match, scratch=self._scratch)
+            if callback_count[0] == 0:
+                # Debug: no callbacks at all - this helps diagnose scanning issues
+                import sys
+                print(f"DEBUG: Hyperscan scan returned 0 callbacks for text len={len(text)}", file=sys.stderr)
         except Exception as e:
             logger.error(f"Hyperscan scan error: {e}")
+            import sys
+            print(f"DEBUG: Hyperscan scan exception: {e}", file=sys.stderr)
 
         return matches
 
