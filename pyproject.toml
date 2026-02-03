@@ -103,7 +103,6 @@ dev = [
     "pytest-env>=1.1.0",  # Set env vars in pyproject.toml for tests
     "pytest-mock>=3.12.0",  # Convenient mocking fixtures
     "pytest-httpx>=0.28.0",  # Mock httpx requests in tests
-    "aiosqlite>=0.19.0",  # Async SQLite for lightweight testing
     "factory-boy>=3.3.0",  # Test data factories
     "faker>=22.0.0",  # Generate fake test data
     "ruff>=0.1.0",
