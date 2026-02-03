@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Scans - OpenLabels{% endblock %}
+{% block page_title %}Scans{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="scansPage()">
+    <!-- Header with actions -->
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-sm text-gray-500">Monitor and manage scan jobs</p>
+        </div>
+        <a
+            href="/ui/scans/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+        >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            New Scan
+        </a>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Pending</dt>
+                            <dd class="text-lg font-medium text-gray-900" x-text="stats.pending">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-yellow-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Running</dt>
+                            <dd class="text-lg font-medium text-gray-900" x-text="stats.running">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Completed</dt>
+                            <dd class="text-lg font-medium text-gray-900" x-text="stats.completed">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-6 w-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">Failed</dt>
+                            <dd class="text-lg font-medium text-gray-900" x-text="stats.failed">0</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex flex-wrap gap-4">
+            <div>
+                <label for="status-filter" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                    id="status-filter"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/scans-list"
+                    hx-target="#scans-list"
+                    hx-trigger="change"
+                    name="status"
+                >
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scans list -->
+    <div class="bg-white rounded-lg shadow">
+        <div
+            id="scans-list"
+            hx-get="/ui/partials/scans-list"
+            hx-trigger="load, every 10s"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/scans_list.html" %}
+        </div>
+    </div>
+</div>
+
+<script>
+function scansPage() {
+    return {
+        stats: {
+            pending: 0,
+            running: 0,
+            completed: 0,
+            failed: 0
+        },
+        init() {
+            this.fetchStats();
+            setInterval(() => this.fetchStats(), 10000);
+        },
+        async fetchStats() {
+            try {
+                const response = await fetch('/api/jobs/stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.stats = {
+                        pending: data.pending || 0,
+                        running: data.running || 0,
+                        completed: data.completed || 0,
+                        failed: data.failed || 0
+                    };
+                }
+            } catch (e) {
+                console.error('Failed to fetch stats:', e);
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

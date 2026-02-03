@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Results - OpenLabels{% endblock %}
+{% block page_title %}Scan Results{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Scan filter banner (shown when filtering by scan) -->
+    {% if scan_id %}
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+        <div class="flex items-center">
+            <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+            </svg>
+            <span class="text-sm text-blue-800">Showing results for scan: <code class="bg-blue-100 px-1 rounded">{{ scan_id[:8] }}...</code></span>
+        </div>
+        <a href="/ui/results" class="text-sm text-blue-600 hover:text-blue-800">Clear filter</a>
+    </div>
+    {% endif %}
+
+    <!-- Hidden input for scan_id -->
+    <input type="hidden" name="scan_id" value="{{ scan_id or '' }}">
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex flex-wrap gap-4">
+            <div>
+                <label for="risk-filter" class="block text-sm font-medium text-gray-700 mb-1">Risk Level</label>
+                <select
+                    id="risk-filter"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/results-list"
+                    hx-target="#results-list"
+                    hx-trigger="change"
+                    hx-include="[name='entity_type'],[name='has_label'],[name='scan_id']"
+                    name="risk_tier"
+                >
+                    <option value="">All Risks</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+            </div>
+            <div>
+                <label for="entity-filter" class="block text-sm font-medium text-gray-700 mb-1">Entity Type</label>
+                <select
+                    id="entity-filter"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/results-list"
+                    hx-target="#results-list"
+                    hx-trigger="change"
+                    hx-include="[name='risk_tier'],[name='has_label'],[name='scan_id']"
+                    name="entity_type"
+                >
+                    <option value="">All Types</option>
+                    <option value="SSN">Social Security Number</option>
+                    <option value="CREDIT_CARD">Credit Card</option>
+                    <option value="EMAIL">Email Address</option>
+                    <option value="PHONE">Phone Number</option>
+                    <option value="PERSON">Person Name</option>
+                    <option value="ADDRESS">Address</option>
+                </select>
+            </div>
+            <div>
+                <label for="label-filter" class="block text-sm font-medium text-gray-700 mb-1">Label Status</label>
+                <select
+                    id="label-filter"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/results-list"
+                    hx-target="#results-list"
+                    hx-trigger="change"
+                    hx-include="[name='risk_tier'],[name='entity_type'],[name='scan_id']"
+                    name="has_label"
+                >
+                    <option value="">All</option>
+                    <option value="true">Labeled</option>
+                    <option value="false">Not Labeled</option>
+                </select>
+            </div>
+            <div class="flex-1"></div>
+            <div class="flex items-end">
+                <button
+                    type="button"
+                    class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    hx-get="/api/results/export?format=csv"
+                    hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label'],[name='scan_id']"
+                >
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results list -->
+    <div class="bg-white rounded-lg shadow">
+        <div
+            id="results-list"
+            hx-get="/ui/partials/results-list{% if scan_id %}?scan_id={{ scan_id }}{% endif %}"
+            hx-trigger="load, refreshResults from:body"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/results_list.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

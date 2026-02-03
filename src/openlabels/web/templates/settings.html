@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - OpenLabels{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Azure AD Configuration -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h3 class="text-lg font-medium text-gray-900">Azure AD Configuration</h3>
+            <p class="mt-1 text-sm text-gray-500">Configure Microsoft Azure AD authentication</p>
+        </div>
+        <div class="p-6">
+            <form
+                hx-post="/api/settings/azure"
+                hx-swap="none"
+                class="space-y-4"
+                x-data="{ saving: false }"
+                @htmx:before-request="saving = true"
+                @htmx:after-request="saving = false"
+            >
+                <div>
+                    <label for="azure_tenant_id" class="block text-sm font-medium text-gray-700">Tenant ID</label>
+                    <input
+                        type="text"
+                        name="tenant_id"
+                        id="azure_tenant_id"
+                        value="{{ settings.azure.tenant_id if settings else '' }}"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    >
+                </div>
+                <div>
+                    <label for="azure_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
+                    <input
+                        type="text"
+                        name="client_id"
+                        id="azure_client_id"
+                        value="{{ settings.azure.client_id if settings else '' }}"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    >
+                </div>
+                <div>
+                    <label for="azure_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
+                    <input
+                        type="password"
+                        name="client_secret"
+                        id="azure_client_secret"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        placeholder="Enter new secret to update"
+                    >
+                    <p class="mt-1 text-xs text-gray-500">Leave blank to keep existing secret</p>
+                </div>
+                <div class="pt-4">
+                    <button
+                        type="submit"
+                        :disabled="saving"
+                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                    >
+                        <span x-show="!saving">Save Azure Settings</span>
+                        <span x-show="saving">Saving...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scan Configuration -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h3 class="text-lg font-medium text-gray-900">Scan Configuration</h3>
+            <p class="mt-1 text-sm text-gray-500">Configure default scan behavior</p>
+        </div>
+        <div class="p-6">
+            <form
+                hx-post="/api/settings/scan"
+                hx-swap="none"
+                class="space-y-4"
+            >
+                <div>
+                    <label for="max_file_size" class="block text-sm font-medium text-gray-700">Max File Size (MB)</label>
+                    <input
+                        type="number"
+                        name="max_file_size_mb"
+                        id="max_file_size"
+                        value="{{ settings.scan.max_file_size_mb if settings else 100 }}"
+                        min="1"
+                        max="1000"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    >
+                </div>
+                <div>
+                    <label for="concurrent_files" class="block text-sm font-medium text-gray-700">Concurrent Files</label>
+                    <input
+                        type="number"
+                        name="concurrent_files"
+                        id="concurrent_files"
+                        value="{{ settings.scan.concurrent_files if settings else 10 }}"
+                        min="1"
+                        max="50"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    >
+                    <p class="mt-1 text-xs text-gray-500">Number of files to process simultaneously</p>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex items-center h-5">
+                        <input
+                            type="checkbox"
+                            name="enable_ocr"
+                            id="enable_ocr"
+                            {% if settings and settings.scan.enable_ocr %}checked{% endif %}
+                            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                        >
+                    </div>
+                    <div class="ml-3 text-sm">
+                        <label for="enable_ocr" class="font-medium text-gray-700">Enable OCR by default</label>
+                        <p class="text-gray-500">Extract text from images during scans</p>
+                    </div>
+                </div>
+                <div class="pt-4">
+                    <button
+                        type="submit"
+                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+                    >
+                        Save Scan Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Entity Detection -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h3 class="text-lg font-medium text-gray-900">Entity Detection</h3>
+            <p class="mt-1 text-sm text-gray-500">Configure which entity types to detect</p>
+        </div>
+        <div class="p-6">
+            <form
+                hx-post="/api/settings/entities"
+                hx-swap="none"
+                class="space-y-4"
+            >
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {% set entity_types = [
+                        ('SSN', 'Social Security Number'),
+                        ('CREDIT_CARD', 'Credit Card Number'),
+                        ('EMAIL', 'Email Address'),
+                        ('PHONE', 'Phone Number'),
+                        ('PERSON', 'Person Name'),
+                        ('ADDRESS', 'Physical Address'),
+                        ('DATE_OF_BIRTH', 'Date of Birth'),
+                        ('PASSPORT', 'Passport Number'),
+                        ('DRIVER_LICENSE', 'Driver License'),
+                        ('BANK_ACCOUNT', 'Bank Account'),
+                        ('IP_ADDRESS', 'IP Address'),
+                        ('MEDICAL_RECORD', 'Medical Record Number')
+                    ] %}
+                    {% for entity_id, entity_name in entity_types %}
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input
+                                type="checkbox"
+                                name="entities[]"
+                                value="{{ entity_id }}"
+                                id="entity_{{ entity_id }}"
+                                {% if not settings or entity_id in (settings.entities.enabled or []) %}checked{% endif %}
+                                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                            >
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="entity_{{ entity_id }}" class="font-medium text-gray-700">{{ entity_name }}</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="pt-4">
+                    <button
+                        type="submit"
+                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+                    >
+                        Save Entity Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="bg-white rounded-lg shadow border-2 border-red-200">
+        <div class="px-4 py-5 border-b border-red-200 sm:px-6">
+            <h3 class="text-lg font-medium text-red-900">Danger Zone</h3>
+            <p class="mt-1 text-sm text-red-600">Irreversible actions</p>
+        </div>
+        <div class="p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900">Clear All Results</h4>
+                    <p class="text-sm text-gray-500">Delete all scan results. This cannot be undone.</p>
+                </div>
+                <button
+                    type="button"
+                    class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                    hx-delete="/api/results"
+                    hx-confirm="Are you sure you want to delete ALL scan results? This cannot be undone."
+                >
+                    Clear Results
+                </button>
+            </div>
+            <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900">Reset Configuration</h4>
+                    <p class="text-sm text-gray-500">Reset all settings to defaults.</p>
+                </div>
+                <button
+                    type="button"
+                    class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                    hx-post="/api/settings/reset"
+                    hx-confirm="Are you sure you want to reset all settings to defaults?"
+                >
+                    Reset Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -34,7 +34,7 @@ class ResolvedUser:
     job_title: Optional[str] = None
     is_well_known: bool = False
     is_system_account: bool = False
-    resolved_at: datetime = field(default_factory=datetime.utcnow)
+    resolved_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     resolution_source: str = "unknown"  # "graph_api", "well_known", "cache", "fallback"
 
     @property

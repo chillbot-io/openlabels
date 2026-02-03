@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,18 +129,33 @@ async def update_schedule(
     return schedule
 
 
-@router.delete("/{schedule_id}", status_code=204)
+@router.delete("/{schedule_id}")
 async def delete_schedule(
     schedule_id: UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
-) -> None:
+):
     """Delete a scan schedule."""
     schedule = await session.get(ScanSchedule, schedule_id)
     if not schedule or schedule.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Schedule not found")
 
+    schedule_name = schedule.name
     await session.delete(schedule)
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": f'{{"notify": {{"message": "Schedule \\"{schedule_name}\\" deleted", "type": "success"}}, "refreshSchedules": true}}',
+            },
+        )
+
+    # Regular REST response
+    return Response(status_code=204)
 
 
 @router.post("/{schedule_id}/run", status_code=202)

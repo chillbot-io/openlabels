@@ -202,9 +202,10 @@ class SystemTrayApp:
 
     def _open_config(self):
         """Open configuration file in default editor."""
+        from openlabels.core.constants import DATA_DIR
         config_paths = [
             Path("C:/ProgramData/OpenLabels/config.yaml"),
-            Path.home() / ".openlabels" / "config.yaml",
+            DATA_DIR / "config.yaml",
         ]
         for path in config_paths:
             if path.exists():

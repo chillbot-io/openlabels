@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - OpenLabels{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Stats Cards -->
+    <div
+        hx-get="/ui/partials/dashboard-stats"
+        hx-trigger="load, every 30s"
+        hx-swap="innerHTML"
+    >
+        {% include "partials/dashboard_stats.html" %}
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Recent Scans -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900">Recent Scans</h3>
+                    <a href="/ui/scans" class="text-sm text-primary-600 hover:text-primary-800">View all</a>
+                </div>
+            </div>
+            <div
+                hx-get="/ui/partials/recent-scans"
+                hx-trigger="load, every 15s"
+                hx-swap="innerHTML"
+                class="divide-y divide-gray-200"
+            >
+                {% include "partials/recent_scans.html" %}
+            </div>
+        </div>
+
+        <!-- Top Findings by Type -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <h3 class="text-lg font-medium text-gray-900">Findings by Type</h3>
+            </div>
+            <div
+                hx-get="/ui/partials/findings-by-type"
+                hx-trigger="load"
+                hx-swap="innerHTML"
+                class="p-4"
+            >
+                {% include "partials/findings_by_type.html" %}
+            </div>
+        </div>
+
+        <!-- Risk Distribution -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <h3 class="text-lg font-medium text-gray-900">Risk Distribution</h3>
+            </div>
+            <div
+                hx-get="/ui/partials/risk-distribution"
+                hx-trigger="load"
+                hx-swap="innerHTML"
+                class="p-4"
+            >
+                {% include "partials/risk_distribution.html" %}
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-medium text-gray-900">Recent Activity</h3>
+                    <a href="/ui/monitoring" class="text-sm text-primary-600 hover:text-primary-800">View all</a>
+                </div>
+            </div>
+            <div
+                hx-get="/ui/partials/recent-activity"
+                hx-trigger="load, every 30s"
+                hx-swap="innerHTML"
+                class="divide-y divide-gray-200 max-h-80 overflow-y-auto"
+            >
+                {% include "partials/recent_activity.html" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
+        <div class="flex flex-wrap gap-4">
+            <a
+                href="/ui/scans/new"
+                class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                New Scan
+            </a>
+            <a
+                href="/ui/targets/new"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                Add Target
+            </a>
+            <a
+                href="/ui/labels/sync"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Sync Labels
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
