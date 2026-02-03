@@ -67,7 +67,7 @@
         <div
             id="targets-list"
             hx-get="/ui/partials/targets-list"
-            hx-trigger="load"
+            hx-trigger="load, refreshTargets from:body"
             hx-swap="innerHTML"
         >
             {% include "partials/targets_list.html" %}

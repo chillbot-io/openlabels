@@ -6,15 +6,15 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanResult
-from openlabels.auth.dependencies import get_current_user, CurrentUser
+from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 router = APIRouter()
 
@@ -230,3 +230,62 @@ async def get_result(
     if not result or result.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Result not found")
     return result
+
+
+@router.delete("")
+async def clear_all_results(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Clear all scan results for the tenant."""
+    # Count results before deletion
+    count_query = select(func.count()).where(ScanResult.tenant_id == user.tenant_id)
+    count_result = await session.execute(count_query)
+    deleted_count = count_result.scalar() or 0
+
+    # Delete all results for tenant
+    delete_query = delete(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+    await session.execute(delete_query)
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": f'{{"notify": {{"message": "{deleted_count} results cleared", "type": "success"}}}}',
+            },
+        )
+
+    # Regular REST response
+    return Response(status_code=204)
+
+
+@router.delete("/{result_id}")
+async def delete_result(
+    result_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Delete a single scan result."""
+    result = await session.get(ScanResult, result_id)
+    if not result or result.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    file_name = result.file_name
+    await session.delete(result)
+
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": f'{{"notify": {{"message": "Result for \\"{file_name}\\" deleted", "type": "success"}}, "refreshResults": true}}',
+            },
+        )
+
+    # Regular REST response
+    return Response(status_code=204)

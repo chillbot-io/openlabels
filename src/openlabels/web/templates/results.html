@@ -5,6 +5,22 @@
 
 {% block content %}
 <div class="space-y-6">
+    <!-- Scan filter banner (shown when filtering by scan) -->
+    {% if scan_id %}
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+        <div class="flex items-center">
+            <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+            </svg>
+            <span class="text-sm text-blue-800">Showing results for scan: <code class="bg-blue-100 px-1 rounded">{{ scan_id[:8] }}...</code></span>
+        </div>
+        <a href="/ui/results" class="text-sm text-blue-600 hover:text-blue-800">Clear filter</a>
+    </div>
+    {% endif %}
+
+    <!-- Hidden input for scan_id -->
+    <input type="hidden" name="scan_id" value="{{ scan_id or '' }}">
+
     <!-- Filters -->
     <div class="bg-white rounded-lg shadow p-4">
         <div class="flex flex-wrap gap-4">
@@ -16,7 +32,7 @@
                     hx-get="/ui/partials/results-list"
                     hx-target="#results-list"
                     hx-trigger="change"
-                    hx-include="[name='entity_type'],[name='has_label']"
+                    hx-include="[name='entity_type'],[name='has_label'],[name='scan_id']"
                     name="risk_tier"
                 >
                     <option value="">All Risks</option>
@@ -34,7 +50,7 @@
                     hx-get="/ui/partials/results-list"
                     hx-target="#results-list"
                     hx-trigger="change"
-                    hx-include="[name='risk_tier'],[name='has_label']"
+                    hx-include="[name='risk_tier'],[name='has_label'],[name='scan_id']"
                     name="entity_type"
                 >
                     <option value="">All Types</option>
@@ -54,7 +70,7 @@
                     hx-get="/ui/partials/results-list"
                     hx-target="#results-list"
                     hx-trigger="change"
-                    hx-include="[name='risk_tier'],[name='entity_type']"
+                    hx-include="[name='risk_tier'],[name='entity_type'],[name='scan_id']"
                     name="has_label"
                 >
                     <option value="">All</option>
@@ -68,7 +84,7 @@
                     type="button"
                     class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                     hx-get="/api/results/export?format=csv"
-                    hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label']"
+                    hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label'],[name='scan_id']"
                 >
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
@@ -83,8 +99,8 @@
     <div class="bg-white rounded-lg shadow">
         <div
             id="results-list"
-            hx-get="/ui/partials/results-list"
-            hx-trigger="load"
+            hx-get="/ui/partials/results-list{% if scan_id %}?scan_id={{ scan_id }}{% endif %}"
+            hx-trigger="load, refreshResults from:body"
             hx-swap="innerHTML"
         >
             {% include "partials/results_list.html" %}

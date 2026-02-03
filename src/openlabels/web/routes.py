@@ -127,11 +127,14 @@ async def new_scan_page(request: Request):
 
 
 @router.get("/results", response_class=HTMLResponse)
-async def results_page(request: Request):
-    """Results page."""
+async def results_page(
+    request: Request,
+    scan_id: Optional[str] = None,
+):
+    """Results page with optional scan_id filter."""
     return templates.TemplateResponse(
         "results.html",
-        {"request": request, "active_page": "results"},
+        {"request": request, "active_page": "results", "scan_id": scan_id},
     )
 
 
@@ -164,10 +167,34 @@ async def monitoring_page(request: Request):
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    """Settings page."""
+    """Settings page with current configuration values."""
+    from openlabels.server.config import get_settings
+
+    config = get_settings()
+
+    # Build settings object that matches template expectations
+    settings = {
+        "azure": {
+            "tenant_id": config.auth.tenant_id or "",
+            "client_id": config.auth.client_id or "",
+        },
+        "scan": {
+            "max_file_size_mb": config.detection.max_file_size_mb,
+            "concurrent_files": 10,  # Default, could be added to config
+            "enable_ocr": config.detection.enable_ocr,
+        },
+        "entities": {
+            "enabled": [
+                "SSN", "CREDIT_CARD", "EMAIL", "PHONE", "PERSON",
+                "ADDRESS", "DATE_OF_BIRTH", "PASSPORT", "DRIVER_LICENSE",
+                "BANK_ACCOUNT", "IP_ADDRESS", "MEDICAL_RECORD"
+            ],  # All enabled by default
+        },
+    }
+
     return templates.TemplateResponse(
         "settings.html",
-        {"request": request, "active_page": "settings"},
+        {"request": request, "active_page": "settings", "settings": settings},
     )
 
 
@@ -719,6 +746,7 @@ async def results_list_partial(
     risk_tier: Optional[str] = None,
     entity_type: Optional[str] = None,
     has_label: Optional[str] = None,
+    scan_id: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
@@ -734,6 +762,8 @@ async def results_list_partial(
             query = query.where(ScanResult.label_applied == True)  # noqa: E712
         elif has_label == "false":
             query = query.where(ScanResult.label_applied == False)  # noqa: E712
+        if scan_id:
+            query = query.where(ScanResult.job_id == UUID(scan_id))
 
         # Count total
         count_query = select(func.count()).select_from(query.subquery())
