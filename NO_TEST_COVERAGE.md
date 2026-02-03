@@ -10,7 +10,7 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | Client | 2 | **Completed** (34 tests) |
 | Core/_rust | 3 | Not Started |
 | GUI | 17 | Not Started |
-| Jobs | 8 | **In Progress** (105 tests) |
+| Jobs | 8 | **Completed** (251 tests) |
 | Server routes | 16 | Not Started |
 | Server other | 2 | Not Started |
 | Web | 2 | Not Started |
@@ -77,13 +77,13 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
 | `src/openlabels/jobs/__init__.py` | 4 | 100% | Package init - TESTED |
-| `src/openlabels/jobs/inventory.py` | 128 | 0% | File inventory tracking |
+| `src/openlabels/jobs/inventory.py` | 128 | ~85% | File inventory tracking - TESTED (52 tests) |
 | `src/openlabels/jobs/queue.py` | 129 | 98% | Job queue management - TESTED (63 tests) |
-| `src/openlabels/jobs/scheduler.py` | 116 | 35% | Cron scheduler - TESTED (requires APScheduler) |
-| `src/openlabels/jobs/tasks/label.py` | 269 | 12% | Labeling task |
-| `src/openlabels/jobs/tasks/label_sync.py` | 154 | 13% | Label sync task |
-| `src/openlabels/jobs/tasks/scan.py` | 395 | 7% | Scan task |
-| `src/openlabels/jobs/worker.py` | 122 | 68% | Background worker - TESTED (42 tests) |
+| `src/openlabels/jobs/scheduler.py` | 116 | ~35% | Cron scheduler - TESTED (requires APScheduler) |
+| `src/openlabels/jobs/tasks/label.py` | 269 | ~45% | Labeling task - TESTED (36 tests) |
+| `src/openlabels/jobs/tasks/label_sync.py` | 154 | ~50% | Label sync task - TESTED (28 tests) |
+| `src/openlabels/jobs/tasks/scan.py` | 395 | ~30% | Scan task - TESTED (30 tests) |
+| `src/openlabels/jobs/worker.py` | 122 | ~68% | Background worker - TESTED (42 tests) |
 
 ---
 
