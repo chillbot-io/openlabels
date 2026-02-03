@@ -358,6 +358,9 @@ def database_url():
     Uses TEST_DATABASE_URL env var if set (PostgreSQL),
     otherwise returns None (tests requiring DB will be skipped).
 
+    IMPORTANT: Must be a PostgreSQL URL (postgresql+asyncpg://...).
+    SQLite is NOT supported because models use JSONB.
+
     To run with PostgreSQL locally:
         docker run -d --name test-postgres \\
             -e POSTGRES_PASSWORD=test \\
@@ -367,7 +370,11 @@ def database_url():
         export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
         pytest
     """
-    return os.getenv("TEST_DATABASE_URL")
+    url = os.getenv("TEST_DATABASE_URL")
+    if url and "postgresql" not in url:
+        # SQLite and other databases are not supported - models use JSONB
+        return None
+    return url
 
 
 @pytest.fixture
