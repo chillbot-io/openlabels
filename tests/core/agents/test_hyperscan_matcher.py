@@ -264,8 +264,18 @@ class TestHyperscanSpecific:
     """Tests that specifically require Hyperscan."""
 
     def test_using_hyperscan(self):
-        """Matcher uses Hyperscan when available."""
-        matcher = HyperscanMatcher()
+        """Matcher uses Hyperscan when available with compatible patterns."""
+        # Create patterns without word boundaries (which Hyperscan doesn't support)
+        patterns = [
+            Pattern(
+                id=1,
+                name="simple_email",
+                entity_type="EMAIL",
+                regex=r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                confidence=0.9,
+            )
+        ]
+        matcher = HyperscanMatcher(patterns=patterns)
         assert matcher.using_hyperscan
 
     def test_hyperscan_utf8_handling(self):

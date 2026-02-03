@@ -166,7 +166,7 @@ SUPPLEMENTAL_PATTERNS: List[Pattern] = [
         name="uk_postcode",
         entity_type="POSTCODE",
         regex=r"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b",
-        flags=PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST,
+        flags=PatternFlags.CASELESS,
         confidence=0.8,
     ),
     # Generic UUID
@@ -175,7 +175,7 @@ SUPPLEMENTAL_PATTERNS: List[Pattern] = [
         name="uuid",
         entity_type="UUID",
         regex=r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
-        flags=PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST,
+        flags=PatternFlags.CASELESS,
         confidence=0.95,
     ),
     # JWT Token

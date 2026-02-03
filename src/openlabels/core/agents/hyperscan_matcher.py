@@ -42,7 +42,8 @@ class PatternFlags(IntFlag):
     DOTALL = 2          # . matches newlines
     MULTILINE = 4       # ^ and $ match line boundaries
     SINGLEMATCH = 8     # Report only first match per pattern
-    SOM_LEFTMOST = 256  # Report start of match (required for extracting matches)
+    # Note: SOM_LEFTMOST (256) requires streaming mode in Hyperscan
+    # We use re-matching in block mode to find match start positions
 
 
 @dataclass
@@ -67,7 +68,7 @@ class Pattern:
     name: str
     entity_type: str
     regex: str
-    flags: PatternFlags = PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST
+    flags: PatternFlags = PatternFlags.CASELESS
     confidence: float = 1.0
     validator: Optional[Callable[[str], bool]] = None  # Post-match validation (e.g., Luhn check)
 
@@ -197,7 +198,7 @@ PII_PATTERNS: list[Pattern] = [
         name="medical_record_mrn",
         entity_type="MRN",
         regex=r"\b(?:MRN|MR#|Med\s*Rec)[-:\s#]*\d{6,12}\b",
-        flags=PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST,
+        flags=PatternFlags.CASELESS,
         confidence=0.95,
     ),
 
@@ -304,7 +305,7 @@ PII_PATTERNS: list[Pattern] = [
         name="generic_api_key",
         entity_type="API_KEY",
         regex=r"\b(?:api[_-]?key|apikey|api[_-]?secret)['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,64})['\"]?",
-        flags=PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST,
+        flags=PatternFlags.CASELESS,
         confidence=0.8,
     ),
 
@@ -328,7 +329,7 @@ PII_PATTERNS: list[Pattern] = [
         name="date_of_birth_label",
         entity_type="DOB",
         regex=r"\b(?:DOB|D\.O\.B\.|Date\s+of\s+Birth|Birth\s*date)[-:\s]*(?:0?[1-9]|1[0-2])[/\-](?:0?[1-9]|[12]\d|3[01])[/\-](?:19|20)\d{2}\b",
-        flags=PatternFlags.CASELESS | PatternFlags.SOM_LEFTMOST,
+        flags=PatternFlags.CASELESS,
         confidence=0.95,
     ),
 ]
@@ -428,20 +429,36 @@ class HyperscanMatcher:
 
     def _compile_hyperscan(self) -> None:
         """Compile patterns into Hyperscan database."""
+        import re as re_module
+
         expressions = []
         flags = []
         ids = []
+
+        # Also compile Python regex patterns for extracting match text
+        # (Hyperscan in block mode only reports end positions)
+        self._python_patterns: dict[int, re_module.Pattern] = {}
 
         for pattern in self.patterns:
             expressions.append(pattern.regex.encode('utf-8'))
             flags.append(int(pattern.flags))
             ids.append(pattern.id)
 
+            # Compile Python regex for match extraction
+            re_flags = 0
+            if pattern.flags & PatternFlags.CASELESS:
+                re_flags |= re_module.IGNORECASE
+            if pattern.flags & PatternFlags.DOTALL:
+                re_flags |= re_module.DOTALL
+            if pattern.flags & PatternFlags.MULTILINE:
+                re_flags |= re_module.MULTILINE
+            try:
+                self._python_patterns[pattern.id] = re_module.compile(pattern.regex, re_flags)
+            except re_module.error as e:
+                logger.warning(f"Failed to compile Python regex for {pattern.name}: {e}")
+
         try:
-            # Use SOM_HORIZON_LARGE mode to support SOM_LEFTMOST flag on patterns
-            # This allows Hyperscan to report start-of-match positions
-            mode = hyperscan.HS_MODE_BLOCK | hyperscan.HS_MODE_SOM_HORIZON_LARGE
-            self._db = hyperscan.Database(mode=mode)
+            self._db = hyperscan.Database(mode=hyperscan.HS_MODE_BLOCK)
             self._db.compile(
                 expressions=expressions,
                 flags=flags,
@@ -452,6 +469,9 @@ class HyperscanMatcher:
             logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database")
         except Exception as e:
             logger.error(f"Failed to compile Hyperscan database: {e}")
+            # Clear the database so we use fallback instead
+            self._db = None
+            self._scratch = None
             if self._use_fallback:
                 self._compile_fallback()
             else:
@@ -499,18 +519,50 @@ class HyperscanMatcher:
     def _scan_hyperscan(self, text: str) -> list[PatternMatch]:
         """Scan using Hyperscan."""
         matches: list[PatternMatch] = []
+        seen_matches: set[tuple[int, int, int]] = set()  # (pattern_id, start, end)
         text_bytes = text.encode('utf-8')
 
-        # Callback for each match
+        # Callback for each match - Hyperscan reports match end position in block mode
         def on_match(id: int, start: int, end: int, flags: int, context: None) -> Optional[bool]:
             pattern = self._pattern_map.get(id)
             if not pattern:
                 return None
 
-            # Convert byte offsets to character offsets (handle UTF-8)
-            char_start = len(text_bytes[:start].decode('utf-8', errors='replace'))
+            # Convert byte end offset to character offset
             char_end = len(text_bytes[:end].decode('utf-8', errors='replace'))
-            matched_text = text[char_start:char_end]
+
+            # Use Python regex to find the actual match ending at this position
+            # Search backwards from end to find where the match started
+            python_pattern = self._python_patterns.get(id)
+            if not python_pattern:
+                return None
+
+            # Search in the text up to the end position for the pattern
+            # Look at a reasonable window before the end position
+            search_start = max(0, char_end - 200)  # Look back up to 200 chars
+            search_text = text[search_start:char_end]
+
+            # Find all matches in this window and get the one that ends at char_end
+            matched_text = None
+            actual_start = None
+            actual_end = None
+
+            for m in python_pattern.finditer(search_text):
+                match_end_in_text = search_start + m.end()
+                if match_end_in_text == char_end:
+                    matched_text = m.group()
+                    actual_start = search_start + m.start()
+                    actual_end = char_end
+                    break
+
+            if not matched_text:
+                return None
+
+            # Deduplicate matches (same pattern at same position)
+            match_key = (id, actual_start, actual_end)
+            if match_key in seen_matches:
+                return None
+            seen_matches.add(match_key)
 
             # Run validator if defined
             validator = VALIDATORS.get(pattern.name)
@@ -521,8 +573,8 @@ class HyperscanMatcher:
                 pattern_id=pattern.id,
                 pattern_name=pattern.name,
                 entity_type=pattern.entity_type,
-                start=char_start,
-                end=char_end,
+                start=actual_start,
+                end=actual_end,
                 matched_text=matched_text,
                 confidence=pattern.confidence,
             ))
