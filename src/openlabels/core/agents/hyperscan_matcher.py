@@ -438,7 +438,10 @@ class HyperscanMatcher:
             ids.append(pattern.id)
 
         try:
-            self._db = hyperscan.Database()
+            # Use SOM_HORIZON_LARGE mode to support SOM_LEFTMOST flag on patterns
+            # This allows Hyperscan to report start-of-match positions
+            mode = hyperscan.HS_MODE_BLOCK | hyperscan.HS_MODE_SOM_HORIZON_LARGE
+            self._db = hyperscan.Database(mode=mode)
             self._db.compile(
                 expressions=expressions,
                 flags=flags,
