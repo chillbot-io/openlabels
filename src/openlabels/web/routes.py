@@ -673,12 +673,22 @@ async def recent_scans_partial(
         scans = result.scalars().all()
 
         for scan in scans:
+            # Get findings count for this scan
+            findings_query = select(func.sum(ScanResult.total_entities)).where(
+                ScanResult.job_id == scan.id
+            )
+            findings_result = await session.execute(findings_query)
+            findings_count = findings_result.scalar() or 0
+
             recent_scans.append({
                 "id": str(scan.id),
                 "target_name": scan.target_name or "Unknown",
                 "status": scan.status,
                 "files_scanned": scan.files_scanned or 0,
+                "findings_count": findings_count,
                 "created_at": scan.created_at,
+                "started_at": scan.started_at,
+                "completed_at": scan.completed_at,
             })
 
     return templates.TemplateResponse(

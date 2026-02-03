@@ -1,5 +1,5 @@
-{% if scans %}
-    {% for scan in scans %}
+{% if recent_scans %}
+    {% for scan in recent_scans %}
     <div class="px-4 py-4 sm:px-6 hover:bg-gray-50">
         <div class="flex items-center justify-between">
             <div class="flex items-center min-w-0">
@@ -41,7 +41,7 @@
                 </div>
             </div>
             <div class="ml-4 flex-shrink-0 text-sm text-gray-500">
-                {{ scan.started_at | default('') }}
+                {{ (scan.started_at or scan.created_at) | relative_time }}
             </div>
         </div>
     </div>

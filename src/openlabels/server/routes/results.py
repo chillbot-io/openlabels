@@ -173,18 +173,36 @@ async def get_result_stats(
 
 @router.get("/export")
 async def export_results(
-    job_id: UUID = Query(..., description="Job ID to export"),
+    job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
+    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    has_label: Optional[str] = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> StreamingResponse:
     """Export scan results as CSV or JSON."""
-    query = select(ScanResult).where(
-        ScanResult.tenant_id == user.tenant_id,
-        ScanResult.job_id == job_id,
-    )
+    query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+
+    # Apply filters
+    if job_id:
+        query = query.where(ScanResult.job_id == job_id)
+    if risk_tier:
+        query = query.where(ScanResult.risk_tier == risk_tier)
+    if has_label == "true":
+        query = query.where(ScanResult.label_applied == True)  # noqa: E712
+    elif has_label == "false":
+        query = query.where(ScanResult.label_applied == False)  # noqa: E712
+
     result = await session.execute(query)
     results = result.scalars().all()
+
+    # Generate filename based on filters
+    filename_parts = ["results"]
+    if job_id:
+        filename_parts.append(str(job_id)[:8])
+    if risk_tier:
+        filename_parts.append(risk_tier.lower())
+    filename = "_".join(filename_parts)
 
     if format == "csv":
         import csv
@@ -207,7 +225,7 @@ async def export_results(
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=results_{job_id}.csv"},
+            headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
         )
     else:
         import json
@@ -215,7 +233,7 @@ async def export_results(
         return StreamingResponse(
             iter([json.dumps(data, indent=2)]),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename=results_{job_id}.json"},
+            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
         )
 
 
@@ -289,3 +307,105 @@ async def delete_result(
 
     # Regular REST response
     return Response(status_code=204)
+
+
+@router.post("/{result_id}/apply-label")
+async def apply_recommended_label(
+    result_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Apply the recommended label to a scan result."""
+    from openlabels.jobs import JobQueue
+
+    result = await session.get(ScanResult, result_id)
+    if not result or result.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    # Check if there's a recommended label
+    if not result.recommended_label_id:
+        raise HTTPException(status_code=400, detail="No recommended label for this result")
+
+    # Enqueue labeling job
+    queue = JobQueue(session, user.tenant_id)
+    job_id = await queue.enqueue(
+        task_type="label",
+        payload={
+            "result_id": str(result_id),
+            "label_id": result.recommended_label_id,
+            "file_path": result.file_path,
+        },
+        priority=60,
+    )
+
+    # Check if HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": '{"notify": {"message": "Label application queued", "type": "success"}}',
+            },
+        )
+
+    return {"message": "Label application queued", "job_id": str(job_id)}
+
+
+@router.post("/{result_id}/rescan")
+async def rescan_file(
+    result_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+):
+    """Rescan a specific file."""
+    from openlabels.server.models import ScanJob
+    from openlabels.jobs import JobQueue
+
+    result = await session.get(ScanResult, result_id)
+    if not result or result.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    # Get the target name from the original job if available
+    target_name = "Rescan"
+    if result.job_id:
+        job = await session.get(ScanJob, result.job_id)
+        if job:
+            target_name = job.target_name or "Rescan"
+
+    # Create a new scan job for just this file
+    new_job = ScanJob(
+        tenant_id=user.tenant_id,
+        target_id=None,  # No specific target
+        target_name=f"{target_name}: {result.file_name}",
+        name=f"Rescan: {result.file_name}",
+        status="pending",
+        created_by=user.id,
+    )
+    session.add(new_job)
+    await session.flush()
+
+    # Enqueue the job
+    queue = JobQueue(session, user.tenant_id)
+    await queue.enqueue(
+        task_type="rescan",
+        payload={
+            "job_id": str(new_job.id),
+            "file_path": result.file_path,
+            "result_id": str(result_id),
+        },
+        priority=70,  # Higher priority for single file rescan
+    )
+
+    # Check if HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
+            },
+        )
+
+    return {"message": "Rescan queued", "job_id": str(new_job.id)}
