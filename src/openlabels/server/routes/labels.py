@@ -439,6 +439,9 @@ async def update_label_mappings(
         await session.delete(rule)
 
     # Create new rules for non-empty mappings
+    # Flush after deletes to avoid sentinel matching issues with asyncpg
+    await session.flush()
+
     priority = 100
     for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
         label_id = data.get(risk_tier)
@@ -455,9 +458,9 @@ async def update_label_mappings(
                     created_by=user.id,
                 )
                 session.add(rule)
+                # Flush each insert individually to avoid asyncpg sentinel matching issues
+                await session.flush()
         priority -= 10
-
-    await session.flush()
 
     # Check if HTMX request
     if request.headers.get("HX-Request"):
