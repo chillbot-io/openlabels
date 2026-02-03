@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}{% if target %}Edit Target{% else %}New Target{% endif %} - OpenLabels{% endblock %}
+{% block page_title %}{% if target %}Edit Target{% else %}New Target{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <form
+        method="POST"
+        action="/api/targets{% if target %}/{{ target.id }}{% endif %}"
+        hx-post="/api/targets{% if target %}/{{ target.id }}{% endif %}"
+        hx-swap="none"
+        x-data="{
+            adapter: '{{ target.adapter if target else 'filesystem' }}',
+            submitting: false
+        }"
+        @htmx:before-request="submitting = true"
+        @htmx:after-request="submitting = false"
+        @htmx:response-error="alert('Error saving target')"
+    >
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-4 py-5 sm:p-6 space-y-6">
+                <!-- Name -->
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700">Target Name</label>
+                    <input
+                        type="text"
+                        name="name"
+                        id="name"
+                        value="{{ target.name if target else '' }}"
+                        required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        placeholder="My SharePoint Site"
+                    >
+                </div>
+
+                <!-- Adapter Type -->
+                <div>
+                    <label for="adapter" class="block text-sm font-medium text-gray-700">Adapter Type</label>
+                    <select
+                        name="adapter"
+                        id="adapter"
+                        x-model="adapter"
+                        required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    >
+                        <option value="filesystem">Filesystem</option>
+                        <option value="sharepoint">SharePoint</option>
+                        <option value="onedrive">OneDrive</option>
+                        <option value="azure_blob">Azure Blob Storage</option>
+                        <option value="s3">Amazon S3</option>
+                    </select>
+                </div>
+
+                <!-- Filesystem Config -->
+                <div x-show="adapter === 'filesystem'" class="space-y-4">
+                    <div>
+                        <label for="fs_path" class="block text-sm font-medium text-gray-700">Path</label>
+                        <input
+                            type="text"
+                            name="config[path]"
+                            id="fs_path"
+                            value="{{ target.config.path if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="/data/files"
+                        >
+                    </div>
+                </div>
+
+                <!-- SharePoint Config -->
+                <div x-show="adapter === 'sharepoint'" class="space-y-4">
+                    <div>
+                        <label for="sp_site_url" class="block text-sm font-medium text-gray-700">Site URL</label>
+                        <input
+                            type="url"
+                            name="config[site_url]"
+                            id="sp_site_url"
+                            value="{{ target.config.site_url if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="https://contoso.sharepoint.com/sites/mysite"
+                        >
+                    </div>
+                    <div>
+                        <label for="sp_library" class="block text-sm font-medium text-gray-700">Document Library</label>
+                        <input
+                            type="text"
+                            name="config[library]"
+                            id="sp_library"
+                            value="{{ target.config.library if target and target.config else 'Documents' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="Documents"
+                        >
+                    </div>
+                </div>
+
+                <!-- OneDrive Config -->
+                <div x-show="adapter === 'onedrive'" class="space-y-4">
+                    <div>
+                        <label for="od_user" class="block text-sm font-medium text-gray-700">User Email</label>
+                        <input
+                            type="email"
+                            name="config[user_email]"
+                            id="od_user"
+                            value="{{ target.config.user_email if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="user@contoso.com"
+                        >
+                    </div>
+                    <div>
+                        <label for="od_folder" class="block text-sm font-medium text-gray-700">Folder Path (optional)</label>
+                        <input
+                            type="text"
+                            name="config[folder_path]"
+                            id="od_folder"
+                            value="{{ target.config.folder_path if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="/Documents/Sensitive"
+                        >
+                    </div>
+                </div>
+
+                <!-- Azure Blob Config -->
+                <div x-show="adapter === 'azure_blob'" class="space-y-4">
+                    <div>
+                        <label for="az_account" class="block text-sm font-medium text-gray-700">Storage Account</label>
+                        <input
+                            type="text"
+                            name="config[storage_account]"
+                            id="az_account"
+                            value="{{ target.config.storage_account if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="mystorageaccount"
+                        >
+                    </div>
+                    <div>
+                        <label for="az_container" class="block text-sm font-medium text-gray-700">Container</label>
+                        <input
+                            type="text"
+                            name="config[container]"
+                            id="az_container"
+                            value="{{ target.config.container if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="documents"
+                        >
+                    </div>
+                </div>
+
+                <!-- S3 Config -->
+                <div x-show="adapter === 's3'" class="space-y-4">
+                    <div>
+                        <label for="s3_bucket" class="block text-sm font-medium text-gray-700">Bucket Name</label>
+                        <input
+                            type="text"
+                            name="config[bucket]"
+                            id="s3_bucket"
+                            value="{{ target.config.bucket if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="my-bucket"
+                        >
+                    </div>
+                    <div>
+                        <label for="s3_region" class="block text-sm font-medium text-gray-700">Region</label>
+                        <input
+                            type="text"
+                            name="config[region]"
+                            id="s3_region"
+                            value="{{ target.config.region if target and target.config else 'us-east-1' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="us-east-1"
+                        >
+                    </div>
+                    <div>
+                        <label for="s3_prefix" class="block text-sm font-medium text-gray-700">Prefix (optional)</label>
+                        <input
+                            type="text"
+                            name="config[prefix]"
+                            id="s3_prefix"
+                            value="{{ target.config.prefix if target and target.config else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="documents/"
+                        >
+                    </div>
+                </div>
+
+                <!-- Enabled toggle -->
+                <div class="flex items-center">
+                    <input
+                        type="checkbox"
+                        name="enabled"
+                        id="enabled"
+                        {% if target and target.enabled %}checked{% elif not target %}checked{% endif %}
+                        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    >
+                    <label for="enabled" class="ml-2 block text-sm text-gray-900">Enabled</label>
+                </div>
+            </div>
+
+            <div class="px-4 py-3 bg-gray-50 text-right sm:px-6 space-x-3">
+                <a
+                    href="/ui/targets"
+                    class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                >
+                    Cancel
+                </a>
+                <button
+                    type="submit"
+                    :disabled="submitting"
+                    class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                >
+                    <span x-show="!submitting">{% if target %}Save Changes{% else %}Create Target{% endif %}</span>
+                    <span x-show="submitting">Saving...</span>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

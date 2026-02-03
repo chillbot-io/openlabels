@@ -1,0 +1,57 @@
+{% if scans %}
+    {% for scan in scans %}
+    <div class="px-4 py-4 sm:px-6 hover:bg-gray-50">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center min-w-0">
+                <div class="flex-shrink-0">
+                    {% if scan.status == 'running' %}
+                    <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100">
+                        <svg class="w-4 h-4 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </span>
+                    {% elif scan.status == 'completed' %}
+                    <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-green-100">
+                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </span>
+                    {% elif scan.status == 'failed' %}
+                    <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-red-100">
+                        <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gray-100">
+                        <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="ml-4 min-w-0">
+                    <a href="/ui/scans/{{ scan.id }}" class="text-sm font-medium text-gray-900 truncate hover:text-primary-600">
+                        {{ scan.target_name | default('Unknown Target') }}
+                    </a>
+                    <p class="text-sm text-gray-500">
+                        {{ scan.files_scanned | default(0) }} files
+                        {% if scan.findings_count %}&middot; {{ scan.findings_count }} findings{% endif %}
+                    </p>
+                </div>
+            </div>
+            <div class="ml-4 flex-shrink-0 text-sm text-gray-500">
+                {{ scan.started_at | default('') }}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="px-4 py-8 text-center text-gray-500">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <p class="mt-2">No scans yet</p>
+        <a href="/ui/scans/new" class="mt-2 inline-block text-primary-600 hover:text-primary-800">Start your first scan</a>
+    </div>
+{% endif %}

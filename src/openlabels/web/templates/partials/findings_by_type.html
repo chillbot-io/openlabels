@@ -1,0 +1,28 @@
+{% if findings_by_type %}
+<div class="space-y-3">
+    {% for finding in findings_by_type %}
+    <div class="flex items-center">
+        <div class="flex-1">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-sm font-medium text-gray-700">{{ finding.entity_type }}</span>
+                <span class="text-sm text-gray-500">{{ finding.count }}</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div
+                    class="h-2 rounded-full
+                        {% if finding.risk == 'CRITICAL' %}bg-red-500
+                        {% elif finding.risk == 'HIGH' %}bg-orange-500
+                        {% elif finding.risk == 'MEDIUM' %}bg-yellow-500
+                        {% else %}bg-blue-500{% endif %}"
+                    style="width: {{ finding.percentage | default(0) }}%"
+                ></div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-8 text-gray-500">
+    <p>No findings data available</p>
+</div>
+{% endif %}

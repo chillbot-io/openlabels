@@ -1,0 +1,49 @@
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="text-center p-4 bg-gray-50 rounded-lg">
+        <div class="text-2xl font-bold text-gray-900">{{ stats.pending | default(0) }}</div>
+        <div class="text-sm text-gray-500">Pending</div>
+    </div>
+    <div class="text-center p-4 bg-yellow-50 rounded-lg">
+        <div class="text-2xl font-bold text-yellow-700">{{ stats.running | default(0) }}</div>
+        <div class="text-sm text-yellow-600">Running</div>
+    </div>
+    <div class="text-center p-4 bg-green-50 rounded-lg">
+        <div class="text-2xl font-bold text-green-700">{{ stats.completed | default(0) }}</div>
+        <div class="text-sm text-green-600">Completed</div>
+    </div>
+    <div class="text-center p-4 bg-red-50 rounded-lg">
+        <div class="text-2xl font-bold text-red-700">{{ stats.failed | default(0) }}</div>
+        <div class="text-sm text-red-600">Failed</div>
+    </div>
+    <div class="text-center p-4 bg-gray-50 rounded-lg">
+        <div class="text-2xl font-bold text-gray-700">{{ stats.cancelled | default(0) }}</div>
+        <div class="text-sm text-gray-500">Cancelled</div>
+    </div>
+</div>
+
+{% if failed_jobs %}
+<div class="mt-6">
+    <h4 class="text-sm font-medium text-gray-900 mb-3">Recent Failed Jobs</h4>
+    <div class="space-y-2">
+        {% for job in failed_jobs %}
+        <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 truncate">{{ job.task_type }}</p>
+                <p class="text-xs text-red-600 truncate">{{ job.error or 'Unknown error' }}</p>
+            </div>
+            <div class="ml-4 flex items-center space-x-2">
+                <span class="text-xs text-gray-500">{{ job.failed_at | relative_time }}</span>
+                <button
+                    type="button"
+                    class="text-xs text-primary-600 hover:text-primary-800"
+                    hx-post="/api/jobs/{{ job.id }}/retry"
+                    hx-swap="none"
+                >
+                    Retry
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Targets - OpenLabels{% endblock %}
+{% block page_title %}Scan Targets{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header with actions -->
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-sm text-gray-500">Configure data sources to scan for sensitive information</p>
+        </div>
+        <a
+            href="/ui/targets/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+        >
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            </svg>
+            Add Target
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex flex-wrap gap-4">
+            <div>
+                <label for="adapter-filter" class="block text-sm font-medium text-gray-700 mb-1">Adapter Type</label>
+                <select
+                    id="adapter-filter"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/targets-list"
+                    hx-target="#targets-list"
+                    hx-trigger="change"
+                    hx-include="[name='page_size']"
+                    name="adapter"
+                >
+                    <option value="">All Types</option>
+                    <option value="filesystem">Filesystem</option>
+                    <option value="sharepoint">SharePoint</option>
+                    <option value="onedrive">OneDrive</option>
+                    <option value="azure_blob">Azure Blob</option>
+                    <option value="s3">Amazon S3</option>
+                </select>
+            </div>
+            <div>
+                <label for="page-size" class="block text-sm font-medium text-gray-700 mb-1">Per Page</label>
+                <select
+                    id="page-size"
+                    name="page_size"
+                    class="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                    hx-get="/ui/partials/targets-list"
+                    hx-target="#targets-list"
+                    hx-trigger="change"
+                    hx-include="[name='adapter']"
+                >
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Targets list -->
+    <div class="bg-white rounded-lg shadow">
+        <div
+            id="targets-list"
+            hx-get="/ui/partials/targets-list"
+            hx-trigger="load"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/targets_list.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}
