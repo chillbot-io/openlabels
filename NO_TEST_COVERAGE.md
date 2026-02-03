@@ -7,10 +7,10 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | Category | Files | Status |
 |----------|-------|--------|
 | Auth | 3 | **Completed** (72 tests) |
-| Client | 2 | Not Started |
+| Client | 2 | **Completed** (34 tests) |
 | Core/_rust | 3 | Not Started |
 | GUI | 17 | Not Started |
-| Jobs | 8 | Not Started |
+| Jobs | 8 | **In Progress** (105 tests) |
 | Server routes | 16 | Not Started |
 | Server other | 2 | Not Started |
 | Web | 2 | Not Started |
@@ -33,8 +33,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/client/__init__.py` | 2 | 0% | Package init |
-| `src/openlabels/client/client.py` | 88 | 0% | API client library |
+| `src/openlabels/client/__init__.py` | 2 | 100% | Package init - TESTED |
+| `src/openlabels/client/client.py` | 88 | ~90% | API client library - TESTED (34 tests) |
 
 ---
 
@@ -76,14 +76,14 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/jobs/__init__.py` | 4 | 0% | Package init |
+| `src/openlabels/jobs/__init__.py` | 4 | 100% | Package init - TESTED |
 | `src/openlabels/jobs/inventory.py` | 128 | 0% | File inventory tracking |
-| `src/openlabels/jobs/queue.py` | 129 | 0% | Job queue management |
-| `src/openlabels/jobs/scheduler.py` | 116 | 0% | Cron scheduler |
-| `src/openlabels/jobs/tasks/label.py` | 269 | 0% | Labeling task |
-| `src/openlabels/jobs/tasks/label_sync.py` | 154 | 0% | Label sync task |
-| `src/openlabels/jobs/tasks/scan.py` | 395 | 0% | Scan task |
-| `src/openlabels/jobs/worker.py` | 122 | 0% | Background worker |
+| `src/openlabels/jobs/queue.py` | 129 | 98% | Job queue management - TESTED (63 tests) |
+| `src/openlabels/jobs/scheduler.py` | 116 | 35% | Cron scheduler - TESTED (requires APScheduler) |
+| `src/openlabels/jobs/tasks/label.py` | 269 | 12% | Labeling task |
+| `src/openlabels/jobs/tasks/label_sync.py` | 154 | 13% | Label sync task |
+| `src/openlabels/jobs/tasks/scan.py` | 395 | 7% | Scan task |
+| `src/openlabels/jobs/worker.py` | 122 | 68% | Background worker - TESTED (42 tests) |
 
 ---
 
