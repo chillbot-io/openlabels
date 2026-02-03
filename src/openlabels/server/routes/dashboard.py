@@ -338,6 +338,10 @@ async def get_heatmap(
     tree: dict = {}
     for r in results:
         parts = r.file_path.replace("\\", "/").split("/")
+        # Filter out empty parts (from leading slashes like /path/to/file)
+        parts = [p for p in parts if p]
+        if not parts:
+            continue
         current = tree
         for i, part in enumerate(parts[:-1]):
             if part not in current:

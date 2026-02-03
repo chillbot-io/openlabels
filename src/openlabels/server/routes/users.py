@@ -110,6 +110,9 @@ async def create_user(
     session.add(new_user)
     await session.flush()
 
+    # Refresh to load server-generated defaults (created_at)
+    await session.refresh(new_user)
+
     return new_user
 
 

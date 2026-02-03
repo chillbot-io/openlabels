@@ -81,6 +81,22 @@ class PurgeRequest(BaseModel):
     older_than_days: Optional[int] = None
 
 
+@router.get("", response_model=QueueStatsResponse)
+async def list_jobs(
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
+) -> QueueStatsResponse:
+    """
+    Get job queue statistics.
+
+    Returns counts of jobs by status and failed jobs by task type.
+    This is the default endpoint for /api/jobs.
+    """
+    queue = JobQueue(session, user.tenant_id)
+    stats = await queue.get_queue_stats()
+    return QueueStatsResponse(**stats)
+
+
 @router.get("/stats", response_model=QueueStatsResponse)
 async def get_queue_stats(
     session: AsyncSession = Depends(get_session),

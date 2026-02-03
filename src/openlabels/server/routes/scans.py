@@ -91,6 +91,9 @@ async def create_scan(
         priority=50,
     )
 
+    # Refresh to load server-generated defaults (created_at)
+    await session.refresh(job)
+
     return job
 
 

@@ -268,6 +268,9 @@ async def quarantine_file(
     session.add(audit)
     await session.flush()
 
+    # Refresh to load server-generated defaults (created_at)
+    await session.refresh(action)
+
     return action
 
 
@@ -357,6 +360,9 @@ async def lockdown_file(
     )
     session.add(audit)
     await session.flush()
+
+    # Refresh to load server-generated defaults (created_at)
+    await session.refresh(action)
 
     return action
 
@@ -493,6 +499,9 @@ async def rollback_action(
     )
     session.add(audit)
     await session.flush()
+
+    # Refresh to load server-generated defaults (created_at)
+    await session.refresh(rollback)
 
     return rollback
 
