@@ -186,7 +186,13 @@ async def monitoring_page(request: Request):
     """Monitoring page."""
     return templates.TemplateResponse(
         "monitoring.html",
-        {"request": request, "active_page": "monitoring"},
+        {
+            "request": request,
+            "active_page": "monitoring",
+            "stats": {"pending": 0, "running": 0, "completed": 0, "failed": 0, "cancelled": 0},
+            "activity_logs": [],
+            "jobs": [],
+        },
     )
 
 
@@ -349,19 +355,23 @@ async def scan_detail_page(
     if user:
         scan_obj = await session.get(ScanJob, scan_id)
         if scan_obj and scan_obj.tenant_id == user.tenant_id:
-            progress = 0
-            if scan_obj.total_files and scan_obj.total_files > 0:
-                progress = int((scan_obj.files_scanned or 0) / scan_obj.total_files * 100)
+            # Get total_files from progress JSONB column
+            progress_data = scan_obj.progress or {}
+            total_files = progress_data.get("files_total", 0)
+
+            progress_pct = 0
+            if total_files and total_files > 0:
+                progress_pct = int((scan_obj.files_scanned or 0) / total_files * 100)
             elif scan_obj.status == "completed":
-                progress = 100
+                progress_pct = 100
 
             scan = {
                 "id": str(scan_obj.id),
                 "target_name": scan_obj.target_name or "Unknown",
                 "status": scan_obj.status,
                 "files_scanned": scan_obj.files_scanned or 0,
-                "total_files": scan_obj.total_files or 0,
-                "progress": progress,
+                "total_files": total_files,
+                "progress": progress_pct,
                 "error": scan_obj.error,
                 "created_at": scan_obj.created_at,
                 "started_at": scan_obj.started_at,
@@ -1117,7 +1127,7 @@ async def job_queue_partial(
                 JobQueueModel.tenant_id == user.tenant_id,
                 JobQueueModel.status == "failed",
             )
-            .order_by(desc(JobQueueModel.updated_at))
+            .order_by(desc(JobQueueModel.completed_at))
             .limit(5)
         )
         result = await session.execute(failed_query)
@@ -1126,7 +1136,7 @@ async def job_queue_partial(
                 "id": str(job.id),
                 "task_type": job.task_type,
                 "error": job.error,
-                "failed_at": job.updated_at,
+                "failed_at": job.completed_at,
             })
 
     return templates.TemplateResponse(
@@ -1187,7 +1197,7 @@ async def labels_list_partial(
                 "description": label.description,
                 "color": label.color,
                 "priority": label.priority,
-                "synced_at": label.updated_at,
+                "synced_at": label.synced_at,
             })
 
     return templates.TemplateResponse(
