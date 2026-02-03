@@ -8,12 +8,12 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 |----------|-------|--------|
 | Auth | 3 | **Completed** (72 tests) |
 | Client | 2 | **Completed** (34 tests) |
-| Core/_rust | 3 | Not Started |
+| Core/_rust | 3 | **In Progress** (95 tests) |
 | GUI | 17 | Not Started |
 | Jobs | 8 | **Completed** (251 tests) |
-| Server routes | 16 | **In Progress** (121 tests for 5 routes) |
-| Server other | 2 | Not Started |
-| Web | 2 | Not Started |
+| Server routes | 16 | **In Progress** (431 tests for 13 routes) |
+| Server other | 2 | **In Progress** (45 tests) |
+| Web | 2 | **In Progress** (85 tests) |
 | Windows | 3 | Not Started |
 | **Total** | **53** | |
 
@@ -42,9 +42,9 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/core/_rust/__init__.py` | 86 | 0% | Rust binding loader |
-| `src/openlabels/core/_rust/patterns_py.py` | 1 | 0% | Pattern fallback |
-| `src/openlabels/core/_rust/validators_py.py` | 120 | 0% | Validator fallback |
+| `src/openlabels/core/_rust/__init__.py` | 86 | ~80% | Rust binding loader - TESTED (45 tests) |
+| `src/openlabels/core/_rust/patterns_py.py` | 1 | ~90% | Pattern fallback - TESTED (8 tests) |
+| `src/openlabels/core/_rust/validators_py.py` | 120 | ~85% | Validator fallback - TESTED (42 tests) |
 
 ---
 
@@ -94,18 +94,18 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | `src/openlabels/server/routes/__init__.py` | 2 | 100% | Routes init - TESTED |
 | `src/openlabels/server/routes/audit.py` | 76 | ~80% | Audit log endpoints - TESTED (30 tests) |
 | `src/openlabels/server/routes/auth.py` | 218 | ~25% | Auth endpoints - partial coverage |
-| `src/openlabels/server/routes/dashboard.py` | 159 | ~30% | Dashboard endpoints - partial coverage |
+| `src/openlabels/server/routes/dashboard.py` | 159 | ~75% | Dashboard endpoints - TESTED (45 tests) |
 | `src/openlabels/server/routes/health.py` | 141 | ~75% | Health endpoints - TESTED (24 tests) |
 | `src/openlabels/server/routes/jobs.py` | 112 | ~85% | Jobs endpoints - TESTED (28 tests) |
-| `src/openlabels/server/routes/labels.py` | 196 | ~40% | Labels endpoints - partial coverage |
-| `src/openlabels/server/routes/monitoring.py` | 186 | ~40% | Monitoring endpoints - partial coverage |
-| `src/openlabels/server/routes/remediation.py` | 191 | ~30% | Remediation endpoints - partial coverage |
-| `src/openlabels/server/routes/results.py` | 186 | ~50% | Results endpoints - partial coverage |
+| `src/openlabels/server/routes/labels.py` | 196 | ~75% | Labels endpoints - TESTED (40 tests) |
+| `src/openlabels/server/routes/monitoring.py` | 186 | ~75% | Monitoring endpoints - TESTED (40 tests) |
+| `src/openlabels/server/routes/remediation.py` | 191 | ~70% | Remediation endpoints - TESTED (45 tests) |
+| `src/openlabels/server/routes/results.py` | 186 | ~75% | Results endpoints - TESTED (45 tests) |
 | `src/openlabels/server/routes/scans.py` | 114 | ~85% | Scans endpoints - TESTED (18 tests) |
-| `src/openlabels/server/routes/schedules.py` | 90 | ~50% | Schedules endpoints - partial coverage |
-| `src/openlabels/server/routes/settings.py` | 33 | 0% | Settings endpoints |
+| `src/openlabels/server/routes/schedules.py` | 90 | ~75% | Schedules endpoints - TESTED (35 tests) |
+| `src/openlabels/server/routes/settings.py` | 33 | ~85% | Settings endpoints - TESTED (25 tests) |
 | `src/openlabels/server/routes/targets.py` | 83 | ~85% | Targets endpoints - TESTED (21 tests) |
-| `src/openlabels/server/routes/users.py` | 76 | ~55% | Users endpoints - partial coverage |
+| `src/openlabels/server/routes/users.py` | 76 | ~80% | Users endpoints - TESTED (35 tests) |
 | `src/openlabels/server/routes/ws.py` | 131 | ~25% | WebSocket endpoints - partial coverage |
 
 ---
@@ -114,8 +114,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/server/app.py` | 93 | 0% | FastAPI app setup |
-| `src/openlabels/server/logging.py` | 94 | 0% | Structured logging |
+| `src/openlabels/server/app.py` | 93 | ~70% | FastAPI app setup - TESTED (20 tests) |
+| `src/openlabels/server/logging.py` | 94 | ~75% | Structured logging - TESTED (25 tests) |
 
 ---
 
@@ -123,8 +123,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/web/__init__.py` | 2 | 0% | Package init |
-| `src/openlabels/web/routes.py` | 470 | 0% | Web UI routes |
+| `src/openlabels/web/__init__.py` | 2 | 100% | Package init - TESTED |
+| `src/openlabels/web/routes.py` | 470 | ~75% | Web UI routes - TESTED (85 tests) |
 
 ---
 
@@ -139,3 +139,37 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 ---
 
 *Last updated: 2026-02-03*
+
+## Recent Test Additions
+
+### 2026-02-03 - Server Routes Expansion
+Added comprehensive tests for 5 additional server routes:
+- **settings.py**: 25 tests covering Azure, scan, and entity settings
+- **dashboard.py**: 45 tests covering stats, trends, heatmaps
+- **users.py**: 35 tests covering CRUD operations and tenant isolation
+- **schedules.py**: 35 tests covering CRUD and trigger operations
+- **remediation.py**: 45 tests covering quarantine, lockdown, and rollback
+
+### 2026-02-03 - Server Other & Additional Routes
+Added comprehensive tests for server infrastructure and 3 more routes:
+- **app.py**: 20 tests covering middleware, request ID, CORS, health endpoints
+- **logging.py**: 25 tests covering JSONFormatter, DevelopmentFormatter, ContextLogger
+- **labels.py**: 40 tests covering label CRUD, sync status, rules, mappings
+- **monitoring.py**: 40 tests covering monitored files, access events, anomaly detection
+- **results.py**: 45 tests covering results listing, stats, export, rescan actions
+
+### 2026-02-03 - Core Rust Bindings
+Added comprehensive tests for pattern matching and validation:
+- **_rust/__init__.py**: 45 tests covering PatternMatcherWrapper, MatchResult, find_matches, batch processing
+- **validators_py.py**: 42 tests covering all validators (Luhn, SSN, phone, email, IPv4, IBAN, NPI, CUSIP, ISIN)
+- **patterns_py.py**: 8 tests covering BUILTIN_PATTERNS definitions and regex validation
+
+### 2026-02-03 - Web UI Routes
+Added comprehensive tests for web UI module:
+- **routes.py**: 85 tests covering:
+  - Helper functions (format_relative_time, truncate_string)
+  - Page routes (dashboard, targets, scans, results, labels, monitoring, settings)
+  - Detail pages (target, scan, result, schedule edit pages)
+  - Form handlers (create/update targets, schedules, scans)
+  - HTMX partials (dashboard stats, lists, health status, job queue)
+  - Tenant isolation and pagination
