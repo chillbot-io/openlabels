@@ -13,7 +13,7 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | Jobs | 8 | **Completed** (251 tests) |
 | Server routes | 16 | **In Progress** (431 tests for 13 routes) |
 | Server other | 2 | **In Progress** (45 tests) |
-| Web | 2 | Not Started |
+| Web | 2 | **In Progress** (85 tests) |
 | Windows | 3 | Not Started |
 | **Total** | **53** | |
 
@@ -123,8 +123,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/web/__init__.py` | 2 | 0% | Package init |
-| `src/openlabels/web/routes.py` | 470 | 0% | Web UI routes |
+| `src/openlabels/web/__init__.py` | 2 | 100% | Package init - TESTED |
+| `src/openlabels/web/routes.py` | 470 | ~75% | Web UI routes - TESTED (85 tests) |
 
 ---
 
@@ -163,3 +163,13 @@ Added comprehensive tests for pattern matching and validation:
 - **_rust/__init__.py**: 45 tests covering PatternMatcherWrapper, MatchResult, find_matches, batch processing
 - **validators_py.py**: 42 tests covering all validators (Luhn, SSN, phone, email, IPv4, IBAN, NPI, CUSIP, ISIN)
 - **patterns_py.py**: 8 tests covering BUILTIN_PATTERNS definitions and regex validation
+
+### 2026-02-03 - Web UI Routes
+Added comprehensive tests for web UI module:
+- **routes.py**: 85 tests covering:
+  - Helper functions (format_relative_time, truncate_string)
+  - Page routes (dashboard, targets, scans, results, labels, monitoring, settings)
+  - Detail pages (target, scan, result, schedule edit pages)
+  - Form handlers (create/update targets, schedules, scans)
+  - HTMX partials (dashboard stats, lists, health status, job queue)
+  - Tenant isolation and pagination
