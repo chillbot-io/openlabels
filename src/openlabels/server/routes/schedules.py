@@ -80,6 +80,7 @@ async def create_schedule(
         name=request.name,
         target_id=request.target_id,
         cron=request.cron,
+        enabled=True,  # Explicitly set default to ensure it's available before flush
         created_by=user.id,
     )
 
@@ -89,6 +90,7 @@ async def create_schedule(
 
     session.add(schedule)
     await session.flush()
+
     return schedule
 
 

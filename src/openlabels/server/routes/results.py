@@ -367,17 +367,23 @@ async def rescan_file(
     if not result or result.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    # Get the target name from the original job if available
+    # Get the target info from the original job
     target_name = "Rescan"
+    target_id = None
     if result.job_id:
         job = await session.get(ScanJob, result.job_id)
         if job:
             target_name = job.target_name or "Rescan"
+            target_id = job.target_id
+
+    # target_id is required - if we can't find it, return an error
+    if target_id is None:
+        raise HTTPException(status_code=400, detail="Cannot rescan: original scan target not found")
 
     # Create a new scan job for just this file
     new_job = ScanJob(
         tenant_id=user.tenant_id,
-        target_id=None,  # No specific target
+        target_id=target_id,
         target_name=f"{target_name}: {result.file_name}",
         name=f"Rescan: {result.file_name}",
         status="pending",

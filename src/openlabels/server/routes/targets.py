@@ -110,10 +110,12 @@ async def create_target(
         name=request.name,
         adapter=request.adapter,
         config=request.config,
+        enabled=True,  # Explicitly set default to ensure it's available before flush
         created_by=user.id,
     )
     session.add(target)
     await session.flush()
+
     return target
 
 

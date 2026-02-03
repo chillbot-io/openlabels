@@ -214,6 +214,9 @@ async def enable_file_monitoring(
     session.add(audit)
     await session.flush()
 
+    # Refresh to load server-generated defaults (added_at)
+    await session.refresh(monitored)
+
     return monitored
 
 
