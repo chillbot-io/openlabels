@@ -457,33 +457,42 @@ class HyperscanMatcher:
             except re_module.error as e:
                 logger.warning(f"Failed to compile Python regex for {pattern.name}: {e}")
 
-        try:
-            # Use SOM_HORIZON_LARGE mode to support SOM_LEFTMOST flag on patterns
-            # This allows Hyperscan to report start-of-match positions
-            mode = hyperscan.HS_MODE_BLOCK | hyperscan.HS_MODE_SOM_HORIZON_LARGE
-            import sys
-            print(f"DEBUG: Hyperscan mode = {mode} (BLOCK={hyperscan.HS_MODE_BLOCK}, SOM_LARGE={hyperscan.HS_MODE_SOM_HORIZON_LARGE})", file=sys.stderr)
-            self._db = hyperscan.Database(mode=mode)
-            self._db.compile(
-                expressions=expressions,
-                flags=flags,
-                ids=ids,
+        # Try different Hyperscan modes - SOM mode may not be available on all systems
+        modes_to_try = []
+
+        # Try SOM mode first if available (allows start-of-match tracking)
+        if hasattr(hyperscan, 'HS_MODE_SOM_HORIZON_LARGE'):
+            modes_to_try.append(
+                ('SOM_HORIZON_LARGE', hyperscan.HS_MODE_BLOCK | hyperscan.HS_MODE_SOM_HORIZON_LARGE)
             )
-            print(f"DEBUG: Compiled {len(expressions)} patterns successfully", file=sys.stderr)
-            self._scratch = hyperscan.Scratch(self._db)
-            self._compiled = True
-            logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database")
-        except Exception as e:
-            import sys
-            print(f"DEBUG: Compile error: {e}", file=sys.stderr)
-            logger.error(f"Failed to compile Hyperscan database: {e}")
-            # Clear the database so we use fallback instead
-            self._db = None
-            self._scratch = None
-            if self._use_fallback:
-                self._compile_fallback()
-            else:
-                raise
+
+        # Fall back to basic block mode
+        modes_to_try.append(('BLOCK', hyperscan.HS_MODE_BLOCK))
+
+        for mode_name, mode in modes_to_try:
+            try:
+                self._db = hyperscan.Database(mode=mode)
+                self._db.compile(
+                    expressions=expressions,
+                    flags=flags,
+                    ids=ids,
+                )
+                self._scratch = hyperscan.Scratch(self._db)
+                self._compiled = True
+                logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database (mode={mode_name})")
+                return  # Success
+            except Exception as e:
+                logger.debug(f"Hyperscan compile with mode {mode_name} failed: {e}")
+                self._db = None
+                self._scratch = None
+                continue
+
+        # All Hyperscan modes failed, use fallback
+        logger.warning("All Hyperscan compilation modes failed, using Python regex fallback")
+        if self._use_fallback:
+            self._compile_fallback()
+        else:
+            raise RuntimeError("Failed to compile Hyperscan database and fallback disabled")
 
     def _compile_fallback(self) -> None:
         """Compile patterns using standard Python regex."""
