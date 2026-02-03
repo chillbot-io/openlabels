@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}{{ error_code }} Error - OpenLabels{% endblock %}
+{% block page_title %}Error{% endblock %}
+
+{% block content %}
+<div class="min-h-96 flex items-center justify-center">
+    <div class="text-center">
+        <p class="text-6xl font-bold text-gray-300">{{ error_code }}</p>
+        <h1 class="mt-4 text-2xl font-semibold text-gray-900">
+            {% if error_code == 404 %}
+            Page Not Found
+            {% elif error_code == 500 %}
+            Server Error
+            {% elif error_code == 403 %}
+            Access Denied
+            {% else %}
+            Something went wrong
+            {% endif %}
+        </h1>
+        <p class="mt-2 text-gray-600">
+            {% if error_message %}
+            {{ error_message }}
+            {% elif error_code == 404 %}
+            The page you're looking for doesn't exist or has been moved.
+            {% elif error_code == 500 %}
+            An unexpected error occurred. Please try again later.
+            {% elif error_code == 403 %}
+            You don't have permission to access this resource.
+            {% else %}
+            An error occurred while processing your request.
+            {% endif %}
+        </p>
+        <div class="mt-8 space-x-4">
+            <a
+                href="/ui"
+                class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+                Go to Dashboard
+            </a>
+            <button
+                onclick="history.back()"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/>
+                </svg>
+                Go Back
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}

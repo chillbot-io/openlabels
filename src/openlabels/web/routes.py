@@ -15,8 +15,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, case, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from uuid import UUID
+
 from openlabels.server.db import get_session
-from openlabels.server.models import ScanJob, ScanResult, ScanTarget, AuditLog
+from openlabels.server.models import ScanJob, ScanResult, ScanTarget, AuditLog, ScanSchedule
 from openlabels.auth.dependencies import get_current_user, get_optional_user
 
 logger = logging.getLogger(__name__)
@@ -55,8 +57,18 @@ def format_relative_time(dt: Optional[datetime]) -> str:
         return dt.strftime("%Y-%m-%d")
 
 
+def truncate_string(s: str, length: int = 50, suffix: str = "...") -> str:
+    """Truncate string to specified length."""
+    if not s:
+        return ""
+    if len(s) <= length:
+        return s
+    return s[:length - len(suffix)] + suffix
+
+
 # Register template filters
 templates.env.filters["relative_time"] = format_relative_time
+templates.env.filters["truncate"] = truncate_string
 
 
 # Page routes
@@ -156,6 +168,217 @@ async def settings_page(request: Request):
     return templates.TemplateResponse(
         "settings.html",
         {"request": request, "active_page": "settings"},
+    )
+
+
+@router.get("/schedules", response_class=HTMLResponse)
+async def schedules_page(request: Request):
+    """Schedules page."""
+    return templates.TemplateResponse(
+        "schedules.html",
+        {"request": request, "active_page": "schedules"},
+    )
+
+
+@router.get("/schedules/new", response_class=HTMLResponse)
+async def new_schedule_page(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """New schedule form page."""
+    targets = []
+    if user:
+        query = (
+            select(ScanTarget)
+            .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled == True)  # noqa: E712
+            .order_by(ScanTarget.name)
+        )
+        result = await session.execute(query)
+        for t in result.scalars().all():
+            targets.append({"id": str(t.id), "name": t.name, "adapter": t.adapter})
+
+    return templates.TemplateResponse(
+        "schedules_form.html",
+        {"request": request, "active_page": "schedules", "schedule": None, "targets": targets},
+    )
+
+
+@router.get("/schedules/{schedule_id}", response_class=HTMLResponse)
+async def edit_schedule_page(
+    request: Request,
+    schedule_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """Edit schedule form page."""
+    schedule = None
+    targets = []
+
+    if user:
+        # Get schedule
+        schedule_obj = await session.get(ScanSchedule, schedule_id)
+        if schedule_obj and schedule_obj.tenant_id == user.tenant_id:
+            schedule = {
+                "id": str(schedule_obj.id),
+                "name": schedule_obj.name,
+                "target_id": str(schedule_obj.target_id),
+                "cron": schedule_obj.cron,
+                "enabled": schedule_obj.enabled,
+            }
+
+        # Get targets
+        query = (
+            select(ScanTarget)
+            .where(ScanTarget.tenant_id == user.tenant_id)
+            .order_by(ScanTarget.name)
+        )
+        result = await session.execute(query)
+        for t in result.scalars().all():
+            targets.append({"id": str(t.id), "name": t.name, "adapter": t.adapter})
+
+    if not schedule:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Schedule not found"},
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        "schedules_form.html",
+        {"request": request, "active_page": "schedules", "schedule": schedule, "targets": targets},
+    )
+
+
+@router.get("/targets/{target_id}", response_class=HTMLResponse)
+async def edit_target_page(
+    request: Request,
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """Edit target form page."""
+    target = None
+
+    if user:
+        target_obj = await session.get(ScanTarget, target_id)
+        if target_obj and target_obj.tenant_id == user.tenant_id:
+            target = {
+                "id": str(target_obj.id),
+                "name": target_obj.name,
+                "adapter": target_obj.adapter,
+                "config": target_obj.config or {},
+                "enabled": target_obj.enabled,
+            }
+
+    if not target:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Target not found"},
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        "targets_form.html",
+        {"request": request, "active_page": "targets", "target": target, "mode": "edit"},
+    )
+
+
+@router.get("/scans/{scan_id}", response_class=HTMLResponse)
+async def scan_detail_page(
+    request: Request,
+    scan_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """Scan detail page with real-time updates."""
+    scan = None
+
+    if user:
+        scan_obj = await session.get(ScanJob, scan_id)
+        if scan_obj and scan_obj.tenant_id == user.tenant_id:
+            progress = 0
+            if scan_obj.total_files and scan_obj.total_files > 0:
+                progress = int((scan_obj.files_scanned or 0) / scan_obj.total_files * 100)
+            elif scan_obj.status == "completed":
+                progress = 100
+
+            scan = {
+                "id": str(scan_obj.id),
+                "target_name": scan_obj.target_name or "Unknown",
+                "status": scan_obj.status,
+                "files_scanned": scan_obj.files_scanned or 0,
+                "total_files": scan_obj.total_files or 0,
+                "progress": progress,
+                "error": scan_obj.error,
+                "created_at": scan_obj.created_at,
+                "started_at": scan_obj.started_at,
+                "completed_at": scan_obj.completed_at,
+            }
+
+    if not scan:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Scan not found"},
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        "scan_detail.html",
+        {"request": request, "active_page": "scans", "scan": scan},
+    )
+
+
+@router.get("/results/{result_id}", response_class=HTMLResponse)
+async def result_detail_page(
+    request: Request,
+    result_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """Result detail page showing file findings."""
+    result = None
+
+    if user:
+        result_obj = await session.get(ScanResult, result_id)
+        if result_obj and result_obj.tenant_id == user.tenant_id:
+            file_path = result_obj.file_path or ""
+            file_name = file_path.split("/")[-1] if "/" in file_path else file_path.split("\\")[-1]
+
+            result = {
+                "id": str(result_obj.id),
+                "file_path": file_path,
+                "file_name": file_name,
+                "risk_tier": result_obj.risk_tier,
+                "risk_score": result_obj.risk_score or 0,
+                "entity_counts": result_obj.entity_counts or {},
+                "entities": result_obj.entities or [],
+                "label_applied": result_obj.label_applied,
+                "label_name": result_obj.label_name,
+                "scanned_at": result_obj.scanned_at,
+                "file_size": result_obj.file_size,
+                "file_hash": result_obj.file_hash,
+            }
+
+    if not result:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Result not found"},
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        "result_detail.html",
+        {"request": request, "active_page": "results", "result": result},
+    )
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Login page."""
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request},
     )
 
 
@@ -785,3 +1008,42 @@ async def target_checkboxes_partial(
         </div>'''
 
     return HTMLResponse(content=html)
+
+
+@router.get("/partials/schedules-list", response_class=HTMLResponse)
+async def schedules_list_partial(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
+):
+    """Schedules list partial for HTMX updates."""
+    schedules = []
+
+    if user:
+        query = (
+            select(ScanSchedule)
+            .where(ScanSchedule.tenant_id == user.tenant_id)
+            .order_by(desc(ScanSchedule.created_at))
+        )
+        result = await session.execute(query)
+        schedule_rows = result.scalars().all()
+
+        for schedule in schedule_rows:
+            # Get target name
+            target = await session.get(ScanTarget, schedule.target_id)
+            target_name = target.name if target else "Unknown"
+
+            schedules.append({
+                "id": str(schedule.id),
+                "name": schedule.name,
+                "target_name": target_name,
+                "cron": schedule.cron,
+                "enabled": schedule.enabled,
+                "last_run_at": schedule.last_run_at,
+                "next_run_at": schedule.next_run_at,
+            })
+
+    return templates.TemplateResponse(
+        "partials/schedules_list.html",
+        {"request": request, "schedules": schedules},
+    )

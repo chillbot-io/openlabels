@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}{% if schedule %}Edit Schedule{% else %}New Schedule{% endif %} - OpenLabels{% endblock %}
+{% block page_title %}{% if schedule %}Edit Schedule{% else %}New Schedule{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <form
+        method="POST"
+        action="/api/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
+        hx-{% if schedule %}put{% else %}post{% endif %}="/api/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
+        hx-swap="none"
+        x-data="{
+            submitting: false,
+            cronPreset: 'custom',
+            cron: '{{ schedule.cron if schedule and schedule.cron else '' }}'
+        }"
+        @htmx:before-request="submitting = true"
+        @htmx:after-request="submitting = false; if ($event.detail.successful) window.location.href = '/ui/schedules'"
+    >
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-4 py-5 sm:p-6 space-y-6">
+                <!-- Name -->
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700">Schedule Name</label>
+                    <input
+                        type="text"
+                        name="name"
+                        id="name"
+                        value="{{ schedule.name if schedule else '' }}"
+                        required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        placeholder="Daily SharePoint Scan"
+                    >
+                </div>
+
+                <!-- Target Selection -->
+                <div>
+                    <label for="target_id" class="block text-sm font-medium text-gray-700">Target</label>
+                    <select
+                        name="target_id"
+                        id="target_id"
+                        required
+                        {% if schedule %}disabled{% endif %}
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    >
+                        <option value="">Select a target...</option>
+                        {% for target in targets %}
+                        <option
+                            value="{{ target.id }}"
+                            {% if schedule and schedule.target_id == target.id %}selected{% endif %}
+                        >
+                            {{ target.name }} ({{ target.adapter }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if schedule %}
+                    <input type="hidden" name="target_id" value="{{ schedule.target_id }}">
+                    <p class="mt-1 text-xs text-gray-500">Target cannot be changed after creation</p>
+                    {% endif %}
+                </div>
+
+                <!-- Cron Expression -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Schedule Frequency</label>
+
+                    <!-- Preset buttons -->
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button
+                            type="button"
+                            @click="cronPreset = 'hourly'; cron = '0 * * * *'"
+                            :class="cronPreset === 'hourly' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Hourly
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'daily'; cron = '0 0 * * *'"
+                            :class="cronPreset === 'daily' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Daily
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'weekly'; cron = '0 0 * * 0'"
+                            :class="cronPreset === 'weekly' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Weekly
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'weekdays'; cron = '0 9 * * 1-5'"
+                            :class="cronPreset === 'weekdays' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Weekdays 9 AM
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'monthly'; cron = '0 0 1 * *'"
+                            :class="cronPreset === 'monthly' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Monthly
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'custom'"
+                            :class="cronPreset === 'custom' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            Custom
+                        </button>
+                        <button
+                            type="button"
+                            @click="cronPreset = 'none'; cron = ''"
+                            :class="cronPreset === 'none' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-white border-gray-300 text-gray-700'"
+                            class="px-3 py-1 text-sm border rounded-md hover:bg-gray-50"
+                        >
+                            On-demand only
+                        </button>
+                    </div>
+
+                    <!-- Cron input -->
+                    <div x-show="cronPreset !== 'none'">
+                        <input
+                            type="text"
+                            name="cron"
+                            id="cron"
+                            x-model="cron"
+                            @input="cronPreset = 'custom'"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm font-mono"
+                            placeholder="0 0 * * *"
+                        >
+                        <p class="mt-1 text-xs text-gray-500">Format: minute hour day month weekday (UTC timezone)</p>
+                    </div>
+                </div>
+
+                <!-- Enabled toggle -->
+                {% if schedule %}
+                <div class="flex items-center">
+                    <input
+                        type="checkbox"
+                        name="enabled"
+                        id="enabled"
+                        {% if schedule.enabled %}checked{% endif %}
+                        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    >
+                    <label for="enabled" class="ml-2 block text-sm text-gray-900">Enabled</label>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="px-4 py-3 bg-gray-50 text-right sm:px-6 space-x-3">
+                <a
+                    href="/ui/schedules"
+                    class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                >
+                    Cancel
+                </a>
+                <button
+                    type="submit"
+                    :disabled="submitting"
+                    class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                >
+                    <span x-show="!submitting">{% if schedule %}Save Changes{% else %}Create Schedule{% endif %}</span>
+                    <span x-show="submitting">Saving...</span>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
