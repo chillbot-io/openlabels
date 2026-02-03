@@ -11,8 +11,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | Core/_rust | 3 | Not Started |
 | GUI | 17 | Not Started |
 | Jobs | 8 | **Completed** (251 tests) |
-| Server routes | 16 | **In Progress** (306 tests for 10 routes) |
-| Server other | 2 | Not Started |
+| Server routes | 16 | **In Progress** (431 tests for 13 routes) |
+| Server other | 2 | **In Progress** (45 tests) |
 | Web | 2 | Not Started |
 | Windows | 3 | Not Started |
 | **Total** | **53** | |
@@ -97,10 +97,10 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 | `src/openlabels/server/routes/dashboard.py` | 159 | ~75% | Dashboard endpoints - TESTED (45 tests) |
 | `src/openlabels/server/routes/health.py` | 141 | ~75% | Health endpoints - TESTED (24 tests) |
 | `src/openlabels/server/routes/jobs.py` | 112 | ~85% | Jobs endpoints - TESTED (28 tests) |
-| `src/openlabels/server/routes/labels.py` | 196 | ~40% | Labels endpoints - partial coverage |
-| `src/openlabels/server/routes/monitoring.py` | 186 | ~40% | Monitoring endpoints - partial coverage |
+| `src/openlabels/server/routes/labels.py` | 196 | ~75% | Labels endpoints - TESTED (40 tests) |
+| `src/openlabels/server/routes/monitoring.py` | 186 | ~75% | Monitoring endpoints - TESTED (40 tests) |
 | `src/openlabels/server/routes/remediation.py` | 191 | ~70% | Remediation endpoints - TESTED (45 tests) |
-| `src/openlabels/server/routes/results.py` | 186 | ~50% | Results endpoints - partial coverage |
+| `src/openlabels/server/routes/results.py` | 186 | ~75% | Results endpoints - TESTED (45 tests) |
 | `src/openlabels/server/routes/scans.py` | 114 | ~85% | Scans endpoints - TESTED (18 tests) |
 | `src/openlabels/server/routes/schedules.py` | 90 | ~75% | Schedules endpoints - TESTED (35 tests) |
 | `src/openlabels/server/routes/settings.py` | 33 | ~85% | Settings endpoints - TESTED (25 tests) |
@@ -114,8 +114,8 @@ This file tracks modules with 0% test coverage. Update the "Coverage %" column a
 
 | File | Stmts | Coverage % | Notes |
 |------|-------|------------|-------|
-| `src/openlabels/server/app.py` | 93 | 0% | FastAPI app setup |
-| `src/openlabels/server/logging.py` | 94 | 0% | Structured logging |
+| `src/openlabels/server/app.py` | 93 | ~70% | FastAPI app setup - TESTED (20 tests) |
+| `src/openlabels/server/logging.py` | 94 | ~75% | Structured logging - TESTED (25 tests) |
 
 ---
 
@@ -149,3 +149,11 @@ Added comprehensive tests for 5 additional server routes:
 - **users.py**: 35 tests covering CRUD operations and tenant isolation
 - **schedules.py**: 35 tests covering CRUD and trigger operations
 - **remediation.py**: 45 tests covering quarantine, lockdown, and rollback
+
+### 2026-02-03 - Server Other & Additional Routes
+Added comprehensive tests for server infrastructure and 3 more routes:
+- **app.py**: 20 tests covering middleware, request ID, CORS, health endpoints
+- **logging.py**: 25 tests covering JSONFormatter, DevelopmentFormatter, ContextLogger
+- **labels.py**: 40 tests covering label CRUD, sync status, rules, mappings
+- **monitoring.py**: 40 tests covering monitored files, access events, anomaly detection
+- **results.py**: 45 tests covering results listing, stats, export, rescan actions
