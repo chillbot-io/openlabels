@@ -128,6 +128,40 @@ async def get_current_user(
     return CurrentUser.model_validate(user)
 
 
+async def get_optional_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> Optional[CurrentUser]:
+    """Get the current user if authenticated, or None if not.
+
+    Use this for routes where authentication is optional (e.g., pages that
+    show different content for authenticated vs anonymous users).
+    """
+    settings = get_settings()
+
+    if settings.auth.provider == "none":
+        # Development mode - create/get dev user
+        claims = TokenClaims(
+            oid="dev-user-oid",
+            preferred_username="dev@localhost",
+            name="Development User",
+            tenant_id="dev-tenant",
+            roles=["admin"],
+        )
+        user = await get_or_create_user(session, claims)
+        return CurrentUser.model_validate(user)
+
+    if not token:
+        return None
+
+    try:
+        claims = await validate_token(token)
+        user = await get_or_create_user(session, claims)
+        return CurrentUser.model_validate(user)
+    except (ValueError, Exception):
+        return None
+
+
 async def require_admin(
     user: CurrentUser = Depends(get_current_user),
 ) -> CurrentUser:
