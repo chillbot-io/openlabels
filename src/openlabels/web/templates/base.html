@@ -225,6 +225,38 @@
         </template>
     </div>
 
+    <!-- HTMX to Alpine.js event bridge for notifications -->
+    <script>
+        // Listen for HTMX HX-Trigger events and dispatch Alpine.js events
+        document.body.addEventListener('notify', function(evt) {
+            // HX-Trigger sends detail as the event data
+            const detail = evt.detail || {};
+            window.dispatchEvent(new CustomEvent('notify', { detail: detail }));
+        });
+
+        // Handle HTMX errors
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            window.dispatchEvent(new CustomEvent('notify', {
+                detail: { message: 'An error occurred. Please try again.', type: 'error' }
+            }));
+        });
+
+        // Handle HTMX afterRequest for form success feedback
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            // Check if it was a successful form submission (POST/PUT/DELETE)
+            if (evt.detail.successful && ['POST', 'PUT', 'DELETE'].includes(evt.detail.requestConfig.verb.toUpperCase())) {
+                // If response doesn't include a trigger, show default success message
+                const xhr = evt.detail.xhr;
+                if (xhr && !xhr.getResponseHeader('HX-Trigger')) {
+                    // Only show for forms that redirect (status 3xx or have HX-Redirect)
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        // Don't show generic message - let specific triggers handle it
+                    }
+                }
+            }
+        });
+    </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

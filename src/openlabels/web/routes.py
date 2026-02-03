@@ -409,6 +409,207 @@ async def login_page(request: Request):
     )
 
 
+# Form submission handlers for HTMX
+from fastapi import Form
+from fastapi.responses import RedirectResponse
+
+
+@router.post("/targets", response_class=HTMLResponse)
+async def create_target_form(
+    request: Request,
+    name: str = Form(...),
+    adapter: str = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Handle target creation form submission."""
+    # Get form data for config fields
+    form_data = await request.form()
+
+    # Build config from form fields
+    config = {}
+    for key, value in form_data.items():
+        if key.startswith("config[") and key.endswith("]"):
+            config_key = key[7:-1]  # Extract key from config[key]
+            if value:  # Only include non-empty values
+                config[config_key] = value
+
+    target = ScanTarget(
+        tenant_id=user.tenant_id,
+        name=name,
+        adapter=adapter,
+        config=config,
+        enabled=enabled == "on",
+        created_by=user.id,
+    )
+    session.add(target)
+    await session.flush()
+
+    # Return redirect with success notification
+    response = RedirectResponse(url="/ui/targets", status_code=303)
+    response.headers["HX-Redirect"] = "/ui/targets"
+    return response
+
+
+@router.post("/targets/{target_id}", response_class=HTMLResponse)
+async def update_target_form(
+    request: Request,
+    target_id: UUID,
+    name: str = Form(...),
+    adapter: str = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Handle target update form submission."""
+    target = await session.get(ScanTarget, target_id)
+    if not target or target.tenant_id != user.tenant_id:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Target not found"},
+            status_code=404,
+        )
+
+    # Get form data for config fields
+    form_data = await request.form()
+
+    # Build config from form fields
+    config = {}
+    for key, value in form_data.items():
+        if key.startswith("config[") and key.endswith("]"):
+            config_key = key[7:-1]
+            if value:
+                config[config_key] = value
+
+    target.name = name
+    target.adapter = adapter
+    target.config = config
+    target.enabled = enabled == "on"
+
+    response = RedirectResponse(url="/ui/targets", status_code=303)
+    response.headers["HX-Redirect"] = "/ui/targets"
+    return response
+
+
+@router.post("/schedules", response_class=HTMLResponse)
+async def create_schedule_form(
+    request: Request,
+    name: str = Form(...),
+    target_id: str = Form(...),
+    cron: str = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Handle schedule creation form submission."""
+    from openlabels.jobs import parse_cron_expression
+
+    schedule = ScanSchedule(
+        tenant_id=user.tenant_id,
+        name=name,
+        target_id=UUID(target_id),
+        cron=cron if cron else None,
+        enabled=enabled == "on",
+        created_by=user.id,
+    )
+
+    # Calculate next run time if cron is set
+    if cron:
+        schedule.next_run_at = parse_cron_expression(cron)
+
+    session.add(schedule)
+    await session.flush()
+
+    response = RedirectResponse(url="/ui/schedules", status_code=303)
+    response.headers["HX-Redirect"] = "/ui/schedules"
+    return response
+
+
+@router.post("/schedules/{schedule_id}", response_class=HTMLResponse)
+async def update_schedule_form(
+    request: Request,
+    schedule_id: UUID,
+    name: str = Form(...),
+    target_id: str = Form(...),
+    cron: str = Form(...),
+    enabled: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Handle schedule update form submission."""
+    from openlabels.jobs import parse_cron_expression
+
+    schedule = await session.get(ScanSchedule, schedule_id)
+    if not schedule or schedule.tenant_id != user.tenant_id:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 404, "error_message": "Schedule not found"},
+            status_code=404,
+        )
+
+    schedule.name = name
+    schedule.target_id = UUID(target_id)
+    schedule.cron = cron if cron else None
+    schedule.enabled = enabled == "on"
+
+    if cron:
+        schedule.next_run_at = parse_cron_expression(cron)
+
+    response = RedirectResponse(url="/ui/schedules", status_code=303)
+    response.headers["HX-Redirect"] = "/ui/schedules"
+    return response
+
+
+@router.post("/scans", response_class=HTMLResponse)
+async def create_scan_form(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Handle scan creation form submission."""
+    from openlabels.jobs import JobQueue
+
+    form_data = await request.form()
+    target_ids = form_data.getlist("target_ids[]")
+
+    if not target_ids:
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400, "error_message": "No targets selected"},
+            status_code=400,
+        )
+
+    # Create scan jobs for each selected target
+    job_ids = []
+    queue = JobQueue(session, user.tenant_id)
+
+    for target_id in target_ids:
+        target = await session.get(ScanTarget, UUID(target_id))
+        if target and target.tenant_id == user.tenant_id:
+            job = ScanJob(
+                tenant_id=user.tenant_id,
+                target_id=target.id,
+                target_name=target.name,
+                status="pending",
+                created_by=user.id,
+            )
+            session.add(job)
+            await session.flush()
+
+            # Enqueue the scan job
+            await queue.enqueue(
+                task_type="scan",
+                payload={"job_id": str(job.id)},
+                priority=50,
+            )
+            job_ids.append(str(job.id))
+
+    response = RedirectResponse(url="/ui/scans", status_code=303)
+    response.headers["HX-Redirect"] = "/ui/scans"
+    return response
+
+
 # Partial routes for HTMX
 @router.get("/partials/dashboard-stats", response_class=HTMLResponse)
 async def dashboard_stats_partial(

@@ -7,12 +7,13 @@
 <div class="max-w-3xl mx-auto">
     <form
         method="POST"
-        action="/api/scans"
-        hx-post="/api/scans"
+        action="/ui/scans"
+        hx-post="/ui/scans"
         hx-swap="none"
         x-data="{ submitting: false, selectedTargets: [] }"
         @htmx:before-request="submitting = true"
-        @htmx:after-request="submitting = false; if ($event.detail.successful) window.location.href = '/ui/scans'"
+        @htmx:after-request="submitting = false"
+        @htmx:response-error="$dispatch('notify', {message: 'Error starting scan', type: 'error'})"
     >
         <div class="bg-white shadow rounded-lg">
             <div class="px-4 py-5 sm:p-6 space-y-6">

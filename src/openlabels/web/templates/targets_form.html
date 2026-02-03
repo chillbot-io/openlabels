@@ -7,8 +7,8 @@
 <div class="max-w-3xl mx-auto">
     <form
         method="POST"
-        action="/api/targets{% if target %}/{{ target.id }}{% endif %}"
-        hx-post="/api/targets{% if target %}/{{ target.id }}{% endif %}"
+        action="/ui/targets{% if target %}/{{ target.id }}{% endif %}"
+        hx-post="/ui/targets{% if target %}/{{ target.id }}{% endif %}"
         hx-swap="none"
         x-data="{
             adapter: '{{ target.adapter if target else 'filesystem' }}',
@@ -16,7 +16,7 @@
         }"
         @htmx:before-request="submitting = true"
         @htmx:after-request="submitting = false"
-        @htmx:response-error="alert('Error saving target')"
+        @htmx:response-error="$dispatch('notify', {message: 'Error saving target', type: 'error'})"
     >
         <div class="bg-white shadow rounded-lg">
             <div class="px-4 py-5 sm:p-6 space-y-6">

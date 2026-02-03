@@ -7,8 +7,8 @@
 <div class="max-w-3xl mx-auto">
     <form
         method="POST"
-        action="/api/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
-        hx-{% if schedule %}put{% else %}post{% endif %}="/api/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
+        action="/ui/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
+        hx-post="/ui/schedules{% if schedule %}/{{ schedule.id }}{% endif %}"
         hx-swap="none"
         x-data="{
             submitting: false,
@@ -16,7 +16,8 @@
             cron: '{{ schedule.cron if schedule and schedule.cron else '' }}'
         }"
         @htmx:before-request="submitting = true"
-        @htmx:after-request="submitting = false; if ($event.detail.successful) window.location.href = '/ui/schedules'"
+        @htmx:after-request="submitting = false"
+        @htmx:response-error="$dispatch('notify', {message: 'Error saving schedule', type: 'error'})"
     >
         <div class="bg-white shadow rounded-lg">
             <div class="px-4 py-5 sm:p-6 space-y-6">
