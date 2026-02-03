@@ -107,9 +107,10 @@ dev = [
 hyperscan = [
     "hyperscan>=0.7.0",  # Intel Hyperscan - 10-100x faster regex
 ]
-# OCR support (requires tesseract binary on system)
+# OCR support
 ocr = [
-    "pytesseract>=0.3.10",  # Python wrapper for Tesseract OCR
+    "pytesseract>=0.3.10",  # Python wrapper for Tesseract OCR (requires tesseract binary)
+    "rapidocr-onnxruntime>=1.3.0",  # ONNX-based OCR (no external binary needed)
 ]
 all = [
     "openlabels[gui,mip,windows,dev,hyperscan,ocr]",
