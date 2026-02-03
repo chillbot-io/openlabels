@@ -424,7 +424,7 @@ async def test_client(test_db):
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
     from openlabels.server.db import get_session
-    from openlabels.auth.dependencies import get_current_user, get_optional_user, CurrentUser
+    from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
     from openlabels.server.models import Tenant, User
 
     # Create test tenant and user in the database
@@ -444,6 +444,10 @@ async def test_client(test_db):
     test_db.add(test_user)
     await test_db.commit()
 
+    # Refresh to ensure all attributes are loaded from DB
+    await test_db.refresh(test_tenant)
+    await test_db.refresh(test_user)
+
     async def override_get_session():
         yield test_db
 
@@ -454,7 +458,7 @@ async def test_client(test_db):
             tenant_id=test_tenant.id,
             email=test_user.email,
             name=test_user.name,
-            role=test_user.role,
+            role=str(test_user.role),  # Ensure role is a string, not enum
         )
 
     async def override_get_current_user():
@@ -465,9 +469,14 @@ async def test_client(test_db):
         """Return a mock current user for testing (for optional auth routes)."""
         return _create_test_current_user()
 
+    async def override_require_admin():
+        """Return a mock admin user for testing."""
+        return _create_test_current_user()
+
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
+    app.dependency_overrides[require_admin] = override_require_admin
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
