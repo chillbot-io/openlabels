@@ -69,7 +69,8 @@ def set_models_dir(path: Path) -> None:
 def _get_model_paths() -> Tuple[Path, Path, Path, Path]:
     """Get paths for FastCoref model files."""
     if _MODELS_DIR is None:
-        models_dir = Path.home() / ".openlabels" / "models"
+        from openlabels.core.constants import DEFAULT_MODELS_DIR
+        models_dir = DEFAULT_MODELS_DIR
     else:
         models_dir = _MODELS_DIR
     return (

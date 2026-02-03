@@ -105,7 +105,7 @@ async def setup_test_data(test_db):
     test_db.add(job_pending)
     test_db.add(job_failed)
 
-    await test_db.commit()
+    await test_db.flush()
 
     return {
         "tenant": tenant,
@@ -307,7 +307,8 @@ class TestWebSocketAuth:
     async def test_websocket_requires_auth(self, test_client):
         """Test that WebSocket connections require authentication."""
         # We can't easily test WebSocket with httpx, but we can verify
-        # the endpoint exists by checking it's not a 404
+        # the endpoint is registered. FastAPI returns 404 for GET requests
+        # to WebSocket-only endpoints since there's no GET handler.
         response = await test_client.get(f"/ws/scans/{uuid4()}")
         # WebSocket endpoints typically return 400 or upgrade required on GET
         # Note: 404 may be returned if WebSocket routes aren't mounted in test config

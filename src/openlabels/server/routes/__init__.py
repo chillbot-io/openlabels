@@ -17,6 +17,7 @@ from openlabels.server.routes import (
     remediation,
     monitoring,
     health,
+    settings,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "remediation",
     "monitoring",
     "health",
+    "settings",
 ]
