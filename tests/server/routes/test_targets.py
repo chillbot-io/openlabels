@@ -207,7 +207,8 @@ class TestCreateTarget:
                 "config": {},
             },
         )
-        assert response.status_code == 400
+        # 422 is the correct FastAPI/Pydantic response for validation errors
+        assert response.status_code == 422
 
 
 class TestGetTarget:

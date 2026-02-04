@@ -432,7 +432,8 @@ def _update_content_types(content: bytes) -> bytes:
     """Update content types to include custom properties."""
     try:
         ns = "http://schemas.openxmlformats.org/package/2006/content-types"
-        ET.register_namespace("", ns)
+        # Use stdlib for register_namespace (defusedxml doesn't have it)
+        _stdlib_ET.register_namespace("", ns)
 
         # Security: Use safe XML parsing to prevent XXE attacks
         root = _safe_xml_fromstring(content)
@@ -442,12 +443,12 @@ def _update_content_types(content: bytes) -> bytes:
             if override.get("PartName") == "/docProps/custom.xml":
                 return content
 
-        # Add override for custom properties
-        override = ET.SubElement(root, "{%s}Override" % ns)
+        # Add override for custom properties (use stdlib for modification)
+        override = _stdlib_ET.SubElement(root, "{%s}Override" % ns)
         override.set("PartName", "/docProps/custom.xml")
         override.set("ContentType", "application/vnd.openxmlformats-officedocument.custom-properties+xml")
 
-        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        return _stdlib_ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
     except Exception as e:
         logger.debug(f"Failed to update content types: {e}")
