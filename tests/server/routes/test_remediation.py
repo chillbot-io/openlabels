@@ -25,11 +25,10 @@ def disable_rate_limiting():
 
     The rate limiter requires a proper Starlette Request object which
     isn't available when testing with httpx AsyncClient + ASGITransport.
+    We patch the internal _check_request_limit to skip rate limit checks.
     """
-    with patch('openlabels.server.routes.remediation.limiter') as mock_limiter:
-        # Make the limit decorator a pass-through
-        mock_limiter.limit.return_value = lambda f: f
-        yield mock_limiter
+    with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
+        yield
 
 
 @pytest.fixture

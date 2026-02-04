@@ -461,7 +461,13 @@ class TestSpanValidation:
     def test_span_detector_set(self, pipeline, sample_text_with_ssn):
         """Test that span detector is set to known detector name."""
         result = pipeline.detect(sample_text_with_ssn)
-        known_detectors = {"checksum", "secrets", "financial", "government", "pattern", "patterns", "ml", "ner"}
+        # Known detector names from the orchestrator
+        known_detectors = {
+            "checksum", "secrets", "financial", "government",
+            "pattern", "patterns", "ml", "ner", "onnx",
+            "phi_bert_onnx", "pii_bert_onnx", "hyperscan",
+            "additional_patterns",
+        }
 
         assert len(result.spans) >= 1, "Should detect at least one span"
         for span in result.spans:

@@ -7,6 +7,7 @@ modify, or enumerate resources belonging to another tenant.
 
 import asyncio
 import pytest
+from unittest.mock import patch
 from uuid import uuid4
 
 from httpx import AsyncClient, ASGITransport
@@ -17,6 +18,13 @@ from openlabels.server.models import (
     Tenant, User, ScanJob, ScanResult, ScanTarget,
     ScanSchedule, AuditLog,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limiting():
+    """Disable rate limiting for all tests in this module."""
+    with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
+        yield
 
 
 @pytest.fixture
@@ -279,7 +287,8 @@ class TestTargetTenantIsolation:
         async with create_client_for_user(
             data["session"], data["user_b"], data["tenant_b"]
         ) as client:
-            response = await client.patch(
+            # Use PUT (the supported method) instead of PATCH
+            response = await client.put(
                 f"/api/targets/{target_a.id}",
                 json={"name": "Hacked Target"},
             )
