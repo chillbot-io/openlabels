@@ -5,6 +5,8 @@ Executes parsed filter expressions against scan results.
 """
 
 import re
+import signal
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Protocol, Union
 
 from openlabels.cli.filter_parser import (
@@ -15,6 +17,77 @@ from openlabels.cli.filter_parser import (
     UnaryOp,
     parse_filter,
 )
+
+
+# Maximum length for regex patterns to prevent ReDoS
+MAX_REGEX_PATTERN_LENGTH = 500
+# Maximum time allowed for regex matching (seconds)
+REGEX_TIMEOUT_SECONDS = 1
+
+
+class RegexTimeoutError(Exception):
+    """Raised when regex matching exceeds the timeout."""
+    pass
+
+
+def _regex_timeout_handler(signum, frame):
+    """Signal handler for regex timeout."""
+    raise RegexTimeoutError("Regex matching timed out")
+
+
+@contextmanager
+def _regex_timeout(seconds: int):
+    """Context manager for regex timeout using SIGALRM (Unix only)."""
+    # Only use signal-based timeout on Unix systems
+    try:
+        old_handler = signal.signal(signal.SIGALRM, _regex_timeout_handler)
+        signal.alarm(seconds)
+        try:
+            yield
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    except (AttributeError, ValueError):
+        # signal.SIGALRM not available (Windows) - just execute without timeout
+        yield
+
+
+def _safe_regex_match(pattern: str, text: str) -> bool:
+    """
+    Safely perform regex matching with timeout and pattern validation.
+
+    Security: Prevents ReDoS attacks by:
+    1. Limiting pattern length
+    2. Using timeout for matching
+    3. Catching regex compilation errors
+
+    Args:
+        pattern: The regex pattern
+        text: The text to match against
+
+    Returns:
+        True if pattern matches text, False otherwise
+    """
+    # Limit pattern length to prevent complex patterns
+    if len(pattern) > MAX_REGEX_PATTERN_LENGTH:
+        return False
+
+    try:
+        # Compile pattern first to catch invalid patterns
+        compiled = re.compile(pattern)
+
+        # Use timeout for the actual matching
+        with _regex_timeout(REGEX_TIMEOUT_SECONDS):
+            return bool(compiled.search(text))
+    except RegexTimeoutError:
+        # Regex took too long - likely ReDoS attempt
+        return False
+    except re.error:
+        # Invalid regex pattern
+        return False
+    except Exception:
+        # Any other error - fail safely
+        return False
 
 
 class FilterableResult(Protocol):
@@ -101,13 +174,10 @@ def _compare(left: Any, op: str, right: Any) -> bool:
     if op == "<=":
         return left is not None and left <= right
     if op == "~":
-        # Regex match
+        # Regex match with ReDoS protection
         if left is None:
             return False
-        try:
-            return bool(re.search(str(right), str(left)))
-        except re.error:
-            return False
+        return _safe_regex_match(str(right), str(left))
     if op == "contains":
         if left is None:
             return False

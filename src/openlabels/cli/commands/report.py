@@ -13,6 +13,7 @@ from typing import Optional
 import click
 
 from openlabels.cli.utils import validate_where_filter
+from openlabels.core.path_validation import validate_output_path, PathValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -237,9 +238,16 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
 
         # Output
         if output:
-            with open(output, "w") as f:
+            # Security: Validate output path to prevent path traversal
+            try:
+                validated_output = validate_output_path(output, create_parent=True)
+            except PathValidationError as e:
+                click.echo(f"Error: Invalid output path: {e}", err=True)
+                return
+
+            with open(validated_output, "w") as f:
                 f.write(content)
-            click.echo(f"Report written to: {output}")
+            click.echo(f"Report written to: {validated_output}")
         else:
             click.echo(content)
 

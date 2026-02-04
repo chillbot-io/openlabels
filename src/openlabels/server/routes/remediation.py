@@ -34,53 +34,23 @@ from openlabels.server.models import (
 from openlabels.auth.dependencies import require_admin
 from openlabels.adapters.base import FileInfo
 from openlabels.adapters.filesystem import FilesystemAdapter
+from openlabels.core.path_validation import (
+    validate_path,
+    PathValidationError,
+    BLOCKED_PATH_PREFIXES,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_client_ip)
-
-# Security: Paths that are never allowed to be accessed
-BLOCKED_PATH_PREFIXES = (
-    "/etc/",
-    "/var/",
-    "/usr/",
-    "/bin/",
-    "/sbin/",
-    "/root/",
-    "/proc/",
-    "/sys/",
-    "/dev/",
-    "/boot/",
-    "C:\\Windows\\",
-    "C:\\Program Files\\",
-    "C:\\Program Files (x86)\\",
-    "C:\\ProgramData\\",
-)
-
-# Security: File patterns that should never be accessed
-BLOCKED_FILE_PATTERNS = (
-    ".env",
-    ".git/",
-    ".ssh/",
-    "id_rsa",
-    "id_ed25519",
-    ".htpasswd",
-    "shadow",
-    "passwd",
-    "credentials",
-)
 
 
 def validate_file_path(file_path: str) -> str:
     """
     Validate file path to prevent path traversal attacks.
 
-    Security checks:
-    1. Normalize path to prevent traversal (../, ./, etc.)
-    2. Block access to system directories
-    3. Block access to sensitive files
-    4. Ensure path is absolute
-    5. Strip null bytes to prevent null byte injection
+    Uses the centralized path_validation module and converts
+    PathValidationError to HTTPException for FastAPI compatibility.
 
     Args:
         file_path: The file path to validate
@@ -91,62 +61,14 @@ def validate_file_path(file_path: str) -> str:
     Raises:
         HTTPException: If path is invalid or blocked
     """
-    if not file_path:
-        raise HTTPException(
-            status_code=400,
-            detail="File path is required"
-        )
-
-    # Security: Strip null bytes to prevent null byte injection attacks
-    # Null bytes can be used to truncate paths: "/data/file.pdf\x00.txt" -> "/data/file.pdf"
-    if "\x00" in file_path:
-        logger.warning(f"Null byte injection attempt detected: {repr(file_path)}")
-        file_path = file_path.replace("\x00", "")
-
-    # Normalize the path to resolve .. and . components
-    # This converts paths like /data/../etc/passwd to /etc/passwd
     try:
-        canonical_path = os.path.normpath(os.path.abspath(file_path))
-    except (ValueError, TypeError) as e:
-        logger.warning(f"Invalid file path format: {file_path} - {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file path format"
-        )
-
-    # Check if path traversal was attempted
-    # If normalized path doesn't start the same way, traversal was attempted
-    if ".." in file_path:
-        logger.warning(f"Path traversal attempt detected: {file_path}")
-        raise HTTPException(
-            status_code=400,
-            detail="Path traversal is not allowed"
-        )
-
-    # Block access to system directories
-    # Check both canonical path (for Linux paths) and original path (for Windows paths on Linux)
-    canonical_lower = canonical_path.lower()
-    original_lower = file_path.lower()
-    for blocked in BLOCKED_PATH_PREFIXES:
-        blocked_lower = blocked.lower()
-        if canonical_lower.startswith(blocked_lower) or original_lower.startswith(blocked_lower):
-            logger.warning(f"Blocked access to system path: {file_path} -> {canonical_path}")
-            raise HTTPException(
-                status_code=403,
-                detail="Access to system directories is not allowed"
-            )
-
-    # Block access to sensitive files
-    path_parts = canonical_path.lower().replace("\\", "/")
-    for pattern in BLOCKED_FILE_PATTERNS:
-        if pattern in path_parts:
-            logger.warning(f"Blocked access to sensitive file: {file_path}")
-            raise HTTPException(
-                status_code=403,
-                detail="Access to this file type is not allowed"
-            )
-
-    return canonical_path
+        return validate_path(file_path)
+    except PathValidationError as e:
+        error_msg = str(e)
+        # Map error messages to appropriate HTTP status codes
+        if "system directories" in error_msg or "file type" in error_msg:
+            raise HTTPException(status_code=403, detail=error_msg)
+        raise HTTPException(status_code=400, detail=error_msg)
 
 
 def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> str:
@@ -164,32 +86,17 @@ def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> st
         # Default: create .quarantine in the same directory as the file
         return os.path.join(os.path.dirname(base_path), ".quarantine")
 
-    # Validate the custom quarantine directory
+    # Use centralized path validation
     try:
-        canonical_dir = os.path.normpath(os.path.abspath(quarantine_dir))
-    except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid quarantine directory format"
-        )
-
-    # Check for path traversal
-    if ".." in quarantine_dir:
-        logger.warning(f"Path traversal in quarantine_dir: {quarantine_dir}")
-        raise HTTPException(
-            status_code=400,
-            detail="Path traversal is not allowed in quarantine directory"
-        )
-
-    # Block system directories for quarantine
-    canonical_lower = canonical_dir.lower()
-    for blocked in BLOCKED_PATH_PREFIXES:
-        if canonical_lower.startswith(blocked.lower()):
-            logger.warning(f"Blocked quarantine to system path: {quarantine_dir}")
+        canonical_dir = validate_path(quarantine_dir)
+    except PathValidationError as e:
+        error_msg = str(e)
+        if "system directories" in error_msg:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot use system directory as quarantine location"
             )
+        raise HTTPException(status_code=400, detail=error_msg)
 
     return canonical_dir
 

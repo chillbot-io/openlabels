@@ -249,6 +249,100 @@ class SecuritySettings(BaseSettings):
     max_request_size_mb: int = 100  # Max request body size
 
 
+class TimeoutSettings(BaseSettings):
+    """
+    Centralized timeout configuration.
+
+    All timeout values in seconds. Configurable via environment variables:
+    - OPENLABELS_TIMEOUTS__HTTP_DEFAULT=30.0
+    - OPENLABELS_TIMEOUTS__HTTP_CONNECT=10.0
+    - etc.
+    """
+
+    # HTTP client timeouts
+    http_default: float = 30.0  # Default HTTP request timeout
+    http_connect: float = 10.0  # HTTP connection establishment
+    http_health_check: float = 5.0  # Health check endpoints
+    http_long_running: float = 60.0  # Long operations (exports, etc.)
+
+    # Graph API specific
+    graph_api: float = 30.0  # Graph API requests
+    graph_token: float = 30.0  # Token acquisition
+    graph_delta_page: float = 60.0  # Delta query pagination
+
+    # Job processing
+    job_default: int = 3600  # Default job timeout (1 hour)
+    job_scan: int = 7200  # Scan job timeout (2 hours)
+    job_label: int = 1800  # Label job timeout (30 min)
+
+    # Detection/ML
+    detector: float = 30.0  # Individual detector timeout
+    model_load: float = 60.0  # ML model loading
+    ocr_ready: float = 30.0  # OCR engine initialization
+
+    # WebSocket
+    websocket_ping: int = 20  # WebSocket ping interval
+    websocket_receive: float = 30.0  # WebSocket receive timeout
+
+    # Database
+    db_query: float = 30.0  # Database query timeout
+
+    # Retry delays
+    retry_base: float = 2.0  # Base retry delay for exponential backoff
+    retry_max: int = 3600  # Maximum retry delay (1 hour)
+
+    # Polling intervals
+    worker_poll: float = 1.0  # Worker job poll interval
+    status_poll: float = 2.0  # Status check poll interval
+    concurrency_check: int = 5  # Worker concurrency check interval
+    stuck_job_check: int = 300  # Stuck job reclaim interval (5 min)
+
+
+class CircuitBreakerSettings(BaseSettings):
+    """
+    Circuit breaker configuration for external service resilience.
+
+    The circuit breaker pattern prevents cascading failures by:
+    1. Tracking consecutive failures
+    2. Opening the circuit after failure_threshold failures
+    3. Allowing test requests after recovery_timeout seconds
+    4. Closing the circuit after success_threshold successes
+
+    Configurable via environment variables:
+    - OPENLABELS_CIRCUIT_BREAKER__ENABLED=true
+    - OPENLABELS_CIRCUIT_BREAKER__FAILURE_THRESHOLD=5
+    - etc.
+    """
+
+    enabled: bool = True
+    failure_threshold: int = 5  # Failures before circuit opens
+    success_threshold: int = 2  # Successes needed to close circuit
+    recovery_timeout: int = 60  # Seconds to wait before half-open
+    exclude_status_codes: list[int] = Field(
+        default_factory=lambda: [400, 401, 403, 404]  # Client errors don't count
+    )
+
+
+class JobSettings(BaseSettings):
+    """Job queue configuration."""
+
+    # Retry configuration
+    max_retries: int = 3
+    retry_base_delay: int = 2  # Seconds
+
+    # TTL/Expiration
+    completed_job_ttl_days: int = 7  # Auto-delete completed jobs after N days
+    failed_job_ttl_days: int = 30  # Keep failed jobs longer for debugging
+    pending_job_max_age_hours: int = 24  # Alert on jobs pending too long
+
+    # Stuck job recovery
+    stuck_job_timeout: int = 3600  # Consider running jobs stuck after 1 hour
+
+    # Concurrency
+    default_worker_concurrency: int = 4
+    max_worker_concurrency: int = 32
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -268,6 +362,9 @@ class Settings(BaseSettings):
     cors: CORSSettings = Field(default_factory=CORSSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
+    circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
+    jobs: JobSettings = Field(default_factory=JobSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

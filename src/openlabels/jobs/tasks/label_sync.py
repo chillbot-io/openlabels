@@ -55,46 +55,47 @@ async def execute_label_sync_task(
 
     Args:
         session: Database session
-        payload: Task payload containing tenant_id and credentials
+        payload: Task payload containing tenant_id (credentials fetched from settings)
 
     Returns:
         Result dictionary with sync statistics
+
+    Security Note:
+        Credentials are NEVER passed via payload to prevent them from being
+        logged, stored in job history, or exposed via job status APIs.
+        All credentials are fetched from secure settings at execution time.
     """
     tenant_id = UUID(payload["tenant_id"])
 
-    # Get credentials from payload or settings
-    tenant_id_azure = payload.get("azure_tenant_id")
-    client_id = payload.get("client_id")
-    client_secret = payload.get("client_secret")
+    # SECURITY: Always get credentials from settings, never from payload
+    # This prevents credentials from being logged or stored in job payloads
+    try:
+        from openlabels.server.config import get_settings
+        settings = get_settings()
+        auth = settings.auth
 
-    # If credentials not in payload, get from settings
-    if not all([tenant_id_azure, client_id, client_secret]):
-        try:
-            from openlabels.server.config import get_settings
-            settings = get_settings()
-            auth = settings.auth
-
-            if auth.provider == "azure_ad" and auth.tenant_id and auth.client_id and auth.client_secret:
-                tenant_id_azure = tenant_id_azure or auth.tenant_id
-                client_id = client_id or auth.client_id
-                client_secret = client_secret or auth.client_secret
-            else:
-                return {
-                    "success": False,
-                    "error": "Azure AD not configured - cannot sync labels",
-                    **LabelSyncResult().to_dict(),
-                }
-        except Exception as e:
+        if auth.provider != "azure_ad":
             return {
                 "success": False,
-                "error": f"Failed to get settings: {e}",
+                "error": "Azure AD not configured - cannot sync labels",
                 **LabelSyncResult().to_dict(),
             }
 
-    if not all([tenant_id_azure, client_id, client_secret]):
+        tenant_id_azure = auth.tenant_id
+        client_id = auth.client_id
+        client_secret = auth.client_secret
+
+        if not all([tenant_id_azure, client_id, client_secret]):
+            return {
+                "success": False,
+                "error": "Azure AD credentials not configured - check AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET",
+                **LabelSyncResult().to_dict(),
+            }
+    except Exception as e:
+        logger.error(f"Failed to get settings for label sync: {e}")
         return {
             "success": False,
-            "error": "Missing Azure AD credentials for label sync",
+            "error": "Failed to retrieve credentials from settings",
             **LabelSyncResult().to_dict(),
         }
 
