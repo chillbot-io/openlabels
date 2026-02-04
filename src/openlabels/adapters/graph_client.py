@@ -7,6 +7,8 @@ Features:
 - Connection pooling for HTTP/2 multiplexing
 - Automatic token refresh
 - Delta query support for incremental sync
+- Circuit breaker for fault tolerance
+- Configurable timeouts
 """
 
 import asyncio
@@ -17,6 +19,12 @@ from typing import Optional, Any
 from datetime import datetime, timedelta, timezone
 
 import httpx
+
+from openlabels.core.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitOpenError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +129,8 @@ class GraphClient:
         client_secret: str,
         rate_config: Optional[RateLimiterConfig] = None,
         pool_size: int = 100,
+        timeout: Optional[float] = None,
+        connect_timeout: Optional[float] = None,
     ):
         """
         Initialize Graph client.
@@ -131,6 +141,8 @@ class GraphClient:
             client_secret: App registration client secret
             rate_config: Rate limiting configuration
             pool_size: HTTP connection pool size
+            timeout: Request timeout in seconds (uses config default if None)
+            connect_timeout: Connection timeout in seconds (uses config default if None)
         """
         self.tenant_id = tenant_id
         self.client_id = client_id
@@ -139,6 +151,24 @@ class GraphClient:
 
         self.rate_config = rate_config or RateLimiterConfig()
         self.pool_size = pool_size
+
+        # Get timeout configuration from settings
+        try:
+            from openlabels.server.config import get_settings
+            settings = get_settings()
+            self._timeout = timeout or settings.timeouts.graph_api
+            self._connect_timeout = connect_timeout or settings.timeouts.http_connect
+            cb_config = CircuitBreakerConfig(
+                failure_threshold=settings.circuit_breaker.failure_threshold,
+                success_threshold=settings.circuit_breaker.success_threshold,
+                recovery_timeout=settings.circuit_breaker.recovery_timeout,
+                exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
+            )
+        except Exception:
+            # Fallback to defaults if settings not available
+            self._timeout = timeout or 30.0
+            self._connect_timeout = connect_timeout or 10.0
+            cb_config = CircuitBreakerConfig()
 
         # Token management
         self._access_token: Optional[str] = None
@@ -149,6 +179,12 @@ class GraphClient:
         self._rate_limiter = TokenBucket(
             rate=self.rate_config.requests_per_second,
             capacity=self.rate_config.burst_size,
+        )
+
+        # Circuit breaker for fault tolerance
+        self._circuit_breaker = CircuitBreaker(
+            name=f"graph_api_{tenant_id[:8]}",
+            config=cb_config,
         )
 
         # Connection pool (created on __aenter__)
@@ -163,6 +199,7 @@ class GraphClient:
             "retries": 0,
             "throttled": 0,
             "errors": 0,
+            "circuit_open_rejections": 0,
         }
 
     def clear_credentials(self) -> None:
@@ -186,7 +223,7 @@ class GraphClient:
                 max_connections=self.pool_size,
                 max_keepalive_connections=self.pool_size // 2,
             ),
-            timeout=httpx.Timeout(30.0, connect=10.0),
+            timeout=httpx.Timeout(self._timeout, connect=self._connect_timeout),
             http2=True,  # Enable HTTP/2 for multiplexing
         )
         return self
@@ -247,15 +284,24 @@ class GraphClient:
         **kwargs,
     ) -> httpx.Response:
         """
-        Make a rate-limited request to Graph API.
+        Make a rate-limited request to Graph API with circuit breaker protection.
 
         Handles:
+        - Circuit breaker for fault tolerance
         - Rate limiting via token bucket
         - 429 throttling with Retry-After
         - Automatic retries with exponential backoff
         """
         if not self._client:
             raise RuntimeError("GraphClient must be used as async context manager")
+
+        # Check circuit breaker first
+        if not await self._circuit_breaker.allow_request():
+            self.stats["circuit_open_rejections"] += 1
+            raise CircuitOpenError(
+                self._circuit_breaker.name,
+                self._circuit_breaker.time_until_recovery,
+            )
 
         # Wait for rate limiter
         wait_time = await self._rate_limiter.acquire()
@@ -303,8 +349,12 @@ class GraphClient:
                     )
                     await asyncio.sleep(backoff)
                     self.stats["retries"] += 1
+                    # Record failure for circuit breaker
+                    await self._circuit_breaker.record_failure()
                     continue
 
+                # Success - record for circuit breaker
+                await self._circuit_breaker.record_success()
                 return response
 
             except httpx.TransportError as e:
@@ -313,6 +363,8 @@ class GraphClient:
                 logger.warning(f"Transport error: {e}, retrying in {backoff}s")
                 await asyncio.sleep(backoff)
                 self.stats["retries"] += 1
+                # Record failure for circuit breaker
+                await self._circuit_breaker.record_failure(e)
 
         self.stats["errors"] += 1
         raise last_error or RuntimeError("Max retries exceeded")

@@ -506,3 +506,169 @@ class JobQueue:
 
         result = await self.session.execute(query)
         return result.scalar() or 0
+
+    # =========================================================================
+    # Job TTL / Expiration
+    # =========================================================================
+
+    async def cleanup_expired_jobs(
+        self,
+        completed_ttl_days: Optional[int] = None,
+        failed_ttl_days: Optional[int] = None,
+    ) -> dict[str, int]:
+        """
+        Clean up expired jobs based on TTL configuration.
+
+        Completed jobs are deleted after completed_ttl_days.
+        Failed jobs are kept longer (failed_ttl_days) for debugging.
+
+        Args:
+            completed_ttl_days: Days to keep completed jobs (uses config default if None)
+            failed_ttl_days: Days to keep failed jobs (uses config default if None)
+
+        Returns:
+            Dictionary with counts of deleted jobs by status
+        """
+        from sqlalchemy import delete
+
+        # Get TTL values from config if not provided
+        try:
+            from openlabels.server.config import get_settings
+            settings = get_settings()
+            completed_ttl_days = completed_ttl_days or settings.jobs.completed_job_ttl_days
+            failed_ttl_days = failed_ttl_days or settings.jobs.failed_job_ttl_days
+        except Exception:
+            completed_ttl_days = completed_ttl_days or 7
+            failed_ttl_days = failed_ttl_days or 30
+
+        now = datetime.now(timezone.utc)
+        deleted_counts = {"completed": 0, "failed": 0, "cancelled": 0}
+
+        # Delete old completed jobs
+        completed_cutoff = now - timedelta(days=completed_ttl_days)
+        completed_result = await self.session.execute(
+            delete(JobQueueModel).where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "completed",
+                JobQueueModel.completed_at < completed_cutoff,
+            )
+        )
+        deleted_counts["completed"] = completed_result.rowcount
+
+        # Delete old cancelled jobs (same TTL as completed)
+        cancelled_result = await self.session.execute(
+            delete(JobQueueModel).where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "cancelled",
+                JobQueueModel.completed_at < completed_cutoff,
+            )
+        )
+        deleted_counts["cancelled"] = cancelled_result.rowcount
+
+        # Delete old failed jobs (longer retention)
+        failed_cutoff = now - timedelta(days=failed_ttl_days)
+        failed_result = await self.session.execute(
+            delete(JobQueueModel).where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "failed",
+                JobQueueModel.completed_at < failed_cutoff,
+            )
+        )
+        deleted_counts["failed"] = failed_result.rowcount
+
+        await self.session.flush()
+
+        total = sum(deleted_counts.values())
+        if total > 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Cleaned up {total} expired jobs for tenant {self.tenant_id}: "
+                f"completed={deleted_counts['completed']}, "
+                f"failed={deleted_counts['failed']}, "
+                f"cancelled={deleted_counts['cancelled']}"
+            )
+
+        return deleted_counts
+
+    async def get_stale_pending_jobs(
+        self,
+        max_age_hours: Optional[int] = None,
+    ) -> list[JobQueueModel]:
+        """
+        Get pending jobs that have been waiting too long.
+
+        Useful for alerting on jobs that may be stuck in pending state.
+
+        Args:
+            max_age_hours: Maximum age for pending jobs (uses config default if None)
+
+        Returns:
+            List of stale pending jobs
+        """
+        try:
+            from openlabels.server.config import get_settings
+            settings = get_settings()
+            max_age_hours = max_age_hours or settings.jobs.pending_job_max_age_hours
+        except Exception:
+            max_age_hours = max_age_hours or 24
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+
+        query = (
+            select(JobQueueModel)
+            .where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "pending",
+                JobQueueModel.created_at < cutoff,
+            )
+            .order_by(JobQueueModel.created_at.asc())
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def get_job_age_stats(self) -> dict:
+        """
+        Get statistics about job ages for monitoring.
+
+        Returns:
+            Dictionary with age statistics by status
+        """
+        now = datetime.now(timezone.utc)
+
+        stats = {
+            "pending": {"count": 0, "oldest_hours": 0, "avg_hours": 0},
+            "running": {"count": 0, "oldest_hours": 0, "avg_hours": 0},
+        }
+
+        # Pending jobs stats
+        pending_query = select(JobQueueModel.created_at).where(
+            JobQueueModel.tenant_id == self.tenant_id,
+            JobQueueModel.status == "pending",
+        )
+        pending_result = await self.session.execute(pending_query)
+        pending_times = [r for r in pending_result.scalars().all()]
+
+        if pending_times:
+            ages = [(now - t).total_seconds() / 3600 for t in pending_times]
+            stats["pending"]["count"] = len(ages)
+            stats["pending"]["oldest_hours"] = round(max(ages), 2)
+            stats["pending"]["avg_hours"] = round(sum(ages) / len(ages), 2)
+
+        # Running jobs stats
+        running_query = select(JobQueueModel.started_at).where(
+            JobQueueModel.tenant_id == self.tenant_id,
+            JobQueueModel.status == "running",
+            JobQueueModel.started_at.isnot(None),
+        )
+        running_result = await self.session.execute(running_query)
+        running_times = [r for r in running_result.scalars().all()]
+
+        if running_times:
+            ages = [(now - t).total_seconds() / 3600 for t in running_times]
+            stats["running"]["count"] = len(ages)
+            stats["running"]["oldest_hours"] = round(max(ages), 2)
+            stats["running"]["avg_hours"] = round(sum(ages) / len(ages), 2)
+
+        return stats

@@ -138,8 +138,14 @@ class Worker:
         # Start stuck job reclaimer
         reclaimer_task = asyncio.create_task(self._stuck_job_reclaimer())
 
+        # Start job cleanup task (TTL expiration)
+        cleanup_task = asyncio.create_task(self._job_cleanup_task())
+
         # Wait for all workers
-        await asyncio.gather(*self._worker_tasks, monitor_task, reclaimer_task, return_exceptions=True)
+        await asyncio.gather(
+            *self._worker_tasks, monitor_task, reclaimer_task, cleanup_task,
+            return_exceptions=True
+        )
 
     def _handle_shutdown(self) -> None:
         """Handle shutdown signal."""
@@ -179,6 +185,39 @@ class Worker:
                 logger.debug(f"Stuck job reclaimer error: {e}")
 
             await asyncio.sleep(reclaim_interval)
+
+    async def _job_cleanup_task(self) -> None:
+        """
+        Periodically clean up expired jobs based on TTL configuration.
+
+        Removes completed/failed/cancelled jobs that exceed their retention period.
+        Runs once per hour to minimize database load.
+        """
+        cleanup_interval = 3600  # Run once per hour
+
+        while self.running:
+            try:
+                async with get_session_context() as session:
+                    from sqlalchemy import select
+                    from openlabels.server.models import Tenant
+
+                    result = await session.execute(select(Tenant))
+                    tenants = result.scalars().all()
+
+                    total_cleaned = 0
+                    for tenant in tenants:
+                        queue = JobQueue(session, tenant.id)
+                        counts = await queue.cleanup_expired_jobs()
+                        total_cleaned += sum(counts.values())
+
+                    if total_cleaned > 0:
+                        await session.commit()
+                        logger.info(f"Cleaned up {total_cleaned} expired jobs")
+
+            except Exception as e:
+                logger.debug(f"Job cleanup task error: {e}")
+
+            await asyncio.sleep(cleanup_interval)
 
     async def _concurrency_monitor(self) -> None:
         """
