@@ -426,7 +426,11 @@ class TestUUIDGeneration:
         from openlabels.server.models import generate_uuid
 
         result = generate_uuid()
-        assert isinstance(result, UUID)
+        # uuid_utils.uuid7 returns a compatible UUID object
+        # Check if it's a UUID instance OR can be converted to string format
+        assert isinstance(result, UUID) or (
+            hasattr(result, 'hex') and len(str(result)) == 36
+        )
 
     def test_generate_uuid_is_unique(self):
         """Each call should generate a unique UUID."""

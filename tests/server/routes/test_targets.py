@@ -187,7 +187,8 @@ class TestCreateTarget:
             json={
                 "name": "New SharePoint Target",
                 "adapter": "sharepoint",
-                "config": {"site": "https://example.sharepoint.com/sites/new"},
+                # SharePoint config requires 'site_url' not 'site'
+                "config": {"site_url": "https://example.sharepoint.com/sites/new"},
             },
         )
         assert response.status_code == 201
