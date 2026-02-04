@@ -173,16 +173,9 @@ class TestBlockedPaths:
 class TestPathTraversalIntegration:
     """Integration tests for path traversal prevention.
 
-    Note: These tests disable rate limiting to work properly with the test client.
+    Note: Rate limiting is disabled globally in the test_client fixture in conftest.py.
     The actual path validation logic is tested in the unit tests above.
     """
-
-    @pytest.fixture(autouse=True)
-    def disable_rate_limiting(self):
-        """Disable rate limiting for integration tests."""
-        from unittest.mock import patch
-        with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
-            yield
 
     @pytest.mark.asyncio
     async def test_quarantine_endpoint_rejects_traversal(self, test_client):

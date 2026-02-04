@@ -19,16 +19,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch, AsyncMock, MagicMock
 
 
-@pytest.fixture(autouse=True)
-def disable_rate_limiting():
-    """Disable rate limiting for all tests in this module.
-
-    The rate limiter requires a proper Starlette Request object which
-    isn't available when testing with httpx AsyncClient + ASGITransport.
-    We patch the internal _check_request_limit to skip rate limit checks.
-    """
-    with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
-        yield
+# Rate limiting is disabled globally in the test_client fixture in conftest.py
 
 
 @pytest.fixture

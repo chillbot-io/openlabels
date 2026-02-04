@@ -7,7 +7,6 @@ modify, or enumerate resources belonging to another tenant.
 
 import asyncio
 import pytest
-from unittest.mock import patch
 from uuid import uuid4
 
 from httpx import AsyncClient, ASGITransport
@@ -20,11 +19,7 @@ from openlabels.server.models import (
 )
 
 
-@pytest.fixture(autouse=True)
-def disable_rate_limiting():
-    """Disable rate limiting for all tests in this module."""
-    with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
-        yield
+# Rate limiting is disabled in create_client_for_user and test_client fixture
 
 
 @pytest.fixture
@@ -169,6 +164,10 @@ async def two_tenant_setup(test_db):
 
 def create_client_for_user(test_db, user, tenant):
     """Create a test client authenticated as a specific user."""
+    from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.remediation import limiter as remediation_limiter
+    from openlabels.server.routes.scans import limiter as scans_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
 
     async def override_get_session():
         yield test_db
@@ -195,6 +194,11 @@ def create_client_for_user(test_db, user, tenant):
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
+
+    # Disable rate limiting for tests
+    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
+    for limiter in limiters:
+        limiter.enabled = False
 
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
