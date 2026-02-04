@@ -277,7 +277,7 @@ class TestHealthScanStatistics:
         )
 
         # Get the existing tenant created by test_client
-        result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+        result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
         tenant = result.scalar_one()
 
         result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))

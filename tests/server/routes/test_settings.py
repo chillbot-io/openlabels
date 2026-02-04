@@ -257,39 +257,42 @@ class TestSettingsAuthentication:
     """Tests for authentication requirements on settings endpoints."""
 
     @pytest.mark.asyncio
-    async def test_azure_settings_requires_auth(self, test_client):
-        """Azure settings endpoint requires authentication."""
-        # The test_client fixture overrides auth, so this tests the endpoint works
+    async def test_azure_settings_accessible_when_authenticated(self, test_client):
+        """Azure settings endpoint should succeed with authenticated user."""
+        # test_client fixture provides authenticated admin user
         response = await test_client.post(
             "/api/settings/azure",
             data={"tenant_id": "test", "client_id": "test"},
         )
-        # Accept both authenticated success and potential auth errors
-        assert response.status_code in (200, 401, 403)
+        assert response.status_code == 200, \
+            f"Expected 200 for authenticated settings request, got {response.status_code}"
 
     @pytest.mark.asyncio
-    async def test_scan_settings_requires_auth(self, test_client):
-        """Scan settings endpoint requires authentication."""
+    async def test_scan_settings_accessible_when_authenticated(self, test_client):
+        """Scan settings endpoint should succeed with authenticated user."""
         response = await test_client.post(
             "/api/settings/scan",
             data={"max_file_size_mb": "100", "concurrent_files": "10"},
         )
-        assert response.status_code in (200, 401, 403)
+        assert response.status_code == 200, \
+            f"Expected 200 for authenticated settings request, got {response.status_code}"
 
     @pytest.mark.asyncio
-    async def test_entity_settings_requires_auth(self, test_client):
-        """Entity settings endpoint requires authentication."""
+    async def test_entity_settings_accessible_when_authenticated(self, test_client):
+        """Entity settings endpoint should succeed with authenticated user."""
         response = await test_client.post(
             "/api/settings/entities",
             data={"entities": ["SSN"]},
         )
-        assert response.status_code in (200, 401, 403)
+        assert response.status_code == 200, \
+            f"Expected 200 for authenticated settings request, got {response.status_code}"
 
     @pytest.mark.asyncio
-    async def test_reset_settings_requires_auth(self, test_client):
-        """Settings reset endpoint requires authentication."""
+    async def test_reset_settings_accessible_when_authenticated(self, test_client):
+        """Settings reset endpoint should succeed with authenticated user."""
         response = await test_client.post("/api/settings/reset")
-        assert response.status_code in (200, 401, 403)
+        assert response.status_code == 200, \
+            f"Expected 200 for authenticated settings request, got {response.status_code}"
 
 
 class TestSettingsResponseFormat:

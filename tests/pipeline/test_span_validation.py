@@ -122,12 +122,16 @@ class TestValidateSingleSpan:
         assert result is None
 
     def test_negative_start(self):
-        """Negative start position is invalid."""
-        text = "Hello"
-        # Can't create Span with start < 0 due to validation in Span
-        # but we can test the function directly with a mock-like approach
-        # For now, skip this since Span validates in __post_init__
-        pass
+        """Negative start position is invalid - Span class prevents creation."""
+        # Span class validates in __post_init__ that start >= 0
+        # This is the correct behavior - invalid spans can't be created
+        # Test verifies the validation exists
+        import pytest
+        with pytest.raises((ValueError, ValidationError)):
+            Span(
+                start=-1, end=4, text="test",
+                entity_type="NAME", confidence=0.9, detector="test", tier=Tier.ML
+            )
 
     def test_start_exceeds_text_length(self):
         """Start exceeding text length is invalid."""
@@ -160,9 +164,13 @@ class TestValidateSingleSpan:
 
         result = _validate_single_span(span, text, len(text))
 
-        # May or may not be an error depending on case sensitivity
-        # The function allows case differences
-        pass
+        # The function should either:
+        # 1. Return an error if strict text matching is enforced
+        # 2. Return None if case-insensitive/fuzzy matching is allowed
+        # Either way, the function should handle this case
+        # Verify the function returns a defined result (not raising)
+        assert result is None or isinstance(result, str), \
+            f"Expected None or error string, got {type(result)}"
 
 
 # =============================================================================
