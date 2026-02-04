@@ -24,6 +24,7 @@ from openlabels.server.models import (
     AuditLog,
 )
 from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.core.path_validation import validate_path, PathValidationError
 
 router = APIRouter()
 
@@ -166,12 +167,22 @@ async def enable_file_monitoring(
 
     This registers the file for access auditing. The actual SACL/auditd
     configuration is handled by the monitoring agent.
+
+    Security:
+    - File path is validated to prevent path traversal attacks
+    - System directories are blocked from monitoring
     """
+    # Security: Validate file path to prevent path traversal and block system paths
+    try:
+        validated_path = validate_path(request.file_path)
+    except PathValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Check if already monitored
     existing = await session.execute(
         select(MonitoredFile).where(
             MonitoredFile.tenant_id == user.tenant_id,
-            MonitoredFile.file_path == request.file_path,
+            MonitoredFile.file_path == validated_path,
         )
     )
     if existing.scalar_one_or_none():
@@ -181,7 +192,7 @@ async def enable_file_monitoring(
     inventory = await session.execute(
         select(FileInventory).where(
             FileInventory.tenant_id == user.tenant_id,
-            FileInventory.file_path == request.file_path,
+            FileInventory.file_path == validated_path,
         )
     )
     file_inv = inventory.scalar_one_or_none()
@@ -191,7 +202,7 @@ async def enable_file_monitoring(
     monitored = MonitoredFile(
         tenant_id=user.tenant_id,
         file_inventory_id=file_inv.id if file_inv else None,
-        file_path=request.file_path,
+        file_path=validated_path,  # Use validated path
         risk_tier=risk_tier,
         audit_read=request.audit_read,
         audit_write=request.audit_write,
@@ -206,7 +217,7 @@ async def enable_file_monitoring(
         action="monitoring_enabled",
         resource_type="file",
         details={
-            "file_path": request.file_path,
+            "file_path": validated_path,  # Use validated path
             "audit_read": request.audit_read,
             "audit_write": request.audit_write,
         },

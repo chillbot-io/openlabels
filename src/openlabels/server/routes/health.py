@@ -8,19 +8,45 @@ import logging
 import platform
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, text, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult, JobQueue
 from openlabels.auth.dependencies import get_current_user
+from openlabels.core.circuit_breaker import CircuitBreaker
+from openlabels.jobs.queue import JobQueue as JobQueueService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class CircuitBreakerStatus(BaseModel):
+    """Status of a single circuit breaker."""
+
+    name: str
+    state: str  # closed, open, half_open
+    failure_count: int
+    success_count: int
+    time_until_recovery: float
+    stats: dict[str, int]
+
+
+class JobMetrics(BaseModel):
+    """Job queue metrics."""
+
+    pending_count: int
+    running_count: int
+    failed_count: int
+    completed_count: int
+    stuck_jobs_count: int = 0
+    stale_pending_count: int = 0
+    oldest_pending_hours: Optional[float] = None
+    oldest_running_hours: Optional[float] = None
 
 
 class HealthStatus(BaseModel):
@@ -46,6 +72,12 @@ class HealthStatus(BaseModel):
     scans_today: int
     files_processed: int
     success_rate: float
+
+    # Circuit breakers
+    circuit_breakers: Optional[list[CircuitBreakerStatus]] = None
+
+    # Job metrics
+    job_metrics: Optional[JobMetrics] = None
 
     # Optional extended info
     python_version: Optional[str] = None
@@ -238,6 +270,42 @@ async def get_health_status(
 
     except Exception as e:
         logger.warning(f"Stats query failed: {e}")
+
+    # Add circuit breaker status
+    try:
+        cb_statuses = []
+        for name, cb in CircuitBreaker._registry.items():
+            cb_status = cb.get_status()
+            cb_statuses.append(CircuitBreakerStatus(
+                name=cb_status["name"],
+                state=cb_status["state"],
+                failure_count=cb_status["failure_count"],
+                success_count=cb_status["success_count"],
+                time_until_recovery=cb_status["time_until_recovery"],
+                stats=cb_status["stats"],
+            ))
+        status["circuit_breakers"] = cb_statuses
+    except Exception as e:
+        logger.debug(f"Circuit breaker status failed: {e}")
+
+    # Add job metrics
+    try:
+        job_queue = JobQueueService(session, user.tenant_id)
+        age_stats = await job_queue.get_job_age_stats()
+        stale_jobs = await job_queue.get_stale_pending_jobs()
+
+        status["job_metrics"] = JobMetrics(
+            pending_count=pending_count,  # Already computed above
+            running_count=age_stats.get("running_count", 0),
+            failed_count=failed_count,  # Already computed above
+            completed_count=age_stats.get("completed_count", 0),
+            stuck_jobs_count=age_stats.get("stuck_count", 0),
+            stale_pending_count=len(stale_jobs),
+            oldest_pending_hours=age_stats.get("oldest_pending_hours"),
+            oldest_running_hours=age_stats.get("oldest_running_hours"),
+        )
+    except Exception as e:
+        logger.debug(f"Job metrics failed: {e}")
 
     # Add system info
     status["python_version"] = platform.python_version()

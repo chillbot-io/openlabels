@@ -10,6 +10,8 @@ from typing import Optional
 
 import click
 
+from openlabels.core.path_validation import validate_output_path, PathValidationError
+
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True))
@@ -77,6 +79,13 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
 
         # Output results
         if output:
+            # Security: Validate output path to prevent path traversal
+            try:
+                validated_output = validate_output_path(output, create_parent=True)
+            except PathValidationError as e:
+                click.echo(f"Error: Invalid output path: {e}", err=True)
+                return
+
             # JSON output
             output_data = []
             for result in results:
@@ -87,9 +96,9 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
                     "entity_counts": result.entity_counts,
                     "error": result.error,
                 })
-            with open(output, "w") as f:
+            with open(validated_output, "w") as f:
                 json.dump(output_data, f, indent=2)
-            click.echo(f"\nResults written to: {output}")
+            click.echo(f"\nResults written to: {validated_output}")
             click.echo(f"Files processed: {len(results)}")
             click.echo(f"Files with risk >= {min_score}: {len([r for r in results if r.risk_score >= min_score])}")
         else:

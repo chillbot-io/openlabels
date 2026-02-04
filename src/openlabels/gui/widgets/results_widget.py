@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Dict
 
+from openlabels.core.path_validation import validate_output_path, PathValidationError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -308,8 +310,15 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         if not file_path:
             return
 
+        # Security: Validate output path to prevent writing to system directories
         try:
-            with open(file_path, "w", newline="", encoding="utf-8") as f:
+            validated_path = validate_output_path(file_path, create_parent=True)
+        except PathValidationError as e:
+            QMessageBox.critical(self, "Export Error", f"Invalid path: {e}")
+            return
+
+        try:
+            with open(validated_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(["File Path", "File Name", "Risk Tier", "Risk Score", "Entity Count", "Labeled", "Label Name"])
 
@@ -325,7 +334,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
                         result.get("current_label_name", ""),
                     ])
 
-            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {file_path}")
+            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
@@ -346,11 +355,18 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         if not file_path:
             return
 
+        # Security: Validate output path to prevent writing to system directories
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
+            validated_path = validate_output_path(file_path, create_parent=True)
+        except PathValidationError as e:
+            QMessageBox.critical(self, "Export Error", f"Invalid path: {e}")
+            return
+
+        try:
+            with open(validated_path, "w", encoding="utf-8") as f:
                 json.dump(self._filtered_results, f, indent=2, default=str)
 
-            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {file_path}")
+            QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
