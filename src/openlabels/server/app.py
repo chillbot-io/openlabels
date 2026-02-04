@@ -23,7 +23,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels import __version__
 from openlabels.server.config import get_settings
-from openlabels.server.utils import get_client_ip
+from openlabels.server.utils import get_client_ip  # noqa: F401 - re-exported for backwards compatibility
 from openlabels.server.db import init_db, close_db
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id

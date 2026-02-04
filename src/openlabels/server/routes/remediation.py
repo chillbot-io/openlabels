@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 
 from openlabels.server.db import get_session
-from openlabels.server.app import get_client_ip
+from openlabels.server.utils import get_client_ip
 from openlabels.server.models import (
     RemediationAction,
     FileInventory,

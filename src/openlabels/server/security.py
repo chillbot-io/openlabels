@@ -10,13 +10,16 @@ Provides reusable functions for:
 
 import logging
 import re
-from typing import Optional, TypeVar, Type
+from typing import TYPE_CHECKING, Optional, TypeVar, Type, Any
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.auth.dependencies import CurrentUser
+# Use TYPE_CHECKING to avoid circular imports
+# auth.dependencies imports from server.* which imports routes which imports auth
+if TYPE_CHECKING:
+    from openlabels.auth.dependencies import CurrentUser
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ async def get_resource_with_tenant_check(
     session: AsyncSession,
     model_class: Type[T],
     resource_id: UUID,
-    user: CurrentUser,
+    user: "CurrentUser",
     resource_name: str = "Resource",
 ) -> T:
     """
@@ -85,7 +88,7 @@ async def get_resource_with_tenant_check(
 
 def validate_tenant_id(
     resource_tenant_id: UUID,
-    user: CurrentUser,
+    user: "CurrentUser",
     resource_name: str = "Resource",
     resource_id: Optional[UUID] = None,
 ) -> bool:
@@ -128,7 +131,7 @@ def validate_tenant_id(
 
 def log_security_event(
     event_type: str,
-    user: Optional[CurrentUser] = None,
+    user: Optional["CurrentUser"] = None,
     details: Optional[dict] = None,
     level: str = "warning",
 ):

@@ -1,7 +1,8 @@
 """
-Utility functions for OpenLabels Server.
+Server utility functions.
 
-These functions are kept separate to avoid circular imports.
+This module contains utility functions that need to be imported by multiple
+modules. It's kept dependency-light to avoid circular imports.
 """
 
 from fastapi import Request
