@@ -72,8 +72,15 @@ def generate_uuid() -> PyUUID:
     - ~20% faster inserts at scale
 
     Falls back to UUIDv4 if uuid-utils is not installed.
+
+    Note: Always returns a standard library uuid.UUID to ensure compatibility
+    with asyncpg which returns standard UUIDs from PostgreSQL.
     """
-    return uuid7()
+    generated = uuid7()
+    # Ensure we return a standard library UUID, not uuid_utils.UUID
+    if not isinstance(generated, PyUUID):
+        return PyUUID(str(generated))
+    return generated
 
 
 # =============================================================================

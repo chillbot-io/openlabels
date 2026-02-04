@@ -290,7 +290,13 @@ class JobQueue:
             True if requeued successfully, False if job not found or not failed
         """
         job = await self.session.get(JobQueueModel, job_id)
-        if not job or job.status != "failed":
+        if not job:
+            return False
+
+        # Refresh to get latest state from database (in case of concurrent modifications)
+        await self.session.refresh(job)
+
+        if job.status != "failed":
             return False
 
         if job.tenant_id != self.tenant_id:

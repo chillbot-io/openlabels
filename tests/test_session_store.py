@@ -314,10 +314,40 @@ class TestSessionStoreDeleteAllForUser:
         assert count == 3
 
     @pytest.mark.asyncio
-    async def test_delete_all_preserves_other_user_sessions(self, session_store):
+    async def test_delete_all_preserves_other_user_sessions(self, session_store, test_db):
         """delete_all_for_user should not affect other users' sessions."""
-        user1 = str(uuid4())
-        user2 = str(uuid4())
+        from openlabels.server.models import Tenant, User
+
+        # Create a tenant for the test users
+        tenant = Tenant(
+            id=uuid4(),
+            name=f"Delete Test Tenant {uuid4().hex[:6]}",
+            azure_tenant_id=f"delete-test-{uuid4().hex[:8]}",
+        )
+        test_db.add(tenant)
+        await test_db.flush()
+
+        # Create two real users (foreign key constraint requires real users)
+        user1_obj = User(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            email=f"user1-{uuid4().hex[:6]}@localhost",
+            name="User 1",
+            role="admin",
+        )
+        user2_obj = User(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            email=f"user2-{uuid4().hex[:6]}@localhost",
+            name="User 2",
+            role="admin",
+        )
+        test_db.add(user1_obj)
+        test_db.add(user2_obj)
+        await test_db.commit()
+
+        user1 = str(user1_obj.id)
+        user2 = str(user2_obj.id)
 
         # Create sessions for user1
         for i in range(2):

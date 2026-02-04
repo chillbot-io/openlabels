@@ -67,9 +67,9 @@ async def create_scan(
     user: CurrentUser = Depends(require_admin),
 ) -> ScanResponse:
     """Create a new scan job."""
-    # Verify target exists
+    # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
     target = await session.get(ScanTarget, scan_request.target_id)
-    if not target:
+    if not target or target.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Target not found")
 
     # Create scan job

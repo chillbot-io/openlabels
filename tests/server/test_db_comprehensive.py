@@ -221,21 +221,25 @@ class TestGetSessionIntegration:
             tenant_name = f"test-commit-{id(self)}"
 
             # Insert through get_session
-            async for session in get_session():
-                tenant = Tenant(name=tenant_name)
-                session.add(tenant)
-                break  # Exit triggers commit
+            # Note: We must properly close the generator for commit to occur
+            gen = get_session()
+            session = await gen.__anext__()
+            tenant = Tenant(name=tenant_name)
+            session.add(tenant)
+            # Properly close generator to trigger commit
+            await gen.aclose()
 
             # Verify commit in new session
-            async for session in get_session():
-                from sqlalchemy import select
-                result = await session.execute(
-                    select(Tenant).where(Tenant.name == tenant_name)
-                )
-                found = result.scalar_one_or_none()
-                assert found is not None
-                assert found.name == tenant_name
-                break
+            gen2 = get_session()
+            session2 = await gen2.__anext__()
+            from sqlalchemy import select
+            result = await session2.execute(
+                select(Tenant).where(Tenant.name == tenant_name)
+            )
+            found = result.scalar_one_or_none()
+            assert found is not None
+            assert found.name == tenant_name
+            await gen2.aclose()
         finally:
             if db_module._engine:
                 async with db_module._engine.begin() as conn:
