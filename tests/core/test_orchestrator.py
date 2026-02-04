@@ -21,8 +21,10 @@ class TestOrchestratorInit:
         """Test orchestrator creates with default settings."""
         orchestrator = DetectorOrchestrator()
 
-        assert orchestrator.confidence_threshold > 0
-        assert len(orchestrator.detectors) > 0
+        assert orchestrator.confidence_threshold > 0, "Should have positive confidence threshold"
+        assert len(orchestrator.detectors) >= 4, "Should have at least 4 core detectors (checksum, secrets, financial, government)"
+        detector_names = orchestrator.detector_names
+        assert "checksum" in detector_names, "Should include checksum detector by default"
 
     def test_secrets_detector_can_be_disabled(self):
         """Test secrets detector can be disabled."""
@@ -110,7 +112,8 @@ class TestOrchestratorDetect:
 
         # Should find multiple entity types
         entity_types = set(s.entity_type for s in result.spans)
-        assert len(entity_types) >= 2
+        assert "SSN" in entity_types, f"Should detect SSN, found: {entity_types}"
+        assert "CREDIT_CARD" in entity_types, f"Should detect CREDIT_CARD, found: {entity_types}"
 
     def test_detect_empty_text(self):
         """Test detection on empty text."""
@@ -236,13 +239,16 @@ class TestErrorHandling:
     """Tests for error handling and graceful degradation."""
 
     def test_handles_unicode_text(self):
-        """Test that orchestrator handles unicode text."""
+        """Test that orchestrator handles unicode text and still detects PII."""
         orchestrator = DetectorOrchestrator()
         text = "Patient: José García, SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
-        assert isinstance(result.spans, list)
+        # Should still detect SSN despite unicode characters
+        ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
+        assert len(ssn_spans) >= 1, f"Should detect SSN in unicode text, found: {[s.entity_type for s in result.spans]}"
+        assert ssn_spans[0].text == "123-45-6789", f"Should match exact SSN, got: {ssn_spans[0].text}"
 
     def test_handles_very_long_text(self):
         """Test that orchestrator handles very long text."""
@@ -433,4 +439,6 @@ class TestIntegration:
         result = orchestrator.detect(text)
 
         # Should find classification markings
-        assert len(result.spans) >= 1
+        assert len(result.spans) >= 1, "Should detect government classification markings"
+        classification_spans = [s for s in result.spans if "CLASSIFICATION" in s.entity_type.upper() or "SECRET" in s.text.upper()]
+        assert len(classification_spans) >= 1, f"Should find classification marking, found types: {[s.entity_type for s in result.spans]}"

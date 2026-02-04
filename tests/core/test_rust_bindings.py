@@ -114,7 +114,7 @@ class TestPatternMatcherWrapper:
         assert any("EMAIL" in name for name in names)
 
     def test_find_matches_returns_list(self):
-        """find_matches should return a list of MatchResult objects."""
+        """find_matches should return a list of MatchResult objects with correct attributes."""
         from openlabels.core._rust import PatternMatcherWrapper, MatchResult
 
         patterns = [("DIGITS", r"\d{4}", None, 0.7)]
@@ -122,10 +122,13 @@ class TestPatternMatcherWrapper:
 
         results = matcher.find_matches("Test 1234 here")
 
-        assert isinstance(results, list)
-        assert len(results) == 1
-        assert isinstance(results[0], MatchResult)
-        assert results[0].matched_text == "1234"
+        assert len(results) == 1, "Should find exactly one 4-digit match"
+        assert isinstance(results[0], MatchResult), f"Result should be MatchResult, got {type(results[0])}"
+        assert results[0].matched_text == "1234", f"Should match '1234', got: {results[0].matched_text}"
+        assert results[0].pattern_name == "DIGITS", f"Pattern name should be DIGITS, got: {results[0].pattern_name}"
+        assert results[0].start == 5, f"Start position should be 5, got: {results[0].start}"
+        assert results[0].end == 9, f"End position should be 9, got: {results[0].end}"
+        assert results[0].confidence == 0.7, f"Confidence should be 0.7, got: {results[0].confidence}"
 
     def test_find_matches_multiple_matches(self):
         """find_matches should find all matches in text."""
@@ -702,10 +705,14 @@ class TestBuiltinPatterns:
     """Tests for the BUILTIN_PATTERNS definitions."""
 
     def test_builtin_patterns_not_empty(self):
-        """BUILTIN_PATTERNS should contain patterns."""
+        """BUILTIN_PATTERNS should contain expected core patterns."""
         from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
 
-        assert len(BUILTIN_PATTERNS) > 0
+        assert len(BUILTIN_PATTERNS) >= 10, "Should have at least 10 builtin patterns"
+        pattern_names = [p[0] for p in BUILTIN_PATTERNS]
+        assert "SSN" in pattern_names, "Should include SSN pattern"
+        assert "EMAIL" in pattern_names, "Should include EMAIL pattern"
+        assert "AWS_ACCESS_KEY" in pattern_names, "Should include AWS_ACCESS_KEY pattern"
 
     def test_builtin_patterns_format(self):
         """BUILTIN_PATTERNS should have correct tuple format."""
@@ -771,8 +778,9 @@ class TestPatternMatcherIntegration:
         results = matcher.find_matches("My SSN is 123-45-6789")
 
         ssn_matches = [r for r in results if "SSN" in r.pattern_name]
-        assert len(ssn_matches) > 0
-        assert "123-45-6789" in ssn_matches[0].matched_text
+        assert len(ssn_matches) >= 1, "Should detect at least one SSN"
+        assert ssn_matches[0].matched_text == "123-45-6789", f"Should match exact SSN, got: {ssn_matches[0].matched_text}"
+        assert ssn_matches[0].confidence >= 0.8, f"SSN should have high confidence, got: {ssn_matches[0].confidence}"
 
     def test_detect_email(self):
         """Pattern matcher should detect email addresses."""
@@ -804,7 +812,9 @@ class TestPatternMatcherIntegration:
         results = matcher.find_matches("AWS key: AKIAIOSFODNN7EXAMPLE")
 
         aws_matches = [r for r in results if "AWS" in r.pattern_name]
-        assert len(aws_matches) > 0
+        assert len(aws_matches) >= 1, "Should detect AWS access key"
+        assert "AKIAIOSFODNN7EXAMPLE" in aws_matches[0].matched_text, \
+            f"Should match AWS key, got: {aws_matches[0].matched_text}"
 
     def test_detect_private_key(self):
         """Pattern matcher should detect private key headers."""
@@ -814,7 +824,9 @@ class TestPatternMatcherIntegration:
         results = matcher.find_matches("-----BEGIN RSA PRIVATE KEY-----")
 
         key_matches = [r for r in results if "PRIVATE_KEY" in r.pattern_name]
-        assert len(key_matches) > 0
+        assert len(key_matches) >= 1, "Should detect private key header"
+        assert "BEGIN RSA PRIVATE KEY" in key_matches[0].matched_text, \
+            f"Should match key header, got: {key_matches[0].matched_text}"
 
     def test_detect_classification_marking(self):
         """Pattern matcher should detect classification markings."""
@@ -824,7 +836,9 @@ class TestPatternMatcherIntegration:
         results = matcher.find_matches("TOP SECRET document")
 
         class_matches = [r for r in results if "CLASSIFICATION" in r.pattern_name]
-        assert len(class_matches) > 0
+        assert len(class_matches) >= 1, "Should detect classification marking"
+        assert "TOP SECRET" in class_matches[0].matched_text, \
+            f"Should match TOP SECRET, got: {class_matches[0].matched_text}"
 
     def test_multiple_patterns_in_document(self):
         """Pattern matcher should detect multiple patterns in a document."""
