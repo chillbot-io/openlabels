@@ -202,7 +202,7 @@ class TokenCache:
 
     def is_valid(self) -> bool:
         """Check if token is still valid (with 5 min buffer)."""
-        return self.access_token and datetime.now(timezone.utc) < (self.expires_at - timedelta(minutes=5))
+        return bool(self.access_token and datetime.now(timezone.utc) < (self.expires_at - timedelta(minutes=5)))
 
 
 class LabelingEngine:
