@@ -24,6 +24,11 @@ from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
 from openlabels.labeling.engine import LabelingEngine
+from openlabels.server.metrics import (
+    record_file_processed,
+    record_entities_found,
+    record_processing_duration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +283,7 @@ async def execute_scan_task(
                     continue
 
                 # Run detection
-                result = await _detect_and_score(content, file_info)
+                result = await _detect_and_score(content, file_info, target.adapter)
 
                 # Save result
                 scan_result = ScanResult(
@@ -668,7 +673,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
     return stats
 
 
-async def _detect_and_score(content: bytes, file_info) -> dict:
+async def _detect_and_score(content: bytes, file_info, adapter_type: str = "filesystem") -> dict:
     """
     Run detection and scoring on file content.
 
@@ -682,6 +687,7 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
     Args:
         content: Raw file bytes
         file_info: File metadata (path, name, exposure, etc.)
+        adapter_type: Type of adapter being used (for metrics)
 
     Returns:
         Dict with risk_score, risk_tier, entity_counts, etc.
@@ -701,6 +707,13 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
             exposure_level=exposure_level,
             file_size=file_info.size if hasattr(file_info, 'size') else len(content),
         )
+
+        # Record Prometheus metrics
+        record_file_processed(adapter_type)
+        if result.entity_counts:
+            record_entities_found(result.entity_counts)
+        if result.processing_time_ms:
+            record_processing_duration(adapter_type, result.processing_time_ms / 1000.0)
 
         # Build findings list from spans (for detailed reporting)
         findings = []
