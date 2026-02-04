@@ -21,6 +21,9 @@ from openlabels.server.models import JobQueue as JobQueueModel
 BASE_RETRY_DELAY_SECONDS = 2  # 2 seconds initial delay
 MAX_RETRY_DELAY_SECONDS = 3600  # Cap at 1 hour
 
+# Job timeout - jobs running longer than this are considered stuck
+DEFAULT_JOB_TIMEOUT_SECONDS = 3600  # 1 hour
+
 
 def calculate_retry_delay(retry_count: int) -> timedelta:
     """
@@ -425,3 +428,81 @@ class JobQueue:
             "cancelled": by_status.get("cancelled", 0),
             "failed_by_type": failed_by_type,
         }
+
+    # =========================================================================
+    # Stuck Job Recovery
+    # =========================================================================
+
+    async def reclaim_stuck_jobs(
+        self,
+        timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    ) -> int:
+        """
+        Reclaim jobs that have been running for too long (likely crashed workers).
+
+        This handles the case where a worker crashes after dequeuing a job but
+        before completing or failing it. The job would otherwise remain stuck
+        in "running" status forever.
+
+        Args:
+            timeout_seconds: Jobs running longer than this are considered stuck
+
+        Returns:
+            Number of jobs reclaimed
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+
+        # Find stuck jobs
+        query = (
+            select(JobQueueModel)
+            .where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "running",
+                JobQueueModel.started_at < cutoff,
+            )
+            .with_for_update(skip_locked=True)
+        )
+
+        result = await self.session.execute(query)
+        stuck_jobs = result.scalars().all()
+
+        reclaimed = 0
+        for job in stuck_jobs:
+            # Treat as a failure and let retry logic handle it
+            job.status = "pending"
+            job.retry_count += 1
+            job.worker_id = None
+            job.started_at = None
+            job.error = f"Reclaimed: job was stuck (running for >{timeout_seconds}s)"
+
+            if job.retry_count >= job.max_retries:
+                # Move to dead letter queue
+                job.status = "failed"
+                job.completed_at = datetime.now(timezone.utc)
+
+            reclaimed += 1
+
+        if reclaimed > 0:
+            await self.session.flush()
+
+        return reclaimed
+
+    async def get_stuck_jobs_count(
+        self,
+        timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
+    ) -> int:
+        """Get count of potentially stuck jobs."""
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+
+        query = (
+            select(func.count())
+            .select_from(JobQueueModel)
+            .where(
+                JobQueueModel.tenant_id == self.tenant_id,
+                JobQueueModel.status == "running",
+                JobQueueModel.started_at < cutoff,
+            )
+        )
+
+        result = await self.session.execute(query)
+        return result.scalar() or 0

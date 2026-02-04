@@ -130,31 +130,69 @@ async def get_result_stats(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> ResultStats:
-    """Get aggregated statistics for scan results."""
-    base_query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+    """Get aggregated statistics for scan results using efficient SQL aggregation."""
+    # Build base filter conditions
+    conditions = [ScanResult.tenant_id == user.tenant_id]
     if job_id:
-        base_query = base_query.where(ScanResult.job_id == job_id)
+        conditions.append(ScanResult.job_id == job_id)
 
-    result = await session.execute(base_query)
-    results = result.scalars().all()
+    # Total files count
+    total_query = select(func.count()).select_from(ScanResult).where(*conditions)
+    total_result = await session.execute(total_query)
+    total_files = total_result.scalar() or 0
 
-    # Calculate stats
-    total_files = len(results)
-    files_with_pii = sum(1 for r in results if r.total_entities > 0)
+    # Files with PII count
+    pii_conditions = conditions + [ScanResult.total_entities > 0]
+    pii_query = select(func.count()).select_from(ScanResult).where(*pii_conditions)
+    pii_result = await session.execute(pii_query)
+    files_with_pii = pii_result.scalar() or 0
 
-    tier_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "MINIMAL": 0}
+    # Count by risk tier (single aggregation query)
+    tier_query = (
+        select(ScanResult.risk_tier, func.count())
+        .where(*conditions)
+        .group_by(ScanResult.risk_tier)
+    )
+    tier_result = await session.execute(tier_query)
+    tier_counts_raw = dict(tier_result.all())
+    tier_counts = {
+        "CRITICAL": tier_counts_raw.get("CRITICAL", 0),
+        "HIGH": tier_counts_raw.get("HIGH", 0),
+        "MEDIUM": tier_counts_raw.get("MEDIUM", 0),
+        "LOW": tier_counts_raw.get("LOW", 0),
+        "MINIMAL": tier_counts_raw.get("MINIMAL", 0),
+    }
+
+    # Labels applied count
+    applied_conditions = conditions + [ScanResult.label_applied == True]  # noqa: E712
+    applied_query = select(func.count()).select_from(ScanResult).where(*applied_conditions)
+    applied_result = await session.execute(applied_query)
+    labels_applied = applied_result.scalar() or 0
+
+    # Labels pending count (has recommended but not applied)
+    pending_conditions = conditions + [
+        ScanResult.label_applied == False,  # noqa: E712
+        ScanResult.recommended_label_id.isnot(None),
+    ]
+    pending_query = select(func.count()).select_from(ScanResult).where(*pending_conditions)
+    pending_result = await session.execute(pending_query)
+    labels_pending = pending_result.scalar() or 0
+
+    # For entity type aggregation, we need to query entity_counts JSON
+    # This requires fetching just the entity_counts column, not full rows
+    entity_query = select(ScanResult.entity_counts).where(
+        *conditions,
+        ScanResult.entity_counts.isnot(None),
+    )
+    entity_result = await session.execute(entity_query)
+    entity_rows = entity_result.scalars().all()
+
+    # Aggregate entity counts in Python (JSON aggregation varies by DB)
     entity_totals: dict[str, int] = {}
-    labels_applied = 0
-    labels_pending = 0
-
-    for r in results:
-        tier_counts[r.risk_tier] = tier_counts.get(r.risk_tier, 0) + 1
-        for entity_type, count in (r.entity_counts or {}).items():
-            entity_totals[entity_type] = entity_totals.get(entity_type, 0) + count
-        if r.label_applied:
-            labels_applied += 1
-        elif r.recommended_label_id:
-            labels_pending += 1
+    for entity_counts in entity_rows:
+        if entity_counts:
+            for entity_type, count in entity_counts.items():
+                entity_totals[entity_type] = entity_totals.get(entity_type, 0) + count
 
     # Top 10 entity types
     top_entities = dict(sorted(entity_totals.items(), key=lambda x: x[1], reverse=True)[:10])

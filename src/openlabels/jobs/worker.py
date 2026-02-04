@@ -5,13 +5,17 @@ Features:
 - Configurable concurrency at runtime via shared state
 - Graceful shutdown with signal handlers
 - Per-tenant job isolation
+- File locking for safe concurrent state access
 """
 
 import asyncio
+import fcntl
+import json
 import logging
 import os
 import signal
 import socket
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -28,29 +32,54 @@ logger = logging.getLogger(__name__)
 # Shared state file for runtime configuration
 # Workers check this periodically to adjust concurrency
 WORKER_STATE_FILE = Path("/tmp/openlabels_worker_state.json")
+WORKER_STATE_LOCK_FILE = Path("/tmp/openlabels_worker_state.lock")
+
+
+@contextmanager
+def _file_lock(lock_path: Path):
+    """
+    Context manager for file-based locking.
+
+    Uses fcntl.flock for safe concurrent access across multiple processes.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+        lock_fd.close()
 
 
 def get_worker_state() -> dict:
-    """Get current worker state from shared state file."""
-    import json
-
-    if WORKER_STATE_FILE.exists():
-        try:
-            with open(WORKER_STATE_FILE) as f:
-                return json.load(f)
-        except Exception as e:
-            logger.debug(f"Failed to read worker state file: {e}")
+    """Get current worker state from shared state file (with file locking)."""
+    try:
+        with _file_lock(WORKER_STATE_LOCK_FILE):
+            if WORKER_STATE_FILE.exists():
+                with open(WORKER_STATE_FILE) as f:
+                    return json.load(f)
+    except Exception as e:
+        logger.debug(f"Failed to read worker state file: {e}")
     return {}
 
 
 def set_worker_state(state: dict) -> None:
-    """Update worker state in shared state file."""
-    import json
-
-    current = get_worker_state()
-    current.update(state)
-    with open(WORKER_STATE_FILE, "w") as f:
-        json.dump(current, f)
+    """Update worker state in shared state file (with file locking)."""
+    try:
+        with _file_lock(WORKER_STATE_LOCK_FILE):
+            current = {}
+            if WORKER_STATE_FILE.exists():
+                try:
+                    with open(WORKER_STATE_FILE) as f:
+                        current = json.load(f)
+                except Exception:
+                    pass
+            current.update(state)
+            with open(WORKER_STATE_FILE, "w") as f:
+                json.dump(current, f)
+    except Exception as e:
+        logger.warning(f"Failed to write worker state file: {e}")
 
 
 class Worker:
@@ -106,14 +135,50 @@ class Worker:
         # Start concurrency monitor
         monitor_task = asyncio.create_task(self._concurrency_monitor())
 
+        # Start stuck job reclaimer
+        reclaimer_task = asyncio.create_task(self._stuck_job_reclaimer())
+
         # Wait for all workers
-        await asyncio.gather(*self._worker_tasks, monitor_task, return_exceptions=True)
+        await asyncio.gather(*self._worker_tasks, monitor_task, reclaimer_task, return_exceptions=True)
 
     def _handle_shutdown(self) -> None:
         """Handle shutdown signal."""
         logger.info(f"Worker {self.worker_id} shutting down...")
         self.running = False
         set_worker_state({"status": "stopping"})
+
+    async def _stuck_job_reclaimer(self) -> None:
+        """
+        Periodically reclaim stuck jobs that have been running for too long.
+
+        This handles the case where a worker crashes after dequeuing a job
+        but before completing or failing it.
+        """
+        reclaim_interval = 300  # Check every 5 minutes
+
+        while self.running:
+            try:
+                async with get_session_context() as session:
+                    from sqlalchemy import select
+                    from openlabels.server.models import Tenant
+
+                    result = await session.execute(select(Tenant))
+                    tenants = result.scalars().all()
+
+                    total_reclaimed = 0
+                    for tenant in tenants:
+                        queue = JobQueue(session, tenant.id)
+                        reclaimed = await queue.reclaim_stuck_jobs()
+                        total_reclaimed += reclaimed
+
+                    if total_reclaimed > 0:
+                        await session.commit()
+                        logger.info(f"Reclaimed {total_reclaimed} stuck jobs")
+
+            except Exception as e:
+                logger.debug(f"Stuck job reclaimer error: {e}")
+
+            await asyncio.sleep(reclaim_interval)
 
     async def _concurrency_monitor(self) -> None:
         """

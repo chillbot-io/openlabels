@@ -107,6 +107,11 @@ class GraphClient:
         client = GraphClient(tenant_id, client_id, client_secret)
         async with client:
             data = await client.get("/me/drive/root/children")
+
+    Security Notes:
+        - Client secret is stored in memory only while the client is active
+        - Call clear_credentials() or use context manager to clear sensitive data
+        - Access tokens are also cleared on exit
     """
 
     def __init__(
@@ -129,7 +134,8 @@ class GraphClient:
         """
         self.tenant_id = tenant_id
         self.client_id = client_id
-        self.client_secret = client_secret
+        # Store secret in a private attribute to discourage direct access
+        self._client_secret: str = client_secret
 
         self.rate_config = rate_config or RateLimiterConfig()
         self.pool_size = pool_size
@@ -159,6 +165,20 @@ class GraphClient:
             "errors": 0,
         }
 
+    def clear_credentials(self) -> None:
+        """
+        Clear sensitive credentials from memory.
+
+        Call this when the client is no longer needed to minimize
+        the time credentials remain in memory.
+        """
+        # Overwrite with empty strings before clearing (defense in depth)
+        if self._client_secret:
+            self._client_secret = ""
+        if self._access_token:
+            self._access_token = ""
+        self._token_expires_at = None
+
     async def __aenter__(self) -> "GraphClient":
         """Create connection pool on context enter."""
         self._client = httpx.AsyncClient(
@@ -172,10 +192,12 @@ class GraphClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Close connection pool on context exit."""
+        """Close connection pool and clear credentials on context exit."""
         if self._client:
             await self._client.aclose()
             self._client = None
+        # Clear sensitive data when context exits
+        self.clear_credentials()
 
     async def _ensure_token(self) -> str:
         """Ensure we have a valid access token, refreshing if needed."""
@@ -196,7 +218,7 @@ class GraphClient:
             auth_url = GRAPH_AUTH_URL.format(tenant_id=self.tenant_id)
             data = {
                 "client_id": self.client_id,
-                "client_secret": self.client_secret,
+                "client_secret": self._client_secret,
                 "scope": "https://graph.microsoft.com/.default",
                 "grant_type": "client_credentials",
             }
