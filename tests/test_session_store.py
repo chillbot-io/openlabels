@@ -1,472 +1,395 @@
 """
-Comprehensive tests for database-backed session storage.
+PostgreSQL integration tests for session storage.
 
-Tests SessionStore and PendingAuthStore for session management,
-expiration handling, and cleanup operations.
+Tests actual database behavior for SessionStore and PendingAuthStore.
+Requires PostgreSQL - set TEST_DATABASE_URL env var.
 
-Strong assertions, no skipping.
+Run with:
+    export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
+    pytest tests/test_session_store.py -v
 """
 
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
-from dataclasses import dataclass
+from uuid import uuid4
 
 from openlabels.server.session import SessionStore, PendingAuthStore
 
 
-# =============================================================================
-# MOCK DATABASE SETUP
-# =============================================================================
+@pytest.fixture
+async def session_store(test_db):
+    """Create SessionStore with real database session."""
+    return SessionStore(test_db)
 
 
-class MockScalarResult:
-    """Mock for scalar query results."""
-
-    def __init__(self, value):
-        self._value = value
-
-    def scalar_one_or_none(self):
-        return self._value
-
-    def scalar(self):
-        return self._value
+@pytest.fixture
+async def pending_auth_store(test_db):
+    """Create PendingAuthStore with real database session."""
+    return PendingAuthStore(test_db)
 
 
-class MockSession:
-    """Mock database session for testing."""
-
-    def __init__(self):
-        self._data = {}
-        self._added = []
-        self._deleted = []
-        self._execute_results = []
-
-    async def execute(self, query):
-        """Execute a query and return mock result."""
-        if self._execute_results:
-            return self._execute_results.pop(0)
-        return MockScalarResult(None)
-
-    async def flush(self):
-        """Flush pending changes."""
-        pass
-
-    def add(self, obj):
-        """Add object to session."""
-        self._added.append(obj)
-
-    async def delete(self, obj):
-        """Delete object from session."""
-        self._deleted.append(obj)
-
-    async def get(self, model, id):
-        """Get object by ID."""
-        return self._data.get(id)
-
-    def set_execute_result(self, result):
-        """Set the next execute result."""
-        self._execute_results.append(result)
+@pytest.fixture
+async def test_user_id():
+    """Generate a unique test user ID."""
+    return str(uuid4())
 
 
-@dataclass
-class MockSessionModel:
-    """Mock Session database model."""
-    id: str
-    data: dict
-    expires_at: datetime
-    tenant_id: str = None
-    user_id: str = None
+@pytest.fixture
+async def test_tenant_id():
+    """Generate a unique test tenant ID."""
+    return str(uuid4())
 
 
-@dataclass
-class MockPendingAuth:
-    """Mock PendingAuth database model."""
-    state: str
-    redirect_uri: str
-    callback_url: str
-    created_at: datetime = None
-
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc)
-
-
-class MockDeleteResult:
-    """Mock result from delete operations."""
-
-    def __init__(self, rowcount):
-        self.rowcount = rowcount
-
-
-# =============================================================================
-# SESSION STORE TESTS
-# =============================================================================
-
-
+@pytest.mark.integration
 class TestSessionStoreGet:
-    """Tests for SessionStore.get method."""
+    """Integration tests for SessionStore.get method."""
 
     @pytest.mark.asyncio
-    async def test_get_existing_session(self):
-        """Get existing valid session returns data."""
-        db = MockSession()
-        store = SessionStore(db)
+    async def test_get_nonexistent_session_returns_none(self, session_store):
+        """Get for nonexistent session ID should return None."""
+        result = await session_store.get("nonexistent-session-id")
+        assert result is None
 
-        session_data = {"access_token": "test-token", "claims": {"user": "test"}}
-        mock_session = MockSessionModel(
-            id="session123",
-            data=session_data,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(mock_session))
+    @pytest.mark.asyncio
+    async def test_get_valid_session_returns_data(self, session_store):
+        """Get for valid session should return stored data."""
+        session_id = f"test-session-{uuid4()}"
+        session_data = {"access_token": "test-token", "user_id": "123"}
 
-        result = await store.get("session123")
+        await session_store.set(session_id, session_data, ttl=3600)
+        result = await session_store.get(session_id)
 
         assert result == session_data
         assert result["access_token"] == "test-token"
-        assert result["claims"]["user"] == "test"
+        assert result["user_id"] == "123"
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_session(self):
-        """Get nonexistent session returns None."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        result = await store.get("nonexistent")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_expired_session(self):
-        """Get expired session returns None."""
-        db = MockSession()
-        store = SessionStore(db)
-        # Expired sessions are filtered out by query, so result is None
-        db.set_execute_result(MockScalarResult(None))
-
-        result = await store.get("expired-session")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_with_empty_data(self):
-        """Get session with empty data dict."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        mock_session = MockSessionModel(
-            id="empty-session",
-            data={},
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(mock_session))
-
-        result = await store.get("empty-session")
-
-        assert result == {}
-
-    @pytest.mark.asyncio
-    async def test_get_with_complex_data(self):
-        """Get session with complex nested data."""
-        db = MockSession()
-        store = SessionStore(db)
-
+    async def test_get_preserves_nested_data(self, session_store):
+        """Get should preserve complex nested data structures."""
+        session_id = f"test-session-{uuid4()}"
         complex_data = {
             "access_token": "xyz",
-            "refresh_token": "abc",
             "claims": {
                 "oid": "user-oid-123",
                 "tid": "tenant-456",
                 "roles": ["admin", "user"],
                 "nested": {"deep": {"value": 42}}
             },
-            "expires_at": "2025-12-31T23:59:59Z"
+            "numbers": [1, 2, 3],
         }
-        mock_session = MockSessionModel(
-            id="complex-session",
-            data=complex_data,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(mock_session))
 
-        result = await store.get("complex-session")
+        await session_store.set(session_id, complex_data, ttl=3600)
+        result = await session_store.get(session_id)
 
         assert result["claims"]["roles"] == ["admin", "user"]
         assert result["claims"]["nested"]["deep"]["value"] == 42
+        assert result["numbers"] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_get_empty_data_dict(self, session_store):
+        """Get should handle empty data dict."""
+        session_id = f"test-session-{uuid4()}"
+
+        await session_store.set(session_id, {}, ttl=3600)
+        result = await session_store.get(session_id)
+
+        assert result == {}
 
 
+@pytest.mark.integration
+class TestSessionStoreExpiration:
+    """Integration tests for session expiration."""
+
+    @pytest.mark.asyncio
+    async def test_expired_session_returns_none(self, session_store):
+        """Expired session should return None."""
+        from openlabels.server.models import Session
+
+        session_id = f"test-expired-{uuid4()}"
+
+        # Create session with TTL of 0 (immediately expired)
+        await session_store.set(session_id, {"data": True}, ttl=0)
+
+        # Wait a tiny bit to ensure it's past expiration
+        import asyncio
+        await asyncio.sleep(0.1)
+
+        result = await session_store.get(session_id)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_session_with_future_expiry_returns_data(self, session_store):
+        """Session with future expiry should return data."""
+        session_id = f"test-valid-{uuid4()}"
+
+        await session_store.set(session_id, {"valid": True}, ttl=7200)  # 2 hours
+        result = await session_store.get(session_id)
+
+        assert result == {"valid": True}
+
+
+@pytest.mark.integration
 class TestSessionStoreSet:
-    """Tests for SessionStore.set method."""
+    """Integration tests for SessionStore.set method."""
 
     @pytest.mark.asyncio
-    async def test_set_new_session(self):
-        """Set creates new session when not existing."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))  # Not found
+    async def test_set_creates_new_session(self, session_store):
+        """Set should create new session when ID doesn't exist."""
+        session_id = f"test-new-{uuid4()}"
 
-        await store.set(
-            "new-session",
-            {"access_token": "token123"},
-            ttl=3600,
-            tenant_id="tenant1",
-            user_id="user1"
-        )
+        await session_store.set(session_id, {"new": True}, ttl=3600)
+        result = await session_store.get(session_id)
 
-        assert len(db._added) == 1
-        # Note: We can't easily verify the Session object without importing it
+        assert result == {"new": True}
 
     @pytest.mark.asyncio
-    async def test_set_updates_existing_session(self):
-        """Set updates existing session."""
-        db = MockSession()
-        store = SessionStore(db)
+    async def test_set_updates_existing_session(self, session_store):
+        """Set should update existing session data."""
+        session_id = f"test-update-{uuid4()}"
 
-        existing = MockSessionModel(
-            id="existing-session",
-            data={"old": "data"},
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(existing))
+        # Create initial session
+        await session_store.set(session_id, {"version": 1}, ttl=3600)
 
-        await store.set(
-            "existing-session",
-            {"new": "data"},
-            ttl=7200
-        )
+        # Update session
+        await session_store.set(session_id, {"version": 2, "updated": True}, ttl=3600)
 
-        # Should update existing, not add new
-        assert len(db._added) == 0
-        assert existing.data == {"new": "data"}
+        result = await session_store.get(session_id)
+        assert result == {"version": 2, "updated": True}
 
     @pytest.mark.asyncio
-    async def test_set_with_ttl_calculates_expiry(self):
-        """Set calculates correct expiry from TTL."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
+    async def test_set_with_tenant_and_user(self, session_store, test_tenant_id, test_user_id):
+        """Set should store tenant_id and user_id."""
+        session_id = f"test-with-ids-{uuid4()}"
 
-        before = datetime.now(timezone.utc)
-        await store.set("session", {"data": True}, ttl=3600)
-        after = datetime.now(timezone.utc)
-
-        # Verify a session was added
-        assert len(db._added) == 1
-
-    @pytest.mark.asyncio
-    async def test_set_with_tenant_and_user(self):
-        """Set stores tenant and user IDs."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        await store.set(
-            "session-with-ids",
+        await session_store.set(
+            session_id,
             {"token": "abc"},
             ttl=3600,
-            tenant_id="tenant-xyz",
-            user_id="user-123"
+            tenant_id=test_tenant_id,
+            user_id=test_user_id,
         )
 
-        assert len(db._added) == 1
+        result = await session_store.get(session_id)
+        assert result == {"token": "abc"}
 
     @pytest.mark.asyncio
-    async def test_set_with_zero_ttl(self):
-        """Set with zero TTL creates immediately expired session."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
+    async def test_set_extends_expiry_on_update(self, session_store):
+        """Updating a session should extend its expiry."""
+        session_id = f"test-extend-{uuid4()}"
 
-        await store.set("zero-ttl", {"data": True}, ttl=0)
+        # Create with short TTL
+        await session_store.set(session_id, {"data": True}, ttl=60)
 
-        assert len(db._added) == 1
+        # Update with longer TTL
+        await session_store.set(session_id, {"data": True, "extended": True}, ttl=7200)
 
-    @pytest.mark.asyncio
-    async def test_set_with_large_ttl(self):
-        """Set with large TTL works correctly."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        # 30 days TTL
-        await store.set("long-session", {"data": True}, ttl=30 * 24 * 3600)
-
-        assert len(db._added) == 1
+        # Session should still be valid
+        result = await session_store.get(session_id)
+        assert result["extended"] is True
 
 
+@pytest.mark.integration
 class TestSessionStoreDelete:
-    """Tests for SessionStore.delete method."""
+    """Integration tests for SessionStore.delete method."""
 
     @pytest.mark.asyncio
-    async def test_delete_existing_session(self):
-        """Delete existing session returns True."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(1))
+    async def test_delete_existing_session_returns_true(self, session_store):
+        """Delete existing session should return True."""
+        session_id = f"test-delete-{uuid4()}"
+        await session_store.set(session_id, {"data": True}, ttl=3600)
 
-        result = await store.delete("session-to-delete")
+        result = await session_store.delete(session_id)
 
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_delete_nonexistent_session(self):
-        """Delete nonexistent session returns False."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(0))
-
-        result = await store.delete("nonexistent")
-
+    async def test_delete_nonexistent_session_returns_false(self, session_store):
+        """Delete nonexistent session should return False."""
+        result = await session_store.delete("nonexistent-delete-test")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_delete_empty_session_id(self):
-        """Delete with empty session ID."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(0))
+    async def test_delete_makes_session_unretrievable(self, session_store):
+        """Deleted session should not be retrievable."""
+        session_id = f"test-delete-verify-{uuid4()}"
+        await session_store.set(session_id, {"data": True}, ttl=3600)
 
-        result = await store.delete("")
+        await session_store.delete(session_id)
+        result = await session_store.get(session_id)
 
-        assert result is False
+        assert result is None
 
 
+@pytest.mark.integration
 class TestSessionStoreCleanup:
-    """Tests for SessionStore.cleanup_expired method."""
+    """Integration tests for SessionStore.cleanup_expired method."""
 
     @pytest.mark.asyncio
-    async def test_cleanup_removes_expired(self):
-        """Cleanup removes expired sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(5))
+    async def test_cleanup_removes_expired_sessions(self, session_store):
+        """Cleanup should remove expired sessions."""
+        # Create some expired sessions
+        for i in range(3):
+            session_id = f"test-expired-cleanup-{uuid4()}"
+            await session_store.set(session_id, {"index": i}, ttl=0)
 
-        count = await store.cleanup_expired()
+        import asyncio
+        await asyncio.sleep(0.1)
 
-        assert count == 5
+        count = await session_store.cleanup_expired()
 
-    @pytest.mark.asyncio
-    async def test_cleanup_no_expired(self):
-        """Cleanup with no expired sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(0))
-
-        count = await store.cleanup_expired()
-
-        assert count == 0
+        assert count >= 3  # At least the 3 we created
 
     @pytest.mark.asyncio
-    async def test_cleanup_many_expired(self):
-        """Cleanup with many expired sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(1000))
+    async def test_cleanup_preserves_valid_sessions(self, session_store):
+        """Cleanup should not remove valid sessions."""
+        valid_id = f"test-valid-cleanup-{uuid4()}"
+        await session_store.set(valid_id, {"valid": True}, ttl=3600)
 
-        count = await store.cleanup_expired()
+        # Create and clean expired sessions
+        for i in range(2):
+            expired_id = f"test-expired-cleanup-{uuid4()}"
+            await session_store.set(expired_id, {"index": i}, ttl=0)
 
-        assert count == 1000
+        import asyncio
+        await asyncio.sleep(0.1)
+
+        await session_store.cleanup_expired()
+
+        # Valid session should still exist
+        result = await session_store.get(valid_id)
+        assert result == {"valid": True}
 
 
+@pytest.mark.integration
 class TestSessionStoreDeleteAllForUser:
-    """Tests for SessionStore.delete_all_for_user method."""
+    """Integration tests for SessionStore.delete_all_for_user method."""
 
     @pytest.mark.asyncio
-    async def test_delete_all_user_sessions(self):
-        """Delete all sessions for a user."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(3))
+    async def test_delete_all_removes_user_sessions(self, session_store, test_user_id):
+        """delete_all_for_user should remove all sessions for that user."""
+        # Create multiple sessions for the user
+        for i in range(3):
+            session_id = f"test-user-session-{uuid4()}"
+            await session_store.set(
+                session_id,
+                {"index": i},
+                ttl=3600,
+                user_id=test_user_id,
+            )
 
-        count = await store.delete_all_for_user("user-123")
+        count = await session_store.delete_all_for_user(test_user_id)
 
         assert count == 3
 
     @pytest.mark.asyncio
-    async def test_delete_all_no_sessions(self):
-        """Delete all for user with no sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(0))
+    async def test_delete_all_preserves_other_user_sessions(self, session_store):
+        """delete_all_for_user should not affect other users' sessions."""
+        user1 = str(uuid4())
+        user2 = str(uuid4())
 
-        count = await store.delete_all_for_user("user-no-sessions")
+        # Create sessions for user1
+        for i in range(2):
+            await session_store.set(
+                f"user1-session-{uuid4()}",
+                {"user": 1, "index": i},
+                ttl=3600,
+                user_id=user1,
+            )
+
+        # Create session for user2
+        user2_session_id = f"user2-session-{uuid4()}"
+        await session_store.set(
+            user2_session_id,
+            {"user": 2},
+            ttl=3600,
+            user_id=user2,
+        )
+
+        # Delete all for user1
+        await session_store.delete_all_for_user(user1)
+
+        # user2's session should still exist
+        result = await session_store.get(user2_session_id)
+        assert result == {"user": 2}
+
+    @pytest.mark.asyncio
+    async def test_delete_all_for_user_with_no_sessions(self, session_store):
+        """delete_all_for_user should return 0 when user has no sessions."""
+        nonexistent_user = str(uuid4())
+
+        count = await session_store.delete_all_for_user(nonexistent_user)
 
         assert count == 0
 
-    @pytest.mark.asyncio
-    async def test_delete_all_many_sessions(self):
-        """Delete all for user with many sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockDeleteResult(50))
 
-        count = await store.delete_all_for_user("power-user")
-
-        assert count == 50
-
-
+@pytest.mark.integration
 class TestSessionStoreCountUserSessions:
-    """Tests for SessionStore.count_user_sessions method."""
+    """Integration tests for SessionStore.count_user_sessions method."""
 
     @pytest.mark.asyncio
-    async def test_count_user_sessions(self):
-        """Count active sessions for user."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(5))
+    async def test_count_returns_correct_number(self, session_store, test_user_id):
+        """count_user_sessions should return correct count."""
+        for i in range(5):
+            await session_store.set(
+                f"count-test-{uuid4()}",
+                {"index": i},
+                ttl=3600,
+                user_id=test_user_id,
+            )
 
-        count = await store.count_user_sessions("user-123")
+        count = await session_store.count_user_sessions(test_user_id)
 
         assert count == 5
 
     @pytest.mark.asyncio
-    async def test_count_no_sessions(self):
-        """Count returns zero for user with no sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(0))
+    async def test_count_excludes_expired_sessions(self, session_store, test_user_id):
+        """count_user_sessions should not count expired sessions."""
+        # Create valid session
+        await session_store.set(
+            f"valid-count-{uuid4()}",
+            {"valid": True},
+            ttl=3600,
+            user_id=test_user_id,
+        )
 
-        count = await store.count_user_sessions("new-user")
+        # Create expired session
+        await session_store.set(
+            f"expired-count-{uuid4()}",
+            {"expired": True},
+            ttl=0,
+            user_id=test_user_id,
+        )
 
-        assert count == 0
+        import asyncio
+        await asyncio.sleep(0.1)
 
-    @pytest.mark.asyncio
-    async def test_count_handles_none(self):
-        """Count handles None result gracefully."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
+        count = await session_store.count_user_sessions(test_user_id)
 
-        count = await store.count_user_sessions("user")
-
-        assert count == 0
-
-
-# =============================================================================
-# PENDING AUTH STORE TESTS
-# =============================================================================
-
-
-class TestPendingAuthStoreGet:
-    """Tests for PendingAuthStore.get method."""
+        assert count == 1  # Only the valid one
 
     @pytest.mark.asyncio
-    async def test_get_existing_pending_auth(self):
-        """Get existing pending auth returns data."""
-        db = MockSession()
-        store = PendingAuthStore(db)
+    async def test_count_returns_zero_for_no_sessions(self, session_store):
+        """count_user_sessions should return 0 for user with no sessions."""
+        count = await session_store.count_user_sessions(str(uuid4()))
+        assert count == 0
 
-        mock_pending = MockPendingAuth(
-            state="state123",
+
+@pytest.mark.integration
+class TestPendingAuthStoreBasicOperations:
+    """Integration tests for PendingAuthStore basic operations."""
+
+    @pytest.mark.asyncio
+    async def test_set_and_get_pending_auth(self, pending_auth_store):
+        """Should store and retrieve pending auth data."""
+        state = f"state-{uuid4()}"
+
+        await pending_auth_store.set(
+            state=state,
             redirect_uri="/dashboard",
             callback_url="https://app.example.com/auth/callback",
-            created_at=datetime.now(timezone.utc)
         )
-        db.set_execute_result(MockScalarResult(mock_pending))
 
-        result = await store.get("state123")
+        result = await pending_auth_store.get(state)
 
         assert result is not None
         assert result["redirect_uri"] == "/dashboard"
@@ -474,413 +397,187 @@ class TestPendingAuthStoreGet:
         assert "created_at" in result
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_pending_auth(self):
-        """Get nonexistent pending auth returns None."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        result = await store.get("nonexistent-state")
-
+    async def test_get_nonexistent_state_returns_none(self, pending_auth_store):
+        """Get for nonexistent state should return None."""
+        result = await pending_auth_store.get("nonexistent-state")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_expired_pending_auth(self):
-        """Get expired pending auth returns None (filtered by query)."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        # Expired entries are filtered out by the query
-        db.set_execute_result(MockScalarResult(None))
+    async def test_delete_pending_auth(self, pending_auth_store):
+        """Should delete pending auth entry."""
+        state = f"state-delete-{uuid4()}"
+        await pending_auth_store.set(state, "/test", "https://callback")
 
-        result = await store.get("expired-state")
-
-        assert result is None
-
-
-class TestPendingAuthStoreSet:
-    """Tests for PendingAuthStore.set method."""
-
-    @pytest.mark.asyncio
-    async def test_set_pending_auth(self):
-        """Set creates pending auth entry."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-
-        await store.set(
-            state="new-state",
-            redirect_uri="/settings",
-            callback_url="https://app.example.com/auth/callback"
-        )
-
-        assert len(db._added) == 1
-
-    @pytest.mark.asyncio
-    async def test_set_with_root_redirect(self):
-        """Set with root redirect URI."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-
-        await store.set(
-            state="state-root",
-            redirect_uri="/",
-            callback_url="https://app.example.com/auth/callback"
-        )
-
-        assert len(db._added) == 1
-
-    @pytest.mark.asyncio
-    async def test_set_with_complex_redirect(self):
-        """Set with complex redirect URI including query params."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-
-        await store.set(
-            state="state-complex",
-            redirect_uri="/dashboard?tab=overview&filter=active",
-            callback_url="https://app.example.com/auth/callback"
-        )
-
-        assert len(db._added) == 1
-
-
-class TestPendingAuthStoreDelete:
-    """Tests for PendingAuthStore.delete method."""
-
-    @pytest.mark.asyncio
-    async def test_delete_existing(self):
-        """Delete existing pending auth returns True."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockDeleteResult(1))
-
-        result = await store.delete("state-to-delete")
-
+        result = await pending_auth_store.delete(state)
         assert result is True
 
+        # Should not be retrievable after delete
+        get_result = await pending_auth_store.get(state)
+        assert get_result is None
+
     @pytest.mark.asyncio
-    async def test_delete_nonexistent(self):
-        """Delete nonexistent pending auth returns False."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockDeleteResult(0))
-
-        result = await store.delete("nonexistent")
-
+    async def test_delete_nonexistent_returns_false(self, pending_auth_store):
+        """Delete for nonexistent state should return False."""
+        result = await pending_auth_store.delete("nonexistent-state")
         assert result is False
 
 
+@pytest.mark.integration
+class TestPendingAuthStoreExpiration:
+    """Integration tests for PendingAuthStore expiration."""
+
+    @pytest.mark.asyncio
+    async def test_expired_pending_auth_returns_none(self, pending_auth_store, test_db):
+        """Pending auth older than AUTH_TIMEOUT_MINUTES should return None."""
+        from openlabels.server.models import PendingAuth as PendingAuthModel
+
+        state = f"state-expired-{uuid4()}"
+
+        # Create pending auth with old timestamp directly
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=15)  # Older than timeout
+        pending = PendingAuthModel(
+            state=state,
+            redirect_uri="/expired",
+            callback_url="https://callback",
+        )
+        pending.created_at = old_time  # Manually set old created_at
+        test_db.add(pending)
+        await test_db.flush()
+
+        # Should not be retrievable because it's expired
+        result = await pending_auth_store.get(state)
+        assert result is None
+
+
+@pytest.mark.integration
 class TestPendingAuthStoreCleanup:
-    """Tests for PendingAuthStore.cleanup_expired method."""
+    """Integration tests for PendingAuthStore.cleanup_expired method."""
 
     @pytest.mark.asyncio
-    async def test_cleanup_removes_expired(self):
-        """Cleanup removes expired pending auth entries."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockDeleteResult(10))
+    async def test_cleanup_removes_expired_entries(self, pending_auth_store, test_db):
+        """Cleanup should remove expired pending auth entries."""
+        from openlabels.server.models import PendingAuth as PendingAuthModel
 
-        count = await store.cleanup_expired()
+        # Create expired entries directly with old timestamps
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=15)
+        for i in range(3):
+            pending = PendingAuthModel(
+                state=f"expired-state-{uuid4()}",
+                redirect_uri=f"/expired-{i}",
+                callback_url="https://callback",
+            )
+            pending.created_at = old_time
+            test_db.add(pending)
+        await test_db.flush()
 
-        assert count == 10
+        count = await pending_auth_store.cleanup_expired()
 
-    @pytest.mark.asyncio
-    async def test_cleanup_no_expired(self):
-        """Cleanup with no expired entries."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockDeleteResult(0))
-
-        count = await store.cleanup_expired()
-
-        assert count == 0
+        assert count >= 3
 
 
+@pytest.mark.integration
 class TestPendingAuthTimeout:
     """Tests for pending auth timeout configuration."""
 
-    def test_auth_timeout_defined(self):
-        """Auth timeout should be defined."""
-        assert hasattr(PendingAuthStore, "AUTH_TIMEOUT_MINUTES")
-        assert PendingAuthStore.AUTH_TIMEOUT_MINUTES > 0
-
-    def test_auth_timeout_reasonable(self):
-        """Auth timeout should be reasonable (5-15 minutes)."""
+    def test_auth_timeout_is_reasonable(self):
+        """AUTH_TIMEOUT_MINUTES should be between 5 and 15 minutes."""
         timeout = PendingAuthStore.AUTH_TIMEOUT_MINUTES
-        assert 5 <= timeout <= 15, f"Timeout {timeout} should be between 5-15 minutes"
+        assert 5 <= timeout <= 15, \
+            f"Auth timeout {timeout} should be 5-15 minutes for security"
 
 
-# =============================================================================
-# INTEGRATION SCENARIOS
-# =============================================================================
-
-
-class TestSessionLifecycle:
-    """Tests for complete session lifecycle."""
+@pytest.mark.integration
+class TestSessionStoreDataIntegrity:
+    """Tests for data integrity and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_create_get_delete_session(self):
-        """Full lifecycle: create, get, delete session."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        # Create
-        db.set_execute_result(MockScalarResult(None))  # Not found for set
-        await store.set("lifecycle-session", {"token": "abc"}, ttl=3600)
-        assert len(db._added) == 1
-
-        # Get
-        mock_session = MockSessionModel(
-            id="lifecycle-session",
-            data={"token": "abc"},
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(mock_session))
-        data = await store.get("lifecycle-session")
-        assert data["token"] == "abc"
-
-        # Delete
-        db.set_execute_result(MockDeleteResult(1))
-        deleted = await store.delete("lifecycle-session")
-        assert deleted is True
-
-    @pytest.mark.asyncio
-    async def test_oauth_flow_lifecycle(self):
-        """Full OAuth flow: pending auth -> session."""
-        db = MockSession()
-        pending_store = PendingAuthStore(db)
-        session_store = SessionStore(db)
-
-        # 1. Create pending auth
-        await pending_store.set("oauth-state", "/dashboard", "https://app/callback")
-        assert len(db._added) == 1
-
-        # 2. Get pending auth
-        mock_pending = MockPendingAuth(
-            state="oauth-state",
-            redirect_uri="/dashboard",
-            callback_url="https://app/callback"
-        )
-        db.set_execute_result(MockScalarResult(mock_pending))
-        pending = await pending_store.get("oauth-state")
-        assert pending["redirect_uri"] == "/dashboard"
-
-        # 3. Delete pending auth
-        db.set_execute_result(MockDeleteResult(1))
-        await pending_store.delete("oauth-state")
-
-        # 4. Create session
-        db.set_execute_result(MockScalarResult(None))
-        await session_store.set(
-            "new-session-id",
-            {"access_token": "real-token", "claims": {"user": "john"}},
-            ttl=604800,  # 7 days
-            tenant_id="tenant1",
-            user_id="user1"
-        )
-
-
-class TestMultipleSessionsPerUser:
-    """Tests for users with multiple sessions."""
-
-    @pytest.mark.asyncio
-    async def test_logout_all_devices(self):
-        """Logout from all devices deletes all user sessions."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        # User has sessions on 3 devices
-        db.set_execute_result(MockDeleteResult(3))
-        count = await store.delete_all_for_user("multi-device-user")
-
-        assert count == 3
-
-    @pytest.mark.asyncio
-    async def test_count_after_delete_all(self):
-        """After delete_all_for_user, count should be 0."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        # Delete all
-        db.set_execute_result(MockDeleteResult(5))
-        await store.delete_all_for_user("user")
-
-        # Count should return 0
-        db.set_execute_result(MockScalarResult(0))
-        count = await store.count_user_sessions("user")
-        assert count == 0
-
-
-# =============================================================================
-# ERROR HANDLING TESTS
-# =============================================================================
-
-
-class TestErrorHandling:
-    """Tests for error handling scenarios."""
-
-    @pytest.mark.asyncio
-    async def test_get_handles_db_error(self):
-        """Get should handle database errors gracefully."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        # Simulate error by raising exception
-        async def raise_error(query):
-            raise Exception("Database connection lost")
-
-        db.execute = raise_error
-
-        with pytest.raises(Exception) as exc_info:
-            await store.get("session-id")
-        assert "Database connection lost" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_set_handles_db_error(self):
-        """Set should handle database errors gracefully."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        async def raise_error(query):
-            raise Exception("Write failed")
-
-        db.execute = raise_error
-
-        with pytest.raises(Exception) as exc_info:
-            await store.set("session", {}, ttl=3600)
-        assert "Write failed" in str(exc_info.value)
-
-
-# =============================================================================
-# EDGE CASES
-# =============================================================================
-
-
-class TestEdgeCases:
-    """Tests for edge cases and boundary conditions."""
-
-    @pytest.mark.asyncio
-    async def test_very_long_session_id(self):
-        """Handle very long session ID."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        long_id = "x" * 1000
-        await store.set(long_id, {"data": True}, ttl=3600)
-
-        assert len(db._added) == 1
-
-    @pytest.mark.asyncio
-    async def test_special_characters_in_session_id(self):
-        """Handle special characters in session ID."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        special_id = "session-with-special!@#$%"
-        await store.set(special_id, {"data": True}, ttl=3600)
-
-        assert len(db._added) == 1
-
-    @pytest.mark.asyncio
-    async def test_unicode_in_session_data(self):
-        """Handle unicode in session data."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
+    async def test_unicode_data_preserved(self, session_store):
+        """Unicode data should be preserved correctly."""
+        session_id = f"unicode-test-{uuid4()}"
         unicode_data = {
             "name": "用户名",
             "emoji": "🔐🔑",
-            "mixed": "Hello 世界"
+            "mixed": "Hello 世界",
         }
-        await store.set("unicode-session", unicode_data, ttl=3600)
 
-        assert len(db._added) == 1
+        await session_store.set(session_id, unicode_data, ttl=3600)
+        result = await session_store.get(session_id)
+
+        assert result == unicode_data
 
     @pytest.mark.asyncio
-    async def test_large_session_data(self):
-        """Handle large session data."""
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
+    async def test_large_data_stored(self, session_store):
+        """Large data should be stored and retrieved correctly."""
+        session_id = f"large-test-{uuid4()}"
         large_data = {
             "array": list(range(1000)),
             "nested": {str(i): {"value": i} for i in range(100)},
-            "string": "x" * 10000
+            "string": "x" * 10000,
         }
-        await store.set("large-session", large_data, ttl=3600)
 
-        assert len(db._added) == 1
+        await session_store.set(session_id, large_data, ttl=3600)
+        result = await session_store.get(session_id)
 
-    @pytest.mark.asyncio
-    async def test_empty_state_string(self):
-        """Handle empty state string in pending auth."""
-        db = MockSession()
-        store = PendingAuthStore(db)
-        db.set_execute_result(MockScalarResult(None))
-
-        result = await store.get("")
-
-        assert result is None
-
-
-# =============================================================================
-# SECURITY TESTS
-# =============================================================================
-
-
-class TestSecurityConcerns:
-    """Tests for security-related behavior."""
+        assert result["array"] == list(range(1000))
+        assert len(result["string"]) == 10000
 
     @pytest.mark.asyncio
-    async def test_session_id_not_in_data(self):
-        """Session data should not expose internal IDs."""
-        db = MockSession()
-        store = SessionStore(db)
+    async def test_null_values_in_data(self, session_store):
+        """Null values in data should be preserved."""
+        session_id = f"null-test-{uuid4()}"
+        data_with_nulls = {
+            "present": "value",
+            "nullable": None,
+            "nested": {"also_null": None},
+        }
 
-        mock_session = MockSessionModel(
-            id="secret-session-id",
-            data={"token": "user-token"},
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-        db.set_execute_result(MockScalarResult(mock_session))
+        await session_store.set(session_id, data_with_nulls, ttl=3600)
+        result = await session_store.get(session_id)
 
-        data = await store.get("secret-session-id")
+        assert result["nullable"] is None
+        assert result["nested"]["also_null"] is None
 
-        # Session ID should not be in the returned data
-        assert "id" not in data
-        assert "session_id" not in data
 
-    @pytest.mark.asyncio
-    async def test_expired_session_not_returned(self):
-        """Expired sessions should never be returned."""
-        db = MockSession()
-        store = SessionStore(db)
-
-        # Query filters out expired, so result is None
-        db.set_execute_result(MockScalarResult(None))
-
-        result = await store.get("expired-session")
-
-        assert result is None
+@pytest.mark.integration
+class TestOAuthFlowLifecycle:
+    """Integration tests for complete OAuth flow lifecycle."""
 
     @pytest.mark.asyncio
-    async def test_tenant_isolation(self):
-        """Sessions should be tenant-isolated in queries."""
-        # This is verified by the query structure using tenant_id
-        # The mock doesn't enforce this, but the real query does
-        db = MockSession()
-        store = SessionStore(db)
-        db.set_execute_result(MockScalarResult(None))
+    async def test_complete_oauth_flow(
+        self, pending_auth_store, session_store, test_tenant_id, test_user_id
+    ):
+        """Test complete OAuth flow: pending auth -> delete -> create session."""
+        state = f"oauth-flow-{uuid4()}"
+        session_id = f"session-{uuid4()}"
 
-        await store.set(
-            "tenant-session",
-            {"data": True},
-            ttl=3600,
-            tenant_id="isolated-tenant"
+        # 1. Create pending auth (user clicks login)
+        await pending_auth_store.set(
+            state=state,
+            redirect_uri="/dashboard",
+            callback_url="https://app/callback",
         )
 
-        # Verify session was created with tenant_id
-        assert len(db._added) == 1
+        # 2. Get pending auth (callback received)
+        pending = await pending_auth_store.get(state)
+        assert pending["redirect_uri"] == "/dashboard"
+
+        # 3. Delete pending auth (state used)
+        deleted = await pending_auth_store.delete(state)
+        assert deleted is True
+
+        # 4. Create session (user authenticated)
+        await session_store.set(
+            session_id,
+            {"access_token": "real-token", "claims": {"sub": "user123"}},
+            ttl=604800,  # 7 days
+            tenant_id=test_tenant_id,
+            user_id=test_user_id,
+        )
+
+        # 5. Verify session exists
+        session = await session_store.get(session_id)
+        assert session["access_token"] == "real-token"
+
+        # 6. Pending auth should be gone
+        pending_again = await pending_auth_store.get(state)
+        assert pending_again is None

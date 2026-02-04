@@ -175,13 +175,17 @@ class TestListScans:
 
     @pytest.mark.asyncio
     async def test_returns_scan_list(self, test_client, setup_scans_data):
-        """Should return list of scans."""
+        """Should return list of scans with expected structure."""
         response = await test_client.get("/api/scans")
         assert response.status_code == 200
         data = response.json()
 
-        assert data["total"] >= 7  # At least 7 scans from fixture
-        assert len(data["items"]) > 0
+        assert data["total"] >= 7, "Should return at least 7 scans from fixture"
+        assert len(data["items"]) >= 1, "Should return at least one scan item"
+        # Verify scan structure
+        first_scan = data["items"][0]
+        assert "id" in first_scan and first_scan["id"], "Scan should have non-empty id"
+        assert "status" in first_scan, "Scan should have status field"
 
     @pytest.mark.asyncio
     async def test_filter_by_status(self, test_client, setup_scans_data):

@@ -402,8 +402,11 @@ class TestCSRFMiddleware:
                 origin="https://app.example.com"  # Valid origin
             )
             response = await middleware.dispatch(request, mock_call_next)
-            # Should pass through (not a 403)
-            assert not hasattr(response, 'status_code') or response.status_code != 403
+            # When CSRF passes, the mock response from call_next is returned
+            # (which doesn't have status_code). When CSRF fails, we get 403.
+            if hasattr(response, 'status_code'):
+                assert response.status_code != 403, \
+                    "Valid origin should not be rejected with 403"
 
     @pytest.mark.asyncio
     async def test_exempt_paths_skip_csrf(self, middleware, mock_call_next, mock_settings_enabled):
@@ -446,7 +449,10 @@ class TestCSRFMiddleware:
                 header_token=token
             )
             response = await middleware.dispatch(request, mock_call_next)
-            assert not hasattr(response, 'status_code') or response.status_code != 403
+            # When CSRF passes, the mock response from call_next is returned
+            if hasattr(response, 'status_code'):
+                assert response.status_code != 403, \
+                    "Matching CSRF tokens should not be rejected"
 
     @pytest.mark.asyncio
     async def test_mismatched_token_rejected(self, middleware, mock_call_next, mock_settings_enabled):

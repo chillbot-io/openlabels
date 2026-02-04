@@ -949,11 +949,15 @@ class TestParserErrors:
 class TestParseFilterAPI:
     """Test the parse_filter() public API."""
 
-    def test_parse_filter_returns_expression(self):
-        """Test that parse_filter returns a FilterExpression."""
+    def test_parse_filter_returns_comparison(self):
+        """Test that parse_filter returns correct expression type."""
         expr = parse_filter("score > 75")
 
-        assert isinstance(expr, FilterExpression)
+        # Should be a Comparison (which is a FilterExpression subclass)
+        assert isinstance(expr, Comparison)
+        assert expr.field == "score"
+        assert expr.operator == ">"
+        assert expr.value == 75
 
     def test_parse_filter_raises_on_invalid(self):
         """Test that parse_filter raises on invalid input."""
@@ -1058,6 +1062,8 @@ class TestEdgeCases:
 
         # Should successfully parse without stack overflow
         assert isinstance(expr, BinaryOp)
+        # The operator should be OR since we joined with OR
+        assert expr.operator == "OR"
 
     def test_deeply_nested_parentheses(self):
         """Test parsing deeply nested parentheses."""

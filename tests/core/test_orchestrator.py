@@ -21,8 +21,10 @@ class TestOrchestratorInit:
         """Test orchestrator creates with default settings."""
         orchestrator = DetectorOrchestrator()
 
-        assert orchestrator.confidence_threshold > 0
-        assert len(orchestrator.detectors) > 0
+        assert orchestrator.confidence_threshold > 0, "Should have positive confidence threshold"
+        assert len(orchestrator.detectors) >= 4, "Should have at least 4 core detectors (checksum, secrets, financial, government)"
+        detector_names = orchestrator.detector_names
+        assert "checksum" in detector_names, "Should include checksum detector by default"
 
     def test_secrets_detector_can_be_disabled(self):
         """Test secrets detector can be disabled."""
@@ -110,7 +112,8 @@ class TestOrchestratorDetect:
 
         # Should find multiple entity types
         entity_types = set(s.entity_type for s in result.spans)
-        assert len(entity_types) >= 2
+        assert "SSN" in entity_types, f"Should detect SSN, found: {entity_types}"
+        assert "CREDIT_CARD" in entity_types, f"Should detect CREDIT_CARD, found: {entity_types}"
 
     def test_detect_empty_text(self):
         """Test detection on empty text."""
@@ -185,17 +188,18 @@ class TestDetectionResult:
     """Tests for DetectionResult structure."""
 
     def test_result_has_required_fields(self):
-        """Test that result has all required fields."""
+        """Test that result has all required fields with correct types."""
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
-        assert hasattr(result, 'spans')
-        assert hasattr(result, 'entity_counts')
-        assert hasattr(result, 'processing_time_ms')
-        assert hasattr(result, 'detectors_used')
-        assert hasattr(result, 'text_length')
+        # Verify fields exist and have correct types
+        assert isinstance(result.spans, list)
+        assert isinstance(result.entity_counts, dict)
+        assert isinstance(result.processing_time_ms, (int, float))
+        assert isinstance(result.detectors_used, list)
+        assert isinstance(result.text_length, int)
 
     def test_entity_counts_populated(self):
         """Test that entity counts are populated."""
@@ -235,13 +239,16 @@ class TestErrorHandling:
     """Tests for error handling and graceful degradation."""
 
     def test_handles_unicode_text(self):
-        """Test that orchestrator handles unicode text."""
+        """Test that orchestrator handles unicode text and still detects PII."""
         orchestrator = DetectorOrchestrator()
         text = "Patient: José García, SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
-        assert isinstance(result.spans, list)
+        # Should still detect SSN despite unicode characters
+        ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
+        assert len(ssn_spans) >= 1, f"Should detect SSN in unicode text, found: {[s.entity_type for s in result.spans]}"
+        assert ssn_spans[0].text == "123-45-6789", f"Should match exact SSN, got: {ssn_spans[0].text}"
 
     def test_handles_very_long_text(self):
         """Test that orchestrator handles very long text."""
@@ -262,20 +269,24 @@ class TestSpanProperties:
     """Tests for span properties."""
 
     def test_spans_have_required_properties(self):
-        """Test that spans have all required properties."""
+        """Test that spans have all required properties with correct types."""
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
+        assert len(result.spans) > 0, "Should detect at least one span for SSN"
+
         for span in result.spans:
-            assert hasattr(span, 'start')
-            assert hasattr(span, 'end')
-            assert hasattr(span, 'text')
-            assert hasattr(span, 'entity_type')
-            assert hasattr(span, 'confidence')
-            assert hasattr(span, 'detector')
-            assert hasattr(span, 'tier')
+            # Verify fields exist with correct types
+            assert isinstance(span.start, int), f"start should be int, got {type(span.start)}"
+            assert isinstance(span.end, int), f"end should be int, got {type(span.end)}"
+            assert isinstance(span.text, str), f"text should be str, got {type(span.text)}"
+            assert isinstance(span.entity_type, str), f"entity_type should be str, got {type(span.entity_type)}"
+            assert isinstance(span.confidence, (int, float)), f"confidence should be numeric"
+            assert isinstance(span.detector, str), f"detector should be str"
+            # tier can be an enum, so just check it exists
+            assert span.tier is not None, "tier should not be None"
 
     def test_span_positions_are_valid(self):
         """Test that span positions are valid."""
@@ -428,4 +439,6 @@ class TestIntegration:
         result = orchestrator.detect(text)
 
         # Should find classification markings
-        assert len(result.spans) >= 1
+        assert len(result.spans) >= 1, "Should detect government classification markings"
+        classification_spans = [s for s in result.spans if "CLASSIFICATION" in s.entity_type.upper() or "SECRET" in s.text.upper()]
+        assert len(classification_spans) >= 1, f"Should find classification marking, found types: {[s.entity_type for s in result.spans]}"

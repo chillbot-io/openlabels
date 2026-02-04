@@ -137,15 +137,17 @@ class TestAuthEndpoints:
         assert data["authenticated"] is False
         assert "provider" in data
 
-    async def test_login_redirect(self, test_client, setup_test_data):
-        """Test GET /auth/login redirects in dev mode."""
+    async def test_login_redirect_in_dev_mode(self, test_client, setup_test_data):
+        """Test GET /auth/login redirects in dev mode (provider=none)."""
         response = await test_client.get(
             "/auth/login",
             follow_redirects=False,
         )
-        # In dev mode (provider=none), it should redirect with a session cookie
-        # In test mode without auth config, may return 503 (Service Unavailable)
-        assert response.status_code in [302, 503]
+        # In dev mode (provider=none), login creates session and redirects
+        assert response.status_code == 302, \
+            f"Expected redirect (302) in dev mode, got {response.status_code}"
+        # Should redirect to the default page
+        assert "location" in response.headers
 
 
 class TestTargetsEndpoints:
@@ -255,15 +257,18 @@ class TestCSRFProtection:
         # In dev mode, CSRF is skipped, but cookie might still be set
 
     async def test_post_request_allowed_same_origin(self, test_client, setup_test_data):
-        """Test POST request with proper origin header."""
-        # In dev mode (auth.provider=none), CSRF is skipped
+        """Test POST request with proper origin header in dev mode."""
+        # In dev mode (auth.provider=none), CSRF is skipped and request should work
         response = await test_client.post(
             "/api/jobs/requeue-all",
             json={"task_type": "scan", "reset_retries": True},
             headers={"Origin": "http://test"},
         )
-        # Should work in dev mode
-        assert response.status_code in [200, 403, 401]
+        # In dev mode, POST should succeed
+        assert response.status_code == 200, \
+            f"Expected 200 for POST in dev mode, got {response.status_code}"
+        data = response.json()
+        assert "requeued_count" in data
 
 
 class TestErrorHandling:
@@ -291,18 +296,21 @@ class TestErrorHandling:
         assert response.status_code == 422
 
 
-class TestWebSocketAuth:
-    """Tests for WebSocket authentication."""
+class TestWebSocketEndpoint:
+    """Tests for WebSocket endpoint registration."""
 
-    async def test_websocket_requires_auth(self, test_client):
-        """Test that WebSocket connections require authentication."""
-        # We can't easily test WebSocket with httpx, but we can verify
-        # the endpoint is registered. FastAPI returns 404 for GET requests
-        # to WebSocket-only endpoints since there's no GET handler.
+    async def test_websocket_endpoint_rejects_http_get(self, test_client):
+        """Test that WebSocket endpoint rejects regular HTTP GET."""
+        # HTTP GET to a WebSocket endpoint should fail - it requires upgrade
         response = await test_client.get(f"/ws/scans/{uuid4()}")
-        # WebSocket endpoints typically return 400 or upgrade required on GET
-        # Note: 404 may be returned if WebSocket routes aren't mounted in test config
-        assert response.status_code in [400, 403, 404, 426]
+        # WebSocket endpoints return 426 Upgrade Required for non-WebSocket requests
+        # or 404 if websocket routes not mounted
+        # The important thing is it does NOT return 200 (success)
+        assert response.status_code != 200, \
+            "WebSocket endpoint should not accept regular HTTP GET"
+        # Valid responses: 426 (upgrade required), 404 (not found), or 400 (bad request)
+        assert response.status_code in [400, 404, 426], \
+            f"Unexpected status {response.status_code} for HTTP GET to WebSocket endpoint"
 
 
 class TestRateLimiting:
