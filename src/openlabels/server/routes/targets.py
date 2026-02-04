@@ -16,7 +16,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -272,15 +272,15 @@ def validate_target_config(adapter: str, config: dict) -> dict:
 class TargetCreate(BaseModel):
     """Request to create a scan target."""
 
-    name: str
-    adapter: str  # 'filesystem', 'sharepoint', 'onedrive'
-    config: dict  # Adapter-specific configuration
+    name: str = Field(..., min_length=1, max_length=255, description="Target name")
+    adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive)$", description="Adapter type")
+    config: dict = Field(..., description="Adapter-specific configuration")
 
 
 class TargetUpdate(BaseModel):
     """Request to update a scan target."""
 
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
     config: Optional[dict] = None
     enabled: Optional[bool] = None
 

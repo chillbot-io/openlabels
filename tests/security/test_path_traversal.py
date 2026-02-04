@@ -173,17 +173,20 @@ class TestBlockedPaths:
 class TestPathTraversalIntegration:
     """Integration tests for path traversal prevention.
 
-    Note: These tests may require disabling rate limiting to work properly
-    with the test client. The actual path validation logic is tested in
-    the unit tests above.
+    Note: These tests disable rate limiting to work properly with the test client.
+    The actual path validation logic is tested in the unit tests above.
     """
+
+    @pytest.fixture(autouse=True)
+    def disable_rate_limiting(self):
+        """Disable rate limiting for integration tests."""
+        from unittest.mock import patch
+        with patch('slowapi.extension.Limiter._check_request_limit', return_value=None):
+            yield
 
     @pytest.mark.asyncio
     async def test_quarantine_endpoint_rejects_traversal(self, test_client):
         """Quarantine endpoint should reject path traversal attempts."""
-        from uuid import uuid4
-        from unittest.mock import patch, MagicMock
-
         # Test path traversal in file_path
         traversal_paths = [
             "../../../etc/passwd",
@@ -191,70 +194,52 @@ class TestPathTraversalIntegration:
             "..\\..\\..\\Windows\\System32\\config\\SAM",
         ]
 
-        # Mock the rate limiter to avoid Request issues in tests
-        with patch('openlabels.server.routes.remediation.limiter') as mock_limiter:
-            mock_limiter.limit.return_value = lambda f: f  # Pass-through decorator
-
-            for malicious_path in traversal_paths:
-                response = await test_client.post(
-                    "/api/remediation/quarantine",
-                    json={
-                        "file_path": malicious_path,
-                    },
-                )
-                # Should be rejected with 400 or 403
-                assert response.status_code in (400, 403, 404, 422), \
-                    f"Quarantine accepted traversal path: {malicious_path}"
+        for malicious_path in traversal_paths:
+            response = await test_client.post(
+                "/api/remediation/quarantine",
+                json={
+                    "file_path": malicious_path,
+                },
+            )
+            # Should be rejected with 400 or 403
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Quarantine accepted traversal path: {malicious_path}"
 
     @pytest.mark.asyncio
     async def test_lockdown_endpoint_rejects_traversal(self, test_client):
         """Lockdown endpoint should reject path traversal attempts."""
-        from uuid import uuid4
-        from unittest.mock import patch, MagicMock
-
         traversal_paths = [
             "../../../etc/passwd",
             "/data/../../../etc/shadow",
         ]
 
-        # Mock the rate limiter to avoid Request issues in tests
-        with patch('openlabels.server.routes.remediation.limiter') as mock_limiter:
-            mock_limiter.limit.return_value = lambda f: f
-
-            for malicious_path in traversal_paths:
-                response = await test_client.post(
-                    "/api/remediation/lockdown",
-                    json={
-                        "file_path": malicious_path,
-                        "allowed_principals": ["SYSTEM"],
-                    },
-                )
-                # Should be rejected
-                assert response.status_code in (400, 403, 404, 422), \
-                    f"Lockdown accepted traversal path: {malicious_path}"
+        for malicious_path in traversal_paths:
+            response = await test_client.post(
+                "/api/remediation/lockdown",
+                json={
+                    "file_path": malicious_path,
+                    "allowed_principals": ["SYSTEM"],
+                },
+            )
+            # Should be rejected
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Lockdown accepted traversal path: {malicious_path}"
 
     @pytest.mark.asyncio
     async def test_quarantine_rejects_system_paths(self, test_client):
         """Quarantine should reject system file paths."""
-        from uuid import uuid4
-        from unittest.mock import patch, MagicMock
-
         system_paths = [
             "/etc/passwd",
             "/etc/shadow",
             "/root/.ssh/id_rsa",
         ]
 
-        # Mock the rate limiter to avoid Request issues in tests
-        with patch('openlabels.server.routes.remediation.limiter') as mock_limiter:
-            mock_limiter.limit.return_value = lambda f: f
-
-            for system_path in system_paths:
-                response = await test_client.post(
-                    "/api/remediation/quarantine",
-                    json={
-                        "file_path": system_path,
-                    },
-                )
-                assert response.status_code in (400, 403, 404, 422), \
-                    f"Quarantine accepted system path: {system_path}"
+        for system_path in system_paths:
+            response = await test_client.post(
+                "/api/remediation/quarantine",
+                json={
+                    "file_path": system_path,
+                },
+            )
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Quarantine accepted system path: {system_path}"
