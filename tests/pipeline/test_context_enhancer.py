@@ -223,17 +223,25 @@ class TestCompanySuffixes:
 class TestHotwordRules:
     """Tests for hotword rules."""
 
-    def test_positive_name_hotwords_exist(self):
-        """Positive NAME hotwords are defined."""
-        from openlabels.core.pipeline.context_enhancer import NAME_POSITIVE_HOTWORDS
+    def test_positive_name_hotwords_defined(self):
+        """Positive NAME hotwords are defined with expected structure."""
+        from openlabels.core.pipeline.context_enhancer import NAME_POSITIVE_HOTWORDS, HotwordRule
 
-        assert len(NAME_POSITIVE_HOTWORDS) > 0
+        assert len(NAME_POSITIVE_HOTWORDS) >= 1, "Should have at least one positive hotword"
+        # Verify structure of first hotword
+        first_rule = NAME_POSITIVE_HOTWORDS[0]
+        assert isinstance(first_rule, HotwordRule), "Hotwords should be HotwordRule instances"
+        assert first_rule.confidence_delta > 0, "Positive hotwords should have positive delta"
 
-    def test_negative_name_hotwords_exist(self):
-        """Negative NAME hotwords are defined."""
-        from openlabels.core.pipeline.context_enhancer import NAME_NEGATIVE_HOTWORDS
+    def test_negative_name_hotwords_defined(self):
+        """Negative NAME hotwords are defined with expected structure."""
+        from openlabels.core.pipeline.context_enhancer import NAME_NEGATIVE_HOTWORDS, HotwordRule
 
-        assert len(NAME_NEGATIVE_HOTWORDS) > 0
+        assert len(NAME_NEGATIVE_HOTWORDS) >= 1, "Should have at least one negative hotword"
+        # Verify structure of first hotword
+        first_rule = NAME_NEGATIVE_HOTWORDS[0]
+        assert isinstance(first_rule, HotwordRule), "Hotwords should be HotwordRule instances"
+        assert first_rule.confidence_delta < 0, "Negative hotwords should have negative delta"
 
     def test_hotword_rule_structure(self):
         """HotwordRule has required attributes."""
@@ -425,8 +433,9 @@ class TestContextEnhancerCheckDenyList:
 
         reason = enhancer._check_deny_list(span)
 
-        assert reason is not None
-        assert "deny_list" in reason
+        # Verify the reason indicates deny_list rejection
+        assert isinstance(reason, str), f"Expected string reason, got {type(reason)}"
+        assert "deny_list" in reason, f"Reason should mention deny_list: {reason}"
 
     def test_allows_valid_name(self, enhancer, make_span):
         """Allows valid NAME not in deny list."""
@@ -442,7 +451,8 @@ class TestContextEnhancerCheckDenyList:
 
         reason = enhancer._check_deny_list(span)
 
-        assert reason is not None
+        assert isinstance(reason, str), "admin should be denied as username"
+        assert "deny_list" in reason or "admin" in reason.lower()
 
     def test_denies_address_in_list(self, enhancer, make_span):
         """Denies ADDRESS in deny list."""
@@ -450,7 +460,7 @@ class TestContextEnhancerCheckDenyList:
 
         reason = enhancer._check_deny_list(span)
 
-        assert reason is not None
+        assert isinstance(reason, str), "maisonette should be denied as address"
 
     def test_denies_medication_in_list(self, enhancer, make_span):
         """Denies MEDICATION in deny list."""
@@ -458,7 +468,7 @@ class TestContextEnhancerCheckDenyList:
 
         reason = enhancer._check_deny_list(span)
 
-        assert reason is not None
+        assert isinstance(reason, str), "health should be denied as medication"
 
     def test_mrn_uses_pattern_exclusion(self, enhancer, make_span):
         """MRN uses pattern-based exclusion."""
@@ -466,8 +476,8 @@ class TestContextEnhancerCheckDenyList:
 
         reason = enhancer._check_deny_list(span)
 
-        assert reason is not None
-        assert "mrn_exclude" in reason
+        assert isinstance(reason, str), "Dollar amount should be excluded from MRN"
+        assert "mrn_exclude" in reason, f"Reason should mention mrn_exclude: {reason}"
 
 
 class TestContextEnhancerEnhanceSpan:
@@ -553,12 +563,14 @@ class TestContextEnhancerEdgeCases:
     """Edge case tests for ContextEnhancer."""
 
     def test_unicode_text(self, enhancer, make_span):
-        """Handles Unicode text."""
+        """Handles Unicode text without errors."""
         span = make_span("José García", entity_type="NAME")
 
         result = enhancer.enhance_span("Hello José García!", span)
 
-        assert result is not None
+        # Should return valid result with an action
+        assert result.action in ("keep", "reject", "verify"), \
+            f"Expected valid action, got: {result.action}"
 
     def test_span_at_text_boundary(self, enhancer, make_span):
         """Handles span at text boundaries."""
@@ -567,7 +579,9 @@ class TestContextEnhancerEdgeCases:
 
         result = enhancer.enhance_span(text, span)
 
-        assert result is not None
+        # Should return valid result with an action
+        assert result.action in ("keep", "reject", "verify"), \
+            f"Expected valid action, got: {result.action}"
 
     def test_case_insensitive_deny_list(self, enhancer, make_span):
         """Deny list check is case insensitive."""
@@ -577,9 +591,9 @@ class TestContextEnhancerEdgeCases:
         reason1 = enhancer._check_deny_list(span1)
         reason2 = enhancer._check_deny_list(span2)
 
-        # Both should be denied
-        assert reason1 is not None
-        assert reason2 is not None
+        # Both should be denied regardless of case
+        assert isinstance(reason1, str), "WILL (uppercase) should be denied"
+        assert isinstance(reason2, str), "Will (titlecase) should be denied"
 
     def test_preserves_span_attributes(self, enhancer, make_span):
         """Preserves non-modified span attributes."""
@@ -599,10 +613,11 @@ class TestContextEnhancerPerformance:
         long_text = "Word " * 10000
         span = make_span("John", start=50, entity_type="NAME")
 
-        # Should not timeout
+        # Should not timeout and return valid result
         result = enhancer.enhance_span(long_text, span)
 
-        assert result is not None
+        assert result.action in ("keep", "reject", "verify"), \
+            f"Expected valid action for long text, got: {result.action}"
 
     def test_handles_many_spans(self, enhancer, make_span):
         """Handles many spans efficiently."""
