@@ -751,9 +751,11 @@ class TestValidateFilter:
         """Test validation returns error message for invalid syntax."""
         result = validate_filter("score > ")
 
-        assert result is not None
-        assert isinstance(result, str)
-        assert len(result) > 0
+        assert result is not None, "Should return error for incomplete filter"
+        assert isinstance(result, str), f"Error should be string, got {type(result)}"
+        # Error message should indicate something about the syntax issue
+        assert "error" in result.lower() or "expected" in result.lower() or "unexpected" in result.lower(), \
+            f"Error message should describe syntax issue: {result}"
 
     def test_validate_invalid_filter_lexer_error(self):
         """Test validation returns error for lexer errors."""

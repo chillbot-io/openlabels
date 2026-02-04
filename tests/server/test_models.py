@@ -1,227 +1,437 @@
-"""Tests for database models."""
+"""
+Tests for database models.
+
+Tests actual model behavior, constraints, defaults, and relationships.
+"""
 
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 
 class TestTenantModel:
-    """Tests for Tenant model."""
+    """Tests for Tenant model behavior."""
 
-    def test_tenant_creation(self):
-        """Test creating a tenant."""
+    def test_tenant_requires_name(self):
+        """Tenant model should require a name."""
         from openlabels.server.models import Tenant
 
-        tenant = Tenant(
-            name="Test Company",
-            azure_tenant_id="test-azure-id",
-        )
+        # Name is required - creating without it should fail at DB level
+        # For unit tests, verify the column is configured as non-nullable
+        assert Tenant.__table__.c.name.nullable is False
 
-        assert tenant.name == "Test Company"
-        assert tenant.azure_tenant_id == "test-azure-id"
+    def test_tenant_id_is_uuid(self):
+        """Tenant ID should be a UUID type."""
+        from openlabels.server.models import Tenant
+        from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
-    def test_tenant_has_uuid_id(self):
-        """Test tenant has UUID id field."""
+        id_column = Tenant.__table__.c.id
+        assert isinstance(id_column.type, PG_UUID)
+
+    def test_tenant_has_created_at_default(self):
+        """Tenant should have automatic created_at timestamp."""
         from openlabels.server.models import Tenant
 
-        # Model should have id field configured
-        assert hasattr(Tenant, "id")
+        created_at_col = Tenant.__table__.c.created_at
+        assert created_at_col.server_default is not None
+
+    def test_tenant_azure_tenant_id_is_optional(self):
+        """Azure tenant ID should be optional for non-Azure deployments."""
+        from openlabels.server.models import Tenant
+
+        assert Tenant.__table__.c.azure_tenant_id.nullable is True
 
 
 class TestUserModel:
-    """Tests for User model."""
+    """Tests for User model constraints."""
 
-    def test_user_creation(self):
-        """Test creating a user."""
+    def test_user_requires_email(self):
+        """User email is required."""
         from openlabels.server.models import User
 
-        user = User(
-            email="test@example.com",
-            name="Test User",
-            role="viewer",
-        )
+        assert User.__table__.c.email.nullable is False
 
-        assert user.email == "test@example.com"
-        assert user.role == "viewer"
-
-    def test_user_roles(self):
-        """Test user roles are valid."""
+    def test_user_requires_tenant(self):
+        """User must belong to a tenant."""
         from openlabels.server.models import User
 
-        # Should accept admin and viewer roles
-        admin = User(email="admin@test.com", role="admin")
-        viewer = User(email="viewer@test.com", role="viewer")
+        assert User.__table__.c.tenant_id.nullable is False
 
-        assert admin.role == "admin"
-        assert viewer.role == "viewer"
+    def test_user_role_defaults_to_viewer(self):
+        """User role should default to 'viewer' for security."""
+        from openlabels.server.models import User
 
+        role_col = User.__table__.c.role
+        # Check default value
+        assert role_col.default.arg == "viewer"
 
-class TestSessionModel:
-    """Tests for Session model."""
+    def test_user_role_enum_values(self):
+        """User role must be admin or viewer."""
+        from openlabels.server.models import UserRoleEnum
 
-    def test_session_creation(self):
-        """Test creating a session."""
-        from openlabels.server.models import Session
+        # Get the enum values
+        enum_values = UserRoleEnum.enums
+        assert "admin" in enum_values
+        assert "viewer" in enum_values
+        assert len(enum_values) == 2, "Only admin and viewer roles should exist"
 
-        session = Session(
-            id="session-123",
-            data={"access_token": "token"},
-            expires_at=datetime.now(timezone.utc),
-        )
+    def test_user_email_unique_per_tenant(self):
+        """User email should be unique within a tenant."""
+        from openlabels.server.models import User
 
-        assert session.id == "session-123"
-        assert session.data == {"access_token": "token"}
+        # Check for the unique index
+        indexes = [idx for idx in User.__table__.indexes if 'email' in str(idx)]
+        assert len(indexes) > 0, "Should have index on email"
 
-    def test_session_data_is_jsonb(self):
-        """Test session data can store complex structures."""
-        from openlabels.server.models import Session
-
-        session = Session(
-            id="session-456",
-            data={
-                "access_token": "token",
-                "claims": {"sub": "user123", "email": "test@test.com"},
-                "scopes": ["read", "write"],
-            },
-            expires_at=datetime.now(timezone.utc),
-        )
-
-        assert session.data["claims"]["sub"] == "user123"
-
-
-class TestPendingAuthModel:
-    """Tests for PendingAuth model."""
-
-    def test_pending_auth_creation(self):
-        """Test creating pending auth."""
-        from openlabels.server.models import PendingAuth
-
-        pending = PendingAuth(
-            state="random-state-token",
-            redirect_uri="http://app/callback",
-            callback_url="http://localhost:8000/auth/callback",
-        )
-
-        assert pending.state == "random-state-token"
-        assert pending.redirect_uri == "http://app/callback"
+        # Find the unique constraint
+        unique_indexes = [idx for idx in indexes if idx.unique]
+        assert len(unique_indexes) > 0, "Email should be unique per tenant"
 
 
 class TestScanJobModel:
-    """Tests for ScanJob model."""
+    """Tests for ScanJob model and job lifecycle."""
 
-    def test_scan_job_creation(self):
-        """Test creating a scan job."""
+    def test_job_status_enum_values(self):
+        """Job status must be one of the allowed values."""
+        from openlabels.server.models import JobStatusEnum
+
+        expected = {'pending', 'running', 'completed', 'failed', 'cancelled'}
+        actual = set(JobStatusEnum.enums)
+        assert actual == expected
+
+    def test_job_defaults_to_pending(self):
+        """New jobs should default to pending status."""
         from openlabels.server.models import ScanJob
 
-        job = ScanJob(
-            status="pending",
-        )
+        status_col = ScanJob.__table__.c.status
+        assert status_col.default.arg == "pending"
 
-        assert job.status == "pending"
-
-    def test_scan_job_statuses(self):
-        """Test scan job status values."""
+    def test_job_tracks_timing(self):
+        """Job should have fields to track execution timing."""
         from openlabels.server.models import ScanJob
 
-        valid_statuses = ["pending", "running", "completed", "failed", "cancelled"]
+        table = ScanJob.__table__
+        assert 'started_at' in table.c
+        assert 'completed_at' in table.c
+        assert 'created_at' in table.c
 
-        for status in valid_statuses:
-            job = ScanJob(status=status)
-            assert job.status == status
+    def test_job_tracks_progress(self):
+        """Job should track files scanned and with PII."""
+        from openlabels.server.models import ScanJob
+
+        table = ScanJob.__table__
+        assert 'files_scanned' in table.c
+        assert 'files_with_pii' in table.c
+
+    def test_job_files_scanned_defaults_to_zero(self):
+        """Files scanned should default to 0."""
+        from openlabels.server.models import ScanJob
+
+        col = ScanJob.__table__.c.files_scanned
+        assert col.default.arg == 0
 
 
 class TestScanResultModel:
-    """Tests for ScanResult model."""
+    """Tests for ScanResult model constraints."""
 
-    def test_scan_result_creation(self):
-        """Test creating a scan result."""
+    def test_result_requires_file_path(self):
+        """Scan result must have file path."""
         from openlabels.server.models import ScanResult
 
-        result = ScanResult(
-            file_path="/path/to/file.txt",
-            file_name="file.txt",
-            risk_score=75,
-            risk_tier="HIGH",
-            entity_counts={"SSN": 3, "EMAIL": 5},
-            total_entities=8,
-        )
+        assert ScanResult.__table__.c.file_path.nullable is False
 
-        assert result.risk_score == 75
-        assert result.entity_counts["SSN"] == 3
-
-    def test_scan_result_entity_counts_is_jsonb(self):
-        """Test entity_counts can store dict."""
+    def test_result_requires_risk_score(self):
+        """Scan result must have a risk score."""
         from openlabels.server.models import ScanResult
 
-        result = ScanResult(
-            file_path="/test.pdf",
-            file_name="test.pdf",
-            entity_counts={"PERSON": 10, "ORG": 5, "EMAIL": 20},
-        )
+        assert ScanResult.__table__.c.risk_score.nullable is False
 
-        assert result.entity_counts["PERSON"] == 10
+    def test_result_requires_risk_tier(self):
+        """Scan result must have a risk tier."""
+        from openlabels.server.models import ScanResult
+
+        assert ScanResult.__table__.c.risk_tier.nullable is False
+
+    def test_risk_tier_enum_values(self):
+        """Risk tier must be one of the defined levels."""
+        from openlabels.server.models import RiskTierEnum
+
+        expected = {'MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'}
+        actual = set(RiskTierEnum.enums)
+        assert actual == expected
+
+    def test_risk_tier_has_correct_order(self):
+        """Risk tiers should be ordered from lowest to highest."""
+        from openlabels.server.models import RiskTierEnum
+
+        # Enums are defined in order
+        tiers = RiskTierEnum.enums
+        expected_order = ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+        assert tiers == expected_order
+
+    def test_result_entity_counts_is_jsonb(self):
+        """Entity counts should use JSONB for efficient queries."""
+        from openlabels.server.models import ScanResult, JSONB
+
+        col = ScanResult.__table__.c.entity_counts
+        assert isinstance(col.type, JSONB)
+
+    def test_result_has_gin_index_on_entities(self):
+        """Should have GIN index on entity_counts for JSONB queries."""
+        from openlabels.server.models import ScanResult
+
+        indexes = list(ScanResult.__table__.indexes)
+        gin_indexes = [idx for idx in indexes if 'entities' in idx.name]
+        assert len(gin_indexes) > 0, "Should have GIN index for entity queries"
 
 
 class TestScanTargetModel:
     """Tests for ScanTarget model."""
 
-    def test_scan_target_creation(self):
-        """Test creating a scan target."""
+    def test_target_adapter_enum_values(self):
+        """Adapter type must be one of the supported adapters."""
+        from openlabels.server.models import AdapterTypeEnum
+
+        expected = {'filesystem', 'sharepoint', 'onedrive'}
+        actual = set(AdapterTypeEnum.enums)
+        assert actual == expected
+
+    def test_target_requires_name(self):
+        """Scan target must have a name."""
         from openlabels.server.models import ScanTarget
 
-        target = ScanTarget(
-            name="Production Share",
-            adapter="filesystem",
-            config={"path": "/data/share"},
-        )
+        assert ScanTarget.__table__.c.name.nullable is False
 
-        assert target.name == "Production Share"
-        assert target.adapter == "filesystem"
-
-    def test_scan_target_adapters(self):
-        """Test scan target adapter types."""
+    def test_target_requires_config(self):
+        """Scan target must have configuration."""
         from openlabels.server.models import ScanTarget
 
-        adapters = ["filesystem", "sharepoint", "onedrive"]
+        assert ScanTarget.__table__.c.config.nullable is False
 
-        for adapter in adapters:
-            target = ScanTarget(name=f"{adapter} target", adapter=adapter, config={})
-            assert target.adapter == adapter
+    def test_target_enabled_defaults_to_true(self):
+        """New targets should be enabled by default."""
+        from openlabels.server.models import ScanTarget
+
+        col = ScanTarget.__table__.c.enabled
+        assert col.default.arg is True
 
 
 class TestSensitivityLabelModel:
     """Tests for SensitivityLabel model."""
 
-    def test_sensitivity_label_creation(self):
-        """Test creating a sensitivity label."""
+    def test_label_id_is_string_for_mip_guids(self):
+        """Label ID should be string to match MIP label GUIDs."""
+        from openlabels.server.models import SensitivityLabel
+        from sqlalchemy import String
+
+        id_col = SensitivityLabel.__table__.c.id
+        assert isinstance(id_col.type, String)
+
+    def test_label_requires_name(self):
+        """Sensitivity label must have a name."""
         from openlabels.server.models import SensitivityLabel
 
-        label = SensitivityLabel(
-            name="Confidential",
-        )
+        assert SensitivityLabel.__table__.c.name.nullable is False
 
-        assert label.name == "Confidential"
-
-    def test_sensitivity_label_has_name_field(self):
-        """Test SensitivityLabel has name field."""
+    def test_label_has_priority(self):
+        """Labels should have priority for ordering."""
         from openlabels.server.models import SensitivityLabel
 
-        assert hasattr(SensitivityLabel, 'name')
+        assert 'priority' in SensitivityLabel.__table__.c
 
 
 class TestLabelRuleModel:
     """Tests for LabelRule model."""
 
-    def test_label_rule_creation(self):
-        """Test creating a label rule."""
+    def test_rule_type_enum_values(self):
+        """Rule type must be one of the allowed values."""
+        from openlabels.server.models import LabelRuleTypeEnum
+
+        expected = {'risk_tier', 'entity_type', 'exposure_level', 'custom'}
+        actual = set(LabelRuleTypeEnum.enums)
+        assert actual == expected
+
+    def test_rule_requires_match_value(self):
+        """Rule must have a value to match against."""
         from openlabels.server.models import LabelRule
 
-        rule = LabelRule(
-            rule_type="risk_tier",
-            match_value="CRITICAL",
-            priority=100,
-        )
+        assert LabelRule.__table__.c.match_value.nullable is False
 
-        assert rule.rule_type == "risk_tier"
-        assert rule.match_value == "CRITICAL"
+    def test_rule_has_priority_for_ordering(self):
+        """Rules should have priority for conflict resolution."""
+        from openlabels.server.models import LabelRule
+
+        col = LabelRule.__table__.c.priority
+        assert col is not None
+        assert col.default.arg == 0
+
+
+class TestJobQueueModel:
+    """Tests for JobQueue model (background task queue)."""
+
+    def test_queue_has_retry_mechanism(self):
+        """Job queue should support retries."""
+        from openlabels.server.models import JobQueue
+
+        table = JobQueue.__table__
+        assert 'retry_count' in table.c
+        assert 'max_retries' in table.c
+
+    def test_queue_retry_defaults(self):
+        """Retry settings should have sensible defaults."""
+        from openlabels.server.models import JobQueue
+
+        retry_count = JobQueue.__table__.c.retry_count
+        max_retries = JobQueue.__table__.c.max_retries
+
+        assert retry_count.default.arg == 0
+        assert max_retries.default.arg == 3
+
+    def test_queue_has_priority(self):
+        """Jobs should have priority for ordering."""
+        from openlabels.server.models import JobQueue
+
+        col = JobQueue.__table__.c.priority
+        assert col is not None
+        assert col.default.arg == 50  # Middle priority
+
+    def test_queue_has_worker_tracking(self):
+        """Queue should track which worker owns a job."""
+        from openlabels.server.models import JobQueue
+
+        assert 'worker_id' in JobQueue.__table__.c
+
+    def test_queue_has_scheduled_for(self):
+        """Queue should support delayed/scheduled jobs."""
+        from openlabels.server.models import JobQueue
+
+        assert 'scheduled_for' in JobQueue.__table__.c
+
+
+class TestExposureLevelEnum:
+    """Tests for ExposureLevel enum."""
+
+    def test_exposure_level_values(self):
+        """Exposure levels should cover access spectrum."""
+        from openlabels.server.models import ExposureLevelEnum
+
+        expected = {'PRIVATE', 'INTERNAL', 'ORG_WIDE', 'PUBLIC'}
+        actual = set(ExposureLevelEnum.enums)
+        assert actual == expected
+
+    def test_exposure_level_order(self):
+        """Exposure levels should be ordered from most to least restrictive."""
+        from openlabels.server.models import ExposureLevelEnum
+
+        levels = ExposureLevelEnum.enums
+        expected_order = ['PRIVATE', 'INTERNAL', 'ORG_WIDE', 'PUBLIC']
+        assert levels == expected_order
+
+
+class TestAuditLogModel:
+    """Tests for AuditLog model."""
+
+    def test_audit_action_enum_covers_operations(self):
+        """Audit actions should cover all major operations."""
+        from openlabels.server.models import AuditActionEnum
+
+        actions = set(AuditActionEnum.enums)
+
+        # Should have scan-related actions
+        assert 'scan_started' in actions
+        assert 'scan_completed' in actions
+        assert 'scan_failed' in actions
+
+        # Should have label actions
+        assert 'label_applied' in actions
+        assert 'label_removed' in actions
+
+        # Should have remediation actions
+        assert 'quarantine_executed' in actions
+        assert 'lockdown_executed' in actions
+
+    def test_audit_requires_action(self):
+        """Audit log must have an action."""
+        from openlabels.server.models import AuditLog
+
+        assert AuditLog.__table__.c.action.nullable is False
+
+    def test_audit_has_timestamp(self):
+        """Audit entries must have timestamps."""
+        from openlabels.server.models import AuditLog
+
+        created_at = AuditLog.__table__.c.created_at
+        assert created_at.server_default is not None
+
+
+class TestSessionModel:
+    """Tests for Session model."""
+
+    def test_session_id_is_string(self):
+        """Session ID should be a secure token string."""
+        from openlabels.server.models import Session
+        from sqlalchemy import String
+
+        id_col = Session.__table__.c.id
+        assert isinstance(id_col.type, String)
+
+    def test_session_requires_expiry(self):
+        """Sessions must have an expiration time."""
+        from openlabels.server.models import Session
+
+        assert Session.__table__.c.expires_at.nullable is False
+
+    def test_session_has_expiry_index(self):
+        """Should have index on expires_at for cleanup queries."""
+        from openlabels.server.models import Session
+
+        indexes = list(Session.__table__.indexes)
+        expiry_indexes = [idx for idx in indexes if 'expires' in idx.name]
+        assert len(expiry_indexes) > 0
+
+
+class TestRemediationModels:
+    """Tests for remediation-related models."""
+
+    def test_remediation_action_types(self):
+        """Remediation actions should include quarantine and lockdown."""
+        from openlabels.server.models import RemediationActionTypeEnum
+
+        actions = set(RemediationActionTypeEnum.enums)
+        assert 'quarantine' in actions
+        assert 'lockdown' in actions
+        assert 'rollback' in actions
+
+    def test_remediation_status_values(self):
+        """Remediation status should track lifecycle."""
+        from openlabels.server.models import RemediationStatusEnum
+
+        statuses = set(RemediationStatusEnum.enums)
+        expected = {'pending', 'completed', 'failed', 'rolled_back'}
+        assert statuses == expected
+
+    def test_remediation_tracks_original_acl(self):
+        """Remediation should store ACL for rollback."""
+        from openlabels.server.models import RemediationAction
+
+        assert 'previous_acl' in RemediationAction.__table__.c
+
+
+class TestUUIDGeneration:
+    """Tests for UUID generation."""
+
+    def test_generate_uuid_returns_uuid(self):
+        """generate_uuid should return a valid UUID."""
+        from openlabels.server.models import generate_uuid
+
+        result = generate_uuid()
+        assert isinstance(result, UUID)
+
+    def test_generate_uuid_is_unique(self):
+        """Each call should generate a unique UUID."""
+        from openlabels.server.models import generate_uuid
+
+        uuids = [generate_uuid() for _ in range(100)]
+        unique_uuids = set(uuids)
+        assert len(unique_uuids) == 100

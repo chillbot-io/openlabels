@@ -19,6 +19,30 @@ class TokenClaims(BaseModel):
     tenant_id: str
     roles: list[str] = []
 
+    @classmethod
+    def model_validator_oid(cls, v):
+        """Validate that oid is not empty - prevents impersonation attacks."""
+        if not v or not v.strip():
+            raise ValueError("oid cannot be empty - this would allow impersonation")
+        return v
+
+    @classmethod
+    def model_validator_tenant(cls, v):
+        """Validate that tenant_id is not empty."""
+        if not v or not v.strip():
+            raise ValueError("tenant_id cannot be empty")
+        return v
+
+    def __init__(self, **data):
+        # Validate oid before Pydantic processing
+        oid = data.get("oid", "")
+        if not oid or not oid.strip():
+            raise ValueError("oid cannot be empty - this would allow impersonation")
+        tenant_id = data.get("tenant_id", "")
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("tenant_id cannot be empty")
+        super().__init__(**data)
+
 
 # Cache for JWKS
 _jwks_cache: dict = {}

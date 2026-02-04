@@ -53,23 +53,39 @@ class TestTokenClaims:
         assert claims.roles == []
 
     def test_empty_oid_rejected(self):
-        """Empty oid should fail validation."""
-        # Pydantic allows empty strings by default for str fields
-        # This test documents current behavior - may need stricter validation
-        claims = TokenClaims(
-            oid="",
-            preferred_username="user@test.com",
-            tenant_id="tenant",
-        )
-        # Note: This passes but ideally should fail - potential security issue
-        assert claims.oid == ""
+        """Empty oid MUST fail validation - prevents impersonation attacks."""
+        with pytest.raises(ValueError, match="oid cannot be empty"):
+            TokenClaims(
+                oid="",
+                preferred_username="user@test.com",
+                tenant_id="tenant",
+            )
 
-    def test_invalid_email_format_accepted(self):
-        """Invalid email format is currently accepted."""
-        # This documents current behavior - may want stricter validation
+    def test_whitespace_only_oid_rejected(self):
+        """Whitespace-only oid MUST fail - prevents impersonation attacks."""
+        with pytest.raises(ValueError, match="oid cannot be empty"):
+            TokenClaims(
+                oid="   ",
+                preferred_username="user@test.com",
+                tenant_id="tenant",
+            )
+
+    def test_empty_tenant_id_rejected(self):
+        """Empty tenant_id MUST fail validation - security requirement."""
+        with pytest.raises(ValueError, match="tenant_id cannot be empty"):
+            TokenClaims(
+                oid="valid-oid",
+                preferred_username="user@test.com",
+                tenant_id="",
+            )
+
+    def test_invalid_email_format_accepted_for_upn(self):
+        """UPN format without @ is valid for some Azure AD scenarios."""
+        # Note: preferred_username can be UPN which may not have @
+        # This is intentionally permissive for Azure AD compatibility
         claims = TokenClaims(
             oid="user-id",
-            preferred_username="not-an-email",  # No @ sign
+            preferred_username="not-an-email",  # UPN format
             tenant_id="tenant",
         )
         assert claims.preferred_username == "not-an-email"

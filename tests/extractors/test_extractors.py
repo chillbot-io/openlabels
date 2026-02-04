@@ -182,7 +182,9 @@ class TestPDFExtractor:
         result = extractor.extract(pdf_bytes, "test.pdf")
 
         assert result.text is not None
-        assert "Test content" in result.text or "123-45-6789" in result.text
+        # PDF extraction should capture the text we inserted
+        assert "Test content" in result.text, \
+            f"Expected 'Test content' in extracted text, got: {result.text[:200]}"
 
     def test_extract_multi_page_pdf(self):
         """Test extracting from multi-page PDF."""
@@ -253,7 +255,9 @@ class TestDOCXExtractor:
         extractor = DOCXExtractor()
         result = extractor.extract(docx_bytes, "test.docx")
 
-        assert "test@example.com" in result.text or "Test paragraph" in result.text
+        # DOCX extraction should capture the paragraph content
+        assert "Test paragraph" in result.text, \
+            f"Expected 'Test paragraph' in extracted text, got: {result.text[:200]}"
 
     def test_extract_docx_with_tables(self):
         """Test extracting text from DOCX with tables."""
@@ -275,8 +279,11 @@ class TestDOCXExtractor:
         extractor = DOCXExtractor()
         result = extractor.extract(docx_bytes, "table.docx")
 
-        # Should extract table content
-        assert "John Doe" in result.text or "123-45-6789" in result.text
+        # DOCX extraction should capture table cell content
+        assert "John Doe" in result.text, \
+            f"Expected 'John Doe' from table in extracted text, got: {result.text[:200]}"
+        assert "123-45-6789" in result.text, \
+            f"Expected SSN from table in extracted text, got: {result.text[:200]}"
 
 
 # =============================================================================
@@ -324,7 +331,9 @@ class TestXLSXExtractor:
         result = extractor.extract(xlsx_bytes, "test.xlsx")
 
         assert result is not None
-        assert "John Doe" in result.text or "123-45-6789" in result.text
+        # XLSX extraction should capture cell content
+        assert "John Doe" in result.text, \
+            f"Expected 'John Doe' from cell in extracted text, got: {result.text[:200]}"
 
     def test_extract_csv(self):
         """Test extracting text from CSV."""
@@ -335,7 +344,9 @@ class TestXLSXExtractor:
         extractor = XLSXExtractor()
         result = extractor.extract(csv_content, "test.csv")
 
-        assert "john@test.com" in result.text or "John" in result.text
+        # CSV extraction should capture the content
+        assert "john@test.com" in result.text, \
+            f"Expected email in extracted CSV text, got: {result.text[:200]}"
 
 
 # =============================================================================

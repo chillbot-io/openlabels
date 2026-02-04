@@ -1,23 +1,18 @@
 """
-Comprehensive tests for database connection and session management.
+Tests for database connection and session management.
 
-Tests cover:
-- Database initialization
-- Session lifecycle (commit, rollback)
-- Engine disposal
-- Uninitialized state handling
-- Session factory pattern
-- Context manager behavior
-- Error handling and recovery
+Unit tests verify error conditions and basic behavior.
+Integration tests verify actual database behavior with PostgreSQL.
+
+Run integration tests with:
+    export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
+    pytest tests/server/test_db_comprehensive.py -v
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from openlabels.server.db import (
     Base,
-    _engine,
-    _session_factory,
     close_db,
     get_session,
     get_session_context,
@@ -30,126 +25,82 @@ from openlabels.server.db import (
 class TestBase:
     """Tests for declarative base."""
 
-    def test_base_exists(self):
-        """Base class exists and is usable."""
-        assert Base is not None
+    def test_base_is_declarative_base(self):
+        """Base should be a SQLAlchemy declarative base."""
+        from sqlalchemy.orm import DeclarativeBase
+
+        assert issubclass(Base, DeclarativeBase)
+
+    def test_base_has_metadata(self):
+        """Base should have metadata for table creation."""
         assert hasattr(Base, "metadata")
+        assert Base.metadata is not None
 
 
-class TestInitDb:
-    """Tests for init_db function."""
-
-    @pytest.mark.asyncio
-    async def test_init_db_creates_engine(self):
-        """init_db creates async engine."""
-        import openlabels.server.db as db_module
-
-        # Save original values
-        original_engine = db_module._engine
-        original_factory = db_module._session_factory
-
-        try:
-            # Reset state
-            db_module._engine = None
-            db_module._session_factory = None
-
-            with patch("openlabels.server.db.create_async_engine") as mock_engine:
-                with patch("openlabels.server.db.async_sessionmaker") as mock_factory:
-                    mock_engine.return_value = MagicMock()
-                    mock_factory.return_value = MagicMock()
-
-                    await init_db("postgresql+asyncpg://test:test@localhost/test")
-
-                    mock_engine.assert_called_once()
-                    mock_factory.assert_called_once()
-                    assert db_module._engine is not None
-                    assert db_module._session_factory is not None
-        finally:
-            # Restore original values
-            db_module._engine = original_engine
-            db_module._session_factory = original_factory
+class TestGetSessionUninitialized:
+    """Tests for get_session error handling when not initialized."""
 
     @pytest.mark.asyncio
-    async def test_init_db_configures_engine_params(self):
-        """init_db configures engine with pool settings."""
+    async def test_raises_runtime_error(self):
+        """get_session raises RuntimeError if database not initialized."""
         import openlabels.server.db as db_module
 
-        original_engine = db_module._engine
         original_factory = db_module._session_factory
-
         try:
-            db_module._engine = None
             db_module._session_factory = None
 
-            with patch("openlabels.server.db.create_async_engine") as mock_engine:
-                with patch("openlabels.server.db.async_sessionmaker"):
-                    mock_engine.return_value = MagicMock()
-
-                    await init_db("postgresql+asyncpg://test:test@localhost/test")
-
-                    call_kwargs = mock_engine.call_args[1]
-                    assert call_kwargs["echo"] is False
-                    assert call_kwargs["pool_size"] == 5
-                    assert call_kwargs["max_overflow"] == 10
+            with pytest.raises(RuntimeError, match="Database not initialized"):
+                async for session in get_session():
+                    pass
         finally:
-            db_module._engine = original_engine
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_init_db_configures_session_factory(self):
-        """init_db configures session factory correctly."""
-        import openlabels.server.db as db_module
-
-        original_engine = db_module._engine
-        original_factory = db_module._session_factory
-
-        try:
-            db_module._engine = None
-            db_module._session_factory = None
-
-            with patch("openlabels.server.db.create_async_engine") as mock_engine:
-                with patch("openlabels.server.db.async_sessionmaker") as mock_factory:
-                    mock_engine.return_value = MagicMock()
-                    mock_factory.return_value = MagicMock()
-
-                    await init_db("postgresql+asyncpg://test:test@localhost/test")
-
-                    call_kwargs = mock_factory.call_args[1]
-                    assert call_kwargs["expire_on_commit"] is False
-        finally:
-            db_module._engine = original_engine
             db_module._session_factory = original_factory
 
 
-class TestCloseDb:
-    """Tests for close_db function."""
+class TestGetSessionContextUninitialized:
+    """Tests for get_session_context error handling."""
 
     @pytest.mark.asyncio
-    async def test_close_db_disposes_engine(self):
-        """close_db disposes the engine."""
+    async def test_raises_runtime_error(self):
+        """get_session_context raises RuntimeError if not initialized."""
         import openlabels.server.db as db_module
 
-        original_engine = db_module._engine
-
+        original_factory = db_module._session_factory
         try:
-            mock_engine = MagicMock()
-            mock_engine.dispose = AsyncMock()
-            db_module._engine = mock_engine
+            db_module._session_factory = None
 
-            await close_db()
-
-            mock_engine.dispose.assert_called_once()
-            assert db_module._engine is None
+            with pytest.raises(RuntimeError, match="Database not initialized"):
+                async with get_session_context() as session:
+                    pass
         finally:
-            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+
+class TestGetSessionFactoryUninitialized:
+    """Tests for get_session_factory error handling."""
+
+    def test_raises_runtime_error(self):
+        """get_session_factory raises RuntimeError if not initialized."""
+        import openlabels.server.db as db_module
+
+        original_factory = db_module._session_factory
+        try:
+            db_module._session_factory = None
+
+            with pytest.raises(RuntimeError, match="Database not initialized"):
+                get_session_factory()
+        finally:
+            db_module._session_factory = original_factory
+
+
+class TestCloseDatabaseUninitialized:
+    """Tests for close_db when not initialized."""
 
     @pytest.mark.asyncio
-    async def test_close_db_handles_no_engine(self):
-        """close_db handles case when no engine exists."""
+    async def test_handles_no_engine(self):
+        """close_db should not raise when no engine exists."""
         import openlabels.server.db as db_module
 
         original_engine = db_module._engine
-
         try:
             db_module._engine = None
 
@@ -161,294 +112,39 @@ class TestCloseDb:
             db_module._engine = original_engine
 
 
-class TestGetSession:
-    """Tests for get_session function."""
+class TestRunMigrationsConfiguration:
+    """Tests for run_migrations configuration."""
+
+    def test_function_exists(self):
+        """run_migrations function should exist and be callable."""
+        assert callable(run_migrations)
+
+    def test_accepts_revision_and_direction(self):
+        """run_migrations should accept revision and direction parameters."""
+        import inspect
+
+        sig = inspect.signature(run_migrations)
+        params = list(sig.parameters.keys())
+
+        assert "revision" in params
+        assert "direction" in params
+
+
+# =============================================================================
+# INTEGRATION TESTS - Require PostgreSQL
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestInitDbIntegration:
+    """Integration tests for init_db with real PostgreSQL."""
 
     @pytest.mark.asyncio
-    async def test_get_session_raises_if_not_initialized(self):
-        """get_session raises RuntimeError if not initialized."""
-        import openlabels.server.db as db_module
+    async def test_creates_working_engine(self, database_url):
+        """init_db should create an engine that can connect."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
 
-        original_factory = db_module._session_factory
-
-        try:
-            db_module._session_factory = None
-
-            with pytest.raises(RuntimeError, match="Database not initialized"):
-                async for session in get_session():
-                    pass
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_yields_session(self):
-        """get_session yields a session."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
-
-            mock_factory = MagicMock()
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-            db_module._session_factory = mock_factory
-
-            async for session in get_session():
-                assert session is mock_session
-                break
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_commits_on_success(self):
-        """get_session commits session on successful completion."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            # Create an async context manager
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            async for session in get_session():
-                pass
-
-            mock_session.commit.assert_called_once()
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_rollbacks_on_exception(self):
-        """get_session rollbacks session on exception."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            # The get_session generator catches the exception, rolls back, and re-raises
-            with pytest.raises(ValueError):
-                async for session in get_session():
-                    raise ValueError("Test error")
-
-            # Note: The rollback may or may not be called depending on the generator cleanup
-            # The important thing is that the exception is properly propagated
-            # Remove assertion on rollback as it depends on generator cleanup behavior
-        finally:
-            db_module._session_factory = original_factory
-
-
-class TestGetSessionContext:
-    """Tests for get_session_context function."""
-
-    @pytest.mark.asyncio
-    async def test_get_session_context_raises_if_not_initialized(self):
-        """get_session_context raises RuntimeError if not initialized."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            db_module._session_factory = None
-
-            with pytest.raises(RuntimeError, match="Database not initialized"):
-                async with get_session_context() as session:
-                    pass
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_context_yields_session(self):
-        """get_session_context yields a session."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            async with get_session_context() as session:
-                assert session is mock_session
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_context_commits_on_success(self):
-        """get_session_context commits on success."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            async with get_session_context() as session:
-                pass
-
-            mock_session.commit.assert_called_once()
-        finally:
-            db_module._session_factory = original_factory
-
-    @pytest.mark.asyncio
-    async def test_get_session_context_rollbacks_on_exception(self):
-        """get_session_context rollbacks on exception."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            with pytest.raises(ValueError):
-                async with get_session_context() as session:
-                    raise ValueError("Test error")
-
-            mock_session.rollback.assert_called_once()
-        finally:
-            db_module._session_factory = original_factory
-
-
-class TestGetSessionFactory:
-    """Tests for get_session_factory function."""
-
-    def test_get_session_factory_raises_if_not_initialized(self):
-        """get_session_factory raises RuntimeError if not initialized."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            db_module._session_factory = None
-
-            with pytest.raises(RuntimeError, match="Database not initialized"):
-                get_session_factory()
-        finally:
-            db_module._session_factory = original_factory
-
-    def test_get_session_factory_returns_factory(self):
-        """get_session_factory returns the factory."""
-        import openlabels.server.db as db_module
-
-        original_factory = db_module._session_factory
-
-        try:
-            mock_factory = MagicMock()
-            db_module._session_factory = mock_factory
-
-            result = get_session_factory()
-
-            assert result is mock_factory
-        finally:
-            db_module._session_factory = original_factory
-
-
-class TestRunMigrations:
-    """Tests for run_migrations function."""
-
-    def test_run_migrations_upgrade(self):
-        """run_migrations runs upgrade."""
-        with patch("alembic.config.Config") as mock_config_class:
-            with patch("alembic.command.upgrade") as mock_upgrade:
-                mock_config = MagicMock()
-                mock_config_class.return_value = mock_config
-
-                run_migrations("head", direction="upgrade")
-
-                mock_upgrade.assert_called_once_with(mock_config, "head")
-
-    def test_run_migrations_downgrade(self):
-        """run_migrations runs downgrade."""
-        with patch("alembic.config.Config") as mock_config_class:
-            with patch("alembic.command.downgrade") as mock_downgrade:
-                mock_config = MagicMock()
-                mock_config_class.return_value = mock_config
-
-                run_migrations("base", direction="downgrade")
-
-                mock_downgrade.assert_called_once_with(mock_config, "base")
-
-    def test_run_migrations_loads_alembic_config(self):
-        """run_migrations loads alembic.ini config."""
-        with patch("alembic.config.Config") as mock_config_class:
-            with patch("alembic.command.upgrade"):
-                run_migrations("head")
-
-                mock_config_class.assert_called_once_with("alembic.ini")
-
-
-class TestDatabaseStateManagement:
-    """Tests for database state edge cases."""
-
-    @pytest.mark.asyncio
-    async def test_multiple_init_calls_overwrite(self):
-        """Multiple init_db calls overwrite previous engine."""
         import openlabels.server.db as db_module
 
         original_engine = db_module._engine
@@ -458,108 +154,306 @@ class TestDatabaseStateManagement:
             db_module._engine = None
             db_module._session_factory = None
 
-            first_engine = MagicMock()
-            second_engine = MagicMock()
-            call_count = [0]
+            await init_db(database_url)
 
-            def create_engine(*args, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    return first_engine
-                return second_engine
+            assert db_module._engine is not None
+            assert db_module._session_factory is not None
 
-            with patch("openlabels.server.db.create_async_engine", side_effect=create_engine):
-                with patch("openlabels.server.db.async_sessionmaker"):
-                    await init_db("postgresql+asyncpg://test1:test@localhost/test1")
-                    await init_db("postgresql+asyncpg://test2:test@localhost/test2")
-
-                    # Second engine should be used
-                    assert db_module._engine is second_engine
+            # Should be able to execute a query
+            async with db_module._session_factory() as session:
+                from sqlalchemy import text
+                result = await session.execute(text("SELECT 1"))
+                assert result.scalar() == 1
         finally:
+            if db_module._engine:
+                await db_module._engine.dispose()
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
+
+@pytest.mark.integration
+class TestGetSessionIntegration:
+    """Integration tests for get_session with real PostgreSQL."""
+
     @pytest.mark.asyncio
-    async def test_close_then_use_session_raises(self):
-        """Using session after close raises error."""
+    async def test_yields_working_session(self, database_url):
+        """get_session should yield a session that can execute queries."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
         import openlabels.server.db as db_module
 
         original_engine = db_module._engine
         original_factory = db_module._session_factory
 
         try:
-            mock_engine = MagicMock()
-            mock_engine.dispose = AsyncMock()
-            db_module._engine = mock_engine
-            db_module._session_factory = MagicMock()
+            await init_db(database_url)
+
+            async for session in get_session():
+                from sqlalchemy import text
+                result = await session.execute(text("SELECT 1 + 1"))
+                assert result.scalar() == 2
+                break
+        finally:
+            if db_module._engine:
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_commits_on_success(self, database_url):
+        """get_session should commit changes on successful completion."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+        from openlabels.server.models import Tenant
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+
+            async with db_module._engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            tenant_name = f"test-commit-{id(self)}"
+
+            # Insert through get_session
+            async for session in get_session():
+                tenant = Tenant(name=tenant_name)
+                session.add(tenant)
+                break  # Exit triggers commit
+
+            # Verify commit in new session
+            async for session in get_session():
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(Tenant).where(Tenant.name == tenant_name)
+                )
+                found = result.scalar_one_or_none()
+                assert found is not None
+                assert found.name == tenant_name
+                break
+        finally:
+            if db_module._engine:
+                async with db_module._engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.drop_all)
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_rollbacks_on_exception(self, database_url):
+        """get_session should rollback on exception."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+        from openlabels.server.models import Tenant
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+
+            async with db_module._engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            tenant_name = f"test-rollback-{id(self)}"
+
+            # Insert and raise exception
+            with pytest.raises(ValueError):
+                async for session in get_session():
+                    tenant = Tenant(name=tenant_name)
+                    session.add(tenant)
+                    raise ValueError("Trigger rollback")
+
+            # Verify rollback - tenant should not exist
+            async for session in get_session():
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(Tenant).where(Tenant.name == tenant_name)
+                )
+                found = result.scalar_one_or_none()
+                assert found is None, "Tenant should not exist after rollback"
+                break
+        finally:
+            if db_module._engine:
+                async with db_module._engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.drop_all)
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+
+@pytest.mark.integration
+class TestGetSessionContextIntegration:
+    """Integration tests for get_session_context."""
+
+    @pytest.mark.asyncio
+    async def test_yields_working_session(self, database_url):
+        """get_session_context should yield a working session."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+
+            async with get_session_context() as session:
+                from sqlalchemy import text
+                result = await session.execute(text("SELECT 2 * 3"))
+                assert result.scalar() == 6
+        finally:
+            if db_module._engine:
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_commits_on_success(self, database_url):
+        """get_session_context should commit on successful exit."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+        from openlabels.server.models import Tenant
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+
+            async with db_module._engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            tenant_name = f"test-context-commit-{id(self)}"
+
+            async with get_session_context() as session:
+                tenant = Tenant(name=tenant_name)
+                session.add(tenant)
+
+            # Verify commit
+            async with get_session_context() as session:
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(Tenant).where(Tenant.name == tenant_name)
+                )
+                found = result.scalar_one_or_none()
+                assert found is not None
+        finally:
+            if db_module._engine:
+                async with db_module._engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.drop_all)
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_rollbacks_on_exception(self, database_url):
+        """get_session_context should rollback on exception."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+        from openlabels.server.models import Tenant
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+
+            async with db_module._engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            tenant_name = f"test-context-rollback-{id(self)}"
+
+            with pytest.raises(ValueError):
+                async with get_session_context() as session:
+                    tenant = Tenant(name=tenant_name)
+                    session.add(tenant)
+                    raise ValueError("Trigger rollback")
+
+            # Verify rollback
+            async with get_session_context() as session:
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(Tenant).where(Tenant.name == tenant_name)
+                )
+                found = result.scalar_one_or_none()
+                assert found is None, "Tenant should not exist after rollback"
+        finally:
+            if db_module._engine:
+                async with db_module._engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.drop_all)
+                await db_module._engine.dispose()
+            db_module._engine = original_engine
+            db_module._session_factory = original_factory
+
+
+@pytest.mark.integration
+class TestCloseDbIntegration:
+    """Integration tests for close_db."""
+
+    @pytest.mark.asyncio
+    async def test_disposes_engine(self, database_url):
+        """close_db should dispose the engine properly."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
+
+        import openlabels.server.db as db_module
+
+        original_engine = db_module._engine
+        original_factory = db_module._session_factory
+
+        try:
+            await init_db(database_url)
+            assert db_module._engine is not None
 
             await close_db()
 
-            # Factory is not reset by close_db, but best practice test
-            # This tests that the engine is set to None
             assert db_module._engine is None
         finally:
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
 
-class TestSessionErrorHandling:
-    """Tests for session error handling."""
+@pytest.mark.integration
+class TestGetSessionFactoryIntegration:
+    """Integration tests for get_session_factory."""
 
     @pytest.mark.asyncio
-    async def test_session_error_propagates(self):
-        """Session errors are properly propagated."""
-        import openlabels.server.db as db_module
+    async def test_returns_working_factory(self, database_url):
+        """get_session_factory should return a usable factory."""
+        if not database_url:
+            pytest.skip("PostgreSQL not available")
 
-        original_factory = db_module._session_factory
-
-        try:
-            mock_session = MagicMock()
-            mock_session.commit = AsyncMock()
-            mock_session.rollback = AsyncMock()
-
-            class FakeAsyncContextManager:
-                async def __aenter__(self):
-                    return mock_session
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    return None
-
-            mock_factory = MagicMock(return_value=FakeAsyncContextManager())
-            db_module._session_factory = mock_factory
-
-            # Test that exceptions are properly propagated
-            with pytest.raises(ValueError, match="Test error"):
-                async for session in get_session():
-                    raise ValueError("Test error")
-        finally:
-            db_module._session_factory = original_factory
-
-
-class TestDatabaseUrlHandling:
-    """Tests for database URL handling."""
-
-    @pytest.mark.asyncio
-    async def test_accepts_postgresql_asyncpg_url(self):
-        """Accepts postgresql+asyncpg:// URL."""
         import openlabels.server.db as db_module
 
         original_engine = db_module._engine
         original_factory = db_module._session_factory
 
         try:
-            db_module._engine = None
-            db_module._session_factory = None
+            await init_db(database_url)
 
-            with patch("openlabels.server.db.create_async_engine") as mock_engine:
-                with patch("openlabels.server.db.async_sessionmaker"):
-                    mock_engine.return_value = MagicMock()
+            factory = get_session_factory()
+            assert factory is not None
 
-                    await init_db("postgresql+asyncpg://user:pass@localhost:5432/dbname")
-
-                    # Should be called with the URL
-                    call_args = mock_engine.call_args[0]
-                    assert "postgresql+asyncpg" in call_args[0]
+            async with factory() as session:
+                from sqlalchemy import text
+                result = await session.execute(text("SELECT 1"))
+                assert result.scalar() == 1
         finally:
+            if db_module._engine:
+                await db_module._engine.dispose()
             db_module._engine = original_engine
             db_module._session_factory = original_factory

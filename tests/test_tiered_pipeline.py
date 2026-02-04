@@ -135,8 +135,9 @@ class TestPipelineInitialization:
         """Test initialization with default config."""
         pipeline = TieredPipeline()
 
-        assert pipeline.config is not None
-        assert len(pipeline._stage1_detectors) > 0
+        assert pipeline.config.escalation_threshold > 0, "Config should have positive escalation threshold"
+        assert pipeline.config.max_workers >= 1, "Config should have at least 1 worker"
+        assert len(pipeline._stage1_detectors) >= 5, "Should have at least 5 stage1 detectors (checksum, secrets, financial, gov, patterns)"
 
     def test_init_with_custom_config(self, default_config):
         """Test initialization with custom config."""
@@ -301,15 +302,16 @@ class TestPipelineDetection:
         """Test that entity counts are computed."""
         result = pipeline.detect(sample_text_with_ssn)
 
-        if result.spans:
-            assert len(result.result.entity_counts) > 0
+        assert len(result.spans) >= 1, "Should detect at least one span for SSN text"
+        assert "SSN" in result.result.entity_counts, "Entity counts should include SSN"
+        assert result.result.entity_counts["SSN"] >= 1, "Should count at least one SSN"
 
     def test_detectors_used_tracked(self, pipeline, sample_text_with_ssn):
         """Test that detectors used are tracked."""
         result = pipeline.detect(sample_text_with_ssn)
 
-        if result.spans:
-            assert len(result.result.detectors_used) > 0
+        assert len(result.spans) >= 1, "Should detect at least one span"
+        assert "checksum" in result.result.detectors_used, "Checksum detector should be used for SSN detection"
 
 
 class TestPipelineSecrets:
@@ -396,9 +398,10 @@ class TestPipelineEscalation:
 
     def test_ml_beneficial_types_defined(self):
         """Test that ML-beneficial types are defined."""
-        assert "NAME" in ML_BENEFICIAL_TYPES
-        assert "ADDRESS" in ML_BENEFICIAL_TYPES
-        assert len(ML_BENEFICIAL_TYPES) > 0
+        assert "NAME" in ML_BENEFICIAL_TYPES, "NAME should benefit from ML refinement"
+        assert "ADDRESS" in ML_BENEFICIAL_TYPES, "ADDRESS should benefit from ML refinement"
+        assert len(ML_BENEFICIAL_TYPES) >= 2, "Should have at least NAME and ADDRESS as ML-beneficial types"
+        assert all(isinstance(t, str) for t in ML_BENEFICIAL_TYPES), "All types should be strings"
 
 
 # =============================================================================
@@ -456,20 +459,24 @@ class TestSpanValidation:
             assert 0.0 <= span.confidence <= 1.0
 
     def test_span_detector_set(self, pipeline, sample_text_with_ssn):
-        """Test that span detector is set."""
+        """Test that span detector is set to known detector name."""
         result = pipeline.detect(sample_text_with_ssn)
+        known_detectors = {"checksum", "secrets", "financial", "government", "pattern", "patterns", "ml", "ner"}
 
+        assert len(result.spans) >= 1, "Should detect at least one span"
         for span in result.spans:
-            assert span.detector is not None
-            assert len(span.detector) > 0
+            assert isinstance(span.detector, str), f"Detector should be string, got {type(span.detector)}"
+            assert span.detector in known_detectors, f"Unknown detector: {span.detector}"
 
     def test_span_tier_set(self, pipeline, sample_text_with_ssn):
-        """Test that span tier is set."""
+        """Test that span tier is set to valid Tier enum."""
         result = pipeline.detect(sample_text_with_ssn)
+        valid_tiers = {Tier.ML, Tier.PATTERN, Tier.STRUCTURED, Tier.CHECKSUM}
 
+        assert len(result.spans) >= 1, "Should detect at least one span"
         for span in result.spans:
-            assert span.tier is not None
-            assert isinstance(span.tier, Tier)
+            assert isinstance(span.tier, Tier), f"Tier should be Tier enum, got {type(span.tier)}"
+            assert span.tier in valid_tiers, f"Tier {span.tier} not in valid tiers for: {span.entity_type}"
 
 
 # =============================================================================

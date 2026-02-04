@@ -104,13 +104,17 @@ class TestListTargets:
 
     @pytest.mark.asyncio
     async def test_returns_targets(self, test_client, setup_targets_data):
-        """Should return list of targets."""
+        """Should return list of targets with expected structure."""
         response = await test_client.get("/api/targets")
         assert response.status_code == 200
         data = response.json()
 
-        assert data["total"] >= 6  # At least 6 targets from fixture
-        assert len(data["items"]) > 0
+        assert data["total"] >= 6, "Should return at least 6 targets from fixture"
+        assert len(data["items"]) >= 1, "Should return at least one target item"
+        # Verify target structure
+        first_target = data["items"][0]
+        assert "id" in first_target and first_target["id"], "Target should have non-empty id"
+        assert "adapter" in first_target, "Target should have adapter field"
 
     @pytest.mark.asyncio
     async def test_filter_by_adapter(self, test_client, setup_targets_data):
