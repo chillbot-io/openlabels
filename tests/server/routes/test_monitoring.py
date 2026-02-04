@@ -42,7 +42,14 @@ class TestListMonitoredFiles:
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """List monitored files should return 200 OK."""
         response = await test_client.get("/api/monitoring/files")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, dict), "Response should be a dictionary"
+        assert "items" in data, "Response should contain 'items' field"
+        assert "total" in data, "Response should contain 'total' field"
+        assert "page" in data, "Response should contain 'page' field"
+        assert "pages" in data, "Response should contain 'pages' field"
+        assert isinstance(data["items"], list), "Items should be a list"
 
     @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
@@ -197,7 +204,13 @@ class TestEnableFileMonitoring:
                 "audit_write": True,
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["file_path"] == "/new/file.txt", "File path should match request"
+        assert data["audit_read"] is True, "audit_read should match request"
+        assert data["audit_write"] is True, "audit_write should match request"
+        assert "added_at" in data, "Response should contain 'added_at' field"
 
     @pytest.mark.asyncio
     async def test_returns_created_record(self, test_client, setup_monitoring_data):
@@ -304,7 +317,14 @@ class TestListAccessEvents:
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """List events should return 200 OK."""
         response = await test_client.get("/api/monitoring/events")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, dict), "Response should be a dictionary"
+        assert "items" in data, "Response should contain 'items' field"
+        assert "total" in data, "Response should contain 'total' field"
+        assert "page" in data, "Response should contain 'page' field"
+        assert "pages" in data, "Response should contain 'pages' field"
+        assert isinstance(data["items"], list), "Items should be a list"
 
     @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
@@ -490,7 +510,15 @@ class TestGetAccessStats:
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """Stats should return 200 OK."""
         response = await test_client.get("/api/monitoring/stats")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "total_events" in data, "Response should contain 'total_events' field"
+        assert "events_last_24h" in data, "Response should contain 'events_last_24h' field"
+        assert "events_last_7d" in data, "Response should contain 'events_last_7d' field"
+        assert "by_action" in data, "Response should contain 'by_action' field"
+        assert "by_user" in data, "Response should contain 'by_user' field"
+        assert "monitored_files_count" in data, "Response should contain 'monitored_files_count' field"
+        assert isinstance(data["total_events"], int), "total_events should be an integer"
 
     @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_monitoring_data):
@@ -568,7 +596,14 @@ class TestDetectAccessAnomalies:
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """Anomaly detection should return 200 OK."""
         response = await test_client.get("/api/monitoring/stats/anomalies")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "analysis_period_hours" in data, "Response should contain 'analysis_period_hours' field"
+        assert "analyzed_since" in data, "Response should contain 'analyzed_since' field"
+        assert "anomaly_count" in data, "Response should contain 'anomaly_count' field"
+        assert "anomalies" in data, "Response should contain 'anomalies' field"
+        assert isinstance(data["anomalies"], list), "anomalies should be a list"
+        assert isinstance(data["anomaly_count"], int), "anomaly_count should be an integer"
 
     @pytest.mark.asyncio
     async def test_returns_anomalies_structure(self, test_client, setup_monitoring_data):

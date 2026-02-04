@@ -64,7 +64,16 @@ class TestListLabels:
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """List labels should return 200 OK."""
         response = await test_client.get("/api/labels")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        # Should have the 3 labels from setup
+        assert len(data) == 3, "Response should contain 3 labels from setup"
+        # Verify label structure
+        for label in data:
+            assert "id" in label, "Each label should have 'id' field"
+            assert "name" in label, "Each label should have 'name' field"
+            assert "priority" in label, "Each label should have 'priority' field"
 
     @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_labels_data):
@@ -120,7 +129,11 @@ class TestLabelSyncStatus:
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """Sync status should return 200 OK."""
         response = await test_client.get("/api/labels/sync/status")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "label_count" in data, "Response should contain 'label_count' field"
+        assert "last_synced_at" in data, "Response should contain 'last_synced_at' field"
+        assert isinstance(data["label_count"], int), "label_count should be an integer"
 
     @pytest.mark.asyncio
     async def test_returns_status_structure(self, test_client, setup_labels_data):
@@ -149,7 +162,10 @@ class TestInvalidateLabelCache:
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """Cache invalidate should return 200 OK."""
         response = await test_client.post("/api/labels/cache/invalidate")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "message" in data, "Response should contain 'message' field"
+        assert isinstance(data["message"], str), "Message should be a string"
 
     @pytest.mark.asyncio
     async def test_returns_success_message(self, test_client, setup_labels_data):
@@ -169,7 +185,9 @@ class TestListLabelRules:
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """List rules should return 200 OK."""
         response = await test_client.get("/api/labels/rules")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
 
     @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_labels_data):
@@ -235,7 +253,13 @@ class TestCreateLabelRule:
                 "priority": 50,
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["rule_type"] == "risk_tier", "Rule type should match request"
+        assert data["match_value"] == "HIGH", "Match value should match request"
+        assert data["label_id"] == labels[0].id, "Label ID should match request"
+        assert data["priority"] == 50, "Priority should match request"
 
     @pytest.mark.asyncio
     async def test_returns_created_rule(self, test_client, setup_labels_data):
@@ -457,7 +481,9 @@ class TestUpdateLabelMappings:
                 "HIGH": labels[1].id,
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "message" in data or isinstance(data, dict), "Response should be a dictionary"
 
     @pytest.mark.asyncio
     async def test_creates_risk_tier_rules(self, test_client, setup_labels_data):
@@ -585,7 +611,11 @@ class TestApplyLabel:
                 "label_id": labels[0].id,
             },
         )
-        assert response.status_code == 202
+        assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}"
+        data = response.json()
+        assert "job_id" in data, "Response should contain 'job_id' field"
+        assert "message" in data, "Response should contain 'message' field"
+        assert isinstance(data["job_id"], str), "job_id should be a string"
 
     @pytest.mark.asyncio
     async def test_returns_job_id(self, test_client, setup_labels_data):

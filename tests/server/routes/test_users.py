@@ -43,7 +43,11 @@ class TestListUsers:
     async def test_returns_200_status(self, test_client, setup_users_data):
         """List users endpoint should return 200 OK."""
         response = await test_client.get("/api/users")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        # Should have at least the admin user from setup
+        assert len(data) >= 1, "Response should contain at least one user"
 
     @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_users_data):
@@ -140,7 +144,10 @@ class TestListUsers:
     async def test_pagination_page_parameter(self, test_client, setup_users_data):
         """List should respect page parameter."""
         response = await test_client.get("/api/users?page=1&limit=10")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        assert len(data) <= 10, "Response should respect the limit parameter"
 
     @pytest.mark.asyncio
     async def test_pagination_validation_min_page(self, test_client, setup_users_data):
@@ -175,7 +182,13 @@ class TestCreateUser:
                 "role": "viewer",
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["email"] == "newuser@test.com", "Email should match request"
+        assert data["name"] == "New User", "Name should match request"
+        assert data["role"] == "viewer", "Role should match request"
+        assert "created_at" in data, "Response should contain 'created_at' field"
 
     @pytest.mark.asyncio
     async def test_returns_created_user(self, test_client, setup_users_data):
@@ -304,7 +317,13 @@ class TestGetUser:
         admin_user = setup_users_data["admin_user"]
 
         response = await test_client.get(f"/api/users/{admin_user.id}")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["id"] == str(admin_user.id), "User ID should match requested ID"
+        assert "email" in data, "Response should contain 'email' field"
+        assert "name" in data, "Response should contain 'name' field"
+        assert "role" in data, "Response should contain 'role' field"
 
     @pytest.mark.asyncio
     async def test_returns_user_details(self, test_client, setup_users_data):
@@ -357,7 +376,13 @@ class TestUpdateUser:
             f"/api/users/{user.id}",
             json={"name": "Updated Name"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["id"] == str(user.id), "User ID should match"
+        assert data["name"] == "Updated Name", "Name should be updated"
+        assert data["email"] == "toupdate@test.com", "Email should remain unchanged"
+        assert data["role"] == "viewer", "Role should remain unchanged"
 
     @pytest.mark.asyncio
     async def test_updates_name(self, test_client, setup_users_data):

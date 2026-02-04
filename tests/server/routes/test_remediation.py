@@ -49,7 +49,12 @@ class TestListRemediationActions:
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """List remediation actions should return 200 OK."""
         response = await test_client.get("/api/remediation")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, dict), "Response should be a dictionary"
+        assert "items" in data, "Response should contain 'items' field"
+        assert "total" in data, "Response should contain 'total' field"
+        assert isinstance(data["items"], list), "Items should be a list"
 
     @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_remediation_data):
@@ -254,7 +259,14 @@ class TestListRemediationActions:
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
         response = await test_client.get("/api/remediation?page=1&limit=10")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "items" in data, "Response should contain 'items' field"
+        assert "page" in data, "Response should contain 'page' field"
+        assert "pages" in data, "Response should contain 'pages' field"
+        assert data["page"] == 1, "Page should be 1"
+        assert isinstance(data["items"], list), "Items should be a list"
+        assert len(data["items"]) <= 10, "Items should respect limit parameter"
 
 
 class TestGetRemediationAction:
@@ -280,7 +292,13 @@ class TestGetRemediationAction:
         await session.commit()
 
         response = await test_client.get(f"/api/remediation/{action.id}")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["id"] == str(action.id), "Response ID should match requested action"
+        assert data["action_type"] == "quarantine", "Action type should be quarantine"
+        assert data["status"] == "completed", "Status should be completed"
+        assert data["source_path"] == "/test/get_file.txt", "Source path should match"
 
     @pytest.mark.asyncio
     async def test_returns_action_details(self, test_client, setup_remediation_data):
@@ -330,7 +348,13 @@ class TestQuarantineFile:
                 "dry_run": True,
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["action_type"] == "quarantine", "Action type should be quarantine"
+        assert data["source_path"] == "/test/sensitive.txt", "Source path should match request"
+        assert data["dry_run"] is True, "Dry run should be True"
+        assert data["status"] in ("pending", "completed"), "Status should be valid"
 
     @pytest.mark.asyncio
     async def test_creates_action_record(self, test_client, setup_remediation_data):
@@ -424,7 +448,13 @@ class TestLockdownFile:
                 "dry_run": True,
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["action_type"] == "lockdown", "Action type should be lockdown"
+        assert data["source_path"] == "/test/lockdown.txt", "Source path should match request"
+        assert data["dry_run"] is True, "Dry run should be True"
+        assert data["status"] in ("pending", "completed"), "Status should be valid"
 
     @pytest.mark.asyncio
     async def test_creates_action_record(self, test_client, setup_remediation_data):
@@ -518,7 +548,13 @@ class TestRollbackAction:
                 "dry_run": True,
             },
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["action_type"] == "rollback", "Action type should be rollback"
+        assert data["dry_run"] is True, "Dry run should be True"
+        assert data["status"] in ("pending", "completed"), "Status should be valid"
+        assert "source_path" in data, "Response should contain 'source_path' field"
 
     @pytest.mark.asyncio
     async def test_creates_rollback_action_record(self, test_client, setup_remediation_data):
@@ -665,7 +701,14 @@ class TestRemediationStats:
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Stats endpoint should return 200 OK."""
         response = await test_client.get("/api/remediation/stats/summary")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "total_actions" in data, "Response should contain 'total_actions' field"
+        assert "by_type" in data, "Response should contain 'by_type' field"
+        assert "by_status" in data, "Response should contain 'by_status' field"
+        assert isinstance(data["total_actions"], int), "total_actions should be an integer"
+        assert isinstance(data["by_type"], dict), "by_type should be a dictionary"
+        assert isinstance(data["by_status"], dict), "by_status should be a dictionary"
 
     @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_remediation_data):
