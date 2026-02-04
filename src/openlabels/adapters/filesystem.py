@@ -130,10 +130,45 @@ class FilesystemAdapter:
                 logger.debug(f"Cannot access {entry}: {e}")
                 continue
 
-    async def read_file(self, file_info: FileInfo) -> bytes:
-        """Read file content."""
+    async def read_file(
+        self,
+        file_info: FileInfo,
+        max_size_bytes: int = 100 * 1024 * 1024,  # Default 100MB
+    ) -> bytes:
+        """
+        Read file content with size limit.
+
+        Security: Enforces maximum file size to prevent DoS attacks via
+        memory exhaustion from processing extremely large files.
+
+        Args:
+            file_info: FileInfo of file to read
+            max_size_bytes: Maximum file size to read (default 100MB)
+
+        Returns:
+            File content as bytes
+
+        Raises:
+            ValueError: If file exceeds max_size_bytes
+        """
+        # Security: Check file size before reading to prevent memory exhaustion
+        if file_info.size > max_size_bytes:
+            raise ValueError(
+                f"File too large for processing: {file_info.size} bytes "
+                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+            )
+
         async with aiofiles.open(file_info.path, "rb") as f:
-            return await f.read()
+            content = await f.read(max_size_bytes + 1)  # Read one extra byte to detect overflow
+
+            # Double-check actual content size (file may have grown since stat)
+            if len(content) > max_size_bytes:
+                raise ValueError(
+                    f"File content exceeds limit: {len(content)} bytes "
+                    f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+                )
+
+            return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
         """Get updated metadata for a file."""

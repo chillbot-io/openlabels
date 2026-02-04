@@ -5,6 +5,8 @@ Security features:
 - CORS configured from settings (not wildcard)
 - Rate limiting on sensitive endpoints
 - Request size limits
+- Security headers (HSTS, CSP, X-Frame-Options, etc.)
+- CSRF protection via double-submit cookie pattern
 """
 
 from contextlib import asynccontextmanager
@@ -174,6 +176,74 @@ async def limit_request_size(request: Request, call_next):
         )
 
     return await call_next(request)
+
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    Add security headers to all responses.
+
+    Headers added:
+    - Strict-Transport-Security: Enforce HTTPS
+    - X-Content-Type-Options: Prevent MIME sniffing
+    - X-Frame-Options: Prevent clickjacking
+    - X-XSS-Protection: XSS filter (legacy browsers)
+    - Referrer-Policy: Control referrer information
+    - Content-Security-Policy: Restrict resource loading
+    - Permissions-Policy: Restrict browser features
+    """
+    response = await call_next(request)
+    settings = get_settings()
+
+    # Only add HSTS in production with HTTPS
+    if settings.server.environment == "production":
+        # HSTS: Force HTTPS for 1 year, include subdomains
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking - allow framing from same origin only
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+
+    # XSS filter for legacy browsers
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Control referrer information
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Content Security Policy - restrictive but functional
+    # Allows inline styles (needed for some UI frameworks) but blocks inline scripts
+    csp_directives = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",  # Allow inline styles for UI
+        "img-src 'self' data: https:",
+        "font-src 'self'",
+        "connect-src 'self' wss: ws:",  # Allow WebSocket connections
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "base-uri 'self'",
+    ]
+    response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+    # Restrict browser features (Permissions-Policy)
+    permissions = [
+        "accelerometer=()",
+        "camera=()",
+        "geolocation=()",
+        "gyroscope=()",
+        "magnetometer=()",
+        "microphone=()",
+        "payment=()",
+        "usb=()",
+    ]
+    response.headers["Permissions-Policy"] = ", ".join(permissions)
+
+    return response
 
 
 # Global exception handler

@@ -5,6 +5,9 @@ Applies sensitivity labels to files using:
 1. MIP SDK for local files (Windows + .NET required)
 2. Microsoft Graph API for SharePoint/OneDrive files
 3. Metadata/sidecar fallback for other scenarios
+
+Security: Uses defusedxml to prevent XXE (XML External Entity) attacks
+when parsing Office document XML content.
 """
 
 import asyncio
@@ -12,7 +15,6 @@ import base64
 import json
 import logging
 import shutil
-import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
@@ -25,6 +27,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.models import ScanResult, SensitivityLabel
 
 logger = logging.getLogger(__name__)
+
+# Security: Use defusedxml to prevent XXE attacks
+# defusedxml is a drop-in replacement that disables external entity processing
+try:
+    import defusedxml.ElementTree as ET
+    _USING_DEFUSED_XML = True
+except ImportError:
+    # Fallback to standard library with manual XXE protection
+    import xml.etree.ElementTree as ET
+    _USING_DEFUSED_XML = False
+    logger.warning(
+        "defusedxml not installed - using standard xml.etree.ElementTree. "
+        "For better XXE protection, install defusedxml: pip install defusedxml"
+    )
+
+
+def _safe_xml_fromstring(content: bytes) -> ET.Element:
+    """
+    Safely parse XML content with XXE protection.
+
+    Security: When defusedxml is not available, this function provides
+    basic XXE mitigation by checking for DOCTYPE declarations.
+
+    Args:
+        content: XML content as bytes
+
+    Returns:
+        Parsed XML Element
+
+    Raises:
+        ValueError: If suspicious XML content is detected
+    """
+    if _USING_DEFUSED_XML:
+        # defusedxml handles XXE protection automatically
+        return ET.fromstring(content)
+
+    # Manual XXE check for standard library fallback
+    # Check for DOCTYPE declarations which could enable XXE
+    content_str = content.decode('utf-8', errors='ignore')[:1000].lower()
+    if '<!doctype' in content_str or '<!entity' in content_str:
+        logger.warning("Blocked potential XXE attack: DOCTYPE/ENTITY declaration detected")
+        raise ValueError("XML content contains potentially unsafe DOCTYPE declaration")
+
+    return ET.fromstring(content)
 
 # Check for optional dependencies
 try:
@@ -339,7 +385,8 @@ def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
         ET.register_namespace("", ns["cp"])
         ET.register_namespace("vt", ns["vt"])
 
-        root = ET.fromstring(content)
+        # Security: Use safe XML parsing to prevent XXE attacks
+        root = _safe_xml_fromstring(content)
 
         label_props = {
             "OpenLabels_LabelId": label.id,
@@ -384,7 +431,8 @@ def _update_content_types(content: bytes) -> bytes:
         ns = "http://schemas.openxmlformats.org/package/2006/content-types"
         ET.register_namespace("", ns)
 
-        root = ET.fromstring(content)
+        # Security: Use safe XML parsing to prevent XXE attacks
+        root = _safe_xml_fromstring(content)
 
         # Check if custom properties type already exists
         for override in root.findall(".//{%s}Override" % ns):

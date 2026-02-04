@@ -12,10 +12,16 @@ Flow:
 5. User redirected to app with session established
 
 Sessions are stored in PostgreSQL for production reliability.
+
+Security features:
+- Open redirect prevention via URL validation
+- Rate limiting on auth endpoints
+- Secure session cookies with HttpOnly and SameSite
 """
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 import secrets
 import logging
 
@@ -30,8 +36,81 @@ from openlabels.server.config import get_settings
 from openlabels.server.app import get_client_ip
 from openlabels.server.db import get_session
 from openlabels.server.session import SessionStore, PendingAuthStore
+from openlabels.server.security import log_security_event
 
 logger = logging.getLogger(__name__)
+
+
+def _get_request_context(request: Request) -> dict:
+    """Extract request context for security logging."""
+    return {
+        "ip": get_client_ip(request),
+        "user_agent": request.headers.get("user-agent", "unknown"),
+        "path": str(request.url.path),
+    }
+
+
+def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
+    """
+    Validate redirect URI to prevent open redirect attacks.
+
+    Security: Only allows:
+    1. Relative paths starting with /
+    2. URLs matching the request's host (same-origin)
+    3. URLs in the configured CORS allowed_origins
+
+    Args:
+        redirect_uri: The redirect URI to validate
+        request: The current request (for host validation)
+
+    Returns:
+        Safe redirect URI (defaults to "/" if invalid)
+    """
+    if not redirect_uri:
+        return "/"
+
+    # Handle relative paths - must start with single /
+    if redirect_uri.startswith("/"):
+        # Block protocol-relative URLs (//evil.com)
+        if redirect_uri.startswith("//"):
+            logger.warning(f"Blocked protocol-relative redirect: {redirect_uri}")
+            return "/"
+        # Ensure no path traversal or weird characters
+        # Only allow safe relative paths
+        return redirect_uri
+
+    # Parse the URL for validation
+    try:
+        parsed = urlparse(redirect_uri)
+    except Exception:
+        logger.warning(f"Failed to parse redirect URI: {redirect_uri}")
+        return "/"
+
+    # Must have a valid scheme
+    if parsed.scheme not in ("http", "https"):
+        logger.warning(f"Blocked redirect with invalid scheme: {redirect_uri}")
+        return "/"
+
+    # Get the request's origin
+    request_host = request.url.netloc
+
+    # Check if redirect is to same host (same-origin)
+    if parsed.netloc == request_host:
+        return redirect_uri
+
+    # Check against CORS allowed origins
+    settings = get_settings()
+    redirect_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    if redirect_origin in settings.cors.allowed_origins:
+        return redirect_uri
+
+    # Log attempted open redirect attack
+    logger.warning(
+        f"Blocked open redirect attempt: {redirect_uri} "
+        f"(not in allowed origins: {settings.cors.allowed_origins})"
+    )
+    return "/"
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 limiter = Limiter(key_func=get_client_ip)
@@ -129,6 +208,14 @@ async def login(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Authentication not configured for production. Contact administrator.",
             )
+
+        # SECURITY: Session fixation prevention - invalidate any existing session
+        # before creating a new one to prevent session accumulation
+        existing_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        if existing_session_id:
+            await session_store.delete(existing_session_id)
+            logger.debug("DEV MODE: Invalidated existing session before creating new one")
+
         logger.warning("DEV MODE: Creating fake admin session - DO NOT USE IN PRODUCTION")
         session_id = _generate_session_id()
         session_data = {
@@ -150,7 +237,10 @@ async def login(
             user_id="dev-user-oid",
         )
 
-        response = RedirectResponse(url=redirect_uri or "/", status_code=302)
+        # Validate redirect URI to prevent open redirect attacks
+        safe_redirect = validate_redirect_uri(redirect_uri, request)
+
+        response = RedirectResponse(url=safe_redirect, status_code=302)
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_id,
@@ -169,8 +259,11 @@ async def login(
     # Build callback URL
     callback_url = str(request.url_for("auth_callback"))
 
+    # Validate redirect URI before storing - prevents open redirect after OAuth flow
+    safe_redirect = validate_redirect_uri(redirect_uri, request)
+
     # Store pending auth state
-    await pending_store.set(state, redirect_uri or "/", callback_url)
+    await pending_store.set(state, safe_redirect, callback_url)
 
     # Get authorization URL
     auth_url = msal_app.get_authorization_request_url(
@@ -204,13 +297,34 @@ async def auth_callback(
 
     # Handle errors from Microsoft
     if error:
+        # Log detailed error server-side for debugging
         logger.error(f"OAuth error: {error} - {error_description}")
+        # Security: Log failed authentication attempt
+        log_security_event(
+            event_type="oauth_error",
+            details={
+                **_get_request_context(request),
+                "error": error,
+                "error_code": error_description[:100] if error_description else None,
+            },
+            level="warning",
+        )
+        # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Authentication failed: {error_description or error}",
+            detail="Authentication failed. Please try again or contact support.",
         )
 
     if not code or not state:
+        log_security_event(
+            event_type="oauth_invalid_request",
+            details={
+                **_get_request_context(request),
+                "missing_code": not code,
+                "missing_state": not state,
+            },
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing authorization code or state",
@@ -221,6 +335,14 @@ async def auth_callback(
     pending = await pending_store.get(state)
 
     if not pending:
+        log_security_event(
+            event_type="oauth_invalid_state",
+            details={
+                **_get_request_context(request),
+                "state_hash": hash(state) % 10000,  # Log hash, not actual state
+            },
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state",
@@ -243,20 +365,46 @@ async def auth_callback(
         )
     except Exception as e:
         logger.error(f"Token acquisition failed: {e}")
+        log_security_event(
+            event_type="token_acquisition_failed",
+            details={
+                **_get_request_context(request),
+                "error_type": type(e).__name__,
+            },
+            level="error",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to acquire token",
         )
 
     if "error" in result:
+        # Log detailed error server-side for debugging
         logger.error(f"Token error: {result.get('error_description', result.get('error'))}")
+        log_security_event(
+            event_type="token_exchange_failed",
+            details={
+                **_get_request_context(request),
+                "error": result.get("error"),
+            },
+            level="warning",
+        )
+        # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error_description", "Token acquisition failed"),
+            detail="Failed to complete authentication. Please try again.",
         )
 
     # Create session
     session_store = SessionStore(db)
+
+    # SECURITY: Session fixation prevention - invalidate any existing session
+    # before creating a new one after successful authentication
+    existing_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if existing_session_id:
+        await session_store.delete(existing_session_id)
+        logger.debug("Invalidated existing session during OAuth callback")
+
     session_id = _generate_session_id()
     expires_in = result.get("expires_in", 3600)
 

@@ -129,6 +129,10 @@ async def execute_scan_task(
     seen_file_paths: set[str] = set()
     folder_stats: dict[str, dict] = {}
 
+    # Security: Get max file size limit to prevent DoS via memory exhaustion
+    settings = get_settings()
+    max_file_size_bytes = settings.scan.max_file_size_mb * 1024 * 1024
+
     # Scan statistics
     stats = {
         "files_scanned": 0,
@@ -189,8 +193,20 @@ async def execute_scan_task(
                 folder_stats[folder_path]["file_count"] += 1
                 folder_stats[folder_path]["total_size"] += file_info.size
 
-                # Read file content
-                content = await adapter.read_file(file_info)
+                # Security: Skip files that exceed size limit to prevent DoS
+                if file_info.size > max_file_size_bytes:
+                    logger.warning(
+                        f"Skipping file exceeding size limit: {file_info.path} "
+                        f"({file_info.size} bytes > {max_file_size_bytes} bytes)"
+                    )
+                    stats["files_skipped"] += 1
+                    if "files_too_large" not in stats:
+                        stats["files_too_large"] = 0
+                    stats["files_too_large"] += 1
+                    continue
+
+                # Read file content with size limit
+                content = await adapter.read_file(file_info, max_size_bytes=max_file_size_bytes)
                 content_hash = inventory.compute_content_hash(content)
 
                 # Check if file needs scanning (delta mode)
