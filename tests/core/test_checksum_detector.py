@@ -140,10 +140,11 @@ class TestValidateCreditCard:
         assert conf >= 0.95
 
     def test_invalid_luhn(self):
-        """Test card that fails Luhn check."""
+        """Test card that fails Luhn check should have low confidence."""
         is_valid, conf = validate_credit_card("4111111111111112")
-        # Still detected but lower confidence
-        assert conf < 0.90 or is_valid is False
+        # Invalid Luhn MUST result in either low confidence OR explicit rejection
+        # Using AND ensures we catch bugs where invalid cards get high confidence
+        assert conf < 0.90, f"Invalid Luhn card should have confidence < 0.90, got {conf}"
 
     def test_too_short(self):
         """Test card number too short."""
@@ -167,10 +168,10 @@ class TestValidateNPI:
         assert conf >= 0.95
 
     def test_invalid_npi_luhn(self):
-        """Test NPI that fails Luhn check."""
+        """Test NPI that fails Luhn check should have low confidence."""
         is_valid, conf = validate_npi("1234567890")
-        # Invalid Luhn
-        assert conf < 0.90 or is_valid is False
+        # Invalid Luhn MUST result in low confidence
+        assert conf < 0.90, f"Invalid NPI Luhn should have confidence < 0.90, got {conf}"
 
     def test_invalid_npi_length(self):
         """Test NPI with wrong length."""
@@ -207,9 +208,10 @@ class TestValidateIBAN:
         assert is_valid is True
 
     def test_invalid_iban_checksum(self):
-        """Test IBAN with invalid checksum."""
+        """Test IBAN with invalid checksum should have low confidence."""
         is_valid, conf = validate_iban("GB82WEST12345698765433")  # Changed last digit
-        assert conf < 0.90 or is_valid is False
+        # Invalid checksum MUST result in low confidence - catch false positives
+        assert conf < 0.90, f"Invalid IBAN checksum should have confidence < 0.90, got {conf}"
 
     def test_invalid_iban_country(self):
         """Test IBAN with invalid country code."""
