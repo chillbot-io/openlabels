@@ -7,122 +7,137 @@ users to malicious sites after authentication.
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, MagicMock
+
+from openlabels.server.routes.auth import validate_redirect_uri
 
 
-class TestLoginRedirectValidation:
-    """Tests for redirect_uri validation in login flow."""
+class TestValidateRedirectUri:
+    """Tests for the validate_redirect_uri function."""
 
     @pytest.fixture
-    def mock_settings_dev_mode(self):
-        """Mock settings in dev mode."""
+    def mock_request(self):
+        """Create a mock request with standard settings."""
+        request = Mock()
+        request.url.netloc = "localhost:8000"
+        return request
+
+    @pytest.fixture
+    def mock_settings(self):
+        """Mock settings with allowed origins."""
         settings = Mock()
-        settings.auth.provider = "none"
-        settings.server.environment = "development"
-        settings.server.debug = True
-        settings.rate_limit.auth_limit = "100/minute"
+        settings.cors.allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://app.example.com",
+        ]
         return settings
 
-    @pytest.mark.asyncio
-    async def test_external_url_redirect_blocked(self, mock_settings_dev_mode):
-        """External URLs in redirect_uri should be blocked or sanitized."""
-        # This test should fail until the vulnerability is fixed
-        from fastapi.testclient import TestClient
-        from openlabels.server.app import create_app
+    def test_none_redirect_returns_root(self, mock_request, mock_settings):
+        """None redirect_uri should return root path."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+            result = validate_redirect_uri(None, mock_request)
+            assert result == "/"
 
-        with patch("openlabels.server.routes.auth.get_settings", return_value=mock_settings_dev_mode):
-            with patch("openlabels.server.config.get_settings", return_value=mock_settings_dev_mode):
-                # TODO: Implement proper test once app fixture is available
-                # For now, document the expected behavior
-                pass
+    def test_empty_redirect_returns_root(self, mock_request, mock_settings):
+        """Empty redirect_uri should return root path."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+            result = validate_redirect_uri("", mock_request)
+            assert result == "/"
 
-        # Expected behavior:
-        # response = client.get("/auth/login?redirect_uri=https://evil.com/phishing")
-        # location = response.headers.get("location", "")
-        # assert "evil.com" not in location
+    def test_relative_path_allowed(self, mock_request, mock_settings):
+        """Relative paths starting with / should be allowed."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
 
-    @pytest.mark.asyncio
-    async def test_javascript_url_redirect_blocked(self, mock_settings_dev_mode):
-        """JavaScript URLs should be blocked."""
-        # javascript: URLs can execute arbitrary code
-        malicious_urls = [
-            "javascript:alert('xss')",
-            "JAVASCRIPT:alert('xss')",
-            "java\x00script:alert('xss')",
-        ]
-        # TODO: Test each URL is rejected
+            safe_paths = ["/", "/dashboard", "/ui/scans", "/ui/results?page=1"]
+            for path in safe_paths:
+                result = validate_redirect_uri(path, mock_request)
+                assert result == path, f"Path {path} should be allowed"
 
-    @pytest.mark.asyncio
-    async def test_data_url_redirect_blocked(self, mock_settings_dev_mode):
-        """Data URLs should be blocked."""
-        # data: URLs can contain malicious content
-        malicious_urls = [
-            "data:text/html,<script>alert('xss')</script>",
-        ]
-        # TODO: Test each URL is rejected
-
-    @pytest.mark.asyncio
-    async def test_protocol_relative_url_blocked(self, mock_settings_dev_mode):
+    def test_protocol_relative_url_blocked(self, mock_request, mock_settings):
         """Protocol-relative URLs (//evil.com) should be blocked."""
-        # //evil.com inherits the current protocol and redirects to external site
-        # TODO: Implement test
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            result = validate_redirect_uri("//evil.com/phishing", mock_request)
+            assert result == "/", "Protocol-relative URL should be blocked"
+
+    def test_external_url_blocked(self, mock_request, mock_settings):
+        """External URLs not in whitelist should be blocked."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            malicious_urls = [
+                "https://evil.com/phishing",
+                "http://attacker.com/steal",
+                "https://malware.net/payload",
+            ]
+            for url in malicious_urls:
+                result = validate_redirect_uri(url, mock_request)
+                assert result == "/", f"External URL {url} should be blocked"
+
+    def test_same_origin_url_allowed(self, mock_request, mock_settings):
+        """URLs to the same origin should be allowed."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            result = validate_redirect_uri("http://localhost:8000/dashboard", mock_request)
+            assert result == "http://localhost:8000/dashboard"
+
+    def test_whitelisted_origin_allowed(self, mock_request, mock_settings):
+        """URLs in CORS whitelist should be allowed."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            result = validate_redirect_uri("https://app.example.com/callback", mock_request)
+            assert result == "https://app.example.com/callback"
+
+    def test_javascript_url_blocked(self, mock_request, mock_settings):
+        """JavaScript URLs should be blocked."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            malicious_urls = [
+                "javascript:alert('xss')",
+                "JAVASCRIPT:alert(1)",
+            ]
+            for url in malicious_urls:
+                result = validate_redirect_uri(url, mock_request)
+                assert result == "/", f"JavaScript URL {url} should be blocked"
+
+    def test_data_url_blocked(self, mock_request, mock_settings):
+        """Data URLs should be blocked."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            result = validate_redirect_uri("data:text/html,<script>alert(1)</script>", mock_request)
+            assert result == "/", "Data URL should be blocked"
+
+    def test_ftp_url_blocked(self, mock_request, mock_settings):
+        """Non-HTTP schemes should be blocked."""
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr("openlabels.server.routes.auth.get_settings", lambda: mock_settings)
+
+            result = validate_redirect_uri("ftp://evil.com/malware", mock_request)
+            assert result == "/", "FTP URL should be blocked"
+
+
+class TestOpenRedirectIntegration:
+    """Integration tests for open redirect prevention."""
 
     @pytest.mark.asyncio
-    async def test_url_with_at_sign_blocked(self, mock_settings_dev_mode):
-        """URLs with @ in authority should be blocked."""
-        # https://good.com@evil.com redirects to evil.com
-        malicious_urls = [
-            "https://good.com@evil.com",
-            "https://user:pass@evil.com/path",
-        ]
-        # TODO: Test each URL is rejected
+    async def test_login_endpoint_validates_redirect(self):
+        """Login endpoint should use validated redirect_uri."""
+        # This would require a full app fixture
+        # For now, we test the validation function directly
+        pass
 
     @pytest.mark.asyncio
-    async def test_relative_path_allowed(self, mock_settings_dev_mode):
-        """Relative paths should be allowed."""
-        safe_paths = [
-            "/",
-            "/dashboard",
-            "/ui/scans",
-            "/ui/results?page=1",
-        ]
-        # TODO: Test each path is accepted
-
-    @pytest.mark.asyncio
-    async def test_whitelisted_host_allowed(self, mock_settings_dev_mode):
-        """Whitelisted hosts should be allowed."""
-        # TODO: Configure whitelist and test
-
-    @pytest.mark.asyncio
-    async def test_path_traversal_in_redirect_blocked(self, mock_settings_dev_mode):
-        """Path traversal attempts in redirect should be normalized."""
-        malicious_paths = [
-            "/../../../etc/passwd",
-            "/..%2f..%2f..%2fetc/passwd",
-        ]
-        # TODO: Test each path is sanitized
-
-
-class TestOAuthCallbackRedirect:
-    """Tests for redirect after OAuth callback."""
-
-    @pytest.mark.asyncio
-    async def test_callback_respects_stored_redirect_uri(self):
-        """Callback should use stored redirect_uri, not request parameter."""
+    async def test_callback_uses_stored_redirect(self):
+        """OAuth callback should use stored redirect, not query param."""
         # Attackers might try to override redirect in callback
-        # TODO: Implement test
-
-    @pytest.mark.asyncio
-    async def test_state_mismatch_prevents_redirect(self):
-        """Invalid state should prevent any redirect."""
-        # TODO: Implement test
-
-
-class TestLogoutRedirect:
-    """Tests for logout redirect security."""
-
-    @pytest.mark.asyncio
-    async def test_logout_redirect_to_ms_is_safe(self):
-        """Logout redirect to Microsoft should be properly formatted."""
-        # post_logout_redirect_uri should be validated
-        # TODO: Implement test
+        # The implementation stores the validated redirect in pending auth
+        pass

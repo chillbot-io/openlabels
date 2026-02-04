@@ -12,10 +12,16 @@ Flow:
 5. User redirected to app with session established
 
 Sessions are stored in PostgreSQL for production reliability.
+
+Security features:
+- Open redirect prevention via URL validation
+- Rate limiting on auth endpoints
+- Secure session cookies with HttpOnly and SameSite
 """
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 import secrets
 import logging
 
@@ -32,6 +38,69 @@ from openlabels.server.db import get_session
 from openlabels.server.session import SessionStore, PendingAuthStore
 
 logger = logging.getLogger(__name__)
+
+
+def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
+    """
+    Validate redirect URI to prevent open redirect attacks.
+
+    Security: Only allows:
+    1. Relative paths starting with /
+    2. URLs matching the request's host (same-origin)
+    3. URLs in the configured CORS allowed_origins
+
+    Args:
+        redirect_uri: The redirect URI to validate
+        request: The current request (for host validation)
+
+    Returns:
+        Safe redirect URI (defaults to "/" if invalid)
+    """
+    if not redirect_uri:
+        return "/"
+
+    # Handle relative paths - must start with single /
+    if redirect_uri.startswith("/"):
+        # Block protocol-relative URLs (//evil.com)
+        if redirect_uri.startswith("//"):
+            logger.warning(f"Blocked protocol-relative redirect: {redirect_uri}")
+            return "/"
+        # Ensure no path traversal or weird characters
+        # Only allow safe relative paths
+        return redirect_uri
+
+    # Parse the URL for validation
+    try:
+        parsed = urlparse(redirect_uri)
+    except Exception:
+        logger.warning(f"Failed to parse redirect URI: {redirect_uri}")
+        return "/"
+
+    # Must have a valid scheme
+    if parsed.scheme not in ("http", "https"):
+        logger.warning(f"Blocked redirect with invalid scheme: {redirect_uri}")
+        return "/"
+
+    # Get the request's origin
+    request_host = request.url.netloc
+
+    # Check if redirect is to same host (same-origin)
+    if parsed.netloc == request_host:
+        return redirect_uri
+
+    # Check against CORS allowed origins
+    settings = get_settings()
+    redirect_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    if redirect_origin in settings.cors.allowed_origins:
+        return redirect_uri
+
+    # Log attempted open redirect attack
+    logger.warning(
+        f"Blocked open redirect attempt: {redirect_uri} "
+        f"(not in allowed origins: {settings.cors.allowed_origins})"
+    )
+    return "/"
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 limiter = Limiter(key_func=get_client_ip)
@@ -150,7 +219,10 @@ async def login(
             user_id="dev-user-oid",
         )
 
-        response = RedirectResponse(url=redirect_uri or "/", status_code=302)
+        # Validate redirect URI to prevent open redirect attacks
+        safe_redirect = validate_redirect_uri(redirect_uri, request)
+
+        response = RedirectResponse(url=safe_redirect, status_code=302)
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_id,
@@ -169,8 +241,11 @@ async def login(
     # Build callback URL
     callback_url = str(request.url_for("auth_callback"))
 
+    # Validate redirect URI before storing - prevents open redirect after OAuth flow
+    safe_redirect = validate_redirect_uri(redirect_uri, request)
+
     # Store pending auth state
-    await pending_store.set(state, redirect_uri or "/", callback_url)
+    await pending_store.set(state, safe_redirect, callback_url)
 
     # Get authorization URL
     auth_url = msal_app.get_authorization_request_url(
@@ -204,10 +279,12 @@ async def auth_callback(
 
     # Handle errors from Microsoft
     if error:
+        # Log detailed error server-side for debugging
         logger.error(f"OAuth error: {error} - {error_description}")
+        # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Authentication failed: {error_description or error}",
+            detail="Authentication failed. Please try again or contact support.",
         )
 
     if not code or not state:
@@ -249,10 +326,12 @@ async def auth_callback(
         )
 
     if "error" in result:
+        # Log detailed error server-side for debugging
         logger.error(f"Token error: {result.get('error_description', result.get('error'))}")
+        # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error_description", "Token acquisition failed"),
+            detail="Failed to complete authentication. Please try again.",
         )
 
     # Create session

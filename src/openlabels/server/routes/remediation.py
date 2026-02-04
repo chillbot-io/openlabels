@@ -6,21 +6,26 @@ Security features:
 - Full audit logging of all actions
 - Rollback capability for reversing actions
 - Dry-run mode for testing without execution
+- Path traversal prevention via path validation
+- Rate limiting on remediation actions
 """
 
 import base64
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
 
 from openlabels.server.db import get_session
+from openlabels.server.app import get_client_ip
 from openlabels.server.models import (
     RemediationAction,
     FileInventory,
@@ -32,6 +37,151 @@ from openlabels.adapters.filesystem import FilesystemAdapter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_client_ip)
+
+# Security: Paths that are never allowed to be accessed
+BLOCKED_PATH_PREFIXES = (
+    "/etc/",
+    "/var/",
+    "/usr/",
+    "/bin/",
+    "/sbin/",
+    "/root/",
+    "/proc/",
+    "/sys/",
+    "/dev/",
+    "/boot/",
+    "C:\\Windows\\",
+    "C:\\Program Files\\",
+    "C:\\Program Files (x86)\\",
+    "C:\\ProgramData\\",
+)
+
+# Security: File patterns that should never be accessed
+BLOCKED_FILE_PATTERNS = (
+    ".env",
+    ".git/",
+    ".ssh/",
+    "id_rsa",
+    "id_ed25519",
+    ".htpasswd",
+    "shadow",
+    "passwd",
+    "credentials",
+)
+
+
+def validate_file_path(file_path: str) -> str:
+    """
+    Validate file path to prevent path traversal attacks.
+
+    Security checks:
+    1. Normalize path to prevent traversal (../, ./, etc.)
+    2. Block access to system directories
+    3. Block access to sensitive files
+    4. Ensure path is absolute
+
+    Args:
+        file_path: The file path to validate
+
+    Returns:
+        Canonicalized safe path
+
+    Raises:
+        HTTPException: If path is invalid or blocked
+    """
+    if not file_path:
+        raise HTTPException(
+            status_code=400,
+            detail="File path is required"
+        )
+
+    # Normalize the path to resolve .. and . components
+    # This converts paths like /data/../etc/passwd to /etc/passwd
+    try:
+        canonical_path = os.path.normpath(os.path.abspath(file_path))
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid file path format: {file_path} - {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path format"
+        )
+
+    # Check if path traversal was attempted
+    # If normalized path doesn't start the same way, traversal was attempted
+    if ".." in file_path:
+        logger.warning(f"Path traversal attempt detected: {file_path}")
+        raise HTTPException(
+            status_code=400,
+            detail="Path traversal is not allowed"
+        )
+
+    # Block access to system directories
+    canonical_lower = canonical_path.lower()
+    for blocked in BLOCKED_PATH_PREFIXES:
+        if canonical_lower.startswith(blocked.lower()):
+            logger.warning(f"Blocked access to system path: {file_path} -> {canonical_path}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access to system directories is not allowed"
+            )
+
+    # Block access to sensitive files
+    path_parts = canonical_path.lower().replace("\\", "/")
+    for pattern in BLOCKED_FILE_PATTERNS:
+        if pattern in path_parts:
+            logger.warning(f"Blocked access to sensitive file: {file_path}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access to this file type is not allowed"
+            )
+
+    return canonical_path
+
+
+def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> str:
+    """
+    Validate quarantine directory to prevent path traversal.
+
+    Args:
+        quarantine_dir: Custom quarantine directory or None for default
+        base_path: Base path of the file being quarantined
+
+    Returns:
+        Safe quarantine directory path
+    """
+    if not quarantine_dir:
+        # Default: create .quarantine in the same directory as the file
+        return os.path.join(os.path.dirname(base_path), ".quarantine")
+
+    # Validate the custom quarantine directory
+    try:
+        canonical_dir = os.path.normpath(os.path.abspath(quarantine_dir))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid quarantine directory format"
+        )
+
+    # Check for path traversal
+    if ".." in quarantine_dir:
+        logger.warning(f"Path traversal in quarantine_dir: {quarantine_dir}")
+        raise HTTPException(
+            status_code=400,
+            detail="Path traversal is not allowed in quarantine directory"
+        )
+
+    # Block system directories for quarantine
+    canonical_lower = canonical_dir.lower()
+    for blocked in BLOCKED_PATH_PREFIXES:
+        if canonical_lower.startswith(blocked.lower()):
+            logger.warning(f"Blocked quarantine to system path: {quarantine_dir}")
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot use system directory as quarantine location"
+            )
+
+    return canonical_dir
 
 
 def _get_adapter_for_path(file_path: str):
@@ -184,7 +334,9 @@ async def get_remediation_action(
 
 
 @router.post("/quarantine", response_model=RemediationResponse)
+@limiter.limit("10/minute")
 async def quarantine_file(
+    http_request: Request,
     request: QuarantineRequest,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
@@ -201,12 +353,20 @@ async def quarantine_file(
     3. Records the action for audit and rollback
 
     Use dry_run=true to preview the action without executing.
+
+    Security:
+    - Path traversal attacks are blocked
+    - System directories cannot be accessed
+    - Rate limited to 10 requests per minute
     """
-    quarantine_dir = request.quarantine_dir or ".quarantine"
+    # Security: Validate file path to prevent path traversal
+    validated_path = validate_file_path(request.file_path)
+
+    # Security: Validate quarantine directory
+    quarantine_dir = validate_quarantine_dir(request.quarantine_dir, validated_path)
 
     # Build destination path
-    import os
-    file_name = os.path.basename(request.file_path)
+    file_name = os.path.basename(validated_path)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     dest_path = f"{quarantine_dir}/{timestamp}_{file_name}"
 
@@ -215,7 +375,7 @@ async def quarantine_file(
         tenant_id=user.tenant_id,
         action_type="quarantine",
         status="pending" if request.dry_run else "pending",
-        source_path=request.file_path,
+        source_path=validated_path,  # Use validated path
         dest_path=dest_path,
         performed_by=user.email,
         dry_run=request.dry_run,
@@ -225,7 +385,7 @@ async def quarantine_file(
 
     if not request.dry_run:
         # Execute actual quarantine operation via adapter
-        adapter = _get_adapter_for_path(request.file_path)
+        adapter = _get_adapter_for_path(validated_path)
 
         if not adapter.supports_remediation():
             action.status = "failed"
@@ -233,7 +393,7 @@ async def quarantine_file(
         else:
             # Create FileInfo for the source file
             file_info = FileInfo(
-                path=request.file_path,
+                path=validated_path,
                 name=file_name,
                 size=0,
                 modified=datetime.now(timezone.utc),
@@ -245,11 +405,11 @@ async def quarantine_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Quarantined {request.file_path} to {dest_path}")
+                logger.info(f"Quarantined {validated_path} to {dest_path}")
             else:
                 action.status = "failed"
                 action.error = "Failed to move file"
-                logger.error(f"Failed to quarantine {request.file_path}")
+                logger.error(f"Failed to quarantine {validated_path}")
 
     # Log audit event
     audit = AuditLog(
@@ -258,7 +418,7 @@ async def quarantine_file(
         action="quarantine_executed",
         resource_type="file",
         details={
-            "source_path": request.file_path,
+            "source_path": validated_path,
             "dest_path": dest_path,
             "dry_run": request.dry_run,
             "action_id": str(action.id),
@@ -275,7 +435,9 @@ async def quarantine_file(
 
 
 @router.post("/lockdown", response_model=RemediationResponse)
+@limiter.limit("10/minute")
 async def lockdown_file(
+    http_request: Request,
     request: LockdownRequest,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
@@ -292,13 +454,21 @@ async def lockdown_file(
     3. Records the action for audit
 
     Use dry_run=true to preview the action without executing.
+
+    Security:
+    - Path traversal attacks are blocked
+    - System directories cannot be accessed
+    - Rate limited to 10 requests per minute
     """
+    # Security: Validate file path to prevent path traversal
+    validated_path = validate_file_path(request.file_path)
+
     # Create remediation action record
     action = RemediationAction(
         tenant_id=user.tenant_id,
         action_type="lockdown",
         status="pending",
-        source_path=request.file_path,
+        source_path=validated_path,  # Use validated path
         performed_by=user.email,
         principals={"allowed": request.allowed_principals},
         dry_run=request.dry_run,
@@ -308,17 +478,16 @@ async def lockdown_file(
 
     if not request.dry_run:
         # Execute actual lockdown operation via adapter
-        adapter = _get_adapter_for_path(request.file_path)
+        adapter = _get_adapter_for_path(validated_path)
 
         if not adapter.supports_remediation():
             action.status = "failed"
             action.error = "Adapter does not support remediation"
         else:
-            import os
-            file_name = os.path.basename(request.file_path)
+            file_name = os.path.basename(validated_path)
 
             file_info = FileInfo(
-                path=request.file_path,
+                path=validated_path,
                 name=file_name,
                 size=0,
                 modified=datetime.now(timezone.utc),
@@ -338,11 +507,11 @@ async def lockdown_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Locked down {request.file_path}")
+                logger.info(f"Locked down {validated_path}")
             else:
                 action.status = "failed"
                 action.error = "Failed to set permissions"
-                logger.error(f"Failed to lockdown {request.file_path}")
+                logger.error(f"Failed to lockdown {validated_path}")
 
     # Log audit event
     audit = AuditLog(
@@ -351,7 +520,7 @@ async def lockdown_file(
         action="lockdown_executed",
         resource_type="file",
         details={
-            "file_path": request.file_path,
+            "file_path": validated_path,
             "allowed_principals": request.allowed_principals,
             "dry_run": request.dry_run,
             "action_id": str(action.id),
