@@ -88,23 +88,25 @@ async def list_results(
     user: CurrentUser = Depends(get_current_user),
 ) -> ResultListResponse:
     """List scan results with filtering and pagination."""
-    query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+    # Build base filter conditions
+    conditions = [ScanResult.tenant_id == user.tenant_id]
 
     if job_id:
-        query = query.where(ScanResult.job_id == job_id)
+        conditions.append(ScanResult.job_id == job_id)
     if risk_tier:
-        query = query.where(ScanResult.risk_tier == risk_tier)
+        conditions.append(ScanResult.risk_tier == risk_tier)
     if has_pii is not None:
         if has_pii:
-            query = query.where(ScanResult.total_entities > 0)
+            conditions.append(ScanResult.total_entities > 0)
         else:
-            query = query.where(ScanResult.total_entities == 0)
+            conditions.append(ScanResult.total_entities == 0)
 
-    query = query.order_by(ScanResult.risk_score.desc())
+    # Build main query
+    query = select(ScanResult).where(*conditions).order_by(ScanResult.risk_score.desc())
 
-    # Count total
+    # Count total (with same filters)
     count_query = select(func.count()).select_from(
-        select(ScanResult.id).where(ScanResult.tenant_id == user.tenant_id)
+        select(ScanResult.id).where(*conditions)
     )
     result = await session.execute(count_query)
     total = result.scalar() or 0
@@ -265,6 +267,7 @@ async def clear_all_results(
     # Delete all results for tenant
     delete_query = delete(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
     await session.execute(delete_query)
+    await session.flush()
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
@@ -294,6 +297,7 @@ async def delete_result(
 
     file_name = result.file_name
     await session.delete(result)
+    await session.flush()
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):

@@ -614,7 +614,10 @@ class TestHeatmap:
             target_id=target.id,
             status="completed",
         )
-        session.add_all([job1, job2])
+        # Add each job individually to avoid asyncpg sentinel matching issues
+        session.add(job1)
+        await session.flush()
+        session.add(job2)
         await session.flush()
 
         # Add results to job1
@@ -630,6 +633,7 @@ class TestHeatmap:
             total_entities=1,
         )
         session.add(result1)
+        await session.flush()
 
         # Add results to job2
         result2 = ScanResult(
