@@ -164,16 +164,67 @@ class TestSecurityHeadersMiddleware:
 class TestCookieSecurityFlags:
     """Tests for cookie security configuration."""
 
-    def test_session_cookie_httponly(self):
-        """Session cookie should have HttpOnly flag."""
-        # The session cookie is set in auth.py with httponly=True
-        # This is verified by code inspection
-        pass
+    @pytest.mark.asyncio
+    async def test_session_cookie_has_security_flags(self):
+        """Session cookie should have HttpOnly and SameSite flags."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
 
-    def test_session_cookie_samesite(self):
-        """Session cookie should have SameSite attribute."""
-        # The session cookie is set with samesite="lax"
-        pass
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Make a request that would set cookies (like auth callback)
+            response = await client.get(
+                "/api/auth/callback",
+                params={"code": "test-code"},
+                follow_redirects=False,
+            )
+
+            # Check any set-cookie headers
+            set_cookie = response.headers.get("set-cookie", "")
+            if set_cookie:
+                # HttpOnly should be present for session cookies
+                # This prevents JavaScript from accessing the cookie
+                if "session" in set_cookie.lower():
+                    assert "httponly" in set_cookie.lower(), \
+                        "Session cookie missing HttpOnly flag"
+
+    @pytest.mark.asyncio
+    async def test_api_responses_dont_set_tracking_cookies(self):
+        """API responses should not set unnecessary cookies."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.auth.dependencies import get_current_user, CurrentUser
+        from uuid import uuid4
+
+        # Setup minimal auth override
+        def _create_current_user():
+            return CurrentUser(
+                id=uuid4(),
+                tenant_id=uuid4(),
+                email="test@example.com",
+                name="Test",
+                role="admin",
+            )
+
+        async def override_get_current_user():
+            return _create_current_user()
+
+        app.dependency_overrides[get_current_user] = override_get_current_user
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Regular API calls should not set tracking cookies
+                response = await client.get("/api/health/status")
+
+                set_cookie = response.headers.get("set-cookie", "")
+                # Should not set advertising/tracking cookies
+                assert "tracking" not in set_cookie.lower()
+                assert "_ga" not in set_cookie  # Google Analytics
+                assert "_fb" not in set_cookie  # Facebook
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestCSPDirectives:

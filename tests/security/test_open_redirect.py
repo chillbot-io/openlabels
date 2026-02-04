@@ -131,13 +131,42 @@ class TestOpenRedirectIntegration:
     @pytest.mark.asyncio
     async def test_login_endpoint_validates_redirect(self):
         """Login endpoint should use validated redirect_uri."""
-        # This would require a full app fixture
-        # For now, we test the validation function directly
-        pass
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Test with malicious redirect
+            response = await client.get(
+                "/api/auth/login",
+                params={"redirect": "https://evil.com/phishing"},
+                follow_redirects=False,
+            )
+            # Should either redirect to safe URL or reject
+            if response.status_code in (302, 307):
+                location = response.headers.get("location", "")
+                assert "evil.com" not in location, \
+                    "Login endpoint allowed redirect to external site"
 
     @pytest.mark.asyncio
-    async def test_callback_uses_stored_redirect(self):
-        """OAuth callback should use stored redirect, not query param."""
-        # Attackers might try to override redirect in callback
-        # The implementation stores the validated redirect in pending auth
-        pass
+    async def test_callback_rejects_malicious_redirect_override(self):
+        """OAuth callback should not use untrusted redirect from query."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Attacker tries to inject redirect in callback
+            response = await client.get(
+                "/api/auth/callback",
+                params={
+                    "code": "fake-code",
+                    "redirect": "https://evil.com/steal-tokens",
+                },
+                follow_redirects=False,
+            )
+            # Should not redirect to evil.com
+            if response.status_code in (302, 307):
+                location = response.headers.get("location", "")
+                assert "evil.com" not in location, \
+                    "Callback allowed attacker to override redirect"

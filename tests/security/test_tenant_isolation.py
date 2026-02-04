@@ -5,155 +5,508 @@ These tests verify that users from one tenant cannot access,
 modify, or enumerate resources belonging to another tenant.
 """
 
+import asyncio
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from uuid import uuid4
+
+from httpx import AsyncClient, ASGITransport
+from openlabels.server.app import app
+from openlabels.server.db import get_session
+from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
+from openlabels.server.models import (
+    Tenant, User, ScanJob, ScanResult, ScanTarget,
+    Schedule, AuditLog,
+)
+
+
+@pytest.fixture
+async def two_tenant_setup(test_db):
+    """Set up two separate tenants with their own users and data."""
+    # Tenant A
+    tenant_a = Tenant(
+        id=uuid4(),
+        name="Tenant A",
+        azure_tenant_id="tenant-a-azure",
+    )
+    test_db.add(tenant_a)
+    await test_db.flush()
+
+    user_a = User(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        email="admin@tenant-a.com",
+        name="Tenant A Admin",
+        role="admin",
+    )
+    test_db.add(user_a)
+
+    # Create target for tenant A
+    target_a = ScanTarget(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        name="Tenant A Target",
+        adapter="filesystem",
+        config={"path": "/tenant-a-data"},
+        enabled=True,
+        created_by=user_a.id,
+    )
+    test_db.add(target_a)
+    await test_db.flush()
+
+    # Create scan for tenant A
+    scan_a = ScanJob(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        target_id=target_a.id,
+        status="completed",
+    )
+    test_db.add(scan_a)
+    await test_db.flush()
+
+    # Create result for tenant A
+    result_a = ScanResult(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        job_id=scan_a.id,
+        file_path="/tenant-a-data/secret.txt",
+        file_name="secret.txt",
+        risk_score=90,
+        risk_tier="CRITICAL",
+        entity_counts={"SSN": 5},
+        total_entities=5,
+    )
+    test_db.add(result_a)
+
+    # Create schedule for tenant A
+    schedule_a = Schedule(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        target_id=target_a.id,
+        name="Tenant A Schedule",
+        cron_expression="0 0 * * *",
+        enabled=True,
+        created_by=user_a.id,
+    )
+    test_db.add(schedule_a)
+
+    # Create audit log for tenant A
+    audit_a = AuditLog(
+        id=uuid4(),
+        tenant_id=tenant_a.id,
+        user_id=user_a.id,
+        action="scan_started",
+        resource_type="scan",
+        resource_id=scan_a.id,
+        details={"scan_name": "Test Scan A"},
+    )
+    test_db.add(audit_a)
+
+    # Tenant B
+    tenant_b = Tenant(
+        id=uuid4(),
+        name="Tenant B",
+        azure_tenant_id="tenant-b-azure",
+    )
+    test_db.add(tenant_b)
+    await test_db.flush()
+
+    user_b = User(
+        id=uuid4(),
+        tenant_id=tenant_b.id,
+        email="admin@tenant-b.com",
+        name="Tenant B Admin",
+        role="admin",
+    )
+    test_db.add(user_b)
+
+    await test_db.commit()
+
+    return {
+        "tenant_a": tenant_a,
+        "user_a": user_a,
+        "target_a": target_a,
+        "scan_a": scan_a,
+        "result_a": result_a,
+        "schedule_a": schedule_a,
+        "audit_a": audit_a,
+        "tenant_b": tenant_b,
+        "user_b": user_b,
+        "session": test_db,
+    }
+
+
+def create_client_for_user(test_db, user, tenant):
+    """Create a test client authenticated as a specific user."""
+
+    async def override_get_session():
+        yield test_db
+
+    def _create_current_user():
+        return CurrentUser(
+            id=user.id,
+            tenant_id=tenant.id,
+            email=user.email,
+            name=user.name,
+            role=str(user.role),
+        )
+
+    async def override_get_current_user():
+        return _create_current_user()
+
+    async def override_get_optional_user():
+        return _create_current_user()
+
+    async def override_require_admin():
+        return _create_current_user()
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_optional_user] = override_get_optional_user
+    app.dependency_overrides[require_admin] = override_require_admin
+
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 class TestScanTenantIsolation:
     """Tests for tenant isolation in scan operations."""
 
-    @pytest.fixture
-    def tenant_a_user(self):
-        """User belonging to tenant A."""
-        user = Mock()
-        user.id = uuid4()
-        user.tenant_id = uuid4()
-        user.email = "user@tenant-a.com"
-        user.role = "admin"
-        return user
+    @pytest.mark.asyncio
+    async def test_cannot_view_other_tenant_scans(self, two_tenant_setup):
+        """User from tenant B should not see tenant A's scans."""
+        data = two_tenant_setup
+        scan_a = data["scan_a"]
 
-    @pytest.fixture
-    def tenant_b_user(self):
-        """User belonging to tenant B."""
-        user = Mock()
-        user.id = uuid4()
-        user.tenant_id = uuid4()
-        user.email = "user@tenant-b.com"
-        user.role = "admin"
-        return user
+        # Authenticate as tenant B user
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            # Try to access tenant A's scan
+            response = await client.get(f"/api/scans/{scan_a.id}")
+
+            # Should return 404 (not 403, to prevent enumeration)
+            assert response.status_code == 404, \
+                f"Expected 404 for cross-tenant access, got {response.status_code}"
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_scans(self, tenant_a_user, tenant_b_user):
-        """User from tenant A should not see tenant B's scans."""
-        # TODO: Create scan for tenant B, attempt access from tenant A
-        # Should return 404 (not 403, to prevent enumeration)
-        pass
+    async def test_cannot_cancel_other_tenant_scans(self, two_tenant_setup):
+        """User from tenant B should not cancel tenant A's scans."""
+        data = two_tenant_setup
+        scan_a = data["scan_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(f"/api/scans/{scan_a.id}/cancel")
+
+            # Should return 404 (not 403)
+            assert response.status_code == 404, \
+                f"Expected 404 for cross-tenant cancel, got {response.status_code}"
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_cancel_other_tenant_scans(self, tenant_a_user, tenant_b_user):
-        """User from tenant A should not cancel tenant B's scans."""
-        # TODO: Implement test
-        pass
-
-    @pytest.mark.asyncio
-    async def test_list_scans_only_shows_own_tenant(self, tenant_a_user, tenant_b_user):
+    async def test_list_scans_only_shows_own_tenant(self, two_tenant_setup):
         """Listing scans should only return current tenant's scans."""
-        # TODO: Create scans for both tenants, verify list only shows own
-        pass
+        data = two_tenant_setup
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get("/api/scans")
+            assert response.status_code == 200
+
+            scans = response.json()
+            items = scans.get("items", scans) if isinstance(scans, dict) else scans
+
+            # Tenant B should not see tenant A's scans
+            scan_a_id = str(data["scan_a"].id)
+            for scan in items:
+                assert scan.get("id") != scan_a_id, \
+                    "Tenant B can see Tenant A's scan - isolation failure!"
+
+        app.dependency_overrides.clear()
 
 
 class TestTargetTenantIsolation:
     """Tests for tenant isolation in target configuration."""
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_targets(self):
-        """User from tenant A should not see tenant B's targets."""
-        pass
+    async def test_cannot_view_other_tenant_targets(self, two_tenant_setup):
+        """User from tenant B should not see tenant A's targets."""
+        data = two_tenant_setup
+        target_a = data["target_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get(f"/api/targets/{target_a.id}")
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_modify_other_tenant_targets(self):
-        """User from tenant A should not modify tenant B's targets."""
-        pass
+    async def test_cannot_modify_other_tenant_targets(self, two_tenant_setup):
+        """User from tenant B should not modify tenant A's targets."""
+        data = two_tenant_setup
+        target_a = data["target_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.patch(
+                f"/api/targets/{target_a.id}",
+                json={"name": "Hacked Target"},
+            )
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_delete_other_tenant_targets(self):
-        """User from tenant A should not delete tenant B's targets."""
-        pass
+    async def test_cannot_delete_other_tenant_targets(self, two_tenant_setup):
+        """User from tenant B should not delete tenant A's targets."""
+        data = two_tenant_setup
+        target_a = data["target_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.delete(f"/api/targets/{target_a.id}")
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_scan_using_other_tenant_target(self):
-        """User from tenant A should not create scan using tenant B's target."""
-        pass
+    async def test_cannot_scan_using_other_tenant_target(self, two_tenant_setup):
+        """User from tenant B should not create scan using tenant A's target."""
+        data = two_tenant_setup
+        target_a = data["target_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(
+                "/api/scans",
+                json={"target_id": str(target_a.id)},
+            )
+            # Should fail - either 404 (target not found) or 400/422 (validation)
+            assert response.status_code in (400, 404, 422), \
+                f"Expected error for cross-tenant scan, got {response.status_code}"
+
+        app.dependency_overrides.clear()
 
 
 class TestResultTenantIsolation:
     """Tests for tenant isolation in scan results."""
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_results(self):
-        """User from tenant A should not see tenant B's results."""
-        pass
+    async def test_cannot_view_other_tenant_results(self, two_tenant_setup):
+        """User from tenant B should not see tenant A's results."""
+        data = two_tenant_setup
+        result_a = data["result_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get(f"/api/results/{result_a.id}")
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_apply_label_to_other_tenant_result(self):
-        """User from tenant A should not apply labels to tenant B's results."""
-        pass
+    async def test_cannot_apply_label_to_other_tenant_result(self, two_tenant_setup):
+        """User from tenant B should not apply labels to tenant A's results."""
+        data = two_tenant_setup
+        result_a = data["result_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(
+                f"/api/results/{result_a.id}/label",
+                json={"label_id": "some-label-id"},
+            )
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
 
 class TestRemediationTenantIsolation:
     """Tests for tenant isolation in remediation actions."""
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_remediation_actions(self):
-        """User from tenant A should not see tenant B's remediation actions."""
-        pass
+    async def test_cannot_quarantine_other_tenant_files(self, two_tenant_setup):
+        """User from tenant B should not quarantine tenant A's files."""
+        data = two_tenant_setup
+        result_a = data["result_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(
+                "/api/remediation/quarantine",
+                json={"result_id": str(result_a.id)},
+            )
+            # Should fail - 404 or 400/422
+            assert response.status_code in (400, 404, 422)
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_rollback_other_tenant_actions(self):
-        """User from tenant A should not rollback tenant B's actions."""
-        pass
+    async def test_cannot_lockdown_other_tenant_files(self, two_tenant_setup):
+        """User from tenant B should not lockdown tenant A's files."""
+        data = two_tenant_setup
+        result_a = data["result_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(
+                "/api/remediation/lockdown",
+                json={"result_id": str(result_a.id)},
+            )
+            assert response.status_code in (400, 404, 422)
+
+        app.dependency_overrides.clear()
 
 
 class TestScheduleTenantIsolation:
     """Tests for tenant isolation in schedules."""
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_schedules(self):
-        """User from tenant A should not see tenant B's schedules."""
-        pass
+    async def test_cannot_view_other_tenant_schedules(self, two_tenant_setup):
+        """User from tenant B should not see tenant A's schedules."""
+        data = two_tenant_setup
+        schedule_a = data["schedule_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get(f"/api/schedules/{schedule_a.id}")
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_cannot_trigger_other_tenant_schedules(self):
-        """User from tenant A should not trigger tenant B's schedules."""
-        pass
+    async def test_cannot_trigger_other_tenant_schedules(self, two_tenant_setup):
+        """User from tenant B should not trigger tenant A's schedules."""
+        data = two_tenant_setup
+        schedule_a = data["schedule_a"]
 
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.post(f"/api/schedules/{schedule_a.id}/trigger")
+            assert response.status_code == 404
 
-class TestLabelTenantIsolation:
-    """Tests for tenant isolation in sensitivity labels."""
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_labels_are_tenant_scoped(self):
-        """Sensitivity labels should be scoped to tenant."""
-        pass
+    async def test_list_schedules_only_shows_own_tenant(self, two_tenant_setup):
+        """Listing schedules should only return current tenant's schedules."""
+        data = two_tenant_setup
 
-    @pytest.mark.asyncio
-    async def test_cannot_use_other_tenant_labels(self):
-        """User from tenant A should not use tenant B's labels."""
-        pass
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get("/api/schedules")
+            assert response.status_code == 200
+
+            schedules = response.json()
+            items = schedules.get("items", schedules) if isinstance(schedules, dict) else schedules
+
+            schedule_a_id = str(data["schedule_a"].id)
+            for schedule in items:
+                assert schedule.get("id") != schedule_a_id, \
+                    "Tenant B can see Tenant A's schedule - isolation failure!"
+
+        app.dependency_overrides.clear()
 
 
 class TestAuditLogTenantIsolation:
     """Tests for tenant isolation in audit logs."""
 
     @pytest.mark.asyncio
-    async def test_cannot_view_other_tenant_audit_logs(self):
-        """User from tenant A should not see tenant B's audit logs."""
-        pass
+    async def test_cannot_view_other_tenant_audit_logs(self, two_tenant_setup):
+        """User from tenant B should not see tenant A's audit logs."""
+        data = two_tenant_setup
+        audit_a = data["audit_a"]
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get(f"/api/audit/{audit_a.id}")
+            assert response.status_code == 404
+
+        app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_list_audit_logs_only_shows_own_tenant(self, two_tenant_setup):
+        """Listing audit logs should only return current tenant's logs."""
+        data = two_tenant_setup
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            response = await client.get("/api/audit")
+            assert response.status_code == 200
+
+            result = response.json()
+            items = result.get("items", [])
+
+            audit_a_id = str(data["audit_a"].id)
+            for log in items:
+                assert log.get("id") != audit_a_id, \
+                    "Tenant B can see Tenant A's audit log - isolation failure!"
+
+        app.dependency_overrides.clear()
 
 
 class TestIDORPrevention:
     """Tests for Insecure Direct Object Reference prevention."""
 
     @pytest.mark.asyncio
-    async def test_uuid_enumeration_returns_404(self):
+    async def test_uuid_enumeration_returns_404(self, two_tenant_setup):
         """Attempting to access non-existent UUIDs should return 404."""
-        # This prevents attackers from distinguishing between
-        # "doesn't exist" and "exists but not yours"
-        pass
+        data = two_tenant_setup
+
+        async with create_client_for_user(
+            data["session"], data["user_a"], data["tenant_a"]
+        ) as client:
+            fake_id = uuid4()
+
+            # All these should return 404, not different error codes
+            # that could leak information
+            responses = await asyncio.gather(
+                client.get(f"/api/scans/{fake_id}"),
+                client.get(f"/api/targets/{fake_id}"),
+                client.get(f"/api/results/{fake_id}"),
+                client.get(f"/api/schedules/{fake_id}"),
+            )
+
+            for response in responses:
+                assert response.status_code == 404
+
+        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
-    async def test_sequential_id_guessing_blocked(self):
-        """Sequential ID guessing should not reveal resources."""
-        # UUIDs should be unpredictable (v4 or v7)
-        pass
+    async def test_cross_tenant_returns_same_as_nonexistent(self, two_tenant_setup):
+        """Cross-tenant access should return same error as non-existent resource."""
+        data = two_tenant_setup
+        scan_a = data["scan_a"]
+        fake_id = uuid4()
+
+        async with create_client_for_user(
+            data["session"], data["user_b"], data["tenant_b"]
+        ) as client:
+            # Cross-tenant access
+            cross_tenant_response = await client.get(f"/api/scans/{scan_a.id}")
+
+            # Non-existent resource
+            nonexistent_response = await client.get(f"/api/scans/{fake_id}")
+
+            # Both should return 404 - same response to prevent enumeration
+            assert cross_tenant_response.status_code == nonexistent_response.status_code == 404
+
+        app.dependency_overrides.clear()
