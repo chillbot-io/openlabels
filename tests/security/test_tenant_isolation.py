@@ -15,7 +15,7 @@ from openlabels.server.db import get_session
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import (
     Tenant, User, ScanJob, ScanResult, ScanTarget,
-    Schedule, AuditLog,
+    ScanSchedule, AuditLog,
 )
 
 
@@ -78,12 +78,12 @@ async def two_tenant_setup(test_db):
     test_db.add(result_a)
 
     # Create schedule for tenant A
-    schedule_a = Schedule(
+    schedule_a = ScanSchedule(
         id=uuid4(),
         tenant_id=tenant_a.id,
         target_id=target_a.id,
         name="Tenant A Schedule",
-        cron_expression="0 0 * * *",
+        cron="0 0 * * *",
         enabled=True,
         created_by=user_a.id,
     )
