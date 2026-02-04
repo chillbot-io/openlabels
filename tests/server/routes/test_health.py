@@ -514,13 +514,37 @@ class TestHealthEndpointAuthentication:
     """Tests for health endpoint authentication."""
 
     @pytest.mark.asyncio
-    async def test_health_requires_authentication(self, test_client):
-        """Health status endpoint requires authentication."""
-        # Without authentication setup, endpoint may return 401/403
-        # In dev mode with auth.provider=none, it may work without auth
+    async def test_health_rejects_unauthenticated_requests(self, test_db):
+        """Health status endpoint should reject unauthenticated requests."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Override only database, NOT authentication
+        # This simulates an unauthenticated request
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/health/status")
+
+            # Without authentication, should get 401 Unauthorized
+            assert response.status_code == 401, \
+                f"Expected 401 for unauthenticated request, got {response.status_code}"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_health_succeeds_with_authentication(self, test_client, setup_health_test_data):
+        """Health status endpoint should succeed when authenticated."""
         response = await test_client.get("/api/health/status")
-        # Accept both authenticated success and unauthenticated error
-        assert response.status_code in (200, 401, 403)
+
+        # test_client is authenticated via fixture, should get 200
+        assert response.status_code == 200
 
 
 class TestHealthContentType:
