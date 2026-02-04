@@ -174,13 +174,69 @@ class TestPathTraversalIntegration:
     """Integration tests for path traversal prevention."""
 
     @pytest.mark.asyncio
-    async def test_quarantine_endpoint_validates_path(self):
-        """Quarantine endpoint should validate file paths."""
-        # Would require full app fixture
-        pass
+    async def test_quarantine_endpoint_rejects_traversal(self, test_client):
+        """Quarantine endpoint should reject path traversal attempts."""
+        from uuid import uuid4
+
+        # Test path traversal in file_path
+        traversal_paths = [
+            "../../../etc/passwd",
+            "/data/../../../etc/shadow",
+            "..\\..\\..\\Windows\\System32\\config\\SAM",
+        ]
+
+        for malicious_path in traversal_paths:
+            response = await test_client.post(
+                "/api/remediation/quarantine",
+                json={
+                    "result_id": str(uuid4()),
+                    "file_path": malicious_path,
+                },
+            )
+            # Should be rejected with 400 or 403
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Quarantine accepted traversal path: {malicious_path}"
 
     @pytest.mark.asyncio
-    async def test_lockdown_endpoint_validates_path(self):
-        """Lockdown endpoint should validate file paths."""
-        # Would require full app fixture
-        pass
+    async def test_lockdown_endpoint_rejects_traversal(self, test_client):
+        """Lockdown endpoint should reject path traversal attempts."""
+        from uuid import uuid4
+
+        traversal_paths = [
+            "../../../etc/passwd",
+            "/data/../../../etc/shadow",
+        ]
+
+        for malicious_path in traversal_paths:
+            response = await test_client.post(
+                "/api/remediation/lockdown",
+                json={
+                    "result_id": str(uuid4()),
+                    "file_path": malicious_path,
+                },
+            )
+            # Should be rejected
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Lockdown accepted traversal path: {malicious_path}"
+
+    @pytest.mark.asyncio
+    async def test_quarantine_rejects_system_paths(self, test_client):
+        """Quarantine should reject system file paths."""
+        from uuid import uuid4
+
+        system_paths = [
+            "/etc/passwd",
+            "/etc/shadow",
+            "/root/.ssh/id_rsa",
+        ]
+
+        for system_path in system_paths:
+            response = await test_client.post(
+                "/api/remediation/quarantine",
+                json={
+                    "result_id": str(uuid4()),
+                    "file_path": system_path,
+                },
+            )
+            assert response.status_code in (400, 403, 404, 422), \
+                f"Quarantine accepted system path: {system_path}"
