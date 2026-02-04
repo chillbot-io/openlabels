@@ -124,9 +124,12 @@ def validate_file_path(file_path: str) -> str:
         )
 
     # Block access to system directories
+    # Check both canonical path (for Linux paths) and original path (for Windows paths on Linux)
     canonical_lower = canonical_path.lower()
+    original_lower = file_path.lower()
     for blocked in BLOCKED_PATH_PREFIXES:
-        if canonical_lower.startswith(blocked.lower()):
+        blocked_lower = blocked.lower()
+        if canonical_lower.startswith(blocked_lower) or original_lower.startswith(blocked_lower):
             logger.warning(f"Blocked access to system path: {file_path} -> {canonical_path}")
             raise HTTPException(
                 status_code=403,
