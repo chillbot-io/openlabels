@@ -101,7 +101,8 @@ class TestCommandInjection:
             )
             # Should be rejected or safely stored
             # Should NOT execute shell commands
-            assert response.status_code in (200, 201, 400, 422), \
+            # 403 is also acceptable - means security middleware rejected it
+            assert response.status_code in (200, 201, 400, 403, 422), \
                 f"Unexpected status {response.status_code} for command injection payload"
 
     @pytest.mark.asyncio
@@ -196,7 +197,8 @@ class TestPathTraversalInAPI:
             )
             # Should be rejected with 400/422 or stored safely
             # The actual traversal prevention happens at scan time
-            assert response.status_code in (200, 201, 400, 422), \
+            # 403 is also acceptable - means security middleware rejected it
+            assert response.status_code in (200, 201, 400, 403, 422), \
                 f"Unexpected status {response.status_code} for path traversal"
 
 

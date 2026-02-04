@@ -189,42 +189,17 @@ class TestCookieSecurityFlags:
                         "Session cookie missing HttpOnly flag"
 
     @pytest.mark.asyncio
-    async def test_api_responses_dont_set_tracking_cookies(self):
+    async def test_api_responses_dont_set_tracking_cookies(self, test_client):
         """API responses should not set unnecessary cookies."""
-        from httpx import AsyncClient, ASGITransport
-        from openlabels.server.app import app
-        from openlabels.server.db import get_session
-        from openlabels.auth.dependencies import get_current_user, CurrentUser
-        from uuid import uuid4
+        # Regular API calls should not set tracking cookies
+        # Use test_client fixture which has proper DB setup
+        response = await test_client.get("/api/health/status")
 
-        # Setup minimal auth override
-        def _create_current_user():
-            return CurrentUser(
-                id=uuid4(),
-                tenant_id=uuid4(),
-                email="test@example.com",
-                name="Test",
-                role="admin",
-            )
-
-        async def override_get_current_user():
-            return _create_current_user()
-
-        app.dependency_overrides[get_current_user] = override_get_current_user
-
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                # Regular API calls should not set tracking cookies
-                response = await client.get("/api/health/status")
-
-                set_cookie = response.headers.get("set-cookie", "")
-                # Should not set advertising/tracking cookies
-                assert "tracking" not in set_cookie.lower()
-                assert "_ga" not in set_cookie  # Google Analytics
-                assert "_fb" not in set_cookie  # Facebook
-        finally:
-            app.dependency_overrides.clear()
+        set_cookie = response.headers.get("set-cookie", "")
+        # Should not set advertising/tracking cookies
+        assert "tracking" not in set_cookie.lower()
+        assert "_ga" not in set_cookie  # Google Analytics
+        assert "_fb" not in set_cookie  # Facebook
 
 
 class TestCSPDirectives:

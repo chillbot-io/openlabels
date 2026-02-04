@@ -226,67 +226,88 @@ class TestAuthenticationBypass:
 
     @pytest.mark.asyncio
     async def test_missing_auth_header_rejected(self, test_db):
-        """Requests without authentication should be rejected."""
-        # Create client WITHOUT full authentication overrides
+        """Requests without authentication should be rejected in production mode."""
+        from unittest.mock import patch, MagicMock
+        from openlabels.server.config import get_settings
+
+        # Mock settings to simulate production auth mode
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+
         async def override_get_session():
             yield test_db
 
         app.dependency_overrides[get_session] = override_get_session
-        # Don't override auth - let real auth handle it
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get("/api/dashboard/stats")
-                # Should be 401 Unauthorized or redirect to login
-                assert response.status_code in (401, 302, 307), \
-                    f"Expected 401 for unauthenticated request, got {response.status_code}"
+            with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get("/api/dashboard/stats")
+                    # Should be 401 Unauthorized or redirect to login
+                    assert response.status_code in (401, 302, 307), \
+                        f"Expected 401 for unauthenticated request, got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_invalid_bearer_token_rejected(self, test_db):
-        """Invalid JWT tokens should be rejected."""
+        """Invalid JWT tokens should be rejected in production mode."""
+        from unittest.mock import patch, MagicMock
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+
         async def override_get_session():
             yield test_db
 
         app.dependency_overrides[get_session] = override_get_session
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/dashboard/stats",
-                    headers={"Authorization": "Bearer invalid.token.here"},
-                )
-                # Should be 401 Unauthorized
-                assert response.status_code in (401, 302, 307), \
-                    f"Expected 401 for invalid token, got {response.status_code}"
+            with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get(
+                        "/api/dashboard/stats",
+                        headers={"Authorization": "Bearer invalid.token.here"},
+                    )
+                    # Should be 401 Unauthorized
+                    assert response.status_code in (401, 302, 307), \
+                        f"Expected 401 for invalid token, got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_malformed_auth_header_rejected(self, test_db):
-        """Malformed authorization headers should be rejected."""
+        """Malformed authorization headers should be rejected in production mode."""
+        from unittest.mock import patch, MagicMock
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+
         async def override_get_session():
             yield test_db
 
         app.dependency_overrides[get_session] = override_get_session
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                # Test various malformed headers
-                malformed_headers = [
-                    {"Authorization": "NotBearer token"},
-                    {"Authorization": "Bearer"},  # Missing token
-                    {"Authorization": ""},
-                ]
+            with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    # Test various malformed headers
+                    malformed_headers = [
+                        {"Authorization": "NotBearer token"},
+                        {"Authorization": "Bearer"},  # Missing token
+                        {"Authorization": ""},
+                    ]
 
-                for headers in malformed_headers:
-                    response = await client.get("/api/dashboard/stats", headers=headers)
-                    assert response.status_code in (401, 302, 307), \
-                        f"Expected 401 for malformed header {headers}, got {response.status_code}"
+                    for headers in malformed_headers:
+                        response = await client.get("/api/dashboard/stats", headers=headers)
+                        assert response.status_code in (401, 302, 307), \
+                            f"Expected 401 for malformed header {headers}, got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 
@@ -309,22 +330,29 @@ class TestAPIKeyAuthentication:
 
     @pytest.mark.asyncio
     async def test_random_api_key_rejected(self, test_db):
-        """Random API keys should be rejected."""
+        """Random API keys should be rejected in production mode."""
+        from unittest.mock import patch, MagicMock
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+
         async def override_get_session():
             yield test_db
 
         app.dependency_overrides[get_session] = override_get_session
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/dashboard/stats",
-                    headers={"X-API-Key": "random-fake-api-key"},
-                )
-                # Should be 401 (requires proper auth) or handled
-                assert response.status_code in (401, 302, 307, 403), \
-                    f"Expected auth error for fake API key, got {response.status_code}"
+            with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get(
+                        "/api/dashboard/stats",
+                        headers={"X-API-Key": "random-fake-api-key"},
+                    )
+                    # Should be 401 (requires proper auth) or handled
+                    assert response.status_code in (401, 302, 307, 403), \
+                        f"Expected auth error for fake API key, got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 
