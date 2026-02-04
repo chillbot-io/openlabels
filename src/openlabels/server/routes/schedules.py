@@ -91,6 +91,9 @@ async def create_schedule(
     session.add(schedule)
     await session.flush()
 
+    # Refresh to load server-generated defaults and ensure proper types
+    await session.refresh(schedule)
+
     return schedule
 
 
@@ -145,6 +148,7 @@ async def delete_schedule(
 
     schedule_name = schedule.name
     await session.delete(schedule)
+    await session.flush()
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):

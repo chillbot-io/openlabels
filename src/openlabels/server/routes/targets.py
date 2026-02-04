@@ -116,6 +116,9 @@ async def create_target(
     session.add(target)
     await session.flush()
 
+    # Refresh to load server-generated defaults and ensure proper types
+    await session.refresh(target)
+
     return target
 
 

@@ -175,7 +175,7 @@ class TestListResults:
         session.add(job2)
         await session.flush()
 
-        # Add results to both jobs
+        # Add results to both jobs (flush after each to avoid asyncpg sentinel matching issues)
         result1 = ScanResult(
             tenant_id=tenant.id,
             job_id=job.id,
@@ -186,6 +186,9 @@ class TestListResults:
             entity_counts={},
             total_entities=0,
         )
+        session.add(result1)
+        await session.flush()
+
         result2 = ScanResult(
             tenant_id=tenant.id,
             job_id=job2.id,
@@ -196,7 +199,7 @@ class TestListResults:
             entity_counts={},
             total_entities=0,
         )
-        session.add_all([result1, result2])
+        session.add(result2)
         await session.commit()
 
         response = await test_client.get(f"/api/results?job_id={job.id}")
@@ -227,6 +230,7 @@ class TestListResults:
                 total_entities=0,
             )
             session.add(result)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/results?risk_tier=HIGH")
@@ -244,7 +248,7 @@ class TestListResults:
         tenant = setup_results_data["tenant"]
         job = setup_results_data["job"]
 
-        # Files with PII
+        # Files with PII (flush after each to avoid asyncpg sentinel issues)
         for i in range(3):
             result = ScanResult(
                 tenant_id=tenant.id,
@@ -257,6 +261,7 @@ class TestListResults:
                 total_entities=1,
             )
             session.add(result)
+            await session.flush()
 
         # Files without PII
         for i in range(2):
@@ -271,6 +276,7 @@ class TestListResults:
                 total_entities=0,
             )
             session.add(result)
+            await session.flush()
         await session.commit()
 
         # Filter has_pii=true
@@ -343,6 +349,7 @@ class TestGetResultStats:
                 total_entities=sum(entities.values()),
             )
             session.add(result)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/results/stats")
@@ -576,7 +583,7 @@ class TestClearAllResults:
         tenant = setup_results_data["tenant"]
         job = setup_results_data["job"]
 
-        # Add multiple results
+        # Add multiple results (flush after each to avoid asyncpg sentinel issues)
         for i in range(5):
             result = ScanResult(
                 tenant_id=tenant.id,
@@ -589,6 +596,7 @@ class TestClearAllResults:
                 total_entities=0,
             )
             session.add(result)
+            await session.flush()
         await session.commit()
 
         await test_client.delete("/api/results")

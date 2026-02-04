@@ -134,7 +134,7 @@ class TestListMonitoredFiles:
         tenant = setup_monitoring_data["tenant"]
         admin_user = setup_monitoring_data["admin_user"]
 
-        # Add files with different risk tiers
+        # Add files with different risk tiers (flush after each to avoid asyncpg sentinel issues)
         for tier, path in [("CRITICAL", "/critical.txt"), ("HIGH", "/high.txt"), ("CRITICAL", "/critical2.txt")]:
             monitored = MonitoredFile(
                 tenant_id=tenant.id,
@@ -143,6 +143,7 @@ class TestListMonitoredFiles:
                 enabled_by=admin_user.email,
             )
             session.add(monitored)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/files?risk_tier=CRITICAL")
@@ -162,7 +163,7 @@ class TestListMonitoredFiles:
         tenant = setup_monitoring_data["tenant"]
         admin_user = setup_monitoring_data["admin_user"]
 
-        # Add multiple files
+        # Add multiple files (flush after each to avoid asyncpg sentinel issues)
         for i in range(15):
             monitored = MonitoredFile(
                 tenant_id=tenant.id,
@@ -171,6 +172,7 @@ class TestListMonitoredFiles:
                 enabled_by=admin_user.email,
             )
             session.add(monitored)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/files?limit=5")
@@ -329,13 +331,25 @@ class TestListAccessEvents:
     @pytest.mark.asyncio
     async def test_returns_events(self, test_client, setup_monitoring_data):
         """List should return access events."""
-        from openlabels.server.models import FileAccessEvent
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        # Create monitored file first (required foreign key)
+        monitored = MonitoredFile(
+            tenant_id=tenant.id,
+            file_path="/accessed/file.txt",
+            risk_tier="HIGH",
+            enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
 
         event = FileAccessEvent(
             tenant_id=tenant.id,
+            monitored_file_id=monitored.id,
             file_path="/accessed/file.txt",
             action="read",
             success=True,
@@ -356,20 +370,37 @@ class TestListAccessEvents:
     @pytest.mark.asyncio
     async def test_filter_by_file_path(self, test_client, setup_monitoring_data):
         """List should filter by file_path."""
-        from openlabels.server.models import FileAccessEvent
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
 
-        for path in ["/filter/a.txt", "/filter/b.txt", "/filter/a.txt"]:
+        # Create monitored files for each path
+        monitored_a = MonitoredFile(
+            tenant_id=tenant.id, file_path="/filter/a.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        monitored_b = MonitoredFile(
+            tenant_id=tenant.id, file_path="/filter/b.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored_a)
+        await session.flush()
+        session.add(monitored_b)
+        await session.flush()
+
+        for path, monitored_id in [("/filter/a.txt", monitored_a.id), ("/filter/b.txt", monitored_b.id), ("/filter/a.txt", monitored_a.id)]:
             event = FileAccessEvent(
                 tenant_id=tenant.id,
+                monitored_file_id=monitored_id,
                 file_path=path,
                 action="read",
                 success=True,
                 event_time=datetime.now(timezone.utc),
             )
             session.add(event)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/events?file_path=/filter/a.txt")
@@ -381,14 +412,24 @@ class TestListAccessEvents:
     @pytest.mark.asyncio
     async def test_filter_by_user_name(self, test_client, setup_monitoring_data):
         """List should filter by user_name."""
-        from openlabels.server.models import FileAccessEvent
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        # Create monitored file first
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/user/filter.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
 
         for user in ["alice", "bob", "alice"]:
             event = FileAccessEvent(
                 tenant_id=tenant.id,
+                monitored_file_id=monitored.id,
                 file_path="/user/filter.txt",
                 action="write",
                 success=True,
@@ -396,6 +437,7 @@ class TestListAccessEvents:
                 event_time=datetime.now(timezone.utc),
             )
             session.add(event)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/events?user_name=alice")
@@ -407,20 +449,31 @@ class TestListAccessEvents:
     @pytest.mark.asyncio
     async def test_filter_by_action(self, test_client, setup_monitoring_data):
         """List should filter by action type."""
-        from openlabels.server.models import FileAccessEvent
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        # Create monitored file first
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/action/filter.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
 
         for action in ["read", "write", "read", "delete"]:
             event = FileAccessEvent(
                 tenant_id=tenant.id,
+                monitored_file_id=monitored.id,
                 file_path="/action/filter.txt",
                 action=action,
                 success=True,
                 event_time=datetime.now(timezone.utc),
             )
             session.add(event)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/events?action=read")
@@ -467,23 +520,37 @@ class TestGetAccessStats:
     @pytest.mark.asyncio
     async def test_counts_events_correctly(self, test_client, setup_monitoring_data):
         """Stats should count events correctly."""
-        from openlabels.server.models import FileAccessEvent
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
 
         now = datetime.now(timezone.utc)
 
-        # Add events at different times
+        # Create monitored files first (flush after each to avoid asyncpg sentinel issues)
+        monitored_files = []
         for i in range(5):
+            monitored = MonitoredFile(
+                tenant_id=tenant.id, file_path=f"/stats/file_{i}.txt",
+                risk_tier="HIGH", enabled_by=admin_user.email,
+            )
+            session.add(monitored)
+            await session.flush()
+            monitored_files.append(monitored)
+
+        # Add events at different times
+        for i, monitored in enumerate(monitored_files):
             event = FileAccessEvent(
                 tenant_id=tenant.id,
+                monitored_file_id=monitored.id,
                 file_path=f"/stats/file_{i}.txt",
                 action="read",
                 success=True,
                 event_time=now - timedelta(hours=i),
             )
             session.add(event)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/monitoring/stats")

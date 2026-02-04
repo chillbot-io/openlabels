@@ -292,6 +292,9 @@ async def create_label_rule(
     session.add(rule)
     await session.flush()
 
+    # Refresh to load server-generated defaults and ensure proper types
+    await session.refresh(rule)
+
     response = LabelRuleResponse.model_validate(rule)
     return response.model_copy(update={"label_name": label.name})
 

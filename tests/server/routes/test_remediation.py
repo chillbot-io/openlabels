@@ -140,7 +140,7 @@ class TestListRemediationActions:
         tenant = setup_remediation_data["tenant"]
         admin_user = setup_remediation_data["admin_user"]
 
-        # Add different action types
+        # Add different action types (flush after each to avoid asyncpg sentinel issues)
         for action_type in ["quarantine", "lockdown", "quarantine"]:
             action = RemediationAction(
                 tenant_id=tenant.id,
@@ -150,6 +150,7 @@ class TestListRemediationActions:
                 performed_by=admin_user.email,
             )
             session.add(action)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation?action_type=quarantine")
@@ -169,7 +170,7 @@ class TestListRemediationActions:
         tenant = setup_remediation_data["tenant"]
         admin_user = setup_remediation_data["admin_user"]
 
-        # Add actions with different statuses
+        # Add actions with different statuses (flush after each to avoid asyncpg sentinel issues)
         for status in ["pending", "completed", "failed", "completed"]:
             action = RemediationAction(
                 tenant_id=tenant.id,
@@ -179,6 +180,7 @@ class TestListRemediationActions:
                 performed_by=admin_user.email,
             )
             session.add(action)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation?status=completed")
@@ -198,7 +200,7 @@ class TestListRemediationActions:
         tenant = setup_remediation_data["tenant"]
         admin_user = setup_remediation_data["admin_user"]
 
-        # Add many actions
+        # Add many actions (flush after each to avoid asyncpg sentinel issues)
         for i in range(60):
             action = RemediationAction(
                 tenant_id=tenant.id,
@@ -208,6 +210,7 @@ class TestListRemediationActions:
                 performed_by=admin_user.email,
             )
             session.add(action)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation")
@@ -235,6 +238,7 @@ class TestListRemediationActions:
                 performed_by=admin_user.email,
             )
             session.add(action)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation?limit=5")
@@ -692,7 +696,7 @@ class TestRemediationStats:
         tenant = setup_remediation_data["tenant"]
         admin_user = setup_remediation_data["admin_user"]
 
-        # Add actions of different types
+        # Add actions of different types (flush after each to avoid asyncpg sentinel issues)
         for action_type, count in [("quarantine", 3), ("lockdown", 2), ("rollback", 1)]:
             for i in range(count):
                 action = RemediationAction(
@@ -703,6 +707,7 @@ class TestRemediationStats:
                     performed_by=admin_user.email,
                 )
                 session.add(action)
+                await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation/stats/summary")
@@ -723,7 +728,7 @@ class TestRemediationStats:
         tenant = setup_remediation_data["tenant"]
         admin_user = setup_remediation_data["admin_user"]
 
-        # Add actions with different statuses
+        # Add actions with different statuses (flush after each to avoid asyncpg sentinel issues)
         for status, count in [("completed", 4), ("failed", 2), ("pending", 1)]:
             for i in range(count):
                 action = RemediationAction(
@@ -734,6 +739,7 @@ class TestRemediationStats:
                     performed_by=admin_user.email,
                 )
                 session.add(action)
+                await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/remediation/stats/summary")

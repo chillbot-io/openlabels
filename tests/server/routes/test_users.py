@@ -87,7 +87,7 @@ class TestListUsers:
         session = setup_users_data["session"]
         tenant = setup_users_data["tenant"]
 
-        # Add many users
+        # Add many users (flush after each to avoid asyncpg sentinel issues)
         for i in range(60):
             user = User(
                 tenant_id=tenant.id,
@@ -96,6 +96,7 @@ class TestListUsers:
                 role="viewer",
             )
             session.add(user)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/users")
@@ -113,7 +114,7 @@ class TestListUsers:
         session = setup_users_data["session"]
         tenant = setup_users_data["tenant"]
 
-        # Add users
+        # Add users (flush after each to avoid asyncpg sentinel issues)
         for i in range(20):
             user = User(
                 tenant_id=tenant.id,
@@ -122,6 +123,7 @@ class TestListUsers:
                 role="viewer",
             )
             session.add(user)
+            await session.flush()
         await session.commit()
 
         response = await test_client.get("/api/users?limit=5")
