@@ -31,11 +31,26 @@ async def init_db(database_url: str) -> None:
     """Initialize database connection."""
     global _engine, _session_factory
 
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    db_settings = settings.database
+
+    logger.info(
+        "Initializing database connection pool: "
+        f"pool_size={db_settings.pool_size}, "
+        f"max_overflow={db_settings.max_overflow}, "
+        f"pool_recycle={db_settings.pool_recycle}s, "
+        f"pool_pre_ping={db_settings.pool_pre_ping}"
+    )
+
     _engine = create_async_engine(
         database_url,
         echo=False,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=db_settings.pool_size,
+        max_overflow=db_settings.max_overflow,
+        pool_recycle=db_settings.pool_recycle,
+        pool_pre_ping=db_settings.pool_pre_ping,
     )
 
     _session_factory = async_sessionmaker(
