@@ -63,8 +63,9 @@ class TestEntityResolverInit:
         """EntityResolver creates with default settings."""
         resolver = EntityResolver()
 
-        assert resolver is not None
-        assert hasattr(resolver, 'resolve')
+        # Verify it's the correct type and has the resolve method
+        assert isinstance(resolver, EntityResolver)
+        assert callable(resolver.resolve)
 
 
 # =============================================================================
@@ -189,27 +190,29 @@ class TestEntityProperties:
     """Tests for Entity object properties."""
 
     def test_entity_has_canonical_value(self):
-        """Entity has canonical_value property."""
+        """Entity canonical_value should match the span text."""
         resolver = EntityResolver()
         spans = [make_span("John Smith", entity_type="NAME")]
 
         entities = resolver.resolve(spans)
 
-        assert hasattr(entities[0], 'canonical_value')
-        assert entities[0].canonical_value is not None
+        # Should be the correct type and have expected value
+        assert isinstance(entities[0], Entity)
+        assert entities[0].canonical_value == "John Smith"
 
     def test_entity_has_entity_type(self):
-        """Entity has entity_type property."""
+        """Entity entity_type should reflect the span type."""
         resolver = EntityResolver()
         spans = [make_span("John Smith", entity_type="NAME_PATIENT")]
 
         entities = resolver.resolve(spans)
 
-        assert hasattr(entities[0], 'entity_type')
+        # Entity type should contain NAME (might be normalized)
+        assert isinstance(entities[0].entity_type, str)
         assert "NAME" in entities[0].entity_type
 
     def test_entity_has_mentions(self):
-        """Entity has mentions list."""
+        """Entity mentions should contain all matching spans."""
         resolver = EntityResolver()
         spans = [
             make_span("John Smith", start=0, entity_type="NAME"),
@@ -218,8 +221,11 @@ class TestEntityProperties:
 
         entities = resolver.resolve(spans)
 
-        assert hasattr(entities[0], 'mentions')
+        # Verify mentions is a list with correct count
+        assert isinstance(entities[0].mentions, list)
         assert len(entities[0].mentions) == 2
+        # Each mention should be a Mention object
+        assert all(isinstance(m, Mention) for m in entities[0].mentions)
 
 
 # =============================================================================

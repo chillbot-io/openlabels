@@ -51,8 +51,9 @@ class TestEnableMonitoringBasic:
 
             result = enable_monitoring(test_file)
 
-            assert result is not None
-            assert hasattr(result, "success")
+            # Verify result has expected structure and values
+            assert result.success is True
+            assert result.path == test_file
 
     def test_adds_to_registry_on_success(self, tmp_path):
         """Adds file to registry on successful enable."""
