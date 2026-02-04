@@ -36,8 +36,18 @@ from openlabels.server.config import get_settings
 from openlabels.server.app import get_client_ip
 from openlabels.server.db import get_session
 from openlabels.server.session import SessionStore, PendingAuthStore
+from openlabels.server.security import log_security_event
 
 logger = logging.getLogger(__name__)
+
+
+def _get_request_context(request: Request) -> dict:
+    """Extract request context for security logging."""
+    return {
+        "ip": get_client_ip(request),
+        "user_agent": request.headers.get("user-agent", "unknown"),
+        "path": str(request.url.path),
+    }
 
 
 def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
@@ -289,6 +299,16 @@ async def auth_callback(
     if error:
         # Log detailed error server-side for debugging
         logger.error(f"OAuth error: {error} - {error_description}")
+        # Security: Log failed authentication attempt
+        log_security_event(
+            event_type="oauth_error",
+            details={
+                **_get_request_context(request),
+                "error": error,
+                "error_code": error_description[:100] if error_description else None,
+            },
+            level="warning",
+        )
         # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -296,6 +316,15 @@ async def auth_callback(
         )
 
     if not code or not state:
+        log_security_event(
+            event_type="oauth_invalid_request",
+            details={
+                **_get_request_context(request),
+                "missing_code": not code,
+                "missing_state": not state,
+            },
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing authorization code or state",
@@ -306,6 +335,14 @@ async def auth_callback(
     pending = await pending_store.get(state)
 
     if not pending:
+        log_security_event(
+            event_type="oauth_invalid_state",
+            details={
+                **_get_request_context(request),
+                "state_hash": hash(state) % 10000,  # Log hash, not actual state
+            },
+            level="warning",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state",
@@ -328,6 +365,14 @@ async def auth_callback(
         )
     except Exception as e:
         logger.error(f"Token acquisition failed: {e}")
+        log_security_event(
+            event_type="token_acquisition_failed",
+            details={
+                **_get_request_context(request),
+                "error_type": type(e).__name__,
+            },
+            level="error",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to acquire token",
@@ -336,6 +381,14 @@ async def auth_callback(
     if "error" in result:
         # Log detailed error server-side for debugging
         logger.error(f"Token error: {result.get('error_description', result.get('error'))}")
+        log_security_event(
+            event_type="token_exchange_failed",
+            details={
+                **_get_request_context(request),
+                "error": result.get("error"),
+            },
+            level="warning",
+        )
         # Return generic message to client to prevent information leakage
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

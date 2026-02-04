@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
@@ -214,6 +214,23 @@ class CORSSettings(BaseSettings):
             "X-Requested-With",
         ]
     )
+
+    @model_validator(mode="after")
+    def validate_cors_security(self) -> "CORSSettings":
+        """
+        Validate CORS configuration for security.
+
+        Security: Wildcard origins (*) with credentials is a security vulnerability
+        as it allows any site to make credentialed requests.
+        """
+        has_wildcard = "*" in self.allowed_origins
+        if has_wildcard and self.allow_credentials:
+            raise ValueError(
+                "SECURITY ERROR: Cannot use wildcard (*) in allowed_origins with "
+                "allow_credentials=True. This would allow any site to make "
+                "credentialed requests. Specify explicit origins instead."
+            )
+        return self
 
 
 class RateLimitSettings(BaseSettings):

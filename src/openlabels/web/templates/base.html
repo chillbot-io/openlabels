@@ -6,6 +6,8 @@
     <title>{% block title %}OpenLabels{% endblock %}</title>
 
     <!-- Tailwind CSS -->
+    <!-- Note: For production, consider self-hosting or using a build step. -->
+    <!-- Tailwind Play CDN doesn't support SRI as it's dynamically generated. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -30,12 +32,25 @@
         }
     </script>
 
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+    <!-- HTMX with SRI hash for integrity verification -->
+    <script
+        src="https://unpkg.com/htmx.org@1.9.10"
+        integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
+        crossorigin="anonymous"
+    ></script>
+    <script
+        src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"
+        integrity="sha384-RpKxj2Z6lPCpQ2RZ0NJfvFmGkjCmxlxw8Bc49PQRb3qEdL9Yz1B9XdpwNNr1Pqps"
+        crossorigin="anonymous"
+    ></script>
 
-    <!-- Alpine.js -->
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Alpine.js with pinned version and SRI hash -->
+    <script
+        defer
+        src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"
+        integrity="sha384-gCpPpBMpFE7YQdHQp9tNWKHxP6xNXJsNmYaA0DE/LOsE0FYibCqWnkPqLdEVx3S3"
+        crossorigin="anonymous"
+    ></script>
 
     <!-- Custom styles -->
     <style>

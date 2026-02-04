@@ -4,10 +4,12 @@ Security utilities for OpenLabels.
 Provides reusable functions for:
 - Tenant isolation validation
 - IDOR attempt detection and logging
+- Log sanitization
 - Security-related helpers
 """
 
 import logging
+import re
 from typing import Optional, TypeVar, Type
 from uuid import UUID
 
@@ -156,3 +158,74 @@ def log_security_event(
         logger.error(message)
     else:
         logger.warning(message)
+
+
+# Patterns for sensitive data that should be redacted in logs
+_SENSITIVE_PATTERNS = [
+    # Tokens and secrets
+    (re.compile(r'(access_token|refresh_token|id_token|api_key|secret)["\']?\s*[:=]\s*["\']?([^"\'&\s]{8,})', re.I), r'\1=***REDACTED***'),
+    # Bearer tokens in headers
+    (re.compile(r'(Bearer\s+)([A-Za-z0-9_.-]{20,})', re.I), r'\1***REDACTED***'),
+    # Password fields
+    (re.compile(r'(password|passwd|pwd)["\']?\s*[:=]\s*["\']?([^"\'&\s]+)', re.I), r'\1=***REDACTED***'),
+    # Email addresses (partial redaction)
+    (re.compile(r'([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'), lambda m: f"{m.group(1)[:2]}***@{m.group(2)}"),
+    # Credit card numbers (basic pattern)
+    (re.compile(r'\b(\d{4})[- ]?(\d{4})[- ]?(\d{4})[- ]?(\d{4})\b'), r'\1-****-****-\4'),
+    # SSN pattern
+    (re.compile(r'\b(\d{3})-?(\d{2})-?(\d{4})\b'), r'***-**-\3'),
+]
+
+
+def sanitize_for_logging(text: str) -> str:
+    """
+    Sanitize text for safe logging by redacting sensitive data.
+
+    This function redacts common sensitive patterns like:
+    - Access tokens and API keys
+    - Passwords
+    - Email addresses (partial)
+    - Credit card numbers
+    - Social security numbers
+
+    Args:
+        text: The text to sanitize
+
+    Returns:
+        Sanitized text with sensitive data redacted
+
+    Example:
+        >>> sanitize_for_logging('access_token=abc123xyz')
+        'access_token=***REDACTED***'
+    """
+    if not text:
+        return text
+
+    result = text
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        if callable(replacement):
+            result = pattern.sub(replacement, result)
+        else:
+            result = pattern.sub(replacement, result)
+
+    return result
+
+
+def truncate_for_logging(text: str, max_length: int = 200) -> str:
+    """
+    Truncate text for safe logging.
+
+    Long error messages or response bodies should be truncated to prevent
+    log file bloat and potential exposure of sensitive data.
+
+    Args:
+        text: The text to truncate
+        max_length: Maximum length before truncation (default 200)
+
+    Returns:
+        Truncated text with indicator if truncated
+    """
+    if not text or len(text) <= max_length:
+        return text
+
+    return text[:max_length] + f"... [truncated, {len(text)} total chars]"
