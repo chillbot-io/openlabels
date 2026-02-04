@@ -25,7 +25,7 @@ async def setup_schedules_data(test_db):
     from openlabels.server.models import Tenant, User, ScanTarget
 
     # Get the existing tenant created by test_client
-    result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
     tenant = result.scalar_one()
 
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
@@ -59,7 +59,9 @@ class TestListSchedules:
     async def test_returns_200_status(self, test_client, setup_schedules_data):
         """List schedules endpoint should return 200 OK."""
         response = await test_client.get("/api/schedules")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
 
     @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_schedules_data):
@@ -153,7 +155,13 @@ class TestCreateSchedule:
                 "target_id": str(target.id),
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["name"] == "New Schedule", "Schedule name should match request"
+        assert data["target_id"] == str(target.id), "Target ID should match request"
+        assert "enabled" in data, "Response should contain 'enabled' field"
+        assert isinstance(data["enabled"], bool), "Enabled should be a boolean"
 
     @pytest.mark.asyncio
     async def test_returns_created_schedule(self, test_client, setup_schedules_data):
@@ -272,7 +280,14 @@ class TestGetSchedule:
         await session.commit()
 
         response = await test_client.get(f"/api/schedules/{schedule.id}")
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["id"] == str(schedule.id), "Schedule ID should match requested ID"
+        assert data["name"] == "Get Test", "Schedule name should match"
+        assert data["target_id"] == str(target.id), "Target ID should match"
+        assert "enabled" in data, "Response should contain 'enabled' field"
+        assert "cron" in data, "Response should contain 'cron' field"
 
     @pytest.mark.asyncio
     async def test_returns_schedule_details(self, test_client, setup_schedules_data):
@@ -342,7 +357,13 @@ class TestUpdateSchedule:
             f"/api/schedules/{schedule.id}",
             json={"name": "Updated Name"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        data = response.json()
+        assert "id" in data, "Response should contain 'id' field"
+        assert data["id"] == str(schedule.id), "Schedule ID should match"
+        assert data["name"] == "Updated Name", "Schedule name should be updated"
+        assert "target_id" in data, "Response should contain 'target_id' field"
+        assert "enabled" in data, "Response should contain 'enabled' field"
 
     @pytest.mark.asyncio
     async def test_updates_name(self, test_client, setup_schedules_data):
@@ -583,7 +604,12 @@ class TestTriggerSchedule:
         await session.commit()
 
         response = await test_client.post(f"/api/schedules/{schedule.id}/run")
-        assert response.status_code == 202
+        assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}"
+        data = response.json()
+        assert "message" in data, "Response should contain 'message' field"
+        assert "schedule_id" in data, "Response should contain 'schedule_id' field"
+        assert "job_id" in data, "Response should contain 'job_id' field"
+        assert data["schedule_id"] == str(schedule.id), "Schedule ID should match request"
 
     @pytest.mark.asyncio
     async def test_returns_job_info(self, test_client, setup_schedules_data):

@@ -21,8 +21,8 @@ async def setup_jobs_data(test_db):
     from sqlalchemy import select
     from openlabels.server.models import Tenant, User, JobQueue as JobQueueModel
 
-    # Get the existing tenant created by test_client
-    result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+    # Get the existing tenant created by test_client (name includes random suffix)
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
     tenant = result.scalar_one()
 
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
@@ -290,8 +290,9 @@ class TestRequeueJob:
             f"/api/jobs/{failed_job.id}/requeue",
             json={"reset_retries": True},
         )
-        # May return 200 or 404 depending on implementation
-        assert response.status_code in (200, 404)
+        # Job exists in test data, requeue should succeed
+        assert response.status_code == 200, \
+            f"Expected 200 for requeuing existing failed job, got {response.status_code}"
 
     @pytest.mark.asyncio
     async def test_returns_success_message(self, test_client, setup_jobs_data):
@@ -379,18 +380,21 @@ class TestCancelJob:
         """Should cancel a pending job."""
         # Find a pending job
         pending_jobs = [j for j in setup_jobs_data["jobs"] if j.status == "pending"]
-        if pending_jobs:
-            job = pending_jobs[0]
-            response = await test_client.post(f"/api/jobs/{job.id}/cancel")
-            # May succeed or fail depending on timing
-            assert response.status_code in (200, 400)
+        assert pending_jobs, "Test setup should have pending jobs"
+        job = pending_jobs[0]
+        response = await test_client.post(f"/api/jobs/{job.id}/cancel")
+        # Pending job exists in test data, cancel should succeed
+        assert response.status_code == 200, \
+            f"Expected 200 for canceling existing pending job, got {response.status_code}"
 
     @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_jobs_data):
-        """Should return error for non-existent job."""
+        """Should return 404 for non-existent job."""
         fake_id = uuid4()
         response = await test_client.post(f"/api/jobs/{fake_id}/cancel")
-        assert response.status_code in (400, 404)
+        # Non-existent job should return 404 Not Found
+        assert response.status_code == 404, \
+            f"Expected 404 for canceling non-existent job, got {response.status_code}"
 
 
 class TestWorkerStatus:

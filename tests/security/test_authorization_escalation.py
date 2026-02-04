@@ -102,9 +102,16 @@ class TestRoleBasedAccessControl:
     """Tests for role-based access control enforcement."""
 
     @pytest.mark.asyncio
-    async def test_viewer_cannot_create_targets(self, viewer_client):
+    async def test_viewer_cannot_create_targets(self, viewer_client, test_db):
         """Viewer role should not be able to create scan targets."""
+        from sqlalchemy import select, func
+
         client, tenant, viewer, admin, target = viewer_client
+
+        # Count targets before attempt
+        count_before = (await test_db.execute(
+            select(func.count(ScanTarget.id)).where(ScanTarget.tenant_id == tenant.id)
+        )).scalar()
 
         response = await client.post(
             "/api/targets",
@@ -117,10 +124,24 @@ class TestRoleBasedAccessControl:
         assert response.status_code == 403, \
             f"Expected 403 for viewer creating target, got {response.status_code}"
 
+        # CRITICAL: Verify no target was actually created in database
+        count_after = (await test_db.execute(
+            select(func.count(ScanTarget.id)).where(ScanTarget.tenant_id == tenant.id)
+        )).scalar()
+        assert count_after == count_before, \
+            f"Target created despite 403! Before: {count_before}, After: {count_after}"
+
     @pytest.mark.asyncio
-    async def test_viewer_cannot_start_scans(self, viewer_client):
+    async def test_viewer_cannot_start_scans(self, viewer_client, test_db):
         """Viewer role should not be able to start scans."""
+        from sqlalchemy import select, func
+
         client, tenant, viewer, admin, target = viewer_client
+
+        # Count scans before attempt
+        count_before = (await test_db.execute(
+            select(func.count(ScanJob.id)).where(ScanJob.tenant_id == tenant.id)
+        )).scalar()
 
         response = await client.post(
             "/api/scans",
@@ -129,14 +150,33 @@ class TestRoleBasedAccessControl:
         assert response.status_code == 403, \
             f"Expected 403 for viewer starting scan, got {response.status_code}"
 
+        # CRITICAL: Verify no scan was actually created in database
+        count_after = (await test_db.execute(
+            select(func.count(ScanJob.id)).where(ScanJob.tenant_id == tenant.id)
+        )).scalar()
+        assert count_after == count_before, \
+            f"Scan created despite 403! Before: {count_before}, After: {count_after}"
+
     @pytest.mark.asyncio
-    async def test_viewer_cannot_delete_targets(self, viewer_client):
+    async def test_viewer_cannot_delete_targets(self, viewer_client, test_db):
         """Viewer role should not be able to delete targets."""
+        from sqlalchemy import select
+
         client, tenant, viewer, admin, target = viewer_client
+        target_id = target.id
 
         response = await client.delete(f"/api/targets/{target.id}")
         assert response.status_code == 403, \
             f"Expected 403 for viewer deleting target, got {response.status_code}"
+
+        # CRITICAL: Verify target still exists in database
+        target_after = (await test_db.execute(
+            select(ScanTarget).where(ScanTarget.id == target_id)
+        )).scalar_one_or_none()
+        assert target_after is not None, \
+            "Target deleted despite 403 response! CRITICAL authorization bypass!"
+        assert target_after.name == target.name, \
+            "Target was modified despite 403 response!"
 
     @pytest.mark.asyncio
     async def test_viewer_cannot_modify_settings(self, viewer_client):
@@ -190,9 +230,12 @@ class TestRoleEscalation:
     """Tests for preventing role escalation attacks."""
 
     @pytest.mark.asyncio
-    async def test_cannot_self_promote_to_admin(self, viewer_client):
+    async def test_cannot_self_promote_to_admin(self, viewer_client, test_db):
         """User should not be able to change their own role to admin."""
+        from sqlalchemy import select
+
         client, tenant, viewer, admin, target = viewer_client
+        viewer_id = viewer.id
 
         # Try to update own user to admin
         response = await client.patch(
@@ -203,9 +246,18 @@ class TestRoleEscalation:
         assert response.status_code in (400, 403, 404, 405, 422), \
             f"Expected error for self-promotion, got {response.status_code}"
 
+        # CRITICAL: Verify user role was NOT changed in database
+        user_after = (await test_db.execute(
+            select(User).where(User.id == viewer_id)
+        )).scalar_one()
+        assert user_after.role == "viewer", \
+            f"PRIVILEGE ESCALATION: User role changed to '{user_after.role}' despite error response!"
+
     @pytest.mark.asyncio
-    async def test_viewer_cannot_create_admin_users(self, viewer_client):
+    async def test_viewer_cannot_create_admin_users(self, viewer_client, test_db):
         """Viewer should not be able to create users with admin role."""
+        from sqlalchemy import select
+
         client, tenant, viewer, admin, target = viewer_client
 
         response = await client.post(
@@ -219,6 +271,13 @@ class TestRoleEscalation:
         # Should be denied
         assert response.status_code in (403, 404, 405), \
             f"Expected error for viewer creating admin, got {response.status_code}"
+
+        # CRITICAL: Verify no hacker user was created in database
+        hacker_user = (await test_db.execute(
+            select(User).where(User.email == "hacker@evil.com")
+        )).scalar_one_or_none()
+        assert hacker_user is None, \
+            "Admin user created despite error response! CRITICAL authorization bypass!"
 
 
 class TestAuthenticationBypass:
@@ -323,7 +382,10 @@ class TestSessionSecurity:
         if response.status_code == 200:
             user_data = response.json()
             # Should be the test user created by test_client fixture
-            assert user_data.get("email") == "test@localhost"
+            # Email format: test-{suffix}@localhost
+            email = user_data.get("email", "")
+            assert email.startswith("test") and "@localhost" in email, \
+                f"Expected test user email pattern, got: {email}"
 
 
 class TestAPIKeyAuthentication:

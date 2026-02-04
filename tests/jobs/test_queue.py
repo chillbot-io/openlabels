@@ -297,16 +297,22 @@ class TestJobQueueComplete:
         job_id = uuid4()
         result = {"files_processed": 100}
 
-        # Should not raise
+        # Complete should execute without raising
         await queue.complete(job_id, result=result)
+
+        # Verify database session was used to update the job
+        queue.session.execute.assert_called()
 
     @pytest.mark.asyncio
     async def test_complete_without_result(self, queue):
         """Complete should work without result data."""
         job_id = uuid4()
 
-        # Should not raise
+        # Complete should execute without raising
         await queue.complete(job_id)
+
+        # Verify database session was used
+        queue.session.execute.assert_called()
 
 
 class TestJobQueueFail:

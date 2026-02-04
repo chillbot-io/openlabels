@@ -23,7 +23,7 @@ async def setup_test_data(test_db):
     )
 
     # Get the existing tenant and user created by test_client fixture
-    result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
     tenant = result.scalar_one()
 
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
@@ -144,8 +144,9 @@ class TestAuthEndpoints:
             follow_redirects=False,
         )
         # In dev mode (provider=none), login may redirect (302/307) or
-        # return 200 (already authenticated), or 503 if service unavailable
-        assert response.status_code in (200, 302, 307, 503), \
+        # return 200 (already authenticated)
+        # Note: 503 removed - accepting service unavailable would hide DoS vulnerabilities
+        assert response.status_code in (200, 302, 307), \
             f"Unexpected status code {response.status_code} for login endpoint"
 
 

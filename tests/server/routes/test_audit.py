@@ -22,7 +22,7 @@ async def setup_audit_data(test_db):
     from openlabels.server.models import Tenant, User, AuditLog
 
     # Get the existing tenant created by test_client
-    result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
     tenant = result.scalar_one()
 
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
@@ -445,7 +445,7 @@ class TestAuditDateFilters:
         from sqlalchemy import select
         from openlabels.server.models import Tenant, User, AuditLog
 
-        result = await test_db.execute(select(Tenant).where(Tenant.name == "Test Tenant"))
+        result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
         tenant = result.scalar_one()
 
         result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))

@@ -419,7 +419,11 @@ async def test_client(test_db):
 
     Overrides the database dependency to use the test database.
     Also overrides authentication to use a mock user for testing.
+
+    Uses randomized test data to prevent collisions in parallel test runs.
     """
+    import random
+    import string
     from uuid import UUID
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
@@ -427,18 +431,21 @@ async def test_client(test_db):
     from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
     from openlabels.server.models import Tenant, User
 
-    # Create test tenant and user in the database
+    # Generate unique suffix to prevent test data collisions
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+    # Create test tenant and user in the database with randomized names
     test_tenant = Tenant(
-        name="Test Tenant",
-        azure_tenant_id="test-tenant-id",
+        name=f"Test Tenant {suffix}",
+        azure_tenant_id=f"test-tenant-id-{suffix}",
     )
     test_db.add(test_tenant)
     await test_db.flush()
 
     test_user = User(
         tenant_id=test_tenant.id,
-        email="test@localhost",
-        name="Test User",
+        email=f"test-{suffix}@localhost",
+        name=f"Test User {suffix}",
         role="admin",
     )
     test_db.add(test_user)

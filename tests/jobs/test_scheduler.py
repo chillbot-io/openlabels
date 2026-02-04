@@ -462,31 +462,32 @@ class TestParseCronExpression:
 class TestGetSchedulerSingleton:
     """Tests for get_scheduler singleton function."""
 
+    @pytest.fixture(autouse=True)
+    def reset_scheduler_singleton(self):
+        """Reset scheduler singleton before and after each test."""
+        import openlabels.jobs.scheduler as scheduler_module
+        # Save original state
+        original_scheduler = scheduler_module._scheduler
+        # Reset before test
+        scheduler_module._scheduler = None
+        yield
+        # Restore after test to prevent state leakage
+        scheduler_module._scheduler = original_scheduler
+
     def test_get_scheduler_returns_scheduler(self):
         """get_scheduler should return a Scheduler instance."""
-        # Reset global first
-        import openlabels.jobs.scheduler as scheduler_module
-        scheduler_module._scheduler = None
-
         scheduler = get_scheduler()
-
         assert isinstance(scheduler, Scheduler)
 
     def test_get_scheduler_returns_same_instance(self):
         """get_scheduler should return the same instance on multiple calls."""
-        # Reset global first
-        import openlabels.jobs.scheduler as scheduler_module
-        scheduler_module._scheduler = None
-
         scheduler1 = get_scheduler()
         scheduler2 = get_scheduler()
-
         assert scheduler1 is scheduler2
 
     def test_get_scheduler_creates_new_if_none(self):
         """get_scheduler should create new scheduler if none exists."""
         import openlabels.jobs.scheduler as scheduler_module
-        scheduler_module._scheduler = None
 
         scheduler = get_scheduler()
 
