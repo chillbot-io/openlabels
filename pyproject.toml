@@ -75,6 +75,7 @@ dependencies = [
 
     # Security
     "slowapi>=0.1.9",  # Rate limiting
+    "defusedxml>=0.7.0",  # XXE-safe XML parsing
 
     # ML Inference (core)
     "onnxruntime>=1.17.0",  # ONNX model inference

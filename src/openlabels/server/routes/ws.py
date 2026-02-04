@@ -1,12 +1,15 @@
 """
 WebSocket endpoints for real-time updates.
 
-Security: WebSocket connections are authenticated using the same session
-cookie as HTTP requests. Unauthenticated connections are rejected.
+Security features:
+- WebSocket connections are authenticated using the same session cookie as HTTP requests
+- Unauthenticated connections are rejected
+- Origin validation prevents cross-site WebSocket hijacking (CSWSH)
 """
 
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID
 import asyncio
 import logging
@@ -23,6 +26,73 @@ from openlabels.server.session import SessionStore
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def validate_websocket_origin(websocket: WebSocket) -> bool:
+    """
+    Validate WebSocket origin to prevent Cross-Site WebSocket Hijacking (CSWSH).
+
+    Security: Validates that the Origin header matches allowed origins from CORS config.
+    This prevents malicious websites from establishing WebSocket connections.
+
+    Args:
+        websocket: The WebSocket connection
+
+    Returns:
+        True if origin is valid, False otherwise
+    """
+    settings = get_settings()
+
+    # In development mode, allow any origin
+    if settings.server.environment == "development":
+        return True
+
+    # Get the Origin header
+    origin = None
+    for header_name, header_value in websocket.headers.items():
+        if header_name.lower() == "origin":
+            origin = header_value
+            break
+
+    if not origin:
+        # No origin header - could be same-origin or non-browser client
+        # Allow for backwards compatibility, but log it
+        logger.debug("WebSocket connection without Origin header")
+        return True
+
+    # Parse the origin
+    try:
+        parsed = urlparse(origin)
+        origin_host = f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        logger.warning(f"Failed to parse WebSocket origin: {origin}")
+        return False
+
+    # Check against allowed CORS origins
+    if origin_host in settings.cors.allowed_origins:
+        return True
+
+    # Check if it matches the request's host (same-origin)
+    host_header = None
+    for header_name, header_value in websocket.headers.items():
+        if header_name.lower() == "host":
+            host_header = header_value
+            break
+
+    if host_header:
+        # Construct expected origins based on host
+        expected_origins = [
+            f"http://{host_header}",
+            f"https://{host_header}",
+        ]
+        if origin_host in expected_origins:
+            return True
+
+    logger.warning(
+        f"WebSocket connection rejected: invalid origin {origin} "
+        f"(allowed: {settings.cors.allowed_origins})"
+    )
+    return False
 
 # Cookie name must match auth.py
 SESSION_COOKIE_NAME = "openlabels_session"
@@ -186,9 +256,16 @@ async def websocket_scan_progress(
     """
     WebSocket endpoint for real-time scan progress updates.
 
-    Requires authentication via session cookie. Connection is rejected
-    with close code 4001 if not authenticated.
+    Security:
+    - Validates Origin header to prevent cross-site WebSocket hijacking
+    - Requires authentication via session cookie
+    - Connection is rejected with close code 1008 if not authorized.
     """
+    # Security: Validate origin before accepting connection
+    if not validate_websocket_origin(websocket):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     # Authenticate before accepting connection
     auth_result = await authenticate_websocket(websocket)
 
