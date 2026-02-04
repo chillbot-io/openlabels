@@ -30,12 +30,15 @@ logger = logging.getLogger(__name__)
 
 # Security: Use defusedxml to prevent XXE attacks
 # defusedxml is a drop-in replacement that disables external entity processing
+# Import standard library Element for type hints (defusedxml doesn't export it)
+import xml.etree.ElementTree as _stdlib_ET
+
 try:
     import defusedxml.ElementTree as ET
     _USING_DEFUSED_XML = True
 except ImportError:
     # Fallback to standard library with manual XXE protection
-    import xml.etree.ElementTree as ET
+    ET = _stdlib_ET
     _USING_DEFUSED_XML = False
     logger.warning(
         "defusedxml not installed - using standard xml.etree.ElementTree. "
@@ -43,7 +46,7 @@ except ImportError:
     )
 
 
-def _safe_xml_fromstring(content: bytes) -> ET.Element:
+def _safe_xml_fromstring(content: bytes) -> _stdlib_ET.Element:
     """
     Safely parse XML content with XXE protection.
 
