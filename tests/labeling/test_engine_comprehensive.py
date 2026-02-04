@@ -25,6 +25,13 @@ import httpx
 import pytest
 
 from openlabels.adapters.base import FileInfo
+
+# Check if PyPDF2 is available for PDF metadata tests
+try:
+    import PyPDF2
+    HAS_PYPDF2 = True
+except ImportError:
+    HAS_PYPDF2 = False
 from openlabels.labeling.engine import (
     CachedLabel,
     LabelCache,
@@ -654,6 +661,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                 mock_sidecar.assert_called_once()
 
 
+@pytest.mark.skipif(not HAS_PYPDF2, reason="PyPDF2 not installed")
 class TestLabelingEnginePDFMetadata:
     """Tests for PDF metadata labeling."""
 

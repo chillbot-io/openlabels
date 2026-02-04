@@ -353,7 +353,7 @@ class TestOneDriveAdapterProtocol:
     """Tests verifying adapter follows the protocol."""
 
     def test_has_list_files_method(self):
-        """Adapter should have async list_files method."""
+        """Adapter should have async list_files method (async generator)."""
         from openlabels.adapters.onedrive import OneDriveAdapter
         import inspect
 
@@ -362,7 +362,8 @@ class TestOneDriveAdapterProtocol:
         )
 
         assert hasattr(adapter, 'list_files')
-        assert inspect.iscoroutinefunction(adapter.list_files)
+        # list_files is an async generator (yields FileInfo), not a coroutine
+        assert inspect.isasyncgenfunction(adapter.list_files)
 
     def test_has_read_file_method(self):
         """Adapter should have async read_file method."""

@@ -600,11 +600,17 @@ class TestScanTaskErrorHandling:
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
 
-                with pytest.raises(PermissionError):
-                    await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
+                    mock_settings.return_value = MagicMock(
+                        scan=MagicMock(max_file_size_mb=100),
+                        labeling=MagicMock(enabled=False),
+                    )
 
-                assert mock_job.status == "failed"
-                assert "Permission denied" in mock_job.error
+                    with pytest.raises(PermissionError):
+                        await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+
+                    assert mock_job.status == "failed"
+                    assert "Permission denied" in mock_job.error
 
     @pytest.mark.asyncio
     async def test_handles_os_error(self, mock_session, mock_job, mock_target):
@@ -627,11 +633,17 @@ class TestScanTaskErrorHandling:
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
 
-                with pytest.raises(OSError):
-                    await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
+                    mock_settings.return_value = MagicMock(
+                        scan=MagicMock(max_file_size_mb=100),
+                        labeling=MagicMock(enabled=False),
+                    )
 
-                assert mock_job.status == "failed"
-                assert "OS error" in mock_job.error
+                    with pytest.raises(OSError):
+                        await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+
+                    assert mock_job.status == "failed"
+                    assert "OS error" in mock_job.error
 
 
 class TestWebSocketStreamingFlag:

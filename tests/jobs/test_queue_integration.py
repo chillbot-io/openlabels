@@ -333,10 +333,14 @@ class TestDeadLetterQueueIntegration:
         await queue.dequeue("worker-1")
         await queue.fail(job_id, "Error", retry=False)
 
+        # Flush to ensure fail status is persisted
+        await test_db.flush()
+
         result = await queue.requeue_failed(job_id)
 
-        assert result is True
+        assert result is True, "requeue_failed should return True for a failed job"
         job = await test_db.get(JobQueueModel, job_id)
+        await test_db.refresh(job)
         assert job.status == "pending"
         assert job.retry_count == 0  # Reset
         assert job.error is None
@@ -411,10 +415,12 @@ class TestTenantIsolation:
         """Verify queue only returns jobs for its own tenant."""
         from openlabels.server.models import Tenant
 
-        # Create two tenants
-        tenant1 = Tenant(name="Tenant 1")
-        tenant2 = Tenant(name="Tenant 2")
+        # Create two tenants with explicit IDs to avoid sentinel matching issues
+        tenant1 = Tenant(id=uuid4(), name="Tenant 1")
         test_db.add(tenant1)
+        await test_db.flush()
+
+        tenant2 = Tenant(id=uuid4(), name="Tenant 2")
         test_db.add(tenant2)
         await test_db.flush()
 
@@ -438,9 +444,12 @@ class TestTenantIsolation:
         """Verify requeue_failed only works for same tenant's jobs."""
         from openlabels.server.models import Tenant
 
-        tenant1 = Tenant(name="Tenant 1")
-        tenant2 = Tenant(name="Tenant 2")
+        # Create tenants with explicit IDs to avoid sentinel matching issues
+        tenant1 = Tenant(id=uuid4(), name="Tenant 1")
         test_db.add(tenant1)
+        await test_db.flush()
+
+        tenant2 = Tenant(id=uuid4(), name="Tenant 2")
         test_db.add(tenant2)
         await test_db.flush()
 
