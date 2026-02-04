@@ -382,7 +382,10 @@ class TestSessionSecurity:
         if response.status_code == 200:
             user_data = response.json()
             # Should be the test user created by test_client fixture
-            assert user_data.get("email") == "test@localhost"
+            # Email format: test-{suffix}@localhost
+            email = user_data.get("email", "")
+            assert email.startswith("test") and "@localhost" in email, \
+                f"Expected test user email pattern, got: {email}"
 
 
 class TestAPIKeyAuthentication:

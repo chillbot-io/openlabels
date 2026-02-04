@@ -63,7 +63,11 @@ class TestListUsers:
         # Should have at least the test user
         assert len(data) >= 1
         emails = [u["email"] for u in data]
-        assert "test@localhost" in emails
+        # Test user email format: test-{suffix}@localhost
+        test_user_found = any(
+            e.startswith("test") and "@localhost" in e for e in emails
+        )
+        assert test_user_found, f"Test user not found in emails: {emails}"
 
     @pytest.mark.asyncio
     async def test_user_response_structure(self, test_client, setup_users_data):
