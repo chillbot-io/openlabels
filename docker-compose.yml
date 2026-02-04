@@ -1,12 +1,20 @@
 version: "3.8"
 
+# SECURITY: Define internal network to isolate database from external access
+networks:
+  internal:
+    driver: bridge
+    internal: true  # No external access - database isolation
+  web:
+    driver: bridge  # External access for API only
+
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only, use reverse proxy for external
     environment:
       - DATABASE_URL=postgresql+asyncpg://openlabels:openlabels@db:5432/openlabels
       - AUTH_PROVIDER=azure_ad
@@ -25,13 +33,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - internal  # Can reach database
+      - web       # Can be reached from outside (via reverse proxy)
 
   db:
     image: postgres:15-alpine
+    # SECURITY: No ports exposed to host - only accessible via internal network
+    # If you need direct access for debugging, use: docker exec -it <container> psql
     environment:
       - POSTGRES_USER=openlabels
-      - POSTGRES_PASSWORD=openlabels
+      # SECURITY: Use strong password in production - set via .env file
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-openlabels}
       - POSTGRES_DB=openlabels
+      # SECURITY: Require password authentication
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -40,11 +56,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - internal  # SECURITY: Only on internal network - not accessible from outside
 
   # Optional: Redis for job queue (if you want distributed workers)
   # redis:
   #   image: redis:7-alpine
   #   restart: unless-stopped
+  #   networks:
+  #     - internal
 
 volumes:
   postgres-data:

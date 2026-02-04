@@ -171,6 +171,9 @@ class FileProcessor:
 
         Returns:
             FileClassification with detection and scoring results
+
+        Security:
+            Files exceeding max_file_size are rejected to prevent DoS attacks.
         """
         import time
         start_time = time.time()
@@ -178,14 +181,24 @@ class FileProcessor:
         file_name = Path(file_path).name
         mime_type, _ = mimetypes.guess_type(file_path)
 
+        # Security: Calculate actual content size for DoS protection
+        actual_size = file_size if file_size is not None else len(content)
+
         # Initialize result
         result = FileClassification(
             file_path=file_path,
             file_name=file_name,
-            file_size=file_size or len(content),
+            file_size=actual_size,
             mime_type=mime_type,
             exposure_level=exposure_level,
         )
+
+        # Security: Reject files that exceed max_file_size to prevent DoS
+        if actual_size > self.max_file_size:
+            result.error = f"File size ({actual_size:,} bytes) exceeds limit ({self.max_file_size:,} bytes)"
+            result.processing_time_ms = (time.time() - start_time) * 1000
+            logger.warning(f"Rejected oversized file: {file_path} ({actual_size:,} bytes)")
+            return result
 
         try:
             # Extract text if bytes
