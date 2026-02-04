@@ -160,11 +160,11 @@ class TestResourceExhaustionPrevention:
             },
         )
 
-        # Should be rejected with 400, 413, or 422
-        # 500 may occur if validation is done at database level (not ideal but handled)
+        # Should be rejected with 400, 413, or 422 - NEVER 500 (server crash = DoS)
         # The key is that the request is not silently accepted/stored
-        assert response.status_code in (400, 413, 422, 500), \
-            f"Large request accepted with status {response.status_code}"
+        assert response.status_code in (400, 413, 422), \
+            f"Large request not properly rejected (status {response.status_code}). " \
+            f"500 = server crash (DoS vulnerability), 200/201 = accepted when should reject"
 
     @pytest.mark.asyncio
     async def test_deeply_nested_json_handled(self, test_client):
@@ -183,9 +183,9 @@ class TestResourceExhaustionPrevention:
             },
         )
 
-        # Should be rejected or handled, not crash
-        assert response.status_code in (200, 201, 400, 413, 422, 500), \
-            f"Deep nesting caused unexpected response: {response.status_code}"
+        # Should be rejected or handled - NEVER 500 (server crash = DoS vulnerability)
+        assert response.status_code in (200, 201, 400, 413, 422), \
+            f"Deep nesting caused server error ({response.status_code}) - potential DoS vulnerability"
 
     @pytest.mark.asyncio
     async def test_many_query_parameters_handled(self, test_client):
