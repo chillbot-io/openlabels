@@ -198,6 +198,14 @@ async def login(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Authentication not configured for production. Contact administrator.",
             )
+
+        # SECURITY: Session fixation prevention - invalidate any existing session
+        # before creating a new one to prevent session accumulation
+        existing_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        if existing_session_id:
+            await session_store.delete(existing_session_id)
+            logger.debug("DEV MODE: Invalidated existing session before creating new one")
+
         logger.warning("DEV MODE: Creating fake admin session - DO NOT USE IN PRODUCTION")
         session_id = _generate_session_id()
         session_data = {
@@ -336,6 +344,14 @@ async def auth_callback(
 
     # Create session
     session_store = SessionStore(db)
+
+    # SECURITY: Session fixation prevention - invalidate any existing session
+    # before creating a new one after successful authentication
+    existing_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if existing_session_id:
+        await session_store.delete(existing_session_id)
+        logger.debug("Invalidated existing session during OAuth callback")
+
     session_id = _generate_session_id()
     expires_in = result.get("expires_in", 3600)
 
