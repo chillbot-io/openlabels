@@ -131,13 +131,17 @@ class TestListAuditLogs:
 
     @pytest.mark.asyncio
     async def test_returns_audit_logs(self, test_client, setup_audit_data):
-        """Should return audit log items."""
+        """Should return audit log items with expected fields."""
         response = await test_client.get("/api/audit")
         assert response.status_code == 200
         data = response.json()
 
-        assert data["total"] >= 8  # At least 8 logs from fixture
-        assert len(data["items"]) > 0
+        assert data["total"] >= 8, "Should return at least 8 logs from fixture"
+        assert len(data["items"]) >= 1, "Should return at least one audit item"
+        # Verify item structure
+        first_item = data["items"][0]
+        assert "id" in first_item and first_item["id"], "Item should have non-empty id"
+        assert "action" in first_item, "Item should have action field"
 
     @pytest.mark.asyncio
     async def test_audit_log_structure(self, test_client, setup_audit_data):
