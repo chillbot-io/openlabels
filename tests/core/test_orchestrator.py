@@ -185,17 +185,18 @@ class TestDetectionResult:
     """Tests for DetectionResult structure."""
 
     def test_result_has_required_fields(self):
-        """Test that result has all required fields."""
+        """Test that result has all required fields with correct types."""
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
-        assert hasattr(result, 'spans')
-        assert hasattr(result, 'entity_counts')
-        assert hasattr(result, 'processing_time_ms')
-        assert hasattr(result, 'detectors_used')
-        assert hasattr(result, 'text_length')
+        # Verify fields exist and have correct types
+        assert isinstance(result.spans, list)
+        assert isinstance(result.entity_counts, dict)
+        assert isinstance(result.processing_time_ms, (int, float))
+        assert isinstance(result.detectors_used, list)
+        assert isinstance(result.text_length, int)
 
     def test_entity_counts_populated(self):
         """Test that entity counts are populated."""
@@ -262,20 +263,24 @@ class TestSpanProperties:
     """Tests for span properties."""
 
     def test_spans_have_required_properties(self):
-        """Test that spans have all required properties."""
+        """Test that spans have all required properties with correct types."""
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
         result = orchestrator.detect(text)
 
+        assert len(result.spans) > 0, "Should detect at least one span for SSN"
+
         for span in result.spans:
-            assert hasattr(span, 'start')
-            assert hasattr(span, 'end')
-            assert hasattr(span, 'text')
-            assert hasattr(span, 'entity_type')
-            assert hasattr(span, 'confidence')
-            assert hasattr(span, 'detector')
-            assert hasattr(span, 'tier')
+            # Verify fields exist with correct types
+            assert isinstance(span.start, int), f"start should be int, got {type(span.start)}"
+            assert isinstance(span.end, int), f"end should be int, got {type(span.end)}"
+            assert isinstance(span.text, str), f"text should be str, got {type(span.text)}"
+            assert isinstance(span.entity_type, str), f"entity_type should be str, got {type(span.entity_type)}"
+            assert isinstance(span.confidence, (int, float)), f"confidence should be numeric"
+            assert isinstance(span.detector, str), f"detector should be str"
+            # tier can be an enum, so just check it exists
+            assert span.tier is not None, "tier should not be None"
 
     def test_span_positions_are_valid(self):
         """Test that span positions are valid."""
