@@ -6,6 +6,7 @@ modify, or enumerate resources belonging to another tenant.
 """
 
 import asyncio
+import contextlib
 import pytest
 from uuid import uuid4
 
@@ -162,8 +163,19 @@ async def two_tenant_setup(test_db):
     }
 
 
-def create_client_for_user(test_db, user, tenant):
-    """Create a test client authenticated as a specific user."""
+@contextlib.asynccontextmanager
+async def create_client_for_user(test_db, user, tenant):
+    """
+    Create a test client authenticated as a specific user.
+
+    This is an async context manager that properly handles cleanup of:
+    - App dependency overrides
+    - Rate limiter states
+
+    Usage:
+        async with create_client_for_user(db, user, tenant) as client:
+            response = await client.get("/api/...")
+    """
     from openlabels.server.app import limiter as app_limiter
     from openlabels.server.routes.remediation import limiter as remediation_limiter
     from openlabels.server.routes.scans import limiter as scans_limiter
@@ -190,17 +202,29 @@ def create_client_for_user(test_db, user, tenant):
     async def override_require_admin():
         return _create_current_user()
 
+    # Save original states for cleanup
+    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
+    original_limiter_states = [l.enabled for l in limiters]
+
+    # Set up overrides
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
 
     # Disable rate limiting for tests
-    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
     for limiter in limiters:
         limiter.enabled = False
 
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client
+    finally:
+        # Always clean up, even if test fails
+        app.dependency_overrides.clear()
+        # Restore rate limiter states
+        for limiter, original_state in zip(limiters, original_limiter_states):
+            limiter.enabled = original_state
 
 
 class TestScanTenantIsolation:
@@ -223,7 +247,6 @@ class TestScanTenantIsolation:
             assert response.status_code == 404, \
                 f"Expected 404 for cross-tenant access, got {response.status_code}"
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_cancel_other_tenant_scans(self, two_tenant_setup):
@@ -251,7 +274,6 @@ class TestScanTenantIsolation:
         assert scan_after.status == original_status, \
             f"TENANT ISOLATION BREACH: Scan status changed from '{original_status}' to '{scan_after.status}'!"
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_list_scans_only_shows_own_tenant(self, two_tenant_setup):
@@ -273,7 +295,6 @@ class TestScanTenantIsolation:
                 assert scan.get("id") != scan_a_id, \
                     "Tenant B can see Tenant A's scan - isolation failure!"
 
-        app.dependency_overrides.clear()
 
 
 class TestTargetTenantIsolation:
@@ -291,7 +312,6 @@ class TestTargetTenantIsolation:
             response = await client.get(f"/api/targets/{target_a.id}")
             assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_modify_other_tenant_targets(self, two_tenant_setup):
@@ -320,7 +340,6 @@ class TestTargetTenantIsolation:
         assert target_after.name == original_name, \
             f"TENANT ISOLATION BREACH: Target name changed from '{original_name}' to '{target_after.name}'!"
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_targets(self, two_tenant_setup):
@@ -344,7 +363,6 @@ class TestTargetTenantIsolation:
         assert target_after is not None, \
             "TENANT ISOLATION BREACH: Target deleted by user from different tenant!"
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_scan_using_other_tenant_target(self, two_tenant_setup):
@@ -378,7 +396,6 @@ class TestTargetTenantIsolation:
         assert count_after == count_before, \
             f"TENANT ISOLATION BREACH: Scan created using other tenant's target! Before: {count_before}, After: {count_after}"
 
-        app.dependency_overrides.clear()
 
 
 class TestResultTenantIsolation:
@@ -396,7 +413,6 @@ class TestResultTenantIsolation:
             response = await client.get(f"/api/results/{result_a.id}")
             assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_apply_label_to_other_tenant_result(self, two_tenant_setup):
@@ -413,7 +429,6 @@ class TestResultTenantIsolation:
             )
             assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
 
 class TestRemediationTenantIsolation:
@@ -435,7 +450,6 @@ class TestRemediationTenantIsolation:
             # Should fail - 404 or 400/422
             assert response.status_code in (400, 404, 422)
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_lockdown_other_tenant_files(self, two_tenant_setup):
@@ -452,7 +466,6 @@ class TestRemediationTenantIsolation:
             )
             assert response.status_code in (400, 404, 422)
 
-        app.dependency_overrides.clear()
 
 
 class TestScheduleTenantIsolation:
@@ -470,7 +483,6 @@ class TestScheduleTenantIsolation:
             response = await client.get(f"/api/schedules/{schedule_a.id}")
             assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cannot_trigger_other_tenant_schedules(self, two_tenant_setup):
@@ -500,7 +512,6 @@ class TestScheduleTenantIsolation:
         assert count_after == count_before, \
             f"TENANT ISOLATION BREACH: Schedule triggered by user from different tenant! Created {count_after - count_before} scans"
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_list_schedules_only_shows_own_tenant(self, two_tenant_setup):
@@ -521,7 +532,6 @@ class TestScheduleTenantIsolation:
                 assert schedule.get("id") != schedule_a_id, \
                     "Tenant B can see Tenant A's schedule - isolation failure!"
 
-        app.dependency_overrides.clear()
 
 
 class TestAuditLogTenantIsolation:
@@ -539,7 +549,6 @@ class TestAuditLogTenantIsolation:
             response = await client.get(f"/api/audit/{audit_a.id}")
             assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_list_audit_logs_only_shows_own_tenant(self, two_tenant_setup):
@@ -560,7 +569,6 @@ class TestAuditLogTenantIsolation:
                 assert log.get("id") != audit_a_id, \
                     "Tenant B can see Tenant A's audit log - isolation failure!"
 
-        app.dependency_overrides.clear()
 
 
 class TestIDORPrevention:
@@ -588,7 +596,6 @@ class TestIDORPrevention:
             for response in responses:
                 assert response.status_code == 404
 
-        app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_cross_tenant_returns_same_as_nonexistent(self, two_tenant_setup):
@@ -609,4 +616,3 @@ class TestIDORPrevention:
             # Both should return 404 - same response to prevent enumeration
             assert cross_tenant_response.status_code == nonexistent_response.status_code == 404
 
-        app.dependency_overrides.clear()
