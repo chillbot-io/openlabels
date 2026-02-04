@@ -22,29 +22,37 @@ from openlabels.server.models import (
 @pytest.fixture
 async def two_tenant_setup(test_db):
     """Set up two separate tenants with their own users and data."""
-    # Tenant A
+    import random
+    import string
+
+    # Use unique suffix to avoid any conflicts
+    suffix = ''.join(random.choices(string.ascii_lowercase, k=6))
+
+    # Tenant A - create and flush immediately
     tenant_a = Tenant(
         id=uuid4(),
-        name="Tenant A",
-        azure_tenant_id="tenant-a-azure",
+        name=f"Tenant A {suffix}",
+        azure_tenant_id=f"tenant-a-azure-{suffix}",
     )
     test_db.add(tenant_a)
     await test_db.flush()
 
+    # User A - flush before creating objects that reference it
     user_a = User(
         id=uuid4(),
         tenant_id=tenant_a.id,
-        email="admin@tenant-a.com",
+        email=f"admin-{suffix}@tenant-a.com",
         name="Tenant A Admin",
         role="admin",
     )
     test_db.add(user_a)
+    await test_db.flush()
 
     # Create target for tenant A
     target_a = ScanTarget(
         id=uuid4(),
         tenant_id=tenant_a.id,
-        name="Tenant A Target",
+        name=f"Tenant A Target {suffix}",
         adapter="filesystem",
         config={"path": "/tenant-a-data"},
         enabled=True,
@@ -76,18 +84,20 @@ async def two_tenant_setup(test_db):
         total_entities=5,
     )
     test_db.add(result_a)
+    await test_db.flush()
 
     # Create schedule for tenant A
     schedule_a = ScanSchedule(
         id=uuid4(),
         tenant_id=tenant_a.id,
         target_id=target_a.id,
-        name="Tenant A Schedule",
+        name=f"Tenant A Schedule {suffix}",
         cron="0 0 * * *",
         enabled=True,
         created_by=user_a.id,
     )
     test_db.add(schedule_a)
+    await test_db.flush()
 
     # Create audit log for tenant A
     audit_a = AuditLog(
@@ -100,12 +110,13 @@ async def two_tenant_setup(test_db):
         details={"scan_name": "Test Scan A"},
     )
     test_db.add(audit_a)
+    await test_db.flush()
 
-    # Tenant B
+    # Tenant B - create and flush
     tenant_b = Tenant(
         id=uuid4(),
-        name="Tenant B",
-        azure_tenant_id="tenant-b-azure",
+        name=f"Tenant B {suffix}",
+        azure_tenant_id=f"tenant-b-azure-{suffix}",
     )
     test_db.add(tenant_b)
     await test_db.flush()
@@ -113,13 +124,26 @@ async def two_tenant_setup(test_db):
     user_b = User(
         id=uuid4(),
         tenant_id=tenant_b.id,
-        email="admin@tenant-b.com",
+        email=f"admin-{suffix}@tenant-b.com",
         name="Tenant B Admin",
         role="admin",
     )
     test_db.add(user_b)
+    await test_db.flush()
 
+    # Commit all changes
     await test_db.commit()
+
+    # Refresh to ensure all relationships are loaded
+    await test_db.refresh(tenant_a)
+    await test_db.refresh(user_a)
+    await test_db.refresh(target_a)
+    await test_db.refresh(scan_a)
+    await test_db.refresh(result_a)
+    await test_db.refresh(schedule_a)
+    await test_db.refresh(audit_a)
+    await test_db.refresh(tenant_b)
+    await test_db.refresh(user_b)
 
     return {
         "tenant_a": tenant_a,

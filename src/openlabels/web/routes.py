@@ -407,6 +407,11 @@ async def result_detail_page(
             file_path = result_obj.file_path or ""
             file_name = file_path.split("/")[-1] if "/" in file_path else file_path.split("\\")[-1]
 
+            # Extract entity list from findings if available
+            entities = []
+            if result_obj.findings and isinstance(result_obj.findings, dict):
+                entities = result_obj.findings.get("entities", [])
+
             result = {
                 "id": str(result_obj.id),
                 "file_path": file_path,
@@ -414,12 +419,12 @@ async def result_detail_page(
                 "risk_tier": result_obj.risk_tier,
                 "risk_score": result_obj.risk_score or 0,
                 "entity_counts": result_obj.entity_counts or {},
-                "entities": result_obj.entities or [],
+                "entities": entities,
                 "label_applied": result_obj.label_applied,
-                "label_name": result_obj.label_name,
+                "label_name": result_obj.current_label_name,
                 "scanned_at": result_obj.scanned_at,
                 "file_size": result_obj.file_size,
-                "file_hash": result_obj.file_hash,
+                "file_hash": result_obj.content_hash,
             }
 
     if not result:
@@ -1036,7 +1041,7 @@ async def results_list_partial(
                 "risk_score": r.risk_score or 0,
                 "entity_counts": r.entity_counts or {},
                 "label_applied": r.label_applied,
-                "label_name": r.label_name,
+                "label_name": r.current_label_name,
                 "scanned_at": r.scanned_at,
             })
 

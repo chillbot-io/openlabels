@@ -29,15 +29,47 @@ async def pending_auth_store(test_db):
 
 
 @pytest.fixture
-async def test_user_id():
-    """Generate a unique test user ID."""
-    return str(uuid4())
+async def test_tenant_and_user(test_db):
+    """Create actual tenant and user records for session tests.
+
+    The Session model has foreign keys to tenants and users tables,
+    so we need real records rather than random UUIDs.
+    """
+    from openlabels.server.models import Tenant, User
+
+    # Create a test tenant
+    tenant = Tenant(
+        id=uuid4(),
+        name=f"Session Test Tenant {uuid4().hex[:6]}",
+        azure_tenant_id=f"session-test-{uuid4().hex[:8]}",
+    )
+    test_db.add(tenant)
+    await test_db.flush()
+
+    # Create a test user
+    user = User(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        email=f"session-test-{uuid4().hex[:6]}@localhost",
+        name="Session Test User",
+        role="admin",
+    )
+    test_db.add(user)
+    await test_db.commit()
+
+    return {"tenant_id": str(tenant.id), "user_id": str(user.id)}
 
 
 @pytest.fixture
-async def test_tenant_id():
-    """Generate a unique test tenant ID."""
-    return str(uuid4())
+async def test_user_id(test_tenant_and_user):
+    """Get the test user ID."""
+    return test_tenant_and_user["user_id"]
+
+
+@pytest.fixture
+async def test_tenant_id(test_tenant_and_user):
+    """Get the test tenant ID."""
+    return test_tenant_and_user["tenant_id"]
 
 
 @pytest.mark.integration

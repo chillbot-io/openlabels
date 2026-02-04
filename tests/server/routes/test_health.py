@@ -515,10 +515,16 @@ class TestHealthEndpointAuthentication:
 
     @pytest.mark.asyncio
     async def test_health_rejects_unauthenticated_requests(self, test_db):
-        """Health status endpoint should reject unauthenticated requests."""
+        """Health status endpoint should reject unauthenticated requests in production mode."""
         from httpx import AsyncClient, ASGITransport
+        from unittest.mock import patch, MagicMock
         from openlabels.server.app import app
         from openlabels.server.db import get_session
+
+        # Mock settings to simulate production auth mode
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
 
         # Override only database, NOT authentication
         # This simulates an unauthenticated request
@@ -528,13 +534,14 @@ class TestHealthEndpointAuthentication:
         app.dependency_overrides[get_session] = override_get_session
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get("/api/health/status")
+            with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get("/api/health/status")
 
-            # Without authentication, should get 401 Unauthorized
-            assert response.status_code == 401, \
-                f"Expected 401 for unauthenticated request, got {response.status_code}"
+                # Without authentication, should get 401 Unauthorized
+                assert response.status_code == 401, \
+                    f"Expected 401 for unauthenticated request, got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 

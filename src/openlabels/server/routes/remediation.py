@@ -80,6 +80,7 @@ def validate_file_path(file_path: str) -> str:
     2. Block access to system directories
     3. Block access to sensitive files
     4. Ensure path is absolute
+    5. Strip null bytes to prevent null byte injection
 
     Args:
         file_path: The file path to validate
@@ -95,6 +96,12 @@ def validate_file_path(file_path: str) -> str:
             status_code=400,
             detail="File path is required"
         )
+
+    # Security: Strip null bytes to prevent null byte injection attacks
+    # Null bytes can be used to truncate paths: "/data/file.pdf\x00.txt" -> "/data/file.pdf"
+    if "\x00" in file_path:
+        logger.warning(f"Null byte injection attempt detected: {repr(file_path)}")
+        file_path = file_path.replace("\x00", "")
 
     # Normalize the path to resolve .. and . components
     # This converts paths like /data/../etc/passwd to /etc/passwd
