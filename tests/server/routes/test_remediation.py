@@ -16,7 +16,20 @@ Tests focus on:
 import pytest
 from uuid import uuid4
 from datetime import datetime, timezone
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limiting():
+    """Disable rate limiting for all tests in this module.
+
+    The rate limiter requires a proper Starlette Request object which
+    isn't available when testing with httpx AsyncClient + ASGITransport.
+    """
+    with patch('openlabels.server.routes.remediation.limiter') as mock_limiter:
+        # Make the limit decorator a pass-through
+        mock_limiter.limit.return_value = lambda f: f
+        yield mock_limiter
 
 
 @pytest.fixture
