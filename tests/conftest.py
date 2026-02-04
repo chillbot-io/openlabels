@@ -478,8 +478,23 @@ async def test_client(test_db):
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
 
+    # Disable rate limiting for tests - collect all limiters from various modules
+    from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.remediation import limiter as remediation_limiter
+    from openlabels.server.routes.scans import limiter as scans_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
+
+    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
+    original_states = [l.enabled for l in limiters]
+    for l in limiters:
+        l.enabled = False
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+    # Re-enable rate limiting
+    for l, state in zip(limiters, original_states):
+        l.enabled = state
 
     app.dependency_overrides.clear()
