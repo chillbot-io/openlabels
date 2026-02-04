@@ -39,12 +39,31 @@ except ImportError:
     _ws_streaming_enabled = False
     logger.debug("WebSocket streaming not available")
 
-# Global processor instance (reuse for efficiency)
+# Global processor instance (reuse for efficiency within job lifecycle)
+# IMPORTANT: Call cleanup_processor() during worker shutdown to release memory
 _processor: Optional[FileProcessor] = None
+
+# Registry of shutdown callbacks for graceful cleanup
+_shutdown_callbacks: list = []
+
+
+def register_shutdown_callback(callback) -> None:
+    """
+    Register a callback to be called during worker shutdown.
+
+    Args:
+        callback: Callable that takes no arguments
+    """
+    _shutdown_callbacks.append(callback)
 
 
 def get_processor(enable_ml: bool = False) -> FileProcessor:
-    """Get or create the file processor."""
+    """
+    Get or create the file processor.
+
+    The processor is cached globally for efficiency during job execution.
+    Call cleanup_processor() during worker shutdown to release resources.
+    """
     global _processor
     if _processor is None:
         settings = get_settings()
@@ -54,6 +73,45 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
             confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
         )
     return _processor
+
+
+def cleanup_processor() -> None:
+    """
+    Release the global processor and free ML model memory.
+
+    This should be called during worker graceful shutdown to release
+    the 200-500MB of memory held by ML models. The processor will be
+    recreated on next use if needed.
+    """
+    global _processor
+    if _processor is not None:
+        try:
+            _processor.cleanup()
+            logger.info("Global file processor cleaned up")
+        except Exception as e:
+            logger.warning(f"Error during processor cleanup: {e}")
+        finally:
+            _processor = None
+
+
+def run_shutdown_callbacks() -> None:
+    """
+    Run all registered shutdown callbacks.
+
+    Called by the worker during graceful shutdown.
+    """
+    # Always cleanup the processor
+    cleanup_processor()
+
+    # Run any additional registered callbacks
+    for callback in _shutdown_callbacks:
+        try:
+            callback()
+        except Exception as e:
+            logger.warning(f"Error in shutdown callback: {e}")
+
+    _shutdown_callbacks.clear()
+    logger.info("All shutdown callbacks completed")
 
 
 async def _check_cancellation(session: AsyncSession, job_id: UUID) -> bool:
