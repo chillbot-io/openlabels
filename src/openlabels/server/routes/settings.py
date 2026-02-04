@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Form, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from openlabels.auth.dependencies import get_current_user
+from openlabels.auth.dependencies import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ async def update_azure_settings(
     tenant_id: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """
     Update Azure AD configuration.
@@ -66,7 +66,7 @@ async def update_scan_settings(
     max_file_size_mb: int = Form(100),
     concurrent_files: int = Form(10),
     enable_ocr: Optional[str] = Form(None),  # Checkbox sends "on" or nothing
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """
     Update scan configuration.
@@ -96,7 +96,7 @@ async def update_scan_settings(
 @router.post("/entities", response_class=HTMLResponse)
 async def update_entity_settings(
     entities: list[str] = Form(default=[]),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """
     Update entity detection configuration.
@@ -119,7 +119,7 @@ async def update_entity_settings(
 
 @router.post("/reset", response_class=HTMLResponse)
 async def reset_settings(
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """
     Reset all settings to defaults.

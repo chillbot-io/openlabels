@@ -430,6 +430,10 @@ class ScanOrchestrator:
     3. Agent pool (CPU bound classification)
     4. Policy evaluation (lightweight)
     5. Result storage (async I/O)
+
+    Thread Safety:
+        Uses asyncio.Lock to protect shared state (_file_chunks, _file_results)
+        from concurrent access by multiple coroutines.
     """
 
     def __init__(
@@ -448,6 +452,9 @@ class ScanOrchestrator:
         # Track chunks per file for aggregation
         self._file_chunks: dict[str, int] = {}  # file_path -> expected chunk count
         self._file_results: dict[str, list[AgentResult]] = defaultdict(list)
+
+        # Lock for protecting shared state during concurrent access
+        self._state_lock: asyncio.Lock = asyncio.Lock()
 
     async def scan_directory(
         self,
@@ -552,8 +559,9 @@ class ScanOrchestrator:
                 # Chunk the text
                 chunks = chunker.chunk(text)
 
-                # Track expected chunk count for aggregation
-                self._file_chunks[file_path] = len(chunks)
+                # Track expected chunk count for aggregation (thread-safe)
+                async with self._state_lock:
+                    self._file_chunks[file_path] = len(chunks)
 
                 # Submit each chunk as a work item
                 for i, chunk in enumerate(chunks):
@@ -581,24 +589,26 @@ class ScanOrchestrator:
 
         async for batch in pool.results_batched():
             for result in batch:
-                # Collect chunk result
-                self._file_results[result.file_path].append(result)
+                # Thread-safe access to shared state
+                async with self._state_lock:
+                    # Collect chunk result
+                    self._file_results[result.file_path].append(result)
 
-                # Check if all chunks for this file are complete
-                expected_chunks = self._file_chunks.get(result.file_path, 1)
-                collected_chunks = len(self._file_results[result.file_path])
+                    # Check if all chunks for this file are complete
+                    expected_chunks = self._file_chunks.get(result.file_path, 1)
+                    collected_chunks = len(self._file_results[result.file_path])
 
-                if collected_chunks >= expected_chunks:
-                    # Aggregate all chunks into single file result
-                    file_result = self._aggregate_file_results(result.file_path)
-                    completed_files.append(file_result)
+                    if collected_chunks >= expected_chunks:
+                        # Aggregate all chunks into single file result
+                        file_result = self._aggregate_file_results(result.file_path)
+                        completed_files.append(file_result)
 
-                    # Clean up tracking
-                    del self._file_results[result.file_path]
-                    if result.file_path in self._file_chunks:
-                        del self._file_chunks[result.file_path]
+                        # Clean up tracking
+                        del self._file_results[result.file_path]
+                        if result.file_path in self._file_chunks:
+                            del self._file_chunks[result.file_path]
 
-                # Call user callback for each chunk result
+                # Call user callback for each chunk result (outside lock)
                 if on_result:
                     on_result(result)
 
