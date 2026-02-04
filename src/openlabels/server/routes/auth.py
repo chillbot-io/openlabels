@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 
 from openlabels.server.config import get_settings
-from openlabels.server.app import get_client_ip
+from openlabels.server.utils import get_client_ip
 from openlabels.server.db import get_session
 from openlabels.server.session import SessionStore, PendingAuthStore
 from openlabels.server.security import log_security_event
