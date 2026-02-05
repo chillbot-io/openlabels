@@ -320,78 +320,140 @@ async def get_access_heatmap(
     return AccessHeatmapResponse(data=heatmap)
 
 
-@router.get("/heatmap", response_model=HeatmapResponse)
-async def get_heatmap(
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
+# Default and maximum limits for heatmap queries to prevent OOM
+HEATMAP_DEFAULT_LIMIT = 10000
+HEATMAP_MAX_LIMIT = 50000
+HEATMAP_CHUNK_SIZE = 1000
+
+
+async def _stream_heatmap_results(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: Optional[UUID],
+    limit: int,
 ):
-    """Get heatmap tree data for visualization."""
-    query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+    """
+    Stream heatmap results in chunks to avoid loading all records into memory.
+
+    Uses server-side cursors and yields results in batches for memory efficiency.
+    Only fetches the columns needed for heatmap building.
+    """
+    # Select only required columns to reduce memory footprint
+    query = select(
+        ScanResult.file_path,
+        ScanResult.risk_score,
+        ScanResult.entity_counts,
+    ).where(ScanResult.tenant_id == tenant_id)
+
     if job_id:
         query = query.where(ScanResult.job_id == job_id)
 
-    result = await session.execute(query)
-    results = result.scalars().all()
+    # Order by file_path for consistent results and add limit
+    query = query.order_by(ScanResult.file_path).limit(limit)
 
-    # Build tree structure from file paths
-    tree: dict = {}
-    for r in results:
-        parts = r.file_path.replace("\\", "/").split("/")
-        # Filter out empty parts (from leading slashes like /path/to/file)
-        parts = [p for p in parts if p]
-        if not parts:
-            continue
-        current = tree
-        for i, part in enumerate(parts[:-1]):
-            if part not in current:
-                current[part] = {"_children": {}, "_stats": {"risk_score": 0, "entity_counts": {}}}
-            current = current[part]["_children"]
+    # Use stream_results for memory-efficient iteration
+    result = await session.stream(query)
 
-        # Add file
-        filename = parts[-1]
-        current[filename] = {
-            "_is_file": True,
-            "_stats": {
-                "risk_score": r.risk_score,
-                "entity_counts": r.entity_counts or {},
-            },
-        }
+    async for partition in result.partitions(HEATMAP_CHUNK_SIZE):
+        for row in partition:
+            yield row
 
-    def build_node(name: str, data: dict, path: str) -> HeatmapNode:
-        """Recursively build heatmap nodes."""
-        if data.get("_is_file"):
-            return HeatmapNode(
-                name=name,
-                path=path,
-                type="file",
-                risk_score=data["_stats"]["risk_score"],
-                entity_counts=data["_stats"]["entity_counts"],
-            )
 
-        children = []
-        total_score = 0
-        total_entities: dict[str, int] = {}
+def _add_file_to_tree(tree: dict, file_path: str, risk_score: int, entity_counts: dict):
+    """Add a single file to the tree structure."""
+    parts = file_path.replace("\\", "/").split("/")
+    # Filter out empty parts (from leading slashes like /path/to/file)
+    parts = [p for p in parts if p]
+    if not parts:
+        return
 
-        for child_name, child_data in data.get("_children", {}).items():
-            child_path = f"{path}/{child_name}" if path else child_name
-            child_node = build_node(child_name, child_data, child_path)
-            children.append(child_node)
-            total_score += child_node.risk_score
-            for entity_type, count in child_node.entity_counts.items():
-                total_entities[entity_type] = total_entities.get(entity_type, 0) + count
+    current = tree
+    for part in parts[:-1]:
+        if part not in current:
+            current[part] = {"_children": {}, "_stats": {"risk_score": 0, "entity_counts": {}}}
+        current = current[part]["_children"]
 
+    # Add file
+    filename = parts[-1]
+    current[filename] = {
+        "_is_file": True,
+        "_stats": {
+            "risk_score": risk_score,
+            "entity_counts": entity_counts or {},
+        },
+    }
+
+
+def _build_node(name: str, data: dict, path: str) -> HeatmapNode:
+    """Recursively build heatmap nodes."""
+    if data.get("_is_file"):
         return HeatmapNode(
             name=name,
             path=path,
-            type="folder",
-            risk_score=total_score,
-            entity_counts=total_entities,
-            children=children if children else None,
+            type="file",
+            risk_score=data["_stats"]["risk_score"],
+            entity_counts=data["_stats"]["entity_counts"],
         )
 
+    children = []
+    total_score = 0
+    total_entities: dict[str, int] = {}
+
+    for child_name, child_data in data.get("_children", {}).items():
+        child_path = f"{path}/{child_name}" if path else child_name
+        child_node = _build_node(child_name, child_data, child_path)
+        children.append(child_node)
+        total_score += child_node.risk_score
+        for entity_type, count in child_node.entity_counts.items():
+            total_entities[entity_type] = total_entities.get(entity_type, 0) + count
+
+    return HeatmapNode(
+        name=name,
+        path=path,
+        type="folder",
+        risk_score=total_score,
+        entity_counts=total_entities,
+        children=children if children else None,
+    )
+
+
+@router.get("/heatmap", response_model=HeatmapResponse)
+async def get_heatmap(
+    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    limit: int = Query(
+        HEATMAP_DEFAULT_LIMIT,
+        ge=1,
+        le=HEATMAP_MAX_LIMIT,
+        description="Maximum number of files to include (for memory safety)",
+    ),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get heatmap tree data for visualization.
+
+    Uses streaming to process results in chunks for memory efficiency.
+    Limited to prevent OOM with very large result sets.
+    Results are ordered by file path for consistent pagination.
+    """
+    # Enforce maximum limit
+    effective_limit = min(limit, HEATMAP_MAX_LIMIT)
+
+    # Build tree structure from file paths using streaming
+    tree: dict = {}
+    file_count = 0
+
+    async for row in _stream_heatmap_results(
+        session, user.tenant_id, job_id, effective_limit
+    ):
+        _add_file_to_tree(tree, row.file_path, row.risk_score, row.entity_counts)
+        file_count += 1
+
+    logger.debug(f"Heatmap built from {file_count} files (limit: {effective_limit})")
+
+    # Build response tree
     roots = []
     for root_name, root_data in tree.items():
-        roots.append(build_node(root_name, root_data, root_name))
+        roots.append(_build_node(root_name, root_data, root_name))
 
     return HeatmapResponse(roots=roots)

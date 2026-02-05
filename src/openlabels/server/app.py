@@ -7,6 +7,7 @@ Security features:
 - Request size limits
 - Security headers (HSTS, CSP, X-Frame-Options, etc.)
 - CSRF protection via double-submit cookie pattern
+- Sentry error tracking (optional, when SENTRY_DSN is configured)
 """
 
 from contextlib import asynccontextmanager
@@ -16,37 +17,121 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse, RedirectResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded  # noqa: F401 - used in register_exception_handlers
 from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels import __version__
-from openlabels.server.config import get_settings
+from openlabels.server.config import get_settings, SentrySettings
 from openlabels.server.utils import get_client_ip  # noqa: F401 - re-exported for backwards compatibility
 from openlabels.server.db import init_db, close_db
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
-from openlabels.server.routes import (
-    auth,
-    audit,
-    jobs,
-    scans,
-    results,
-    targets,
-    schedules,
-    labels,
-    dashboard,
-    ws,
-    users,
-    remediation,
-    monitoring,
-    health,
-    settings,
+from openlabels.server.errors import register_exception_handlers, create_error_response
+from openlabels.server.metrics import (
+    PrometheusMiddleware,
+    metrics_router,
+    setup_metrics,
 )
+from openlabels.server.routes import v1
 from openlabels.web import router as web_router
 
 logger = logging.getLogger(__name__)
+
+
+def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> bool:
+    """
+    Initialize Sentry SDK for error tracking and performance monitoring.
+
+    Returns True if Sentry was initialized, False otherwise.
+    """
+    if not sentry_settings.is_enabled:
+        logger.info("Sentry not configured (SENTRY_DSN not set) - skipping initialization")
+        return False
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        # Use configured environment or fall back to server environment
+        environment = sentry_settings.environment or server_environment
+
+        # Use configured release or fall back to app version
+        release = sentry_settings.release or f"openlabels@{__version__}"
+
+        sentry_sdk.init(
+            dsn=sentry_settings.dsn,
+            environment=environment,
+            release=release,
+            traces_sample_rate=sentry_settings.traces_sample_rate,
+            profiles_sample_rate=sentry_settings.profiles_sample_rate,
+            send_default_pii=sentry_settings.send_default_pii,
+            debug=sentry_settings.debug,
+            integrations=[
+                # FastAPI/Starlette integration for automatic request/response tracking
+                FastApiIntegration(transaction_style="endpoint"),
+                StarletteIntegration(transaction_style="endpoint"),
+                # SQLAlchemy integration for database query tracking
+                SqlalchemyIntegration(),
+                # Logging integration - capture errors and warnings as breadcrumbs
+                LoggingIntegration(
+                    level=logging.INFO,  # Capture INFO+ as breadcrumbs
+                    event_level=logging.ERROR,  # Create events for ERROR+
+                ),
+            ],
+            # Filter out health check endpoints from performance monitoring
+            traces_sampler=_traces_sampler,
+            # Add tags for better filtering in Sentry dashboard
+            _experiments={
+                "continuous_profiling_auto_start": True,
+            },
+        )
+
+        logger.info(
+            f"Sentry initialized successfully",
+            extra={
+                "sentry_environment": environment,
+                "sentry_release": release,
+                "traces_sample_rate": sentry_settings.traces_sample_rate,
+            }
+        )
+        return True
+
+    except ImportError as e:
+        logger.warning(f"Sentry SDK not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to initialize Sentry: {e}")
+        return False
+
+
+def _traces_sampler(sampling_context: dict) -> float:
+    """
+    Custom traces sampler to filter out noisy endpoints.
+
+    Returns a sample rate between 0.0 and 1.0.
+    """
+    settings = get_settings()
+    default_rate = settings.sentry.traces_sample_rate
+
+    # Get transaction name from context
+    transaction_context = sampling_context.get("transaction_context", {})
+    name = transaction_context.get("name", "")
+
+    # Don't trace health check and metrics endpoints
+    if name in ("/health", "/api/health", "/api/v1/health", "/api/v1/health/live", "/api/v1/health/ready", "/metrics"):
+        return 0.0
+
+    # Lower sample rate for high-frequency endpoints
+    if name.startswith("/api/v1/ws") or name.startswith("/api/ws"):
+        return default_rate * 0.1  # 10% of normal rate for WebSocket
+
+    return default_rate
+
 
 # Initialize rate limiter with proxy-aware IP detection
 limiter = Limiter(key_func=get_client_ip)
@@ -65,8 +150,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log_file=settings.logging.file,
     )
 
-    await init_db(settings.database.url)
-    logger.info(f"OpenLabels v{__version__} starting up")
+    # Initialize Sentry for error tracking (optional - only if SENTRY_DSN is configured)
+    sentry_enabled = init_sentry(settings.sentry, settings.server.environment)
+
+    # Initialize Prometheus metrics
+    setup_metrics()
+
+    await init_db(
+        settings.database.url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+    )
+    logger.info(
+        f"OpenLabels v{__version__} starting up",
+        extra={"sentry_enabled": sentry_enabled}
+    )
     yield
     # Shutdown
     await close_db()
@@ -101,12 +199,16 @@ def configure_middleware():
     )
 
     # Rate limiting middleware
+    # Note: RateLimitExceeded is handled by register_exception_handlers for standardized format
     if settings.rate_limit.enabled:
         app.add_middleware(SlowAPIMiddleware)
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CSRF protection middleware
     app.add_middleware(CSRFMiddleware)
+
+    # Prometheus metrics middleware - tracks request count, latency, and active connections
+    # This should be added after other middleware to capture accurate timing
+    app.add_middleware(PrometheusMiddleware)
 
 
 # Configure middleware
@@ -138,12 +240,11 @@ async def limit_request_size(request: Request, call_next):
     # Check content-length header
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > max_size:
-        return JSONResponse(
+        return create_error_response(
             status_code=413,
-            content={
-                "error": "request_too_large",
-                "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
-            },
+            code="request_too_large",
+            message=f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
+            details={"max_size_mb": settings.security.max_request_size_mb},
         )
 
     return await call_next(request)
@@ -217,25 +318,10 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-# Global exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle unexpected exceptions."""
-    request_id = get_request_id()
-    logger.exception(
-        f"Unhandled exception: {exc}",
-        extra={
-            "path": request.url.path,
-            "method": request.method,
-        }
-    )
-    error_response = {
-        "error": "internal_server_error",
-        "message": str(exc) if get_settings().server.debug else "An unexpected error occurred",
-    }
-    if request_id:
-        error_response["request_id"] = request_id
-    return JSONResponse(status_code=500, content=error_response)
+# Register standardized exception handlers
+# This replaces the default FastAPI exception handling with our standardized format
+# Format: {"error": {"code": "...", "message": "...", "details": {...}}, "request_id": "..."}
+register_exception_handlers(app)
 
 
 # Health check
@@ -248,30 +334,122 @@ async def health_check():
 # API info
 @app.get("/api")
 async def api_info():
-    """API information."""
+    """API information and available versions."""
     return {
         "name": "OpenLabels API",
         "version": __version__,
         "docs": "/api/docs",
+        "current_version": "v1",
+        "available_versions": ["v1"],
+        "v1_base_url": "/api/v1",
     }
 
 
-# Include routers
-app.include_router(auth.router, tags=["Authentication"])  # /auth/* endpoints
-app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
-app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
-app.include_router(scans.router, prefix="/api/scans", tags=["Scans"])
-app.include_router(results.router, prefix="/api/results", tags=["Results"])
-app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
-app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"])
-app.include_router(labels.router, prefix="/api/labels", tags=["Labels"])
-app.include_router(users.router, prefix="/api/users", tags=["Users"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(remediation.router, prefix="/api/remediation", tags=["Remediation"])
-app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
-app.include_router(health.router, prefix="/api/health", tags=["Health"])
-app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
-app.include_router(ws.router, tags=["WebSocket"])
+@app.get("/api/v1")
+async def api_v1_info():
+    """API v1 information."""
+    return {
+        "name": "OpenLabels API",
+        "version": "v1",
+        "app_version": __version__,
+        "docs": "/api/docs",
+    }
+
+
+# Include versioned API router
+# All API endpoints are now under /api/v1/*
+app.include_router(v1.router, prefix="/api/v1")
+
+# Prometheus metrics endpoint (/metrics)
+# Note: This endpoint is excluded from authentication to allow Prometheus scraping
+app.include_router(metrics_router, tags=["Metrics"])
 
 # Web UI
 app.include_router(web_router, prefix="/ui", tags=["Web UI"])
+
+
+# =============================================================================
+# Backward Compatibility - Redirect old /api/* paths to /api/v1/*
+# =============================================================================
+# These redirects ensure existing clients continue to work while they migrate
+# to the new versioned endpoints. The redirects use HTTP 307 (Temporary Redirect)
+# to preserve the request method (GET, POST, etc.) and body.
+
+# List of API path prefixes that need backward compatibility redirects
+_LEGACY_API_PREFIXES = [
+    "audit", "jobs", "scans", "results", "targets", "schedules",
+    "labels", "users", "dashboard", "remediation", "monitoring",
+    "health", "settings",
+]
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def legacy_api_redirect(request: Request, path: str):
+    """
+    Redirect legacy /api/* requests to /api/v1/*.
+
+    This ensures backward compatibility for clients using the old API paths.
+    Uses HTTP 307 to preserve the request method and body.
+    """
+    # Check if this is a legacy API path that should be redirected
+    path_prefix = path.split("/")[0] if path else ""
+
+    if path_prefix in _LEGACY_API_PREFIXES:
+        # Build the new URL with /api/v1 prefix
+        new_path = f"/api/v1/{path}"
+        query_string = request.url.query
+        if query_string:
+            new_path = f"{new_path}?{query_string}"
+
+        return RedirectResponse(
+            url=new_path,
+            status_code=307,  # Temporary Redirect - preserves method and body
+            headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/* endpoints."},
+        )
+
+    # For paths that don't match legacy patterns, return 404
+    return JSONResponse(
+        status_code=404,
+        content={"error": "not_found", "message": f"Endpoint /api/{path} not found. Try /api/v1/{path}"},
+    )
+
+
+# Legacy /auth/* redirect to /api/v1/auth/*
+@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def legacy_auth_redirect(request: Request, path: str):
+    """
+    Redirect legacy /auth/* requests to /api/v1/auth/*.
+
+    Uses HTTP 307 to preserve the request method and body.
+    """
+    new_path = f"/api/v1/auth/{path}"
+    query_string = request.url.query
+    if query_string:
+        new_path = f"{new_path}?{query_string}"
+
+    return RedirectResponse(
+        url=new_path,
+        status_code=307,
+        headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/auth/* endpoints."},
+    )
+
+
+# Legacy /ws/* redirect to /api/v1/ws/*
+@app.api_route("/ws/{path:path}", methods=["GET"], include_in_schema=False)
+async def legacy_ws_redirect(request: Request, path: str):
+    """
+    Redirect legacy /ws/* WebSocket requests to /api/v1/ws/*.
+
+    Note: WebSocket upgrade requests may not follow redirects automatically.
+    Clients should update to use /api/v1/ws/* directly.
+    """
+    new_path = f"/api/v1/ws/{path}"
+    query_string = request.url.query
+    if query_string:
+        new_path = f"{new_path}?{query_string}"
+
+    return RedirectResponse(
+        url=new_path,
+        status_code=307,
+        headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/ws/* endpoints."},
+    )

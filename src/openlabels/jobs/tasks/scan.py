@@ -39,12 +39,25 @@ except ImportError:
     _ws_streaming_enabled = False
     logger.debug("WebSocket streaming not available")
 
-# Global processor instance (reuse for efficiency)
+# Global processor instance with lifecycle management
+# The processor holds 200-500MB of ML models and must be explicitly released
 _processor: Optional[FileProcessor] = None
 
 
 def get_processor(enable_ml: bool = False) -> FileProcessor:
-    """Get or create the file processor."""
+    """
+    Get or create the file processor with lazy loading.
+
+    The processor is cached globally for efficiency during batch processing,
+    but should be released after processing completes to free memory.
+    Call release_processor() when done with batch processing.
+
+    Args:
+        enable_ml: Whether to enable ML-based detection models
+
+    Returns:
+        FileProcessor instance (cached or newly created)
+    """
     global _processor
     if _processor is None:
         settings = get_settings()
@@ -53,7 +66,22 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
             ml_model_dir=getattr(settings, 'ml_model_dir', None),
             confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
         )
+        logger.debug("Created ML processor instance")
     return _processor
+
+
+def release_processor() -> None:
+    """
+    Release the ML processor to free memory (200-500MB).
+
+    Call this after batch processing completes to allow garbage
+    collection of ML models. The processor will be lazily
+    recreated on the next get_processor() call if needed.
+    """
+    global _processor
+    if _processor is not None:
+        logger.info("Releasing ML processor to free memory")
+        _processor = None
 
 
 async def _check_cancellation(session: AsyncSession, job_id: UUID) -> bool:
@@ -434,6 +462,11 @@ async def execute_scan_task(
                 logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise
+
+    finally:
+        # Release ML processor to free memory (200-500MB)
+        # This ensures cleanup happens whether scan completes, fails, or is cancelled
+        release_processor()
 
 
 def _get_adapter(adapter_type: str, config: dict):
@@ -943,3 +976,8 @@ async def execute_parallel_scan_task(
                 logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise
+
+    finally:
+        # Release ML processor to free memory (200-500MB)
+        # This ensures cleanup happens whether scan completes, fails, or is cancelled
+        release_processor()

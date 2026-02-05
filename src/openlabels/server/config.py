@@ -343,6 +343,44 @@ class JobSettings(BaseSettings):
     max_worker_concurrency: int = 32
 
 
+class SentrySettings(BaseSettings):
+    """
+    Sentry error tracking and performance monitoring configuration.
+
+    Sentry integration is optional - if SENTRY_DSN is not set, the application
+    runs normally without Sentry.
+
+    Environment variables:
+    - SENTRY_DSN: Your Sentry Data Source Name (required for Sentry to be active)
+    - SENTRY_ENVIRONMENT: Environment name (production/staging/development)
+    - SENTRY_TRACES_SAMPLE_RATE: Sample rate for performance monitoring (0.0-1.0)
+    - SENTRY_PROFILES_SAMPLE_RATE: Sample rate for profiling (0.0-1.0)
+    - SENTRY_SEND_DEFAULT_PII: Whether to send PII data (default: False)
+    - SENTRY_DEBUG: Enable Sentry debug mode (default: False)
+
+    Note: These use SENTRY_ prefix directly (not OPENLABELS_SENTRY_) for
+    compatibility with standard Sentry SDK environment variable conventions.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="SENTRY_",
+        extra="ignore",
+    )
+
+    dsn: str | None = None  # Required for Sentry to be active
+    environment: str | None = None  # Defaults to server.environment if not set
+    traces_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)  # 10% of transactions
+    profiles_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)  # 10% of profiled transactions
+    send_default_pii: bool = False  # Don't send PII by default
+    debug: bool = False  # Sentry SDK debug mode
+    release: str | None = None  # Version/release identifier
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if Sentry should be initialized."""
+        return self.dsn is not None and self.dsn.strip() != ""
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -365,6 +403,7 @@ class Settings(BaseSettings):
     timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
     circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
     jobs: JobSettings = Field(default_factory=JobSettings)
+    sentry: SentrySettings = Field(default_factory=SentrySettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:
