@@ -2,18 +2,28 @@
 Scan management API endpoints.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from openlabels.server.db import get_session
+from openlabels.server.errors import (
+    NotFoundError,
+    BadRequestError,
+    InternalServerError,
+    ErrorCode,
+)
+
+logger = logging.getLogger(__name__)
 from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
@@ -67,34 +77,47 @@ async def create_scan(
     user: CurrentUser = Depends(require_admin),
 ) -> ScanResponse:
     """Create a new scan job."""
-    # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
-    target = await session.get(ScanTarget, scan_request.target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
+        target = await session.get(ScanTarget, scan_request.target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise NotFoundError(
+                code=ErrorCode.TARGET_NOT_FOUND,
+                message="Target not found",
+                details={"target_id": str(scan_request.target_id)},
+            )
 
-    # Create scan job
-    job = ScanJob(
-        tenant_id=user.tenant_id,
-        target_id=scan_request.target_id,
-        name=scan_request.name or f"Scan: {target.name}",
-        status="pending",
-        created_by=user.id,
-    )
-    session.add(job)
-    await session.flush()
+        # Create scan job
+        job = ScanJob(
+            tenant_id=user.tenant_id,
+            target_id=scan_request.target_id,
+            name=scan_request.name or f"Scan: {target.name}",
+            status="pending",
+            created_by=user.id,
+        )
+        session.add(job)
+        await session.flush()
 
-    # Enqueue the job in the job queue
-    queue = JobQueue(session, user.tenant_id)
-    await queue.enqueue(
-        task_type="scan",
-        payload={"job_id": str(job.id)},
-        priority=50,
-    )
+        # Enqueue the job in the job queue
+        queue = JobQueue(session, user.tenant_id)
+        await queue.enqueue(
+            task_type="scan",
+            payload={"job_id": str(job.id)},
+            priority=50,
+        )
 
-    # Refresh to load server-generated defaults (created_at)
-    await session.refresh(job)
+        # Refresh to load server-generated defaults (created_at)
+        await session.refresh(job)
 
-    return job
+        return job
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error creating scan for target {scan_request.target_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while creating scan",
+        )
 
 
 @router.get("", response_model=ScanListResponse)
@@ -106,31 +129,38 @@ async def list_scans(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanListResponse:
     """List scan jobs."""
-    query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
+    try:
+        query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
 
-    if status:
-        query = query.where(ScanJob.status == status)
+        if status:
+            query = query.where(ScanJob.status == status)
 
-    query = query.order_by(ScanJob.created_at.desc())
+        query = query.order_by(ScanJob.created_at.desc())
 
-    # Count total
-    count_query = select(ScanJob.id).where(ScanJob.tenant_id == user.tenant_id)
-    if status:
-        count_query = count_query.where(ScanJob.status == status)
-    result = await session.execute(count_query)
-    total = len(result.all())
+        # Count total
+        count_query = select(ScanJob.id).where(ScanJob.tenant_id == user.tenant_id)
+        if status:
+            count_query = count_query.where(ScanJob.status == status)
+        result = await session.execute(count_query)
+        total = len(result.all())
 
-    # Paginate
-    query = query.offset((page - 1) * limit).limit(limit)
-    result = await session.execute(query)
-    jobs = result.scalars().all()
+        # Paginate
+        query = query.offset((page - 1) * limit).limit(limit)
+        result = await session.execute(query)
+        jobs = result.scalars().all()
 
-    return ScanListResponse(
-        items=[ScanResponse.model_validate(j) for j in jobs],
-        total=total,
-        page=page,
-        pages=(total + limit - 1) // limit,
-    )
+        return ScanListResponse(
+            items=[ScanResponse.model_validate(j) for j in jobs],
+            total=total,
+            page=page,
+            pages=(total + limit - 1) // limit,
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error listing scans: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing scans",
+        )
 
 
 @router.get("/{scan_id}", response_model=ScanResponse)
@@ -140,10 +170,23 @@ async def get_scan(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanResponse:
     """Get scan job details."""
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    return job
+    try:
+        job = await session.get(ScanJob, scan_id)
+        if not job or job.tenant_id != user.tenant_id:
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
+        return job
+    except NotFoundError:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrieving scan",
+        )
 
 
 @router.delete("/{scan_id}", status_code=204)
@@ -153,16 +196,33 @@ async def delete_scan(
     user: CurrentUser = Depends(require_admin),
 ) -> None:
     """Cancel a running scan (DELETE method)."""
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    try:
+        job = await session.get(ScanJob, scan_id)
+        if not job or job.tenant_id != user.tenant_id:
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
-    if job.status not in ("pending", "running"):
-        raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+        if job.status not in ("pending", "running"):
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_CANCEL,
+                message="Scan cannot be cancelled",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
-    job.status = "cancelled"
-    job.completed_at = datetime.now(timezone.utc)
-    await session.flush()
+        job.status = "cancelled"
+        job.completed_at = datetime.now(timezone.utc)
+        await session.flush()
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error cancelling scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while cancelling scan",
+        )
 
 
 @router.post("/{scan_id}/cancel")
@@ -175,28 +235,45 @@ async def cancel_scan(
     """Cancel a running scan (POST method for HTMX)."""
     from fastapi.responses import HTMLResponse, Response
 
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    try:
+        job = await session.get(ScanJob, scan_id)
+        if not job or job.tenant_id != user.tenant_id:
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
-    if job.status not in ("pending", "running"):
-        raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+        if job.status not in ("pending", "running"):
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_CANCEL,
+                message="Scan cannot be cancelled",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
-    job.status = "cancelled"
-    job.completed_at = datetime.now(timezone.utc)
-    await session.flush()
+        job.status = "cancelled"
+        job.completed_at = datetime.now(timezone.utc)
+        await session.flush()
 
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Scan cancelled", "type": "success"}, "refreshScans": true}',
-            },
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Scan cancelled", "type": "success"}, "refreshScans": true}',
+                },
+            )
+
+        return Response(status_code=204)
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error cancelling scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while cancelling scan",
         )
-
-    return Response(status_code=204)
 
 
 @router.post("/{scan_id}/retry")
@@ -209,46 +286,67 @@ async def retry_scan(
     """Retry a failed scan by creating a new scan job."""
     from fastapi.responses import HTMLResponse, Response
 
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    try:
+        job = await session.get(ScanJob, scan_id)
+        if not job or job.tenant_id != user.tenant_id:
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
-    if job.status not in ("failed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Only failed or cancelled scans can be retried")
+        if job.status not in ("failed", "cancelled"):
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_RETRY,
+                message="Only failed or cancelled scans can be retried",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
-    # Get the target
-    target = await session.get(ScanTarget, job.target_id)
-    if not target:
-        raise HTTPException(status_code=404, detail="Target no longer exists")
+        # Get the target
+        target = await session.get(ScanTarget, job.target_id)
+        if not target:
+            raise NotFoundError(
+                code=ErrorCode.TARGET_NOT_AVAILABLE,
+                message="Target no longer exists",
+                details={"target_id": str(job.target_id)},
+            )
 
-    # Create a new scan job
-    new_job = ScanJob(
-        tenant_id=user.tenant_id,
-        target_id=job.target_id,
-        target_name=target.name,
-        name=f"{job.name} (retry)",
-        status="pending",
-        created_by=user.id,
-    )
-    session.add(new_job)
-    await session.flush()
+        # Create a new scan job
+        new_job = ScanJob(
+            tenant_id=user.tenant_id,
+            target_id=job.target_id,
+            target_name=target.name,
+            name=f"{job.name} (retry)",
+            status="pending",
+            created_by=user.id,
+        )
+        session.add(new_job)
+        await session.flush()
 
-    # Enqueue the job
-    queue = JobQueue(session, user.tenant_id)
-    await queue.enqueue(
-        task_type="scan",
-        payload={"job_id": str(new_job.id)},
-        priority=60,  # Slightly higher priority for retries
-    )
-
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
-            },
+        # Enqueue the job
+        queue = JobQueue(session, user.tenant_id)
+        await queue.enqueue(
+            task_type="scan",
+            payload={"job_id": str(new_job.id)},
+            priority=60,  # Slightly higher priority for retries
         )
 
-    return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
+                },
+            )
+
+        return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error retrying scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrying scan",
+        )

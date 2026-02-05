@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -91,12 +92,16 @@ async def list_labels(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[LabelResponse]:
     """List available sensitivity labels."""
-    query = select(SensitivityLabel).where(
-        SensitivityLabel.tenant_id == user.tenant_id
-    ).order_by(SensitivityLabel.priority)
-    result = await session.execute(query)
-    labels = result.scalars().all()
-    return [LabelResponse.model_validate(l) for l in labels]
+    try:
+        query = select(SensitivityLabel).where(
+            SensitivityLabel.tenant_id == user.tenant_id
+        ).order_by(SensitivityLabel.priority)
+        result = await session.execute(query)
+        labels = result.scalars().all()
+        return [LabelResponse.model_validate(l) for l in labels]
+    except SQLAlchemyError as e:
+        logger.error(f"Database error listing labels: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 class LabelSyncRequest(BaseModel):
@@ -201,29 +206,33 @@ async def get_sync_status(
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Get label sync status including last sync time and counts."""
-    # Get label count and last sync time
-    query = select(
-        func.count(SensitivityLabel.id),
-        func.max(SensitivityLabel.synced_at),
-    ).where(SensitivityLabel.tenant_id == user.tenant_id)
-
-    result = await session.execute(query)
-    row = result.one()
-    label_count, last_synced = row
-
-    # Get cache status
     try:
-        from openlabels.labeling.engine import get_label_cache
-        cache_stats = get_label_cache().stats
-    except Exception as e:
-        logger.debug(f"Failed to get cache stats: {e}")
-        cache_stats = None
+        # Get label count and last sync time
+        query = select(
+            func.count(SensitivityLabel.id),
+            func.max(SensitivityLabel.synced_at),
+        ).where(SensitivityLabel.tenant_id == user.tenant_id)
 
-    return {
-        "label_count": label_count or 0,
-        "last_synced_at": last_synced.isoformat() if last_synced else None,
-        "cache": cache_stats,
-    }
+        result = await session.execute(query)
+        row = result.one()
+        label_count, last_synced = row
+
+        # Get cache status
+        try:
+            from openlabels.labeling.engine import get_label_cache
+            cache_stats = get_label_cache().stats
+        except Exception as e:
+            logger.debug(f"Failed to get cache stats: {e}")
+            cache_stats = None
+
+        return {
+            "label_count": label_count or 0,
+            "last_synced_at": last_synced.isoformat() if last_synced else None,
+            "cache": cache_stats,
+        }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.post("/cache/invalidate", status_code=200)
@@ -248,22 +257,26 @@ async def list_label_rules(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[LabelRuleResponse]:
     """List label mapping rules."""
-    query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id
-    ).order_by(LabelRule.priority.desc())
-    result = await session.execute(query)
-    rules = result.scalars().all()
+    try:
+        query = select(LabelRule).where(
+            LabelRule.tenant_id == user.tenant_id
+        ).order_by(LabelRule.priority.desc())
+        result = await session.execute(query)
+        rules = result.scalars().all()
 
-    # Enrich with label names
-    responses = []
-    for rule in rules:
-        label = await session.get(SensitivityLabel, rule.label_id)
-        response = LabelRuleResponse.model_validate(rule)
-        if label:
-            response.label_name = label.name
-        responses.append(response)
+        # Enrich with label names
+        responses = []
+        for rule in rules:
+            label = await session.get(SensitivityLabel, rule.label_id)
+            response = LabelRuleResponse.model_validate(rule)
+            if label:
+                response.label_name = label.name
+            responses.append(response)
 
-    return responses
+        return responses
+    except SQLAlchemyError as e:
+        logger.error(f"Database error listing label rules: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.post("/rules", response_model=LabelRuleResponse, status_code=201)
@@ -276,27 +289,33 @@ async def create_label_rule(
     if request.rule_type not in ("risk_tier", "entity_type"):
         raise HTTPException(status_code=400, detail="Invalid rule type")
 
-    # Verify label exists
-    label = await session.get(SensitivityLabel, request.label_id)
-    if not label or label.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Label not found")
+    try:
+        # Verify label exists
+        label = await session.get(SensitivityLabel, request.label_id)
+        if not label or label.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Label not found")
 
-    rule = LabelRule(
-        tenant_id=user.tenant_id,
-        rule_type=request.rule_type,
-        match_value=request.match_value,
-        label_id=request.label_id,
-        priority=request.priority,
-        created_by=user.id,
-    )
-    session.add(rule)
-    await session.flush()
+        rule = LabelRule(
+            tenant_id=user.tenant_id,
+            rule_type=request.rule_type,
+            match_value=request.match_value,
+            label_id=request.label_id,
+            priority=request.priority,
+            created_by=user.id,
+        )
+        session.add(rule)
+        await session.flush()
 
-    # Refresh to load server-generated defaults and ensure proper types
-    await session.refresh(rule)
+        # Refresh to load server-generated defaults and ensure proper types
+        await session.refresh(rule)
 
-    response = LabelRuleResponse.model_validate(rule)
-    return response.model_copy(update={"label_name": label.name})
+        response = LabelRuleResponse.model_validate(rule)
+        return response.model_copy(update={"label_name": label.name})
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error creating label rule: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
@@ -306,11 +325,17 @@ async def delete_label_rule(
     user: CurrentUser = Depends(require_admin),
 ) -> None:
     """Delete a label rule."""
-    rule = await session.get(LabelRule, rule_id)
-    if not rule or rule.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Rule not found")
+    try:
+        rule = await session.get(LabelRule, rule_id)
+        if not rule or rule.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Rule not found")
 
-    await session.delete(rule)
+        await session.delete(rule)
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error deleting label rule {rule_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.post("/apply", status_code=202)
@@ -320,32 +345,38 @@ async def apply_label(
     user: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Apply a sensitivity label to a file."""
-    result = await session.get(ScanResult, request.result_id)
-    if not result or result.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Result not found")
+    try:
+        result = await session.get(ScanResult, request.result_id)
+        if not result or result.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Result not found")
 
-    label = await session.get(SensitivityLabel, request.label_id)
-    if not label or label.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Label not found")
+        label = await session.get(SensitivityLabel, request.label_id)
+        if not label or label.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Label not found")
 
-    # Enqueue labeling job
-    queue = JobQueue(session, user.tenant_id)
-    job_id = await queue.enqueue(
-        task_type="label",
-        payload={
+        # Enqueue labeling job
+        queue = JobQueue(session, user.tenant_id)
+        job_id = await queue.enqueue(
+            task_type="label",
+            payload={
+                "result_id": str(request.result_id),
+                "label_id": request.label_id,
+                "file_path": result.file_path,
+            },
+            priority=60,  # Higher priority than scans
+        )
+
+        return {
+            "message": "Label application queued",
+            "job_id": str(job_id),
             "result_id": str(request.result_id),
             "label_id": request.label_id,
-            "file_path": result.file_path,
-        },
-        priority=60,  # Higher priority than scans
-    )
-
-    return {
-        "message": "Label application queued",
-        "job_id": str(job_id),
-        "result_id": str(request.result_id),
-        "label_id": request.label_id,
-    }
+        }
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error applying label: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 # =============================================================================
@@ -378,33 +409,37 @@ async def get_label_mappings(
     user: CurrentUser = Depends(get_current_user),
 ) -> LabelMappingsResponse:
     """Get label mappings for each risk tier."""
-    # Get all rules for risk_tier type
-    query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id,
-        LabelRule.rule_type == "risk_tier",
-    )
-    result = await session.execute(query)
-    rules = result.scalars().all()
+    try:
+        # Get all rules for risk_tier type
+        query = select(LabelRule).where(
+            LabelRule.tenant_id == user.tenant_id,
+            LabelRule.rule_type == "risk_tier",
+        )
+        result = await session.execute(query)
+        rules = result.scalars().all()
 
-    # Build mappings dict
-    mappings = {}
-    for rule in rules:
-        mappings[rule.match_value] = rule.label_id
+        # Build mappings dict
+        mappings = {}
+        for rule in rules:
+            mappings[rule.match_value] = rule.label_id
 
-    # Get available labels
-    label_query = select(SensitivityLabel).where(
-        SensitivityLabel.tenant_id == user.tenant_id
-    ).order_by(SensitivityLabel.priority)
-    label_result = await session.execute(label_query)
-    labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
+        # Get available labels
+        label_query = select(SensitivityLabel).where(
+            SensitivityLabel.tenant_id == user.tenant_id
+        ).order_by(SensitivityLabel.priority)
+        label_result = await session.execute(label_query)
+        labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
 
-    return LabelMappingsResponse(
-        CRITICAL=mappings.get("CRITICAL"),
-        HIGH=mappings.get("HIGH"),
-        MEDIUM=mappings.get("MEDIUM"),
-        LOW=mappings.get("LOW"),
-        labels=labels,
-    )
+        return LabelMappingsResponse(
+            CRITICAL=mappings.get("CRITICAL"),
+            HIGH=mappings.get("HIGH"),
+            MEDIUM=mappings.get("MEDIUM"),
+            LOW=mappings.get("LOW"),
+            labels=labels,
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting label mappings: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 from fastapi import Request
@@ -418,61 +453,65 @@ async def update_label_mappings(
     user: CurrentUser = Depends(require_admin),
 ):
     """Update label mappings for risk tiers."""
-    # Try to get JSON body, fallback to form data
-    content_type = request.headers.get("content-type", "")
+    try:
+        # Try to get JSON body, fallback to form data
+        content_type = request.headers.get("content-type", "")
 
-    if "application/json" in content_type:
-        data = await request.json()
-    else:
-        form = await request.form()
-        data = {
-            "CRITICAL": form.get("CRITICAL") or None,
-            "HIGH": form.get("HIGH") or None,
-            "MEDIUM": form.get("MEDIUM") or None,
-            "LOW": form.get("LOW") or None,
-        }
+        if "application/json" in content_type:
+            data = await request.json()
+        else:
+            form = await request.form()
+            data = {
+                "CRITICAL": form.get("CRITICAL") or None,
+                "HIGH": form.get("HIGH") or None,
+                "MEDIUM": form.get("MEDIUM") or None,
+                "LOW": form.get("LOW") or None,
+            }
 
-    # Delete existing risk_tier rules
-    existing_query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id,
-        LabelRule.rule_type == "risk_tier",
-    )
-    existing_result = await session.execute(existing_query)
-    for rule in existing_result.scalars().all():
-        await session.delete(rule)
-
-    # Create new rules for non-empty mappings
-    # Flush after deletes to avoid sentinel matching issues with asyncpg
-    await session.flush()
-
-    priority = 100
-    for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-        label_id = data.get(risk_tier)
-        if label_id:
-            # Verify label exists
-            label = await session.get(SensitivityLabel, label_id)
-            if label and label.tenant_id == user.tenant_id:
-                rule = LabelRule(
-                    tenant_id=user.tenant_id,
-                    rule_type="risk_tier",
-                    match_value=risk_tier,
-                    label_id=label_id,
-                    priority=priority,
-                    created_by=user.id,
-                )
-                session.add(rule)
-                # Flush each insert individually to avoid asyncpg sentinel matching issues
-                await session.flush()
-        priority -= 10
-
-    # Check if HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
-            },
+        # Delete existing risk_tier rules
+        existing_query = select(LabelRule).where(
+            LabelRule.tenant_id == user.tenant_id,
+            LabelRule.rule_type == "risk_tier",
         )
+        existing_result = await session.execute(existing_query)
+        for rule in existing_result.scalars().all():
+            await session.delete(rule)
 
-    return {"message": "Label mappings updated"}
+        # Create new rules for non-empty mappings
+        # Flush after deletes to avoid sentinel matching issues with asyncpg
+        await session.flush()
+
+        priority = 100
+        for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            label_id = data.get(risk_tier)
+            if label_id:
+                # Verify label exists
+                label = await session.get(SensitivityLabel, label_id)
+                if label and label.tenant_id == user.tenant_id:
+                    rule = LabelRule(
+                        tenant_id=user.tenant_id,
+                        rule_type="risk_tier",
+                        match_value=risk_tier,
+                        label_id=label_id,
+                        priority=priority,
+                        created_by=user.id,
+                    )
+                    session.add(rule)
+                    # Flush each insert individually to avoid asyncpg sentinel matching issues
+                    await session.flush()
+            priority -= 10
+
+        # Check if HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
+                },
+            )
+
+        return {"message": "Label mappings updated"}
+    except SQLAlchemyError as e:
+        logger.error(f"Database error updating label mappings: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")

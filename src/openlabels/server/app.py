@@ -22,7 +22,8 @@ import re
 import time
 import uuid
 
-from fastapi import FastAPI, Request, APIRouter
+from fastapi import FastAPI, HTTPException, Request, APIRouter
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -36,6 +37,14 @@ from openlabels.server.utils import get_client_ip  # noqa: F401 - re-exported fo
 from openlabels.server.db import init_db, close_db
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
+from openlabels.server.errors import (
+    APIError,
+    ErrorCode,
+    create_error_response,
+    format_api_error,
+    format_http_exception,
+    format_validation_error,
+)
 from openlabels.server.metrics import (
     http_active_connections,
     record_http_request,
@@ -349,12 +358,10 @@ async def limit_request_size(request: Request, call_next):
     # Check content-length header
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > max_size:
-        return JSONResponse(
+        return create_error_response(
             status_code=413,
-            content={
-                "error": "request_too_large",
-                "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
-            },
+            code=ErrorCode.REQUEST_TOO_LARGE,
+            message=f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
         )
 
     return await call_next(request)
@@ -428,10 +435,33 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+# APIError exception handler (custom exceptions with error codes)
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
+    """Handle APIError exceptions with standardized format."""
+    return format_api_error(exc)
+
+
+# HTTPException handler (convert to standardized format)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Handle HTTPException with standardized format."""
+    return format_http_exception(exc)
+
+
+# Validation error handler
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Handle request validation errors with standardized format."""
+    return format_validation_error(exc.errors())
+
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle unexpected exceptions."""
+    """Handle unexpected exceptions with standardized format."""
     request_id = get_request_id()
     logger.exception(
         f"Unhandled exception: {exc}",
@@ -440,13 +470,13 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
             "method": request.method,
         }
     )
-    error_response = {
-        "error": "internal_server_error",
-        "message": str(exc) if get_settings().server.debug else "An unexpected error occurred",
-    }
-    if request_id:
-        error_response["request_id"] = request_id
-    return JSONResponse(status_code=500, content=error_response)
+    message = str(exc) if get_settings().server.debug else "An unexpected error occurred"
+    return create_error_response(
+        status_code=500,
+        code=ErrorCode.INTERNAL_ERROR,
+        message=message,
+        request_id=request_id,
+    )
 
 
 # Health check (unversioned - stays at root level)
