@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -357,21 +358,25 @@ async def create_target(
     # Security: Validate target configuration to prevent path traversal and SSRF
     validated_config = validate_target_config(request.adapter, request.config)
 
-    target = ScanTarget(
-        tenant_id=user.tenant_id,
-        name=request.name,
-        adapter=request.adapter,
-        config=validated_config,
-        enabled=True,  # Explicitly set default to ensure it's available before flush
-        created_by=user.id,
-    )
-    session.add(target)
-    await session.flush()
+    try:
+        target = ScanTarget(
+            tenant_id=user.tenant_id,
+            name=request.name,
+            adapter=request.adapter,
+            config=validated_config,
+            enabled=True,  # Explicitly set default to ensure it's available before flush
+            created_by=user.id,
+        )
+        session.add(target)
+        await session.flush()
 
-    # Refresh to load server-generated defaults and ensure proper types
-    await session.refresh(target)
+        # Refresh to load server-generated defaults and ensure proper types
+        await session.refresh(target)
 
-    return target
+        return target
+    except SQLAlchemyError as e:
+        logger.error(f"Database error creating target: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -381,10 +386,16 @@ async def get_target(
     user: CurrentUser = Depends(get_current_user),
 ) -> TargetResponse:
     """Get scan target details."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
-    return target
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
+        return target
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -395,20 +406,26 @@ async def update_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Update a scan target."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
 
-    if request.name is not None:
-        target.name = request.name
-    if request.config is not None:
-        # Security: Validate updated configuration
-        validated_config = validate_target_config(target.adapter, request.config)
-        target.config = validated_config
-    if request.enabled is not None:
-        target.enabled = request.enabled
+        if request.name is not None:
+            target.name = request.name
+        if request.config is not None:
+            # Security: Validate updated configuration
+            validated_config = validate_target_config(target.adapter, request.config)
+            target.config = validated_config
+        if request.enabled is not None:
+            target.enabled = request.enabled
 
-    return target
+        return target
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error updating target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.delete("/{target_id}")
@@ -419,22 +436,28 @@ async def delete_target(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a scan target."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
 
-    target_name = target.name
-    await session.delete(target)
+        target_name = target.name
+        await session.delete(target)
 
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
-            },
-        )
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
+                },
+            )
 
-    # Regular REST response
-    return Response(status_code=204)
+        # Regular REST response
+        return Response(status_code=204)
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error deleting target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")

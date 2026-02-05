@@ -2,6 +2,7 @@
 Scan schedule management API endpoints.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -10,9 +11,12 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
+
+logger = logging.getLogger(__name__)
 from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -105,17 +109,22 @@ async def create_schedule(
         created_by=user.id,
     )
 
-    # Calculate next run time if cron is set
-    if request.cron:
-        schedule.next_run_at = parse_cron_expression(request.cron)
+        # Calculate next run time if cron is set
+        if request.cron:
+            schedule.next_run_at = parse_cron_expression(request.cron)
 
-    session.add(schedule)
-    await session.flush()
+        session.add(schedule)
+        await session.flush()
 
-    # Refresh to load server-generated defaults and ensure proper types
-    await session.refresh(schedule)
+        # Refresh to load server-generated defaults and ensure proper types
+        await session.refresh(schedule)
 
-    return schedule
+        return schedule
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error creating schedule: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.get("/{schedule_id}", response_model=ScheduleResponse)

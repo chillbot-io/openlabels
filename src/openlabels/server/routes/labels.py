@@ -194,11 +194,17 @@ async def get_sync_status(
         logger.debug(f"Failed to get label cache stats: {type(e).__name__}: {e}")
         cache_stats = None
 
-    return {
-        "label_count": label_count or 0,
-        "last_synced_at": last_synced.isoformat() if last_synced else None,
-        "cache": cache_stats,
-    }
+        return {
+            "label_count": label_count or 0,
+            "last_synced_at": last_synced.isoformat() if last_synced else None,
+            "cache": cache_stats,
+        }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting sync status: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while getting sync status",
+        )
 
 
 @router.post("/cache/invalidate", status_code=200)
@@ -332,17 +338,15 @@ async def apply_label(
         payload={
             "result_id": str(request.result_id),
             "label_id": request.label_id,
-            "file_path": result.file_path,
-        },
-        priority=60,  # Higher priority than scans
-    )
-
-    return {
-        "message": "Label application queued",
-        "job_id": str(job_id),
-        "result_id": str(request.result_id),
-        "label_id": request.label_id,
-    }
+        }
+    except NotFoundError:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error applying label: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while applying label",
+        )
 
 
 # =============================================================================
@@ -516,5 +520,48 @@ async def update_label_mappings(
                 "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
             },
         )
+        existing_result = await session.execute(existing_query)
+        for rule in existing_result.scalars().all():
+            await session.delete(rule)
 
-    return {"message": "Label mappings updated"}
+        # Create new rules for non-empty mappings
+        # Flush after deletes to avoid sentinel matching issues with asyncpg
+        await session.flush()
+
+        priority = 100
+        for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            label_id = data.get(risk_tier)
+            if label_id:
+                # Verify label exists
+                label = await session.get(SensitivityLabel, label_id)
+                if label and label.tenant_id == user.tenant_id:
+                    rule = LabelRule(
+                        tenant_id=user.tenant_id,
+                        rule_type="risk_tier",
+                        match_value=risk_tier,
+                        label_id=label_id,
+                        priority=priority,
+                        created_by=user.id,
+                    )
+                    session.add(rule)
+                    # Flush each insert individually to avoid asyncpg sentinel matching issues
+                    await session.flush()
+            priority -= 10
+
+        # Check if HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
+                },
+            )
+
+        return {"message": "Label mappings updated"}
+    except SQLAlchemyError as e:
+        logger.error(f"Database error updating label mappings: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while updating label mappings",
+        )

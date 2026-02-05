@@ -25,6 +25,8 @@ from openlabels.server.dependencies import (
 )
 from openlabels.auth.dependencies import require_admin
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
@@ -136,8 +138,6 @@ async def cancel_scan(
             },
         )
 
-    return Response(status_code=204)
-
 
 @router.post("/{scan_id}/retry")
 async def retry_scan(
@@ -159,4 +159,22 @@ async def retry_scan(
             },
         )
 
-    return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
+                },
+            )
+
+        return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error retrying scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrying scan",
+        )

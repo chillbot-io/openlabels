@@ -416,6 +416,37 @@ class FileProcessor:
 
         return ext in supported
 
+    def cleanup(self) -> None:
+        """
+        Release resources held by the processor.
+
+        This should be called during graceful shutdown to free ML models
+        and other heavy resources (typically 200-500MB for ML models).
+        """
+        # Clear OCR engine
+        if self._ocr_engine is not None:
+            try:
+                # OCR engines may have cleanup methods
+                if hasattr(self._ocr_engine, 'cleanup'):
+                    self._ocr_engine.cleanup()
+            except Exception as e:
+                logger.debug(f"Error cleaning up OCR engine: {e}")
+            self._ocr_engine = None
+
+        # Clear detectors in orchestrator (releases ML model memory)
+        if self._orchestrator is not None:
+            try:
+                # Clear detector list to release references to ML models
+                self._orchestrator.detectors.clear()
+                # Clear pipeline components
+                self._orchestrator._coref_resolver = None
+                self._orchestrator._context_enhancer = None
+            except Exception as e:
+                logger.debug(f"Error cleaning up orchestrator: {e}")
+            self._orchestrator = None
+
+        logger.info("FileProcessor resources released")
+
 
 async def process_file(
     file_path: str,

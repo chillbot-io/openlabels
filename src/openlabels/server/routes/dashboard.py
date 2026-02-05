@@ -75,6 +75,9 @@ class HeatmapResponse(BaseModel):
     """Heatmap tree data."""
 
     roots: list[HeatmapNode]
+    truncated: bool = False
+    total_files: int = 0
+    limit_applied: int = 0
 
 
 @router.get("/stats", response_model=OverallStats)
@@ -216,6 +219,12 @@ class EntityTrendsResponse(BaseModel):
     """Entity type trends over time for charts."""
 
     series: dict[str, list[tuple[str, int]]]  # entity_type -> [(date, count), ...]
+    truncated: bool = False
+    total_records: int = 0
+
+
+# Maximum number of records to process for entity aggregation
+ENTITY_TRENDS_LIMIT = 50000
 
 
 @router.get("/entity-trends", response_model=EntityTrendsResponse)
@@ -330,7 +339,65 @@ async def get_entity_trends(
 
         current += timedelta(days=1)
 
-    return EntityTrendsResponse(series=series)
+    return EntityTrendsResponse(series=series, truncated=truncated, total_records=total_records)
+
+
+async def _aggregate_entity_counts_streaming(
+    session: AsyncSession,
+    tenant_id: UUID,
+    start_date: datetime,
+    limit: int,
+) -> dict[str, dict[str, int]]:
+    """
+    Fallback streaming aggregation for entity counts.
+
+    Uses server-side cursor to stream results in batches, avoiding memory explosion.
+    """
+    from sqlalchemy import select
+
+    daily_counts: dict[str, dict[str, int]] = {}
+    processed = 0
+    batch_size = 1000
+
+    # Use yield_per for streaming to avoid loading all into memory
+    query = (
+        select(
+            cast(ScanResult.scanned_at, Date).label("scan_date"),
+            ScanResult.entity_counts,
+        )
+        .where(
+            and_(
+                ScanResult.tenant_id == tenant_id,
+                ScanResult.scanned_at >= start_date,
+                ScanResult.entity_counts.isnot(None),
+            )
+        )
+        .order_by(ScanResult.scanned_at.desc())
+        .limit(limit)
+    )
+
+    # Execute with streaming
+    result = await session.stream(query)
+
+    async for partition in result.partitions(batch_size):
+        for row in partition:
+            date_str = row.scan_date.strftime("%Y-%m-%d")
+            if date_str not in daily_counts:
+                daily_counts[date_str] = {}
+
+            entity_counts = row.entity_counts or {}
+            for entity_type, count in entity_counts.items():
+                if entity_type not in daily_counts[date_str]:
+                    daily_counts[date_str][entity_type] = 0
+                daily_counts[date_str][entity_type] += count
+
+            processed += 1
+
+        # Safety check
+        if processed >= limit:
+            break
+
+    return daily_counts
 
 
 class AccessHeatmapResponse(BaseModel):
@@ -405,43 +472,97 @@ async def get_access_heatmap(
     return AccessHeatmapResponse(data=heatmap)
 
 
+# Maximum number of files to load for heatmap to prevent memory explosion
+HEATMAP_MAX_FILES = 10000
+
+# Maximum depth for folder aggregation (deeper files rolled up)
+HEATMAP_MAX_DEPTH = 10
+
+
 @router.get("/heatmap", response_model=HeatmapResponse)
 async def get_heatmap(
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    limit: int = Query(HEATMAP_MAX_FILES, ge=1, le=HEATMAP_MAX_FILES, description="Max files to include"),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    """Get heatmap tree data for visualization."""
-    query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+    """
+    Get heatmap tree data for visualization.
+
+    To prevent memory explosion with large datasets:
+    - Limited to top N files by risk_score (default 10,000)
+    - Uses streaming to build tree incrementally
+    - Returns truncation indicator if limit was hit
+    """
+    # First, get total count to determine if truncation is needed
+    count_query = select(func.count()).select_from(ScanResult).where(
+        ScanResult.tenant_id == user.tenant_id
+    )
+    if job_id:
+        count_query = count_query.where(ScanResult.job_id == job_id)
+
+    count_result = await session.execute(count_query)
+    total_files = count_result.scalar() or 0
+
+    truncated = total_files > limit
+    if truncated:
+        logger.warning(
+            f"Heatmap query truncated: {total_files} files exceed limit of {limit}. "
+            "Returning highest risk files only."
+        )
+
+    # Query with limit, ordered by risk_score to get most important files first
+    # Only select needed columns to reduce memory usage
+    query = (
+        select(
+            ScanResult.file_path,
+            ScanResult.risk_score,
+            ScanResult.entity_counts,
+        )
+        .where(ScanResult.tenant_id == user.tenant_id)
+        .order_by(ScanResult.risk_score.desc())
+        .limit(limit)
+    )
     if job_id:
         query = query.where(ScanResult.job_id == job_id)
 
-    result = await session.execute(query)
-    results = result.scalars().all()
+    # Use streaming to avoid loading all results at once
+    result = await session.stream(query)
 
-    # Build tree structure from file paths
+    # Build tree structure incrementally from file paths
     tree: dict = {}
-    for r in results:
-        parts = r.file_path.replace("\\", "/").split("/")
-        # Filter out empty parts (from leading slashes like /path/to/file)
-        parts = [p for p in parts if p]
-        if not parts:
-            continue
-        current = tree
-        for i, part in enumerate(parts[:-1]):
-            if part not in current:
-                current[part] = {"_children": {}, "_stats": {"risk_score": 0, "entity_counts": {}}}
-            current = current[part]["_children"]
+    files_processed = 0
 
-        # Add file
-        filename = parts[-1]
-        current[filename] = {
-            "_is_file": True,
-            "_stats": {
-                "risk_score": r.risk_score,
-                "entity_counts": r.entity_counts or {},
-            },
-        }
+    async for partition in result.partitions(1000):
+        for row in partition:
+            files_processed += 1
+            parts = row.file_path.replace("\\", "/").split("/")
+            # Filter out empty parts (from leading slashes like /path/to/file)
+            parts = [p for p in parts if p]
+            if not parts:
+                continue
+
+            # Limit depth to prevent excessive nesting
+            if len(parts) > HEATMAP_MAX_DEPTH:
+                # Roll up deep paths: keep first (DEPTH-1) folders + "..." + filename
+                truncated_parts = parts[:HEATMAP_MAX_DEPTH - 1] + ["..."] + [parts[-1]]
+                parts = truncated_parts
+
+            current = tree
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {"_children": {}, "_stats": {"risk_score": 0, "entity_counts": {}}}
+                current = current[part]["_children"]
+
+            # Add file
+            filename = parts[-1]
+            current[filename] = {
+                "_is_file": True,
+                "_stats": {
+                    "risk_score": row.risk_score or 0,
+                    "entity_counts": row.entity_counts or {},
+                },
+            }
 
     def build_node(name: str, data: dict, path: str) -> HeatmapNode:
         """Recursively build heatmap nodes."""
@@ -458,13 +579,14 @@ async def get_heatmap(
         total_score = 0
         total_entities: dict[str, int] = {}
 
-        for child_name, child_data in data.get("_children", {}).items():
-            child_path = f"{path}/{child_name}" if path else child_name
-            child_node = build_node(child_name, child_data, child_path)
-            children.append(child_node)
-            total_score += child_node.risk_score
-            for entity_type, count in child_node.entity_counts.items():
-                total_entities[entity_type] = total_entities.get(entity_type, 0) + count
+    async for row in _stream_heatmap_results(
+        session, user.tenant_id, job_id, effective_limit
+    ):
+        _add_file_to_tree(tree, row.file_path, row.risk_score, row.entity_counts)
+        file_count += 1
+
+        # Sort children by risk_score descending for better visualization
+        children.sort(key=lambda n: n.risk_score, reverse=True)
 
         return HeatmapNode(
             name=name,
@@ -475,8 +597,17 @@ async def get_heatmap(
             children=children if children else None,
         )
 
+    # Build response tree
     roots = []
     for root_name, root_data in tree.items():
-        roots.append(build_node(root_name, root_data, root_name))
+        roots.append(_build_node(root_name, root_data, root_name))
 
-    return HeatmapResponse(roots=roots)
+    # Sort roots by risk_score descending
+    roots.sort(key=lambda n: n.risk_score, reverse=True)
+
+    return HeatmapResponse(
+        roots=roots,
+        truncated=truncated,
+        total_files=total_files,
+        limit_applied=limit,
+    )

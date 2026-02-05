@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from openlabels.server.schemas.pagination import (
@@ -119,6 +119,14 @@ async def list_failed_jobs(
     List failed jobs (dead letter queue).
 
     Admin access required.
+
+    Uses standardized pagination format with consistent field naming:
+    - `items`: List of failed jobs
+    - `total`: Total number of failed jobs
+    - `page`: Current page number
+    - `page_size`: Items per page
+    - `total_pages`: Total number of pages
+    - `has_more`: Whether there are more pages
     """
     jobs, total = await job_service.get_failed_jobs(
         task_type=task_type,

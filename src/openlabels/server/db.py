@@ -27,15 +27,43 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
-async def init_db(database_url: str) -> None:
-    """Initialize database connection."""
+async def init_db(
+    database_url: str,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+) -> None:
+    """
+    Initialize database connection.
+
+    Args:
+        database_url: PostgreSQL connection URL (asyncpg driver)
+        pool_size: Number of persistent connections in the pool.
+            Configure via OPENLABELS_DATABASE__POOL_SIZE env var.
+        max_overflow: Maximum overflow connections above pool_size.
+            Configure via OPENLABELS_DATABASE__MAX_OVERFLOW env var.
+    """
     global _engine, _session_factory
+
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    db_settings = settings.database
+
+    logger.info(
+        "Initializing database connection pool: "
+        f"pool_size={db_settings.pool_size}, "
+        f"max_overflow={db_settings.max_overflow}, "
+        f"pool_recycle={db_settings.pool_recycle}s, "
+        f"pool_pre_ping={db_settings.pool_pre_ping}"
+    )
 
     _engine = create_async_engine(
         database_url,
         echo=False,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=db_settings.pool_size,
+        max_overflow=db_settings.max_overflow,
+        pool_recycle=db_settings.pool_recycle,
+        pool_pre_ping=db_settings.pool_pre_ping,
     )
 
     _session_factory = async_sessionmaker(
@@ -89,6 +117,17 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     if _session_factory is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     return _session_factory
+
+
+def get_engine() -> AsyncEngine | None:
+    """
+    Get the database engine for metrics and diagnostics.
+
+    Returns:
+        The AsyncEngine instance or None if not initialized.
+        Access the sync pool via engine.sync_engine.pool for pool metrics.
+    """
+    return _engine
 
 
 def run_migrations(revision: str, direction: str = "upgrade") -> None:

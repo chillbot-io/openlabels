@@ -16,6 +16,12 @@ from sqlalchemy import select, update, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import JobQueue as JobQueueModel
+from openlabels.server.metrics import (
+    record_job_enqueued,
+    record_job_completed,
+    record_job_failed,
+    update_queue_depth,
+)
 
 # Retry configuration
 BASE_RETRY_DELAY_SECONDS = 2  # 2 seconds initial delay
@@ -84,6 +90,10 @@ class JobQueue:
         )
         self.session.add(job)
         await self.session.flush()
+
+        # Record metrics
+        record_job_enqueued(task_type)
+
         return job.id
 
     async def dequeue(self, worker_id: str) -> Optional[JobQueueModel]:
@@ -135,6 +145,10 @@ class JobQueue:
             job_id: Job ID to complete
             result: Optional result data
         """
+        # Get job to record task_type for metrics
+        job = await self.session.get(JobQueueModel, job_id)
+        task_type = job.task_type if job else "unknown"
+
         await self.session.execute(
             update(JobQueueModel)
             .where(JobQueueModel.id == job_id)
@@ -144,6 +158,9 @@ class JobQueue:
                 result=result,
             )
         )
+
+        # Record metrics
+        record_job_completed(task_type)
 
     async def fail(
         self,
@@ -182,6 +199,9 @@ class JobQueue:
             job.status = "failed"
             job.completed_at = datetime.now(timezone.utc)
             job.error = error
+
+            # Record failed metric only when permanently failed
+            record_job_failed(job.task_type)
 
         await self.session.flush()
 
@@ -420,7 +440,7 @@ class JobQueue:
         failed_result = await self.session.execute(failed_query)
         failed_by_type = dict(failed_result.all())
 
-        return {
+        stats = {
             "pending": by_status.get("pending", 0),
             "running": by_status.get("running", 0),
             "completed": by_status.get("completed", 0),
@@ -428,6 +448,15 @@ class JobQueue:
             "cancelled": by_status.get("cancelled", 0),
             "failed_by_type": failed_by_type,
         }
+
+        # Update Prometheus queue depth gauges
+        update_queue_depth(
+            pending=stats["pending"],
+            running=stats["running"],
+            failed=stats["failed"],
+        )
+
+        return stats
 
     # =========================================================================
     # Stuck Job Recovery

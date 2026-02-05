@@ -25,7 +25,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, get_session_context
 from openlabels.jobs.queue import JobQueue
-from openlabels.jobs.tasks.scan import execute_scan_task
+from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
 from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
 from openlabels.core.exceptions import JobError
@@ -111,7 +111,11 @@ class Worker:
     async def start(self) -> None:
         """Start the worker loop with dynamic concurrency support."""
         settings = get_settings()
-        await init_db(settings.database.url)
+        await init_db(
+            settings.database.url,
+            pool_size=settings.database.pool_size,
+            max_overflow=settings.database.max_overflow,
+        )
 
         self.running = True
         logger.info(f"Worker {self.worker_id} started with concurrency={self.concurrency}")
@@ -156,6 +160,12 @@ class Worker:
         logger.info(f"Worker {self.worker_id} shutting down...")
         self.running = False
         set_worker_state({"status": "stopping"})
+
+        # Release heavy resources (ML models, etc.) to free memory
+        try:
+            run_shutdown_callbacks()
+        except Exception as e:
+            logger.warning(f"Error running shutdown callbacks: {e}")
 
     async def _stuck_job_reclaimer(self) -> None:
         """

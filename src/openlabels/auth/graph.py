@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
+import re
 
 import httpx
 from msal import ConfidentialClientApplication
@@ -20,8 +21,82 @@ logger = logging.getLogger(__name__)
 # Graph API base URL
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
+
+def escape_odata_string(value: str) -> str:
+    """
+    Escape a string value for safe use in OData filter expressions.
+
+    OData string literals are enclosed in single quotes. To include a single
+    quote within a string literal, it must be doubled (i.e., '' represents ').
+    Backslashes are also escaped for safety.
+
+    Args:
+        value: The raw string value to escape
+
+    Returns:
+        The escaped string safe for use in OData filters (without surrounding quotes)
+
+    Example:
+        escape_odata_string("O'Brien") -> "O''Brien"
+        escape_odata_string("path\\to\\file") -> "path\\\\to\\\\file"
+    """
+    # Escape backslashes first (before they could be confused with escape sequences)
+    escaped = value.replace("\\", "\\\\")
+    # Escape single quotes by doubling them (OData standard)
+    escaped = escaped.replace("'", "''")
+    return escaped
+
 # Scopes for client credentials flow (no user context)
 GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
+
+# Pattern to detect potentially malicious OData injection attempts
+_ODATA_INJECTION_PATTERN = re.compile(
+    r"(\bor\b|\band\b|\bnot\b|\beq\b|\bne\b|\bgt\b|\blt\b|\bge\b|\ble\b|"
+    r"\bstartswith\s*\(|\bendswith\s*\(|\bcontains\s*\(|\bsubstringof\s*\()",
+    re.IGNORECASE,
+)
+
+
+def escape_odata_string(value: str) -> str:
+    """
+    Escape a string value for safe use in OData $filter parameters.
+
+    OData string literals are enclosed in single quotes. To include a single
+    quote within a string, it must be doubled (OData 4.0 standard).
+
+    This function also validates input to reject obviously malicious patterns
+    that could indicate OData injection attempts.
+
+    Args:
+        value: The user-supplied string value to escape.
+
+    Returns:
+        The escaped string safe for use in OData filters.
+
+    Raises:
+        ValueError: If the input contains suspicious OData injection patterns.
+    """
+    if not isinstance(value, str):
+        raise ValueError("OData value must be a string")
+
+    # Check for potentially malicious OData operators/functions
+    if _ODATA_INJECTION_PATTERN.search(value):
+        logger.warning(f"Potential OData injection attempt detected in value: {value[:100]}")
+        raise ValueError("Invalid characters in filter value")
+
+    # Check for other suspicious patterns
+    if "'" in value and ("(" in value or ")" in value):
+        # Combination of quotes and parentheses is suspicious
+        logger.warning(f"Suspicious pattern detected in OData value: {value[:100]}")
+        raise ValueError("Invalid characters in filter value")
+
+    # Escape single quotes by doubling them (OData standard)
+    escaped = value.replace("'", "''")
+
+    # Also escape backslashes for extra safety
+    escaped = escaped.replace("\\", "\\\\")
+
+    return escaped
 
 
 @dataclass
@@ -232,12 +307,15 @@ class GraphClient:
             GraphUser or None if not found
         """
         try:
+            # Escape user input to prevent OData injection
+            safe_sid = escape_odata_string(sid)
+
             # Use $filter to find user by onPremisesSecurityIdentifier
             data = await self._request(
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"onPremisesSecurityIdentifier eq '{sid}'",
+                    "$filter": f"onPremisesSecurityIdentifier eq '{safe_sid}'",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "jobTitle,department,officeLocation,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
@@ -269,11 +347,14 @@ class GraphClient:
             sam_account_name = sam_account_name.split("\\")[1]
 
         try:
+            # Escape user input to prevent OData injection
+            safe_sam_account_name = escape_odata_string(sam_account_name)
+
             data = await self._request(
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"onPremisesSamAccountName eq '{sam_account_name}'",
+                    "$filter": f"onPremisesSamAccountName eq '{safe_sam_account_name}'",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "jobTitle,department,officeLocation,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
@@ -302,12 +383,15 @@ class GraphClient:
             List of matching users
         """
         try:
+            # Escape user input to prevent OData injection
+            safe_query = escape_odata_string(query)
+
             data = await self._request(
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"startswith(displayName, '{query}') or "
-                    f"startswith(userPrincipalName, '{query}')",
+                    "$filter": f"startswith(displayName, '{safe_query}') or "
+                    f"startswith(userPrincipalName, '{safe_query}')",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
                     "$top": str(limit),

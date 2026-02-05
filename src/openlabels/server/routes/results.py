@@ -1,12 +1,21 @@
 """
 Scan results API endpoints.
+
+Supports both cursor-based and offset-based pagination:
+- Cursor-based (recommended for large datasets): Use `cursor` parameter
+- Offset-based (backward compatible): Use `page` and `page_size` parameters
+
+Cursor-based pagination is more efficient for large datasets as it:
+- Avoids the performance penalty of large OFFSETs
+- Provides consistent results even when data changes between requests
 """
 
+import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -300,9 +309,6 @@ async def clear_all_results(
             },
         )
 
-    # Regular REST response
-    return Response(status_code=204)
-
 
 @router.delete("/{result_id}")
 async def delete_result(
@@ -336,9 +342,6 @@ async def delete_result(
                 "HX-Trigger": f'{{"notify": {{"message": "Result for \\"{file_name}\\" deleted", "type": "success"}}, "refreshResults": true}}',
             },
         )
-
-    # Regular REST response
-    return Response(status_code=204)
 
 
 @router.post("/{result_id}/apply-label")
@@ -387,9 +390,28 @@ async def apply_recommended_label(
             headers={
                 "HX-Trigger": '{"notify": {"message": "Label application queued", "type": "success"}}',
             },
+            priority=60,
         )
 
-    return {"message": "Label application queued", "job_id": str(job_id)}
+        # Check if HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Label application queued", "type": "success"}}',
+                },
+            )
+
+        return {"message": "Label application queued", "job_id": str(job_id)}
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error applying label to result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while applying label",
+        )
 
 
 @router.post("/{result_id}/rescan")
@@ -460,6 +482,25 @@ async def rescan_file(
             headers={
                 "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
             },
+            priority=70,  # Higher priority for single file rescan
         )
 
-    return {"message": "Rescan queued", "job_id": str(new_job.id)}
+        # Check if HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
+                },
+            )
+
+        return {"message": "Rescan queued", "job_id": str(new_job.id)}
+    except (NotFoundError, BadRequestError):
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error rescanning result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while rescanning file",
+        )
