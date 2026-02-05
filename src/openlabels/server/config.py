@@ -236,9 +236,25 @@ class CORSSettings(BaseSettings):
 
 
 class RateLimitSettings(BaseSettings):
-    """Rate limiting configuration."""
+    """
+    Rate limiting configuration.
+
+    For distributed deployments with multiple server instances, configure
+    Redis storage to ensure rate limits are shared across all instances.
+
+    Environment variables:
+    - OPENLABELS_RATE_LIMIT__ENABLED: Enable/disable rate limiting
+    - OPENLABELS_RATE_LIMIT__STORAGE_URI: Redis URI for distributed rate limiting
+    - OPENLABELS_RATE_LIMIT__AUTH_LIMIT: Rate limit for auth endpoints
+    - OPENLABELS_RATE_LIMIT__API_LIMIT: Rate limit for general API
+    - OPENLABELS_RATE_LIMIT__SCAN_CREATE_LIMIT: Rate limit for scan creation
+    """
 
     enabled: bool = True
+    # Storage backend URI for distributed rate limiting (e.g., "redis://localhost:6379")
+    # If not set, defaults to redis.url when Redis is enabled
+    # Set to empty string "" to force in-memory storage even when Redis is available
+    storage_uri: str | None = None
     # Requests per minute by endpoint type
     auth_limit: str = "10/minute"  # /auth/* endpoints
     api_limit: str = "100/minute"  # General API
@@ -395,6 +411,25 @@ class JobSettings(BaseSettings):
     max_worker_concurrency: int = 32
 
 
+class SchedulerSettings(BaseSettings):
+    """
+    Database-driven scheduler configuration.
+
+    The scheduler polls the database for due schedules and triggers scan jobs.
+    Multiple server instances can run safely - database locking prevents
+    duplicate triggers.
+
+    Environment variables:
+    - OPENLABELS_SCHEDULER__ENABLED: Enable/disable the scheduler
+    - OPENLABELS_SCHEDULER__POLL_INTERVAL: Polling interval in seconds
+    - OPENLABELS_SCHEDULER__MIN_TRIGGER_INTERVAL: Minimum seconds between triggers
+    """
+
+    enabled: bool = True  # Enable scheduler on startup
+    poll_interval: int = 30  # Seconds between schedule checks
+    min_trigger_interval: int = 60  # Minimum seconds between triggering same schedule
+
+
 class RedisSettings(BaseSettings):
     """
     Redis caching configuration.
@@ -444,6 +479,7 @@ class Settings(BaseSettings):
     timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
     circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
     jobs: JobSettings = Field(default_factory=JobSettings)
+    scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
 
 

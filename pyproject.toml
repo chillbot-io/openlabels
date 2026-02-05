@@ -78,6 +78,7 @@ dependencies = [
 
     # Security
     "slowapi>=0.1.9",  # Rate limiting
+    "limits[redis]>=3.0.0",  # Redis backend for distributed rate limiting
     "defusedxml>=0.7.0",  # XXE-safe XML parsing
 
     # Observability
