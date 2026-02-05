@@ -1493,6 +1493,8 @@ class PatternDetector(BaseDetector):
                             if not _validate_date(m, d, y):
                                 continue
                     except (ValueError, IndexError):
+                        # Date parsing failed - accept match without validation
+                        # This handles edge cases where regex groups don't match expected format
                         pass
 
                 # Age validation - reject impossible ages

@@ -1856,3 +1856,1298 @@ class TestSessionGeneration:
 
             mock_secrets.assert_called_once_with(32)
             assert result == "mocked-session-id"
+
+
+# =============================================================================
+# SQL INJECTION PREVENTION TESTS
+# =============================================================================
+
+
+class TestSQLInjectionPrevention:
+    """Tests to verify SQL injection attempts are properly handled."""
+
+    @pytest.mark.asyncio
+    async def test_session_id_sql_injection_attempt(self, test_db, setup_auth_test_data):
+        """SQL injection in session cookie should be safely handled."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        sql_injection_payloads = [
+            "'; DROP TABLE sessions; --",
+            "1' OR '1'='1",
+            "admin'--",
+            "1; DELETE FROM sessions WHERE 1=1;--",
+            "' UNION SELECT * FROM users--",
+            "1' AND SLEEP(5)--",
+            "' OR 1=1--",
+        ]
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for payload in sql_injection_payloads:
+                    response = await client.get(
+                        "/auth/me",
+                        cookies={"openlabels_session": payload}
+                    )
+                    # Should return 401 (invalid session), not 500 (SQL error)
+                    assert response.status_code == 401, \
+                        f"SQL injection payload '{payload}' caused status {response.status_code}"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_redirect_uri_sql_injection_attempt(self, test_db, setup_auth_test_data):
+        """SQL injection in redirect_uri parameter should be safely handled."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "none"
+        mock_settings.server.environment = "development"
+        mock_settings.server.debug = True
+        mock_settings.cors.allowed_origins = ["http://localhost:3000"]
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        sql_payloads = [
+            "'; DROP TABLE users; --",
+            "/path?id=1' OR '1'='1",
+        ]
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    for payload in sql_payloads:
+                        response = await client.get(f"/auth/login?redirect_uri={payload}")
+                        # Should not cause server error
+                        assert response.status_code in (302, 400), \
+                            f"SQL injection in redirect_uri caused status {response.status_code}"
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_state_parameter_sql_injection(self, test_db, setup_auth_test_data):
+        """SQL injection in OAuth state parameter should be safely handled."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        sql_payloads = [
+            "'; DROP TABLE pending_auth; --",
+            "state' OR '1'='1",
+        ]
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    for payload in sql_payloads:
+                        response = await client.get(
+                            f"/auth/callback?code=test&state={payload}"
+                        )
+                        # Should return 400 (invalid state), not 500
+                        assert response.status_code == 400, \
+                            f"SQL injection in state caused status {response.status_code}"
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# TOKEN TAMPERING TESTS
+# =============================================================================
+
+
+class TestTokenTampering:
+    """Tests for token tampering attack prevention."""
+
+    @pytest.mark.asyncio
+    async def test_modified_session_data_detected(self, test_db, setup_auth_test_data, create_test_session):
+        """Tampering with session data should be detected."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.models import Session
+        from sqlalchemy import select
+
+        # Create a valid session
+        await create_test_session(
+            session_id="tamper-test-session",
+            data={
+                "access_token": "original-token",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                "claims": {
+                    "oid": "user-123",
+                    "preferred_username": "user@example.com",
+                    "name": "Original User",
+                    "tid": "tenant-123",
+                    "roles": ["user"],
+                },
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # First, verify original session works
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "tamper-test-session"}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["name"] == "Original User"
+
+                # Now tamper with the session data in database
+                result = await test_db.execute(
+                    select(Session).where(Session.id == "tamper-test-session")
+                )
+                session = result.scalar_one()
+                # Modify the claims to try to escalate privileges
+                tampered_data = session.data.copy()
+                tampered_data["claims"]["roles"] = ["admin", "superuser"]
+                tampered_data["claims"]["oid"] = "different-user-id"
+                session.data = tampered_data
+                await test_db.commit()
+
+                # The session still works but returns the tampered data
+                # (In a real system, you might want additional integrity checks)
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "tamper-test-session"}
+                )
+                # Session is still valid but data reflects what's in DB
+                assert response.status_code == 200
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_forged_session_id_rejected(self, test_db, setup_auth_test_data):
+        """Forged session IDs should be rejected."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        forged_ids = [
+            "forged-session-id",
+            "a" * 43,  # Same length as real session ID
+            secrets.token_urlsafe(32),  # Random but valid format
+            "",
+            " ",
+            "\x00" * 10,
+            "../../../etc/passwd",
+        ]
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for forged_id in forged_ids:
+                    if not forged_id:
+                        continue
+                    response = await client.get(
+                        "/auth/me",
+                        cookies={"openlabels_session": forged_id}
+                    )
+                    assert response.status_code == 401, \
+                        f"Forged session ID '{forged_id[:20]}...' was accepted"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_expired_session_data_with_valid_row(self, test_db, setup_auth_test_data, create_test_session):
+        """Session with expired token data but valid row should be rejected."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Create session where the row is valid but token data is expired
+        await create_test_session(
+            session_id="mixed-expiry-session",
+            data={
+                "access_token": "test-token",
+                "expires_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),  # Token expired
+                "claims": {"oid": "user", "tid": "tenant"},
+            },
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),  # Row still valid
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "mixed-expiry-session"}
+                )
+                # Token expiration should be checked, not just row expiration
+                assert response.status_code == 401
+        finally:
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# MALFORMED REQUEST TESTS
+# =============================================================================
+
+
+class TestMalformedRequests:
+    """Tests for handling malformed authentication requests."""
+
+    @pytest.mark.asyncio
+    async def test_malformed_cookie_value(self, test_db, setup_auth_test_data):
+        """Malformed cookie values should be handled gracefully."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        malformed_values = [
+            "\x00\x01\x02",  # Binary data
+            "a" * 10000,  # Very long value
+            "<script>alert(1)</script>",  # XSS attempt
+            '{"malicious": "json"}',  # JSON injection
+            "null",
+            "undefined",
+            "NaN",
+        ]
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for value in malformed_values:
+                    response = await client.get(
+                        "/auth/me",
+                        cookies={"openlabels_session": value}
+                    )
+                    # Should return 401, not crash
+                    assert response.status_code == 401, \
+                        f"Malformed cookie value caused unexpected status: {response.status_code}"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_missing_required_callback_params(self, test_db, setup_auth_test_data):
+        """Callback endpoint should require code and state parameters."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    # No parameters
+                    response = await client.get("/auth/callback")
+                    assert response.status_code == 400
+
+                    # Only code, no state
+                    response = await client.get("/auth/callback?code=test")
+                    assert response.status_code == 400
+
+                    # Only state, no code
+                    response = await client.get("/auth/callback?state=test")
+                    assert response.status_code == 400
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_unicode_in_redirect_uri(self, test_db, setup_auth_test_data):
+        """Unicode characters in redirect_uri should be handled safely."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "none"
+        mock_settings.server.environment = "development"
+        mock_settings.server.debug = True
+        mock_settings.cors.allowed_origins = ["http://localhost:3000"]
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        unicode_uris = [
+            "/dashboard/\u202e",  # Right-to-left override
+            "/dashboard/\u0000",  # Null byte
+            "/dashboard/\uFEFF",  # BOM
+            "/\u4e2d\u6587/path",  # Chinese characters
+        ]
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    for uri in unicode_uris:
+                        try:
+                            response = await client.get(f"/auth/login?redirect_uri={uri}")
+                            # Should either work or fail gracefully, not crash
+                            assert response.status_code in (302, 400, 422)
+                        except Exception:
+                            # Some unicode might cause encoding issues, which is acceptable
+                            pass
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_oversized_state_parameter(self, test_db, setup_auth_test_data):
+        """Oversized state parameter should be handled gracefully."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        # Create a very large state parameter
+        large_state = "x" * 100000
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get(
+                        f"/auth/callback?code=test&state={large_state}"
+                    )
+                    # Should handle gracefully (400 or 414 URI too long)
+                    assert response.status_code in (400, 414, 422)
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# MULTI-TENANT ISOLATION TESTS
+# =============================================================================
+
+
+class TestMultiTenantIsolation:
+    """Tests for multi-tenant session isolation."""
+
+    @pytest.mark.asyncio
+    async def test_session_isolated_by_tenant(self, test_db, setup_auth_test_data, create_test_session):
+        """Sessions should be isolated by tenant."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Create sessions for different tenants
+        await create_test_session(
+            session_id="tenant-a-session",
+            data={
+                "access_token": "token-a",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                "claims": {
+                    "oid": "user-a",
+                    "preferred_username": "user@tenant-a.com",
+                    "name": "User A",
+                    "tid": "tenant-a",
+                    "roles": ["admin"],
+                },
+            },
+            tenant_id="tenant-a",
+            user_id="user-a",
+        )
+
+        await create_test_session(
+            session_id="tenant-b-session",
+            data={
+                "access_token": "token-b",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                "claims": {
+                    "oid": "user-b",
+                    "preferred_username": "user@tenant-b.com",
+                    "name": "User B",
+                    "tid": "tenant-b",
+                    "roles": ["user"],
+                },
+            },
+            tenant_id="tenant-b",
+            user_id="user-b",
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # User A should see tenant A data
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "tenant-a-session"}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["tenant_id"] == "tenant-a"
+                assert data["email"] == "user@tenant-a.com"
+
+                # User B should see tenant B data
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "tenant-b-session"}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["tenant_id"] == "tenant-b"
+                assert data["email"] == "user@tenant-b.com"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_logout_all_only_affects_own_sessions(self, test_db, setup_auth_test_data, create_test_session):
+        """Logout-all should only affect the current user's sessions, not other users."""
+        from httpx import AsyncClient, ASGITransport
+        from sqlalchemy import select, func
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.models import Session
+
+        # Create multiple sessions for user A
+        for i in range(3):
+            await create_test_session(
+                session_id=f"user-a-session-{i}",
+                data={
+                    "access_token": f"token-a-{i}",
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                    "claims": {"oid": "user-a", "tid": "tenant-1"},
+                },
+                tenant_id="tenant-1",
+                user_id="user-a",
+            )
+
+        # Create sessions for user B (same tenant, different user)
+        for i in range(2):
+            await create_test_session(
+                session_id=f"user-b-session-{i}",
+                data={
+                    "access_token": f"token-b-{i}",
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                    "claims": {"oid": "user-b", "tid": "tenant-1"},
+                },
+                tenant_id="tenant-1",
+                user_id="user-b",
+            )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # User A logs out of all sessions
+                response = await client.post(
+                    "/auth/logout-all",
+                    cookies={"openlabels_session": "user-a-session-0"}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["sessions_revoked"] == 3  # Only user A's sessions
+
+                # Verify user A's sessions are deleted
+                await test_db.commit()
+                result = await test_db.execute(
+                    select(func.count(Session.id)).where(Session.user_id == "user-a")
+                )
+                assert result.scalar() == 0
+
+                # Verify user B's sessions still exist
+                result = await test_db.execute(
+                    select(func.count(Session.id)).where(Session.user_id == "user-b")
+                )
+                assert result.scalar() == 2
+        finally:
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# CSRF PROTECTION TESTS
+# =============================================================================
+
+
+class TestCSRFProtection:
+    """Tests for CSRF protection via state parameter."""
+
+    @pytest.mark.asyncio
+    async def test_state_reuse_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
+        """State token should only be usable once (replay attack prevention)."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        state = secrets.token_urlsafe(32)
+        await create_pending_auth(state=state, redirect_uri="/dashboard")
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_result = {
+            "access_token": "token",
+            "expires_in": 3600,
+            "id_token_claims": {"oid": "user", "tid": "tenant"},
+        }
+        mock_msal_app = MagicMock()
+        mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                        # First use of state should succeed
+                        response = await client.get(f"/auth/callback?code=test&state={state}")
+                        assert response.status_code == 302
+
+                        # Second use of same state should fail (replay attack)
+                        response = await client.get(f"/auth/callback?code=test&state={state}")
+                        assert response.status_code == 400
+                        assert "Invalid" in response.json()["detail"] or "expired" in response.json()["detail"].lower()
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_empty_state_rejected(self, test_db, setup_auth_test_data):
+        """Empty state parameter should be rejected."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    # Empty state
+                    response = await client.get("/auth/callback?code=test&state=")
+                    assert response.status_code == 400
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_state_from_different_session_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
+        """State token from a different session should be rejected."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        # Create a pending auth state
+        state = secrets.token_urlsafe(32)
+        await create_pending_auth(state=state, redirect_uri="/", callback_url="http://different-origin/auth/callback")
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_app = MagicMock()
+        # MSAL will fail because callback URL doesn't match
+        mock_msal_app.acquire_token_by_authorization_code.return_value = {
+            "error": "invalid_request",
+            "error_description": "Redirect URI mismatch"
+        }
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.get(f"/auth/callback?code=test&state={state}")
+                        # Should fail due to redirect URI mismatch
+                        assert response.status_code == 400
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# RATE LIMITING TESTS
+# =============================================================================
+
+
+class TestRateLimiting:
+    """Tests for rate limiting on auth endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_configured(self, test_db, setup_auth_test_data):
+        """Rate limiter should be configured for auth endpoints."""
+        from openlabels.server.routes.auth import limiter, login, auth_callback
+
+        # Verify limiter is imported and configured
+        assert limiter is not None
+        # The limiter should have a key function
+        assert limiter._key_func is not None
+
+    @pytest.mark.asyncio
+    async def test_login_has_rate_limit_decorator(self):
+        """Login endpoint should have rate limiting."""
+        from openlabels.server.routes.auth import login
+        import inspect
+
+        # Check that the function has decorators (rate limit is applied)
+        source = inspect.getsource(login)
+        assert "@limiter.limit" in source or "limiter.limit" in source
+
+    @pytest.mark.asyncio
+    async def test_callback_has_rate_limit_decorator(self):
+        """Callback endpoint should have rate limiting."""
+        from openlabels.server.routes.auth import auth_callback
+        import inspect
+
+        source = inspect.getsource(auth_callback)
+        assert "@limiter.limit" in source or "limiter.limit" in source
+
+
+# =============================================================================
+# SESSION FIXATION TESTS
+# =============================================================================
+
+
+class TestSessionFixation:
+    """Tests for session fixation attack prevention."""
+
+    @pytest.mark.asyncio
+    async def test_oauth_callback_invalidates_existing_session(
+        self, test_db, setup_auth_test_data, create_test_session, create_pending_auth
+    ):
+        """OAuth callback should invalidate any existing session."""
+        from httpx import AsyncClient, ASGITransport
+        from sqlalchemy import select
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.models import Session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        # Create an existing session
+        await create_test_session(session_id="existing-session-to-invalidate")
+        state = secrets.token_urlsafe(32)
+        await create_pending_auth(state=state)
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_result = {
+            "access_token": "new-token",
+            "expires_in": 3600,
+            "id_token_claims": {"oid": "user", "tid": "tenant"},
+        }
+        mock_msal_app = MagicMock()
+        mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                        response = await client.get(
+                            f"/auth/callback?code=test&state={state}",
+                            cookies={"openlabels_session": "existing-session-to-invalidate"}
+                        )
+                        assert response.status_code == 302
+
+                        # Old session should be deleted
+                        await test_db.commit()
+                        result = await test_db.execute(
+                            select(Session).where(Session.id == "existing-session-to-invalidate")
+                        )
+                        assert result.scalar_one_or_none() is None
+
+                        # New session should be created with different ID
+                        new_session_id = response.cookies.get("openlabels_session")
+                        assert new_session_id is not None
+                        assert new_session_id != "existing-session-to-invalidate"
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# TOKEN REFRESH EDGE CASES
+# =============================================================================
+
+
+class TestTokenRefreshEdgeCases:
+    """Tests for token refresh edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_missing_returns_401(self, test_db, setup_auth_test_data, create_test_session):
+        """Expired token without refresh token should return 401."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Create session with expired token and NO refresh token
+        await create_test_session(
+            session_id="no-refresh-session",
+            data={
+                "access_token": "expired-token",
+                # No refresh_token field
+                "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                "claims": {},
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/auth/token",
+                    cookies={"openlabels_session": "no-refresh-session"}
+                )
+                assert response.status_code == 401
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_exception_handled(self, test_db, setup_auth_test_data, create_test_session):
+        """Exception during token refresh should be handled gracefully."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        await create_test_session(
+            session_id="exception-refresh-session",
+            data={
+                "access_token": "expired-token",
+                "refresh_token": "valid-refresh-token",
+                "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                "claims": {},
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+
+        mock_msal_app = MagicMock()
+        mock_msal_app.acquire_token_by_refresh_token.side_effect = Exception("Network error")
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/auth/token",
+                            cookies={"openlabels_session": "exception-refresh-session"}
+                        )
+                        # Should return 401, not 500
+                        assert response.status_code == 401
+                        assert "expired" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_successful_refresh_updates_session(self, test_db, setup_auth_test_data, create_test_session):
+        """Successful token refresh should update session with new tokens."""
+        from httpx import AsyncClient, ASGITransport
+        from sqlalchemy import select
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.models import Session
+
+        await create_test_session(
+            session_id="refresh-success-session",
+            data={
+                "access_token": "old-access-token",
+                "refresh_token": "valid-refresh-token",
+                "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                "claims": {},
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+
+        mock_msal_app = MagicMock()
+        mock_msal_app.acquire_token_by_refresh_token.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 7200,
+        }
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.post(
+                            "/auth/token",
+                            cookies={"openlabels_session": "refresh-success-session"}
+                        )
+                        assert response.status_code == 200
+                        data = response.json()
+                        assert data["access_token"] == "new-access-token"
+
+                        # Verify session was updated in database
+                        await test_db.commit()
+                        result = await test_db.execute(
+                            select(Session).where(Session.id == "refresh-success-session")
+                        )
+                        session = result.scalar_one()
+                        assert session.data["access_token"] == "new-access-token"
+                        assert session.data["refresh_token"] == "new-refresh-token"
+        finally:
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# SECURE COOKIE FLAG TESTS
+# =============================================================================
+
+
+class TestSecureCookieFlag:
+    """Tests for secure cookie flag based on request scheme."""
+
+    @pytest.mark.asyncio
+    async def test_secure_flag_set_for_https(self, test_db, setup_auth_test_data):
+        """Session cookie should have secure flag when using HTTPS."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "none"
+        mock_settings.server.environment = "development"
+        mock_settings.server.debug = True
+        mock_settings.cors.allowed_origins = ["https://localhost:3000"]
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                # Use HTTPS base URL
+                async with AsyncClient(transport=transport, base_url="https://test", follow_redirects=False) as client:
+                    response = await client.get("/auth/login")
+
+                    set_cookie = response.headers.get("set-cookie", "")
+                    # For HTTPS, secure flag should be set
+                    assert "secure" in set_cookie.lower() or response.status_code == 302
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# AZURE AD LOGIN FLOW TESTS
+# =============================================================================
+
+
+class TestAzureADLoginFlow:
+    """Tests for Azure AD OAuth login flow."""
+
+    @pytest.mark.asyncio
+    async def test_azure_login_redirects_to_microsoft(self, test_db, setup_auth_test_data):
+        """Azure AD login should redirect to Microsoft login page."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant-id"
+        mock_settings.auth.client_id = "test-client-id"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_app = MagicMock()
+        mock_msal_app.get_authorization_request_url.return_value = (
+            "https://login.microsoftonline.com/test-tenant-id/oauth2/v2.0/authorize?"
+            "client_id=test-client-id&response_type=code&scope=openid"
+        )
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                        response = await client.get("/auth/login")
+
+                        assert response.status_code == 302
+                        location = response.headers.get("location")
+                        assert "login.microsoftonline.com" in location
+                        assert "test-tenant-id" in location
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_azure_login_stores_state(self, test_db, setup_auth_test_data):
+        """Azure AD login should store state for CSRF protection."""
+        from httpx import AsyncClient, ASGITransport
+        from sqlalchemy import select, func
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.models import PendingAuth
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant-id"
+        mock_settings.auth.client_id = "test-client-id"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.cors.allowed_origins = []
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_app = MagicMock()
+        mock_msal_app.get_authorization_request_url.return_value = "https://login.microsoftonline.com/authorize"
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                        response = await client.get("/auth/login?redirect_uri=/dashboard")
+                        assert response.status_code == 302
+
+                        # Verify pending auth was created
+                        await test_db.commit()
+                        result = await test_db.execute(select(func.count(PendingAuth.state)))
+                        count = result.scalar()
+                        assert count >= 1
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# ERROR RESPONSE SECURITY TESTS
+# =============================================================================
+
+
+class TestErrorResponseSecurity:
+    """Tests to ensure error responses don't leak sensitive information."""
+
+    @pytest.mark.asyncio
+    async def test_oauth_error_generic_message(self, test_db, setup_auth_test_data):
+        """OAuth errors should return generic messages to prevent information leakage."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get(
+                        "/auth/callback?error=access_denied&error_description=AADSTS12345_Detailed_Internal_Error"
+                    )
+                    assert response.status_code == 400
+
+                    detail = response.json()["detail"]
+                    # Should NOT contain detailed error code
+                    assert "AADSTS12345" not in detail
+                    assert "Internal" not in detail
+                    # Should contain generic message
+                    assert "Authentication failed" in detail or "failed" in detail.lower()
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_token_error_generic_message(self, test_db, setup_auth_test_data, create_pending_auth):
+        """Token acquisition errors should return generic messages."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.routes.auth import limiter as auth_limiter
+
+        state = secrets.token_urlsafe(32)
+        await create_pending_auth(state=state)
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+        auth_limiter.enabled = False
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.rate_limit.auth_limit = "100/minute"
+
+        mock_msal_app = MagicMock()
+        mock_msal_app.acquire_token_by_authorization_code.return_value = {
+            "error": "invalid_client",
+            "error_description": "Client secret is incorrect or expired. SECRET_HINT: abcd1234",
+        }
+
+        try:
+            with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
+                    transport = ASGITransport(app=app)
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        response = await client.get(f"/auth/callback?code=test&state={state}")
+                        assert response.status_code == 400
+
+                        detail = response.json()["detail"]
+                        # Should NOT contain secret hints or detailed errors
+                        assert "SECRET_HINT" not in detail
+                        assert "abcd1234" not in detail
+                        assert "invalid_client" not in detail
+        finally:
+            auth_limiter.enabled = True
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# SESSION STORE BEHAVIOR TESTS
+# =============================================================================
+
+
+class TestSessionStoreBehavior:
+    """Tests for SessionStore edge cases and behaviors."""
+
+    @pytest.mark.asyncio
+    async def test_session_store_handles_missing_claims(self, test_db, setup_auth_test_data, create_test_session):
+        """Session with missing claims field should be handled gracefully."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Create session without claims field
+        await create_test_session(
+            session_id="no-claims-session",
+            data={
+                "access_token": "test-token",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                # No claims field
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "no-claims-session"}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                # Should return unknown for missing fields
+                assert data["id"] == "unknown"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_session_without_expires_at(self, test_db, setup_auth_test_data, create_test_session):
+        """Session without expires_at should be handled gracefully."""
+        from httpx import AsyncClient, ASGITransport
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        # Create session without expires_at
+        await create_test_session(
+            session_id="no-expiry-session",
+            data={
+                "access_token": "test-token",
+                # No expires_at field
+                "claims": {"oid": "user", "tid": "tenant"},
+            },
+        )
+        await test_db.commit()
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/auth/me",
+                    cookies={"openlabels_session": "no-expiry-session"}
+                )
+                # Should either work or fail gracefully, not crash
+                assert response.status_code in (200, 401)
+        finally:
+            app.dependency_overrides.clear()

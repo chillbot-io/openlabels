@@ -18,6 +18,8 @@ ML Detectors (optional, require additional dependencies):
 - PIIBertONNXDetector: AI4Privacy PII-BERT (ONNX optimized)
 """
 
+import logging
+
 from .base import BaseDetector
 from .checksum import ChecksumDetector
 from .secrets import SecretsDetector
@@ -42,12 +44,15 @@ __all__ = [
     "PII_BERT_LABELS",
 ]
 
+logger = logging.getLogger(__name__)
+
 # Hyperscan Detector - optional (requires hyperscan library)
 try:
     from .hyperscan import HyperscanDetector, is_hyperscan_available
     __all__.extend(["HyperscanDetector", "is_hyperscan_available"])
 except ImportError:
-    pass
+    # Hyperscan not installed - SIMD acceleration unavailable
+    logger.debug("Hyperscan library not available - using standard pattern matching")
 
 # ML Detectors - optional imports (require numpy, onnxruntime, transformers)
 # Import these explicitly when needed, e.g.:
@@ -69,7 +74,8 @@ try:
         "get_device_info",
     ])
 except ImportError:
-    pass
+    # ML detectors require transformers/torch - optional feature
+    logger.debug("ML detectors not available - transformers/torch not installed")
 
 try:
     from .ml_onnx import (
@@ -83,4 +89,5 @@ try:
         "PIIBertONNXDetector",
     ])
 except ImportError:
-    pass
+    # ONNX detectors require onnxruntime - optional feature
+    logger.debug("ONNX detectors not available - onnxruntime not installed")

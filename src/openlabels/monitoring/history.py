@@ -184,7 +184,9 @@ ForEach-Object {{
             # Parse timestamp
             try:
                 ts = datetime.fromisoformat(item["TimeCreated"].replace("Z", "+00:00"))
-            except (ValueError, KeyError):
+            except (ValueError, KeyError) as e:
+                # Skip events with missing/malformed timestamps - common in Windows event logs
+                logger.debug(f"Skipping event with invalid timestamp: {type(e).__name__}")
                 continue
 
             # Determine action from access mask
@@ -375,5 +377,14 @@ def _resolve_linux_uid(uid: str) -> Optional[str]:
 
         uid_int = int(uid)
         return pwd.getpwuid(uid_int).pw_name
-    except (ValueError, KeyError, ImportError):
+    except ValueError:
+        # Invalid UID format - not a number
+        logger.debug(f"Cannot resolve non-numeric UID: {uid}")
+        return None
+    except KeyError:
+        # UID not found in passwd database
+        logger.debug(f"UID {uid} not found in passwd database")
+        return None
+    except ImportError:
+        # pwd module not available (Windows)
         return None

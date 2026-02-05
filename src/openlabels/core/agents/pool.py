@@ -284,6 +284,7 @@ class AgentPool:
             try:
                 await self._result_task
             except asyncio.CancelledError:
+                # Expected when cancelling the task - not an error
                 pass
 
         # Clean up queues
@@ -364,6 +365,7 @@ class AgentPool:
                 )
                 yield result
             except asyncio.TimeoutError:
+                # Timeout is expected - allows checking for shutdown between waits
                 continue
 
     async def results_batched(

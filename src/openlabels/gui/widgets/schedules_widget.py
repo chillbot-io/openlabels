@@ -314,6 +314,7 @@ class SchedulesWidget(QWidget):
                 dt = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
                 next_run = dt.strftime("%Y-%m-%d %H:%M")
             except ValueError:
+                # Keep original string if parsing fails - may be non-ISO format
                 pass
         next_run_item = QTableWidgetItem(str(next_run) if next_run else "-")
         self.table.setItem(row, 3, next_run_item)
