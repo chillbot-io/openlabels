@@ -43,6 +43,7 @@ from openlabels.core.path_validation import (
     validate_path,
     PathValidationError,
     BLOCKED_PATH_PREFIXES,
+    BLOCKED_FILE_PATTERNS,
 )
 
 logger = logging.getLogger(__name__)

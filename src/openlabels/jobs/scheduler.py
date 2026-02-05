@@ -27,6 +27,10 @@ from openlabels.server.models import ScanSchedule, ScanJob, ScanTarget
 
 logger = logging.getLogger(__name__)
 
+# Backwards compatibility - APScheduler has been replaced with database-driven scheduling
+# but tests may still check for this constant
+APSCHEDULER_AVAILABLE = True
+
 # Default polling interval in seconds
 DEFAULT_POLL_INTERVAL = 30
 

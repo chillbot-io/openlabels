@@ -81,8 +81,8 @@ class PurgeRequest(BaseModel):
 
 @router.get("", response_model=QueueStatsResponse)
 async def list_jobs(
-    job_service: JobServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    job_service: JobServiceDep,
+    _tenant: TenantContextDep,
 ) -> QueueStatsResponse:
     """
     Get job queue statistics.
@@ -96,8 +96,8 @@ async def list_jobs(
 
 @router.get("/stats", response_model=QueueStatsResponse)
 async def get_queue_stats(
-    job_service: JobServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    job_service: JobServiceDep,
+    _tenant: TenantContextDep,
 ) -> QueueStatsResponse:
     """
     Get job queue statistics.
@@ -110,10 +110,10 @@ async def get_queue_stats(
 
 @router.get("/failed", response_model=PaginatedResponse[JobResponse])
 async def list_failed_jobs(
+    job_service: JobServiceDep,
+    _admin: AdminContextDep,
     task_type: Optional[str] = Query(None, description="Filter by task type"),
     pagination: PaginationParams = Depends(),
-    job_service: JobServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
 ) -> PaginatedResponse[JobResponse]:
     """
     List failed jobs (dead letter queue).
@@ -147,8 +147,8 @@ async def list_failed_jobs(
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: UUID,
-    job_service: JobServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    job_service: JobServiceDep,
+    _tenant: TenantContextDep,
 ) -> JobResponse:
     """Get job details."""
     job = await job_service.get_job(job_id)
@@ -158,9 +158,9 @@ async def get_job(
 @router.post("/{job_id}/requeue")
 async def requeue_job(
     job_id: UUID,
+    job_service: JobServiceDep,
+    _admin: AdminContextDep,
     request: RequeueRequest = RequeueRequest(),
-    job_service: JobServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Requeue a failed job from the dead letter queue.
@@ -173,9 +173,9 @@ async def requeue_job(
 
 @router.post("/requeue-all")
 async def requeue_all_failed(
+    job_service: JobServiceDep,
+    _admin: AdminContextDep,
     request: RequeueAllRequest = RequeueAllRequest(),
-    job_service: JobServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Requeue all failed jobs.
@@ -192,9 +192,9 @@ async def requeue_all_failed(
 
 @router.post("/purge")
 async def purge_failed_jobs(
+    job_service: JobServiceDep,
+    _admin: AdminContextDep,
     request: PurgeRequest = PurgeRequest(),
-    job_service: JobServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Delete failed jobs from the dead letter queue.
@@ -212,8 +212,8 @@ async def purge_failed_jobs(
 @router.post("/{job_id}/cancel")
 async def cancel_job(
     job_id: UUID,
-    job_service: JobServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    job_service: JobServiceDep,
+    _admin: AdminContextDep,
 ) -> dict:
     """
     Cancel a pending or running job.
@@ -247,7 +247,7 @@ class WorkerStatusResponse(BaseModel):
 
 @router.get("/workers/status", response_model=WorkerStatusResponse)
 async def get_worker_status(
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ) -> WorkerStatusResponse:
     """
     Get current worker pool status.
@@ -284,7 +284,7 @@ async def get_worker_status(
 @router.post("/workers/config")
 async def update_worker_config(
     request: WorkerConfigRequest,
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ) -> dict:
     """
     Update worker pool configuration.
