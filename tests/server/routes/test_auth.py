@@ -78,8 +78,8 @@ async def create_test_session(test_db):
         session_id: str = None,
         data: dict = None,
         expires_at: datetime = None,
-        tenant_id: str = None,
-        user_id: str = None,
+        tenant_id=None,
+        user_id=None,
     ):
         if session_id is None:
             session_id = secrets.token_urlsafe(32)
@@ -88,10 +88,10 @@ async def create_test_session(test_db):
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": user_id or "test-oid",
+                    "oid": str(user_id) if user_id else "test-oid",
                     "preferred_username": "test@localhost",
                     "name": "Test User",
-                    "tid": tenant_id or "test-tenant",
+                    "tid": str(tenant_id) if tenant_id else "test-tenant",
                     "roles": ["admin"],
                 },
             }
@@ -1503,7 +1503,8 @@ class TestLogoutAllEndpoint:
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
 
-        user_id = "multi-session-user"
+        user = setup_auth_test_data["user"]
+        user_id = user.id
 
         # Create multiple sessions for the same user
         for i in range(5):
@@ -1512,7 +1513,7 @@ class TestLogoutAllEndpoint:
                 data={
                     "access_token": f"token-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": user_id, "tid": "test-tenant"},
+                    "claims": {"oid": str(user_id), "tid": "test-tenant"},
                 },
                 user_id=user_id,
             )
@@ -2279,6 +2280,8 @@ class TestMultiTenantIsolation:
         from openlabels.server.db import get_session
 
         # Create sessions for different tenants
+        # FK columns (tenant_id, user_id) are left as None because /auth/me reads
+        # from session.data["claims"], not from the FK columns.
         await create_test_session(
             session_id="tenant-a-session",
             data={
@@ -2292,8 +2295,6 @@ class TestMultiTenantIsolation:
                     "roles": ["admin"],
                 },
             },
-            tenant_id="tenant-a",
-            user_id="user-a",
         )
 
         await create_test_session(
@@ -2309,8 +2310,6 @@ class TestMultiTenantIsolation:
                     "roles": ["user"],
                 },
             },
-            tenant_id="tenant-b",
-            user_id="user-b",
         )
         await test_db.commit()
 
@@ -2350,7 +2349,23 @@ class TestMultiTenantIsolation:
         from sqlalchemy import select, func
         from openlabels.server.app import app
         from openlabels.server.db import get_session
-        from openlabels.server.models import Session
+        from openlabels.server.models import Session, User
+
+        tenant = setup_auth_test_data["tenant"]
+        user_a = setup_auth_test_data["user"]
+
+        # Create a second user in the same tenant for isolation testing
+        user_b = User(
+            tenant_id=tenant.id,
+            email=f"user-b-{uuid4().hex[:8]}@localhost",
+            name="User B",
+            role="viewer",
+        )
+        test_db.add(user_b)
+        await test_db.flush()
+
+        user_a_id = user_a.id
+        user_b_id = user_b.id
 
         # Create multiple sessions for user A
         for i in range(3):
@@ -2359,10 +2374,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-a-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "user-a", "tid": "tenant-1"},
+                    "claims": {"oid": str(user_a_id), "tid": str(tenant.id)},
                 },
-                tenant_id="tenant-1",
-                user_id="user-a",
+                tenant_id=tenant.id,
+                user_id=user_a_id,
             )
 
         # Create sessions for user B (same tenant, different user)
@@ -2372,10 +2387,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-b-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "user-b", "tid": "tenant-1"},
+                    "claims": {"oid": str(user_b_id), "tid": str(tenant.id)},
                 },
-                tenant_id="tenant-1",
-                user_id="user-b",
+                tenant_id=tenant.id,
+                user_id=user_b_id,
             )
         await test_db.commit()
 
@@ -2399,13 +2414,13 @@ class TestMultiTenantIsolation:
                 # Verify user A's sessions are deleted
                 await test_db.commit()
                 result = await test_db.execute(
-                    select(func.count(Session.id)).where(Session.user_id == "user-a")
+                    select(func.count(Session.id)).where(Session.user_id == user_a_id)
                 )
                 assert result.scalar() == 0
 
                 # Verify user B's sessions still exist
                 result = await test_db.execute(
-                    select(func.count(Session.id)).where(Session.user_id == "user-b")
+                    select(func.count(Session.id)).where(Session.user_id == user_b_id)
                 )
                 assert result.scalar() == 2
         finally:
