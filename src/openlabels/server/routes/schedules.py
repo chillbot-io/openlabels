@@ -100,14 +100,15 @@ async def create_schedule(
             resource_id=str(request.target_id),
         )
 
-    schedule = ScanSchedule(
-        tenant_id=user.tenant_id,
-        name=request.name,
-        target_id=request.target_id,
-        cron=request.cron,
-        enabled=True,  # Explicitly set default to ensure it's available before flush
-        created_by=user.id,
-    )
+    try:
+        schedule = ScanSchedule(
+            tenant_id=user.tenant_id,
+            name=request.name,
+            target_id=request.target_id,
+            cron=request.cron,
+            enabled=True,  # Explicitly set default to ensure it's available before flush
+            created_by=user.id,
+        )
 
         # Calculate next run time if cron is set
         if request.cron:

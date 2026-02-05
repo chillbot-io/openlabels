@@ -331,14 +331,17 @@ async def apply_label(
             resource_id=request.label_id,
         )
 
-    # Enqueue labeling job
-    queue = JobQueue(db, admin.tenant_id)
-    job_id = await queue.enqueue(
-        task_type="label",
-        payload={
-            "result_id": str(request.result_id),
-            "label_id": request.label_id,
-        }
+    try:
+        # Enqueue labeling job
+        queue = JobQueue(db, admin.tenant_id)
+        job_id = await queue.enqueue(
+            task_type="label",
+            payload={
+                "result_id": str(request.result_id),
+                "label_id": request.label_id,
+            }
+        )
+        return {"job_id": str(job_id), "message": "Label application queued"}
     except NotFoundError:
         raise
     except SQLAlchemyError as e:
@@ -520,48 +523,5 @@ async def update_label_mappings(
                 "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
             },
         )
-        existing_result = await session.execute(existing_query)
-        for rule in existing_result.scalars().all():
-            await session.delete(rule)
 
-        # Create new rules for non-empty mappings
-        # Flush after deletes to avoid sentinel matching issues with asyncpg
-        await session.flush()
-
-        priority = 100
-        for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-            label_id = data.get(risk_tier)
-            if label_id:
-                # Verify label exists
-                label = await session.get(SensitivityLabel, label_id)
-                if label and label.tenant_id == user.tenant_id:
-                    rule = LabelRule(
-                        tenant_id=user.tenant_id,
-                        rule_type="risk_tier",
-                        match_value=risk_tier,
-                        label_id=label_id,
-                        priority=priority,
-                        created_by=user.id,
-                    )
-                    session.add(rule)
-                    # Flush each insert individually to avoid asyncpg sentinel matching issues
-                    await session.flush()
-            priority -= 10
-
-        # Check if HTMX request
-        if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
-                },
-            )
-
-        return {"message": "Label mappings updated"}
-    except SQLAlchemyError as e:
-        logger.error(f"Database error updating label mappings: {e}")
-        raise InternalServerError(
-            code=ErrorCode.DATABASE_ERROR,
-            message="Database error occurred while updating label mappings",
-        )
+    return {"message": "Label mappings updated"}

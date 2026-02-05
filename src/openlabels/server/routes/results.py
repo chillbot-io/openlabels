@@ -370,25 +370,15 @@ async def apply_recommended_label(
             details={"result_id": str(result_id)},
         )
 
-    # Enqueue labeling job
-    queue = JobQueue(db, admin.tenant_id)
-    job_id = await queue.enqueue(
-        task_type="label",
-        payload={
-            "result_id": str(result_id),
-            "label_id": result.recommended_label_id,
-            "file_path": result.file_path,
-        },
-        priority=60,
-    )
-
-    # Check if HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Label application queued", "type": "success"}}',
+    try:
+        # Enqueue labeling job
+        queue = JobQueue(db, admin.tenant_id)
+        job_id = await queue.enqueue(
+            task_type="label",
+            payload={
+                "result_id": str(result_id),
+                "label_id": result.recommended_label_id,
+                "file_path": result.file_path,
             },
             priority=60,
         )
@@ -482,25 +472,6 @@ async def rescan_file(
             headers={
                 "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
             },
-            priority=70,  # Higher priority for single file rescan
         )
 
-        # Check if HTMX request
-        if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
-                },
-            )
-
-        return {"message": "Rescan queued", "job_id": str(new_job.id)}
-    except (NotFoundError, BadRequestError):
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error rescanning result {result_id}: {e}")
-        raise InternalServerError(
-            code=ErrorCode.DATABASE_ERROR,
-            message="Database error occurred while rescanning file",
-        )
+    return {"message": "Rescan queued", "job_id": str(new_job.id)}
