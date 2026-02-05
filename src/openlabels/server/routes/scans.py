@@ -25,7 +25,8 @@ from openlabels.server.dependencies import (
     AdminContextDep,
 )
 from openlabels.auth.dependencies import require_admin
-from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalServerError, ErrorCode
+from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
+from openlabels.server.errors import ErrorCode
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -168,7 +169,7 @@ async def retry_scan(
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error retrying scan {scan_id}: {e}")
-        raise InternalServerError(
-            code=ErrorCode.DATABASE_ERROR,
+        raise InternalError(
             message="Database error occurred while retrying scan",
+            details={"error_code": ErrorCode.DATABASE_ERROR},
         )

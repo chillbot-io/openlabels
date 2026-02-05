@@ -408,6 +408,31 @@ api_v1_router = APIRouter(prefix=API_V1_PREFIX)
 app.state.limiter = limiter
 
 
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """
+    Handle rate limit exceeded errors with standardized format.
+
+    Converts slowapi's RateLimitExceeded to our ErrorResponse format.
+    """
+    request_id = get_request_id()
+    error_response = {
+        "error": "RATE_LIMIT_EXCEEDED",
+        "message": "Rate limit exceeded. Please try again later.",
+        "details": {"limit": str(exc.detail) if hasattr(exc, "detail") else None},
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+
+    response = JSONResponse(status_code=429, content=error_response)
+
+    # Add Retry-After header if available
+    if hasattr(exc, "headers") and exc.headers:
+        for key, value in exc.headers.items():
+            response.headers[key] = value
+
+    return response
+
+
 def configure_middleware():
     """Configure all middleware based on settings."""
     settings = get_settings()
@@ -430,9 +455,8 @@ def configure_middleware():
     # CSRF protection middleware
     app.add_middleware(CSRFMiddleware)
 
-    # Prometheus metrics middleware - tracks request count, latency, and active connections
-    # This should be added after other middleware to capture accurate timing
-    app.add_middleware(PrometheusMiddleware)
+    # Note: Prometheus metrics middleware is added via @app.middleware("http") decorator
+    # in the track_metrics() function below, which is the recommended FastAPI pattern
 
 
 # Configure middleware
@@ -634,31 +658,6 @@ async def add_deprecation_warning(request: Request, call_next):
 # =============================================================================
 # EXCEPTION HANDLERS
 # =============================================================================
-
-
-async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    """
-    Handle rate limit exceeded errors with standardized format.
-
-    Converts slowapi's RateLimitExceeded to our ErrorResponse format.
-    """
-    request_id = get_request_id()
-    error_response = {
-        "error": "RATE_LIMIT_EXCEEDED",
-        "message": "Rate limit exceeded. Please try again later.",
-        "details": {"limit": str(exc.detail) if hasattr(exc, "detail") else None},
-    }
-    if request_id:
-        error_response["request_id"] = request_id
-
-    response = JSONResponse(status_code=429, content=error_response)
-
-    # Add Retry-After header if available
-    if hasattr(exc, "headers") and exc.headers:
-        for key, value in exc.headers.items():
-            response.headers[key] = value
-
-    return response
 
 
 @app.exception_handler(APIError)

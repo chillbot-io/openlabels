@@ -32,7 +32,8 @@ from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalServerError, ErrorCode
+from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
+from openlabels.server.errors import ErrorCode
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -401,9 +402,9 @@ async def apply_recommended_label(
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error applying label to result {result_id}: {e}")
-        raise InternalServerError(
-            code=ErrorCode.DATABASE_ERROR,
+        raise InternalError(
             message="Database error occurred while applying label",
+            details={"error_code": ErrorCode.DATABASE_ERROR},
         )
 
 
