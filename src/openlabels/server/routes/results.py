@@ -32,7 +32,10 @@ from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError
+from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalServerError, ErrorCode
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
