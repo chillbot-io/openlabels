@@ -363,7 +363,6 @@ class TestCSRFMiddleware:
         settings.auth.provider = "none"
         return settings
 
-    @pytest.mark.asyncio
     async def test_safe_methods_pass_through(self, middleware, mock_call_next, mock_settings_enabled):
         """Safe methods (GET, HEAD, OPTIONS) should pass without CSRF check."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -372,7 +371,6 @@ class TestCSRFMiddleware:
                 response = await middleware.dispatch(request, mock_call_next)
                 assert response is not None
 
-    @pytest.mark.asyncio
     async def test_dev_mode_skips_csrf(self, middleware, mock_call_next, mock_settings_disabled):
         """Dev mode (auth.provider=none) should skip CSRF checks."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_disabled):
@@ -380,7 +378,6 @@ class TestCSRFMiddleware:
             response = await middleware.dispatch(request, mock_call_next)
             assert response is not None
 
-    @pytest.mark.asyncio
     async def test_protected_methods_require_origin(self, middleware, mock_call_next, mock_settings_enabled):
         """Protected methods require valid origin."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -393,7 +390,6 @@ class TestCSRFMiddleware:
                 # Should return 403 error response
                 assert response.status_code == 403
 
-    @pytest.mark.asyncio
     async def test_valid_origin_passes(self, middleware, mock_call_next, mock_settings_enabled):
         """Valid origin should pass CSRF check."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -408,7 +404,6 @@ class TestCSRFMiddleware:
                 assert response.status_code != 403, \
                     "Valid origin should not be rejected with 403"
 
-    @pytest.mark.asyncio
     async def test_exempt_paths_skip_csrf(self, middleware, mock_call_next, mock_settings_enabled):
         """Exempt paths should skip CSRF validation."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -422,7 +417,6 @@ class TestCSRFMiddleware:
                 # Should pass through for exempt paths
                 assert response is not None
 
-    @pytest.mark.asyncio
     async def test_websocket_upgrade_skips_csrf(self, middleware, mock_call_next, mock_settings_enabled):
         """WebSocket upgrade requests should skip CSRF."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -435,7 +429,6 @@ class TestCSRFMiddleware:
             # Should pass through
             assert response is not None
 
-    @pytest.mark.asyncio
     async def test_double_submit_token_validation(self, middleware, mock_call_next, mock_settings_enabled):
         """When CSRF header is present, token must match cookie."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -454,7 +447,6 @@ class TestCSRFMiddleware:
                 assert response.status_code != 403, \
                     "Matching CSRF tokens should not be rejected"
 
-    @pytest.mark.asyncio
     async def test_mismatched_token_rejected(self, middleware, mock_call_next, mock_settings_enabled):
         """Mismatched CSRF tokens should be rejected."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
@@ -467,7 +459,6 @@ class TestCSRFMiddleware:
             response = await middleware.dispatch(request, mock_call_next)
             assert response.status_code == 403
 
-    @pytest.mark.asyncio
     async def test_get_sets_csrf_cookie(self, middleware, mock_call_next, mock_settings_enabled):
         """GET requests should set CSRF cookie if not present."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):

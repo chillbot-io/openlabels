@@ -76,7 +76,6 @@ class TestFileProcessor:
         assert processor.can_process("test.xyz", 1024) is False
         assert processor.can_process("test.bin", 1024) is False
 
-    @pytest.mark.asyncio
     async def test_process_text_file(self):
         """Test processing a text file."""
         from openlabels.core.processor import FileProcessor
@@ -92,7 +91,6 @@ class TestFileProcessor:
         assert result is not None
         assert result.file_path == "test.txt"
 
-    @pytest.mark.asyncio
     async def test_process_empty_file(self):
         """Test processing an empty file."""
         from openlabels.core.processor import FileProcessor
@@ -108,7 +106,6 @@ class TestFileProcessor:
         assert result is not None
         assert result.entity_counts == {}
 
-    @pytest.mark.asyncio
     async def test_process_bytes_content(self):
         """Test processing bytes content."""
         from openlabels.core.processor import FileProcessor
@@ -169,7 +166,6 @@ class TestFileClassification:
 class TestProcessFileBatch:
     """Tests for batch file processing."""
 
-    @pytest.mark.asyncio
     async def test_process_batch(self):
         """Test processing multiple files."""
         from openlabels.core.processor import FileProcessor
@@ -187,7 +183,6 @@ class TestProcessFileBatch:
 
         assert len(results) == 2
 
-    @pytest.mark.asyncio
     async def test_process_batch_with_concurrency(self):
         """Test batch processing respects concurrency limit."""
         from openlabels.core.processor import FileProcessor

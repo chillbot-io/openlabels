@@ -60,7 +60,6 @@ async def setup_labels_data(test_db):
 class TestListLabels:
     """Tests for GET /api/labels endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """List labels should return 200 OK."""
         response = await test_client.get("/api/labels")
@@ -75,7 +74,6 @@ class TestListLabels:
             assert "name" in label, "Each label should have 'name' field"
             assert "priority" in label, "Each label should have 'priority' field"
 
-    @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_labels_data):
         """List labels should return a list."""
         response = await test_client.get("/api/labels")
@@ -83,7 +81,6 @@ class TestListLabels:
         data = response.json()
         assert isinstance(data, list)
 
-    @pytest.mark.asyncio
     async def test_returns_labels(self, test_client, setup_labels_data):
         """List should return created labels."""
         response = await test_client.get("/api/labels")
@@ -96,7 +93,6 @@ class TestListLabels:
         assert "Internal" in names
         assert "Public" in names
 
-    @pytest.mark.asyncio
     async def test_label_response_structure(self, test_client, setup_labels_data):
         """Label response should have required fields."""
         response = await test_client.get("/api/labels")
@@ -110,7 +106,6 @@ class TestListLabels:
         assert "priority" in label
         assert "color" in label
 
-    @pytest.mark.asyncio
     async def test_labels_ordered_by_priority(self, test_client, setup_labels_data):
         """Labels should be ordered by priority."""
         response = await test_client.get("/api/labels")
@@ -125,7 +120,6 @@ class TestListLabels:
 class TestLabelSyncStatus:
     """Tests for GET /api/labels/sync/status endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """Sync status should return 200 OK."""
         response = await test_client.get("/api/labels/sync/status")
@@ -135,7 +129,6 @@ class TestLabelSyncStatus:
         assert "last_synced_at" in data, "Response should contain 'last_synced_at' field"
         assert isinstance(data["label_count"], int), "label_count should be an integer"
 
-    @pytest.mark.asyncio
     async def test_returns_status_structure(self, test_client, setup_labels_data):
         """Sync status should return required fields."""
         response = await test_client.get("/api/labels/sync/status")
@@ -145,7 +138,6 @@ class TestLabelSyncStatus:
         assert "label_count" in data
         assert "last_synced_at" in data
 
-    @pytest.mark.asyncio
     async def test_returns_label_count(self, test_client, setup_labels_data):
         """Sync status should return correct label count."""
         response = await test_client.get("/api/labels/sync/status")
@@ -158,7 +150,6 @@ class TestLabelSyncStatus:
 class TestInvalidateLabelCache:
     """Tests for POST /api/labels/cache/invalidate endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """Cache invalidate should return 200 OK."""
         response = await test_client.post("/api/labels/cache/invalidate")
@@ -167,7 +158,6 @@ class TestInvalidateLabelCache:
         assert "message" in data, "Response should contain 'message' field"
         assert isinstance(data["message"], str), "Message should be a string"
 
-    @pytest.mark.asyncio
     async def test_returns_success_message(self, test_client, setup_labels_data):
         """Cache invalidate should return success message."""
         response = await test_client.post("/api/labels/cache/invalidate")
@@ -181,7 +171,6 @@ class TestInvalidateLabelCache:
 class TestListLabelRules:
     """Tests for GET /api/labels/rules endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """List rules should return 200 OK."""
         response = await test_client.get("/api/labels/rules")
@@ -189,7 +178,6 @@ class TestListLabelRules:
         data = response.json()
         assert isinstance(data, list), "Response should be a list"
 
-    @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_labels_data):
         """List rules should return a list."""
         response = await test_client.get("/api/labels/rules")
@@ -197,7 +185,6 @@ class TestListLabelRules:
         data = response.json()
         assert isinstance(data, list)
 
-    @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_rules(self, test_client, setup_labels_data):
         """List should return empty when no rules exist."""
         response = await test_client.get("/api/labels/rules")
@@ -205,7 +192,6 @@ class TestListLabelRules:
         data = response.json()
         assert data == []
 
-    @pytest.mark.asyncio
     async def test_returns_rules(self, test_client, setup_labels_data):
         """List should return created rules."""
         from openlabels.server.models import LabelRule
@@ -239,7 +225,6 @@ class TestListLabelRules:
 class TestCreateLabelRule:
     """Tests for POST /api/labels/rules endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_201_status(self, test_client, setup_labels_data):
         """Create rule should return 201 Created."""
         labels = setup_labels_data["labels"]
@@ -261,7 +246,6 @@ class TestCreateLabelRule:
         assert data["label_id"] == labels[0].id, "Label ID should match request"
         assert data["priority"] == 50, "Priority should match request"
 
-    @pytest.mark.asyncio
     async def test_returns_created_rule(self, test_client, setup_labels_data):
         """Create should return the created rule."""
         labels = setup_labels_data["labels"]
@@ -283,7 +267,6 @@ class TestCreateLabelRule:
         assert data["label_id"] == labels[1].id
         assert "id" in data
 
-    @pytest.mark.asyncio
     async def test_includes_label_name(self, test_client, setup_labels_data):
         """Created rule should include label name."""
         labels = setup_labels_data["labels"]
@@ -301,7 +284,6 @@ class TestCreateLabelRule:
 
         assert data["label_name"] == "Internal"
 
-    @pytest.mark.asyncio
     async def test_rejects_invalid_rule_type(self, test_client, setup_labels_data):
         """Create should reject invalid rule_type."""
         labels = setup_labels_data["labels"]
@@ -316,7 +298,6 @@ class TestCreateLabelRule:
         )
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
     async def test_rejects_nonexistent_label(self, test_client, setup_labels_data):
         """Create should reject nonexistent label_id."""
         response = await test_client.post(
@@ -333,7 +314,6 @@ class TestCreateLabelRule:
 class TestDeleteLabelRule:
     """Tests for DELETE /api/labels/rules/{rule_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_204_status(self, test_client, setup_labels_data):
         """Delete rule should return 204 No Content."""
         from openlabels.server.models import LabelRule
@@ -357,7 +337,6 @@ class TestDeleteLabelRule:
         response = await test_client.delete(f"/api/labels/rules/{rule.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_rule_is_removed(self, test_client, setup_labels_data):
         """Deleted rule should no longer exist."""
         from openlabels.server.models import LabelRule
@@ -387,7 +366,6 @@ class TestDeleteLabelRule:
         ids = [r["id"] for r in data]
         assert str(rule_id) not in ids
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_rule(self, test_client, setup_labels_data):
         """Delete nonexistent rule should return 404."""
         fake_id = uuid4()
@@ -398,13 +376,11 @@ class TestDeleteLabelRule:
 class TestGetLabelMappings:
     """Tests for GET /api/labels/mappings endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_labels_data):
         """Get mappings should return 200 OK."""
         response = await test_client.get("/api/labels/mappings")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_mappings_structure(self, test_client, setup_labels_data):
         """Mappings should have required fields."""
         response = await test_client.get("/api/labels/mappings")
@@ -417,7 +393,6 @@ class TestGetLabelMappings:
         assert "LOW" in data
         assert "labels" in data
 
-    @pytest.mark.asyncio
     async def test_includes_available_labels(self, test_client, setup_labels_data):
         """Mappings should include available labels."""
         response = await test_client.get("/api/labels/mappings")
@@ -426,7 +401,6 @@ class TestGetLabelMappings:
 
         assert len(data["labels"]) == 3
 
-    @pytest.mark.asyncio
     async def test_returns_null_for_unmapped_tiers(self, test_client, setup_labels_data):
         """Unmapped tiers should be null."""
         response = await test_client.get("/api/labels/mappings")
@@ -437,7 +411,6 @@ class TestGetLabelMappings:
         assert data["CRITICAL"] is None
         assert data["HIGH"] is None
 
-    @pytest.mark.asyncio
     async def test_returns_label_id_for_mapped_tiers(self, test_client, setup_labels_data):
         """Mapped tiers should have label_id."""
         from openlabels.server.models import LabelRule
@@ -469,7 +442,6 @@ class TestGetLabelMappings:
 class TestUpdateLabelMappings:
     """Tests for POST /api/labels/mappings endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status_json(self, test_client, setup_labels_data):
         """Update mappings should return 200 OK for JSON."""
         labels = setup_labels_data["labels"]
@@ -485,7 +457,6 @@ class TestUpdateLabelMappings:
         data = response.json()
         assert "message" in data or isinstance(data, dict), "Response should be a dictionary"
 
-    @pytest.mark.asyncio
     async def test_creates_risk_tier_rules(self, test_client, setup_labels_data):
         """Update should create risk_tier rules."""
         labels = setup_labels_data["labels"]
@@ -507,7 +478,6 @@ class TestUpdateLabelMappings:
         assert rule_values["CRITICAL"] == labels[0].id
         assert rule_values["HIGH"] == labels[1].id
 
-    @pytest.mark.asyncio
     async def test_replaces_existing_rules(self, test_client, setup_labels_data):
         """Update should replace existing risk_tier rules."""
         from openlabels.server.models import LabelRule
@@ -542,7 +512,6 @@ class TestUpdateLabelMappings:
 
         assert data["CRITICAL"] == labels[1].id
 
-    @pytest.mark.asyncio
     async def test_htmx_request_returns_trigger(self, test_client, setup_labels_data):
         """HTMX request should return HX-Trigger header."""
         labels = setup_labels_data["labels"]
@@ -561,7 +530,6 @@ class TestUpdateLabelMappings:
 class TestApplyLabel:
     """Tests for POST /api/labels/apply endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_202_status(self, test_client, setup_labels_data):
         """Apply label should return 202 Accepted."""
         from openlabels.server.models import ScanJob, ScanResult, ScanTarget
@@ -617,7 +585,6 @@ class TestApplyLabel:
         assert "message" in data, "Response should contain 'message' field"
         assert isinstance(data["job_id"], str), "job_id should be a string"
 
-    @pytest.mark.asyncio
     async def test_returns_job_id(self, test_client, setup_labels_data):
         """Apply label should return job_id."""
         from openlabels.server.models import ScanJob, ScanResult, ScanTarget
@@ -672,7 +639,6 @@ class TestApplyLabel:
         assert "job_id" in data
         assert "message" in data
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_result(self, test_client, setup_labels_data):
         """Apply to nonexistent result should return 404."""
         labels = setup_labels_data["labels"]
@@ -687,7 +653,6 @@ class TestApplyLabel:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_label(self, test_client, setup_labels_data):
         """Apply nonexistent label should return 404."""
         from openlabels.server.models import ScanJob, ScanResult, ScanTarget
@@ -741,7 +706,6 @@ class TestApplyLabel:
 class TestLabelTenantIsolation:
     """Tests for tenant isolation in label endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_labels(self, test_client, setup_labels_data):
         """Should not be able to see labels from other tenants."""
         from openlabels.server.models import Tenant, SensitivityLabel
@@ -777,19 +741,16 @@ class TestLabelTenantIsolation:
 class TestLabelContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_labels_data):
         """List labels should return JSON."""
         response = await test_client.get("/api/labels")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_rules_returns_json(self, test_client, setup_labels_data):
         """List rules should return JSON."""
         response = await test_client.get("/api/labels/rules")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_mappings_returns_json(self, test_client, setup_labels_data):
         """Get mappings should return JSON."""
         response = await test_client.get("/api/labels/mappings")

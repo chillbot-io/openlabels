@@ -128,7 +128,6 @@ class TestValidateRedirectUri:
 class TestOpenRedirectIntegration:
     """Integration tests for open redirect prevention."""
 
-    @pytest.mark.asyncio
     async def test_login_endpoint_validates_redirect(self):
         """Login endpoint should use validated redirect_uri."""
         from httpx import AsyncClient, ASGITransport
@@ -148,7 +147,6 @@ class TestOpenRedirectIntegration:
                 assert "evil.com" not in location, \
                     "Login endpoint allowed redirect to external site"
 
-    @pytest.mark.asyncio
     async def test_callback_rejects_malicious_redirect_override(self):
         """OAuth callback should not use untrusted redirect from query."""
         from httpx import AsyncClient, ASGITransport

@@ -113,7 +113,6 @@ async def setup_scans_data(test_db):
 class TestCreateScan:
     """Tests for POST /api/scans endpoint."""
 
-    @pytest.mark.asyncio
     async def test_creates_scan_job(self, test_client, setup_scans_data):
         """Should create a new scan job."""
         target = setup_scans_data["target"]
@@ -127,7 +126,6 @@ class TestCreateScan:
         assert data["target_id"] == str(target.id)
         assert data["status"] == "pending"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_invalid_target(self, test_client, setup_scans_data):
         """Should return 404 for non-existent target."""
         fake_id = uuid4()
@@ -137,7 +135,6 @@ class TestCreateScan:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_generates_default_name(self, test_client, setup_scans_data):
         """Should generate default name from target."""
         target = setup_scans_data["target"]
@@ -155,13 +152,11 @@ class TestCreateScan:
 class TestListScans:
     """Tests for GET /api/scans endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_scans_data):
         """List scans should return 200 OK."""
         response = await test_client.get("/api/scans")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_response(self, test_client, setup_scans_data):
         """Response should have pagination structure."""
         response = await test_client.get("/api/scans")
@@ -173,7 +168,6 @@ class TestListScans:
         assert "page" in data
         assert "pages" in data
 
-    @pytest.mark.asyncio
     async def test_returns_scan_list(self, test_client, setup_scans_data):
         """Should return list of scans with expected structure."""
         response = await test_client.get("/api/scans")
@@ -187,7 +181,6 @@ class TestListScans:
         assert "id" in first_scan and first_scan["id"], "Scan should have non-empty id"
         assert "status" in first_scan, "Scan should have status field"
 
-    @pytest.mark.asyncio
     async def test_filter_by_status(self, test_client, setup_scans_data):
         """Should filter scans by status."""
         response = await test_client.get("/api/scans?status=completed")
@@ -197,7 +190,6 @@ class TestListScans:
         for item in data["items"]:
             assert item["status"] == "completed"
 
-    @pytest.mark.asyncio
     async def test_pagination_works(self, test_client, setup_scans_data):
         """Should respect pagination parameters."""
         response = await test_client.get("/api/scans?page=1&limit=3")
@@ -207,7 +199,6 @@ class TestListScans:
         assert data["page"] == 1
         assert len(data["items"]) <= 3
 
-    @pytest.mark.asyncio
     async def test_scan_response_structure(self, test_client, setup_scans_data):
         """Scan items should have expected fields."""
         response = await test_client.get("/api/scans")
@@ -225,7 +216,6 @@ class TestListScans:
 class TestGetScan:
     """Tests for GET /api/scans/{scan_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_scan_details(self, test_client, setup_scans_data):
         """Should return scan details."""
         scan = setup_scans_data["scans"][0]
@@ -236,14 +226,12 @@ class TestGetScan:
         assert data["id"] == str(scan.id)
         assert data["name"] == scan.name
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
         """Should return 404 for non-existent scan."""
         fake_id = uuid4()
         response = await test_client.get(f"/api/scans/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_full_structure(self, test_client, setup_scans_data):
         """Should return all scan fields."""
         scan = setup_scans_data["scans"][0]
@@ -262,7 +250,6 @@ class TestGetScan:
 class TestCancelScan:
     """Tests for DELETE /api/scans/{scan_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_cancels_pending_scan(self, test_client, setup_scans_data):
         """Should cancel a pending scan."""
         # Find a pending scan
@@ -272,14 +259,12 @@ class TestCancelScan:
             response = await test_client.delete(f"/api/scans/{scan.id}")
             assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_cancels_running_scan(self, test_client, setup_scans_data):
         """Should cancel a running scan."""
         running_scan = setup_scans_data["running_scan"]
         response = await test_client.delete(f"/api/scans/{running_scan.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_returns_400_for_completed_scan(self, test_client, setup_scans_data):
         """Should return 400 for completed scan."""
         completed_scans = [s for s in setup_scans_data["scans"] if s.status == "completed"]
@@ -288,7 +273,6 @@ class TestCancelScan:
             response = await test_client.delete(f"/api/scans/{scan.id}")
             assert response.status_code == 400
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
         """Should return 404 for non-existent scan."""
         fake_id = uuid4()
@@ -299,14 +283,12 @@ class TestCancelScan:
 class TestScansContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_scans_data):
         """List scans should return JSON."""
         response = await test_client.get("/api/scans")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_get_returns_json(self, test_client, setup_scans_data):
         """Get scan should return JSON."""
         scan = setup_scans_data["scans"][0]

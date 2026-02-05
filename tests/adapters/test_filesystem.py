@@ -19,7 +19,6 @@ from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig
 class TestFilesystemAdapterListFiles:
     """Tests for file listing functionality."""
 
-    @pytest.mark.asyncio
     async def test_list_files_finds_all_files(self):
         """Should list all files in a directory."""
         adapter = FilesystemAdapter()
@@ -38,7 +37,6 @@ class TestFilesystemAdapterListFiles:
             names = {f.name for f in files}
             assert names == {"file1.txt", "file2.txt", "file3.txt"}
 
-    @pytest.mark.asyncio
     async def test_list_files_empty_directory(self):
         """Should return empty iterator for empty directory."""
         adapter = FilesystemAdapter()
@@ -50,7 +48,6 @@ class TestFilesystemAdapterListFiles:
 
             assert len(files) == 0
 
-    @pytest.mark.asyncio
     async def test_list_files_recursive(self):
         """Should recursively list files in subdirectories."""
         adapter = FilesystemAdapter()
@@ -74,7 +71,6 @@ class TestFilesystemAdapterListFiles:
             assert "level1.txt" in names
             assert "level2.txt" in names
 
-    @pytest.mark.asyncio
     async def test_list_files_non_recursive(self):
         """Non-recursive listing should only get top-level files."""
         adapter = FilesystemAdapter()
@@ -93,7 +89,6 @@ class TestFilesystemAdapterListFiles:
             assert len(files) == 1
             assert files[0].name == "root.txt"
 
-    @pytest.mark.asyncio
     async def test_list_files_returns_fileinfo_with_correct_attributes(self):
         """FileInfo should have correct path, name, size, modified."""
         adapter = FilesystemAdapter()
@@ -115,7 +110,6 @@ class TestFilesystemAdapterListFiles:
             assert isinstance(file_info.modified, datetime)
             assert file_info.adapter == "filesystem"
 
-    @pytest.mark.asyncio
     async def test_list_files_raises_on_nonexistent_path(self):
         """Should raise FilesystemError for non-existent path."""
         from openlabels.core.exceptions import FilesystemError
@@ -125,7 +119,6 @@ class TestFilesystemAdapterListFiles:
             async for _ in adapter.list_files("/nonexistent/path/12345"):
                 pass
 
-    @pytest.mark.asyncio
     async def test_list_files_raises_on_file_not_directory(self):
         """Should raise FilesystemError when target is a file, not directory."""
         from openlabels.core.exceptions import FilesystemError
@@ -140,7 +133,6 @@ class TestFilesystemAdapterListFiles:
 class TestFilesystemAdapterFiltering:
     """Tests for file filtering with FilterConfig."""
 
-    @pytest.mark.asyncio
     async def test_filters_hidden_files_by_pattern(self):
         """Should filter hidden files when pattern excludes them."""
         adapter = FilesystemAdapter()
@@ -164,7 +156,6 @@ class TestFilesystemAdapterFiltering:
             assert "visible.txt" in names
             assert ".hidden.txt" not in names
 
-    @pytest.mark.asyncio
     async def test_filters_temp_files_by_default(self):
         """Default filter should exclude common temp file extensions."""
         adapter = FilesystemAdapter()
@@ -188,7 +179,6 @@ class TestFilesystemAdapterFiltering:
             assert "temp.tmp" not in names
             assert "swap.swp" not in names
 
-    @pytest.mark.asyncio
     async def test_filters_by_size(self):
         """Should filter files by size limits."""
         adapter = FilesystemAdapter()
@@ -214,7 +204,6 @@ class TestFilesystemAdapterFiltering:
             assert "medium.txt" in names  # Just right
             assert "large.txt" not in names  # Too large
 
-    @pytest.mark.asyncio
     async def test_no_filter_includes_all_files(self):
         """Without filtering, should include all files."""
         adapter = FilesystemAdapter()
@@ -245,7 +234,6 @@ class TestFilesystemAdapterFiltering:
 class TestFilesystemAdapterReadFile:
     """Tests for file reading."""
 
-    @pytest.mark.asyncio
     async def test_read_file_returns_content(self):
         """Should read and return file contents as bytes."""
         adapter = FilesystemAdapter()
@@ -266,7 +254,6 @@ class TestFilesystemAdapterReadFile:
 
             assert content == b"Hello, World!"
 
-    @pytest.mark.asyncio
     async def test_read_file_binary(self):
         """Should correctly read binary files."""
         adapter = FilesystemAdapter()
@@ -293,7 +280,6 @@ class TestFilesystemAdapterExposureLevel:
     """Tests for exposure level calculation on POSIX systems."""
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_private_exposure_for_owner_only(self):
         """Files with mode 600 should be PRIVATE."""
         adapter = FilesystemAdapter()
@@ -311,7 +297,6 @@ class TestFilesystemAdapterExposureLevel:
             assert files[0].exposure == ExposureLevel.PRIVATE
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_org_wide_exposure_for_group_readable(self):
         """Files with group read should be ORG_WIDE."""
         adapter = FilesystemAdapter()
@@ -329,7 +314,6 @@ class TestFilesystemAdapterExposureLevel:
             assert files[0].exposure == ExposureLevel.ORG_WIDE
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_public_exposure_for_world_readable(self):
         """Files with world read should be PUBLIC."""
         adapter = FilesystemAdapter()
@@ -350,7 +334,6 @@ class TestFilesystemAdapterExposureLevel:
 class TestFilesystemAdapterTestConnection:
     """Tests for connection testing."""
 
-    @pytest.mark.asyncio
     async def test_connection_succeeds_for_valid_path(self):
         """Should return True for valid directory."""
         adapter = FilesystemAdapter()
@@ -359,7 +342,6 @@ class TestFilesystemAdapterTestConnection:
             result = await adapter.test_connection({"path": tmpdir})
             assert result is True
 
-    @pytest.mark.asyncio
     async def test_connection_fails_for_nonexistent_path(self):
         """Should return False for non-existent path."""
         adapter = FilesystemAdapter()
@@ -367,7 +349,6 @@ class TestFilesystemAdapterTestConnection:
         result = await adapter.test_connection({"path": "/nonexistent/12345"})
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_connection_fails_for_file_path(self):
         """Should return False when path is a file, not directory."""
         adapter = FilesystemAdapter()
@@ -376,7 +357,6 @@ class TestFilesystemAdapterTestConnection:
             result = await adapter.test_connection({"path": f.name})
             assert result is False
 
-    @pytest.mark.asyncio
     async def test_connection_fails_for_missing_path_config(self):
         """Should return False when path not in config."""
         adapter = FilesystemAdapter()
@@ -388,7 +368,6 @@ class TestFilesystemAdapterTestConnection:
 class TestFilesystemAdapterMetadata:
     """Tests for metadata retrieval."""
 
-    @pytest.mark.asyncio
     async def test_get_metadata_returns_current_info(self):
         """get_metadata should return current file info."""
         adapter = FilesystemAdapter()
@@ -441,7 +420,6 @@ class TestFilesystemAdapterProperties:
 class TestFilesystemAdapterMoveFile:
     """Tests for file move/quarantine functionality."""
 
-    @pytest.mark.asyncio
     async def test_move_file_success(self):
         """Should successfully move file to new location."""
         adapter = FilesystemAdapter()
@@ -467,7 +445,6 @@ class TestFilesystemAdapterMoveFile:
             assert dest.exists()
             assert dest.read_text() == "content"
 
-    @pytest.mark.asyncio
     async def test_move_file_creates_destination_directory(self):
         """Should create destination directory if it doesn't exist."""
         adapter = FilesystemAdapter()
@@ -492,7 +469,6 @@ class TestFilesystemAdapterMoveFile:
             assert result is True
             assert dest.exists()
 
-    @pytest.mark.asyncio
     async def test_move_nonexistent_file_returns_false(self):
         """Should return False when source doesn't exist."""
         adapter = FilesystemAdapter()
@@ -515,7 +491,6 @@ class TestFilesystemAdapterACL:
     """Tests for ACL get/set functionality."""
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_get_acl_returns_posix_permissions(self):
         """Should return POSIX permission info."""
         adapter = FilesystemAdapter()
@@ -542,7 +517,6 @@ class TestFilesystemAdapterACL:
             assert "gid" in acl
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_set_acl_changes_permissions(self):
         """Should apply POSIX permissions."""
         adapter = FilesystemAdapter()
@@ -573,7 +547,6 @@ class TestFilesystemAdapterACL:
             assert new_mode == 0o600
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
-    @pytest.mark.asyncio
     async def test_lockdown_restricts_to_owner_only(self):
         """Lockdown should restrict file to owner read/write only."""
         adapter = FilesystemAdapter()

@@ -117,13 +117,11 @@ async def setup_jobs_data(test_db):
 class TestQueueStats:
     """Tests for GET /api/jobs/stats endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_jobs_data):
         """Stats endpoint should return 200 OK."""
         response = await test_client.get("/api/jobs/stats")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_jobs_data):
         """Response should have expected stats structure."""
         response = await test_client.get("/api/jobs/stats")
@@ -137,7 +135,6 @@ class TestQueueStats:
         assert "cancelled" in data
         assert "failed_by_type" in data
 
-    @pytest.mark.asyncio
     async def test_counts_are_accurate(self, test_client, setup_jobs_data):
         """Stats should accurately count jobs by status."""
         response = await test_client.get("/api/jobs/stats")
@@ -150,7 +147,6 @@ class TestQueueStats:
         assert data["failed"] == 4
         assert data["cancelled"] == 1
 
-    @pytest.mark.asyncio
     async def test_failed_by_type_breakdown(self, test_client, setup_jobs_data):
         """Should break down failed jobs by task type."""
         response = await test_client.get("/api/jobs/stats")
@@ -167,13 +163,11 @@ class TestQueueStats:
 class TestListFailedJobs:
     """Tests for GET /api/jobs/failed endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_jobs_data):
         """Failed jobs endpoint should return 200 OK."""
         response = await test_client.get("/api/jobs/failed")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_response(self, test_client, setup_jobs_data):
         """Response should have pagination structure."""
         response = await test_client.get("/api/jobs/failed")
@@ -185,7 +179,6 @@ class TestListFailedJobs:
         assert "page" in data
         assert "page_size" in data
 
-    @pytest.mark.asyncio
     async def test_only_returns_failed_jobs(self, test_client, setup_jobs_data):
         """Should only return jobs with failed status."""
         response = await test_client.get("/api/jobs/failed")
@@ -195,7 +188,6 @@ class TestListFailedJobs:
         for item in data["items"]:
             assert item["status"] == "failed"
 
-    @pytest.mark.asyncio
     async def test_total_count_is_accurate(self, test_client, setup_jobs_data):
         """Total count should match number of failed jobs."""
         response = await test_client.get("/api/jobs/failed")
@@ -204,7 +196,6 @@ class TestListFailedJobs:
 
         assert data["total"] == 4
 
-    @pytest.mark.asyncio
     async def test_filter_by_task_type(self, test_client, setup_jobs_data):
         """Should filter failed jobs by task type."""
         response = await test_client.get("/api/jobs/failed?task_type=scan")
@@ -214,7 +205,6 @@ class TestListFailedJobs:
         for item in data["items"]:
             assert item["task_type"] == "scan"
 
-    @pytest.mark.asyncio
     async def test_pagination_works(self, test_client, setup_jobs_data):
         """Should respect pagination parameters."""
         response = await test_client.get("/api/jobs/failed?page=1&page_size=2")
@@ -225,7 +215,6 @@ class TestListFailedJobs:
         assert data["page_size"] == 2
         assert len(data["items"]) <= 2
 
-    @pytest.mark.asyncio
     async def test_job_response_structure(self, test_client, setup_jobs_data):
         """Job items should have expected fields."""
         response = await test_client.get("/api/jobs/failed")
@@ -244,7 +233,6 @@ class TestListFailedJobs:
 class TestGetJob:
     """Tests for GET /api/jobs/{job_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_job_details(self, test_client, setup_jobs_data):
         """Should return job details."""
         job = setup_jobs_data["jobs"][0]
@@ -255,14 +243,12 @@ class TestGetJob:
         assert data["id"] == str(job.id)
         assert data["task_type"] == job.task_type
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_jobs_data):
         """Should return 404 for non-existent job."""
         fake_id = uuid4()
         response = await test_client.get(f"/api/jobs/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_full_job_structure(self, test_client, setup_jobs_data):
         """Should return all job fields."""
         job = setup_jobs_data["jobs"][0]
@@ -282,7 +268,6 @@ class TestGetJob:
 class TestRequeueJob:
     """Tests for POST /api/jobs/{job_id}/requeue endpoint."""
 
-    @pytest.mark.asyncio
     async def test_requeues_failed_job(self, test_client, setup_jobs_data):
         """Should requeue a failed job."""
         failed_job = setup_jobs_data["failed_jobs"][0]
@@ -294,7 +279,6 @@ class TestRequeueJob:
         assert response.status_code == 200, \
             f"Expected 200 for requeuing existing failed job, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_returns_success_message(self, test_client, setup_jobs_data):
         """Should return success message on requeue."""
         failed_job = setup_jobs_data["failed_jobs"][0]
@@ -306,7 +290,6 @@ class TestRequeueJob:
             data = response.json()
             assert "message" in data
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_jobs_data):
         """Should return 404 for non-existent job."""
         fake_id = uuid4()
@@ -320,7 +303,6 @@ class TestRequeueJob:
 class TestRequeueAllFailed:
     """Tests for POST /api/jobs/requeue-all endpoint."""
 
-    @pytest.mark.asyncio
     async def test_requeues_all_failed(self, test_client, setup_jobs_data):
         """Should requeue all failed jobs."""
         response = await test_client.post(
@@ -333,7 +315,6 @@ class TestRequeueAllFailed:
         assert "message" in data
         assert "count" in data
 
-    @pytest.mark.asyncio
     async def test_filter_by_task_type(self, test_client, setup_jobs_data):
         """Should only requeue failed jobs of specified type."""
         response = await test_client.post(
@@ -349,7 +330,6 @@ class TestRequeueAllFailed:
 class TestPurgeFailedJobs:
     """Tests for POST /api/jobs/purge endpoint."""
 
-    @pytest.mark.asyncio
     async def test_purges_failed_jobs(self, test_client, setup_jobs_data):
         """Should purge failed jobs."""
         response = await test_client.post(
@@ -362,7 +342,6 @@ class TestPurgeFailedJobs:
         assert "message" in data
         assert "count" in data
 
-    @pytest.mark.asyncio
     async def test_filter_by_task_type(self, test_client, setup_jobs_data):
         """Should only purge failed jobs of specified type."""
         response = await test_client.post(
@@ -375,7 +354,6 @@ class TestPurgeFailedJobs:
 class TestCancelJob:
     """Tests for POST /api/jobs/{job_id}/cancel endpoint."""
 
-    @pytest.mark.asyncio
     async def test_cancels_pending_job(self, test_client, setup_jobs_data):
         """Should cancel a pending job."""
         # Find a pending job
@@ -387,7 +365,6 @@ class TestCancelJob:
         assert response.status_code == 200, \
             f"Expected 200 for canceling existing pending job, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_jobs_data):
         """Should return 404 for non-existent job."""
         fake_id = uuid4()
@@ -400,13 +377,11 @@ class TestCancelJob:
 class TestWorkerStatus:
     """Tests for GET /api/jobs/workers/status endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_jobs_data):
         """Worker status endpoint should return 200 OK."""
         response = await test_client.get("/api/jobs/workers/status")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_status_structure(self, test_client, setup_jobs_data):
         """Response should have expected status structure."""
         response = await test_client.get("/api/jobs/workers/status")
@@ -420,7 +395,6 @@ class TestWorkerStatus:
 class TestWorkerConfig:
     """Tests for POST /api/jobs/workers/config endpoint."""
 
-    @pytest.mark.asyncio
     async def test_requires_running_worker(self, test_client, setup_jobs_data):
         """Should fail if no worker is running."""
         response = await test_client.post(
@@ -434,14 +408,12 @@ class TestWorkerConfig:
 class TestJobsContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_stats_returns_json(self, test_client, setup_jobs_data):
         """Stats endpoint should return JSON."""
         response = await test_client.get("/api/jobs/stats")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_failed_returns_json(self, test_client, setup_jobs_data):
         """Failed jobs endpoint should return JSON."""
         response = await test_client.get("/api/jobs/failed")

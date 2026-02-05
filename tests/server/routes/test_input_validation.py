@@ -91,7 +91,6 @@ def assert_error_response(response, expected_status_codes=(400, 422)):
 class TestEmptyInputs:
     """Tests for empty and null input handling."""
 
-    @pytest.mark.asyncio
     async def test_empty_string_required_fields(self, test_client, setup_validation_data):
         """Empty strings for required fields should be rejected."""
         # Target name cannot be empty
@@ -126,7 +125,6 @@ class TestEmptyInputs:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_null_values_in_json(self, test_client, setup_validation_data):
         """Null values for required fields should be rejected."""
         response = await test_client.post(
@@ -147,7 +145,6 @@ class TestEmptyInputs:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_missing_required_fields(self, test_client, setup_validation_data):
         """Missing required fields should return validation error."""
         # Target missing name
@@ -196,7 +193,6 @@ class TestEmptyInputs:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_empty_arrays_objects(self, test_client, setup_validation_data):
         """Empty arrays and objects should be handled appropriately."""
         # Empty config should be rejected or handled
@@ -211,7 +207,6 @@ class TestEmptyInputs:
         # Filesystem adapter requires 'path' in config
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_empty_request_body(self, test_client, setup_validation_data):
         """Empty request body should be rejected."""
         response = await test_client.post(
@@ -226,7 +221,6 @@ class TestEmptyInputs:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_whitespace_only_strings(self, test_client, setup_validation_data):
         """Whitespace-only strings should be rejected as empty."""
         response = await test_client.post(
@@ -250,7 +244,6 @@ class TestEmptyInputs:
 class TestBoundaryValues:
     """Tests for boundary value handling."""
 
-    @pytest.mark.asyncio
     async def test_very_long_strings(self, test_client, setup_validation_data):
         """Very long strings should be rejected or truncated."""
         long_string = "A" * 10001  # 10001 characters
@@ -290,7 +283,6 @@ class TestBoundaryValues:
         )
         assert response.status_code in (200, 201, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_negative_numbers(self, test_client, setup_validation_data):
         """Negative numbers where positive expected should be rejected."""
         # Negative page number
@@ -308,7 +300,6 @@ class TestBoundaryValues:
         response = await test_client.get("/api/users?limit=-5")
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_zero_values(self, test_client, setup_validation_data):
         """Zero values should be validated appropriately."""
         # Page 0 should be rejected
@@ -323,7 +314,6 @@ class TestBoundaryValues:
         response = await test_client.get("/api/audit?page_size=0")
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_maximum_integer_values(self, test_client, setup_validation_data):
         """Maximum integer values should be handled safely."""
         max_int = 2147483647  # Max 32-bit signed int
@@ -342,7 +332,6 @@ class TestBoundaryValues:
         response = await test_client.get(f"/api/results?page={large_int + 1}")
         assert response.status_code in (200, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_unicode_special_characters(self, test_client, setup_validation_data):
         """Unicode and special characters should be handled safely."""
         unicode_strings = [
@@ -371,7 +360,6 @@ class TestBoundaryValues:
             assert response.status_code in (200, 201, 400, 422), \
                 f"Unicode string '{repr(test_string)}' caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_control_characters(self, test_client, setup_validation_data):
         """Control characters should be handled safely."""
         control_char_strings = [
@@ -405,7 +393,6 @@ class TestBoundaryValues:
 class TestTypeCoercion:
     """Tests for type coercion attack prevention."""
 
-    @pytest.mark.asyncio
     async def test_string_where_number_expected(self, test_client, setup_validation_data):
         """String values where numbers expected should be rejected."""
         # String for page number
@@ -419,7 +406,6 @@ class TestTypeCoercion:
         response = await test_client.get("/api/users?limit=many")
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_number_where_string_expected(self, test_client, setup_validation_data):
         """Number values where strings expected should be coerced or rejected."""
         # Number for target name (should be coerced to string or rejected)
@@ -445,7 +431,6 @@ class TestTypeCoercion:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_array_where_object_expected(self, test_client, setup_validation_data):
         """Array values where objects expected should be rejected."""
         # Array for config (should be object)
@@ -459,7 +444,6 @@ class TestTypeCoercion:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_object_where_string_expected(self, test_client, setup_validation_data):
         """Object values where strings expected should be rejected."""
         # Object for target name
@@ -473,7 +457,6 @@ class TestTypeCoercion:
         )
         assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_boolean_coercion(self, test_client, setup_validation_data):
         """Boolean type coercion should be handled correctly."""
         # String "true" for boolean
@@ -510,7 +493,6 @@ class TestTypeCoercion:
 class TestMalformedData:
     """Tests for malformed data handling."""
 
-    @pytest.mark.asyncio
     async def test_invalid_uuids(self, test_client, setup_validation_data):
         """Invalid UUIDs should be rejected with 422."""
         invalid_uuids = [
@@ -535,7 +517,6 @@ class TestMalformedData:
             response = await test_client.get(f"/api/results/{invalid_uuid}")
             assert response.status_code == 422
 
-    @pytest.mark.asyncio
     async def test_invalid_email_formats(self, test_client, setup_validation_data):
         """Invalid email formats should be rejected."""
         invalid_emails = [
@@ -564,7 +545,6 @@ class TestMalformedData:
             assert response.status_code in (201, 400, 422), \
                 f"Invalid email '{invalid_email}' caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_invalid_cron_expressions(self, test_client, setup_validation_data):
         """Invalid cron expressions should be rejected or handled."""
         target = setup_validation_data["target"]
@@ -594,7 +574,6 @@ class TestMalformedData:
             assert response.status_code in (201, 400, 422), \
                 f"Invalid cron '{invalid_cron}' caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_invalid_json(self, test_client, setup_validation_data):
         """Invalid JSON should return 400/422."""
         import httpx
@@ -618,7 +597,6 @@ class TestMalformedData:
             )
             assert response.status_code in (400, 422)
 
-    @pytest.mark.asyncio
     async def test_invalid_adapter_types(self, test_client, setup_validation_data):
         """Invalid adapter types should be rejected."""
         invalid_adapters = [
@@ -642,7 +620,6 @@ class TestMalformedData:
             )
             assert_error_response(response)
 
-    @pytest.mark.asyncio
     async def test_invalid_role_values(self, test_client, setup_validation_data):
         """Invalid role values should be rejected."""
         invalid_roles = [
@@ -710,7 +687,6 @@ class TestInjectionPatterns:
         "x*)(objectclass=user",
     ]
 
-    @pytest.mark.asyncio
     async def test_sql_injection_in_target_name(self, test_client, setup_validation_data):
         """SQL injection in target name should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -727,7 +703,6 @@ class TestInjectionPatterns:
             assert response.status_code in (200, 201, 400, 422), \
                 f"SQL payload '{payload}' caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_sql_injection_in_search_params(self, test_client, setup_validation_data):
         """SQL injection in search parameters should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -750,7 +725,6 @@ class TestInjectionPatterns:
             )
             assert response.status_code in (200, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_sql_injection_in_config(self, test_client, setup_validation_data):
         """SQL injection in config objects should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -765,7 +739,6 @@ class TestInjectionPatterns:
             # Should be safely stored or rejected - path traversal middleware may block
             assert response.status_code in (200, 201, 400, 403, 422)
 
-    @pytest.mark.asyncio
     async def test_nosql_injection_patterns(self, test_client, setup_validation_data):
         """NoSQL/MongoDB injection patterns should be safely handled."""
         for payload in self.MONGODB_INJECTION_PAYLOADS:
@@ -779,7 +752,6 @@ class TestInjectionPatterns:
             )
             assert response.status_code in (200, 201, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_ldap_injection_patterns(self, test_client, setup_validation_data):
         """LDAP injection patterns should be safely handled."""
         for payload in self.LDAP_INJECTION_PAYLOADS:
@@ -801,7 +773,6 @@ class TestInjectionPatterns:
 class TestErrorMessageQuality:
     """Tests to ensure error messages are helpful but secure."""
 
-    @pytest.mark.asyncio
     async def test_validation_errors_are_descriptive(self, test_client, setup_validation_data):
         """Validation errors should describe what's wrong."""
         # Missing required field
@@ -818,7 +789,6 @@ class TestErrorMessageQuality:
         # Should have detail field explaining the error
         assert "detail" in error or "message" in error
 
-    @pytest.mark.asyncio
     async def test_no_internal_paths_exposed(self, test_client, setup_validation_data):
         """Error responses should not expose internal file paths."""
         response = await test_client.post(
@@ -848,7 +818,6 @@ class TestErrorMessageQuality:
             assert path not in response_text, \
                 f"Internal path '{path}' exposed in error response"
 
-    @pytest.mark.asyncio
     async def test_no_database_details_exposed(self, test_client, setup_validation_data):
         """Error responses should not expose database details."""
         response = await test_client.get(f"/api/targets/{uuid4()}")
@@ -875,7 +844,6 @@ class TestErrorMessageQuality:
             assert term not in response_text, \
                 f"Database term '{term}' exposed in error response"
 
-    @pytest.mark.asyncio
     async def test_error_responses_are_json(self, test_client, setup_validation_data):
         """Error responses should be JSON (not HTML error pages)."""
         # Trigger various errors
@@ -906,7 +874,6 @@ class TestErrorMessageQuality:
 class TestEdgeCases:
     """Tests for various edge cases."""
 
-    @pytest.mark.asyncio
     async def test_concurrent_duplicate_creation(self, test_client, setup_validation_data):
         """Concurrent creation of duplicate resources should be handled."""
         import asyncio
@@ -935,7 +902,6 @@ class TestEdgeCases:
             assert code in (201, 409), \
                 f"Unexpected status code {code} during concurrent creation"
 
-    @pytest.mark.asyncio
     async def test_deeply_nested_json_config(self, test_client, setup_validation_data):
         """Deeply nested JSON in config should not cause DoS."""
         # Create deeply nested config
@@ -956,7 +922,6 @@ class TestEdgeCases:
         assert response.status_code in (200, 201, 400, 413, 422), \
             f"Deeply nested config caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_large_json_payload(self, test_client, setup_validation_data):
         """Very large JSON payloads should be rejected."""
         # Create payload with many keys
@@ -973,7 +938,6 @@ class TestEdgeCases:
         # Should either succeed or fail gracefully
         assert response.status_code in (200, 201, 400, 413, 422)
 
-    @pytest.mark.asyncio
     async def test_special_query_parameter_characters(self, test_client, setup_validation_data):
         """Special characters in query parameters should be handled."""
         special_params = [
@@ -994,7 +958,6 @@ class TestEdgeCases:
             assert response.status_code in (200, 400, 422), \
                 f"Special param '{param_value}' caused {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_repeated_parameter_handling(self, test_client, setup_validation_data):
         """Repeated parameters should be handled consistently."""
         # Some frameworks accept first, some last, some as array
@@ -1004,7 +967,6 @@ class TestEdgeCases:
         # Should handle gracefully
         assert response.status_code in (200, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_extra_fields_ignored_or_rejected(self, test_client, setup_validation_data):
         """Extra fields in request body should be ignored or rejected."""
         response = await test_client.post(
@@ -1026,7 +988,6 @@ class TestEdgeCases:
             assert "extra_field" not in data
             assert "another_extra" not in data
 
-    @pytest.mark.asyncio
     async def test_content_type_validation(self, test_client, setup_validation_data):
         """Wrong content type should be rejected."""
         import httpx

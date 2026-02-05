@@ -38,7 +38,6 @@ async def setup_monitoring_data(test_db):
 class TestListMonitoredFiles:
     """Tests for GET /api/monitoring/files endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """List monitored files should return 200 OK."""
         response = await test_client.get("/api/monitoring/files")
@@ -51,7 +50,6 @@ class TestListMonitoredFiles:
         assert "pages" in data, "Response should contain 'pages' field"
         assert isinstance(data["items"], list), "Items should be a list"
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
         """List should return paginated structure."""
         response = await test_client.get("/api/monitoring/files")
@@ -63,7 +61,6 @@ class TestListMonitoredFiles:
         assert "page" in data
         assert "pages" in data
 
-    @pytest.mark.asyncio
     async def test_returns_empty_when_no_files(self, test_client, setup_monitoring_data):
         """List should return empty when no monitored files."""
         response = await test_client.get("/api/monitoring/files")
@@ -73,7 +70,6 @@ class TestListMonitoredFiles:
         assert data["items"] == []
         assert data["total"] == 0
 
-    @pytest.mark.asyncio
     async def test_returns_monitored_files(self, test_client, setup_monitoring_data):
         """List should return monitored files."""
         from openlabels.server.models import MonitoredFile
@@ -100,7 +96,6 @@ class TestListMonitoredFiles:
         assert len(data["items"]) == 1
         assert data["items"][0]["file_path"] == "/sensitive/data.xlsx"
 
-    @pytest.mark.asyncio
     async def test_file_response_structure(self, test_client, setup_monitoring_data):
         """Monitored file response should have required fields."""
         from openlabels.server.models import MonitoredFile
@@ -132,7 +127,6 @@ class TestListMonitoredFiles:
         assert "audit_write" in item
         assert "added_at" in item
 
-    @pytest.mark.asyncio
     async def test_filter_by_risk_tier(self, test_client, setup_monitoring_data):
         """List should filter by risk_tier."""
         from openlabels.server.models import MonitoredFile
@@ -161,7 +155,6 @@ class TestListMonitoredFiles:
         for item in data["items"]:
             assert item["risk_tier"] == "CRITICAL"
 
-    @pytest.mark.asyncio
     async def test_pagination(self, test_client, setup_monitoring_data):
         """List should respect pagination parameters."""
         from openlabels.server.models import MonitoredFile
@@ -193,7 +186,6 @@ class TestListMonitoredFiles:
 class TestEnableFileMonitoring:
     """Tests for POST /api/monitoring/files endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """Enable monitoring should return 200 OK."""
         response = await test_client.post(
@@ -212,7 +204,6 @@ class TestEnableFileMonitoring:
         assert data["audit_write"] is True, "audit_write should match request"
         assert "added_at" in data, "Response should contain 'added_at' field"
 
-    @pytest.mark.asyncio
     async def test_returns_created_record(self, test_client, setup_monitoring_data):
         """Enable should return the created record."""
         response = await test_client.post(
@@ -231,7 +222,6 @@ class TestEnableFileMonitoring:
         assert data["audit_write"] is False
         assert "id" in data
 
-    @pytest.mark.asyncio
     async def test_rejects_duplicate(self, test_client, setup_monitoring_data):
         """Enable should reject duplicate file_path."""
         # First creation
@@ -255,7 +245,6 @@ class TestEnableFileMonitoring:
 class TestDisableFileMonitoring:
     """Tests for DELETE /api/monitoring/files/{file_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_204_status(self, test_client, setup_monitoring_data):
         """Disable monitoring should return 204 No Content."""
         from openlabels.server.models import MonitoredFile
@@ -276,7 +265,6 @@ class TestDisableFileMonitoring:
         response = await test_client.delete(f"/api/monitoring/files/{monitored.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_file_is_removed(self, test_client, setup_monitoring_data):
         """Disabled file should no longer be in list."""
         from openlabels.server.models import MonitoredFile
@@ -302,7 +290,6 @@ class TestDisableFileMonitoring:
         paths = [f["file_path"] for f in data["items"]]
         assert "/remove/me.txt" not in paths
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_monitoring_data):
         """Disable nonexistent file should return 404."""
         fake_id = uuid4()
@@ -313,7 +300,6 @@ class TestDisableFileMonitoring:
 class TestListAccessEvents:
     """Tests for GET /api/monitoring/events endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """List events should return 200 OK."""
         response = await test_client.get("/api/monitoring/events")
@@ -326,7 +312,6 @@ class TestListAccessEvents:
         assert "pages" in data, "Response should contain 'pages' field"
         assert isinstance(data["items"], list), "Items should be a list"
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
         """List should return paginated structure."""
         response = await test_client.get("/api/monitoring/events")
@@ -338,7 +323,6 @@ class TestListAccessEvents:
         assert "page" in data
         assert "pages" in data
 
-    @pytest.mark.asyncio
     async def test_returns_empty_when_no_events(self, test_client, setup_monitoring_data):
         """List should return empty when no events."""
         response = await test_client.get("/api/monitoring/events")
@@ -348,7 +332,6 @@ class TestListAccessEvents:
         assert data["items"] == []
         assert data["total"] == 0
 
-    @pytest.mark.asyncio
     async def test_returns_events(self, test_client, setup_monitoring_data):
         """List should return access events."""
         from openlabels.server.models import FileAccessEvent, MonitoredFile
@@ -387,7 +370,6 @@ class TestListAccessEvents:
         assert len(data["items"]) == 1
         assert data["items"][0]["file_path"] == "/accessed/file.txt"
 
-    @pytest.mark.asyncio
     async def test_filter_by_file_path(self, test_client, setup_monitoring_data):
         """List should filter by file_path."""
         from openlabels.server.models import FileAccessEvent, MonitoredFile
@@ -429,7 +411,6 @@ class TestListAccessEvents:
 
         assert data["total"] == 2
 
-    @pytest.mark.asyncio
     async def test_filter_by_user_name(self, test_client, setup_monitoring_data):
         """List should filter by user_name."""
         from openlabels.server.models import FileAccessEvent, MonitoredFile
@@ -466,7 +447,6 @@ class TestListAccessEvents:
 
         assert data["total"] == 2
 
-    @pytest.mark.asyncio
     async def test_filter_by_action(self, test_client, setup_monitoring_data):
         """List should filter by action type."""
         from openlabels.server.models import FileAccessEvent, MonitoredFile
@@ -506,7 +486,6 @@ class TestListAccessEvents:
 class TestGetAccessStats:
     """Tests for GET /api/monitoring/stats endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """Stats should return 200 OK."""
         response = await test_client.get("/api/monitoring/stats")
@@ -520,7 +499,6 @@ class TestGetAccessStats:
         assert "monitored_files_count" in data, "Response should contain 'monitored_files_count' field"
         assert isinstance(data["total_events"], int), "total_events should be an integer"
 
-    @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_monitoring_data):
         """Stats should return required fields."""
         response = await test_client.get("/api/monitoring/stats")
@@ -534,7 +512,6 @@ class TestGetAccessStats:
         assert "by_user" in data
         assert "monitored_files_count" in data
 
-    @pytest.mark.asyncio
     async def test_returns_zero_values_when_empty(self, test_client, setup_monitoring_data):
         """Stats should return zeros when no events."""
         response = await test_client.get("/api/monitoring/stats")
@@ -545,7 +522,6 @@ class TestGetAccessStats:
         assert data["events_last_24h"] == 0
         assert data["events_last_7d"] == 0
 
-    @pytest.mark.asyncio
     async def test_counts_events_correctly(self, test_client, setup_monitoring_data):
         """Stats should count events correctly."""
         from openlabels.server.models import FileAccessEvent, MonitoredFile
@@ -592,7 +568,6 @@ class TestGetAccessStats:
 class TestDetectAccessAnomalies:
     """Tests for GET /api/monitoring/stats/anomalies endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_monitoring_data):
         """Anomaly detection should return 200 OK."""
         response = await test_client.get("/api/monitoring/stats/anomalies")
@@ -605,7 +580,6 @@ class TestDetectAccessAnomalies:
         assert isinstance(data["anomalies"], list), "anomalies should be a list"
         assert isinstance(data["anomaly_count"], int), "anomaly_count should be an integer"
 
-    @pytest.mark.asyncio
     async def test_returns_anomalies_structure(self, test_client, setup_monitoring_data):
         """Anomalies should return required fields."""
         response = await test_client.get("/api/monitoring/stats/anomalies")
@@ -617,7 +591,6 @@ class TestDetectAccessAnomalies:
         assert "anomaly_count" in data
         assert "anomalies" in data
 
-    @pytest.mark.asyncio
     async def test_default_24_hours(self, test_client, setup_monitoring_data):
         """Anomaly detection should default to 24 hours."""
         response = await test_client.get("/api/monitoring/stats/anomalies")
@@ -626,7 +599,6 @@ class TestDetectAccessAnomalies:
 
         assert data["analysis_period_hours"] == 24
 
-    @pytest.mark.asyncio
     async def test_custom_hours_parameter(self, test_client, setup_monitoring_data):
         """Anomaly detection should respect hours parameter."""
         response = await test_client.get("/api/monitoring/stats/anomalies?hours=48")
@@ -635,7 +607,6 @@ class TestDetectAccessAnomalies:
 
         assert data["analysis_period_hours"] == 48
 
-    @pytest.mark.asyncio
     async def test_returns_empty_anomalies_when_no_events(self, test_client, setup_monitoring_data):
         """Anomalies should be empty when no events."""
         response = await test_client.get("/api/monitoring/stats/anomalies")
@@ -649,7 +620,6 @@ class TestDetectAccessAnomalies:
 class TestMonitoringTenantIsolation:
     """Tests for tenant isolation in monitoring endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_files(self, test_client, setup_monitoring_data):
         """Should not be able to see files from other tenants."""
         from openlabels.server.models import Tenant, MonitoredFile
@@ -680,7 +650,6 @@ class TestMonitoringTenantIsolation:
         paths = [f["file_path"] for f in data["items"]]
         assert "/other/tenant/file.txt" not in paths
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_file(self, test_client, setup_monitoring_data):
         """Should not be able to delete files from other tenants."""
         from openlabels.server.models import Tenant, MonitoredFile
@@ -710,19 +679,16 @@ class TestMonitoringTenantIsolation:
 class TestMonitoringContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_files_returns_json(self, test_client, setup_monitoring_data):
         """List files should return JSON."""
         response = await test_client.get("/api/monitoring/files")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_events_returns_json(self, test_client, setup_monitoring_data):
         """List events should return JSON."""
         response = await test_client.get("/api/monitoring/events")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_stats_returns_json(self, test_client, setup_monitoring_data):
         """Stats should return JSON."""
         response = await test_client.get("/api/monitoring/stats")

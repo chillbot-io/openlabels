@@ -392,7 +392,6 @@ class TestMIPClientConfiguration:
 class TestMIPClientMethods:
     """Tests for MIPClient methods that don't require initialization."""
 
-    @pytest.mark.asyncio
     async def test_get_labels_without_init_returns_empty(self):
         """get_labels should return empty list if not initialized."""
         from openlabels.labeling.mip import MIPClient
@@ -407,7 +406,6 @@ class TestMIPClientMethods:
 
         assert labels == []
 
-    @pytest.mark.asyncio
     async def test_apply_label_without_init_returns_error(self):
         """apply_label should return error if not initialized."""
         from openlabels.labeling.mip import MIPClient
@@ -423,7 +421,6 @@ class TestMIPClientMethods:
         assert result.success is False
         assert "not initialized" in result.error.lower()
 
-    @pytest.mark.asyncio
     async def test_remove_label_without_init_returns_error(self):
         """remove_label should return error if not initialized."""
         from openlabels.labeling.mip import MIPClient
@@ -439,7 +436,6 @@ class TestMIPClientMethods:
         assert result.success is False
         assert "not initialized" in result.error.lower()
 
-    @pytest.mark.asyncio
     async def test_get_file_label_without_init_returns_none(self):
         """get_file_label should return None if not initialized."""
         from openlabels.labeling.mip import MIPClient
@@ -454,7 +450,6 @@ class TestMIPClientMethods:
 
         assert label is None
 
-    @pytest.mark.asyncio
     async def test_is_file_protected_without_init_returns_false(self):
         """is_file_protected should return False if not initialized."""
         from openlabels.labeling.mip import MIPClient
@@ -478,7 +473,6 @@ class TestMIPClientMethods:
 class TestMIPClientFileValidation:
     """Tests for MIPClient file validation."""
 
-    @pytest.mark.asyncio
     async def test_apply_label_nonexistent_file(self, tmp_path):
         """apply_label should fail for nonexistent file."""
         from openlabels.labeling.mip import MIPClient
@@ -496,7 +490,6 @@ class TestMIPClientFileValidation:
         assert result.success is False
         assert "not found" in result.error.lower()
 
-    @pytest.mark.asyncio
     async def test_remove_label_nonexistent_file(self, tmp_path):
         """remove_label should fail for nonexistent file."""
         from openlabels.labeling.mip import MIPClient

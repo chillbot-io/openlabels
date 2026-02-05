@@ -148,7 +148,6 @@ async def create_pending_auth(test_db):
 class TestLoginEndpoint:
     """Tests for GET /auth/login endpoint."""
 
-    @pytest.mark.asyncio
     async def test_dev_mode_creates_session_and_redirects(self, test_db, setup_auth_test_data):
         """Dev mode login should create session and redirect."""
         from httpx import AsyncClient, ASGITransport
@@ -188,7 +187,6 @@ class TestLoginEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_dev_mode_respects_redirect_uri(self, test_db, setup_auth_test_data):
         """Dev mode login should redirect to specified redirect_uri."""
         from httpx import AsyncClient, ASGITransport
@@ -221,7 +219,6 @@ class TestLoginEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_dev_mode_blocked_in_production(self, test_db, setup_auth_test_data):
         """Dev mode auth should be blocked in production environment."""
         from httpx import AsyncClient, ASGITransport
@@ -253,7 +250,6 @@ class TestLoginEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_dev_mode_requires_debug_flag(self, test_db, setup_auth_test_data):
         """Dev mode auth should require DEBUG=true."""
         from httpx import AsyncClient, ASGITransport
@@ -284,7 +280,6 @@ class TestLoginEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_dev_mode_invalidates_existing_session(self, test_db, setup_auth_test_data, create_test_session):
         """Dev mode login should invalidate existing session (session fixation prevention)."""
         from httpx import AsyncClient, ASGITransport
@@ -342,7 +337,6 @@ class TestLoginEndpoint:
 class TestLoginRedirectValidation:
     """Tests for redirect URI validation in login endpoint."""
 
-    @pytest.mark.asyncio
     async def test_blocks_external_redirect(self, test_db, setup_auth_test_data):
         """Login should block external redirect URIs."""
         from httpx import AsyncClient, ASGITransport
@@ -377,7 +371,6 @@ class TestLoginRedirectValidation:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_blocks_protocol_relative_redirect(self, test_db, setup_auth_test_data):
         """Login should block protocol-relative URLs (//evil.com)."""
         from httpx import AsyncClient, ASGITransport
@@ -410,7 +403,6 @@ class TestLoginRedirectValidation:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_allows_relative_paths(self, test_db, setup_auth_test_data):
         """Login should allow relative path redirects."""
         from httpx import AsyncClient, ASGITransport
@@ -443,7 +435,6 @@ class TestLoginRedirectValidation:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_allows_cors_origin_redirect(self, test_db, setup_auth_test_data):
         """Login should allow redirects to CORS allowed origins."""
         from httpx import AsyncClient, ASGITransport
@@ -476,7 +467,6 @@ class TestLoginRedirectValidation:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_blocks_javascript_scheme(self, test_db, setup_auth_test_data):
         """Login should block javascript: scheme redirects."""
         from httpx import AsyncClient, ASGITransport
@@ -518,7 +508,6 @@ class TestLoginRedirectValidation:
 class TestCallbackEndpoint:
     """Tests for GET /auth/callback endpoint."""
 
-    @pytest.mark.asyncio
     async def test_callback_missing_code_returns_400(self, test_db, setup_auth_test_data):
         """Callback without code should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -551,7 +540,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_missing_state_returns_400(self, test_db, setup_auth_test_data):
         """Callback without state should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -584,7 +572,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_invalid_state_returns_400(self, test_db, setup_auth_test_data):
         """Callback with invalid/unknown state should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -617,7 +604,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_oauth_error_returns_400(self, test_db, setup_auth_test_data):
         """Callback with OAuth error should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -652,7 +638,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_success_creates_session(self, test_db, setup_auth_test_data, create_pending_auth):
         """Successful callback should create session and redirect."""
         from httpx import AsyncClient, ASGITransport
@@ -718,7 +703,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_token_error_returns_400(self, test_db, setup_auth_test_data, create_pending_auth):
         """Callback with token acquisition error should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -766,7 +750,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_token_exception_returns_400(self, test_db, setup_auth_test_data, create_pending_auth):
         """Callback with token acquisition exception should return 400."""
         from httpx import AsyncClient, ASGITransport
@@ -807,7 +790,6 @@ class TestCallbackEndpoint:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_callback_dev_mode_redirects_to_root(self, test_db, setup_auth_test_data):
         """Callback in dev mode should redirect to /."""
         from httpx import AsyncClient, ASGITransport
@@ -846,7 +828,6 @@ class TestCallbackEndpoint:
 class TestLogoutEndpoint:
     """Tests for GET /auth/logout endpoint."""
 
-    @pytest.mark.asyncio
     async def test_logout_clears_session(self, test_db, setup_auth_test_data, create_test_session):
         """Logout should delete session from database."""
         from httpx import AsyncClient, ASGITransport
@@ -888,7 +869,6 @@ class TestLogoutEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_clears_cookie(self, test_db, setup_auth_test_data, create_test_session):
         """Logout should clear the session cookie."""
         from httpx import AsyncClient, ASGITransport
@@ -924,7 +904,6 @@ class TestLogoutEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_redirects_to_azure_when_configured(self, test_db, setup_auth_test_data):
         """Logout with Azure AD should redirect to Microsoft logout."""
         from httpx import AsyncClient, ASGITransport
@@ -954,7 +933,6 @@ class TestLogoutEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_without_session_still_redirects(self, test_db, setup_auth_test_data):
         """Logout without session cookie should still redirect."""
         from httpx import AsyncClient, ASGITransport
@@ -989,7 +967,6 @@ class TestLogoutEndpoint:
 class TestMeEndpoint:
     """Tests for GET /auth/me endpoint."""
 
-    @pytest.mark.asyncio
     async def test_me_returns_user_info(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/me should return current user info."""
         from httpx import AsyncClient, ASGITransport
@@ -1035,7 +1012,6 @@ class TestMeEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_me_without_session_returns_401(self, test_db, setup_auth_test_data):
         """GET /auth/me without session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1057,7 +1033,6 @@ class TestMeEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_me_with_invalid_session_returns_401(self, test_db, setup_auth_test_data):
         """GET /auth/me with invalid session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1082,7 +1057,6 @@ class TestMeEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_me_with_expired_session_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/me with expired session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1135,7 +1109,6 @@ class TestMeEndpoint:
 class TestTokenEndpoint:
     """Tests for POST /auth/token endpoint."""
 
-    @pytest.mark.asyncio
     async def test_token_returns_access_token(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token should return access token."""
         from httpx import AsyncClient, ASGITransport
@@ -1174,7 +1147,6 @@ class TestTokenEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_token_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/token without session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1195,7 +1167,6 @@ class TestTokenEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_token_with_expired_session_attempts_refresh(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token with expired token should attempt refresh."""
         from httpx import AsyncClient, ASGITransport
@@ -1249,7 +1220,6 @@ class TestTokenEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_token_refresh_failure_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token with failed refresh should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1310,7 +1280,6 @@ class TestTokenEndpoint:
 class TestAuthStatusEndpoint:
     """Tests for GET /auth/status endpoint."""
 
-    @pytest.mark.asyncio
     async def test_status_authenticated(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/status should return authenticated=True with valid session."""
         from httpx import AsyncClient, ASGITransport
@@ -1357,7 +1326,6 @@ class TestAuthStatusEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_status_not_authenticated(self, test_db, setup_auth_test_data):
         """GET /auth/status should return authenticated=False without session."""
         from httpx import AsyncClient, ASGITransport
@@ -1386,7 +1354,6 @@ class TestAuthStatusEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_status_with_expired_token(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/status should return authenticated=False with expired token."""
         from httpx import AsyncClient, ASGITransport
@@ -1439,7 +1406,6 @@ class TestAuthStatusEndpoint:
 class TestRevokeEndpoint:
     """Tests for POST /auth/revoke endpoint."""
 
-    @pytest.mark.asyncio
     async def test_revoke_deletes_session(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/revoke should delete the session."""
         from httpx import AsyncClient, ASGITransport
@@ -1477,7 +1443,6 @@ class TestRevokeEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_revoke_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/revoke without session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1498,7 +1463,6 @@ class TestRevokeEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_revoke_invalid_session_returns_404(self, test_db, setup_auth_test_data):
         """POST /auth/revoke with invalid session should return 404."""
         from httpx import AsyncClient, ASGITransport
@@ -1531,7 +1495,6 @@ class TestRevokeEndpoint:
 class TestLogoutAllEndpoint:
     """Tests for POST /auth/logout-all endpoint."""
 
-    @pytest.mark.asyncio
     async def test_logout_all_deletes_user_sessions(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/logout-all should delete all sessions for the user."""
         from httpx import AsyncClient, ASGITransport
@@ -1582,7 +1545,6 @@ class TestLogoutAllEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_all_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/logout-all without session should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -1603,7 +1565,6 @@ class TestLogoutAllEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_all_without_user_id_deletes_current_only(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/logout-all without user_id in claims should only delete current session."""
         from httpx import AsyncClient, ASGITransport
@@ -1736,7 +1697,6 @@ class TestValidateRedirectUri:
 class TestSessionCookieSecurity:
     """Tests for secure session cookie settings."""
 
-    @pytest.mark.asyncio
     async def test_session_cookie_is_httponly(self, test_db, setup_auth_test_data):
         """Session cookie should have HttpOnly flag."""
         from httpx import AsyncClient, ASGITransport
@@ -1769,7 +1729,6 @@ class TestSessionCookieSecurity:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_session_cookie_has_samesite(self, test_db, setup_auth_test_data):
         """Session cookie should have SameSite attribute."""
         from httpx import AsyncClient, ASGITransport
@@ -1890,7 +1849,6 @@ class TestSessionGeneration:
 class TestSQLInjectionPrevention:
     """Tests to verify SQL injection attempts are properly handled."""
 
-    @pytest.mark.asyncio
     async def test_session_id_sql_injection_attempt(self, test_db, setup_auth_test_data):
         """SQL injection in session cookie should be safely handled."""
         from httpx import AsyncClient, ASGITransport
@@ -1926,7 +1884,6 @@ class TestSQLInjectionPrevention:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_redirect_uri_sql_injection_attempt(self, test_db, setup_auth_test_data):
         """SQL injection in redirect_uri parameter should be safely handled."""
         from httpx import AsyncClient, ASGITransport
@@ -1965,7 +1922,6 @@ class TestSQLInjectionPrevention:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_state_parameter_sql_injection(self, test_db, setup_auth_test_data):
         """SQL injection in OAuth state parameter should be safely handled."""
         from httpx import AsyncClient, ASGITransport
@@ -2015,7 +1971,6 @@ class TestSQLInjectionPrevention:
 class TestTokenTampering:
     """Tests for token tampering attack prevention."""
 
-    @pytest.mark.asyncio
     async def test_modified_session_data_detected(self, test_db, setup_auth_test_data, create_test_session):
         """Tampering with session data should be detected."""
         from httpx import AsyncClient, ASGITransport
@@ -2081,7 +2036,6 @@ class TestTokenTampering:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_forged_session_id_rejected(self, test_db, setup_auth_test_data):
         """Forged session IDs should be rejected."""
         from httpx import AsyncClient, ASGITransport
@@ -2118,7 +2072,6 @@ class TestTokenTampering:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_expired_session_data_with_valid_row(self, test_db, setup_auth_test_data, create_test_session):
         """Session with expired token data but valid row should be rejected."""
         from httpx import AsyncClient, ASGITransport
@@ -2163,7 +2116,6 @@ class TestTokenTampering:
 class TestMalformedRequests:
     """Tests for handling malformed authentication requests."""
 
-    @pytest.mark.asyncio
     async def test_malformed_cookie_value(self, test_db, setup_auth_test_data):
         """Malformed cookie values should be handled gracefully."""
         from httpx import AsyncClient, ASGITransport
@@ -2199,7 +2151,6 @@ class TestMalformedRequests:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_missing_required_callback_params(self, test_db, setup_auth_test_data):
         """Callback endpoint should require code and state parameters."""
         from httpx import AsyncClient, ASGITransport
@@ -2236,7 +2187,6 @@ class TestMalformedRequests:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_unicode_in_redirect_uri(self, test_db, setup_auth_test_data):
         """Unicode characters in redirect_uri should be handled safely."""
         from httpx import AsyncClient, ASGITransport
@@ -2280,7 +2230,6 @@ class TestMalformedRequests:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_oversized_state_parameter(self, test_db, setup_auth_test_data):
         """Oversized state parameter should be handled gracefully."""
         from httpx import AsyncClient, ASGITransport
@@ -2323,7 +2272,6 @@ class TestMalformedRequests:
 class TestMultiTenantIsolation:
     """Tests for multi-tenant session isolation."""
 
-    @pytest.mark.asyncio
     async def test_session_isolated_by_tenant(self, test_db, setup_auth_test_data, create_test_session):
         """Sessions should be isolated by tenant."""
         from httpx import AsyncClient, ASGITransport
@@ -2396,7 +2344,6 @@ class TestMultiTenantIsolation:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_logout_all_only_affects_own_sessions(self, test_db, setup_auth_test_data, create_test_session):
         """Logout-all should only affect the current user's sessions, not other users."""
         from httpx import AsyncClient, ASGITransport
@@ -2473,7 +2420,6 @@ class TestMultiTenantIsolation:
 class TestCSRFProtection:
     """Tests for CSRF protection via state parameter."""
 
-    @pytest.mark.asyncio
     async def test_state_reuse_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
         """State token should only be usable once (replay attack prevention)."""
         from httpx import AsyncClient, ASGITransport
@@ -2523,7 +2469,6 @@ class TestCSRFProtection:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_empty_state_rejected(self, test_db, setup_auth_test_data):
         """Empty state parameter should be rejected."""
         from httpx import AsyncClient, ASGITransport
@@ -2552,7 +2497,6 @@ class TestCSRFProtection:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_state_from_different_session_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
         """State token from a different session should be rejected."""
         from httpx import AsyncClient, ASGITransport
@@ -2606,7 +2550,6 @@ class TestCSRFProtection:
 class TestRateLimiting:
     """Tests for rate limiting on auth endpoints."""
 
-    @pytest.mark.asyncio
     async def test_rate_limiter_configured(self, test_db, setup_auth_test_data):
         """Rate limiter should be configured for auth endpoints."""
         from openlabels.server.routes.auth import limiter, login, auth_callback
@@ -2616,7 +2559,6 @@ class TestRateLimiting:
         # The limiter should have a key function
         assert limiter._key_func is not None
 
-    @pytest.mark.asyncio
     async def test_login_has_rate_limit_decorator(self):
         """Login endpoint should have rate limiting."""
         from openlabels.server.routes.auth import login
@@ -2626,7 +2568,6 @@ class TestRateLimiting:
         source = inspect.getsource(login)
         assert "@limiter.limit" in source or "limiter.limit" in source
 
-    @pytest.mark.asyncio
     async def test_callback_has_rate_limit_decorator(self):
         """Callback endpoint should have rate limiting."""
         from openlabels.server.routes.auth import auth_callback
@@ -2644,7 +2585,6 @@ class TestRateLimiting:
 class TestSessionFixation:
     """Tests for session fixation attack prevention."""
 
-    @pytest.mark.asyncio
     async def test_oauth_callback_invalidates_existing_session(
         self, test_db, setup_auth_test_data, create_test_session, create_pending_auth
     ):
@@ -2718,7 +2658,6 @@ class TestSessionFixation:
 class TestTokenRefreshEdgeCases:
     """Tests for token refresh edge cases."""
 
-    @pytest.mark.asyncio
     async def test_refresh_token_missing_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """Expired token without refresh token should return 401."""
         from httpx import AsyncClient, ASGITransport
@@ -2753,7 +2692,6 @@ class TestTokenRefreshEdgeCases:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_refresh_token_exception_handled(self, test_db, setup_auth_test_data, create_test_session):
         """Exception during token refresh should be handled gracefully."""
         from httpx import AsyncClient, ASGITransport
@@ -2800,7 +2738,6 @@ class TestTokenRefreshEdgeCases:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_successful_refresh_updates_session(self, test_db, setup_auth_test_data, create_test_session):
         """Successful token refresh should update session with new tokens."""
         from httpx import AsyncClient, ASGITransport
@@ -2871,7 +2808,6 @@ class TestTokenRefreshEdgeCases:
 class TestSecureCookieFlag:
     """Tests for secure cookie flag based on request scheme."""
 
-    @pytest.mark.asyncio
     async def test_secure_flag_set_for_https(self, test_db, setup_auth_test_data):
         """Session cookie should have secure flag when using HTTPS."""
         from httpx import AsyncClient, ASGITransport
@@ -2915,7 +2851,6 @@ class TestSecureCookieFlag:
 class TestAzureADLoginFlow:
     """Tests for Azure AD OAuth login flow."""
 
-    @pytest.mark.asyncio
     async def test_azure_login_redirects_to_microsoft(self, test_db, setup_auth_test_data):
         """Azure AD login should redirect to Microsoft login page."""
         from httpx import AsyncClient, ASGITransport
@@ -2957,7 +2892,6 @@ class TestAzureADLoginFlow:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_azure_login_stores_state(self, test_db, setup_auth_test_data):
         """Azure AD login should store state for CSRF protection."""
         from httpx import AsyncClient, ASGITransport
@@ -3010,7 +2944,6 @@ class TestAzureADLoginFlow:
 class TestErrorResponseSecurity:
     """Tests to ensure error responses don't leak sensitive information."""
 
-    @pytest.mark.asyncio
     async def test_oauth_error_generic_message(self, test_db, setup_auth_test_data):
         """OAuth errors should return generic messages to prevent information leakage."""
         from httpx import AsyncClient, ASGITransport
@@ -3047,7 +2980,6 @@ class TestErrorResponseSecurity:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_token_error_generic_message(self, test_db, setup_auth_test_data, create_pending_auth):
         """Token acquisition errors should return generic messages."""
         from httpx import AsyncClient, ASGITransport
@@ -3104,7 +3036,6 @@ class TestErrorResponseSecurity:
 class TestSessionStoreBehavior:
     """Tests for SessionStore edge cases and behaviors."""
 
-    @pytest.mark.asyncio
     async def test_session_store_handles_missing_claims(self, test_db, setup_auth_test_data, create_test_session):
         """Session with missing claims field should be handled gracefully."""
         from httpx import AsyncClient, ASGITransport
@@ -3141,7 +3072,6 @@ class TestSessionStoreBehavior:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_session_without_expires_at(self, test_db, setup_auth_test_data, create_test_session):
         """Session without expires_at should be handled gracefully."""
         from httpx import AsyncClient, ASGITransport

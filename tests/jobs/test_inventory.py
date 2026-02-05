@@ -115,7 +115,6 @@ class TestLoadFolderInventory:
         mock_session = AsyncMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_loads_folders_into_cache(self, service):
         """Should load folders from DB into cache."""
         mock_folder1 = MagicMock()
@@ -133,7 +132,6 @@ class TestLoadFolderInventory:
         assert "/path/one" in result
         assert "/path/two" in result
 
-    @pytest.mark.asyncio
     async def test_returns_empty_dict_when_no_folders(self, service):
         """Should return empty dict when no folders exist."""
         mock_result = MagicMock()
@@ -144,7 +142,6 @@ class TestLoadFolderInventory:
 
         assert result == {}
 
-    @pytest.mark.asyncio
     async def test_updates_internal_cache(self, service):
         """Should update internal _folder_cache."""
         mock_folder = MagicMock()
@@ -168,7 +165,6 @@ class TestLoadFileInventory:
         mock_session = AsyncMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_loads_files_into_cache(self, service):
         """Should load files from DB into cache."""
         mock_file1 = MagicMock()
@@ -186,7 +182,6 @@ class TestLoadFileInventory:
         assert "/path/file1.txt" in result
         assert "/path/file2.txt" in result
 
-    @pytest.mark.asyncio
     async def test_returns_empty_dict_when_no_files(self, service):
         """Should return empty dict when no files exist."""
         mock_result = MagicMock()
@@ -207,7 +202,6 @@ class TestShouldScanFolder:
         mock_session = AsyncMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_returns_true_for_force_full_scan(self, service):
         """Should return True when force_full_scan is True."""
         # Even if folder is in cache
@@ -220,14 +214,12 @@ class TestShouldScanFolder:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_true_for_new_folder(self, service):
         """Should return True for folder not in cache."""
         result = await service.should_scan_folder("/new/folder")
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_never_scanned(self, service):
         """Should return True when folder was never scanned."""
         mock_folder = MagicMock()
@@ -239,7 +231,6 @@ class TestShouldScanFolder:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_folder_modified(self, service):
         """Should return True when folder modified since last scan."""
         old_time = datetime.now(timezone.utc) - timedelta(days=1)
@@ -255,7 +246,6 @@ class TestShouldScanFolder:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_has_sensitive_files(self, service):
         """Should always return True for folders with sensitive files."""
         mock_folder = MagicMock()
@@ -268,7 +258,6 @@ class TestShouldScanFolder:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_false_when_unchanged(self, service):
         """Should return False for unchanged folder without sensitive files."""
         scan_time = datetime.now(timezone.utc)
@@ -306,7 +295,6 @@ class TestShouldScanFile:
         file_info.modified = datetime.now(timezone.utc)
         return file_info
 
-    @pytest.mark.asyncio
     async def test_returns_true_for_force_full_scan(self, service, mock_file_info):
         """Should return True with 'full_scan' reason when forced."""
         should_scan, reason = await service.should_scan_file(
@@ -317,7 +305,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "full_scan"
 
-    @pytest.mark.asyncio
     async def test_returns_true_for_new_file(self, service, mock_file_info):
         """Should return True with 'new_file' reason for new files."""
         should_scan, reason = await service.should_scan_file(mock_file_info)
@@ -325,7 +312,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "new_file"
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_flagged_for_rescan(self, service, mock_file_info):
         """Should return True when file is flagged for rescan."""
         mock_inv = MagicMock()
@@ -340,7 +326,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "flagged_rescan"
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_content_changed(self, service, mock_file_info):
         """Should return True when content hash differs."""
         mock_inv = MagicMock()
@@ -358,7 +343,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "content_changed"
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_modified_time_newer(self, service, mock_file_info):
         """Should return True when file modification time is newer."""
         old_time = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -375,7 +359,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "modified_time"
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_size_changed(self, service, mock_file_info):
         """Should return True when file size differs."""
         mock_inv = MagicMock()
@@ -390,7 +373,6 @@ class TestShouldScanFile:
         assert should_scan is True
         assert reason == "size_changed"
 
-    @pytest.mark.asyncio
     async def test_returns_false_when_unchanged(self, service, mock_file_info):
         """Should return False with 'unchanged' for unchanged file."""
         mock_inv = MagicMock()
@@ -467,7 +449,6 @@ class TestUpdateFolderInventory:
         mock_session.add = MagicMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_updates_existing_folder(self, service):
         """Should update existing folder in cache."""
         job_id = uuid4()
@@ -494,7 +475,6 @@ class TestUpdateFolderInventory:
         assert mock_folder.total_entities_found == 5
         assert mock_folder.last_scan_job_id == job_id
 
-    @pytest.mark.asyncio
     async def test_creates_new_folder(self, service):
         """Should create new folder when not in cache."""
         job_id = uuid4()
@@ -514,7 +494,6 @@ class TestUpdateFolderInventory:
             service.session.add.assert_called_once_with(mock_new_folder)
             assert service._folder_cache["/new/folder"] is mock_new_folder
 
-    @pytest.mark.asyncio
     async def test_sets_last_scanned_at(self, service):
         """Should set last_scanned_at to current time."""
         mock_folder = MagicMock()
@@ -568,7 +547,6 @@ class TestUpdateFileInventory:
         result.label_applied_at = None
         return result
 
-    @pytest.mark.asyncio
     async def test_updates_existing_file(self, service, mock_file_info, mock_scan_result):
         """Should update existing file in cache."""
         job_id = uuid4()
@@ -591,7 +569,6 @@ class TestUpdateFileInventory:
         assert mock_file_inv.scan_count == 2  # Incremented
         assert mock_file_inv.needs_rescan is False
 
-    @pytest.mark.asyncio
     async def test_increments_content_changed_count(self, service, mock_file_info, mock_scan_result):
         """Should increment content_changed_count when hash differs."""
         mock_file_inv = MagicMock()
@@ -609,7 +586,6 @@ class TestUpdateFileInventory:
 
         assert mock_file_inv.content_changed_count == 6
 
-    @pytest.mark.asyncio
     async def test_does_not_increment_when_hash_same(self, service, mock_file_info, mock_scan_result):
         """Should not increment content_changed_count when hash matches."""
         mock_file_inv = MagicMock()
@@ -627,7 +603,6 @@ class TestUpdateFileInventory:
 
         assert mock_file_inv.content_changed_count == 5  # Not incremented
 
-    @pytest.mark.asyncio
     async def test_creates_new_file(self, service, mock_file_info, mock_scan_result):
         """Should create new file when not in cache."""
         job_id = uuid4()
@@ -647,7 +622,6 @@ class TestUpdateFileInventory:
             service.session.add.assert_called_once_with(mock_new_file)
             assert service._file_cache[mock_file_info.path] is mock_new_file
 
-    @pytest.mark.asyncio
     async def test_updates_label_info_when_applied(self, service, mock_file_info, mock_scan_result):
         """Should update label info when label was applied."""
         mock_scan_result.label_applied = True
@@ -682,7 +656,6 @@ class TestMarkMissingFiles:
         mock_session = AsyncMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_marks_unseen_files_for_rescan(self, service):
         """Should mark files not in seen_paths for rescan."""
         mock_file1 = MagicMock()
@@ -706,7 +679,6 @@ class TestMarkMissingFiles:
         assert mock_file2.needs_rescan is True
         assert mock_file3.needs_rescan is True
 
-    @pytest.mark.asyncio
     async def test_returns_zero_when_all_seen(self, service):
         """Should return 0 when all files were seen."""
         mock_file = MagicMock()
@@ -718,7 +690,6 @@ class TestMarkMissingFiles:
         assert count == 0
         assert mock_file.needs_rescan is False
 
-    @pytest.mark.asyncio
     async def test_returns_zero_with_empty_cache(self, service):
         """Should return 0 when cache is empty."""
         count = await service.mark_missing_files({"/some/path"}, uuid4())
@@ -735,7 +706,6 @@ class TestGetInventoryStats:
         mock_session = AsyncMock()
         return InventoryService(mock_session, uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_returns_folder_count(self, service):
         """Should return correct folder count."""
         service._folder_cache = {
@@ -749,7 +719,6 @@ class TestGetInventoryStats:
 
         assert stats["total_folders"] == 3
 
-    @pytest.mark.asyncio
     async def test_returns_file_count(self, service):
         """Should return correct sensitive file count."""
         service._folder_cache = {}
@@ -769,7 +738,6 @@ class TestGetInventoryStats:
 
         assert stats["total_sensitive_files"] == 2
 
-    @pytest.mark.asyncio
     async def test_counts_risk_tiers(self, service):
         """Should count files by risk tier."""
         service._folder_cache = {}
@@ -799,7 +767,6 @@ class TestGetInventoryStats:
         assert stats["risk_tier_breakdown"]["LOW"] == 1
         assert stats["risk_tier_breakdown"]["MINIMAL"] == 1
 
-    @pytest.mark.asyncio
     async def test_counts_total_entities(self, service):
         """Should sum total entities across files."""
         service._folder_cache = {}
@@ -822,7 +789,6 @@ class TestGetInventoryStats:
 
         assert stats["total_entities"] == 35
 
-    @pytest.mark.asyncio
     async def test_counts_labeled_files(self, service):
         """Should count files with labels applied."""
         service._folder_cache = {}
@@ -845,7 +811,6 @@ class TestGetInventoryStats:
 
         assert stats["labeled_files"] == 2
 
-    @pytest.mark.asyncio
     async def test_counts_pending_rescan(self, service):
         """Should count files flagged for rescan."""
         service._folder_cache = {}
@@ -868,7 +833,6 @@ class TestGetInventoryStats:
 
         assert stats["pending_rescan"] == 2
 
-    @pytest.mark.asyncio
     async def test_handles_empty_inventory(self, service):
         """Should handle empty caches gracefully."""
         stats = await service.get_inventory_stats()
@@ -879,7 +843,6 @@ class TestGetInventoryStats:
         assert stats["labeled_files"] == 0
         assert stats["pending_rescan"] == 0
 
-    @pytest.mark.asyncio
     async def test_ignores_unknown_risk_tiers(self, service):
         """Should only count known risk tiers."""
         service._folder_cache = {}

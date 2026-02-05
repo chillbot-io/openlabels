@@ -37,7 +37,6 @@ async def queue(test_db, tenant_id):
 class TestEnqueueIntegration:
     """Integration tests for job enqueueing."""
 
-    @pytest.mark.asyncio
     async def test_enqueue_creates_job_in_database(self, queue, test_db):
         """Verify enqueue actually creates a job in the database."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -51,7 +50,6 @@ class TestEnqueueIntegration:
         assert job.payload == {"path": "/data"}
         assert job.status == "pending"
 
-    @pytest.mark.asyncio
     async def test_enqueue_respects_priority(self, queue, test_db):
         """Verify priority is stored correctly."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -61,7 +59,6 @@ class TestEnqueueIntegration:
         job = await test_db.get(JobQueueModel, job_id)
         assert job.priority == 90
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_scheduled_time(self, queue, test_db):
         """Verify scheduled_for is stored correctly."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -79,7 +76,6 @@ class TestEnqueueIntegration:
 class TestDequeueIntegration:
     """Integration tests for job dequeueing with real SELECT FOR UPDATE."""
 
-    @pytest.mark.asyncio
     async def test_dequeue_returns_highest_priority_first(self, queue, test_db):
         """Verify dequeue returns jobs in priority order."""
         # Enqueue jobs with different priorities
@@ -101,13 +97,11 @@ class TestDequeueIntegration:
         job3 = await queue.dequeue("worker-1")
         assert job3.id == low_id
 
-    @pytest.mark.asyncio
     async def test_dequeue_returns_none_when_empty(self, queue):
         """Verify dequeue returns None when no jobs available."""
         job = await queue.dequeue("worker-1")
         assert job is None
 
-    @pytest.mark.asyncio
     async def test_dequeue_skips_scheduled_future_jobs(self, queue):
         """Jobs scheduled for the future should not be dequeued."""
         future = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -116,7 +110,6 @@ class TestDequeueIntegration:
         job = await queue.dequeue("worker-1")
         assert job is None  # Should not get the future-scheduled job
 
-    @pytest.mark.asyncio
     async def test_dequeue_gets_past_scheduled_jobs(self, queue):
         """Jobs scheduled in the past should be dequeued."""
         past = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -126,7 +119,6 @@ class TestDequeueIntegration:
         assert job is not None
         assert job.id == job_id
 
-    @pytest.mark.asyncio
     async def test_dequeue_sets_started_at(self, queue):
         """Dequeue should set started_at timestamp."""
         await queue.enqueue("scan", {})
@@ -143,7 +135,6 @@ class TestDequeueIntegration:
 class TestCompleteIntegration:
     """Integration tests for job completion."""
 
-    @pytest.mark.asyncio
     async def test_complete_sets_status_and_time(self, queue, test_db):
         """Verify complete updates status and completed_at."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -166,7 +157,6 @@ class TestCompleteIntegration:
 class TestFailAndRetryIntegration:
     """Integration tests for failure handling and retry logic."""
 
-    @pytest.mark.asyncio
     async def test_fail_reschedules_with_exponential_backoff(self, queue, test_db):
         """Verify fail reschedules job with proper delay."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -190,7 +180,6 @@ class TestFailAndRetryIntegration:
         assert job.scheduled_for is not None
         assert job.scheduled_for >= before + expected_delay
 
-    @pytest.mark.asyncio
     async def test_fail_moves_to_dead_letter_after_max_retries(self, queue, test_db):
         """Verify job moves to failed status after max retries."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -210,7 +199,6 @@ class TestFailAndRetryIntegration:
         assert job.completed_at is not None
         assert job.error == "Permanent error"
 
-    @pytest.mark.asyncio
     async def test_fail_without_retry_goes_to_dead_letter_immediately(self, queue, test_db):
         """Verify retry=False moves job to dead letter immediately."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -224,7 +212,6 @@ class TestFailAndRetryIntegration:
         assert job.status == "failed"
         assert job.retry_count == 0  # Not incremented
 
-    @pytest.mark.asyncio
     async def test_exponential_backoff_sequence(self, queue, test_db):
         """Verify exponential backoff increases correctly over retries."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -260,7 +247,6 @@ class TestFailAndRetryIntegration:
 class TestCancelIntegration:
     """Integration tests for job cancellation."""
 
-    @pytest.mark.asyncio
     async def test_cancel_pending_job(self, queue, test_db):
         """Verify pending jobs can be cancelled."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -274,7 +260,6 @@ class TestCancelIntegration:
         assert job.status == "cancelled"
         assert job.completed_at is not None
 
-    @pytest.mark.asyncio
     async def test_cancel_completed_job_fails(self, queue, test_db):
         """Verify completed jobs cannot be cancelled."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -294,7 +279,6 @@ class TestCancelIntegration:
 class TestDeadLetterQueueIntegration:
     """Integration tests for dead letter queue operations."""
 
-    @pytest.mark.asyncio
     async def test_get_failed_jobs(self, queue, test_db):
         """Verify get_failed_jobs returns failed jobs."""
         # Create and fail some jobs
@@ -309,7 +293,6 @@ class TestDeadLetterQueueIntegration:
         for job in failed:
             assert job.status == "failed"
 
-    @pytest.mark.asyncio
     async def test_get_failed_jobs_filter_by_type(self, queue, test_db):
         """Verify get_failed_jobs can filter by task type."""
         # Create failed jobs of different types
@@ -324,7 +307,6 @@ class TestDeadLetterQueueIntegration:
         assert len(scan_failed) == 2
         assert len(label_failed) == 1
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_job(self, queue, test_db):
         """Verify failed jobs can be requeued."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -345,7 +327,6 @@ class TestDeadLetterQueueIntegration:
         assert job.retry_count == 0  # Reset
         assert job.error is None
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_preserves_retries_when_requested(self, queue, test_db):
         """Verify requeue can preserve retry count."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -363,7 +344,6 @@ class TestDeadLetterQueueIntegration:
         job = await test_db.get(JobQueueModel, job_id)
         assert job.retry_count == 2  # Preserved
 
-    @pytest.mark.asyncio
     async def test_get_failed_count(self, queue, test_db):
         """Verify get_failed_count returns correct count."""
         # Create and fail jobs
@@ -380,7 +360,6 @@ class TestDeadLetterQueueIntegration:
 class TestQueueStatsIntegration:
     """Integration tests for queue statistics."""
 
-    @pytest.mark.asyncio
     async def test_get_queue_stats(self, queue, test_db):
         """Verify get_queue_stats returns comprehensive statistics."""
         # Create jobs in various states
@@ -410,7 +389,6 @@ class TestQueueStatsIntegration:
 class TestTenantIsolation:
     """Tests verifying tenant isolation in the queue."""
 
-    @pytest.mark.asyncio
     async def test_dequeue_only_returns_tenant_jobs(self, test_db):
         """Verify queue only returns jobs for its own tenant."""
         from openlabels.server.models import Tenant
@@ -439,7 +417,6 @@ class TestTenantIsolation:
         assert job is not None
         assert job.id == job_id
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_respects_tenant(self, test_db):
         """Verify requeue_failed only works for same tenant's jobs."""
         from openlabels.server.models import Tenant

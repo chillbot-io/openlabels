@@ -200,7 +200,6 @@ class TestGraphClientTokenManagement:
                 client._mock_msal_app = mock_msal_app
                 return client
 
-    @pytest.mark.asyncio
     async def test_acquires_token_on_first_call(self, client_with_mocked_msal):
         """Should acquire token on first call."""
         client = client_with_mocked_msal
@@ -214,7 +213,6 @@ class TestGraphClientTokenManagement:
         assert token == "new-token"
         client._mock_msal_app.acquire_token_for_client.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_caches_token(self, client_with_mocked_msal):
         """Should cache token and not re-acquire."""
         client = client_with_mocked_msal
@@ -227,7 +225,6 @@ class TestGraphClientTokenManagement:
         # Should not call MSAL since token is cached and valid
         client._mock_msal_app.acquire_token_for_client.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_refreshes_expired_token(self, client_with_mocked_msal):
         """Should refresh token when expired."""
         client = client_with_mocked_msal
@@ -244,7 +241,6 @@ class TestGraphClientTokenManagement:
         assert token == "new-token"
         client._mock_msal_app.acquire_token_for_client.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_refreshes_token_near_expiry(self, client_with_mocked_msal):
         """Should refresh token when within 5 minutes of expiry."""
         client = client_with_mocked_msal
@@ -262,7 +258,6 @@ class TestGraphClientTokenManagement:
         assert token == "fresh-token"
         client._mock_msal_app.acquire_token_for_client.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_token_acquisition_failure_raises(self, client_with_mocked_msal):
         """Failed token acquisition should raise RuntimeError."""
         client = client_with_mocked_msal
@@ -297,7 +292,6 @@ class TestGraphClientUserLookups:
                 client._token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
                 return client
 
-    @pytest.mark.asyncio
     async def test_get_user_by_id_success(self, client):
         """get_user_by_id should return user for valid ID."""
         mock_response = {
@@ -314,14 +308,12 @@ class TestGraphClientUserLookups:
             assert user.id == "user-guid"
             assert user.display_name == "John Smith"
 
-    @pytest.mark.asyncio
     async def test_get_user_by_id_not_found(self, client):
         """get_user_by_id should return None for unknown ID."""
         with patch.object(client, "_request", return_value={}):
             user = await client.get_user_by_id("unknown-guid")
             assert user is None
 
-    @pytest.mark.asyncio
     async def test_get_user_by_id_404_handled(self, client):
         """get_user_by_id should return None on 404."""
         with patch.object(client, "_request") as mock_request:
@@ -334,7 +326,6 @@ class TestGraphClientUserLookups:
             user = await client.get_user_by_id("nonexistent-guid")
             assert user is None
 
-    @pytest.mark.asyncio
     async def test_get_user_by_upn_success(self, client):
         """get_user_by_upn should return user for valid UPN."""
         mock_response = {
@@ -349,7 +340,6 @@ class TestGraphClientUserLookups:
             assert user is not None
             assert user.user_principal_name == "jdoe@contoso.com"
 
-    @pytest.mark.asyncio
     async def test_get_user_by_on_prem_sid_success(self, client):
         """get_user_by_on_prem_sid should find user by SID."""
         mock_response = {
@@ -368,7 +358,6 @@ class TestGraphClientUserLookups:
             assert user is not None
             assert user.display_name == "Hybrid User"
 
-    @pytest.mark.asyncio
     async def test_get_user_by_on_prem_sid_not_found(self, client):
         """get_user_by_on_prem_sid should return None when not found."""
         mock_response = {"value": []}
@@ -377,7 +366,6 @@ class TestGraphClientUserLookups:
             user = await client.get_user_by_on_prem_sid("S-1-5-21-unknown-sid")
             assert user is None
 
-    @pytest.mark.asyncio
     async def test_get_user_by_sam_account_name_strips_domain(self, client):
         """get_user_by_sam_account_name should strip domain prefix."""
         mock_response = {
@@ -400,7 +388,6 @@ class TestGraphClientUserLookups:
             assert "jsmith" in params["$filter"]
             assert "CONTOSO" not in params["$filter"]
 
-    @pytest.mark.asyncio
     async def test_search_users(self, client):
         """search_users should return list of matching users."""
         mock_response = {
@@ -416,7 +403,6 @@ class TestGraphClientUserLookups:
             assert len(users) == 2
             assert users[0].display_name == "John Smith"
 
-    @pytest.mark.asyncio
     async def test_search_users_with_limit(self, client):
         """search_users should respect limit parameter."""
         with patch.object(client, "_request", return_value={"value": []}) as mock_req:
@@ -447,7 +433,6 @@ class TestGraphClientRequest:
                 client._token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
                 return client
 
-    @pytest.mark.asyncio
     async def test_request_adds_auth_header(self, client):
         """Requests should include Authorization header."""
         with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
@@ -466,7 +451,6 @@ class TestGraphClientRequest:
             assert "Authorization" in call_kwargs["headers"]
             assert call_kwargs["headers"]["Authorization"] == "Bearer test-token"
 
-    @pytest.mark.asyncio
     async def test_request_404_returns_empty_dict(self, client):
         """404 responses should return empty dict, not raise."""
         with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
@@ -481,7 +465,6 @@ class TestGraphClientRequest:
 
             assert result == {}
 
-    @pytest.mark.asyncio
     async def test_request_error_propagates(self, client):
         """Non-404 errors should propagate."""
         with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
@@ -571,7 +554,6 @@ class TestGraphClientEdgeCases:
                 client._token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
                 return client
 
-    @pytest.mark.asyncio
     async def test_sid_with_special_characters(self, client):
         """SID lookup should handle special characters safely."""
         # SIDs have specific format, but test escaping
@@ -584,7 +566,6 @@ class TestGraphClientEdgeCases:
             call_args = mock_req.call_args
             assert "S-1-5-21-" in str(call_args)
 
-    @pytest.mark.asyncio
     async def test_empty_search_query(self, client):
         """Empty search query should still work."""
         mock_response = {"value": []}
@@ -593,7 +574,6 @@ class TestGraphClientEdgeCases:
             users = await client.search_users("")
             assert users == []
 
-    @pytest.mark.asyncio
     async def test_parse_user_with_null_fields(self, client):
         """_parse_user should handle null fields gracefully."""
         data = {

@@ -64,7 +64,6 @@ class TestSchedulerInitialization:
 class TestSchedulerStartStop:
     """Tests for scheduler start/stop lifecycle."""
 
-    @pytest.mark.asyncio
     async def test_start_returns_true(self):
         """Start should return True on success."""
         scheduler = DatabaseScheduler()
@@ -77,7 +76,6 @@ class TestSchedulerStartStop:
         # Cleanup
         await scheduler.stop()
 
-    @pytest.mark.asyncio
     async def test_start_when_already_running(self):
         """Start should return True if already running."""
         scheduler = DatabaseScheduler()
@@ -91,7 +89,6 @@ class TestSchedulerStartStop:
         # Cleanup
         await scheduler.stop()
 
-    @pytest.mark.asyncio
     async def test_stop_shuts_down_scheduler(self):
         """Stop should shut down the scheduler."""
         scheduler = DatabaseScheduler()
@@ -102,7 +99,6 @@ class TestSchedulerStartStop:
         assert scheduler.is_running is False
         assert scheduler._task is None
 
-    @pytest.mark.asyncio
     async def test_stop_when_not_running(self):
         """Stop should handle case where not running."""
         scheduler = DatabaseScheduler()
@@ -112,7 +108,6 @@ class TestSchedulerStartStop:
 
         assert scheduler.is_running is False
 
-    @pytest.mark.asyncio
     async def test_multiple_start_stop_cycles(self):
         """Scheduler should handle multiple start/stop cycles."""
         scheduler = DatabaseScheduler()
@@ -300,7 +295,6 @@ class TestCronExpressionConcepts:
 class TestSchedulerPolling:
     """Tests for scheduler polling functionality (mocked)."""
 
-    @pytest.mark.asyncio
     async def test_poll_loop_starts_on_start(self):
         """Poll loop should start when scheduler starts."""
         scheduler = DatabaseScheduler(poll_interval=1)
@@ -312,7 +306,6 @@ class TestSchedulerPolling:
 
         await scheduler.stop()
 
-    @pytest.mark.asyncio
     async def test_shutdown_event_stops_polling(self):
         """Setting shutdown event should stop the poll loop."""
         scheduler = DatabaseScheduler(poll_interval=60)

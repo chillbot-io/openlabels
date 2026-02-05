@@ -55,13 +55,11 @@ async def setup_dashboard_data(test_db):
 class TestOverallStats:
     """Tests for GET /api/dashboard/stats endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_dashboard_data):
         """Stats endpoint should return 200 OK."""
         response = await test_client.get("/api/dashboard/stats")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_all_required_fields(self, test_client, setup_dashboard_data):
         """Stats response should have all required fields."""
         response = await test_client.get("/api/dashboard/stats")
@@ -76,7 +74,6 @@ class TestOverallStats:
         assert "high_files" in data
         assert "active_scans" in data
 
-    @pytest.mark.asyncio
     async def test_returns_zero_values_for_empty_tenant(self, test_client, setup_dashboard_data):
         """Stats should return zeros when no data exists."""
         response = await test_client.get("/api/dashboard/stats")
@@ -89,7 +86,6 @@ class TestOverallStats:
         assert data["labels_applied"] == 0
         assert data["active_scans"] == 0
 
-    @pytest.mark.asyncio
     async def test_counts_scans_correctly(self, test_client, setup_dashboard_data):
         """Stats should count scans correctly."""
         from openlabels.server.models import ScanJob
@@ -115,7 +111,6 @@ class TestOverallStats:
 
         assert data["total_scans"] == 5
 
-    @pytest.mark.asyncio
     async def test_counts_active_scans(self, test_client, setup_dashboard_data):
         """Stats should count active (pending/running) scans."""
         from openlabels.server.models import ScanJob
@@ -151,7 +146,6 @@ class TestOverallStats:
         assert data["active_scans"] == 3
         assert data["total_scans"] == 4
 
-    @pytest.mark.asyncio
     async def test_counts_files_with_pii(self, test_client, setup_dashboard_data):
         """Stats should count files with PII correctly."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -207,7 +201,6 @@ class TestOverallStats:
         assert data["total_files_scanned"] == 5
         assert data["files_with_pii"] == 3
 
-    @pytest.mark.asyncio
     async def test_counts_risk_tiers(self, test_client, setup_dashboard_data):
         """Stats should count critical and high files correctly."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -249,7 +242,6 @@ class TestOverallStats:
         assert data["critical_files"] == 2
         assert data["high_files"] == 3
 
-    @pytest.mark.asyncio
     async def test_counts_labels_applied(self, test_client, setup_dashboard_data):
         """Stats should count files with labels applied."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -309,13 +301,11 @@ class TestOverallStats:
 class TestTrends:
     """Tests for GET /api/dashboard/trends endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_dashboard_data):
         """Trends endpoint should return 200 OK."""
         response = await test_client.get("/api/dashboard/trends")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_points_array(self, test_client, setup_dashboard_data):
         """Trends response should have points array."""
         response = await test_client.get("/api/dashboard/trends")
@@ -325,7 +315,6 @@ class TestTrends:
         assert "points" in data
         assert isinstance(data["points"], list)
 
-    @pytest.mark.asyncio
     async def test_default_30_days(self, test_client, setup_dashboard_data):
         """Trends should return 31 points by default (30 days + today)."""
         response = await test_client.get("/api/dashboard/trends")
@@ -335,7 +324,6 @@ class TestTrends:
         # Should have ~31 points (30 days + current day)
         assert len(data["points"]) >= 30
 
-    @pytest.mark.asyncio
     async def test_custom_days_parameter(self, test_client, setup_dashboard_data):
         """Trends should respect days parameter."""
         response = await test_client.get("/api/dashboard/trends?days=7")
@@ -346,7 +334,6 @@ class TestTrends:
         assert len(data["points"]) >= 7
         assert len(data["points"]) <= 9
 
-    @pytest.mark.asyncio
     async def test_point_structure(self, test_client, setup_dashboard_data):
         """Each trend point should have required fields."""
         response = await test_client.get("/api/dashboard/trends?days=7")
@@ -359,19 +346,16 @@ class TestTrends:
             assert "files_with_pii" in point
             assert "labels_applied" in point
 
-    @pytest.mark.asyncio
     async def test_days_validation_min(self, test_client, setup_dashboard_data):
         """Trends should reject days < 1."""
         response = await test_client.get("/api/dashboard/trends?days=0")
         assert response.status_code == 422  # Validation error
 
-    @pytest.mark.asyncio
     async def test_days_validation_max(self, test_client, setup_dashboard_data):
         """Trends should reject days > 365."""
         response = await test_client.get("/api/dashboard/trends?days=400")
         assert response.status_code == 422  # Validation error
 
-    @pytest.mark.asyncio
     async def test_aggregates_by_date(self, test_client, setup_dashboard_data):
         """Trends should aggregate results by date."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -421,13 +405,11 @@ class TestTrends:
 class TestEntityTrends:
     """Tests for GET /api/dashboard/entity-trends endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_dashboard_data):
         """Entity trends endpoint should return 200 OK."""
         response = await test_client.get("/api/dashboard/entity-trends")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_series_dict(self, test_client, setup_dashboard_data):
         """Entity trends response should have series dict."""
         response = await test_client.get("/api/dashboard/entity-trends")
@@ -437,7 +419,6 @@ class TestEntityTrends:
         assert "series" in data
         assert isinstance(data["series"], dict)
 
-    @pytest.mark.asyncio
     async def test_includes_total_series(self, test_client, setup_dashboard_data):
         """Entity trends should always include Total series."""
         response = await test_client.get("/api/dashboard/entity-trends")
@@ -446,7 +427,6 @@ class TestEntityTrends:
 
         assert "Total" in data["series"]
 
-    @pytest.mark.asyncio
     async def test_default_14_days(self, test_client, setup_dashboard_data):
         """Entity trends should default to 14 days."""
         response = await test_client.get("/api/dashboard/entity-trends")
@@ -456,7 +436,6 @@ class TestEntityTrends:
         # Total series should have ~15 points
         assert len(data["series"]["Total"]) >= 14
 
-    @pytest.mark.asyncio
     async def test_custom_days_parameter(self, test_client, setup_dashboard_data):
         """Entity trends should respect days parameter."""
         response = await test_client.get("/api/dashboard/entity-trends?days=7")
@@ -466,7 +445,6 @@ class TestEntityTrends:
         assert len(data["series"]["Total"]) >= 7
         assert len(data["series"]["Total"]) <= 9
 
-    @pytest.mark.asyncio
     async def test_series_point_format(self, test_client, setup_dashboard_data):
         """Each series point should be [date, count] tuple."""
         response = await test_client.get("/api/dashboard/entity-trends?days=7")
@@ -485,13 +463,11 @@ class TestEntityTrends:
 class TestAccessHeatmap:
     """Tests for GET /api/dashboard/access-heatmap endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_dashboard_data):
         """Access heatmap endpoint should return 200 OK."""
         response = await test_client.get("/api/dashboard/access-heatmap")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_7x24_matrix(self, test_client, setup_dashboard_data):
         """Access heatmap should return 7x24 matrix."""
         response = await test_client.get("/api/dashboard/access-heatmap")
@@ -503,7 +479,6 @@ class TestAccessHeatmap:
         for day in data["data"]:
             assert len(day) == 24  # 24 hours
 
-    @pytest.mark.asyncio
     async def test_all_values_are_integers(self, test_client, setup_dashboard_data):
         """All heatmap values should be integers."""
         response = await test_client.get("/api/dashboard/access-heatmap")
@@ -514,7 +489,6 @@ class TestAccessHeatmap:
             for hour in day:
                 assert isinstance(hour, int)
 
-    @pytest.mark.asyncio
     async def test_returns_zeros_when_no_data(self, test_client, setup_dashboard_data):
         """Heatmap should return all zeros when no access events exist."""
         response = await test_client.get("/api/dashboard/access-heatmap")
@@ -528,13 +502,11 @@ class TestAccessHeatmap:
 class TestHeatmap:
     """Tests for GET /api/dashboard/heatmap endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_dashboard_data):
         """Heatmap endpoint should return 200 OK."""
         response = await test_client.get("/api/dashboard/heatmap")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_roots_array(self, test_client, setup_dashboard_data):
         """Heatmap response should have roots array."""
         response = await test_client.get("/api/dashboard/heatmap")
@@ -544,7 +516,6 @@ class TestHeatmap:
         assert "roots" in data
         assert isinstance(data["roots"], list)
 
-    @pytest.mark.asyncio
     async def test_empty_roots_when_no_data(self, test_client, setup_dashboard_data):
         """Heatmap should return empty roots when no results exist."""
         response = await test_client.get("/api/dashboard/heatmap")
@@ -553,7 +524,6 @@ class TestHeatmap:
 
         assert data["roots"] == []
 
-    @pytest.mark.asyncio
     async def test_builds_tree_from_file_paths(self, test_client, setup_dashboard_data):
         """Heatmap should build tree structure from file paths."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -592,7 +562,6 @@ class TestHeatmap:
 
         assert len(data["roots"]) > 0
 
-    @pytest.mark.asyncio
     async def test_filter_by_job_id(self, test_client, setup_dashboard_data):
         """Heatmap should filter by job_id when provided."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -659,7 +628,6 @@ class TestHeatmap:
         assert len(data["roots"]) == 1
         assert data["roots"][0]["name"] == "job1"
 
-    @pytest.mark.asyncio
     async def test_node_structure(self, test_client, setup_dashboard_data):
         """Heatmap nodes should have required fields."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -707,19 +675,16 @@ class TestHeatmap:
 class TestDashboardContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_stats_returns_json(self, test_client, setup_dashboard_data):
         """Stats endpoint should return JSON."""
         response = await test_client.get("/api/dashboard/stats")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_trends_returns_json(self, test_client, setup_dashboard_data):
         """Trends endpoint should return JSON."""
         response = await test_client.get("/api/dashboard/trends")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_heatmap_returns_json(self, test_client, setup_dashboard_data):
         """Heatmap endpoint should return JSON."""
         response = await test_client.get("/api/dashboard/heatmap")

@@ -68,7 +68,6 @@ class TestExecuteLabelTask:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_raises_when_result_not_found(self, mock_session):
         """Should raise ValueError when result doesn't exist."""
         mock_session.get = AsyncMock(return_value=None)
@@ -81,7 +80,6 @@ class TestExecuteLabelTask:
 
         assert "Result not found" in str(exc_info.value)
 
-    @pytest.mark.asyncio
     async def test_raises_when_label_not_found(self, mock_session, mock_result):
         """Should raise ValueError when label doesn't exist."""
         mock_session.get = AsyncMock(side_effect=[mock_result, None])
@@ -94,7 +92,6 @@ class TestExecuteLabelTask:
 
         assert "Label not found" in str(exc_info.value)
 
-    @pytest.mark.asyncio
     async def test_returns_success_on_successful_labeling(self, mock_session, mock_result, mock_label):
         """Should return success result when labeling succeeds."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
@@ -111,7 +108,6 @@ class TestExecuteLabelTask:
             assert result["label_name"] == "Confidential"
             assert mock_result.label_applied is True
 
-    @pytest.mark.asyncio
     async def test_returns_failure_on_labeling_error(self, mock_session, mock_result, mock_label):
         """Should return failure result when labeling fails."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
@@ -151,7 +147,6 @@ class TestApplyLabel:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_routes_sharepoint_to_graph(self, mock_result, mock_label):
         """Should route SharePoint URLs to Graph API."""
         mock_result.file_path = "https://contoso.sharepoint.com/sites/docs/file.docx"
@@ -163,7 +158,6 @@ class TestApplyLabel:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_routes_onedrive_to_graph(self, mock_result, mock_label):
         """Should route OneDrive URLs to Graph API."""
         mock_result.file_path = "https://contoso-my.sharepoint.com/personal/user_onedrive/file.xlsx"
@@ -175,7 +169,6 @@ class TestApplyLabel:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_rejects_non_microsoft_urls(self, mock_result, mock_label):
         """Should reject non-Microsoft HTTP URLs."""
         mock_result.file_path = "https://example.com/files/document.pdf"
@@ -185,7 +178,6 @@ class TestApplyLabel:
         assert result["success"] is False
         assert result["method"] == "unsupported"
 
-    @pytest.mark.asyncio
     async def test_routes_local_files_to_local(self, mock_result, mock_label):
         """Should route local file paths to local labeling."""
         mock_result.file_path = "/home/user/document.docx"
@@ -215,7 +207,6 @@ class TestApplyLabelLocal:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_returns_error_for_missing_file(self, mock_result, mock_label):
         """Should return error when file doesn't exist."""
         mock_result.file_path = "/nonexistent/path/file.txt"
@@ -225,7 +216,6 @@ class TestApplyLabelLocal:
         assert result["success"] is False
         assert "not found" in result["error"].lower()
 
-    @pytest.mark.asyncio
     async def test_tries_mip_first(self, mock_result, mock_label):
         """Should try MIP SDK before metadata."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as f:
@@ -245,7 +235,6 @@ class TestApplyLabelLocal:
         finally:
             os.unlink(temp_path)
 
-    @pytest.mark.asyncio
     async def test_falls_back_to_metadata_when_mip_unavailable(self, mock_result, mock_label):
         """Should fall back to metadata when MIP not available."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
@@ -282,7 +271,6 @@ class TestApplyLabelMetadata:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_routes_docx_to_office_metadata(self, mock_label):
         """Should route .docx files to Office metadata labeling."""
         with patch('openlabels.jobs.tasks.label._apply_label_office_metadata') as mock_office:
@@ -292,7 +280,6 @@ class TestApplyLabelMetadata:
 
             mock_office.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_routes_xlsx_to_office_metadata(self, mock_label):
         """Should route .xlsx files to Office metadata labeling."""
         with patch('openlabels.jobs.tasks.label._apply_label_office_metadata') as mock_office:
@@ -302,7 +289,6 @@ class TestApplyLabelMetadata:
 
             mock_office.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_routes_pptx_to_office_metadata(self, mock_label):
         """Should route .pptx files to Office metadata labeling."""
         with patch('openlabels.jobs.tasks.label._apply_label_office_metadata') as mock_office:
@@ -312,7 +298,6 @@ class TestApplyLabelMetadata:
 
             mock_office.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_routes_pdf_to_pdf_metadata(self, mock_label):
         """Should route .pdf files to PDF metadata labeling."""
         with patch('openlabels.jobs.tasks.label._apply_label_pdf_metadata') as mock_pdf:
@@ -322,7 +307,6 @@ class TestApplyLabelMetadata:
 
             mock_pdf.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_routes_other_to_sidecar(self, mock_label):
         """Should route other file types to sidecar labeling."""
         with patch('openlabels.jobs.tasks.label._apply_label_sidecar') as mock_sidecar:
@@ -344,7 +328,6 @@ class TestApplyLabelSidecar:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_creates_sidecar_file(self, mock_label):
         """Should create a sidecar file with label information."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as f:
@@ -373,7 +356,6 @@ class TestApplyLabelSidecar:
             if os.path.exists(sidecar_path):
                 os.unlink(sidecar_path)
 
-    @pytest.mark.asyncio
     async def test_sidecar_includes_applied_by(self, mock_label):
         """Sidecar should include applied_by field."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
@@ -542,7 +524,6 @@ class TestGraphApiLabeling:
         label.name = "Confidential"
         return label
 
-    @pytest.mark.asyncio
     async def test_returns_error_when_httpx_unavailable(self, mock_result, mock_label):
         """Should return error when httpx is not installed."""
         import openlabels.jobs.tasks.label as label_module
@@ -568,7 +549,6 @@ class TestLabelPayloadParsing:
         """Create a mock database session."""
         return AsyncMock()
 
-    @pytest.mark.asyncio
     async def test_parses_result_id_from_payload(self, mock_session):
         """Should parse result_id from payload."""
         result_id = uuid4()
@@ -585,7 +565,6 @@ class TestLabelPayloadParsing:
         call_args = mock_session.get.call_args
         assert call_args[0][1] == result_id
 
-    @pytest.mark.asyncio
     async def test_parses_label_id_from_payload(self, mock_session):
         """Should parse label_id from payload."""
         result_id = uuid4()
@@ -634,7 +613,6 @@ class TestLabelResultUpdate:
         label.name = "Secret"
         return label
 
-    @pytest.mark.asyncio
     async def test_updates_label_applied_on_success(self, mock_session, mock_result, mock_label):
         """Should set label_applied=True on success."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
@@ -649,7 +627,6 @@ class TestLabelResultUpdate:
 
             assert mock_result.label_applied is True
 
-    @pytest.mark.asyncio
     async def test_updates_label_applied_at_on_success(self, mock_session, mock_result, mock_label):
         """Should set label_applied_at timestamp on success."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
@@ -666,7 +643,6 @@ class TestLabelResultUpdate:
 
             assert before <= mock_result.label_applied_at <= after
 
-    @pytest.mark.asyncio
     async def test_updates_current_label_on_success(self, mock_session, mock_result, mock_label):
         """Should update current_label_id and current_label_name on success."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
@@ -682,7 +658,6 @@ class TestLabelResultUpdate:
             assert mock_result.current_label_id == mock_label.id
             assert mock_result.current_label_name == "Secret"
 
-    @pytest.mark.asyncio
     async def test_clears_label_error_on_success(self, mock_session, mock_result, mock_label):
         """Should clear label_error on success."""
         mock_result.label_error = "Previous error"
@@ -698,7 +673,6 @@ class TestLabelResultUpdate:
 
             assert mock_result.label_error is None
 
-    @pytest.mark.asyncio
     async def test_sets_label_error_on_failure(self, mock_session, mock_result, mock_label):
         """Should set label_error on failure."""
         mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])

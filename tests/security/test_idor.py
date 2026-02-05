@@ -373,7 +373,6 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
 class TestTargetIDOR:
     """IDOR tests for scan target endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot GET target belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -385,7 +384,6 @@ class TestTargetIDOR:
             assert response.status_code == 404, \
                 f"Cross-tenant target access should return 404, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_cannot_update_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot PUT (update) target belonging to tenant A."""
         from sqlalchemy import select
@@ -410,7 +408,6 @@ class TestTargetIDOR:
         assert target.name == original_name, \
             "CRITICAL: Target modified despite 404 response!"
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot DELETE target belonging to tenant A."""
         from sqlalchemy import select
@@ -431,7 +428,6 @@ class TestTargetIDOR:
         assert target is not None, \
             "CRITICAL: Target deleted by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_target_list_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Target list should only show current tenant's targets."""
         data = multi_tenant_idor_setup
@@ -459,7 +455,6 @@ class TestTargetIDOR:
 class TestScanIDOR:
     """IDOR tests for scan job endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_scan(self, multi_tenant_idor_setup):
         """User B cannot GET scan belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -470,7 +465,6 @@ class TestScanIDOR:
             response = await client.get(f"/api/scans/{data['scan_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_cancel_other_tenant_scan(self, multi_tenant_idor_setup):
         """User B cannot DELETE (cancel) scan belonging to tenant A."""
         from sqlalchemy import select
@@ -492,7 +486,6 @@ class TestScanIDOR:
         assert scan.status == original_status, \
             "CRITICAL: Scan cancelled by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_create_scan_with_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot create scan using tenant A's target."""
         from sqlalchemy import select, func
@@ -521,7 +514,6 @@ class TestScanIDOR:
         assert count_after == count_before, \
             "CRITICAL: Scan created using cross-tenant target!"
 
-    @pytest.mark.asyncio
     async def test_scan_list_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Scan list should only show current tenant's scans."""
         data = multi_tenant_idor_setup
@@ -549,7 +541,6 @@ class TestScanIDOR:
 class TestResultIDOR:
     """IDOR tests for scan result endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_result(self, multi_tenant_idor_setup):
         """User B cannot GET result belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -560,7 +551,6 @@ class TestResultIDOR:
             response = await client.get(f"/api/results/{data['result_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_result(self, multi_tenant_idor_setup):
         """User B cannot DELETE result belonging to tenant A."""
         from sqlalchemy import select
@@ -581,7 +571,6 @@ class TestResultIDOR:
         assert result is not None, \
             "CRITICAL: Result deleted by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_apply_label_to_other_tenant_result(self, multi_tenant_idor_setup):
         """User B cannot apply labels to tenant A's results."""
         data = multi_tenant_idor_setup
@@ -594,7 +583,6 @@ class TestResultIDOR:
             )
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_rescan_other_tenant_result(self, multi_tenant_idor_setup):
         """User B cannot trigger rescan of tenant A's result."""
         data = multi_tenant_idor_setup
@@ -607,7 +595,6 @@ class TestResultIDOR:
             )
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_result_list_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Result list should only show current tenant's results."""
         data = multi_tenant_idor_setup
@@ -635,7 +622,6 @@ class TestResultIDOR:
 class TestScheduleIDOR:
     """IDOR tests for scan schedule endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_schedule(self, multi_tenant_idor_setup):
         """User B cannot GET schedule belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -646,7 +632,6 @@ class TestScheduleIDOR:
             response = await client.get(f"/api/schedules/{data['schedule_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_update_other_tenant_schedule(self, multi_tenant_idor_setup):
         """User B cannot PUT (update) schedule belonging to tenant A."""
         from sqlalchemy import select
@@ -671,7 +656,6 @@ class TestScheduleIDOR:
         assert schedule.name == original_name, \
             "CRITICAL: Schedule modified by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_schedule(self, multi_tenant_idor_setup):
         """User B cannot DELETE schedule belonging to tenant A."""
         from sqlalchemy import select
@@ -692,7 +676,6 @@ class TestScheduleIDOR:
         assert schedule is not None, \
             "CRITICAL: Schedule deleted by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_trigger_other_tenant_schedule(self, multi_tenant_idor_setup):
         """User B cannot trigger tenant A's schedule."""
         from sqlalchemy import select, func
@@ -718,7 +701,6 @@ class TestScheduleIDOR:
         assert count_after == count_before, \
             "CRITICAL: Schedule triggered by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_create_schedule_with_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot create schedule for tenant A's target."""
         from sqlalchemy import select, func
@@ -758,7 +740,6 @@ class TestScheduleIDOR:
 class TestAuditLogIDOR:
     """IDOR tests for audit log endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_audit_log(self, multi_tenant_idor_setup):
         """User B cannot GET audit log belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -769,7 +750,6 @@ class TestAuditLogIDOR:
             response = await client.get(f"/api/audit/{data['audit_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_audit_list_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Audit log list should only show current tenant's logs."""
         data = multi_tenant_idor_setup
@@ -788,7 +768,6 @@ class TestAuditLogIDOR:
                 assert log.get("id") != audit_a_id, \
                     "CRITICAL: Tenant B can see Tenant A's audit log in list!"
 
-    @pytest.mark.asyncio
     async def test_resource_history_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Resource history should not reveal cross-tenant resources."""
         data = multi_tenant_idor_setup
@@ -816,7 +795,6 @@ class TestAuditLogIDOR:
 class TestJobQueueIDOR:
     """IDOR tests for job queue endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_job(self, multi_tenant_idor_setup):
         """User B cannot GET job belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -827,7 +805,6 @@ class TestJobQueueIDOR:
             response = await client.get(f"/api/jobs/{data['job_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_requeue_other_tenant_job(self, multi_tenant_idor_setup):
         """User B cannot requeue job belonging to tenant A."""
         from sqlalchemy import select
@@ -851,7 +828,6 @@ class TestJobQueueIDOR:
         assert job.status == "failed", \
             "CRITICAL: Job requeued by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_cannot_cancel_other_tenant_job(self, multi_tenant_idor_setup):
         """User B cannot cancel job belonging to tenant A."""
         from sqlalchemy import select
@@ -873,7 +849,6 @@ class TestJobQueueIDOR:
         assert job.status == original_status, \
             "CRITICAL: Job cancelled by cross-tenant user!"
 
-    @pytest.mark.asyncio
     async def test_job_stats_excludes_other_tenant(self, multi_tenant_idor_setup):
         """Job stats should only include current tenant's jobs."""
         data = multi_tenant_idor_setup
@@ -899,7 +874,6 @@ class TestJobQueueIDOR:
 class TestUserIDOR:
     """IDOR tests for user management endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_get_other_tenant_user(self, multi_tenant_idor_setup):
         """User B cannot GET user belonging to tenant A."""
         data = multi_tenant_idor_setup
@@ -910,7 +884,6 @@ class TestUserIDOR:
             response = await client.get(f"/api/users/{data['admin_a'].id}")
             assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_update_other_tenant_user(self, multi_tenant_idor_setup):
         """User B cannot update user belonging to tenant A."""
         from sqlalchemy import select
@@ -937,7 +910,6 @@ class TestUserIDOR:
         assert user.role == "viewer", \
             "CRITICAL: User role escalated by cross-tenant admin!"
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_user(self, multi_tenant_idor_setup):
         """User B cannot delete user belonging to tenant A."""
         from sqlalchemy import select
@@ -958,7 +930,6 @@ class TestUserIDOR:
         assert user is not None, \
             "CRITICAL: User deleted by cross-tenant admin!"
 
-    @pytest.mark.asyncio
     async def test_user_list_excludes_other_tenant(self, multi_tenant_idor_setup):
         """User list should only show current tenant's users."""
         data = multi_tenant_idor_setup
@@ -988,7 +959,6 @@ class TestUserIDOR:
 class TestHorizontalPrivilegeEscalation:
     """Tests for horizontal privilege escalation within same tenant."""
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_modify_other_users_resources(self, multi_tenant_idor_setup):
         """Viewer user cannot modify resources created by admin in same tenant."""
         from sqlalchemy import select
@@ -1016,7 +986,6 @@ class TestHorizontalPrivilegeEscalation:
         assert target.name == original_name, \
             "CRITICAL: Target modified by viewer user!"
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_delete_other_users_resources(self, multi_tenant_idor_setup):
         """Viewer user cannot delete resources created by admin in same tenant."""
         from sqlalchemy import select
@@ -1037,7 +1006,6 @@ class TestHorizontalPrivilegeEscalation:
         assert target is not None, \
             "CRITICAL: Target deleted by viewer user!"
 
-    @pytest.mark.asyncio
     async def test_user_cannot_modify_own_role(self, multi_tenant_idor_setup):
         """User cannot elevate their own role."""
         from sqlalchemy import select
@@ -1072,7 +1040,6 @@ class TestHorizontalPrivilegeEscalation:
 class TestVerticalPrivilegeEscalation:
     """Tests for vertical privilege escalation (viewer -> admin actions)."""
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_create_targets(self, multi_tenant_idor_setup):
         """Viewer cannot create scan targets (admin-only operation)."""
         from sqlalchemy import select, func
@@ -1107,7 +1074,6 @@ class TestVerticalPrivilegeEscalation:
         assert count_after == count_before, \
             "CRITICAL: Target created by viewer!"
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_create_schedules(self, multi_tenant_idor_setup):
         """Viewer cannot create scan schedules (admin-only operation)."""
         from sqlalchemy import select, func
@@ -1141,7 +1107,6 @@ class TestVerticalPrivilegeEscalation:
         assert count_after == count_before, \
             "CRITICAL: Schedule created by viewer!"
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_start_scans(self, multi_tenant_idor_setup):
         """Viewer cannot start scans (admin-only operation)."""
         from sqlalchemy import select, func
@@ -1172,7 +1137,6 @@ class TestVerticalPrivilegeEscalation:
         assert count_after == count_before, \
             "CRITICAL: Scan started by viewer!"
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_create_users(self, multi_tenant_idor_setup):
         """Viewer cannot create users (admin-only operation)."""
         from sqlalchemy import select
@@ -1199,7 +1163,6 @@ class TestVerticalPrivilegeEscalation:
         assert user is None, \
             "CRITICAL: Admin user created by viewer!"
 
-    @pytest.mark.asyncio
     async def test_viewer_can_read_resources(self, multi_tenant_idor_setup):
         """Viewer CAN read resources (read is allowed for viewers)."""
         data = multi_tenant_idor_setup
@@ -1230,7 +1193,6 @@ class TestVerticalPrivilegeEscalation:
 class TestEnumerationPrevention:
     """Tests to verify enumeration attacks are prevented."""
 
-    @pytest.mark.asyncio
     async def test_cross_tenant_returns_same_as_nonexistent(self, multi_tenant_idor_setup):
         """
         Cross-tenant access should return the same response as non-existent resource.
@@ -1262,7 +1224,6 @@ class TestEnumerationPrevention:
                 assert response.status_code == 404, \
                     f"Endpoint {endpoints[i]} returned {response.status_code}, expected 404"
 
-    @pytest.mark.asyncio
     async def test_bulk_uuid_enumeration_blocked(self, multi_tenant_idor_setup):
         """
         Attempting to enumerate UUIDs should return 404 for all.
@@ -1305,7 +1266,6 @@ class TestEnumerationPrevention:
 class TestRemediationIDOR:
     """IDOR tests for remediation endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_quarantine_other_tenant_file(self, multi_tenant_idor_setup):
         """User B cannot quarantine files from tenant A's results."""
         data = multi_tenant_idor_setup
@@ -1321,7 +1281,6 @@ class TestRemediationIDOR:
             assert response.status_code in (400, 404, 422), \
                 f"Cross-tenant quarantine should fail, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_cannot_lockdown_other_tenant_file(self, multi_tenant_idor_setup):
         """User B cannot lockdown files from tenant A's results."""
         data = multi_tenant_idor_setup
