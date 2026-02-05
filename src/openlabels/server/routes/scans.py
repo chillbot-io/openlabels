@@ -64,7 +64,7 @@ async def create_scan(
     request: Request,
     scan_request: ScanCreate,
     scan_service: ScanServiceDep,
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ) -> ScanResponse:
     """Create a new scan job."""
     job = await scan_service.create_scan(
@@ -76,10 +76,10 @@ async def create_scan(
 
 @router.get("", response_model=PaginatedResponse[ScanResponse])
 async def list_scans(
+    scan_service: ScanServiceDep,
+    _tenant: TenantContextDep,
     status: Optional[str] = Query(None, description="Filter by status"),
     pagination: PaginationParams = Depends(),
-    scan_service: ScanServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[ScanResponse]:
     """List scan jobs with pagination."""
     jobs, total = await scan_service.list_scans(
@@ -102,7 +102,7 @@ async def list_scans(
 async def get_scan(
     scan_id: UUID,
     scan_service: ScanServiceDep,
-    _tenant: TenantContextDep = Depends(),
+    _tenant: TenantContextDep,
 ) -> ScanResponse:
     """Get scan job details."""
     job = await scan_service.get_scan(scan_id)
@@ -113,7 +113,7 @@ async def get_scan(
 async def delete_scan(
     scan_id: UUID,
     scan_service: ScanServiceDep,
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ) -> None:
     """Cancel a running scan (DELETE method)."""
     await scan_service.cancel_scan(scan_id)
@@ -124,7 +124,7 @@ async def cancel_scan(
     scan_id: UUID,
     request: Request,
     scan_service: ScanServiceDep,
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ):
     """Cancel a running scan (POST method for HTMX)."""
     await scan_service.cancel_scan(scan_id)
@@ -145,7 +145,7 @@ async def retry_scan(
     scan_id: UUID,
     request: Request,
     scan_service: ScanServiceDep,
-    _admin: AdminContextDep = Depends(),
+    _admin: AdminContextDep,
 ):
     """Retry a failed scan by creating a new scan job."""
     try:

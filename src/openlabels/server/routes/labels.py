@@ -121,9 +121,9 @@ class LabelMappingsUpdate(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[LabelResponse])
 async def list_labels(
+    label_service: LabelServiceDep,
+    _tenant: TenantContextDep,
     pagination: PaginationParams = Depends(),
-    label_service: LabelServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[LabelResponse]:
     """
     List available sensitivity labels with pagination.
@@ -148,9 +148,9 @@ async def list_labels(
 
 @router.post("/sync", status_code=202)
 async def sync_labels(
+    label_service: LabelServiceDep,
+    _admin: AdminContextDep,
     request: Optional[LabelSyncRequest] = None,
-    label_service: LabelServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Sync sensitivity labels from Microsoft 365.
@@ -167,8 +167,8 @@ async def sync_labels(
 
 @router.get("/sync/status")
 async def get_sync_status(
-    label_service: LabelServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    label_service: LabelServiceDep,
+    _tenant: TenantContextDep,
 ) -> dict:
     """Get label sync status including last sync time and counts."""
     from sqlalchemy import select, func
@@ -209,8 +209,8 @@ async def get_sync_status(
 
 @router.post("/cache/invalidate", status_code=200)
 async def invalidate_label_cache(
-    label_service: LabelServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    label_service: LabelServiceDep,
+    _admin: AdminContextDep,
 ) -> dict:
     """Invalidate the label cache, forcing a refresh on next access."""
     errors = []
@@ -249,9 +249,9 @@ async def invalidate_label_cache(
 
 @router.get("/rules", response_model=PaginatedResponse[LabelRuleResponse])
 async def list_label_rules(
+    label_service: LabelServiceDep,
+    _tenant: TenantContextDep,
     pagination: PaginationParams = Depends(),
-    label_service: LabelServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[LabelRuleResponse]:
     """List label mapping rules with label names using a single JOIN query."""
     rules, total = await label_service.get_label_rules(
@@ -275,8 +275,8 @@ async def list_label_rules(
 @router.post("/rules", response_model=LabelRuleResponse, status_code=201)
 async def create_label_rule(
     request: LabelRuleCreate,
-    label_service: LabelServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    label_service: LabelServiceDep,
+    _admin: AdminContextDep,
 ) -> LabelRuleResponse:
     """Create a label mapping rule."""
     rule = await label_service.create_label_rule({
@@ -292,8 +292,8 @@ async def create_label_rule(
 @router.delete("/rules/{rule_id}", status_code=204)
 async def delete_label_rule(
     rule_id: UUID,
-    label_service: LabelServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    label_service: LabelServiceDep,
+    _admin: AdminContextDep,
 ) -> None:
     """Delete a label rule."""
     await label_service.delete_label_rule(rule_id)
@@ -307,9 +307,9 @@ async def delete_label_rule(
 @router.post("/apply", status_code=202)
 async def apply_label(
     request: ApplyLabelRequest,
-    db: DbSessionDep = Depends(),
-    label_service: LabelServiceDep = Depends(),
-    admin: AdminContextDep = Depends(),
+    db: DbSessionDep,
+    label_service: LabelServiceDep,
+    admin: AdminContextDep,
 ) -> dict:
     """Apply a sensitivity label to a file."""
     from openlabels.server.models import ScanResult, SensitivityLabel
@@ -359,9 +359,9 @@ async def apply_label(
 
 @router.get("/mappings", response_model=LabelMappingsResponse)
 async def get_label_mappings(
-    db: DbSessionDep = Depends(),
-    label_service: LabelServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    db: DbSessionDep,
+    label_service: LabelServiceDep,
+    _tenant: TenantContextDep,
 ) -> LabelMappingsResponse:
     """
     Get label mappings for each risk tier.
@@ -441,9 +441,9 @@ async def get_label_mappings(
 @router.post("/mappings")
 async def update_label_mappings(
     request: Request,
-    db: DbSessionDep = Depends(),
-    label_service: LabelServiceDep = Depends(),
-    admin: AdminContextDep = Depends(),
+    db: DbSessionDep,
+    label_service: LabelServiceDep,
+    admin: AdminContextDep,
 ):
     """Update label mappings for risk tiers."""
     from openlabels.server.cache import invalidate_cache
