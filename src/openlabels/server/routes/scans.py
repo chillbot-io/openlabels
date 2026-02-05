@@ -4,12 +4,12 @@ Scan management API endpoints.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -21,6 +21,10 @@ from openlabels.server.errors import (
     BadRequestError,
     InternalServerError,
     ErrorCode,
+)
+from openlabels.server.pagination import (
+    encode_cursor,
+    decode_cursor,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,12 +64,24 @@ class ScanResponse(BaseModel):
 
 
 class ScanListResponse(BaseModel):
-    """Paginated list of scans."""
+    """Paginated list of scans (offset-based)."""
 
     items: list[ScanResponse]
     total: int
     page: int
     pages: int
+
+
+class CursorScanListResponse(BaseModel):
+    """Paginated list of scans (cursor-based).
+
+    This response format is more efficient for large datasets as it uses
+    cursor-based pagination instead of offset-based pagination.
+    """
+
+    items: list[ScanResponse]
+    next_cursor: Optional[str] = None
+    has_more: bool = False
 
 
 @router.post("", response_model=ScanResponse, status_code=201)
@@ -120,41 +136,101 @@ async def create_scan(
         )
 
 
-@router.get("", response_model=ScanListResponse)
+@router.get("", response_model=Union[ScanListResponse, CursorScanListResponse])
 async def list_scans(
     status: Optional[str] = Query(None, description="Filter by status"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    # Offset-based pagination parameters (backward compatible)
+    page: Optional[int] = Query(None, ge=1, description="Page number for offset-based pagination"),
+    # Cursor-based pagination parameters
+    cursor: Optional[str] = Query(None, description="Cursor for cursor-based pagination (more efficient for large datasets)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of items per page"),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> ScanListResponse:
-    """List scan jobs."""
+) -> Union[ScanListResponse, CursorScanListResponse]:
+    """List scan jobs with pagination.
+
+    Supports two pagination modes:
+    - Offset-based (default): Use `page` parameter. Returns total count and page info.
+    - Cursor-based: Use `cursor` parameter. More efficient for large datasets (OFFSET 10000 scans 10K rows,
+      cursor-based uses WHERE clause with indexed columns).
+
+    If `cursor` is provided, cursor-based pagination is used.
+    If `page` is provided (or neither), offset-based pagination is used for backward compatibility.
+    """
     try:
-        query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
+        # Build base filter conditions
+        conditions = [ScanJob.tenant_id == user.tenant_id]
 
         if status:
-            query = query.where(ScanJob.status == status)
+            conditions.append(ScanJob.status == status)
 
-        query = query.order_by(ScanJob.created_at.desc())
+        # Determine pagination mode: cursor-based if cursor provided, else offset-based
+        use_cursor_pagination = cursor is not None
 
-        # Count total
-        count_query = select(ScanJob.id).where(ScanJob.tenant_id == user.tenant_id)
-        if status:
-            count_query = count_query.where(ScanJob.status == status)
-        result = await session.execute(count_query)
-        total = len(result.all())
+        if use_cursor_pagination:
+            # Cursor-based pagination (efficient for large datasets)
+            # Order by created_at DESC, id DESC for consistent ordering
+            query = (
+                select(ScanJob)
+                .where(*conditions)
+                .order_by(ScanJob.created_at.desc(), ScanJob.id.desc())
+            )
 
-        # Paginate
-        query = query.offset((page - 1) * limit).limit(limit)
-        result = await session.execute(query)
-        jobs = result.scalars().all()
+            # Apply cursor filter if provided
+            cursor_data = decode_cursor(cursor)
+            if cursor_data:
+                # WHERE (created_at, id) < (cursor_timestamp, cursor_id)
+                # This efficiently seeks to the correct position using index
+                query = query.where(
+                    tuple_(ScanJob.created_at, ScanJob.id)
+                    < (cursor_data.timestamp, cursor_data.id)
+                )
 
-        return ScanListResponse(
-            items=[ScanResponse.model_validate(j) for j in jobs],
-            total=total,
-            page=page,
-            pages=(total + limit - 1) // limit,
-        )
+            # Fetch one extra to check if there are more results
+            query = query.limit(limit + 1)
+            result = await session.execute(query)
+            jobs = list(result.scalars().all())
+
+            # Check if there are more results
+            has_more = len(jobs) > limit
+            if has_more:
+                jobs = jobs[:limit]  # Remove the extra item
+
+            # Generate next cursor from last item
+            next_cursor = None
+            if jobs and has_more:
+                last_item = jobs[-1]
+                next_cursor = encode_cursor(last_item.id, last_item.created_at)
+
+            return CursorScanListResponse(
+                items=[ScanResponse.model_validate(j) for j in jobs],
+                next_cursor=next_cursor,
+                has_more=has_more,
+            )
+        else:
+            # Offset-based pagination (backward compatible)
+            effective_page = page if page is not None else 1
+
+            query = select(ScanJob).where(*conditions).order_by(ScanJob.created_at.desc())
+
+            # Count total
+            count_query = select(func.count()).select_from(
+                select(ScanJob.id).where(*conditions)
+            )
+            result = await session.execute(count_query)
+            total = result.scalar() or 0
+
+            # Paginate
+            query = query.offset((effective_page - 1) * limit).limit(limit)
+            result = await session.execute(query)
+            jobs = result.scalars().all()
+
+            return ScanListResponse(
+                items=[ScanResponse.model_validate(j) for j in jobs],
+                total=total,
+                page=effective_page,
+                pages=(total + limit - 1) // limit if total > 0 else 1,
+            )
     except SQLAlchemyError as e:
         logger.error(f"Database error listing scans: {e}")
         raise InternalServerError(

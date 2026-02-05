@@ -442,22 +442,28 @@ async def delete_target(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a scan target."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
 
-    target_name = target.name
-    await session.delete(target)
+        target_name = target.name
+        await session.delete(target)
 
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
-            },
-        )
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
+                },
+            )
 
-    # Regular REST response
-    return Response(status_code=204)
+        # Regular REST response
+        return Response(status_code=204)
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error deleting target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete, tuple_
@@ -18,6 +18,12 @@ from openlabels.server.db import get_session
 from openlabels.server.pagination import (
     encode_cursor,
     decode_cursor,
+)
+from openlabels.server.errors import (
+    NotFoundError,
+    BadRequestError,
+    InternalServerError,
+    ErrorCode,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,7 +210,10 @@ async def list_results(
             )
     except SQLAlchemyError as e:
         logger.error(f"Database error listing results: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing results",
+        )
 
 
 @router.get("/stats", response_model=ResultStats)
@@ -295,7 +304,10 @@ async def get_result_stats(
         )
     except SQLAlchemyError as e:
         logger.error(f"Database error getting result stats: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while getting statistics",
+        )
 
 
 @router.get("/export")
@@ -365,7 +377,10 @@ async def export_results(
             )
     except SQLAlchemyError as e:
         logger.error(f"Database error exporting results: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while exporting results",
+        )
 
 
 @router.get("/{result_id}", response_model=ResultDetailResponse)
@@ -378,13 +393,20 @@ async def get_result(
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
         return result
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error getting result {result_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrieving result",
+        )
 
 
 @router.delete("")
@@ -419,7 +441,10 @@ async def clear_all_results(
         return Response(status_code=204)
     except SQLAlchemyError as e:
         logger.error(f"Database error clearing results: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while clearing results",
+        )
 
 
 @router.delete("/{result_id}")
@@ -433,7 +458,11 @@ async def delete_result(
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         file_name = result.file_name
         await session.delete(result)
@@ -451,11 +480,14 @@ async def delete_result(
 
         # Regular REST response
         return Response(status_code=204)
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error deleting result {result_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while deleting result",
+        )
 
 
 @router.post("/{result_id}/apply-label")
@@ -471,11 +503,19 @@ async def apply_recommended_label(
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         # Check if there's a recommended label
         if not result.recommended_label_id:
-            raise HTTPException(status_code=400, detail="No recommended label for this result")
+            raise BadRequestError(
+                code=ErrorCode.NO_RECOMMENDED_LABEL,
+                message="No recommended label for this result",
+                details={"result_id": str(result_id)},
+            )
 
         # Enqueue labeling job
         queue = JobQueue(session, user.tenant_id)
@@ -500,11 +540,14 @@ async def apply_recommended_label(
             )
 
         return {"message": "Label application queued", "job_id": str(job_id)}
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error applying label to result {result_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while applying label",
+        )
 
 
 @router.post("/{result_id}/rescan")
@@ -521,7 +564,11 @@ async def rescan_file(
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         # Get the target info from the original job
         target_name = "Rescan"
@@ -534,7 +581,11 @@ async def rescan_file(
 
         # target_id is required - if we can't find it, return an error
         if target_id is None:
-            raise HTTPException(status_code=400, detail="Cannot rescan: original scan target not found")
+            raise BadRequestError(
+                code=ErrorCode.TARGET_NOT_AVAILABLE,
+                message="Cannot rescan: original scan target not found",
+                details={"result_id": str(result_id)},
+            )
 
         # Create a new scan job for just this file
         new_job = ScanJob(
@@ -571,8 +622,11 @@ async def rescan_file(
             )
 
         return {"message": "Rescan queued", "job_id": str(new_job.id)}
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error rescanning result {result_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while rescanning file",
+        )
