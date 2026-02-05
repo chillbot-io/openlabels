@@ -26,15 +26,39 @@ from unittest.mock import patch, MagicMock, AsyncMock
 @pytest.fixture
 async def setup_auth_test_data(test_db):
     """Set up test data for auth endpoint tests."""
+    import random
+    import string
     from sqlalchemy import select
     from openlabels.server.models import Tenant, User
 
-    # Get the existing tenant created by test_client
-    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
-    tenant = result.scalar_one()
+    # Generate unique suffix to prevent test data collisions
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
 
+    # Check if a tenant already exists, otherwise create one
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
+    tenant = result.scalars().first()
+
+    if tenant is None:
+        tenant = Tenant(
+            name=f"Test Tenant {suffix}",
+            azure_tenant_id=f"test-tenant-id-{suffix}",
+        )
+        test_db.add(tenant)
+        await test_db.flush()
+
+    # Check if a user already exists for this tenant, otherwise create one
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
-    user = result.scalar_one()
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            tenant_id=tenant.id,
+            email=f"test-{suffix}@localhost",
+            name=f"Test User {suffix}",
+            role="admin",
+        )
+        test_db.add(user)
+        await test_db.commit()
 
     return {
         "tenant": tenant,

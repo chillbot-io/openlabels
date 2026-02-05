@@ -145,7 +145,7 @@ class TestScansEndpoints:
 
             mock_instance.post.assert_called_once()
             call_kwargs = mock_instance.post.call_args
-            assert "http://test/api/scans" in str(call_kwargs)
+            assert "http://test/api/v1/scans" in str(call_kwargs)
             # Verify JSON body
             json_body = call_kwargs[1]["json"]
             assert json_body["target_id"] == str(target_id)
@@ -234,7 +234,7 @@ class TestScansEndpoints:
             result = await client.get_scan(scan_id)
 
             mock_instance.get.assert_called_once()
-            assert f"/api/scans/{scan_id}" in str(mock_instance.get.call_args)
+            assert f"/api/v1/scans/{scan_id}" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_cancel_scan(self):
@@ -253,7 +253,7 @@ class TestScansEndpoints:
             await client.cancel_scan(scan_id)
 
             mock_instance.delete.assert_called_once()
-            assert f"/api/scans/{scan_id}" in str(mock_instance.delete.call_args)
+            assert f"/api/v1/scans/{scan_id}" in str(mock_instance.delete.call_args)
 
 
 class TestResultsEndpoints:
@@ -276,7 +276,7 @@ class TestResultsEndpoints:
             await client.list_results()
 
             call_kwargs = mock_instance.get.call_args
-            assert "/api/results" in str(call_kwargs)
+            assert "/api/v1/results" in str(call_kwargs)
 
     @pytest.mark.asyncio
     async def test_list_results_with_filters(self):
@@ -317,7 +317,7 @@ class TestResultsEndpoints:
 
             await client.get_result(result_id)
 
-            assert f"/api/results/{result_id}" in str(mock_instance.get.call_args)
+            assert f"/api/v1/results/{result_id}" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_get_result_stats(self):
@@ -335,7 +335,7 @@ class TestResultsEndpoints:
 
             await client.get_result_stats()
 
-            assert "/api/results/stats" in str(mock_instance.get.call_args)
+            assert "/api/v1/results/stats" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_get_result_stats_with_job_filter(self):
@@ -378,7 +378,7 @@ class TestTargetsEndpoints:
 
             result = await client.list_targets()
 
-            assert "/api/targets" in str(mock_instance.get.call_args)
+            assert "/api/v1/targets" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_list_targets_with_adapter_filter(self):
@@ -446,7 +446,7 @@ class TestDashboardEndpoints:
 
             result = await client.get_dashboard_stats()
 
-            assert "/api/dashboard/stats" in str(mock_instance.get.call_args)
+            assert "/api/v1/dashboard/stats" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_get_heatmap(self):
@@ -464,7 +464,7 @@ class TestDashboardEndpoints:
 
             await client.get_heatmap()
 
-            assert "/api/dashboard/heatmap" in str(mock_instance.get.call_args)
+            assert "/api/v1/dashboard/heatmap" in str(mock_instance.get.call_args)
 
     @pytest.mark.asyncio
     async def test_get_heatmap_with_job_filter(self):

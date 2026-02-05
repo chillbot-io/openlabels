@@ -9,6 +9,7 @@ Tests cover:
 """
 
 import pytest
+from pydantic import ValidationError
 from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.span_validation import (
     validate_span_positions,

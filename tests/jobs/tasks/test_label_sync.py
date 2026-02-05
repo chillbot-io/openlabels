@@ -110,28 +110,32 @@ class TestExecuteLabelSyncTask:
 
     @pytest.mark.asyncio
     async def test_uses_payload_credentials(self, mock_session):
-        """Should use credentials from payload when provided."""
+        """Should use credentials from settings (credentials never from payload for security)."""
         tenant_id = uuid4()
 
-        with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-            mock_result = LabelSyncResult()
-            mock_result.labels_synced = 5
-            mock_sync.return_value = mock_result
-
-            result = await execute_label_sync_task(
-                mock_session,
-                {
-                    "tenant_id": str(tenant_id),
-                    "azure_tenant_id": "azure-tenant",
-                    "client_id": "client-id",
-                    "client_secret": "client-secret",
-                }
+        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+            mock_settings.return_value = MagicMock(
+                auth=MagicMock(
+                    provider="azure_ad",
+                    tenant_id="azure-tenant",
+                    client_id="client-id",
+                    client_secret="client-secret",
+                )
             )
+            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
+                mock_result = LabelSyncResult()
+                mock_result.labels_synced = 5
+                mock_sync.return_value = mock_result
 
-            mock_sync.assert_called_once()
-            call_kwargs = mock_sync.call_args.kwargs
-            assert call_kwargs["azure_tenant_id"] == "azure-tenant"
-            assert call_kwargs["client_id"] == "client-id"
+                result = await execute_label_sync_task(
+                    mock_session,
+                    {"tenant_id": str(tenant_id)}
+                )
+
+                mock_sync.assert_called_once()
+                call_kwargs = mock_sync.call_args.kwargs
+                assert call_kwargs["azure_tenant_id"] == "azure-tenant"
+                assert call_kwargs["client_id"] == "client-id"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_settings_credentials(self, mock_session):
@@ -163,65 +167,79 @@ class TestExecuteLabelSyncTask:
     @pytest.mark.asyncio
     async def test_returns_success_when_no_errors(self, mock_session):
         """Should return success=True when no errors."""
-        with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-            mock_result = LabelSyncResult()
-            mock_result.labels_synced = 10
-            mock_sync.return_value = mock_result
-
-            result = await execute_label_sync_task(
-                mock_session,
-                {
-                    "tenant_id": str(uuid4()),
-                    "azure_tenant_id": "tenant",
-                    "client_id": "client",
-                    "client_secret": "secret",
-                }
+        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+            mock_settings.return_value = MagicMock(
+                auth=MagicMock(
+                    provider="azure_ad",
+                    tenant_id="tenant",
+                    client_id="client",
+                    client_secret="secret",
+                )
             )
+            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
+                mock_result = LabelSyncResult()
+                mock_result.labels_synced = 10
+                mock_sync.return_value = mock_result
 
-            assert result["success"] is True
-            assert result["labels_synced"] == 10
+                result = await execute_label_sync_task(
+                    mock_session,
+                    {"tenant_id": str(uuid4())}
+                )
+
+                assert result["success"] is True
+                assert result["labels_synced"] == 10
 
     @pytest.mark.asyncio
     async def test_returns_failure_when_errors(self, mock_session):
         """Should return success=False when there are errors."""
-        with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-            mock_result = LabelSyncResult()
-            mock_result.errors = ["Error 1", "Error 2"]
-            mock_sync.return_value = mock_result
-
-            result = await execute_label_sync_task(
-                mock_session,
-                {
-                    "tenant_id": str(uuid4()),
-                    "azure_tenant_id": "tenant",
-                    "client_id": "client",
-                    "client_secret": "secret",
-                }
+        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+            mock_settings.return_value = MagicMock(
+                auth=MagicMock(
+                    provider="azure_ad",
+                    tenant_id="tenant",
+                    client_id="client",
+                    client_secret="secret",
+                )
             )
+            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
+                mock_result = LabelSyncResult()
+                mock_result.errors = ["Error 1", "Error 2"]
+                mock_sync.return_value = mock_result
 
-            assert result["success"] is False
-            assert "Error 1" in result["error"]
+                result = await execute_label_sync_task(
+                    mock_session,
+                    {"tenant_id": str(uuid4())}
+                )
+
+                assert result["success"] is False
+                assert "Error 1" in result["error"]
 
     @pytest.mark.asyncio
     async def test_passes_remove_stale_option(self, mock_session):
         """Should pass remove_stale option to sync function."""
-        with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-            mock_result = LabelSyncResult()
-            mock_sync.return_value = mock_result
-
-            await execute_label_sync_task(
-                mock_session,
-                {
-                    "tenant_id": str(uuid4()),
-                    "azure_tenant_id": "tenant",
-                    "client_id": "client",
-                    "client_secret": "secret",
-                    "remove_stale": True,
-                }
+        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+            mock_settings.return_value = MagicMock(
+                auth=MagicMock(
+                    provider="azure_ad",
+                    tenant_id="tenant",
+                    client_id="client",
+                    client_secret="secret",
+                )
             )
+            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
+                mock_result = LabelSyncResult()
+                mock_sync.return_value = mock_result
 
-            call_kwargs = mock_sync.call_args.kwargs
-            assert call_kwargs["remove_stale"] is True
+                await execute_label_sync_task(
+                    mock_session,
+                    {
+                        "tenant_id": str(uuid4()),
+                        "remove_stale": True,
+                    }
+                )
+
+                call_kwargs = mock_sync.call_args.kwargs
+                assert call_kwargs["remove_stale"] is True
 
 
 class TestSyncLabelsFromGraph:
@@ -229,10 +247,14 @@ class TestSyncLabelsFromGraph:
 
     @pytest.fixture
     def mock_session(self):
-        """Create a mock database session."""
+        """Create a mock database session with batch query support."""
         session = AsyncMock()
         session.flush = AsyncMock()
         session.add = MagicMock()
+        # Mock for batch query - returns empty result by default (no existing labels)
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        session.execute = AsyncMock(return_value=mock_result)
         return session
 
     @pytest.mark.asyncio
@@ -295,7 +317,10 @@ class TestSyncLabelsFromGraph:
     @pytest.mark.asyncio
     async def test_adds_new_labels(self, mock_session):
         """Should add labels that don't exist in database."""
-        mock_session.get = AsyncMock(return_value=None)
+        # Mock batch query to return no existing labels
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "valid-token"
@@ -322,9 +347,13 @@ class TestSyncLabelsFromGraph:
         """Should update labels that exist in database."""
         label_id = str(uuid4())
         existing_label = MagicMock()
+        existing_label.id = label_id
         existing_label.name = "Old Name"
 
-        mock_session.get = AsyncMock(return_value=existing_label)
+        # Mock batch query to return the existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing_label]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "valid-token"
@@ -347,6 +376,11 @@ class TestSyncLabelsFromGraph:
     @pytest.mark.asyncio
     async def test_skips_labels_without_id(self, mock_session):
         """Should skip labels that don't have an ID."""
+        # Mock batch query to return no existing labels
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "valid-token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
@@ -354,7 +388,6 @@ class TestSyncLabelsFromGraph:
                     {"name": "No ID Label"},  # Missing id
                     {"id": str(uuid4()), "name": "Has ID"},
                 ]
-                mock_session.get = AsyncMock(return_value=None)
 
                 result = await sync_labels_from_graph(
                     mock_session,
@@ -369,7 +402,10 @@ class TestSyncLabelsFromGraph:
     @pytest.mark.asyncio
     async def test_removes_stale_labels_when_enabled(self, mock_session):
         """Should remove stale labels when remove_stale=True."""
-        mock_session.get = AsyncMock(return_value=None)
+        # Mock batch query to return no existing labels
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "valid-token"
@@ -434,22 +470,26 @@ class TestLabelSyncPayloadParsing:
         """Should parse tenant_id UUID from payload."""
         tenant_id = uuid4()
 
-        with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-            mock_result = LabelSyncResult()
-            mock_sync.return_value = mock_result
-
-            await execute_label_sync_task(
-                mock_session,
-                {
-                    "tenant_id": str(tenant_id),
-                    "azure_tenant_id": "azure",
-                    "client_id": "client",
-                    "client_secret": "secret",
-                }
+        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+            mock_settings.return_value = MagicMock(
+                auth=MagicMock(
+                    provider="azure_ad",
+                    tenant_id="azure",
+                    client_id="client",
+                    client_secret="secret",
+                )
             )
+            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
+                mock_result = LabelSyncResult()
+                mock_sync.return_value = mock_result
 
-            call_kwargs = mock_sync.call_args.kwargs
-            assert call_kwargs["tenant_id"] == tenant_id
+                await execute_label_sync_task(
+                    mock_session,
+                    {"tenant_id": str(tenant_id)}
+                )
+
+                call_kwargs = mock_sync.call_args.kwargs
+                assert call_kwargs["tenant_id"] == tenant_id
 
 
 class TestLabelFieldExtraction:
@@ -457,7 +497,7 @@ class TestLabelFieldExtraction:
 
     @pytest.fixture
     def mock_session(self):
-        """Create a mock database session."""
+        """Create a mock database session with batch query support."""
         session = AsyncMock()
         session.flush = AsyncMock()
         session.add = MagicMock()
@@ -466,15 +506,21 @@ class TestLabelFieldExtraction:
     @pytest.mark.asyncio
     async def test_extracts_label_description(self, mock_session):
         """Should extract description from label data."""
+        label_id = str(uuid4())
         existing = MagicMock()
+        existing.id = label_id
         existing.description = None
-        mock_session.get = AsyncMock(return_value=existing)
+
+        # Mock batch query to return existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
                 mock_fetch.return_value = [
-                    {"id": str(uuid4()), "name": "Label", "description": "Test desc"}
+                    {"id": label_id, "name": "Label", "description": "Test desc"}
                 ]
 
                 await sync_labels_from_graph(
@@ -490,15 +536,21 @@ class TestLabelFieldExtraction:
     @pytest.mark.asyncio
     async def test_extracts_label_color(self, mock_session):
         """Should extract color from label data."""
+        label_id = str(uuid4())
         existing = MagicMock()
+        existing.id = label_id
         existing.color = None
-        mock_session.get = AsyncMock(return_value=existing)
+
+        # Mock batch query to return existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
                 mock_fetch.return_value = [
-                    {"id": str(uuid4()), "name": "Label", "color": "#FF0000"}
+                    {"id": label_id, "name": "Label", "color": "#FF0000"}
                 ]
 
                 await sync_labels_from_graph(
@@ -514,15 +566,21 @@ class TestLabelFieldExtraction:
     @pytest.mark.asyncio
     async def test_extracts_label_priority(self, mock_session):
         """Should extract priority from label data."""
+        label_id = str(uuid4())
         existing = MagicMock()
+        existing.id = label_id
         existing.priority = 0
-        mock_session.get = AsyncMock(return_value=existing)
+
+        # Mock batch query to return existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
                 mock_fetch.return_value = [
-                    {"id": str(uuid4()), "name": "Label", "priority": 100}
+                    {"id": label_id, "name": "Label", "priority": 100}
                 ]
 
                 await sync_labels_from_graph(
@@ -538,17 +596,23 @@ class TestLabelFieldExtraction:
     @pytest.mark.asyncio
     async def test_extracts_parent_id(self, mock_session):
         """Should extract parent_id from nested parent object."""
+        label_id = str(uuid4())
         existing = MagicMock()
+        existing.id = label_id
         existing.parent_id = None
-        mock_session.get = AsyncMock(return_value=existing)
 
         parent_id = str(uuid4())
+
+        # Mock batch query to return existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
                 mock_fetch.return_value = [
-                    {"id": str(uuid4()), "name": "Label", "parent": {"id": parent_id}}
+                    {"id": label_id, "name": "Label", "parent": {"id": parent_id}}
                 ]
 
                 await sync_labels_from_graph(
@@ -564,15 +628,21 @@ class TestLabelFieldExtraction:
     @pytest.mark.asyncio
     async def test_updates_synced_at_timestamp(self, mock_session):
         """Should update synced_at to current time."""
+        label_id = str(uuid4())
         existing = MagicMock()
+        existing.id = label_id
         existing.synced_at = None
-        mock_session.get = AsyncMock(return_value=existing)
+
+        # Mock batch query to return existing label
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [existing]
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
             with patch('openlabels.jobs.tasks.label_sync._fetch_labels_from_graph') as mock_fetch:
                 mock_fetch.return_value = [
-                    {"id": str(uuid4()), "name": "Label"}
+                    {"id": label_id, "name": "Label"}
                 ]
 
                 before = datetime.now(timezone.utc)
@@ -596,12 +666,14 @@ class TestLabelSyncErrorHandling:
         """Create a mock database session."""
         session = AsyncMock()
         session.flush = AsyncMock()
+        session.add = MagicMock()
         return session
 
     @pytest.mark.asyncio
     async def test_catches_individual_label_errors(self, mock_session):
         """Should catch and record errors for individual labels."""
-        mock_session.get = AsyncMock(side_effect=Exception("Database error"))
+        # Mock batch query to raise exception
+        mock_session.execute = AsyncMock(side_effect=Exception("Database error"))
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
@@ -619,8 +691,8 @@ class TestLabelSyncErrorHandling:
                     client_secret="secret",
                 )
 
+                # Should have an error since execute failed
                 assert len(result.errors) > 0
-                assert label_id in result.errors[0]
 
     @pytest.mark.asyncio
     async def test_handles_settings_exception(self, mock_session):

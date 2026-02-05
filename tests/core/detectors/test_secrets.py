@@ -49,20 +49,24 @@ def _fake_github_token(prefix: str) -> str:
 
 def _fake_discord_token() -> str:
     """Build fake Discord bot token."""
-    # Format: base64(bot_id).timestamp.hmac - use obviously fake parts
-    return "FAKEBOT0000000000000" + "." + "FAKETIME" + "." + "FAKESECRET" + "0" * 17
+    # Format: [MN]{23+}.{6}.{27+} - must start with M or N
+    return "M" + "T" * 23 + "." + "abcdef" + "." + "a" * 27
 
 def _fake_shopify_token(prefix: str) -> str:
-    """Build fake Shopify token."""
-    return prefix + "FAKETEST" + "0" * 24
+    """Build fake Shopify token: prefix + 32 lowercase hex."""
+    return prefix + "abcdef0123456789abcdef0123456789"
 
 def _fake_square_token(prefix: str) -> str:
     """Build fake Square token."""
-    return prefix + "FAKETESTEXAMPLE0000000"
+    if "csp" in prefix:
+        # sq0csp- needs 43 chars
+        return prefix + "abcdefghij0123456789abcdefghij0123456789abc"
+    # sq0atp- needs 22 chars
+    return prefix + "abcdefghij0123456789ab"
 
 def _fake_mailchimp_key() -> str:
-    """Build fake Mailchimp API key."""
-    return "FAKETEST" + "0" * 24 + "-" + "us00"
+    """Build fake Mailchimp API key: 32 lowercase hex + -us{1-2 digits}."""
+    return "abcdef0123456789abcdef0123456789" + "-us01"
 
 
 # =============================================================================
@@ -241,9 +245,11 @@ class TestGitHubTokens:
         assert any(s.text.startswith("ghr_") for s in gh_spans)
 
     def test_detect_github_fine_grained_v1(self, detector):
-        """Test GitHub fine-grained token with v1. prefix."""
+        """Test GitHub fine-grained token with v1. prefix (hex format)."""
         # nosec: Test data - obviously fake token for pattern matching tests
-        text = "token=github_pat_FAKETEST12345678901234567890123456"
+        # v1. prefix requires 40 lowercase hex chars: v1.{40 hex}
+        # Split to avoid secret scanner detection
+        text = "token=" + "v1." + "0" * 40
         spans = detector.detect(text)
 
         gh_spans = [s for s in spans if s.entity_type == "GITHUB_TOKEN"]
@@ -327,7 +333,8 @@ class TestSlackTokens:
     def test_detect_slack_bot_token(self, detector):
         """Test Slack Bot token with xoxb- prefix."""
         # nosec: Test data - obviously fake token for pattern matching tests
-        text = "SLACK_TOKEN=xoxb-FAKE000000000-FAKE000000000-FAKETESTEXAMPLE00000"
+        # Format: xoxb-{10-13 digits}-{10-13 digits}-{24 alphanumeric}
+        text = "SLACK_TOKEN=xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx"
         spans = detector.detect(text)
 
         slack_spans = [s for s in spans if s.entity_type == "SLACK_TOKEN"]
@@ -337,7 +344,9 @@ class TestSlackTokens:
     def test_detect_slack_user_token(self, detector):
         """Test Slack User token with xoxp- prefix."""
         # nosec: Test data - obviously fake token for pattern matching tests
-        text = "user_token=xoxp-FAKE000000000-FAKE000000000-FAKE000000000-FAKETESTEXAMPLE000000000000"
+        # Format: xoxp-{10-13 digits}-{10-13 digits}-{10-13 digits}-{32 hex}
+        # Split to avoid secret scanner detection
+        text = "user_token=" + "xoxp-" + "0" * 13 + "-" + "0" * 13 + "-" + "0" * 13 + "-" + "0" * 32
         spans = detector.detect(text)
 
         slack_spans = [s for s in spans if s.entity_type == "SLACK_TOKEN"]
@@ -364,7 +373,8 @@ class TestSlackTokens:
     def test_slack_token_high_confidence(self, detector):
         """Test Slack token has high confidence."""
         # nosec: Test data - obviously fake token for pattern matching tests
-        text = "xoxb-FAKE000000000-FAKE000000000-FAKETESTEXAMPLE00000"
+        # Format: xoxb-{10-13 digits}-{10-13 digits}-{24 alphanumeric}
+        text = "xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx"
         spans = detector.detect(text)
 
         slack_spans = [s for s in spans if s.entity_type == "SLACK_TOKEN"]
@@ -429,7 +439,7 @@ class TestStripeKeys:
     def test_detect_stripe_webhook_secret(self, detector):
         """Test Stripe webhook secret with whsec_ prefix."""
         # Webhook secrets need 32+ chars after prefix
-        text = "STRIPE_WEBHOOK_SECRET=whsec_FAKETESTEXAMPLE0000000000000"
+        text = "STRIPE_WEBHOOK_SECRET=whsec_abcdef0123456789abcdef0123456789"
         spans = detector.detect(text)
 
         stripe_spans = [s for s in spans if s.entity_type == "STRIPE_KEY"]
@@ -505,7 +515,9 @@ class TestTwilioCredentials:
 
     def test_detect_twilio_account_sid(self, detector):
         """Test Twilio Account SID with AC prefix."""
-        text = "TWILIO_ACCOUNT_SID=AC" + "FAKETEST" + "0" * 24 + ""
+        # Format: AC + 32 lowercase hex chars
+        # Split to avoid secret scanner detection
+        text = "TWILIO_ACCOUNT_SID=" + "AC" + "0" * 32
         spans = detector.detect(text)
 
         twilio_spans = [s for s in spans if s.entity_type == "TWILIO_ACCOUNT_SID"]
@@ -514,7 +526,9 @@ class TestTwilioCredentials:
 
     def test_detect_twilio_api_key(self, detector):
         """Test Twilio API key SID with SK prefix."""
-        text = "TWILIO_API_KEY_SID=SK" + "FAKETEST" + "0" * 24 + ""
+        # Format: SK + 32 lowercase hex chars
+        # Split to avoid secret scanner detection
+        text = "TWILIO_API_KEY_SID=" + "SK" + "0" * 32
         spans = detector.detect(text)
 
         twilio_spans = [s for s in spans if s.entity_type == "TWILIO_KEY"]
@@ -543,8 +557,8 @@ class TestSendGridKeys:
 
     def test_detect_sendgrid_api_key(self, detector):
         """Test SendGrid API key with SG. prefix."""
-        # SendGrid: SG. + 22 chars + . + 43 chars
-        text = "SENDGRID_API_KEY=SG.FAKETESTEXAMPLE0000000.FAKETESTEXAMPLEKEY000000000000000000000000"
+        # SendGrid format: SG.{22 chars}.{43 chars}
+        text = "SENDGRID_API_KEY=SG.abcdefghij0123456789ab.abcdefghij0123456789abcdefghij0123456789abc"
         spans = detector.detect(text)
 
         sg_spans = [s for s in spans if s.entity_type == "SENDGRID_KEY"]
@@ -553,8 +567,8 @@ class TestSendGridKeys:
 
     def test_sendgrid_key_high_confidence(self, detector):
         """Test SendGrid key has very high confidence."""
-        # SendGrid: SG. + 22 chars + . + 43 chars
-        text = "SG.FAKETESTEXAMPLE0000000.FAKETESTEXAMPLEKEY000000000000000000000000"
+        # SendGrid format: SG.{22 chars}.{43 chars}
+        text = "SG.abcdefghij0123456789ab.abcdefghij0123456789abcdefghij0123456789abc"
         spans = detector.detect(text)
 
         sg_spans = [s for s in spans if s.entity_type == "SENDGRID_KEY"]
@@ -611,7 +625,8 @@ class TestPackageRegistryTokens:
 
     def test_detect_npm_token(self, detector):
         """Test NPM token with npm_ prefix."""
-        text = "NPM_TOKEN=npm_FAKETESTEXAMPLE0000000000000000000"
+        # Format: npm_ + 36 alphanumeric chars
+        text = "NPM_TOKEN=npm_abcdefghij0123456789abcdefghij012345"
         spans = detector.detect(text)
 
         npm_spans = [s for s in spans if s.entity_type == "NPM_TOKEN"]
@@ -988,7 +1003,8 @@ class TestSquareTokens:
 
     def test_detect_square_application_secret(self, detector):
         """Test Square application secret with sq0csp- prefix."""
-        text = "SQUARE_SECRET=" + _fake_square_token("sq0" + "csp-") + "0" * 20
+        # Pattern expects sq0csp- + 43 chars
+        text = "SQUARE_SECRET=" + _fake_square_token("sq0" + "csp-")
         spans = detector.detect(text)
 
         square_spans = [s for s in spans if s.entity_type == "SQUARE_SECRET"]
@@ -1048,7 +1064,8 @@ class TestMonitoringKeys:
 
     def test_detect_datadog_api_key(self, detector):
         """Test Datadog API key detection."""
-        text = "datadog_api_key=" + "FAKETEST" + "0" * 24
+        # Format: contextual "datadog" then 32 lowercase hex chars
+        text = "datadog_api_key=abcdef0123456789abcdef0123456789"
         spans = detector.detect(text)
 
         dd_spans = [s for s in spans if s.entity_type == "DATADOG_KEY"]
@@ -1056,7 +1073,9 @@ class TestMonitoringKeys:
 
     def test_detect_newrelic_api_key(self, detector):
         """Test New Relic API key detection with NRAK- prefix."""
-        text = "NEW_RELIC_API_KEY=" + "NR" + "AK-FAKETEST" + "0" * 17
+        # Format: NRAK-{27 uppercase alphanumeric}
+        # Split to avoid secret scanner detection
+        text = "NEW_RELIC_API_KEY=" + "NRAK-" + "A" * 27
         spans = detector.detect(text)
 
         nr_spans = [s for s in spans if s.entity_type == "NEWRELIC_KEY"]
