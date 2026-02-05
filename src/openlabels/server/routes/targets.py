@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -322,45 +323,38 @@ async def list_targets(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> PaginatedTargetsResponse:
-    """
-    List configured scan targets with pagination.
+    """List configured scan targets with pagination."""
+    try:
+        # Base query with tenant filter
+        base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
 
-    Uses standardized pagination format with consistent field naming:
-    - `items`: List of targets
-    - `total`: Total number of targets
-    - `page`: Current page number
-    - `page_size`: Items per page
-    - `total_pages`: Total number of pages
-    - `has_more`: Whether there are more pages
-    """
-    # Base query with tenant filter
-    base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
+        if adapter:
+            base_query = base_query.where(ScanTarget.adapter == adapter)
 
-    if adapter:
-        base_query = base_query.where(ScanTarget.adapter == adapter)
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
 
-    # Get total count
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
+        # Calculate pagination
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        offset = (page - 1) * page_size
 
-    # Calculate pagination
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-    offset = (page - 1) * page_size
+        # Get paginated results
+        paginated_query = base_query.order_by(ScanTarget.name).offset(offset).limit(page_size)
+        result = await session.execute(paginated_query)
+        targets = result.scalars().all()
 
-    # Get paginated results
-    paginated_query = base_query.order_by(ScanTarget.name).offset(offset).limit(page_size)
-    result = await session.execute(paginated_query)
-    targets = result.scalars().all()
-
-    return PaginatedTargetsResponse(
-        items=[TargetResponse.model_validate(t) for t in targets],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-        has_more=page < total_pages,
-    )
+        return PaginatedTargetsResponse(
+            items=[TargetResponse.model_validate(t) for t in targets],
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error listing targets: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.post("", response_model=TargetResponse, status_code=201)
@@ -376,21 +370,25 @@ async def create_target(
     # Security: Validate target configuration to prevent path traversal and SSRF
     validated_config = validate_target_config(request.adapter, request.config)
 
-    target = ScanTarget(
-        tenant_id=user.tenant_id,
-        name=request.name,
-        adapter=request.adapter,
-        config=validated_config,
-        enabled=True,  # Explicitly set default to ensure it's available before flush
-        created_by=user.id,
-    )
-    session.add(target)
-    await session.flush()
+    try:
+        target = ScanTarget(
+            tenant_id=user.tenant_id,
+            name=request.name,
+            adapter=request.adapter,
+            config=validated_config,
+            enabled=True,  # Explicitly set default to ensure it's available before flush
+            created_by=user.id,
+        )
+        session.add(target)
+        await session.flush()
 
-    # Refresh to load server-generated defaults and ensure proper types
-    await session.refresh(target)
+        # Refresh to load server-generated defaults and ensure proper types
+        await session.refresh(target)
 
-    return target
+        return target
+    except SQLAlchemyError as e:
+        logger.error(f"Database error creating target: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -400,10 +398,16 @@ async def get_target(
     user: CurrentUser = Depends(get_current_user),
 ) -> TargetResponse:
     """Get scan target details."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
-    return target
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
+        return target
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -414,20 +418,26 @@ async def update_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Update a scan target."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
 
-    if request.name is not None:
-        target.name = request.name
-    if request.config is not None:
-        # Security: Validate updated configuration
-        validated_config = validate_target_config(target.adapter, request.config)
-        target.config = validated_config
-    if request.enabled is not None:
-        target.enabled = request.enabled
+        if request.name is not None:
+            target.name = request.name
+        if request.config is not None:
+            # Security: Validate updated configuration
+            validated_config = validate_target_config(target.adapter, request.config)
+            target.config = validated_config
+        if request.enabled is not None:
+            target.enabled = request.enabled
 
-    return target
+        return target
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error updating target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
 
 
 @router.delete("/{target_id}")
@@ -438,22 +448,28 @@ async def delete_target(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a scan target."""
-    target = await session.get(ScanTarget, target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+    try:
+        target = await session.get(ScanTarget, target_id)
+        if not target or target.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=404, detail="Target not found")
 
-    target_name = target.name
-    await session.delete(target)
+        target_name = target.name
+        await session.delete(target)
 
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
-            },
-        )
+        # Check if this is an HTMX request
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={
+                    "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
+                },
+            )
 
-    # Regular REST response
-    return Response(status_code=204)
+        # Regular REST response
+        return Response(status_code=204)
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error deleting target {target_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")

@@ -4,18 +4,30 @@ Scan management API endpoints.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from openlabels.server.db import get_session
+from openlabels.server.errors import (
+    NotFoundError,
+    BadRequestError,
+    InternalServerError,
+    ErrorCode,
+)
+from openlabels.server.pagination import (
+    encode_cursor,
+    decode_cursor,
+)
+
+logger = logging.getLogger(__name__)
 from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
@@ -54,11 +66,7 @@ class ScanResponse(BaseModel):
 
 
 class ScanListResponse(BaseModel):
-    """
-    Paginated list of scans.
-
-    Uses standardized pagination format with consistent field naming.
-    """
+    """Paginated list of scans (offset-based)."""
 
     items: list[ScanResponse]
     total: int
@@ -66,6 +74,18 @@ class ScanListResponse(BaseModel):
     page_size: int = Field(description="Items per page")
     total_pages: int = Field(description="Total number of pages")
     has_more: bool = Field(description="Whether there are more pages")
+
+
+class CursorScanListResponse(BaseModel):
+    """Paginated list of scans (cursor-based).
+
+    This response format is more efficient for large datasets as it uses
+    cursor-based pagination instead of offset-based pagination.
+    """
+
+    items: list[ScanResponse]
+    next_cursor: Optional[str] = None
+    has_more: bool = False
 
 
 @router.post("", response_model=ScanResponse, status_code=201)
@@ -77,12 +97,15 @@ async def create_scan(
     user: CurrentUser = Depends(require_admin),
 ) -> ScanResponse:
     """Create a new scan job."""
-    settings = get_settings()
     try:
         # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
         target = await session.get(ScanTarget, scan_request.target_id)
         if not target or target.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Target not found")
+            raise NotFoundError(
+                code=ErrorCode.TARGET_NOT_FOUND,
+                message="Target not found",
+                details={"target_id": str(scan_request.target_id)},
+            )
 
         # Create scan job
         job = ScanJob(
@@ -107,79 +130,117 @@ async def create_scan(
         await session.refresh(job)
 
         return job
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in create_scan: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in create_scan: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error creating scan for target {scan_request.target_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while creating scan",
+        )
 
 
-@router.get("", response_model=ScanListResponse)
+@router.get("", response_model=Union[ScanListResponse, CursorScanListResponse])
 async def list_scans(
     status: Optional[str] = Query(None, description="Filter by status"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, alias="limit", description="Items per page"),
+    # Offset-based pagination parameters (backward compatible)
+    page: Optional[int] = Query(None, ge=1, description="Page number for offset-based pagination"),
+    # Cursor-based pagination parameters
+    cursor: Optional[str] = Query(None, description="Cursor for cursor-based pagination (more efficient for large datasets)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of items per page"),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> ScanListResponse:
-    """
-    List scan jobs with pagination.
+) -> Union[ScanListResponse, CursorScanListResponse]:
+    """List scan jobs with pagination.
 
-    Uses standardized pagination format with consistent field naming:
-    - `items`: List of scans
-    - `total`: Total number of scans
-    - `page`: Current page number
-    - `page_size`: Items per page
-    - `total_pages`: Total number of pages
-    - `has_more`: Whether there are more pages
+    Supports two pagination modes:
+    - Offset-based (default): Use `page` parameter. Returns total count and page info.
+    - Cursor-based: Use `cursor` parameter. More efficient for large datasets (OFFSET 10000 scans 10K rows,
+      cursor-based uses WHERE clause with indexed columns).
+
+    If `cursor` is provided, cursor-based pagination is used.
+    If `page` is provided (or neither), offset-based pagination is used for backward compatibility.
     """
-    settings = get_settings()
     try:
-        query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
+        # Build base filter conditions
+        conditions = [ScanJob.tenant_id == user.tenant_id]
 
         if status:
-            query = query.where(ScanJob.status == status)
+            conditions.append(ScanJob.status == status)
 
-        query = query.order_by(ScanJob.created_at.desc())
+        # Determine pagination mode: cursor-based if cursor provided, else offset-based
+        use_cursor_pagination = cursor is not None
 
-        # Count total
-        count_query = select(ScanJob.id).where(ScanJob.tenant_id == user.tenant_id)
-        if status:
-            count_query = count_query.where(ScanJob.status == status)
-        result = await session.execute(count_query)
-        total = len(result.all())
+        if use_cursor_pagination:
+            # Cursor-based pagination (efficient for large datasets)
+            # Order by created_at DESC, id DESC for consistent ordering
+            query = (
+                select(ScanJob)
+                .where(*conditions)
+                .order_by(ScanJob.created_at.desc(), ScanJob.id.desc())
+            )
 
-        # Calculate pagination
-        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+            # Apply cursor filter if provided
+            cursor_data = decode_cursor(cursor)
+            if cursor_data:
+                # WHERE (created_at, id) < (cursor_timestamp, cursor_id)
+                # This efficiently seeks to the correct position using index
+                query = query.where(
+                    tuple_(ScanJob.created_at, ScanJob.id)
+                    < (cursor_data.timestamp, cursor_data.id)
+                )
 
-        # Paginate
-        query = query.offset((page - 1) * page_size).limit(page_size)
-        result = await session.execute(query)
-        jobs = result.scalars().all()
+            # Fetch one extra to check if there are more results
+            query = query.limit(limit + 1)
+            result = await session.execute(query)
+            jobs = list(result.scalars().all())
 
-        return ScanListResponse(
-            items=[ScanResponse.model_validate(j) for j in jobs],
-            total=total,
-            page=page,
-            page_size=page_size,
-            total_pages=total_pages,
-            has_more=page < total_pages,
-        )
+            # Check if there are more results
+            has_more = len(jobs) > limit
+            if has_more:
+                jobs = jobs[:limit]  # Remove the extra item
+
+            # Generate next cursor from last item
+            next_cursor = None
+            if jobs and has_more:
+                last_item = jobs[-1]
+                next_cursor = encode_cursor(last_item.id, last_item.created_at)
+
+            return CursorScanListResponse(
+                items=[ScanResponse.model_validate(j) for j in jobs],
+                next_cursor=next_cursor,
+                has_more=has_more,
+            )
+        else:
+            # Offset-based pagination (backward compatible)
+            effective_page = page if page is not None else 1
+
+            query = select(ScanJob).where(*conditions).order_by(ScanJob.created_at.desc())
+
+            # Count total
+            count_query = select(func.count()).select_from(
+                select(ScanJob.id).where(*conditions)
+            )
+            result = await session.execute(count_query)
+            total = result.scalar() or 0
+
+            # Paginate
+            query = query.offset((effective_page - 1) * limit).limit(limit)
+            result = await session.execute(query)
+            jobs = result.scalars().all()
+
+            return ScanListResponse(
+                items=[ScanResponse.model_validate(j) for j in jobs],
+                total=total,
+                page=effective_page,
+                pages=(total + limit - 1) // limit if total > 0 else 1,
+            )
     except SQLAlchemyError as e:
-        logger.error(f"Database error in list_scans: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in list_scans: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error listing scans: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing scans",
+        )
 
 
 @router.get("/{scan_id}", response_model=ScanResponse)
@@ -189,22 +250,23 @@ async def get_scan(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanResponse:
     """Get scan job details."""
-    settings = get_settings()
     try:
         job = await session.get(ScanJob, scan_id)
         if not job or job.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Scan not found")
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
         return job
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in get_scan: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_scan: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error getting scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrieving scan",
+        )
 
 
 @router.delete("/{scan_id}", status_code=204)
@@ -214,30 +276,33 @@ async def delete_scan(
     user: CurrentUser = Depends(require_admin),
 ) -> None:
     """Cancel a running scan (DELETE method)."""
-    settings = get_settings()
     try:
         job = await session.get(ScanJob, scan_id)
         if not job or job.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Scan not found")
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
         if job.status not in ("pending", "running"):
-            raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_CANCEL,
+                message="Scan cannot be cancelled",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
         job.status = "cancelled"
         job.completed_at = datetime.now(timezone.utc)
         await session.flush()
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in delete_scan: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in delete_scan: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error cancelling scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while cancelling scan",
+        )
 
 
 @router.post("/{scan_id}/cancel")
@@ -250,14 +315,21 @@ async def cancel_scan(
     """Cancel a running scan (POST method for HTMX)."""
     from fastapi.responses import HTMLResponse, Response
 
-    settings = get_settings()
     try:
         job = await session.get(ScanJob, scan_id)
         if not job or job.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Scan not found")
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
         if job.status not in ("pending", "running"):
-            raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_CANCEL,
+                message="Scan cannot be cancelled",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
         job.status = "cancelled"
         job.completed_at = datetime.now(timezone.utc)
@@ -274,18 +346,14 @@ async def cancel_scan(
             )
 
         return Response(status_code=204)
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in cancel_scan: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in cancel_scan: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error cancelling scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while cancelling scan",
+        )
 
 
 @router.post("/{scan_id}/retry")
@@ -298,19 +366,30 @@ async def retry_scan(
     """Retry a failed scan by creating a new scan job."""
     from fastapi.responses import HTMLResponse, Response
 
-    settings = get_settings()
     try:
         job = await session.get(ScanJob, scan_id)
         if not job or job.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Scan not found")
+            raise NotFoundError(
+                code=ErrorCode.SCAN_NOT_FOUND,
+                message="The specified scan does not exist",
+                details={"scan_id": str(scan_id)},
+            )
 
         if job.status not in ("failed", "cancelled"):
-            raise HTTPException(status_code=400, detail="Only failed or cancelled scans can be retried")
+            raise BadRequestError(
+                code=ErrorCode.SCAN_CANNOT_RETRY,
+                message="Only failed or cancelled scans can be retried",
+                details={"scan_id": str(scan_id), "current_status": job.status},
+            )
 
         # Get the target
         target = await session.get(ScanTarget, job.target_id)
         if not target:
-            raise HTTPException(status_code=404, detail="Target no longer exists")
+            raise NotFoundError(
+                code=ErrorCode.TARGET_NOT_AVAILABLE,
+                message="Target no longer exists",
+                details={"target_id": str(job.target_id)},
+            )
 
         # Create a new scan job
         new_job = ScanJob(
@@ -343,15 +422,11 @@ async def retry_scan(
             )
 
         return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in retry_scan: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in retry_scan: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error retrying scan {scan_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrying scan",
+        )

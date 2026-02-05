@@ -24,6 +24,11 @@ from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
 from openlabels.labeling.engine import LabelingEngine
+from openlabels.server.metrics import (
+    record_file_processed,
+    record_entities_found,
+    record_processing_duration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,24 +44,30 @@ except ImportError:
     _ws_streaming_enabled = False
     logger.debug("WebSocket streaming not available")
 
-# Global processor instance with lifecycle management
-# The processor holds 200-500MB of ML models and must be explicitly released
+# Global processor instance (reuse for efficiency within job lifecycle)
+# IMPORTANT: Call cleanup_processor() during worker shutdown to release memory
 _processor: Optional[FileProcessor] = None
+
+# Registry of shutdown callbacks for graceful cleanup
+_shutdown_callbacks: list = []
+
+
+def register_shutdown_callback(callback) -> None:
+    """
+    Register a callback to be called during worker shutdown.
+
+    Args:
+        callback: Callable that takes no arguments
+    """
+    _shutdown_callbacks.append(callback)
 
 
 def get_processor(enable_ml: bool = False) -> FileProcessor:
     """
-    Get or create the file processor with lazy loading.
+    Get or create the file processor.
 
-    The processor is cached globally for efficiency during batch processing,
-    but should be released after processing completes to free memory.
-    Call release_processor() when done with batch processing.
-
-    Args:
-        enable_ml: Whether to enable ML-based detection models
-
-    Returns:
-        FileProcessor instance (cached or newly created)
+    The processor is cached globally for efficiency during job execution.
+    Call cleanup_processor() during worker shutdown to release resources.
     """
     global _processor
     if _processor is None:
@@ -70,18 +81,43 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
     return _processor
 
 
-def release_processor() -> None:
+def cleanup_processor() -> None:
     """
-    Release the ML processor to free memory (200-500MB).
+    Release the global processor and free ML model memory.
 
-    Call this after batch processing completes to allow garbage
-    collection of ML models. The processor will be lazily
-    recreated on the next get_processor() call if needed.
+    This should be called during worker graceful shutdown to release
+    the 200-500MB of memory held by ML models. The processor will be
+    recreated on next use if needed.
     """
     global _processor
     if _processor is not None:
-        logger.info("Releasing ML processor to free memory")
-        _processor = None
+        try:
+            _processor.cleanup()
+            logger.info("Global file processor cleaned up")
+        except Exception as e:
+            logger.warning(f"Error during processor cleanup: {e}")
+        finally:
+            _processor = None
+
+
+def run_shutdown_callbacks() -> None:
+    """
+    Run all registered shutdown callbacks.
+
+    Called by the worker during graceful shutdown.
+    """
+    # Always cleanup the processor
+    cleanup_processor()
+
+    # Run any additional registered callbacks
+    for callback in _shutdown_callbacks:
+        try:
+            callback()
+        except Exception as e:
+            logger.warning(f"Error in shutdown callback: {e}")
+
+    _shutdown_callbacks.clear()
+    logger.info("All shutdown callbacks completed")
 
 
 async def _check_cancellation(session: AsyncSession, job_id: UUID) -> bool:
@@ -248,7 +284,7 @@ async def execute_scan_task(
                     continue
 
                 # Run detection
-                result = await _detect_and_score(content, file_info)
+                result = await _detect_and_score(content, file_info, target.adapter)
 
                 # Save result
                 scan_result = ScanResult(
@@ -643,7 +679,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
     return stats
 
 
-async def _detect_and_score(content: bytes, file_info) -> dict:
+async def _detect_and_score(content: bytes, file_info, adapter_type: str = "filesystem") -> dict:
     """
     Run detection and scoring on file content.
 
@@ -657,6 +693,7 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
     Args:
         content: Raw file bytes
         file_info: File metadata (path, name, exposure, etc.)
+        adapter_type: Type of adapter being used (for metrics)
 
     Returns:
         Dict with risk_score, risk_tier, entity_counts, etc.
@@ -676,6 +713,13 @@ async def _detect_and_score(content: bytes, file_info) -> dict:
             exposure_level=exposure_level,
             file_size=file_info.size if hasattr(file_info, 'size') else len(content),
         )
+
+        # Record Prometheus metrics
+        record_file_processed(adapter_type)
+        if result.entity_counts:
+            record_entities_found(result.entity_counts)
+        if result.processing_time_ms:
+            record_processing_duration(adapter_type, result.processing_time_ms / 1000.0)
 
         # Build findings list from spans (for detailed reporting)
         findings = []

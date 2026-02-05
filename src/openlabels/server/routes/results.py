@@ -15,15 +15,26 @@ from datetime import datetime
 from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse, HTMLResponse
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, delete
+from pydantic import BaseModel
+from sqlalchemy import select, func, delete, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
-from openlabels.server.config import get_settings
+from openlabels.server.pagination import (
+    encode_cursor,
+    decode_cursor,
+)
+from openlabels.server.errors import (
+    NotFoundError,
+    BadRequestError,
+    InternalServerError,
+    ErrorCode,
+)
+
+logger = logging.getLogger(__name__)
 from openlabels.server.models import ScanResult
 
 logger = logging.getLogger(__name__)
@@ -78,13 +89,7 @@ class ResultDetailResponse(ResultResponse):
 
 # Legacy response format for backward compatibility
 class ResultListResponse(BaseModel):
-    """
-    Paginated list of results (legacy format).
-
-    DEPRECATED: New clients should use the standardized format with
-    `data` and `pagination` fields. This format is maintained for
-    backward compatibility.
-    """
+    """Paginated list of results (offset-based)."""
 
     items: list[ResultResponse]
     total: int
@@ -109,6 +114,18 @@ class ResultPaginatedResponse(BaseModel):
     )
 
 
+class CursorResultListResponse(BaseModel):
+    """Paginated list of results (cursor-based).
+
+    This response format is more efficient for large datasets as it uses
+    cursor-based pagination instead of offset-based pagination.
+    """
+
+    items: list[ResultResponse]
+    next_cursor: Optional[str] = None
+    has_more: bool = False
+
+
 class ResultStats(BaseModel):
     """Aggregated result statistics."""
 
@@ -124,53 +141,29 @@ class ResultStats(BaseModel):
     labels_pending: int
 
 
-@router.get("")
+@router.get("", response_model=Union[ResultListResponse, CursorResultListResponse])
 async def list_results(
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
-    # Cursor-based pagination (recommended for large datasets)
-    cursor: Optional[str] = Query(
-        None,
-        description="Cursor for next page (use this for efficient pagination of large datasets)",
-    ),
-    # Offset-based pagination (for backward compatibility)
-    page: int = Query(1, ge=1, description="Page number (ignored if cursor is provided)"),
-    limit: int = Query(50, ge=1, le=100, alias="page_size", description="Items per page"),
-    # Optional total count
-    include_total: bool = Query(
-        True,
-        description="Include total count (set to false for faster queries on large datasets)",
-    ),
-    # Response format
-    format: str = Query(
-        "legacy",
-        description="Response format: 'legacy' (items/total/page/pages), 'standard' (data/pagination)",
-    ),
+    # Offset-based pagination parameters (backward compatible)
+    page: Optional[int] = Query(None, ge=1, description="Page number for offset-based pagination"),
+    # Cursor-based pagination parameters
+    cursor: Optional[str] = Query(None, description="Cursor for cursor-based pagination (more efficient for large datasets)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of items per page"),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> Union[ResultListResponse, ResultPaginatedResponse]:
-    """
-    List scan results with filtering and pagination.
+) -> Union[ResultListResponse, CursorResultListResponse]:
+    """List scan results with filtering and pagination.
 
     Supports two pagination modes:
-    - **Cursor-based** (recommended for large datasets): Pass `cursor` from previous response
-    - **Offset-based** (backward compatible): Use `page` and `page_size` parameters
+    - Offset-based (default): Use `page` parameter. Returns total count and page info.
+    - Cursor-based: Use `cursor` parameter. More efficient for large datasets (OFFSET 10000 scans 10K rows,
+      cursor-based uses WHERE clause with indexed columns).
 
-    Supports two response formats:
-    - **legacy** (default): `{items, total, page, pages}` for backward compatibility
-    - **standard**: `{data, pagination}` with cursor support
-
-    Example cursor-based pagination:
-    ```
-    GET /api/results?page_size=50&format=standard
-    # Returns: {"data": [...], "pagination": {"cursor": "abc123", "has_more": true}}
-
-    GET /api/results?cursor=abc123&page_size=50&format=standard
-    # Returns next page
-    ```
+    If `cursor` is provided, cursor-based pagination is used.
+    If `page` is provided (or neither), offset-based pagination is used for backward compatibility.
     """
-    settings = get_settings()
     try:
         # Build base filter conditions
         conditions = [ScanResult.tenant_id == user.tenant_id]
@@ -185,110 +178,80 @@ async def list_results(
             else:
                 conditions.append(ScanResult.total_entities == 0)
 
-        # Count total if requested (skip for cursor-based pagination without include_total)
-        total = None
-        if include_total:
-            count_query = select(func.count()).select_from(
-                select(ScanResult.id).where(*conditions).subquery()
-            )
-            result = await session.execute(count_query)
-            total = result.scalar() or 0
+        # Determine pagination mode: cursor-based if cursor provided, else offset-based
+        use_cursor_pagination = cursor is not None
 
-        # Use cursor-based pagination if cursor is provided or standard format requested
-        if cursor is not None or format == "standard":
-            # Cursor-based pagination using scanned_at as sort key
-            from openlabels.server.pagination import (
-                CursorPaginationParams,
-                decode_cursor,
-                encode_cursor,
+        if use_cursor_pagination:
+            # Cursor-based pagination (efficient for large datasets)
+            # Order by scanned_at DESC, id DESC for consistent ordering
+            query = (
+                select(ScanResult)
+                .where(*conditions)
+                .order_by(ScanResult.scanned_at.desc(), ScanResult.id.desc())
             )
 
-            # Build base query with filters
-            query = select(ScanResult).where(*conditions)
+            # Apply cursor filter if provided
+            cursor_data = decode_cursor(cursor)
+            if cursor_data:
+                # WHERE (scanned_at, id) < (cursor_timestamp, cursor_id)
+                # This efficiently seeks to the correct position using index
+                query = query.where(
+                    tuple_(ScanResult.scanned_at, ScanResult.id)
+                    < (cursor_data.timestamp, cursor_data.id)
+                )
 
-            # Apply cursor-based pagination
-            pagination_params = CursorPaginationParams(
-                cursor=cursor,
-                limit=limit,
-                include_total=include_total,
-            )
-            query, cursor_info = apply_cursor_pagination(
-                query,
-                ScanResult,
-                pagination_params,
-                sort_column=ScanResult.scanned_at,
-                sort_desc=True,
-            )
-
+            # Fetch one extra to check if there are more results
+            query = query.limit(limit + 1)
             result = await session.execute(query)
             results = list(result.scalars().all())
 
-            # Build pagination metadata
-            pagination_meta = build_cursor_response(results, cursor_info, total)
+            # Check if there are more results
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]  # Remove the extra item
 
-            # Trim extra result used for has_more check
-            actual_results = results[: pagination_params.limit]
+            # Generate next cursor from last item
+            next_cursor = None
+            if results and has_more:
+                last_item = results[-1]
+                next_cursor = encode_cursor(last_item.id, last_item.scanned_at)
 
-            if format == "standard":
-                return ResultPaginatedResponse(
-                    data=[ResultResponse.model_validate(r) for r in actual_results],
-                    pagination=pagination_meta,
-                )
-            else:
-                # Legacy format with cursor info added
-                pages = (total + limit - 1) // limit if total and total > 0 else 1
-                return ResultListResponse(
-                    items=[ResultResponse.model_validate(r) for r in actual_results],
-                    total=total or 0,
-                    page=page,
-                    pages=pages,
-                    page_size=limit,
-                    has_more=pagination_meta.has_more,
-                )
+            return CursorResultListResponse(
+                items=[ResultResponse.model_validate(r) for r in results],
+                next_cursor=next_cursor,
+                has_more=has_more,
+            )
+        else:
+            # Offset-based pagination (backward compatible)
+            effective_page = page if page is not None else 1
 
-        # Offset-based pagination (legacy mode)
-        query = (
-            select(ScanResult)
-            .where(*conditions)
-            .order_by(ScanResult.scanned_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
-        result = await session.execute(query)
-        results = result.scalars().all()
+            # Build main query with original ordering (by risk_score)
+            query = select(ScanResult).where(*conditions).order_by(ScanResult.risk_score.desc())
 
-        # For offset pagination without total, we need to count
-        if total is None:
+            # Count total (with same filters)
             count_query = select(func.count()).select_from(
-                select(ScanResult.id).where(*conditions).subquery()
+                select(ScanResult.id).where(*conditions)
             )
             result = await session.execute(count_query)
             total = result.scalar() or 0
 
-        pages = (total + limit - 1) // limit if total > 0 else 1
+            # Paginate
+            query = query.offset((effective_page - 1) * limit).limit(limit)
+            result = await session.execute(query)
+            results = result.scalars().all()
 
-        if format == "standard":
-            return ResultPaginatedResponse(
-                data=[ResultResponse.model_validate(r) for r in results],
-                pagination=PaginationMeta.from_offset(total, page, limit),
+            return ResultListResponse(
+                items=[ResultResponse.model_validate(r) for r in results],
+                total=total,
+                page=effective_page,
+                pages=(total + limit - 1) // limit if total > 0 else 1,
             )
-
-        return ResultListResponse(
-            items=[ResultResponse.model_validate(r) for r in results],
-            total=total,
-            page=page,
-            pages=pages,
-            page_size=limit,
-            has_more=page < pages,
-        )
     except SQLAlchemyError as e:
-        logger.error(f"Database error in list_results: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in list_results: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error listing results: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing results",
+        )
 
 
 @router.get("/stats", response_model=ResultStats)
@@ -298,7 +261,6 @@ async def get_result_stats(
     user: CurrentUser = Depends(get_current_user),
 ) -> ResultStats:
     """Get aggregated statistics for scan results using efficient SQL aggregation."""
-    settings = get_settings()
     try:
         # Build base filter conditions
         conditions = [ScanResult.tenant_id == user.tenant_id]
@@ -379,13 +341,11 @@ async def get_result_stats(
             labels_pending=labels_pending,
         )
     except SQLAlchemyError as e:
-        logger.error(f"Database error in get_result_stats: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_result_stats: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error getting result stats: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while getting statistics",
+        )
 
 
 @router.get("/export")
@@ -398,7 +358,6 @@ async def export_results(
     user: CurrentUser = Depends(get_current_user),
 ) -> StreamingResponse:
     """Export scan results as CSV or JSON."""
-    settings = get_settings()
     try:
         query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
 
@@ -455,13 +414,11 @@ async def export_results(
                 headers={"Content-Disposition": f"attachment; filename={filename}.json"},
             )
     except SQLAlchemyError as e:
-        logger.error(f"Database error in export_results: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in export_results: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error exporting results: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while exporting results",
+        )
 
 
 @router.get("/{result_id}", response_model=ResultDetailResponse)
@@ -471,22 +428,23 @@ async def get_result(
     user: CurrentUser = Depends(get_current_user),
 ) -> ResultDetailResponse:
     """Get detailed scan result."""
-    settings = get_settings()
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
         return result
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in get_result: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_result: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error getting result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while retrieving result",
+        )
 
 
 @router.delete("")
@@ -496,7 +454,6 @@ async def clear_all_results(
     user: CurrentUser = Depends(require_admin),
 ):
     """Clear all scan results for the tenant."""
-    settings = get_settings()
     try:
         # Count results before deletion
         count_query = select(func.count()).where(ScanResult.tenant_id == user.tenant_id)
@@ -521,15 +478,11 @@ async def clear_all_results(
         # Regular REST response
         return Response(status_code=204)
     except SQLAlchemyError as e:
-        logger.error(f"Database error in clear_all_results: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in clear_all_results: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error clearing results: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while clearing results",
+        )
 
 
 @router.delete("/{result_id}")
@@ -540,11 +493,14 @@ async def delete_result(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a single scan result."""
-    settings = get_settings()
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         file_name = result.file_name
         await session.delete(result)
@@ -562,18 +518,14 @@ async def delete_result(
 
         # Regular REST response
         return Response(status_code=204)
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in delete_result: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in delete_result: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error deleting result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while deleting result",
+        )
 
 
 @router.post("/{result_id}/apply-label")
@@ -586,15 +538,22 @@ async def apply_recommended_label(
     """Apply the recommended label to a scan result."""
     from openlabels.jobs import JobQueue
 
-    settings = get_settings()
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         # Check if there's a recommended label
         if not result.recommended_label_id:
-            raise HTTPException(status_code=400, detail="No recommended label for this result")
+            raise BadRequestError(
+                code=ErrorCode.NO_RECOMMENDED_LABEL,
+                message="No recommended label for this result",
+                details={"result_id": str(result_id)},
+            )
 
         # Enqueue labeling job
         queue = JobQueue(session, user.tenant_id)
@@ -619,18 +578,14 @@ async def apply_recommended_label(
             )
 
         return {"message": "Label application queued", "job_id": str(job_id)}
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in apply_recommended_label: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in apply_recommended_label: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error applying label to result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while applying label",
+        )
 
 
 @router.post("/{result_id}/rescan")
@@ -644,11 +599,14 @@ async def rescan_file(
     from openlabels.server.models import ScanJob
     from openlabels.jobs import JobQueue
 
-    settings = get_settings()
     try:
         result = await session.get(ScanResult, result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="The specified result does not exist",
+                details={"result_id": str(result_id)},
+            )
 
         # Get the target info from the original job
         target_name = "Rescan"
@@ -661,7 +619,11 @@ async def rescan_file(
 
         # target_id is required - if we can't find it, return an error
         if target_id is None:
-            raise HTTPException(status_code=400, detail="Cannot rescan: original scan target not found")
+            raise BadRequestError(
+                code=ErrorCode.TARGET_NOT_AVAILABLE,
+                message="Cannot rescan: original scan target not found",
+                details={"result_id": str(result_id)},
+            )
 
         # Create a new scan job for just this file
         new_job = ScanJob(
@@ -698,15 +660,11 @@ async def rescan_file(
             )
 
         return {"message": "Rescan queued", "job_id": str(new_job.id)}
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in rescan_file: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in rescan_file: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error rescanning result {result_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while rescanning file",
+        )

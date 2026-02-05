@@ -1,42 +1,68 @@
 """
-Standardized error response handling for OpenLabels API.
+Standardized error handling for OpenLabels API.
 
-This module provides a unified error response format across all API endpoints.
-
-Standard Error Response Format:
-{
-    "error": {
-        "code": "error_code",       # Machine-readable error code
-        "message": "Human-readable message",
-        "details": {...}            # Optional additional context
-    },
-    "request_id": "abc123"          # Optional request correlation ID
-}
-
-Error Codes:
-- validation_error: Request validation failed
-- not_found: Resource not found
-- unauthorized: Authentication required
-- forbidden: Access denied
-- conflict: Resource conflict (e.g., duplicate)
-- bad_request: Invalid request
-- rate_limited: Rate limit exceeded
-- internal_error: Internal server error
-- service_unavailable: Service temporarily unavailable
+This module provides:
+- Standard error response model (ErrorResponse)
+- Error code constants
+- Helper functions to create standardized error responses
+- Custom exception classes that map to error codes
 """
 
+from enum import Enum
 from typing import Any, Optional
-from fastapi import HTTPException, Request, status
+
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from openlabels.server.logging import get_request_id
 
 
 # =============================================================================
-# Error Response Models
+# ERROR CODES
+# =============================================================================
+
+
+class ErrorCode(str, Enum):
+    """Standardized error codes for the API."""
+
+    # General errors
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    BAD_REQUEST = "BAD_REQUEST"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    FORBIDDEN = "FORBIDDEN"
+    RATE_LIMITED = "RATE_LIMITED"
+    REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+
+    # Resource-specific errors
+    SCAN_NOT_FOUND = "SCAN_NOT_FOUND"
+    TARGET_NOT_FOUND = "TARGET_NOT_FOUND"
+    RESULT_NOT_FOUND = "RESULT_NOT_FOUND"
+    LABEL_NOT_FOUND = "LABEL_NOT_FOUND"
+    RULE_NOT_FOUND = "RULE_NOT_FOUND"
+    JOB_NOT_FOUND = "JOB_NOT_FOUND"
+    USER_NOT_FOUND = "USER_NOT_FOUND"
+
+    # Operation errors
+    SCAN_CANNOT_CANCEL = "SCAN_CANNOT_CANCEL"
+    SCAN_CANNOT_RETRY = "SCAN_CANNOT_RETRY"
+    NO_RECOMMENDED_LABEL = "NO_RECOMMENDED_LABEL"
+    TARGET_NOT_AVAILABLE = "TARGET_NOT_AVAILABLE"
+    INVALID_RULE_TYPE = "INVALID_RULE_TYPE"
+
+    # Integration errors
+    DATABASE_ERROR = "DATABASE_ERROR"
+    AZURE_AD_NOT_CONFIGURED = "AZURE_AD_NOT_CONFIGURED"
+    HTTPX_NOT_AVAILABLE = "HTTPX_NOT_AVAILABLE"
+    LABEL_SYNC_FAILED = "LABEL_SYNC_FAILED"
+    CACHE_INVALIDATION_FAILED = "CACHE_INVALIDATION_FAILED"
+
+
+# =============================================================================
+# RESPONSE MODELS
 # =============================================================================
 
 
@@ -45,186 +71,143 @@ class ErrorDetail(BaseModel):
 
     code: str
     message: str
+    request_id: Optional[str] = None
     details: Optional[dict[str, Any]] = None
 
 
 class ErrorResponse(BaseModel):
-    """Standardized error response model."""
-
-    error: ErrorDetail
-    request_id: Optional[str] = None
-
-
-# =============================================================================
-# API Exception Classes
-# =============================================================================
-
-
-class APIError(Exception):
     """
-    Base exception for API errors with standardized format.
-
-    Use this for custom errors that need the standardized format.
+    Standard error response format.
 
     Example:
+        {
+            "error": {
+                "code": "SCAN_NOT_FOUND",
+                "message": "The specified scan does not exist",
+                "request_id": "abc123",
+                "details": {"scan_id": "..."}
+            }
+        }
+    """
+
+    error: ErrorDetail
+
+
+# =============================================================================
+# CUSTOM EXCEPTIONS
+# =============================================================================
+
+
+class APIError(HTTPException):
+    """
+    Base exception for API errors with standardized error codes.
+
+    Usage:
         raise APIError(
             status_code=404,
-            code="resource_not_found",
-            message="The requested scan was not found",
-            details={"scan_id": str(scan_id)}
+            code=ErrorCode.SCAN_NOT_FOUND,
+            message="The specified scan does not exist"
         )
     """
 
     def __init__(
         self,
         status_code: int,
-        code: str,
+        code: ErrorCode | str,
         message: str,
         details: Optional[dict[str, Any]] = None,
     ):
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        self.details = details
-        super().__init__(message)
+        self.error_code = code if isinstance(code, str) else code.value
+        self.error_message = message
+        self.error_details = details
+        # Store as detail dict for compatibility with FastAPI's exception handling
+        super().__init__(status_code=status_code, detail={
+            "code": self.error_code,
+            "message": message,
+            "details": details,
+        })
 
 
 class NotFoundError(APIError):
-    """Resource not found error."""
+    """Resource not found error (404)."""
 
     def __init__(
         self,
+        code: ErrorCode | str = ErrorCode.NOT_FOUND,
         message: str = "Resource not found",
         details: Optional[dict[str, Any]] = None,
     ):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            code="not_found",
-            message=message,
-            details=details,
-        )
-
-
-class ValidationError(APIError):
-    """Request validation error."""
-
-    def __init__(
-        self,
-        message: str = "Validation failed",
-        details: Optional[dict[str, Any]] = None,
-    ):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            code="validation_error",
-            message=message,
-            details=details,
-        )
-
-
-class UnauthorizedError(APIError):
-    """Authentication required error."""
-
-    def __init__(
-        self,
-        message: str = "Authentication required",
-        details: Optional[dict[str, Any]] = None,
-    ):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            code="unauthorized",
-            message=message,
-            details=details,
-        )
-
-
-class ForbiddenError(APIError):
-    """Access denied error."""
-
-    def __init__(
-        self,
-        message: str = "Access denied",
-        details: Optional[dict[str, Any]] = None,
-    ):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            code="forbidden",
-            message=message,
-            details=details,
-        )
-
-
-class ConflictError(APIError):
-    """Resource conflict error."""
-
-    def __init__(
-        self,
-        message: str = "Resource conflict",
-        details: Optional[dict[str, Any]] = None,
-    ):
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            code="conflict",
-            message=message,
-            details=details,
-        )
+        super().__init__(status_code=404, code=code, message=message, details=details)
 
 
 class BadRequestError(APIError):
-    """Bad request error."""
+    """Bad request error (400)."""
 
     def __init__(
         self,
-        message: str = "Bad request",
+        code: ErrorCode | str = ErrorCode.BAD_REQUEST,
+        message: str = "Invalid request",
         details: Optional[dict[str, Any]] = None,
     ):
-        super().__init__(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            code="bad_request",
-            message=message,
-            details=details,
-        )
+        super().__init__(status_code=400, code=code, message=message, details=details)
 
 
-class RateLimitError(APIError):
-    """Rate limit exceeded error."""
+class UnauthorizedError(APIError):
+    """Unauthorized error (401)."""
 
     def __init__(
         self,
-        message: str = "Rate limit exceeded",
+        code: ErrorCode | str = ErrorCode.UNAUTHORIZED,
+        message: str = "Authentication required",
         details: Optional[dict[str, Any]] = None,
     ):
-        super().__init__(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            code="rate_limited",
-            message=message,
-            details=details,
-        )
+        super().__init__(status_code=401, code=code, message=message, details=details)
+
+
+class ForbiddenError(APIError):
+    """Forbidden error (403)."""
+
+    def __init__(
+        self,
+        code: ErrorCode | str = ErrorCode.FORBIDDEN,
+        message: str = "Access denied",
+        details: Optional[dict[str, Any]] = None,
+    ):
+        super().__init__(status_code=403, code=code, message=message, details=details)
 
 
 class ServiceUnavailableError(APIError):
-    """Service unavailable error."""
+    """Service unavailable error (503)."""
 
     def __init__(
         self,
+        code: ErrorCode | str = ErrorCode.SERVICE_UNAVAILABLE,
         message: str = "Service temporarily unavailable",
         details: Optional[dict[str, Any]] = None,
     ):
-        super().__init__(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="service_unavailable",
-            message=message,
-            details=details,
-        )
+        super().__init__(status_code=503, code=code, message=message, details=details)
+
+
+class InternalServerError(APIError):
+    """Internal server error (500)."""
+
+    def __init__(
+        self,
+        code: ErrorCode | str = ErrorCode.INTERNAL_ERROR,
+        message: str = "An unexpected error occurred",
+        details: Optional[dict[str, Any]] = None,
+    ):
+        super().__init__(status_code=500, code=code, message=message, details=details)
 
 
 # =============================================================================
-# Helper Functions
+# HELPER FUNCTIONS
 # =============================================================================
 
 
 def create_error_response(
     status_code: int,
-    code: str,
+    code: ErrorCode | str,
     message: str,
     details: Optional[dict[str, Any]] = None,
     request_id: Optional[str] = None,
@@ -234,211 +217,134 @@ def create_error_response(
 
     Args:
         status_code: HTTP status code
-        code: Machine-readable error code
+        code: Error code from ErrorCode enum or string
         message: Human-readable error message
-        details: Optional additional error details
-        request_id: Optional request correlation ID
+        details: Optional additional details dict
+        request_id: Optional request ID (auto-retrieved if not provided)
 
     Returns:
         JSONResponse with standardized error format
     """
-    error_body: dict[str, Any] = {
-        "error": {
-            "code": code,
-            "message": message,
-        }
-    }
-
-    if details:
-        error_body["error"]["details"] = details
-
-    # Include request ID if available
     if request_id is None:
         request_id = get_request_id()
+
+    error_code = code if isinstance(code, str) else code.value
+
+    error_detail = {
+        "code": error_code,
+        "message": message,
+    }
+
     if request_id:
-        error_body["request_id"] = request_id
+        error_detail["request_id"] = request_id
+
+    if details:
+        error_detail["details"] = details
 
     return JSONResponse(
         status_code=status_code,
-        content=error_body,
+        content={"error": error_detail},
     )
 
 
-# =============================================================================
-# Status Code to Error Code Mapping
-# =============================================================================
+def format_api_error(exc: APIError, request_id: Optional[str] = None) -> JSONResponse:
+    """
+    Format an APIError exception into a standardized JSONResponse.
 
+    Args:
+        exc: The APIError exception
+        request_id: Optional request ID (auto-retrieved if not provided)
 
-HTTP_STATUS_TO_ERROR_CODE = {
-    400: "bad_request",
-    401: "unauthorized",
-    403: "forbidden",
-    404: "not_found",
-    405: "method_not_allowed",
-    409: "conflict",
-    413: "request_too_large",
-    422: "validation_error",
-    429: "rate_limited",
-    500: "internal_error",
-    502: "bad_gateway",
-    503: "service_unavailable",
-    504: "gateway_timeout",
-}
-
-
-def get_error_code_for_status(status_code: int) -> str:
-    """Get the standard error code for an HTTP status code."""
-    return HTTP_STATUS_TO_ERROR_CODE.get(status_code, "error")
-
-
-# =============================================================================
-# Exception Handlers (to be registered with FastAPI app)
-# =============================================================================
-
-
-async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
-    """Handle APIError exceptions."""
+    Returns:
+        JSONResponse with standardized error format
+    """
     return create_error_response(
         status_code=exc.status_code,
-        code=exc.code,
-        message=exc.message,
-        details=exc.details,
+        code=exc.error_code,
+        message=exc.error_message,
+        details=exc.error_details,
+        request_id=request_id,
     )
 
 
-async def http_exception_handler(
-    request: Request,
+def format_http_exception(
     exc: HTTPException,
+    request_id: Optional[str] = None,
 ) -> JSONResponse:
     """
-    Handle FastAPI HTTPException with standardized format.
+    Format a standard HTTPException into standardized error format.
 
-    Converts the standard HTTPException (which returns {"detail": "..."})
-    to our standardized format.
+    Maps common HTTP status codes to appropriate error codes.
+
+    Args:
+        exc: The HTTPException
+        request_id: Optional request ID (auto-retrieved if not provided)
+
+    Returns:
+        JSONResponse with standardized error format
     """
-    error_code = get_error_code_for_status(exc.status_code)
+    # Map status codes to default error codes
+    status_code_map = {
+        400: ErrorCode.BAD_REQUEST,
+        401: ErrorCode.UNAUTHORIZED,
+        403: ErrorCode.FORBIDDEN,
+        404: ErrorCode.NOT_FOUND,
+        429: ErrorCode.RATE_LIMITED,
+        500: ErrorCode.INTERNAL_ERROR,
+        503: ErrorCode.SERVICE_UNAVAILABLE,
+    }
 
-    # Handle both string and dict detail
+    code = status_code_map.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
+
+    # Extract message from detail
     if isinstance(exc.detail, dict):
+        # If detail is already structured (from APIError), use it
         message = exc.detail.get("message", str(exc.detail))
-        details = exc.detail if "message" not in exc.detail else None
+        code_from_detail = exc.detail.get("code")
+        if code_from_detail:
+            code = code_from_detail
+        details = exc.detail.get("details")
     else:
-        message = str(exc.detail)
+        message = str(exc.detail) if exc.detail else "An error occurred"
         details = None
 
     return create_error_response(
         status_code=exc.status_code,
-        code=error_code,
+        code=code,
         message=message,
         details=details,
+        request_id=request_id,
     )
 
 
-async def starlette_http_exception_handler(
-    request: Request,
-    exc: StarletteHTTPException,
-) -> JSONResponse:
-    """Handle Starlette HTTPException with standardized format."""
-    error_code = get_error_code_for_status(exc.status_code)
-    message = str(exc.detail) if exc.detail else "An error occurred"
-
-    return create_error_response(
-        status_code=exc.status_code,
-        code=error_code,
-        message=message,
-    )
-
-
-async def validation_exception_handler(
-    request: Request,
-    exc: RequestValidationError,
+def format_validation_error(
+    errors: list[dict[str, Any]],
+    request_id: Optional[str] = None,
 ) -> JSONResponse:
     """
-    Handle Pydantic validation errors with standardized format.
+    Format Pydantic validation errors into standardized error format.
 
-    Converts validation errors to a structured format that's easier
-    to understand and process.
+    Args:
+        errors: List of validation error dicts from Pydantic
+        request_id: Optional request ID (auto-retrieved if not provided)
+
+    Returns:
+        JSONResponse with standardized error format
     """
-    # Extract field-level errors
-    errors = []
-    for error in exc.errors():
-        field_path = ".".join(str(loc) for loc in error["loc"])
-        errors.append({
-            "field": field_path,
-            "message": error["msg"],
-            "type": error["type"],
+    # Format validation errors as details
+    formatted_errors = []
+    for error in errors:
+        loc = ".".join(str(x) for x in error.get("loc", []))
+        formatted_errors.append({
+            "field": loc,
+            "message": error.get("msg", "Invalid value"),
+            "type": error.get("type", "validation_error"),
         })
 
     return create_error_response(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        code="validation_error",
+        status_code=422,
+        code=ErrorCode.VALIDATION_ERROR,
         message="Request validation failed",
-        details={"errors": errors},
+        details={"errors": formatted_errors},
+        request_id=request_id,
     )
-
-
-async def general_exception_handler(
-    request: Request,
-    exc: Exception,
-) -> JSONResponse:
-    """
-    Handle unexpected exceptions with standardized format.
-
-    In debug mode, includes the exception message.
-    In production, returns a generic message.
-    """
-    import logging
-    from openlabels.server.config import get_settings
-
-    logger = logging.getLogger(__name__)
-    logger.exception(
-        f"Unhandled exception: {exc}",
-        extra={
-            "path": request.url.path,
-            "method": request.method,
-        }
-    )
-
-    settings = get_settings()
-    message = str(exc) if settings.server.debug else "An unexpected error occurred"
-
-    return create_error_response(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        code="internal_error",
-        message=message,
-    )
-
-
-def register_exception_handlers(app) -> None:
-    """
-    Register all standardized exception handlers with a FastAPI app.
-
-    Usage:
-        from openlabels.server.errors import register_exception_handlers
-        register_exception_handlers(app)
-    """
-    from slowapi.errors import RateLimitExceeded
-
-    # Custom API errors
-    app.add_exception_handler(APIError, api_error_handler)
-
-    # FastAPI/Starlette HTTP exceptions
-    app.add_exception_handler(HTTPException, http_exception_handler)
-    app.add_exception_handler(StarletteHTTPException, starlette_http_exception_handler)
-
-    # Validation errors
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-
-    # Rate limit errors (from slowapi)
-    async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-        return create_error_response(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            code="rate_limited",
-            message=f"Rate limit exceeded: {exc.detail}",
-            details={"retry_after": getattr(exc, "retry_after", None)},
-        )
-
-    app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
-
-    # General exception handler (must be last)
-    app.add_exception_handler(Exception, general_exception_handler)

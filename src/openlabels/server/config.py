@@ -34,6 +34,8 @@ class DatabaseSettings(BaseSettings):
     url: str = "postgresql+asyncpg://localhost/openlabels"
     pool_size: int = 5
     max_overflow: int = 10
+    pool_recycle: int = 3600  # Recycle connections after 1 hour to prevent stale connections
+    pool_pre_ping: bool = True  # Enable connection health checks before use
 
 
 class AuthSettings(BaseSettings):
@@ -320,6 +322,56 @@ class CircuitBreakerSettings(BaseSettings):
     recovery_timeout: int = 60  # Seconds to wait before half-open
     exclude_status_codes: list[int] = Field(
         default_factory=lambda: [400, 401, 403, 404]  # Client errors don't count
+    )
+
+
+class SentrySettings(BaseSettings):
+    """
+    Sentry error tracking and performance monitoring configuration.
+
+    Sentry integration is optional - if dsn is not set, Sentry will not initialize.
+    This allows running the application without Sentry in development environments.
+
+    Environment variables:
+    - SENTRY_DSN: Sentry Data Source Name (required to enable)
+    - OPENLABELS_SENTRY__ENVIRONMENT: Override environment name
+    - OPENLABELS_SENTRY__TRACES_SAMPLE_RATE: Performance monitoring sample rate
+    - OPENLABELS_SENTRY__PROFILES_SAMPLE_RATE: Profiling sample rate
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="SENTRY_",
+        extra="ignore",
+    )
+
+    # DSN is loaded directly from SENTRY_DSN environment variable
+    dsn: str | None = None
+    # Environment defaults to server.environment but can be overridden
+    environment: str | None = None
+    # Sampling rates (0.0 to 1.0)
+    # Default to lower rates in production, higher in development
+    traces_sample_rate: float = 0.1  # Sample 10% of transactions for performance monitoring
+    profiles_sample_rate: float = 0.1  # Sample 10% of profiled transactions
+
+    # List of sensitive field names to scrub from error reports
+    sensitive_fields: list[str] = Field(
+        default_factory=lambda: [
+            "password",
+            "passwd",
+            "secret",
+            "token",
+            "api_key",
+            "apikey",
+            "auth",
+            "authorization",
+            "cookie",
+            "session",
+            "jwt",
+            "bearer",
+            "credential",
+            "private_key",
+            "client_secret",
+        ]
     )
 
 

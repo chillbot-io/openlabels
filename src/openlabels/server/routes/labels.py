@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.db import get_session
 from openlabels.server.config import get_settings
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
+from openlabels.server.errors import (
+    NotFoundError,
+    BadRequestError,
+    InternalServerError,
+    ServiceUnavailableError,
+    ErrorCode,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue
 
@@ -93,7 +101,6 @@ async def list_labels(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[LabelResponse]:
     """List available sensitivity labels."""
-    settings = get_settings()
     try:
         query = select(SensitivityLabel).where(
             SensitivityLabel.tenant_id == user.tenant_id
@@ -102,13 +109,11 @@ async def list_labels(
         labels = result.scalars().all()
         return [LabelResponse.model_validate(l) for l in labels]
     except SQLAlchemyError as e:
-        logger.error(f"Database error in list_labels: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in list_labels: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error listing labels: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing labels",
+        )
 
 
 class LabelSyncRequest(BaseModel):
@@ -132,9 +137,9 @@ async def sync_labels(
     - remove_stale: If true, removes labels from DB that no longer exist in M365
     """
     if not HTTPX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="httpx not installed - cannot sync labels"
+        raise ServiceUnavailableError(
+            code=ErrorCode.HTTPX_NOT_AVAILABLE,
+            message="httpx not installed - cannot sync labels",
         )
 
     request = request or LabelSyncRequest()
@@ -146,9 +151,9 @@ async def sync_labels(
 
         # Check Azure AD configuration
         if auth.provider != "azure_ad" or not all([auth.tenant_id, auth.client_id, auth.client_secret]):
-            raise HTTPException(
-                status_code=503,
-                detail="Azure AD not configured - cannot sync labels from M365"
+            raise ServiceUnavailableError(
+                code=ErrorCode.AZURE_AD_NOT_CONFIGURED,
+                message="Azure AD not configured - cannot sync labels from M365",
             )
 
         # If background mode, enqueue as job
@@ -197,13 +202,13 @@ async def sync_labels(
             **result.to_dict(),
         }
 
-    except HTTPException:
+    except (ServiceUnavailableError, NotFoundError, BadRequestError):
         raise
     except Exception as e:
         logger.error(f"Label sync failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Label sync failed: {str(e)}"
+        raise InternalServerError(
+            code=ErrorCode.LABEL_SYNC_FAILED,
+            message=f"Label sync failed: {str(e)}",
         )
 
 
@@ -213,7 +218,6 @@ async def get_sync_status(
     user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Get label sync status including last sync time and counts."""
-    settings = get_settings()
     try:
         # Get label count and last sync time
         query = select(
@@ -239,13 +243,11 @@ async def get_sync_status(
             "cache": cache_stats,
         }
     except SQLAlchemyError as e:
-        logger.error(f"Database error in get_sync_status: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_sync_status: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error getting sync status: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while getting sync status",
+        )
 
 
 @router.post("/cache/invalidate", status_code=200)
@@ -258,9 +260,9 @@ async def invalidate_label_cache(
         get_label_cache().invalidate()
         return {"message": "Label cache invalidated"}
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to invalidate cache: {e}"
+        raise InternalServerError(
+            code=ErrorCode.CACHE_INVALIDATION_FAILED,
+            message=f"Failed to invalidate cache: {e}",
         )
 
 
@@ -270,7 +272,6 @@ async def list_label_rules(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[LabelRuleResponse]:
     """List label mapping rules."""
-    settings = get_settings()
     try:
         query = select(LabelRule).where(
             LabelRule.tenant_id == user.tenant_id
@@ -289,13 +290,11 @@ async def list_label_rules(
 
         return responses
     except SQLAlchemyError as e:
-        logger.error(f"Database error in list_label_rules: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in list_label_rules: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error listing label rules: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while listing label rules",
+        )
 
 
 @router.post("/rules", response_model=LabelRuleResponse, status_code=201)
@@ -306,14 +305,21 @@ async def create_label_rule(
 ) -> LabelRuleResponse:
     """Create a label mapping rule."""
     if request.rule_type not in ("risk_tier", "entity_type"):
-        raise HTTPException(status_code=400, detail="Invalid rule type")
+        raise BadRequestError(
+            code=ErrorCode.INVALID_RULE_TYPE,
+            message="Invalid rule type",
+            details={"rule_type": request.rule_type, "valid_types": ["risk_tier", "entity_type"]},
+        )
 
-    settings = get_settings()
     try:
         # Verify label exists
         label = await session.get(SensitivityLabel, request.label_id)
         if not label or label.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Label not found")
+            raise NotFoundError(
+                code=ErrorCode.LABEL_NOT_FOUND,
+                message="Label not found",
+                details={"label_id": request.label_id},
+            )
 
         rule = LabelRule(
             tenant_id=user.tenant_id,
@@ -331,18 +337,14 @@ async def create_label_rule(
 
         response = LabelRuleResponse.model_validate(rule)
         return response.model_copy(update={"label_name": label.name})
-    except HTTPException:
+    except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in create_label_rule: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in create_label_rule: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error creating label rule: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while creating label rule",
+        )
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
@@ -352,25 +354,24 @@ async def delete_label_rule(
     user: CurrentUser = Depends(require_admin),
 ) -> None:
     """Delete a label rule."""
-    settings = get_settings()
     try:
         rule = await session.get(LabelRule, rule_id)
         if not rule or rule.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Rule not found")
+            raise NotFoundError(
+                code=ErrorCode.RULE_NOT_FOUND,
+                message="Rule not found",
+                details={"rule_id": str(rule_id)},
+            )
 
         await session.delete(rule)
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in delete_label_rule: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in delete_label_rule: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error deleting label rule {rule_id}: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while deleting label rule",
+        )
 
 
 @router.post("/apply", status_code=202)
@@ -380,15 +381,22 @@ async def apply_label(
     user: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Apply a sensitivity label to a file."""
-    settings = get_settings()
     try:
         result = await session.get(ScanResult, request.result_id)
         if not result or result.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Result not found")
+            raise NotFoundError(
+                code=ErrorCode.RESULT_NOT_FOUND,
+                message="Result not found",
+                details={"result_id": str(request.result_id)},
+            )
 
         label = await session.get(SensitivityLabel, request.label_id)
         if not label or label.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Label not found")
+            raise NotFoundError(
+                code=ErrorCode.LABEL_NOT_FOUND,
+                message="Label not found",
+                details={"label_id": request.label_id},
+            )
 
         # Enqueue labeling job
         queue = JobQueue(session, user.tenant_id)
@@ -408,18 +416,14 @@ async def apply_label(
             "result_id": str(request.result_id),
             "label_id": request.label_id,
         }
-    except HTTPException:
+    except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error in apply_label: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in apply_label: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error applying label: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while applying label",
+        )
 
 
 # =============================================================================
@@ -452,7 +456,6 @@ async def get_label_mappings(
     user: CurrentUser = Depends(get_current_user),
 ) -> LabelMappingsResponse:
     """Get label mappings for each risk tier."""
-    settings = get_settings()
     try:
         # Get all rules for risk_tier type
         query = select(LabelRule).where(
@@ -482,17 +485,11 @@ async def get_label_mappings(
             labels=labels,
         )
     except SQLAlchemyError as e:
-        logger.error(f"Database error in get_label_mappings: {e}")
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_label_mappings: {e}")
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
-
-
-from fastapi import Request
-from fastapi.responses import HTMLResponse
+        logger.error(f"Database error getting label mappings: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while getting label mappings",
+        )
 
 
 @router.post("/mappings")
@@ -502,7 +499,6 @@ async def update_label_mappings(
     user: CurrentUser = Depends(require_admin),
 ):
     """Update label mappings for risk tiers."""
-    settings = get_settings()
     try:
         # Try to get JSON body, fallback to form data
         content_type = request.headers.get("content-type", "")
@@ -563,12 +559,8 @@ async def update_label_mappings(
 
         return {"message": "Label mappings updated"}
     except SQLAlchemyError as e:
-        logger.error(f"Database error in update_label_mappings: {e}")
-        await session.rollback()
-        detail = f"Database error: {str(e)}" if settings.server.environment != "production" else "Database operation failed"
-        raise HTTPException(status_code=500, detail=detail)
-    except Exception as e:
-        logger.error(f"Unexpected error in update_label_mappings: {e}")
-        await session.rollback()
-        detail = f"Internal error: {str(e)}" if settings.server.environment != "production" else "An unexpected error occurred"
-        raise HTTPException(status_code=500, detail=detail)
+        logger.error(f"Database error updating label mappings: {e}")
+        raise InternalServerError(
+            code=ErrorCode.DATABASE_ERROR,
+            message="Database error occurred while updating label mappings",
+        )

@@ -64,6 +64,56 @@ class TestApiInfoEndpoint:
         assert "docs" in data
         assert data["docs"] == "/api/docs"
 
+    @pytest.mark.asyncio
+    async def test_returns_versioning_info(self, test_client):
+        """API info should include versioning information."""
+        response = await test_client.get("/api")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "current_api_version" in data
+        assert data["current_api_version"] == "v1"
+        assert "supported_versions" in data
+        assert "v1" in data["supported_versions"]
+        assert "versions_endpoint" in data
+        assert data["versions_endpoint"] == "/api/versions"
+
+
+class TestApiVersionsEndpoint:
+    """Tests for GET /api/versions endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_returns_200_status(self, test_client):
+        """API versions endpoint should return 200 OK."""
+        response = await test_client.get("/api/versions")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_returns_version_info(self, test_client):
+        """API versions should return version information."""
+        response = await test_client.get("/api/versions")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "current_version" in data
+        assert data["current_version"] == "v1"
+        assert "supported_versions" in data
+        assert "v1" in data["supported_versions"]
+        assert "versions" in data
+        assert len(data["versions"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_version_details(self, test_client):
+        """API versions should include detailed version info."""
+        response = await test_client.get("/api/versions")
+        assert response.status_code == 200
+        data = response.json()
+
+        v1_info = data["versions"][0]
+        assert v1_info["version"] == "v1"
+        assert v1_info["status"] == "current"
+        assert v1_info["base_url"] == "/api/v1"
+
 
 class TestRequestIdMiddleware:
     """Tests for request ID correlation middleware."""
@@ -278,4 +328,81 @@ class TestRouteRegistration:
     async def test_settings_routes_registered(self, test_client):
         """Settings routes should be registered."""
         response = await test_client.post("/api/settings/reset")
+        assert response.status_code != 404
+
+
+class TestVersionedRouteRegistration:
+    """Tests for versioned API route registration at /api/v1/*."""
+
+    @pytest.mark.asyncio
+    async def test_v1_jobs_routes_registered(self, test_client):
+        """V1 Jobs routes should be registered."""
+        response = await test_client.get("/api/v1/jobs")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_scans_routes_registered(self, test_client):
+        """V1 Scans routes should be registered."""
+        response = await test_client.get("/api/v1/scans")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_targets_routes_registered(self, test_client):
+        """V1 Targets routes should be registered."""
+        response = await test_client.get("/api/v1/targets")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_labels_routes_registered(self, test_client):
+        """V1 Labels routes should be registered."""
+        response = await test_client.get("/api/v1/labels")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_users_routes_registered(self, test_client):
+        """V1 Users routes should be registered."""
+        response = await test_client.get("/api/v1/users")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_dashboard_routes_registered(self, test_client):
+        """V1 Dashboard routes should be registered."""
+        response = await test_client.get("/api/v1/dashboard/stats")
+        assert response.status_code != 404
+
+    @pytest.mark.asyncio
+    async def test_v1_auth_routes_registered(self, test_client):
+        """V1 Auth routes should be registered."""
+        response = await test_client.get("/api/v1/auth/login")
+        # Auth redirects, so accept redirect status codes too
+        assert response.status_code != 404
+
+
+class TestBackwardCompatibilityRedirect:
+    """Tests for backward compatibility redirect from /api/* to /api/v1/*."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_api_redirects_to_v1(self, test_client):
+        """Legacy /api/* requests should redirect to /api/v1/*."""
+        # Use follow_redirects=False to check the redirect response
+        response = await test_client.get("/api/jobs", follow_redirects=False)
+        # Should return 307 redirect
+        assert response.status_code == 307
+        assert "/api/v1/jobs" in response.headers.get("location", "")
+
+    @pytest.mark.asyncio
+    async def test_legacy_api_preserves_query_string(self, test_client):
+        """Legacy redirect should preserve query string parameters."""
+        response = await test_client.get("/api/jobs?limit=10&offset=5", follow_redirects=False)
+        assert response.status_code == 307
+        location = response.headers.get("location", "")
+        assert "/api/v1/jobs" in location
+        assert "limit=10" in location
+        assert "offset=5" in location
+
+    @pytest.mark.asyncio
+    async def test_following_redirect_works(self, test_client):
+        """Following the redirect should reach the v1 endpoint."""
+        response = await test_client.get("/api/jobs", follow_redirects=True)
+        # Should not be 404 after following redirect
         assert response.status_code != 404
