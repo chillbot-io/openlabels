@@ -4,7 +4,7 @@ Comprehensive tests for the job worker process.
 Tests focus on:
 - Worker initialization and configuration
 - Concurrency management
-- Shared state file operations
+- Redis-based state management (with in-memory fallback)
 - Job execution routing
 - Graceful shutdown handling
 """
@@ -12,138 +12,203 @@ Tests focus on:
 import sys
 import os
 import json
-import tempfile
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import pytest
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch, mock_open
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from openlabels.jobs.worker import (
     Worker,
-    get_worker_state,
-    set_worker_state,
-    WORKER_STATE_FILE,
+    WorkerStateManager,
+    InMemoryWorkerState,
+    get_worker_state_manager,
+    close_worker_state_manager,
+    WORKER_STATE_KEY_PREFIX,
+    WORKER_STATE_TTL_SECONDS,
 )
 
 
-class TestGetWorkerState:
-    """Tests for get_worker_state function."""
+class TestInMemoryWorkerState:
+    """Tests for InMemoryWorkerState class."""
 
-    def test_returns_empty_dict_when_file_missing(self):
-        """Should return empty dict when state file doesn't exist."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+    @pytest.mark.asyncio
+    async def test_set_and_get_state(self):
+        """Should set and retrieve worker state."""
+        state = InMemoryWorkerState()
+        worker_id = "test-worker-1"
+        worker_state = {"concurrency": 4, "status": "running"}
 
-        try:
-            # Use a non-existent path
-            worker_module.WORKER_STATE_FILE = Path("/nonexistent/path/state.json")
-            result = get_worker_state()
-            assert result == {}
-        finally:
-            worker_module.WORKER_STATE_FILE = original
+        result = await state.set_state(worker_id, worker_state)
+        assert result is True
 
-    def test_returns_state_from_file(self):
-        """Should return parsed JSON from state file."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+        retrieved = await state.get_state(worker_id)
+        assert retrieved == worker_state
 
-        # Create a temp file with test data
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump({"concurrency": 4, "status": "running"}, f)
-            temp_path = f.name
+    @pytest.mark.asyncio
+    async def test_get_state_returns_none_for_missing(self):
+        """Should return None for non-existent worker."""
+        state = InMemoryWorkerState()
+        result = await state.get_state("nonexistent-worker")
+        assert result is None
 
-        try:
-            worker_module.WORKER_STATE_FILE = Path(temp_path)
-            result = get_worker_state()
-            assert result == {"concurrency": 4, "status": "running"}
-        finally:
-            worker_module.WORKER_STATE_FILE = original
-            os.unlink(temp_path)
+    @pytest.mark.asyncio
+    async def test_get_state_expires_after_ttl(self):
+        """Should return None for expired state."""
+        state = InMemoryWorkerState()
+        worker_id = "test-worker-1"
+        worker_state = {"status": "running"}
 
-    def test_returns_empty_dict_on_parse_error(self):
-        """Should return empty dict if JSON parse fails."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+        # Set with very short TTL
+        await state.set_state(worker_id, worker_state, ttl=0)
 
-        # Create a temp file with invalid JSON
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write("invalid json {")
-            temp_path = f.name
+        # Should be expired immediately
+        import time
+        time.sleep(0.01)
+        result = await state.get_state(worker_id)
+        assert result is None
 
-        try:
-            worker_module.WORKER_STATE_FILE = Path(temp_path)
-            result = get_worker_state()
-            assert result == {}
-        finally:
-            worker_module.WORKER_STATE_FILE = original
-            os.unlink(temp_path)
+    @pytest.mark.asyncio
+    async def test_get_all_workers(self):
+        """Should return all non-expired worker states."""
+        state = InMemoryWorkerState()
 
-    def test_returns_empty_dict_on_read_error(self):
-        """Should return empty dict if file read fails."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+        await state.set_state("worker-1", {"status": "running"}, ttl=60)
+        await state.set_state("worker-2", {"status": "running"}, ttl=60)
 
-        try:
-            # Use a path that exists but is a directory (causes read error)
-            worker_module.WORKER_STATE_FILE = Path("/tmp")
-            result = get_worker_state()
-            assert result == {}
-        finally:
-            worker_module.WORKER_STATE_FILE = original
+        workers = await state.get_all_workers()
+        assert len(workers) == 2
+        assert "worker-1" in workers
+        assert "worker-2" in workers
+
+    @pytest.mark.asyncio
+    async def test_delete_state(self):
+        """Should delete worker state."""
+        state = InMemoryWorkerState()
+        worker_id = "test-worker-1"
+
+        await state.set_state(worker_id, {"status": "running"})
+        result = await state.delete_state(worker_id)
+        assert result is True
+
+        retrieved = await state.get_state(worker_id)
+        assert retrieved is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_returns_false(self):
+        """Should return False when deleting non-existent worker."""
+        state = InMemoryWorkerState()
+        result = await state.delete_state("nonexistent")
+        assert result is False
 
 
-class TestSetWorkerState:
-    """Tests for set_worker_state function."""
+class TestWorkerStateManager:
+    """Tests for WorkerStateManager class."""
 
-    def test_writes_state_to_file(self):
-        """Should write state as JSON to file."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+    @pytest.mark.asyncio
+    async def test_init_without_redis_uses_memory(self):
+        """Should use in-memory storage when no Redis URL provided."""
+        manager = WorkerStateManager(redis_url=None)
+        await manager.initialize()
 
-        # Create a temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            temp_path = f.name
+        assert manager.is_redis_connected is False
 
-        try:
-            worker_module.WORKER_STATE_FILE = Path(temp_path)
-            set_worker_state({"concurrency": 8})
+    @pytest.mark.asyncio
+    async def test_set_and_get_state_in_memory(self):
+        """Should work with in-memory fallback."""
+        manager = WorkerStateManager(redis_url=None)
+        await manager.initialize()
 
-            # Read back and verify
-            with open(temp_path) as f:
-                result = json.load(f)
-            assert result["concurrency"] == 8
-        finally:
-            worker_module.WORKER_STATE_FILE = original
-            os.unlink(temp_path)
+        worker_id = "test-worker"
+        state = {"concurrency": 4, "status": "running"}
 
-    def test_merges_with_existing_state(self):
-        """Should merge new state with existing state."""
-        import openlabels.jobs.worker as worker_module
-        original = worker_module.WORKER_STATE_FILE
+        result = await manager.set_state(worker_id, state)
+        assert result is True
 
-        # Create a temp file with existing state
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump({"existing": "value", "concurrency": 4}, f)
-            temp_path = f.name
+        retrieved = await manager.get_state(worker_id)
+        assert retrieved == state
 
-        try:
-            worker_module.WORKER_STATE_FILE = Path(temp_path)
-            set_worker_state({"concurrency": 8, "status": "running"})
+    @pytest.mark.asyncio
+    async def test_get_all_workers_in_memory(self):
+        """Should get all workers from in-memory storage."""
+        manager = WorkerStateManager(redis_url=None)
+        await manager.initialize()
 
-            # Read back and verify merge
-            with open(temp_path) as f:
-                result = json.load(f)
-            assert result["existing"] == "value"  # Preserved
-            assert result["concurrency"] == 8  # Updated
-            assert result["status"] == "running"  # Added
-        finally:
-            worker_module.WORKER_STATE_FILE = original
-            os.unlink(temp_path)
+        await manager.set_state("worker-1", {"status": "running"})
+        await manager.set_state("worker-2", {"status": "running"})
+
+        workers = await manager.get_all_workers()
+        assert len(workers) == 2
+
+    @pytest.mark.asyncio
+    async def test_delete_state_in_memory(self):
+        """Should delete state from in-memory storage."""
+        manager = WorkerStateManager(redis_url=None)
+        await manager.initialize()
+
+        await manager.set_state("worker-1", {"status": "running"})
+        result = await manager.delete_state("worker-1")
+        assert result is True
+
+        retrieved = await manager.get_state("worker-1")
+        assert retrieved is None
+
+    @pytest.mark.asyncio
+    async def test_key_prefix_default(self):
+        """Should use default key prefix."""
+        manager = WorkerStateManager()
+        assert manager._key_prefix == WORKER_STATE_KEY_PREFIX
+
+    @pytest.mark.asyncio
+    async def test_custom_key_prefix(self):
+        """Should accept custom key prefix."""
+        manager = WorkerStateManager(key_prefix="custom:prefix:")
+        assert manager._key_prefix == "custom:prefix:"
+
+    @pytest.mark.asyncio
+    async def test_make_key(self):
+        """Should create Redis key correctly."""
+        manager = WorkerStateManager(key_prefix="test:")
+        key = manager._make_key("worker-1")
+        assert key == "test:worker-1"
+
+
+class TestWorkerStateManagerWithMockedRedis:
+    """Tests for WorkerStateManager with mocked Redis."""
+
+    @pytest.mark.asyncio
+    async def test_redis_connection_failure_falls_back_to_memory(self):
+        """Should fall back to memory on Redis connection failure."""
+        manager = WorkerStateManager(redis_url="redis://nonexistent:6379")
+
+        # Mock redis import to fail connection
+        with patch('redis.asyncio.from_url') as mock_redis:
+            mock_client = AsyncMock()
+            mock_client.ping.side_effect = Exception("Connection refused")
+            mock_redis.return_value = mock_client
+
+            await manager.initialize()
+
+        assert manager.is_redis_connected is False
+
+        # Should still work with memory fallback
+        result = await manager.set_state("worker-1", {"status": "running"})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_redis_operation_failure_falls_back_to_memory(self):
+        """Should fall back to memory on Redis operation failure."""
+        manager = WorkerStateManager(redis_url="redis://localhost:6379")
+        manager._redis_connected = True
+        manager._redis_client = AsyncMock()
+        manager._redis_client.get.side_effect = Exception("Redis error")
+
+        # Should fall back to memory and return None (not set in memory)
+        result = await manager.get_state("worker-1")
+        assert result is None
 
 
 class TestWorkerInitialization:
@@ -190,6 +255,11 @@ class TestWorkerInitialization:
 
         assert worker._current_jobs == set()
         assert worker._worker_tasks == []
+
+    def test_init_state_manager_is_none(self):
+        """Worker should initialize with None state manager."""
+        worker = Worker()
+        assert worker._state_manager is None
 
 
 class TestWorkerConcurrencyAdjustment:
@@ -259,21 +329,38 @@ class TestWorkerShutdown:
         """Shutdown handler should set running to False."""
         worker = Worker()
         worker.running = True
+        worker._state_manager = None  # No state manager
 
-        with patch('openlabels.jobs.worker.set_worker_state'):
-            worker._handle_shutdown()
+        worker._handle_shutdown()
 
         assert worker.running is False
 
-    def test_handle_shutdown_updates_state(self):
-        """Shutdown handler should update state file."""
+    @pytest.mark.asyncio
+    async def test_handle_shutdown_schedules_state_update(self):
+        """Shutdown handler should schedule async state update."""
         worker = Worker()
         worker.running = True
+        worker._state_manager = AsyncMock()
 
-        with patch('openlabels.jobs.worker.set_worker_state') as mock_set:
+        with patch('asyncio.create_task') as mock_create_task:
             worker._handle_shutdown()
 
-        mock_set.assert_called_with({"status": "stopping"})
+        # Should have created a task to update stopping state
+        mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_stopping_state(self):
+        """Should update worker state to stopping."""
+        worker = Worker()
+        worker._state_manager = AsyncMock()
+        worker._worker_tasks = []
+
+        await worker._update_stopping_state()
+
+        worker._state_manager.set_state.assert_called_once()
+        call_args = worker._state_manager.set_state.call_args
+        assert call_args[0][0] == worker.worker_id
+        assert call_args[0][1]["status"] == "stopping"
 
 
 class TestWorkerJobExecution:
@@ -428,16 +515,16 @@ class TestWorkerLoop:
         assert callable(worker._worker_loop)
 
 
-class TestWorkerStateFile:
-    """Tests for worker state file path."""
+class TestWorkerStateConfiguration:
+    """Tests for worker state configuration constants."""
 
-    def test_state_file_path_is_tmp(self):
-        """State file should be in /tmp directory."""
-        assert str(WORKER_STATE_FILE).startswith("/tmp")
+    def test_key_prefix_format(self):
+        """Key prefix should be properly formatted."""
+        assert WORKER_STATE_KEY_PREFIX == "openlabels:worker:state:"
 
-    def test_state_file_has_json_extension(self):
-        """State file should have .json extension."""
-        assert str(WORKER_STATE_FILE).endswith(".json")
+    def test_ttl_is_reasonable(self):
+        """TTL should be reasonable (30-120 seconds)."""
+        assert 30 <= WORKER_STATE_TTL_SECONDS <= 120
 
 
 class TestWorkerEdgeCases:
@@ -467,18 +554,33 @@ class TestWorkerEdgeCases:
 
     @pytest.mark.asyncio
     async def test_concurrency_monitor_handles_errors(self):
-        """Concurrency monitor should handle state file errors gracefully."""
+        """Concurrency monitor should handle state manager errors gracefully."""
         worker = Worker()
         worker.running = True
+        worker._state_manager = AsyncMock()
+        worker._state_manager.get_state.side_effect = Exception("Redis error")
+        worker._state_manager.set_state.side_effect = Exception("Redis error")
 
-        # Make get_worker_state raise an exception
-        with patch('openlabels.jobs.worker.get_worker_state', side_effect=Exception("Read error")):
-            with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
-                # Run one iteration
-                worker.running = False  # Will exit after exception handling
-                await worker._concurrency_monitor()
+        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+            # Run one iteration then exit
+            worker.running = False
+            await worker._concurrency_monitor()
 
         # Should not raise, just continue
+
+    @pytest.mark.asyncio
+    async def test_concurrency_monitor_handles_missing_state_manager(self):
+        """Concurrency monitor should handle missing state manager."""
+        worker = Worker()
+        worker.running = True
+        worker._state_manager = None
+
+        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+            # Run one iteration then exit
+            worker.running = False
+            await worker._concurrency_monitor()
+
+        # Should not raise
 
     def test_worker_accepts_zero_concurrency(self):
         """Worker should handle 0 concurrency by using CPU count."""
@@ -515,3 +617,45 @@ class TestRunWorkerFunction:
 
         sig = inspect.signature(run_worker)
         assert "concurrency" in sig.parameters
+
+
+class TestGetWorkerStateManager:
+    """Tests for get_worker_state_manager function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_state_manager(self):
+        """Should return a WorkerStateManager instance."""
+        # Reset global state
+        await close_worker_state_manager()
+
+        with patch('openlabels.jobs.worker.get_settings') as mock_settings:
+            mock_settings.return_value.redis.enabled = False
+            mock_settings.return_value.redis.url = None
+            mock_settings.return_value.redis.connect_timeout = 5.0
+            mock_settings.return_value.redis.socket_timeout = 5.0
+
+            manager = await get_worker_state_manager()
+
+        assert isinstance(manager, WorkerStateManager)
+
+        # Clean up
+        await close_worker_state_manager()
+
+    @pytest.mark.asyncio
+    async def test_returns_same_instance(self):
+        """Should return the same instance on multiple calls."""
+        await close_worker_state_manager()
+
+        with patch('openlabels.jobs.worker.get_settings') as mock_settings:
+            mock_settings.return_value.redis.enabled = False
+            mock_settings.return_value.redis.url = None
+            mock_settings.return_value.redis.connect_timeout = 5.0
+            mock_settings.return_value.redis.socket_timeout = 5.0
+
+            manager1 = await get_worker_state_manager()
+            manager2 = await get_worker_state_manager()
+
+        assert manager1 is manager2
+
+        # Clean up
+        await close_worker_state_manager()

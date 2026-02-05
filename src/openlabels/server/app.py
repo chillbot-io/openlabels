@@ -36,6 +36,7 @@ from openlabels.server.config import get_settings, SentrySettings
 from openlabels.server.utils import get_client_ip  # noqa: F401 - re-exported for backwards compatibility
 from openlabels.server.db import init_db, close_db
 from openlabels.server.cache import get_cache_manager, close_cache
+from openlabels.jobs.scheduler import get_scheduler, DatabaseScheduler
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
 from openlabels.server.exceptions import APIError, RateLimitError
@@ -209,7 +210,94 @@ def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> boo
         return False
 
 
-# Initialize rate limiter with proxy-aware IP detection
+def _get_rate_limit_storage_uri() -> str | None:
+    """
+    Get the storage URI for rate limiting.
+
+    Priority:
+    1. rate_limit.storage_uri if explicitly set (non-empty string)
+    2. redis.url if Redis is enabled
+    3. None (in-memory storage)
+
+    Returns:
+        Storage URI string or None for in-memory storage
+    """
+    settings = get_settings()
+
+    # Check if explicitly configured
+    # Empty string means "force in-memory"
+    if settings.rate_limit.storage_uri is not None:
+        if settings.rate_limit.storage_uri == "":
+            return None
+        return settings.rate_limit.storage_uri
+
+    # Fall back to Redis URL if enabled
+    if settings.redis.enabled:
+        return settings.redis.url
+
+    return None
+
+
+def _create_rate_limit_storage():
+    """
+    Create rate limit storage backend with Redis primary and in-memory fallback.
+
+    Uses key prefix 'openlabels:ratelimit' for Redis keys to avoid conflicts
+    with other Redis data.
+
+    Returns:
+        A limits storage backend (RedisStorage or MemoryStorage)
+    """
+    storage_uri = _get_rate_limit_storage_uri()
+
+    if storage_uri:
+        try:
+            from limits.storage import RedisStorage
+
+            # Create a custom Redis storage with our key prefix
+            class OpenLabelsRateLimitStorage(RedisStorage):
+                """Redis storage with OpenLabels-specific key prefix."""
+                PREFIX = "openlabels:ratelimit"
+
+            storage = OpenLabelsRateLimitStorage(storage_uri)
+            # Test the connection - this will raise if Redis is unavailable
+            storage.check()
+            logger.info(f"Rate limiter using Redis storage: {storage_uri}")
+            return storage
+
+        except ImportError:
+            logger.warning(
+                "limits[redis] not installed - using in-memory rate limiting. "
+                "Install with: pip install limits[redis]"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Redis unavailable for rate limiting ({type(e).__name__}: {e}) - "
+                "using in-memory fallback"
+            )
+
+    # Fall back to in-memory storage
+    from limits.storage import MemoryStorage
+    logger.info("Rate limiter using in-memory storage")
+    return MemoryStorage()
+
+
+def create_limiter() -> Limiter:
+    """
+    Create rate limiter with appropriate storage backend.
+
+    Uses Redis as primary storage if available, with graceful fallback to in-memory.
+    The storage backend is determined by settings and Redis availability.
+
+    Returns:
+        Configured Limiter instance
+    """
+    storage = _create_rate_limit_storage()
+    return Limiter(key_func=get_client_ip, storage=storage)
+
+
+# Initialize rate limiter with default in-memory storage
+# Will be reconfigured with Redis support during app startup if available
 limiter = Limiter(key_func=get_client_ip)
 
 
@@ -242,9 +330,55 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Cache is optional - log the failure type for debugging
         logger.warning(f"Cache initialization failed: {type(e).__name__}: {e} - caching disabled")
 
+    # Initialize rate limiter with proper storage backend (Redis with in-memory fallback)
+    # This must happen after settings are loaded but before requests are served
+    if settings.rate_limit.enabled:
+        try:
+            configured_limiter = create_limiter()
+            # Update app.state.limiter so SlowAPIMiddleware uses the configured limiter
+            app.state.limiter = configured_limiter
+            # Also update the module-level limiter reference
+            global limiter
+            limiter = configured_limiter
+        except Exception as e:
+            logger.warning(
+                f"Rate limiter initialization failed ({type(e).__name__}: {e}) - "
+                "using default in-memory limiter"
+            )
+
+    # Start the database-driven scheduler for cron jobs
+    # The scheduler polls the database for due schedules and triggers scan jobs.
+    # It uses database locking (SELECT FOR UPDATE SKIP LOCKED) to ensure only
+    # one instance triggers each schedule, even in multi-instance deployments.
+    scheduler: DatabaseScheduler | None = None
+    if settings.scheduler.enabled:
+        try:
+            scheduler = get_scheduler()
+            started = await scheduler.start()
+            if started:
+                logger.info(
+                    f"Scheduler started (poll interval: {settings.scheduler.poll_interval}s, "
+                    f"min trigger interval: {settings.scheduler.min_trigger_interval}s)"
+                )
+            else:
+                logger.warning("Scheduler failed to start")
+        except Exception as e:
+            logger.error(f"Failed to initialize scheduler: {type(e).__name__}: {e}")
+    else:
+        logger.info("Scheduler disabled by configuration")
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
     # Shutdown
+
+    # Stop the scheduler gracefully
+    if scheduler and scheduler.is_running:
+        try:
+            await scheduler.stop()
+            logger.info("Scheduler stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
+
     await close_cache()
     await close_db()
     logger.info("OpenLabels shutting down")
