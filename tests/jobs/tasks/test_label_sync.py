@@ -113,7 +113,7 @@ class TestExecuteLabelSyncTask:
         """Should use credentials from settings (credentials never from payload for security)."""
         tenant_id = uuid4()
 
-        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+        with patch('openlabels.server.config.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 auth=MagicMock(
                     provider="azure_ad",
@@ -167,7 +167,7 @@ class TestExecuteLabelSyncTask:
     @pytest.mark.asyncio
     async def test_returns_success_when_no_errors(self, mock_session):
         """Should return success=True when no errors."""
-        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+        with patch('openlabels.server.config.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 auth=MagicMock(
                     provider="azure_ad",
@@ -192,7 +192,7 @@ class TestExecuteLabelSyncTask:
     @pytest.mark.asyncio
     async def test_returns_failure_when_errors(self, mock_session):
         """Should return success=False when there are errors."""
-        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+        with patch('openlabels.server.config.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 auth=MagicMock(
                     provider="azure_ad",
@@ -217,7 +217,7 @@ class TestExecuteLabelSyncTask:
     @pytest.mark.asyncio
     async def test_passes_remove_stale_option(self, mock_session):
         """Should pass remove_stale option to sync function."""
-        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+        with patch('openlabels.server.config.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 auth=MagicMock(
                     provider="azure_ad",
@@ -470,7 +470,7 @@ class TestLabelSyncPayloadParsing:
         """Should parse tenant_id UUID from payload."""
         tenant_id = uuid4()
 
-        with patch('openlabels.jobs.tasks.label_sync.get_settings') as mock_settings:
+        with patch('openlabels.server.config.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 auth=MagicMock(
                     provider="azure_ad",

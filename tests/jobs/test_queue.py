@@ -531,7 +531,7 @@ class TestJobQueueCountMethods:
     async def test_get_pending_count_returns_count(self, queue):
         """get_pending_count should return number of pending jobs."""
         mock_result = MagicMock()
-        mock_result.all.return_value = [1, 2, 3]  # 3 pending jobs
+        mock_result.scalar.return_value = 3  # 3 pending jobs
         queue.session.execute = AsyncMock(return_value=mock_result)
 
         count = await queue.get_pending_count()
@@ -542,7 +542,7 @@ class TestJobQueueCountMethods:
     async def test_get_running_count_returns_count(self, queue):
         """get_running_count should return number of running jobs."""
         mock_result = MagicMock()
-        mock_result.all.return_value = [1, 2]  # 2 running jobs
+        mock_result.scalar.return_value = 2  # 2 running jobs
         queue.session.execute = AsyncMock(return_value=mock_result)
 
         count = await queue.get_running_count()

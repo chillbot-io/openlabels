@@ -99,6 +99,10 @@ def validate_path(
     # Store original for traversal detection
     original_path = file_path
 
+    # Check blocked paths on original path first (before abspath mangles Windows paths on Linux)
+    # This ensures Windows paths like C:\Windows\ are blocked even on Linux systems
+    _check_blocked_paths(original_path)
+
     # Normalize the path to resolve .. and . components
     # This converts paths like /data/../etc/passwd to /etc/passwd
     try:
@@ -118,7 +122,7 @@ def validate_path(
         logger.warning(f"Path traversal attempt detected: {original_path}")
         raise PathValidationError("Path traversal is not allowed")
 
-    # Block access to system directories
+    # Block access to system directories (also check canonical path for Unix paths)
     _check_blocked_paths(canonical_path)
 
     # Block access to sensitive files
