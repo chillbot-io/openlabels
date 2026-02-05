@@ -50,6 +50,7 @@ from openlabels.jobs.tasks.scan import (
     execute_parallel_scan_task,
     CANCELLATION_CHECK_INTERVAL,
 )
+from openlabels.core.exceptions import AdapterError, JobError
 
 
 class TestGetProcessor:
@@ -202,14 +203,14 @@ class TestGetAdapter:
                 MockAdapter.assert_called_once()
 
     def test_raises_for_unknown_adapter(self):
-        """Should raise ValueError for unknown adapter type."""
+        """Should raise AdapterError for unknown adapter type."""
         with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock()
 
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(AdapterError) as exc_info:
                 _get_adapter("unknown_adapter", {})
 
-            assert "Unknown adapter type" in str(exc_info.value)
+            assert "unknown" in str(exc_info.value).lower()
 
     def test_passes_service_account_to_filesystem(self):
         """Should pass service_account config to FilesystemAdapter."""
@@ -229,7 +230,7 @@ class TestGetAdapter:
                 auth=MagicMock(tenant_id=None, client_id=None)
             )
 
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(AdapterError) as exc_info:
                 _get_adapter("sharepoint", {})
 
             assert "auth" in str(exc_info.value).lower()
@@ -241,7 +242,7 @@ class TestGetAdapter:
                 auth=MagicMock(tenant_id=None, client_id=None)
             )
 
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(AdapterError) as exc_info:
                 _get_adapter("onedrive", {})
 
             assert "auth" in str(exc_info.value).lower()
@@ -447,23 +448,23 @@ class TestExecuteScanTask:
 
     @pytest.mark.asyncio
     async def test_raises_when_job_not_found(self, mock_session):
-        """Should raise ValueError when job doesn't exist."""
+        """Should raise JobError when job doesn't exist."""
         mock_session.get = AsyncMock(return_value=None)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(JobError) as exc_info:
             await execute_scan_task(mock_session, {"job_id": str(uuid4())})
 
-        assert "Job not found" in str(exc_info.value)
+        assert "not found" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_raises_when_target_not_found(self, mock_session, mock_job):
-        """Should raise ValueError when target doesn't exist."""
+        """Should raise JobError when target doesn't exist."""
         mock_session.get = AsyncMock(side_effect=[mock_job, None])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(JobError) as exc_info:
             await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
 
-        assert "Target not found" in str(exc_info.value)
+        assert "target" in str(exc_info.value).lower() and "not found" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_returns_cancelled_when_job_already_cancelled(self, mock_session, mock_job, mock_target):
@@ -496,6 +497,8 @@ class TestExecuteScanTask:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.update_file_inventory = AsyncMock()
+                mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
                 mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
@@ -600,6 +603,8 @@ class TestScanTaskDeltaMode:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.update_file_inventory = AsyncMock()
+                mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
                 mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
@@ -739,15 +744,15 @@ class TestParallelScanTask:
 
     @pytest.mark.asyncio
     async def test_raises_when_job_not_found(self, mock_session):
-        """Should raise ValueError when job doesn't exist."""
+        """Should raise JobError when job doesn't exist."""
         from openlabels.jobs.tasks.scan import execute_parallel_scan_task
 
         mock_session.get = AsyncMock(return_value=None)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(JobError) as exc_info:
             await execute_parallel_scan_task(mock_session, {"job_id": str(uuid4())})
 
-        assert "Job not found" in str(exc_info.value)
+        assert "not found" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_returns_cancelled_when_already_cancelled(self, mock_session):
@@ -769,7 +774,7 @@ class TestParallelScanTask:
 
     @pytest.mark.asyncio
     async def test_raises_when_target_not_found(self, mock_session):
-        """Should raise ValueError when target doesn't exist."""
+        """Should raise JobError when target doesn't exist."""
         from openlabels.jobs.tasks.scan import execute_parallel_scan_task
 
         mock_job = MagicMock()
@@ -778,13 +783,13 @@ class TestParallelScanTask:
         mock_job.target_id = uuid4()
         mock_session.get = AsyncMock(side_effect=[mock_job, None])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(JobError) as exc_info:
             await execute_parallel_scan_task(
                 mock_session,
                 {"job_id": str(mock_job.id)}
             )
 
-        assert "Target not found" in str(exc_info.value)
+        assert "target" in str(exc_info.value).lower() and "not found" in str(exc_info.value).lower()
 
 
 # ============================================================================
@@ -1553,6 +1558,8 @@ class TestLargeFilesHandling:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.update_file_inventory = AsyncMock()
+                mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
                 mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
@@ -2043,6 +2050,8 @@ class TestAutoLabelingIntegration:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.update_file_inventory = AsyncMock()
+                mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
                 mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv

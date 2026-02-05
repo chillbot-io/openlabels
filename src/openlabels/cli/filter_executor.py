@@ -14,6 +14,8 @@ from openlabels.cli.filter_parser import (
     Comparison,
     FilterExpression,
     FunctionCall,
+    LexerError,
+    ParseError,
     UnaryOp,
     parse_filter,
 )
@@ -331,7 +333,7 @@ def validate_filter(filter_str: str) -> Optional[str]:
     try:
         parse_filter(filter_str)
         return None
-    except (ValueError, SyntaxError) as e:
+    except (ValueError, SyntaxError, ParseError, LexerError) as e:
         # Expected validation errors - return message
         return str(e)
     except Exception as e:
