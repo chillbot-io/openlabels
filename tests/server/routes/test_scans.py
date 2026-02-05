@@ -111,13 +111,13 @@ async def setup_scans_data(test_db):
 
 
 class TestCreateScan:
-    """Tests for POST /api/scans endpoint."""
+    """Tests for POST /api/v1/scans endpoint."""
 
     async def test_creates_scan_job(self, test_client, setup_scans_data):
         """Should create a new scan job."""
         target = setup_scans_data["target"]
         response = await test_client.post(
-            "/api/scans",
+            "/api/v1/scans",
             json={"target_id": str(target.id), "name": "New Test Scan"},
         )
         assert response.status_code == 201
@@ -130,7 +130,7 @@ class TestCreateScan:
         """Should return 404 for non-existent target."""
         fake_id = uuid4()
         response = await test_client.post(
-            "/api/scans",
+            "/api/v1/scans",
             json={"target_id": str(fake_id)},
         )
         assert response.status_code == 404
@@ -139,7 +139,7 @@ class TestCreateScan:
         """Should generate default name from target."""
         target = setup_scans_data["target"]
         response = await test_client.post(
-            "/api/scans",
+            "/api/v1/scans",
             json={"target_id": str(target.id)},
         )
         assert response.status_code == 201
@@ -150,27 +150,30 @@ class TestCreateScan:
 
 
 class TestListScans:
-    """Tests for GET /api/scans endpoint."""
+    """Tests for GET /api/v1/scans endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_scans_data):
         """List scans should return 200 OK."""
-        response = await test_client.get("/api/scans")
+        response = await test_client.get("/api/v1/scans")
         assert response.status_code == 200
 
     async def test_returns_paginated_response(self, test_client, setup_scans_data):
         """Response should have pagination structure."""
-        response = await test_client.get("/api/scans")
+        response = await test_client.get("/api/v1/scans")
         assert response.status_code == 200
         data = response.json()
 
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "page_size" in data
+        assert "total_pages" in data
+        assert "has_next" in data
+        assert "has_previous" in data
 
     async def test_returns_scan_list(self, test_client, setup_scans_data):
         """Should return list of scans with expected structure."""
-        response = await test_client.get("/api/scans")
+        response = await test_client.get("/api/v1/scans")
         assert response.status_code == 200
         data = response.json()
 
@@ -183,7 +186,7 @@ class TestListScans:
 
     async def test_filter_by_status(self, test_client, setup_scans_data):
         """Should filter scans by status."""
-        response = await test_client.get("/api/scans?status=completed")
+        response = await test_client.get("/api/v1/scans?status=completed")
         assert response.status_code == 200
         data = response.json()
 
@@ -192,7 +195,7 @@ class TestListScans:
 
     async def test_pagination_works(self, test_client, setup_scans_data):
         """Should respect pagination parameters."""
-        response = await test_client.get("/api/scans?page=1&limit=3")
+        response = await test_client.get("/api/v1/scans?page=1&page_size=3")
         assert response.status_code == 200
         data = response.json()
 
@@ -201,7 +204,7 @@ class TestListScans:
 
     async def test_scan_response_structure(self, test_client, setup_scans_data):
         """Scan items should have expected fields."""
-        response = await test_client.get("/api/scans")
+        response = await test_client.get("/api/v1/scans")
         assert response.status_code == 200
         data = response.json()
 
@@ -214,12 +217,12 @@ class TestListScans:
 
 
 class TestGetScan:
-    """Tests for GET /api/scans/{scan_id} endpoint."""
+    """Tests for GET /api/v1/scans/{scan_id} endpoint."""
 
     async def test_returns_scan_details(self, test_client, setup_scans_data):
         """Should return scan details."""
         scan = setup_scans_data["scans"][0]
-        response = await test_client.get(f"/api/scans/{scan.id}")
+        response = await test_client.get(f"/api/v1/scans/{scan.id}")
         assert response.status_code == 200
         data = response.json()
 
@@ -229,13 +232,13 @@ class TestGetScan:
     async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
         """Should return 404 for non-existent scan."""
         fake_id = uuid4()
-        response = await test_client.get(f"/api/scans/{fake_id}")
+        response = await test_client.get(f"/api/v1/scans/{fake_id}")
         assert response.status_code == 404
 
     async def test_returns_full_structure(self, test_client, setup_scans_data):
         """Should return all scan fields."""
         scan = setup_scans_data["scans"][0]
-        response = await test_client.get(f"/api/scans/{scan.id}")
+        response = await test_client.get(f"/api/v1/scans/{scan.id}")
         assert response.status_code == 200
         data = response.json()
 
@@ -248,7 +251,7 @@ class TestGetScan:
 
 
 class TestCancelScan:
-    """Tests for DELETE /api/scans/{scan_id} endpoint."""
+    """Tests for DELETE /api/v1/scans/{scan_id} endpoint."""
 
     async def test_cancels_pending_scan(self, test_client, setup_scans_data):
         """Should cancel a pending scan."""
@@ -256,13 +259,13 @@ class TestCancelScan:
         pending_scans = [s for s in setup_scans_data["scans"] if s.status == "pending"]
         if pending_scans:
             scan = pending_scans[0]
-            response = await test_client.delete(f"/api/scans/{scan.id}")
+            response = await test_client.delete(f"/api/v1/scans/{scan.id}")
             assert response.status_code == 204
 
     async def test_cancels_running_scan(self, test_client, setup_scans_data):
         """Should cancel a running scan."""
         running_scan = setup_scans_data["running_scan"]
-        response = await test_client.delete(f"/api/scans/{running_scan.id}")
+        response = await test_client.delete(f"/api/v1/scans/{running_scan.id}")
         assert response.status_code == 204
 
     async def test_returns_400_for_completed_scan(self, test_client, setup_scans_data):
@@ -270,13 +273,13 @@ class TestCancelScan:
         completed_scans = [s for s in setup_scans_data["scans"] if s.status == "completed"]
         if completed_scans:
             scan = completed_scans[0]
-            response = await test_client.delete(f"/api/scans/{scan.id}")
+            response = await test_client.delete(f"/api/v1/scans/{scan.id}")
             assert response.status_code == 400
 
     async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
         """Should return 404 for non-existent scan."""
         fake_id = uuid4()
-        response = await test_client.delete(f"/api/scans/{fake_id}")
+        response = await test_client.delete(f"/api/v1/scans/{fake_id}")
         assert response.status_code == 404
 
 
@@ -285,13 +288,13 @@ class TestScansContentType:
 
     async def test_list_returns_json(self, test_client, setup_scans_data):
         """List scans should return JSON."""
-        response = await test_client.get("/api/scans")
+        response = await test_client.get("/api/v1/scans")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")
 
     async def test_get_returns_json(self, test_client, setup_scans_data):
         """Get scan should return JSON."""
         scan = setup_scans_data["scans"][0]
-        response = await test_client.get(f"/api/scans/{scan.id}")
+        response = await test_client.get(f"/api/v1/scans/{scan.id}")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")

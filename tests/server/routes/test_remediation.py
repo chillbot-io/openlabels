@@ -43,11 +43,11 @@ async def setup_remediation_data(test_db):
 
 
 class TestListRemediationActions:
-    """Tests for GET /api/remediation endpoint."""
+    """Tests for GET /api/v1/remediation endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """List remediation actions should return 200 OK."""
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert isinstance(data, dict), "Response should be a dictionary"
@@ -57,19 +57,22 @@ class TestListRemediationActions:
 
     async def test_returns_paginated_structure(self, test_client, setup_remediation_data):
         """List should return paginated structure."""
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
 
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "page_size" in data
+        assert "total_pages" in data
+        assert "has_next" in data
+        assert "has_previous" in data
         assert isinstance(data["items"], list)
 
     async def test_returns_empty_list_when_no_actions(self, test_client, setup_remediation_data):
         """List should return empty items when no actions exist."""
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
 
@@ -95,7 +98,7 @@ class TestListRemediationActions:
         session.add(action)
         await session.commit()
 
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
 
@@ -120,7 +123,7 @@ class TestListRemediationActions:
         session.add(action)
         await session.commit()
 
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
 
@@ -155,7 +158,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation?action_type=quarantine")
+        response = await test_client.get("/api/v1/remediation?action_type=quarantine")
         assert response.status_code == 200
         data = response.json()
 
@@ -184,7 +187,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation?status=completed")
+        response = await test_client.get("/api/v1/remediation?status=completed")
         assert response.status_code == 200
         data = response.json()
 
@@ -193,7 +196,7 @@ class TestListRemediationActions:
             assert item["status"] == "completed"
 
     async def test_pagination_default_limit(self, test_client, setup_remediation_data):
-        """List should use default limit of 50."""
+        """List should use default page_size of 50."""
         from openlabels.server.models import RemediationAction
 
         session = setup_remediation_data["session"]
@@ -213,7 +216,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
 
@@ -221,7 +224,7 @@ class TestListRemediationActions:
         assert data["total"] == 60
 
     async def test_pagination_custom_limit(self, test_client, setup_remediation_data):
-        """List should respect custom limit."""
+        """List should respect custom page_size."""
         from openlabels.server.models import RemediationAction
 
         session = setup_remediation_data["session"]
@@ -240,7 +243,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation?limit=5")
+        response = await test_client.get("/api/v1/remediation?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -248,19 +251,19 @@ class TestListRemediationActions:
 
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
-        response = await test_client.get("/api/remediation?page=1&limit=10")
+        response = await test_client.get("/api/v1/remediation?page=1&page_size=10")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert "items" in data, "Response should contain 'items' field"
         assert "page" in data, "Response should contain 'page' field"
-        assert "pages" in data, "Response should contain 'pages' field"
+        assert "total_pages" in data, "Response should contain 'total_pages' field"
         assert data["page"] == 1, "Page should be 1"
         assert isinstance(data["items"], list), "Items should be a list"
-        assert len(data["items"]) <= 10, "Items should respect limit parameter"
+        assert len(data["items"]) <= 10, "Items should respect page_size parameter"
 
 
 class TestGetRemediationAction:
-    """Tests for GET /api/remediation/{action_id} endpoint."""
+    """Tests for GET /api/v1/remediation/{action_id} endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Get action should return 200 OK."""
@@ -280,7 +283,7 @@ class TestGetRemediationAction:
         session.add(action)
         await session.commit()
 
-        response = await test_client.get(f"/api/remediation/{action.id}")
+        response = await test_client.get(f"/api/v1/remediation/{action.id}")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert "id" in data, "Response should contain 'id' field"
@@ -307,7 +310,7 @@ class TestGetRemediationAction:
         session.add(action)
         await session.commit()
 
-        response = await test_client.get(f"/api/remediation/{action.id}")
+        response = await test_client.get(f"/api/v1/remediation/{action.id}")
         assert response.status_code == 200
         data = response.json()
 
@@ -318,17 +321,17 @@ class TestGetRemediationAction:
     async def test_returns_404_for_nonexistent_action(self, test_client, setup_remediation_data):
         """Get nonexistent action should return 404."""
         fake_id = uuid4()
-        response = await test_client.get(f"/api/remediation/{fake_id}")
+        response = await test_client.get(f"/api/v1/remediation/{fake_id}")
         assert response.status_code == 404
 
 
 class TestQuarantineFile:
-    """Tests for POST /api/remediation/quarantine endpoint."""
+    """Tests for POST /api/v1/remediation/quarantine endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Quarantine action should return 200 OK."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/sensitive.txt",
                 "dry_run": True,
@@ -345,7 +348,7 @@ class TestQuarantineFile:
     async def test_creates_action_record(self, test_client, setup_remediation_data):
         """Quarantine should create an action record."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/record.txt",
                 "dry_run": True,
@@ -362,7 +365,7 @@ class TestQuarantineFile:
     async def test_dry_run_does_not_move_file(self, test_client, setup_remediation_data):
         """Dry run should not actually move the file."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/dry_run.txt",
                 "dry_run": True,
@@ -378,7 +381,7 @@ class TestQuarantineFile:
     async def test_custom_quarantine_dir(self, test_client, setup_remediation_data):
         """Quarantine should respect custom quarantine directory."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/custom_dir.txt",
                 "quarantine_dir": "/secure/vault",
@@ -393,7 +396,7 @@ class TestQuarantineFile:
     async def test_default_quarantine_dir(self, test_client, setup_remediation_data):
         """Quarantine should use .quarantine as default directory."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/default_dir.txt",
                 "dry_run": True,
@@ -407,7 +410,7 @@ class TestQuarantineFile:
     async def test_missing_file_path_returns_422(self, test_client, setup_remediation_data):
         """Quarantine without file_path should return 422."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "dry_run": True,
             },
@@ -416,12 +419,12 @@ class TestQuarantineFile:
 
 
 class TestLockdownFile:
-    """Tests for POST /api/remediation/lockdown endpoint."""
+    """Tests for POST /api/v1/remediation/lockdown endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Lockdown action should return 200 OK."""
         response = await test_client.post(
-            "/api/remediation/lockdown",
+            "/api/v1/remediation/lockdown",
             json={
                 "file_path": "/test/lockdown.txt",
                 "allowed_principals": ["DOMAIN\\Admin"],
@@ -439,7 +442,7 @@ class TestLockdownFile:
     async def test_creates_action_record(self, test_client, setup_remediation_data):
         """Lockdown should create an action record."""
         response = await test_client.post(
-            "/api/remediation/lockdown",
+            "/api/v1/remediation/lockdown",
             json={
                 "file_path": "/test/lockdown_record.txt",
                 "allowed_principals": ["DOMAIN\\SecurityGroup"],
@@ -456,7 +459,7 @@ class TestLockdownFile:
     async def test_dry_run_does_not_change_permissions(self, test_client, setup_remediation_data):
         """Dry run should not actually change permissions."""
         response = await test_client.post(
-            "/api/remediation/lockdown",
+            "/api/v1/remediation/lockdown",
             json={
                 "file_path": "/test/dry_run_lockdown.txt",
                 "allowed_principals": ["DOMAIN\\Admin"],
@@ -472,7 +475,7 @@ class TestLockdownFile:
     async def test_missing_file_path_returns_422(self, test_client, setup_remediation_data):
         """Lockdown without file_path should return 422."""
         response = await test_client.post(
-            "/api/remediation/lockdown",
+            "/api/v1/remediation/lockdown",
             json={
                 "allowed_principals": ["DOMAIN\\Admin"],
                 "dry_run": True,
@@ -483,7 +486,7 @@ class TestLockdownFile:
     async def test_missing_allowed_principals_returns_422(self, test_client, setup_remediation_data):
         """Lockdown without allowed_principals should return 422."""
         response = await test_client.post(
-            "/api/remediation/lockdown",
+            "/api/v1/remediation/lockdown",
             json={
                 "file_path": "/test/no_principals.txt",
                 "dry_run": True,
@@ -493,7 +496,7 @@ class TestLockdownFile:
 
 
 class TestRollbackAction:
-    """Tests for POST /api/remediation/rollback endpoint."""
+    """Tests for POST /api/v1/remediation/rollback endpoint."""
 
     async def test_returns_200_status_for_dry_run(self, test_client, setup_remediation_data):
         """Rollback dry run should return 200 OK."""
@@ -517,7 +520,7 @@ class TestRollbackAction:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(original.id),
                 "dry_run": True,
@@ -552,7 +555,7 @@ class TestRollbackAction:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(original.id),
                 "dry_run": True,
@@ -567,7 +570,7 @@ class TestRollbackAction:
         """Rollback nonexistent action should return 404."""
         fake_id = uuid4()
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(fake_id),
                 "dry_run": True,
@@ -598,7 +601,7 @@ class TestRollbackAction:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(original.id),
                 "dry_run": True,
@@ -626,7 +629,7 @@ class TestRollbackAction:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(rollback_action.id),
                 "dry_run": True,
@@ -655,7 +658,7 @@ class TestRollbackAction:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(dry_run_action.id),
                 "dry_run": False,
@@ -665,11 +668,11 @@ class TestRollbackAction:
 
 
 class TestRemediationStats:
-    """Tests for GET /api/remediation/stats/summary endpoint."""
+    """Tests for GET /api/v1/remediation/stats/summary endpoint."""
 
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Stats endpoint should return 200 OK."""
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert "total_actions" in data, "Response should contain 'total_actions' field"
@@ -681,7 +684,7 @@ class TestRemediationStats:
 
     async def test_returns_stats_structure(self, test_client, setup_remediation_data):
         """Stats should return required structure."""
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert response.status_code == 200
         data = response.json()
 
@@ -691,7 +694,7 @@ class TestRemediationStats:
 
     async def test_returns_zero_values_when_empty(self, test_client, setup_remediation_data):
         """Stats should return zeros when no actions exist."""
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert response.status_code == 200
         data = response.json()
 
@@ -722,7 +725,7 @@ class TestRemediationStats:
                 await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert response.status_code == 200
         data = response.json()
 
@@ -753,7 +756,7 @@ class TestRemediationStats:
                 await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert response.status_code == 200
         data = response.json()
 
@@ -799,7 +802,7 @@ class TestRemediationTenantIsolation:
         await session.commit()
 
         # Try to access the other tenant's action
-        response = await test_client.get(f"/api/remediation/{other_action.id}")
+        response = await test_client.get(f"/api/v1/remediation/{other_action.id}")
         assert response.status_code == 404
 
     async def test_cannot_rollback_other_tenant_action(self, test_client, setup_remediation_data):
@@ -837,7 +840,7 @@ class TestRemediationTenantIsolation:
         await session.commit()
 
         response = await test_client.post(
-            "/api/remediation/rollback",
+            "/api/v1/remediation/rollback",
             json={
                 "action_id": str(other_action.id),
                 "dry_run": True,
@@ -851,13 +854,13 @@ class TestRemediationContentType:
 
     async def test_list_returns_json(self, test_client, setup_remediation_data):
         """List remediation should return JSON."""
-        response = await test_client.get("/api/remediation")
+        response = await test_client.get("/api/v1/remediation")
         assert "application/json" in response.headers.get("content-type", "")
 
     async def test_quarantine_returns_json(self, test_client, setup_remediation_data):
         """Quarantine should return JSON."""
         response = await test_client.post(
-            "/api/remediation/quarantine",
+            "/api/v1/remediation/quarantine",
             json={
                 "file_path": "/test/content_type.txt",
                 "dry_run": True,
@@ -867,5 +870,5 @@ class TestRemediationContentType:
 
     async def test_stats_returns_json(self, test_client, setup_remediation_data):
         """Stats should return JSON."""
-        response = await test_client.get("/api/remediation/stats/summary")
+        response = await test_client.get("/api/v1/remediation/stats/summary")
         assert "application/json" in response.headers.get("content-type", "")
