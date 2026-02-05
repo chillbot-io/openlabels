@@ -41,6 +41,7 @@ from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
 from openlabels.server.exceptions import APIError, RateLimitError
 from openlabels.server.schemas import ErrorResponse
+from openlabels.server.metrics import http_active_connections, record_http_request
 from openlabels.server.routes import (
     auth,
     audit,
