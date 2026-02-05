@@ -15,7 +15,8 @@ from uuid import UUID
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.services.base import BaseService
+from openlabels.server.services.base import BaseService, TenantContext
+from openlabels.server.config import Settings
 from openlabels.server.models import JobQueue as JobQueueModel
 from openlabels.server.exceptions import (
     NotFoundError,
@@ -37,7 +38,8 @@ class JobService(BaseService):
     - Pagination support for list operations
 
     Example:
-        service = JobService(session, tenant_id)
+        context = TenantContext.from_current_user(user)
+        service = JobService(session, context, settings)
         job_id = await service.enqueue("scan", {"target_id": str(target.id)})
         job = await service.get_job(job_id)
     """
@@ -45,19 +47,19 @@ class JobService(BaseService):
     def __init__(
         self,
         session: AsyncSession,
-        tenant_id: UUID,
-        user_id: Optional[UUID] = None,
+        tenant: TenantContext,
+        settings: Settings,
     ):
         """
         Initialize the job service.
 
         Args:
-            session: Database session for queries
-            tenant_id: Tenant ID for data isolation
-            user_id: Optional user ID for audit trails
+            session: Async database session for queries
+            tenant: Tenant context for data isolation
+            settings: Application settings
         """
-        super().__init__(session, tenant_id, user_id)
-        self._queue = JobQueue(session, tenant_id)
+        super().__init__(session, tenant, settings)
+        self._queue = JobQueue(session, tenant.tenant_id)
 
     async def enqueue(
         self,
@@ -92,10 +94,7 @@ class JobService(BaseService):
             priority=priority,
         )
 
-        self._logger.info(
-            f"Enqueued {task_type} job {job_id} for tenant {self.tenant_id} "
-            f"(priority={priority})"
-        )
+        self._log_info(f"Enqueued {task_type} job {job_id} (priority={priority})")
 
         return job_id
 
@@ -167,13 +166,9 @@ class JobService(BaseService):
         result = await self._queue.cancel(job_id)
 
         if result:
-            self._logger.info(
-                f"Cancelled job {job_id} for tenant {self.tenant_id}"
-            )
+            self._log_info(f"Cancelled job {job_id}")
         else:
-            self._logger.warning(
-                f"Failed to cancel job {job_id} for tenant {self.tenant_id}"
-            )
+            self._log_warning(f"Failed to cancel job {job_id}")
 
         return result
 
@@ -192,10 +187,9 @@ class JobService(BaseService):
         """
         stats = await self._queue.get_queue_stats()
 
-        self._logger.debug(
-            f"Queue stats for tenant {self.tenant_id}: "
-            f"pending={stats['pending']}, running={stats['running']}, "
-            f"failed={stats['failed']}"
+        self._log_debug(
+            f"Queue stats: pending={stats['pending']}, "
+            f"running={stats['running']}, failed={stats['failed']}"
         )
 
         return stats
@@ -233,7 +227,7 @@ class JobService(BaseService):
             .select_from(JobQueueModel)
             .where(and_(*conditions))
         )
-        count_result = await self._session.execute(count_query)
+        count_result = await self.session.execute(count_query)
         total = count_result.scalar() or 0
 
         # Get paginated jobs
@@ -247,13 +241,12 @@ class JobService(BaseService):
             .offset(offset)
             .limit(limit)
         )
-        result = await self._session.execute(query)
+        result = await self.session.execute(query)
         jobs = list(result.scalars().all())
 
-        self._logger.debug(
-            f"Listed {len(jobs)} jobs for tenant {self.tenant_id} "
-            f"(status={status}, task_type={task_type}, offset={offset}, "
-            f"limit={limit}, total={total})"
+        self._log_debug(
+            f"Listed {len(jobs)} jobs (status={status}, task_type={task_type}, "
+            f"offset={offset}, limit={limit}, total={total})"
         )
 
         return jobs, total
@@ -285,9 +278,9 @@ class JobService(BaseService):
             offset=offset,
         )
 
-        self._logger.debug(
-            f"Listed {len(jobs)} failed jobs for tenant {self.tenant_id} "
-            f"(task_type={task_type}, offset={offset}, limit={limit}, total={total})"
+        self._log_debug(
+            f"Listed {len(jobs)} failed jobs (task_type={task_type}, "
+            f"offset={offset}, limit={limit}, total={total})"
         )
 
         return jobs, total
@@ -335,14 +328,9 @@ class JobService(BaseService):
         )
 
         if result:
-            self._logger.info(
-                f"Requeued failed job {job_id} for tenant {self.tenant_id} "
-                f"(reset_retries={reset_retries})"
-            )
+            self._log_info(f"Requeued failed job {job_id} (reset_retries={reset_retries})")
         else:
-            self._logger.warning(
-                f"Failed to requeue job {job_id} for tenant {self.tenant_id}"
-            )
+            self._log_warning(f"Failed to requeue job {job_id}")
 
         return result
 
@@ -366,9 +354,8 @@ class JobService(BaseService):
             reset_retries=reset_retries,
         )
 
-        self._logger.info(
-            f"Requeued {count} failed jobs for tenant {self.tenant_id} "
-            f"(task_type={task_type}, reset_retries={reset_retries})"
+        self._log_info(
+            f"Requeued {count} failed jobs (task_type={task_type}, reset_retries={reset_retries})"
         )
 
         return count
@@ -393,9 +380,8 @@ class JobService(BaseService):
             older_than_days=older_than_days,
         )
 
-        self._logger.info(
-            f"Purged {count} failed jobs for tenant {self.tenant_id} "
-            f"(task_type={task_type}, older_than_days={older_than_days})"
+        self._log_info(
+            f"Purged {count} failed jobs (task_type={task_type}, older_than_days={older_than_days})"
         )
 
         return count
@@ -422,10 +408,7 @@ class JobService(BaseService):
 
         total = sum(result.values())
         if total > 0:
-            self._logger.info(
-                f"Cleaned up {total} expired jobs for tenant {self.tenant_id}: "
-                f"{result}"
-            )
+            self._log_info(f"Cleaned up {total} expired jobs: {result}")
 
         return result
 
@@ -450,10 +433,7 @@ class JobService(BaseService):
         )
 
         if count > 0:
-            self._logger.info(
-                f"Reclaimed {count} stuck jobs for tenant {self.tenant_id} "
-                f"(timeout={timeout_seconds}s)"
-            )
+            self._log_info(f"Reclaimed {count} stuck jobs (timeout={timeout_seconds}s)")
 
         return count
 

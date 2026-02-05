@@ -44,73 +44,12 @@ from openlabels.auth.dependencies import CurrentUser, get_current_user, get_opti
 from openlabels.server.cache import CacheManager, get_cache_manager as _get_cache_manager
 
 
-if TYPE_CHECKING:
-    # Forward references for services that don't exist yet
-    # These will be replaced with actual imports when services are implemented
-    from typing import Protocol
-
-    class ScanService(Protocol):
-        """Protocol for scan service operations."""
-
-        async def create_scan(self, target_id: str, tenant_id: str, user_id: str) -> Any:
-            """Create a new scan job."""
-            ...
-
-        async def get_scan(self, scan_id: str, tenant_id: str) -> Any:
-            """Get scan by ID."""
-            ...
-
-        async def list_scans(self, tenant_id: str, limit: int = 50, offset: int = 0) -> list[Any]:
-            """List scans for a tenant."""
-            ...
-
-    class LabelService(Protocol):
-        """Protocol for label service operations."""
-
-        async def get_labels(self, tenant_id: str) -> list[Any]:
-            """Get all labels for a tenant."""
-            ...
-
-        async def apply_label(self, file_id: str, label_id: str, tenant_id: str) -> Any:
-            """Apply a label to a file."""
-            ...
-
-        async def sync_labels(self, tenant_id: str) -> int:
-            """Sync labels from M365."""
-            ...
-
-    class JobService(Protocol):
-        """Protocol for job service operations."""
-
-        async def enqueue(self, task_type: str, payload: dict, tenant_id: str) -> Any:
-            """Enqueue a new job."""
-            ...
-
-        async def get_job(self, job_id: str, tenant_id: str) -> Any:
-            """Get job by ID."""
-            ...
-
-        async def cancel_job(self, job_id: str, tenant_id: str) -> bool:
-            """Cancel a job."""
-            ...
-
-    class ResultService(Protocol):
-        """Protocol for result service operations."""
-
-        async def get_results(
-            self,
-            tenant_id: str,
-            job_id: str | None = None,
-            risk_tier: str | None = None,
-            limit: int = 100,
-            offset: int = 0,
-        ) -> list[Any]:
-            """Get scan results."""
-            ...
-
-        async def get_result(self, result_id: str, tenant_id: str) -> Any:
-            """Get a single result."""
-            ...
+# Import service classes
+from openlabels.server.services.scan_service import ScanService
+from openlabels.server.services.result_service import ResultService
+from openlabels.server.services.label_service import LabelService
+from openlabels.server.services.job_service import JobService
+from openlabels.server.services.base import TenantContext as ServiceTenantContext
 
 
 logger = logging.getLogger(__name__)
@@ -388,8 +327,7 @@ async def get_scan_service(
     db: DbSessionDep,
     tenant: TenantContextDep,
     settings: SettingsDep,
-    cache: CacheDep,
-) -> Any:  # Will be: ScanService
+) -> ScanService:
     """
     Get the scan service for managing scan operations.
 
@@ -402,14 +340,9 @@ async def get_scan_service(
         db: Database session (injected by FastAPI).
         tenant: Tenant context (injected by FastAPI).
         settings: Application settings (injected by FastAPI).
-        cache: Cache manager (injected by FastAPI).
 
     Returns:
         ScanService: The scan service instance.
-
-    Note:
-        This is a forward reference. The actual ScanService class
-        will be implemented in src/openlabels/services/scan_service.py.
 
     Example:
         @router.post("/scans")
@@ -419,21 +352,20 @@ async def get_scan_service(
         ) -> ScanJob:
             return await scan_service.create_scan(target_id)
     """
-    # TODO: Replace with actual service implementation
-    # from openlabels.services.scan_service import ScanService
-    # return ScanService(db=db, tenant=tenant, settings=settings, cache=cache)
-    raise NotImplementedError(
-        "ScanService is not yet implemented. "
-        "Create src/openlabels/services/scan_service.py"
+    service_tenant = ServiceTenantContext(
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        user_email=tenant.user_email,
+        user_role="admin" if tenant.is_admin else "viewer",
     )
+    return ScanService(db, service_tenant, settings)
 
 
 async def get_label_service(
     db: DbSessionDep,
     tenant: TenantContextDep,
     settings: SettingsDep,
-    cache: CacheDep,
-) -> Any:  # Will be: LabelService
+) -> LabelService:
     """
     Get the label service for managing sensitivity labels.
 
@@ -446,14 +378,9 @@ async def get_label_service(
         db: Database session (injected by FastAPI).
         tenant: Tenant context (injected by FastAPI).
         settings: Application settings (injected by FastAPI).
-        cache: Cache manager (injected by FastAPI).
 
     Returns:
         LabelService: The label service instance.
-
-    Note:
-        This is a forward reference. The actual LabelService class
-        will be implemented in src/openlabels/services/label_service.py.
 
     Example:
         @router.post("/files/{file_id}/label")
@@ -465,20 +392,20 @@ async def get_label_service(
             await label_service.apply_label(file_id, label_id)
             return {"status": "applied"}
     """
-    # TODO: Replace with actual service implementation
-    # from openlabels.services.label_service import LabelService
-    # return LabelService(db=db, tenant=tenant, settings=settings, cache=cache)
-    raise NotImplementedError(
-        "LabelService is not yet implemented. "
-        "Create src/openlabels/services/label_service.py"
+    service_tenant = ServiceTenantContext(
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        user_email=tenant.user_email,
+        user_role="admin" if tenant.is_admin else "viewer",
     )
+    return LabelService(db, service_tenant, settings)
 
 
 async def get_job_service(
     db: DbSessionDep,
     tenant: TenantContextDep,
     settings: SettingsDep,
-) -> Any:  # Will be: JobService
+) -> JobService:
     """
     Get the job service for managing background jobs.
 
@@ -495,10 +422,6 @@ async def get_job_service(
     Returns:
         JobService: The job service instance.
 
-    Note:
-        This is a forward reference. The actual JobService class
-        will be implemented in src/openlabels/services/job_service.py.
-
     Example:
         @router.post("/jobs")
         async def enqueue_job(
@@ -508,13 +431,13 @@ async def get_job_service(
         ) -> Job:
             return await job_service.enqueue(task_type, payload)
     """
-    # TODO: Replace with actual service implementation
-    # from openlabels.services.job_service import JobService
-    # return JobService(db=db, tenant=tenant, settings=settings)
-    raise NotImplementedError(
-        "JobService is not yet implemented. "
-        "Create src/openlabels/services/job_service.py"
+    service_tenant = ServiceTenantContext(
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        user_email=tenant.user_email,
+        user_role="admin" if tenant.is_admin else "viewer",
     )
+    return JobService(db, service_tenant, settings)
 
 
 async def get_result_service(
