@@ -392,10 +392,18 @@ async def test_db(database_url):
     from sqlalchemy.orm import sessionmaker
     from openlabels.server.models import Base
 
-    engine = create_async_engine(database_url, echo=False)
+    engine = create_async_engine(
+        database_url,
+        echo=False,
+        connect_args={"timeout": 5},
+    )
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as exc:
+        await engine.dispose()
+        pytest.fail(f"PostgreSQL not reachable: {exc}")
 
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
