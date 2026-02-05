@@ -38,47 +38,6 @@ def pytest_configure(config):
     )
 
 
-def _check_postgres_available():
-    """Check if PostgreSQL is actually reachable (not just env var set)."""
-    import os
-    url = os.getenv("TEST_DATABASE_URL")
-    if not url or "postgresql" not in url:
-        return False
-    try:
-        import socket
-        # Parse host and port from the URL
-        # Format: postgresql+asyncpg://user:pass@host:port/db
-        from urllib.parse import urlparse
-        parsed = urlparse(url.replace("postgresql+asyncpg", "postgresql"))
-        host = parsed.hostname or "localhost"
-        port = parsed.port or 5432
-        sock = socket.create_connection((host, port), timeout=2)
-        sock.close()
-        return True
-    except (OSError, ValueError):
-        return False
-
-
-_postgres_available = _check_postgres_available()
-
-_postgres_skip_reason = (
-    "PostgreSQL not available. Set TEST_DATABASE_URL and ensure the server is running, or: "
-    "docker run -d --name test-postgres -e POSTGRES_PASSWORD=test "
-    "-e POSTGRES_DB=openlabels_test -p 5432:5432 postgres:15"
-)
-
-# Fixtures that require a live PostgreSQL database
-_DB_FIXTURES = {"test_db", "test_client"}
-
-
-def _test_needs_db(item):
-    """Check if a test (directly or transitively) depends on database fixtures."""
-    try:
-        return bool(_DB_FIXTURES & set(item.fixturenames))
-    except Exception:
-        return False
-
-
 def pytest_collection_modifyitems(config, items):
     """Skip tests based on available dependencies."""
     for item in items:
@@ -86,10 +45,6 @@ def pytest_collection_modifyitems(config, items):
         if not _qt_available:
             if "test_gui" in item.nodeid or "gui" in item.keywords:
                 item.add_marker(pytest.mark.skip(reason=_qt_skip_reason))
-
-        # Skip any test that needs PostgreSQL (via test_db or test_client)
-        if not _postgres_available and _test_needs_db(item):
-            item.add_marker(pytest.mark.skip(reason=_postgres_skip_reason))
 
 
 if not _qt_available:
@@ -444,7 +399,7 @@ async def test_db(database_url):
             await conn.run_sync(Base.metadata.create_all)
     except Exception as exc:
         await engine.dispose()
-        pytest.skip(f"PostgreSQL not available: {exc}")
+        pytest.fail(f"PostgreSQL not reachable at {database_url}: {exc}")
 
     try:
         async_session = sessionmaker(
