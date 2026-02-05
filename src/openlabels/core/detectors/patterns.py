@@ -1242,6 +1242,7 @@ def _validate_ip(ip: str) -> bool:
             return False
         return all(0 <= int(p) <= 255 for p in parts)
     except ValueError:
+        # Non-numeric octets - invalid IP
         return False
 
 
@@ -1334,6 +1335,7 @@ def _validate_age(value: str) -> bool:
         age = int(value)
         return 0 <= age <= 125
     except ValueError:
+        # Non-numeric age value - invalid
         return False
 
 
@@ -1390,6 +1392,7 @@ def _validate_vin(vin: str) -> bool:
         check_char = 'X' if check == 10 else str(check)
         return vin[8].upper() == check_char
     except (ValueError, IndexError):
+        # VIN too short or contains invalid characters
         return False
 
 

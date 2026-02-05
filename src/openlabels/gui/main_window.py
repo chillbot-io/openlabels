@@ -26,6 +26,8 @@ try:
 
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - GUI main window unavailable
+    logger.debug("PySide6 not installed - GUI main window disabled")
     PYSIDE_AVAILABLE = False
 
 

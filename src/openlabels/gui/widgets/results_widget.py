@@ -24,6 +24,8 @@ try:
     from PySide6.QtCore import Qt, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - results widget unavailable
+    logger.debug("PySide6 not installed - results widget disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 

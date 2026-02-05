@@ -351,13 +351,14 @@ class XLSXExtractor(BaseExtractor):
 
     def _extract_csv(self, content: bytes, delimiter: str) -> ExtractionResult:
         """Extract from CSV/TSV."""
-        # Try common encodings
+        # Try common encodings - UnicodeDecodeError is expected for wrong encodings
         text_content = None
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         if text_content is None:
@@ -631,7 +632,7 @@ class TextExtractor(BaseExtractor):
         )
 
     def extract(self, content: bytes, filename: str) -> ExtractionResult:
-        # Try common encodings
+        # Try common encodings - UnicodeDecodeError is expected for wrong encodings
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text = content.decode(encoding)
@@ -640,6 +641,7 @@ class TextExtractor(BaseExtractor):
                     pages=1,
                 )
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         return ExtractionResult(
@@ -664,12 +666,13 @@ class RTFExtractor(BaseExtractor):
         except ImportError:
             raise ImportError("striprtf not installed. Run: pip install striprtf")
 
-        # Try to decode
+        # Try to decode - UnicodeDecodeError is expected for wrong encodings
         for encoding in ["utf-8", "latin-1", "cp1252"]:
             try:
                 rtf_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
         else:
             return ExtractionResult(
@@ -1024,13 +1027,14 @@ class HTMLExtractor(BaseExtractor):
         )
 
     def extract(self, content: bytes, filename: str) -> ExtractionResult:
-        # Try to decode with various encodings
+        # Try to decode with various encodings - UnicodeDecodeError is expected for wrong encodings
         text_content = None
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         if text_content is None:

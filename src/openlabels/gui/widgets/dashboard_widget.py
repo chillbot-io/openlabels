@@ -22,6 +22,8 @@ try:
     from PySide6.QtGui import QFont
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - dashboard widget unavailable
+    logger.debug("PySide6 not installed - dashboard widget disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 

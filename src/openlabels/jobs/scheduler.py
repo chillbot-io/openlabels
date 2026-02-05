@@ -19,6 +19,8 @@ try:
     from apscheduler.jobstores.memory import MemoryJobStore
     APSCHEDULER_AVAILABLE = True
 except ImportError:
+    # APScheduler not installed - scheduling functionality unavailable
+    logger.debug("APScheduler not installed - cron scheduling disabled")
     APSCHEDULER_AVAILABLE = False
     AsyncIOScheduler = None
     CronTrigger = None

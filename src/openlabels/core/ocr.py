@@ -217,6 +217,8 @@ class OCREngine:
             import rapidocr_onnxruntime
             return True
         except ImportError:
+            # RapidOCR not installed - OCR functionality unavailable
+            logger.debug("rapidocr-onnxruntime not installed - OCR unavailable")
             return False
 
     @property

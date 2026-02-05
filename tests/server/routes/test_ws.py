@@ -1985,7 +1985,7 @@ class TestAuthenticationEdgeCases:
                 assert result is None
 
     @pytest.mark.asyncio
-    async def test_cookie_with_special_characters(self):
+    async def test_cookie_with_special_characters(self, test_db):
         """Session cookie with special characters should be handled."""
         from openlabels.server.routes.ws import authenticate_websocket
 
@@ -1997,9 +1997,11 @@ class TestAuthenticationEdgeCases:
         mock_websocket.cookies = {"openlabels_session": "session%20with%20spaces"}
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
-            result = await authenticate_websocket(mock_websocket)
-            # Invalid session should return None
-            assert result is None
+            with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                mock_factory.return_value = MagicMock(return_value=test_db)
+                result = await authenticate_websocket(mock_websocket)
+                # Invalid session should return None
+                assert result is None
 
 
 # =============================================================================

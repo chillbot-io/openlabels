@@ -381,11 +381,12 @@ class FileProcessor:
 
     async def _decode_text(self, content: bytes) -> str:
         """Decode bytes to text with encoding detection."""
-        # Try common encodings
+        # Try common encodings - decode errors are expected for wrong encodings
         for encoding in ["utf-8", "utf-16", "latin-1", "cp1252"]:
             try:
                 return content.decode(encoding)
             except (UnicodeDecodeError, LookupError):
+                # This encoding doesn't work - try next one
                 continue
 
         # Last resort: decode with errors replaced
