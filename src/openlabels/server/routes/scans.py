@@ -147,17 +147,8 @@ async def retry_scan(
     _admin: AdminContextDep = Depends(),
 ):
     """Retry a failed scan by creating a new scan job."""
-    new_job = await scan_service.retry_scan(scan_id)
-
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
-            },
-        )
+    try:
+        new_job = await scan_service.retry_scan(scan_id)
 
         # Check if this is an HTMX request
         if request.headers.get("HX-Request"):
