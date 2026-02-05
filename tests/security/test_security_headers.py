@@ -158,26 +158,50 @@ class TestCookieSecurityFlags:
 
     async def test_session_cookie_has_security_flags(self):
         """Session cookie should have HttpOnly and SameSite flags."""
+        from unittest.mock import AsyncMock, MagicMock
         from httpx import AsyncClient, ASGITransport
         from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.routes.auth import limiter as auth_limiter
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Make a request that would set cookies (like auth callback)
-            response = await client.get(
-                "/api/auth/callback",
-                params={"code": "test-code"},
-                follow_redirects=False,
-            )
+        # Create a mock DB session so the endpoint doesn't hit real DB
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
 
-            # Check any set-cookie headers
-            set_cookie = response.headers.get("set-cookie", "")
-            if set_cookie:
-                # HttpOnly should be present for session cookies
-                # This prevents JavaScript from accessing the cookie
-                if "session" in set_cookie.lower():
-                    assert "httponly" in set_cookie.lower(), \
-                        "Session cookie missing HttpOnly flag"
+        async def override_get_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_get_session
+        original_app = app_limiter.enabled
+        original_auth = auth_limiter.enabled
+        app_limiter.enabled = False
+        auth_limiter.enabled = False
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Make a request that would set cookies (like auth callback)
+                response = await client.get(
+                    "/api/auth/callback",
+                    params={"code": "test-code"},
+                    follow_redirects=False,
+                )
+
+                # Check any set-cookie headers
+                set_cookie = response.headers.get("set-cookie", "")
+                if set_cookie:
+                    # HttpOnly should be present for session cookies
+                    # This prevents JavaScript from accessing the cookie
+                    if "session" in set_cookie.lower():
+                        assert "httponly" in set_cookie.lower(), \
+                            "Session cookie missing HttpOnly flag"
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            app_limiter.enabled = original_app
+            auth_limiter.enabled = original_auth
 
     async def test_api_responses_dont_set_tracking_cookies(self, test_client):
         """API responses should not set unnecessary cookies."""

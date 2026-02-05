@@ -1275,10 +1275,10 @@ class TestRemediationIDOR:
         ) as client:
             response = await client.post(
                 "/api/remediation/quarantine",
-                json={"result_id": str(data["result_a"].id)},
+                json={"file_path": data["result_a"].file_path},
             )
             # Should fail with 400, 404, or 422
-            assert response.status_code in (400, 404, 422), \
+            assert response.status_code in (400, 403, 404, 422), \
                 f"Cross-tenant quarantine should fail, got {response.status_code}"
 
     async def test_cannot_lockdown_other_tenant_file(self, multi_tenant_idor_setup):
@@ -1290,6 +1290,9 @@ class TestRemediationIDOR:
         ) as client:
             response = await client.post(
                 "/api/remediation/lockdown",
-                json={"result_id": str(data["result_a"].id)},
+                json={
+                    "file_path": data["result_a"].file_path,
+                    "allowed_principals": ["SYSTEM"],
+                },
             )
-            assert response.status_code in (400, 404, 422)
+            assert response.status_code in (400, 403, 404, 422)

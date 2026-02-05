@@ -415,8 +415,7 @@ class TestResultTenantIsolation:
             data["session"], data["user_b"], data["tenant_b"]
         ) as client:
             response = await client.post(
-                f"/api/results/{result_a.id}/label",
-                json={"label_id": "some-label-id"},
+                f"/api/results/{result_a.id}/apply-label",
             )
             assert response.status_code == 404
 
@@ -435,10 +434,10 @@ class TestRemediationTenantIsolation:
         ) as client:
             response = await client.post(
                 "/api/remediation/quarantine",
-                json={"result_id": str(result_a.id)},
+                json={"file_path": result_a.file_path},
             )
-            # Should fail - 404 or 400/422
-            assert response.status_code in (400, 404, 422)
+            # Should fail - 400, 403, 404, or 422
+            assert response.status_code in (400, 403, 404, 422)
 
 
     async def test_cannot_lockdown_other_tenant_files(self, two_tenant_setup):
@@ -451,9 +450,12 @@ class TestRemediationTenantIsolation:
         ) as client:
             response = await client.post(
                 "/api/remediation/lockdown",
-                json={"result_id": str(result_a.id)},
+                json={
+                    "file_path": result_a.file_path,
+                    "allowed_principals": ["SYSTEM"],
+                },
             )
-            assert response.status_code in (400, 404, 422)
+            assert response.status_code in (400, 403, 404, 422)
 
 
 

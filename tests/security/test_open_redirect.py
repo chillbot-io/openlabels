@@ -130,41 +130,92 @@ class TestOpenRedirectIntegration:
 
     async def test_login_endpoint_validates_redirect(self):
         """Login endpoint should use validated redirect_uri."""
+        from unittest.mock import AsyncMock, MagicMock
         from httpx import AsyncClient, ASGITransport
         from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.routes.auth import limiter as auth_limiter
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Test with malicious redirect
-            response = await client.get(
-                "/api/auth/login",
-                params={"redirect": "https://evil.com/phishing"},
-                follow_redirects=False,
-            )
-            # Should either redirect to safe URL or reject
-            if response.status_code in (302, 307):
-                location = response.headers.get("location", "")
-                assert "evil.com" not in location, \
-                    "Login endpoint allowed redirect to external site"
+        # Create a mock DB session so the endpoint doesn't hit real DB
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+        mock_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
+
+        async def override_get_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_get_session
+        original_app = app_limiter.enabled
+        original_auth = auth_limiter.enabled
+        app_limiter.enabled = False
+        auth_limiter.enabled = False
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Test with malicious redirect
+                response = await client.get(
+                    "/api/auth/login",
+                    params={"redirect": "https://evil.com/phishing"},
+                    follow_redirects=False,
+                )
+                # Should either redirect to safe URL or reject
+                if response.status_code in (302, 307):
+                    location = response.headers.get("location", "")
+                    assert "evil.com" not in location, \
+                        "Login endpoint allowed redirect to external site"
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            app_limiter.enabled = original_app
+            auth_limiter.enabled = original_auth
 
     async def test_callback_rejects_malicious_redirect_override(self):
         """OAuth callback should not use untrusted redirect from query."""
+        from unittest.mock import AsyncMock, MagicMock
         from httpx import AsyncClient, ASGITransport
         from openlabels.server.app import app
+        from openlabels.server.db import get_session
+        from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.routes.auth import limiter as auth_limiter
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Attacker tries to inject redirect in callback
-            response = await client.get(
-                "/api/auth/callback",
-                params={
-                    "code": "fake-code",
-                    "redirect": "https://evil.com/steal-tokens",
-                },
-                follow_redirects=False,
-            )
-            # Should not redirect to evil.com
-            if response.status_code in (302, 307):
-                location = response.headers.get("location", "")
-                assert "evil.com" not in location, \
-                    "Callback allowed attacker to override redirect"
+        # Create a mock DB session so the endpoint doesn't hit real DB
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
+
+        async def override_get_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_get_session
+        original_app = app_limiter.enabled
+        original_auth = auth_limiter.enabled
+        app_limiter.enabled = False
+        auth_limiter.enabled = False
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Attacker tries to inject redirect in callback
+                response = await client.get(
+                    "/api/auth/callback",
+                    params={
+                        "code": "fake-code",
+                        "redirect": "https://evil.com/steal-tokens",
+                    },
+                    follow_redirects=False,
+                )
+                # Should not redirect to evil.com
+                if response.status_code in (302, 307):
+                    location = response.headers.get("location", "")
+                    assert "evil.com" not in location, \
+                        "Callback allowed attacker to override redirect"
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            app_limiter.enabled = original_app
+            auth_limiter.enabled = original_auth
