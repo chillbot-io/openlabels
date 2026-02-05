@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
+from openlabels.server.config import get_settings
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
 from openlabels.server.errors import (
     NotFoundError,

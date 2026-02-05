@@ -546,13 +546,11 @@ async def get_heatmap(
         total_score = 0
         total_entities: dict[str, int] = {}
 
-        for child_name, child_data in data.get("_children", {}).items():
-            child_path = f"{path}/{child_name}" if path else child_name
-            child_node = build_node(child_name, child_data, child_path)
-            children.append(child_node)
-            total_score += child_node.risk_score
-            for entity_type, count in child_node.entity_counts.items():
-                total_entities[entity_type] = total_entities.get(entity_type, 0) + count
+    async for row in _stream_heatmap_results(
+        session, user.tenant_id, job_id, effective_limit
+    ):
+        _add_file_to_tree(tree, row.file_path, row.risk_score, row.entity_counts)
+        file_count += 1
 
         # Sort children by risk_score descending for better visualization
         children.sort(key=lambda n: n.risk_score, reverse=True)
@@ -566,9 +564,10 @@ async def get_heatmap(
             children=children if children else None,
         )
 
+    # Build response tree
     roots = []
     for root_name, root_data in tree.items():
-        roots.append(build_node(root_name, root_data, root_name))
+        roots.append(_build_node(root_name, root_data, root_name))
 
     # Sort roots by risk_score descending
     roots.sort(key=lambda n: n.risk_score, reverse=True)

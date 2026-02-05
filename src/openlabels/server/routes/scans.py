@@ -33,6 +33,8 @@ from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
@@ -69,7 +71,9 @@ class ScanListResponse(BaseModel):
     items: list[ScanResponse]
     total: int
     page: int
-    pages: int
+    page_size: int = Field(description="Items per page")
+    total_pages: int = Field(description="Total number of pages")
+    has_more: bool = Field(description="Whether there are more pages")
 
 
 class CursorScanListResponse(BaseModel):

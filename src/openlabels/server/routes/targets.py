@@ -300,13 +300,19 @@ class TargetResponse(BaseModel):
 
 
 class PaginatedTargetsResponse(BaseModel):
-    """Paginated list of scan targets."""
+    """
+    Paginated list of scan targets (legacy format).
+
+    Provides consistent field naming for backward compatibility.
+    """
 
     items: list[TargetResponse]
     total: int
     page: int
     page_size: int
     total_pages: int
+    # New field for forward compatibility
+    has_more: Optional[bool] = None
 
 
 @router.get("", response_model=PaginatedTargetsResponse)

@@ -1,5 +1,13 @@
 """
 Scan results API endpoints.
+
+Supports both cursor-based and offset-based pagination:
+- Cursor-based (recommended for large datasets): Use `cursor` parameter
+- Offset-based (backward compatible): Use `page` and `page_size` parameters
+
+Cursor-based pagination is more efficient for large datasets as it:
+- Avoids the performance penalty of large OFFSETs
+- Provides consistent results even when data changes between requests
 """
 
 import logging
@@ -28,6 +36,18 @@ from openlabels.server.errors import (
 
 logger = logging.getLogger(__name__)
 from openlabels.server.models import ScanResult
+
+logger = logging.getLogger(__name__)
+from openlabels.server.pagination import (
+    HybridPaginationParams,
+    PaginatedResponse,
+    CursorPaginatedResponse,
+    LegacyPaginatedResponse,
+    PaginationMeta,
+    CursorPaginationMeta,
+    apply_cursor_pagination,
+    build_cursor_response,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 router = APIRouter()
@@ -67,6 +87,7 @@ class ResultDetailResponse(ResultResponse):
     label_error: Optional[str] = None
 
 
+# Legacy response format for backward compatibility
 class ResultListResponse(BaseModel):
     """Paginated list of results (offset-based)."""
 
@@ -74,6 +95,23 @@ class ResultListResponse(BaseModel):
     total: int
     page: int
     pages: int
+    # New fields for forward compatibility
+    page_size: Optional[int] = None
+    has_more: Optional[bool] = None
+
+
+# New standardized response formats
+class ResultPaginatedResponse(BaseModel):
+    """
+    Standardized paginated response for scan results.
+
+    Supports both cursor-based and offset-based pagination.
+    """
+
+    data: list[ResultResponse] = Field(description="List of scan results")
+    pagination: Union[CursorPaginationMeta, PaginationMeta] = Field(
+        description="Pagination metadata"
+    )
 
 
 class CursorResultListResponse(BaseModel):

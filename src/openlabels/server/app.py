@@ -66,6 +66,7 @@ from openlabels.server.routes import (
     health,
     settings,
 )
+from openlabels.server.routes import v1
 from openlabels.web import router as web_router
 
 # API version constants
@@ -283,12 +284,16 @@ def configure_middleware():
     )
 
     # Rate limiting middleware
+    # Note: RateLimitExceeded is handled by register_exception_handlers for standardized format
     if settings.rate_limit.enabled:
         app.add_middleware(SlowAPIMiddleware)
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CSRF protection middleware
     app.add_middleware(CSRFMiddleware)
+
+    # Prometheus metrics middleware - tracks request count, latency, and active connections
+    # This should be added after other middleware to capture accurate timing
+    app.add_middleware(PrometheusMiddleware)
 
 
 # Configure middleware
@@ -575,3 +580,90 @@ async def legacy_api_redirect(request: Request, path: str):
 
 # Web UI
 app.include_router(web_router, prefix="/ui", tags=["Web UI"])
+
+
+# =============================================================================
+# Backward Compatibility - Redirect old /api/* paths to /api/v1/*
+# =============================================================================
+# These redirects ensure existing clients continue to work while they migrate
+# to the new versioned endpoints. The redirects use HTTP 307 (Temporary Redirect)
+# to preserve the request method (GET, POST, etc.) and body.
+
+# List of API path prefixes that need backward compatibility redirects
+_LEGACY_API_PREFIXES = [
+    "audit", "jobs", "scans", "results", "targets", "schedules",
+    "labels", "users", "dashboard", "remediation", "monitoring",
+    "health", "settings",
+]
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def legacy_api_redirect(request: Request, path: str):
+    """
+    Redirect legacy /api/* requests to /api/v1/*.
+
+    This ensures backward compatibility for clients using the old API paths.
+    Uses HTTP 307 to preserve the request method and body.
+    """
+    # Check if this is a legacy API path that should be redirected
+    path_prefix = path.split("/")[0] if path else ""
+
+    if path_prefix in _LEGACY_API_PREFIXES:
+        # Build the new URL with /api/v1 prefix
+        new_path = f"/api/v1/{path}"
+        query_string = request.url.query
+        if query_string:
+            new_path = f"{new_path}?{query_string}"
+
+        return RedirectResponse(
+            url=new_path,
+            status_code=307,  # Temporary Redirect - preserves method and body
+            headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/* endpoints."},
+        )
+
+    # For paths that don't match legacy patterns, return 404
+    return JSONResponse(
+        status_code=404,
+        content={"error": "not_found", "message": f"Endpoint /api/{path} not found. Try /api/v1/{path}"},
+    )
+
+
+# Legacy /auth/* redirect to /api/v1/auth/*
+@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def legacy_auth_redirect(request: Request, path: str):
+    """
+    Redirect legacy /auth/* requests to /api/v1/auth/*.
+
+    Uses HTTP 307 to preserve the request method and body.
+    """
+    new_path = f"/api/v1/auth/{path}"
+    query_string = request.url.query
+    if query_string:
+        new_path = f"{new_path}?{query_string}"
+
+    return RedirectResponse(
+        url=new_path,
+        status_code=307,
+        headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/auth/* endpoints."},
+    )
+
+
+# Legacy /ws/* redirect to /api/v1/ws/*
+@app.api_route("/ws/{path:path}", methods=["GET"], include_in_schema=False)
+async def legacy_ws_redirect(request: Request, path: str):
+    """
+    Redirect legacy /ws/* WebSocket requests to /api/v1/ws/*.
+
+    Note: WebSocket upgrade requests may not follow redirects automatically.
+    Clients should update to use /api/v1/ws/* directly.
+    """
+    new_path = f"/api/v1/ws/{path}"
+    query_string = request.url.query
+    if query_string:
+        new_path = f"{new_path}?{query_string}"
+
+    return RedirectResponse(
+        url=new_path,
+        status_code=307,
+        headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/ws/* endpoints."},
+    )

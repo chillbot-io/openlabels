@@ -77,6 +77,7 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
             ml_model_dir=getattr(settings, 'ml_model_dir', None),
             confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
         )
+        logger.debug("Created ML processor instance")
     return _processor
 
 
@@ -497,6 +498,11 @@ async def execute_scan_task(
                 logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise
+
+    finally:
+        # Release ML processor to free memory (200-500MB)
+        # This ensures cleanup happens whether scan completes, fails, or is cancelled
+        release_processor()
 
 
 def _get_adapter(adapter_type: str, config: dict):
@@ -1014,3 +1020,8 @@ async def execute_parallel_scan_task(
                 logger.debug(f"Failed to send scan failed event: {ws_err}")
 
         raise
+
+    finally:
+        # Release ML processor to free memory (200-500MB)
+        # This ensures cleanup happens whether scan completes, fails, or is cancelled
+        release_processor()
