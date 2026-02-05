@@ -328,52 +328,44 @@ class MIPClient:
                 FileEngineSettings,
             )
 
-            # Create application info
             app_info = ApplicationInfo()
             app_info.ApplicationId = self.client_id
             app_info.ApplicationName = self.app_name
             app_info.ApplicationVersion = self.app_version
 
-            # Create MIP configuration
             mip_config = MipConfiguration(
                 app_info,
-                "mip_data",  # Cache directory
+                "mip_data",
                 LogLevel.Warning,
-                False,  # Is offline
+                False,
             )
 
-            # Create MIP context
             self._mip_context = MipContext.Create(mip_config)
             logger.info("MipContext created")
 
-            # Create auth delegate
             self._auth_delegate = AuthDelegateImpl(
                 self.client_id,
                 self.client_secret,
                 self.tenant_id,
             )
 
-            # Create file profile settings
             profile_settings = FileProfile.Settings(
                 self._mip_context,
                 MipContext.CacheStorageType.InMemory,
                 self._create_consent_delegate(),
             )
 
-            # Create file profile
             self._file_profile = FileProfile.LoadAsync(profile_settings).GetAwaiter().GetResult()
             logger.info("FileProfile created")
 
-            # Create file engine settings
             engine_settings = FileEngineSettings(
-                self.client_id,  # Engine ID
+                self.client_id,
                 self._auth_delegate,
-                "",  # Client data
-                "en-US",  # Locale
+                "",
+                "en-US",
             )
             engine_settings.Identity = MipContext.Identity(f"service@{self.tenant_id}")
 
-            # Create file engine
             self._file_engine = self._file_profile.AddEngineAsync(engine_settings).GetAwaiter().GetResult()
             logger.info("FileEngine created")
 

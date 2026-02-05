@@ -47,7 +47,8 @@ def _get_scheduler_settings():
             "poll_interval": settings.scheduler.poll_interval,
             "min_trigger_interval": settings.scheduler.min_trigger_interval,
         }
-    except Exception:
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Using default scheduler settings: {e}")
         return {
             "poll_interval": DEFAULT_POLL_INTERVAL,
             "min_trigger_interval": DEFAULT_MIN_TRIGGER_INTERVAL_SECONDS,
