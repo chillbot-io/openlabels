@@ -412,7 +412,7 @@ class LabelService(BaseService):
                 resource_id=str(rule_id),
             )
 
-        await self.session.delete(rule)
+        self.session.delete(rule)  # delete() is synchronous
         await self.flush()
 
         self._log_info(f"Deleted label rule {rule_id}")

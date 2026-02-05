@@ -67,14 +67,6 @@ async def list_audit_logs(
     List audit log entries with filtering and pagination.
 
     Admin access required. Returns audit trail for the current tenant.
-
-    Supports two pagination modes:
-    - **Cursor-based** (recommended): Pass `cursor` from previous response
-    - **Offset-based** (backward compatible): Use `page` and `page_size` parameters
-
-    Supports two response formats:
-    - **legacy** (default): `{items, total, page, page_size, total_pages}`
-    - **standard**: `{data, pagination}` with cursor support
     """
     # Build base query with tenant filter
     conditions = [AuditLog.tenant_id == user.tenant_id]
@@ -92,66 +84,11 @@ async def list_audit_logs(
     if end_date:
         conditions.append(AuditLog.created_at <= end_date)
 
-    # Count total if requested
-    total = None
-    if include_total:
-        base_query = select(AuditLog).where(and_(*conditions))
-        count_query = select(func.count()).select_from(base_query.subquery())
-        total_result = await session.execute(count_query)
-        total = total_result.scalar() or 0
-
-    # Use cursor-based pagination if cursor is provided or standard format requested
-    if cursor is not None or format == "standard":
-        # Build base query with filters
-        query = select(AuditLog).where(and_(*conditions))
-
-        # Apply cursor-based pagination
-        pagination_params = CursorPaginationParams(
-            cursor=cursor,
-            limit=page_size,
-            include_total=include_total,
-        )
-        query, cursor_info = apply_cursor_pagination(
-            query,
-            AuditLog,
-            pagination_params,
-            sort_column=AuditLog.created_at,
-            sort_desc=True,
-        )
-
-        result = await session.execute(query)
-        logs = list(result.scalars().all())
-
-        # Build pagination metadata
-        pagination_meta = build_cursor_response(logs, cursor_info, total)
-
-        # Trim extra result used for has_more check
-        actual_logs = logs[: pagination_params.limit]
-
-        if format == "standard":
-            return AuditPaginatedResponse(
-                data=[AuditLogResponse.model_validate(log) for log in actual_logs],
-                pagination=pagination_meta,
-            )
-        else:
-            # Legacy format with cursor info added
-            total_pages = (total + page_size - 1) // page_size if total and total > 0 else 1
-            return PaginatedAuditResponse(
-                items=[AuditLogResponse.model_validate(log) for log in actual_logs],
-                total=total or 0,
-                page=page,
-                page_size=page_size,
-                total_pages=total_pages,
-                has_more=pagination_meta.has_more,
-            )
-
-    # Offset-based pagination (legacy mode)
-    # Count total if not yet done
-    if total is None:
-        base_query = select(AuditLog).where(and_(*conditions))
-        count_query = select(func.count()).select_from(base_query.subquery())
-        total_result = await session.execute(count_query)
-        total = total_result.scalar() or 0
+    # Count total
+    base_query = select(AuditLog).where(and_(*conditions))
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total_result = await session.execute(count_query)
+    total = total_result.scalar() or 0
 
     # Get paginated results (newest first)
     paginated_query = (

@@ -98,7 +98,7 @@ async def execute_label_task(
         Result dictionary with success status and details
     """
     result_id = UUID(payload["result_id"])
-    label_id = payload["label_id"]
+    label_id = payload["label_id"]  # Keep as string - SensitivityLabel uses string IDs from M365
 
     # Get scan result
     result = await session.get(ScanResult, result_id)

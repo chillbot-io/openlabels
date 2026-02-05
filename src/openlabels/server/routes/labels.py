@@ -178,15 +178,22 @@ async def get_sync_status(
 
     db = label_service.session
 
-    # Get label count and last sync time
-    query = select(
-        func.count(SensitivityLabel.id),
-        func.max(SensitivityLabel.synced_at),
-    ).where(SensitivityLabel.tenant_id == label_service.tenant_id)
+    try:
+        # Get label count and last sync time
+        query = select(
+            func.count(SensitivityLabel.id),
+            func.max(SensitivityLabel.synced_at),
+        ).where(SensitivityLabel.tenant_id == label_service.tenant_id)
 
-    result = await db.execute(query)
-    row = result.one()
-    label_count, last_synced = row
+        result = await db.execute(query)
+        row = result.one()
+        label_count, last_synced = row
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting sync status: {e}")
+        raise InternalError(
+            message="Database error occurred while getting sync status",
+            details={"error_code": ErrorCode.DATABASE_ERROR},
+        )
 
     # Get cache status
     try:
@@ -196,17 +203,11 @@ async def get_sync_status(
         logger.debug(f"Failed to get label cache stats: {type(e).__name__}: {e}")
         cache_stats = None
 
-        return {
-            "label_count": label_count or 0,
-            "last_synced_at": last_synced.isoformat() if last_synced else None,
-            "cache": cache_stats,
-        }
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting sync status: {e}")
-        raise InternalError(
-            message="Database error occurred while getting sync status",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+    return {
+        "label_count": label_count or 0,
+        "last_synced_at": last_synced.isoformat() if last_synced else None,
+        "cache": cache_stats,
+    }
 
 
 @router.post("/cache/invalidate", status_code=200)
