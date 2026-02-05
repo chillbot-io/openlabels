@@ -282,8 +282,26 @@ class FilesystemAdapter:
                     try:
                         name, domain, _ = win32security.LookupAccountSid(None, sid)
                         trustee = f"{domain}\\{name}"
+                    except LookupError as e:
+                        # SID not found in local or domain account databases
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - account not found: {e}",
+                            exc_info=True
+                        )
+                        trustee = str(sid)
+                    except OSError as e:
+                        # Network or system error during SID lookup
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - OS error: {e}",
+                            exc_info=True
+                        )
+                        trustee = str(sid)
                     except Exception as e:
-                        logger.debug(f"Failed to lookup SID {sid}: {e}")
+                        # Catch-all for unexpected win32security errors
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - unexpected error ({type(e).__name__}): {e}",
+                            exc_info=True
+                        )
                         trustee = str(sid)
 
                     permissions["aces"].append({

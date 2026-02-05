@@ -1,11 +1,13 @@
 """Tier 2: Pattern-based detectors for PHI/PII entity recognition."""
 
+import logging
 import re
 from typing import List, Tuple, Set
 
 from ..types import Span, Tier
 from .base import BaseDetector
 
+logger = logging.getLogger(__name__)
 
 # FALSE POSITIVE FILTERS
 
@@ -1495,10 +1497,12 @@ class PatternDetector(BaseDetector):
                                 m, d, y = int(g1), int(g2), int(g3)
                             if not _validate_date(m, d, y):
                                 continue
-                    except (ValueError, IndexError):
+                    except (ValueError, IndexError) as e:
                         # Date parsing failed - accept match without validation
                         # This handles edge cases where regex groups don't match expected format
-                        pass
+                        logger.debug(
+                            f"Date validation skipped for '{value}': {type(e).__name__}: {e}"
+                        )
 
                 # Age validation - reject impossible ages
                 if entity_type == 'AGE' and not _validate_age(value):

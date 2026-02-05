@@ -610,8 +610,8 @@ class ImageExtractor(BaseExtractor):
                 page_num += 1
 
         except EOFError:
-            # End of pages
-            pass
+            # End of pages - expected when all TIFF frames have been processed
+            logger.debug(f"TIFF extraction complete: {page_num} pages processed from {filename}")
 
         return ExtractionResult(
             text="\n\n".join(pages_text),

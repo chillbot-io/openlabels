@@ -4,7 +4,10 @@ Schedules management widget for OpenLabels GUI.
 Provides interface for creating, viewing, editing, and deleting scan schedules.
 """
 
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from typing import Optional
 from uuid import UUID
 
@@ -194,7 +197,8 @@ class ScheduleDialog(QDialog):
                     # Custom
                     self.schedule_type.setCurrentText("Custom (Cron)")
                     self.cron_edit.setText(cron)
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as e:
+                logger.debug(f"Could not parse cron expression '{cron}' into standard schedule type: {e}")
                 self.schedule_type.setCurrentText("Custom (Cron)")
                 self.cron_edit.setText(cron)
 
@@ -313,9 +317,9 @@ class SchedulesWidget(QWidget):
             try:
                 dt = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
                 next_run = dt.strftime("%Y-%m-%d %H:%M")
-            except ValueError:
+            except ValueError as e:
                 # Keep original string if parsing fails - may be non-ISO format
-                pass
+                logger.debug(f"Could not parse next_run timestamp '{next_run}': {e}")
         next_run_item = QTableWidgetItem(str(next_run) if next_run else "-")
         self.table.setItem(row, 3, next_run_item)
 

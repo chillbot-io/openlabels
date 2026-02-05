@@ -285,7 +285,7 @@ class AgentPool:
                 await self._result_task
             except asyncio.CancelledError:
                 # Expected when cancelling the task - not an error
-                pass
+                logger.debug("Result collection task cancelled during pool shutdown")
 
         # Clean up queues
         if self._input_queue:

@@ -82,8 +82,11 @@ def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
     # Parse the URL for validation
     try:
         parsed = urlparse(redirect_uri)
-    except Exception:
-        logger.warning(f"Failed to parse redirect URI: {redirect_uri}")
+    except Exception as e:
+        # Log the exception type and message for debugging URL parsing failures
+        logger.warning(
+            f"Failed to parse redirect URI '{redirect_uri}': {type(e).__name__}: {e}"
+        )
         return "/"
 
     # Must have a valid scheme

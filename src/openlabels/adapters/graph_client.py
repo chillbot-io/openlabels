@@ -165,9 +165,31 @@ class GraphClient:
                 recovery_timeout=settings.circuit_breaker.recovery_timeout,
                 exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
             )
+        except ImportError as settings_err:
+            # Fallback to defaults if settings module not available (e.g., during tests)
+            logger.debug(
+                f"Using default Graph client config (settings module not available): {settings_err}",
+                exc_info=True
+            )
+            self._timeout = timeout or 30.0
+            self._connect_timeout = connect_timeout or 10.0
+            cb_config = CircuitBreakerConfig()
+        except (AttributeError, KeyError, TypeError) as settings_err:
+            # Fallback to defaults if settings are misconfigured
+            logger.debug(
+                f"Using default Graph client config (settings misconfigured): {settings_err}",
+                exc_info=True
+            )
+            self._timeout = timeout or 30.0
+            self._connect_timeout = connect_timeout or 10.0
+            cb_config = CircuitBreakerConfig()
         except Exception as settings_err:
-            # Fallback to defaults if settings not available (e.g., during tests)
-            logger.debug(f"Using default Graph client config (settings unavailable): {settings_err}")
+            # Catch-all for unexpected errors during settings loading
+            logger.warning(
+                f"Using default Graph client config (unexpected error loading settings: "
+                f"{type(settings_err).__name__}): {settings_err}",
+                exc_info=True
+            )
             self._timeout = timeout or 30.0
             self._connect_timeout = connect_timeout or 10.0
             cb_config = CircuitBreakerConfig()
