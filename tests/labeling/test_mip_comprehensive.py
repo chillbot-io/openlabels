@@ -413,7 +413,6 @@ class TestMIPClientInit:
 class TestMIPClientInitialize:
     """Tests for MIPClient.initialize method."""
 
-    @pytest.mark.asyncio
     async def test_initialize_returns_false_without_pythonnet(self):
         """initialize returns False if pythonnet not available."""
         import openlabels.labeling.mip as mip_module
@@ -435,7 +434,6 @@ class TestMIPClientInitialize:
         finally:
             mip_module.PYTHONNET_AVAILABLE = original
 
-    @pytest.mark.asyncio
     async def test_initialize_returns_true_if_already_initialized(self):
         """initialize returns True if already initialized."""
         import openlabels.labeling.mip as mip_module
@@ -459,7 +457,6 @@ class TestMIPClientInitialize:
         finally:
             mip_module.PYTHONNET_AVAILABLE = original_available
 
-    @pytest.mark.asyncio
     async def test_initialize_calls_load_assemblies(self):
         """initialize attempts to load assemblies."""
         import openlabels.labeling.mip as mip_module
@@ -487,7 +484,6 @@ class TestMIPClientInitialize:
 class TestMIPClientShutdown:
     """Tests for MIPClient.shutdown method."""
 
-    @pytest.mark.asyncio
     async def test_shutdown_clears_state(self):
         """shutdown clears internal state."""
         client = MIPClient(
@@ -511,7 +507,6 @@ class TestMIPClientShutdown:
         assert client._file_profile is None
         assert client._mip_context is None
 
-    @pytest.mark.asyncio
     async def test_shutdown_handles_no_engine(self):
         """shutdown handles case where no engine exists."""
         client = MIPClient(
@@ -529,7 +524,6 @@ class TestMIPClientShutdown:
 class TestMIPClientGetLabels:
     """Tests for MIPClient.get_labels method."""
 
-    @pytest.mark.asyncio
     async def test_get_labels_returns_empty_if_not_initialized(self):
         """get_labels returns empty list if not initialized."""
         client = MIPClient(
@@ -542,7 +536,6 @@ class TestMIPClientGetLabels:
 
         assert labels == []
 
-    @pytest.mark.asyncio
     async def test_get_labels_returns_cached_if_available(self):
         """get_labels returns cached labels if available."""
         client = MIPClient(
@@ -560,7 +553,6 @@ class TestMIPClientGetLabels:
 
         assert len(labels) == 2
 
-    @pytest.mark.asyncio
     async def test_get_labels_force_refresh(self):
         """get_labels fetches fresh labels when force_refresh=True."""
         client = MIPClient(
@@ -585,7 +577,6 @@ class TestMIPClientGetLabels:
 class TestMIPClientGetLabel:
     """Tests for MIPClient.get_label method."""
 
-    @pytest.mark.asyncio
     async def test_get_label_finds_by_id(self):
         """get_label finds label by ID."""
         client = MIPClient(
@@ -604,7 +595,6 @@ class TestMIPClientGetLabel:
         assert label is not None
         assert label.id == "label-123"
 
-    @pytest.mark.asyncio
     async def test_get_label_returns_none_if_not_found(self):
         """get_label returns None if label not found."""
         client = MIPClient(
@@ -623,7 +613,6 @@ class TestMIPClientGetLabel:
 class TestMIPClientApplyLabel:
     """Tests for MIPClient.apply_label method."""
 
-    @pytest.mark.asyncio
     async def test_apply_label_returns_error_if_not_initialized(self):
         """apply_label returns error if not initialized."""
         client = MIPClient(
@@ -637,7 +626,6 @@ class TestMIPClientApplyLabel:
         assert result.success is False
         assert "not initialized" in result.error
 
-    @pytest.mark.asyncio
     async def test_apply_label_returns_error_if_file_not_found(self, tmp_path):
         """apply_label returns error if file doesn't exist."""
         client = MIPClient(
@@ -654,7 +642,6 @@ class TestMIPClientApplyLabel:
         assert result.success is False
         assert "not found" in result.error.lower()
 
-    @pytest.mark.asyncio
     async def test_apply_label_success(self, tmp_path):
         """apply_label succeeds with valid file."""
         client = MIPClient(
@@ -681,7 +668,6 @@ class TestMIPClientApplyLabel:
 
         assert result.success is True
 
-    @pytest.mark.asyncio
     async def test_apply_label_handles_permission_error(self, tmp_path):
         """apply_label handles permission errors."""
         client = MIPClient(
@@ -708,7 +694,6 @@ class TestMIPClientApplyLabel:
 class TestMIPClientRemoveLabel:
     """Tests for MIPClient.remove_label method."""
 
-    @pytest.mark.asyncio
     async def test_remove_label_returns_error_if_not_initialized(self):
         """remove_label returns error if not initialized."""
         client = MIPClient(
@@ -722,7 +707,6 @@ class TestMIPClientRemoveLabel:
         assert result.success is False
         assert "not initialized" in result.error
 
-    @pytest.mark.asyncio
     async def test_remove_label_returns_error_if_file_not_found(self, tmp_path):
         """remove_label returns error if file doesn't exist."""
         client = MIPClient(
@@ -743,7 +727,6 @@ class TestMIPClientRemoveLabel:
 class TestMIPClientGetFileLabel:
     """Tests for MIPClient.get_file_label method."""
 
-    @pytest.mark.asyncio
     async def test_get_file_label_returns_none_if_not_initialized(self):
         """get_file_label returns None if not initialized."""
         client = MIPClient(
@@ -756,7 +739,6 @@ class TestMIPClientGetFileLabel:
 
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_file_label_returns_none_if_file_not_found(self, tmp_path):
         """get_file_label returns None if file doesn't exist."""
         client = MIPClient(
@@ -776,7 +758,6 @@ class TestMIPClientGetFileLabel:
 class TestMIPClientIsFileProtected:
     """Tests for MIPClient.is_file_protected method."""
 
-    @pytest.mark.asyncio
     async def test_is_file_protected_returns_false_if_not_initialized(self):
         """is_file_protected returns False if not initialized."""
         client = MIPClient(
@@ -789,7 +770,6 @@ class TestMIPClientIsFileProtected:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_is_file_protected_returns_false_if_file_not_found(self, tmp_path):
         """is_file_protected returns False if file doesn't exist."""
         client = MIPClient(

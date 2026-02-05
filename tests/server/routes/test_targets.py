@@ -83,13 +83,11 @@ async def setup_targets_data(test_db):
 class TestListTargets:
     """Tests for GET /api/targets endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_targets_data):
         """List targets should return 200 OK."""
         response = await test_client.get("/api/targets")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_response(self, test_client, setup_targets_data):
         """Response should have pagination structure."""
         response = await test_client.get("/api/targets")
@@ -102,7 +100,6 @@ class TestListTargets:
         assert "page_size" in data
         assert "total_pages" in data
 
-    @pytest.mark.asyncio
     async def test_returns_targets(self, test_client, setup_targets_data):
         """Should return list of targets with expected structure."""
         response = await test_client.get("/api/targets")
@@ -116,7 +113,6 @@ class TestListTargets:
         assert "id" in first_target and first_target["id"], "Target should have non-empty id"
         assert "adapter" in first_target, "Target should have adapter field"
 
-    @pytest.mark.asyncio
     async def test_filter_by_adapter(self, test_client, setup_targets_data):
         """Should filter targets by adapter type."""
         response = await test_client.get("/api/targets?adapter=filesystem")
@@ -126,7 +122,6 @@ class TestListTargets:
         for item in data["items"]:
             assert item["adapter"] == "filesystem"
 
-    @pytest.mark.asyncio
     async def test_pagination_works(self, test_client, setup_targets_data):
         """Should respect pagination parameters."""
         response = await test_client.get("/api/targets?page=1&page_size=2")
@@ -137,7 +132,6 @@ class TestListTargets:
         assert data["page_size"] == 2
         assert len(data["items"]) <= 2
 
-    @pytest.mark.asyncio
     async def test_target_response_structure(self, test_client, setup_targets_data):
         """Target items should have expected fields."""
         response = await test_client.get("/api/targets")
@@ -152,7 +146,6 @@ class TestListTargets:
             assert "config" in item
             assert "enabled" in item
 
-    @pytest.mark.asyncio
     async def test_invalid_page_size_rejected(self, test_client, setup_targets_data):
         """Page size above 100 should be rejected."""
         response = await test_client.get("/api/targets?page_size=200")
@@ -162,7 +155,6 @@ class TestListTargets:
 class TestCreateTarget:
     """Tests for POST /api/targets endpoint."""
 
-    @pytest.mark.asyncio
     async def test_creates_filesystem_target(self, test_client, setup_targets_data):
         """Should create a filesystem target."""
         response = await test_client.post(
@@ -179,7 +171,6 @@ class TestCreateTarget:
         assert data["name"] == "New Filesystem Target"
         assert data["adapter"] == "filesystem"
 
-    @pytest.mark.asyncio
     async def test_creates_sharepoint_target(self, test_client, setup_targets_data):
         """Should create a SharePoint target."""
         response = await test_client.post(
@@ -196,7 +187,6 @@ class TestCreateTarget:
 
         assert data["adapter"] == "sharepoint"
 
-    @pytest.mark.asyncio
     async def test_rejects_invalid_adapter(self, test_client, setup_targets_data):
         """Should reject invalid adapter type."""
         response = await test_client.post(
@@ -214,7 +204,6 @@ class TestCreateTarget:
 class TestGetTarget:
     """Tests for GET /api/targets/{target_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_target_details(self, test_client, setup_targets_data):
         """Should return target details."""
         target = setup_targets_data["targets"][0]
@@ -225,14 +214,12 @@ class TestGetTarget:
         assert data["id"] == str(target.id)
         assert data["name"] == target.name
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_targets_data):
         """Should return 404 for non-existent target."""
         fake_id = uuid4()
         response = await test_client.get(f"/api/targets/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_full_structure(self, test_client, setup_targets_data):
         """Should return all target fields."""
         target = setup_targets_data["targets"][0]
@@ -250,7 +237,6 @@ class TestGetTarget:
 class TestUpdateTarget:
     """Tests for PUT /api/targets/{target_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_updates_target_name(self, test_client, setup_targets_data):
         """Should update target name."""
         target = setup_targets_data["targets"][0]
@@ -263,7 +249,6 @@ class TestUpdateTarget:
 
         assert data["name"] == "Updated Name"
 
-    @pytest.mark.asyncio
     async def test_updates_target_config(self, test_client, setup_targets_data):
         """Should update target config."""
         target = setup_targets_data["targets"][0]
@@ -277,7 +262,6 @@ class TestUpdateTarget:
 
         assert data["config"] == new_config
 
-    @pytest.mark.asyncio
     async def test_updates_target_enabled(self, test_client, setup_targets_data):
         """Should update target enabled status."""
         target = setup_targets_data["targets"][0]
@@ -290,7 +274,6 @@ class TestUpdateTarget:
 
         assert data["enabled"] is False
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_targets_data):
         """Should return 404 for non-existent target."""
         fake_id = uuid4()
@@ -304,14 +287,12 @@ class TestUpdateTarget:
 class TestDeleteTarget:
     """Tests for DELETE /api/targets/{target_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_deletes_target(self, test_client, setup_targets_data):
         """Should delete a target."""
         target = setup_targets_data["targets"][-1]  # Delete last one
         response = await test_client.delete(f"/api/targets/{target.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_targets_data):
         """Should return 404 for non-existent target."""
         fake_id = uuid4()
@@ -322,14 +303,12 @@ class TestDeleteTarget:
 class TestTargetsContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_targets_data):
         """List targets should return JSON."""
         response = await test_client.get("/api/targets")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_get_returns_json(self, test_client, setup_targets_data):
         """Get target should return JSON."""
         target = setup_targets_data["targets"][0]

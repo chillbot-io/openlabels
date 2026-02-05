@@ -177,7 +177,6 @@ class TestPathTraversalIntegration:
     The actual path validation logic is tested in the unit tests above.
     """
 
-    @pytest.mark.asyncio
     async def test_quarantine_endpoint_rejects_traversal(self, test_client):
         """Quarantine endpoint should reject path traversal attempts."""
         # Test path traversal in file_path
@@ -198,7 +197,6 @@ class TestPathTraversalIntegration:
             assert response.status_code in (400, 403, 404, 422), \
                 f"Quarantine accepted traversal path: {malicious_path}"
 
-    @pytest.mark.asyncio
     async def test_lockdown_endpoint_rejects_traversal(self, test_client):
         """Lockdown endpoint should reject path traversal attempts."""
         traversal_paths = [
@@ -218,7 +216,6 @@ class TestPathTraversalIntegration:
             assert response.status_code in (400, 403, 404, 422), \
                 f"Lockdown accepted traversal path: {malicious_path}"
 
-    @pytest.mark.asyncio
     async def test_quarantine_rejects_system_paths(self, test_client):
         """Quarantine should reject system file paths."""
         system_paths = [

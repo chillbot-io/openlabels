@@ -119,7 +119,6 @@ class TestGetProcessor:
 class TestCheckCancellation:
     """Tests for _check_cancellation function."""
 
-    @pytest.mark.asyncio
     async def test_returns_true_when_cancelled(self):
         """Should return True when job status is 'cancelled'."""
         mock_session = AsyncMock()
@@ -131,7 +130,6 @@ class TestCheckCancellation:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_returns_false_when_running(self):
         """Should return False when job is still running."""
         mock_session = AsyncMock()
@@ -143,7 +141,6 @@ class TestCheckCancellation:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_returns_false_when_job_not_found(self):
         """Should return False when job doesn't exist."""
         mock_session = AsyncMock()
@@ -261,7 +258,6 @@ class TestDetectAndScore:
         file_info.exposure = MagicMock(value="PRIVATE")
         return file_info
 
-    @pytest.mark.asyncio
     async def test_returns_detection_results(self, mock_file_info):
         """Should return detection results from processor."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -288,7 +284,6 @@ class TestDetectAndScore:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_handles_unicode_decode_error(self, mock_file_info):
         """Should handle UnicodeDecodeError gracefully."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -309,7 +304,6 @@ class TestDetectAndScore:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_handles_value_error(self, mock_file_info):
         """Should handle ValueError gracefully."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -330,7 +324,6 @@ class TestDetectAndScore:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_handles_os_error(self, mock_file_info):
         """Should handle OSError gracefully."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -351,7 +344,6 @@ class TestDetectAndScore:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_limits_findings_to_50(self, mock_file_info):
         """Should limit findings list to first 50."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -388,7 +380,6 @@ class TestDetectAndScore:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_calculates_total_entities_correctly(self, mock_file_info):
         """Should correctly sum entity counts for total_entities."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -446,7 +437,6 @@ class TestExecuteScanTask:
         target.config = {"path": "/test/path"}
         return target
 
-    @pytest.mark.asyncio
     async def test_raises_when_job_not_found(self, mock_session):
         """Should raise JobError when job doesn't exist."""
         mock_session.get = AsyncMock(return_value=None)
@@ -456,7 +446,6 @@ class TestExecuteScanTask:
 
         assert "not found" in str(exc_info.value).lower()
 
-    @pytest.mark.asyncio
     async def test_raises_when_target_not_found(self, mock_session, mock_job):
         """Should raise JobError when target doesn't exist."""
         mock_session.get = AsyncMock(side_effect=[mock_job, None])
@@ -466,7 +455,6 @@ class TestExecuteScanTask:
 
         assert "target" in str(exc_info.value).lower() and "not found" in str(exc_info.value).lower()
 
-    @pytest.mark.asyncio
     async def test_returns_cancelled_when_job_already_cancelled(self, mock_session, mock_job, mock_target):
         """Should return cancelled status if job was cancelled before start."""
         mock_job.status = "cancelled"
@@ -477,7 +465,6 @@ class TestExecuteScanTask:
         assert result["status"] == "cancelled"
         assert result["files_scanned"] == 0
 
-    @pytest.mark.asyncio
     async def test_updates_job_status_to_running(self, mock_session, mock_job, mock_target):
         """Should update job status to 'running' when starting."""
         mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
@@ -512,7 +499,6 @@ class TestExecuteScanTask:
 
                     assert mock_job.status == "completed"
 
-    @pytest.mark.asyncio
     async def test_returns_scan_statistics(self, mock_session, mock_job, mock_target):
         """Should return scan statistics on completion."""
         mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
@@ -572,7 +558,6 @@ class TestScanTaskDeltaMode:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_force_full_scan_parameter(self, mock_session):
         """Should pass force_full_scan to inventory service."""
         job_id = uuid4()
@@ -652,7 +637,6 @@ class TestScanTaskErrorHandling:
         target.config = {"path": "/test"}
         return target
 
-    @pytest.mark.asyncio
     async def test_handles_permission_error(self, mock_session, mock_job, mock_target):
         """Should handle PermissionError and mark job as failed."""
         mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
@@ -685,7 +669,6 @@ class TestScanTaskErrorHandling:
                     assert mock_job.status == "failed"
                     assert "Permission denied" in mock_job.error
 
-    @pytest.mark.asyncio
     async def test_handles_os_error(self, mock_session, mock_job, mock_target):
         """Should handle OSError and mark job as failed."""
         mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
@@ -742,7 +725,6 @@ class TestParallelScanTask:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_raises_when_job_not_found(self, mock_session):
         """Should raise JobError when job doesn't exist."""
         from openlabels.jobs.tasks.scan import execute_parallel_scan_task
@@ -754,7 +736,6 @@ class TestParallelScanTask:
 
         assert "not found" in str(exc_info.value).lower()
 
-    @pytest.mark.asyncio
     async def test_returns_cancelled_when_already_cancelled(self, mock_session):
         """Should return cancelled if job was cancelled before start."""
         from openlabels.jobs.tasks.scan import execute_parallel_scan_task
@@ -772,7 +753,6 @@ class TestParallelScanTask:
         assert result["status"] == "cancelled"
         assert result["files_scanned"] == 0
 
-    @pytest.mark.asyncio
     async def test_raises_when_target_not_found(self, mock_session):
         """Should raise JobError when target doesn't exist."""
         from openlabels.jobs.tasks.scan import execute_parallel_scan_task
@@ -808,7 +788,6 @@ class TestTaskCreationAndQueuing:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_enqueue_scan_task_with_valid_payload(self, mock_session):
         """Should successfully enqueue scan task with valid payload."""
         from openlabels.jobs.queue import JobQueue
@@ -828,7 +807,6 @@ class TestTaskCreationAndQueuing:
         assert call_args.task_type == "scan"
         assert call_args.priority == 75
 
-    @pytest.mark.asyncio
     async def test_enqueue_scan_task_with_schedule(self, mock_session):
         """Should queue scan task for future execution."""
         from openlabels.jobs.queue import JobQueue
@@ -846,7 +824,6 @@ class TestTaskCreationAndQueuing:
         call_args = mock_session.add.call_args[0][0]
         assert call_args.scheduled_for == scheduled_time
 
-    @pytest.mark.asyncio
     async def test_dequeue_respects_priority_order(self, mock_session):
         """Higher priority jobs should be dequeued first."""
         from openlabels.jobs.queue import JobQueue
@@ -880,7 +857,6 @@ class TestTaskExecutionSuccessPath:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_successful_scan_updates_job_completion(self, mock_session):
         """Successful scan should mark job as completed with stats."""
         job_id = uuid4()
@@ -930,7 +906,6 @@ class TestTaskExecutionSuccessPath:
                     assert mock_job.status == "completed"
                     mock_session.commit.assert_called()
 
-    @pytest.mark.asyncio
     async def test_scans_files_and_records_results(self, mock_session):
         """Should scan files and record scan results to database."""
         job_id = uuid4()
@@ -1017,7 +992,6 @@ class TestTaskFailureHandling:
         session.get = AsyncMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_retry_on_temporary_failure(self, mock_session):
         """Job should be retried on temporary failure."""
         from openlabels.jobs.queue import JobQueue
@@ -1036,7 +1010,6 @@ class TestTaskFailureHandling:
         assert mock_job.retry_count == 1
         assert mock_job.scheduled_for is not None
 
-    @pytest.mark.asyncio
     async def test_max_retries_exceeded_moves_to_dlq(self, mock_session):
         """Job should move to dead letter queue when max retries exceeded."""
         from openlabels.jobs.queue import JobQueue
@@ -1054,7 +1027,6 @@ class TestTaskFailureHandling:
         assert mock_job.status == "failed"
         assert mock_job.completed_at is not None
 
-    @pytest.mark.asyncio
     async def test_non_retryable_error_fails_immediately(self, mock_session):
         """Non-retryable errors should fail job immediately."""
         from openlabels.jobs.queue import JobQueue
@@ -1085,7 +1057,6 @@ class TestTaskCancellationMidScan:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_cancellation_detected_during_file_iteration(self, mock_session):
         """Scan should stop when cancellation is detected mid-scan."""
         job_id = uuid4()
@@ -1180,7 +1151,6 @@ class TestProgressReportingAndUpdates:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_progress_updated_during_scan(self, mock_session):
         """Job progress should be updated as files are scanned."""
         job_id = uuid4()
@@ -1253,7 +1223,6 @@ class TestProgressReportingAndUpdates:
 class TestConcurrentTaskExecution:
     """Tests for concurrent task execution."""
 
-    @pytest.mark.asyncio
     async def test_multiple_workers_can_dequeue_different_jobs(self):
         """Multiple workers should be able to dequeue different jobs."""
         from openlabels.jobs.queue import JobQueue
@@ -1301,7 +1270,6 @@ class TestTaskPrioritization:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_high_priority_scan_queued_correctly(self, mock_session):
         """High priority scans should be queued with correct priority."""
         from openlabels.jobs.queue import JobQueue
@@ -1314,7 +1282,6 @@ class TestTaskPrioritization:
         call_args = mock_session.add.call_args[0][0]
         assert call_args.priority == 100
 
-    @pytest.mark.asyncio
     async def test_low_priority_scan_queued_correctly(self, mock_session):
         """Low priority scans should be queued with correct priority."""
         from openlabels.jobs.queue import JobQueue
@@ -1331,7 +1298,6 @@ class TestTaskPrioritization:
 class TestTaskTimeoutHandling:
     """Tests for task timeout handling."""
 
-    @pytest.mark.asyncio
     async def test_stuck_job_detection(self):
         """Jobs running too long should be detected as stuck."""
         from openlabels.jobs.queue import JobQueue
@@ -1363,7 +1329,6 @@ class TestTaskTimeoutHandling:
 class TestCleanupAfterCompletion:
     """Tests for cleanup after task completion/failure."""
 
-    @pytest.mark.asyncio
     async def test_completed_jobs_cleaned_up_after_ttl(self):
         """Completed jobs should be cleaned up after TTL expires."""
         from openlabels.jobs.queue import JobQueue
@@ -1386,7 +1351,6 @@ class TestCleanupAfterCompletion:
 
         assert counts["completed"] == 5
 
-    @pytest.mark.asyncio
     async def test_failed_jobs_retained_longer(self):
         """Failed jobs should have longer retention than completed jobs."""
         from openlabels.jobs.queue import JobQueue
@@ -1428,7 +1392,6 @@ class TestDifferentFileTypesScanning:
             return file_info
         return factory
 
-    @pytest.mark.asyncio
     async def test_pdf_file_detection(self, mock_file_info_factory):
         """PDF files should be processed correctly."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1454,7 +1417,6 @@ class TestDifferentFileTypesScanning:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_docx_file_detection(self, mock_file_info_factory):
         """DOCX files should be processed correctly."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1479,7 +1441,6 @@ class TestDifferentFileTypesScanning:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_xlsx_file_detection(self, mock_file_info_factory):
         """XLSX files should be processed correctly."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1518,7 +1479,6 @@ class TestLargeFilesHandling:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_large_file_skipped_when_exceeds_limit(self, mock_session):
         """Files exceeding size limit should be skipped."""
         job_id = uuid4()
@@ -1589,7 +1549,6 @@ class TestCorruptedUnreadableFiles:
         file_info.exposure = MagicMock(value="PRIVATE")
         return file_info
 
-    @pytest.mark.asyncio
     async def test_corrupted_file_returns_minimal_risk(self, mock_file_info):
         """Corrupted files should return minimal risk score."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1623,7 +1582,6 @@ class TestPermissionDeniedScenarios:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_permission_denied_on_single_file_continues(self, mock_session):
         """Permission denied on single file should continue scanning other files."""
         job_id = uuid4()
@@ -1765,7 +1723,6 @@ class TestDetectionResultAggregation:
         file_info.exposure = MagicMock(value="PRIVATE")
         return file_info
 
-    @pytest.mark.asyncio
     async def test_aggregates_multiple_entity_types(self, mock_file_info):
         """Should aggregate counts from multiple entity types."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1810,7 +1767,6 @@ class TestRiskScoreCalculation:
         file_info.exposure = MagicMock(value="PRIVATE")
         return file_info
 
-    @pytest.mark.asyncio
     async def test_critical_risk_tier_for_high_score(self, mock_file_info):
         """High risk score should result in CRITICAL tier."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1835,7 +1791,6 @@ class TestRiskScoreCalculation:
         finally:
             scan_module._processor = original
 
-    @pytest.mark.asyncio
     async def test_minimal_risk_tier_for_no_entities(self, mock_file_info):
         """No entities should result in MINIMAL tier."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1874,7 +1829,6 @@ class TestDatabaseConnectionFailures:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_database_error_during_job_lookup(self, mock_session):
         """Database error during job lookup should raise exception."""
         from sqlalchemy.exc import SQLAlchemyError
@@ -1898,7 +1852,6 @@ class TestOutOfMemoryConditions:
         file_info.exposure = MagicMock(value="PRIVATE")
         return file_info
 
-    @pytest.mark.asyncio
     async def test_memory_error_handled_gracefully(self, mock_file_info):
         """Memory errors during detection should be handled."""
         import openlabels.jobs.tasks.scan as scan_module
@@ -1923,7 +1876,6 @@ class TestOutOfMemoryConditions:
 class TestWorkerCrashRecovery:
     """Tests for worker crash recovery."""
 
-    @pytest.mark.asyncio
     async def test_stuck_jobs_reclaimed_on_worker_recovery(self):
         """Jobs stuck in running state should be reclaimed."""
         from openlabels.jobs.queue import JobQueue
@@ -1957,7 +1909,6 @@ class TestWorkerCrashRecovery:
 class TestOrphanedTasksCleanup:
     """Tests for orphaned task cleanup."""
 
-    @pytest.mark.asyncio
     async def test_old_completed_jobs_purged(self):
         """Old completed jobs should be purged."""
         from openlabels.jobs.queue import JobQueue
@@ -1981,7 +1932,6 @@ class TestOrphanedTasksCleanup:
         total_deleted = counts["completed"] + counts["failed"] + counts["cancelled"]
         assert total_deleted > 0
 
-    @pytest.mark.asyncio
     async def test_stale_pending_jobs_detected(self):
         """Stale pending jobs should be detected."""
         from openlabels.jobs.queue import JobQueue
@@ -2017,7 +1967,6 @@ class TestAutoLabelingIntegration:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_auto_labeling_disabled_by_default(self, mock_session):
         """Scan should complete without auto-labeling when disabled."""
         job_id = uuid4()
@@ -2079,7 +2028,6 @@ class TestInventoryDeltaScanning:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_unchanged_files_skipped_in_delta_mode(self, mock_session):
         """Unchanged files should be skipped in delta scan mode."""
         job_id = uuid4()

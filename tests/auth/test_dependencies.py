@@ -118,13 +118,11 @@ class TestGetOrCreateUser:
         # "admin" (lowercase) not in roles
         assert "admin" not in claims_upper.roles
 
-    @pytest.mark.asyncio
     async def test_fails_with_none_session(self, sample_claims):
         """Should raise when session is None."""
         with pytest.raises((TypeError, AttributeError)):
             await get_or_create_user(None, sample_claims)
 
-    @pytest.mark.asyncio
     async def test_fails_with_none_claims(self):
         """Should raise when claims is None."""
         mock_session = AsyncMock()
@@ -135,7 +133,6 @@ class TestGetOrCreateUser:
 class TestGetCurrentUser:
     """Tests for current user resolution - critical for auth."""
 
-    @pytest.mark.asyncio
     async def test_dev_mode_creates_dev_user(self):
         """In dev mode, should create dev user without token."""
         mock_settings = MagicMock()
@@ -156,7 +153,6 @@ class TestGetCurrentUser:
                 assert user.email == "dev@localhost"
                 assert user.role == "admin"
 
-    @pytest.mark.asyncio
     async def test_no_token_returns_401(self):
         """Without token in production mode, should return 401."""
         mock_settings = MagicMock()
@@ -171,7 +167,6 @@ class TestGetCurrentUser:
             assert exc_info.value.status_code == 401
             assert "Not authenticated" in exc_info.value.detail
 
-    @pytest.mark.asyncio
     async def test_invalid_token_returns_401(self):
         """Invalid token should return 401."""
         mock_settings = MagicMock()
@@ -189,7 +184,6 @@ class TestGetCurrentUser:
                 assert exc_info.value.status_code == 401
                 assert "Token expired" in exc_info.value.detail
 
-    @pytest.mark.asyncio
     async def test_valid_token_returns_user(self):
         """Valid token should return current user."""
         mock_settings = MagicMock()
@@ -224,7 +218,6 @@ class TestGetCurrentUser:
 class TestRequireAdmin:
     """Tests for admin requirement - authorization critical."""
 
-    @pytest.mark.asyncio
     async def test_admin_user_allowed(self):
         """Admin user should pass require_admin check."""
         admin_user = CurrentUser(
@@ -238,7 +231,6 @@ class TestRequireAdmin:
         result = await require_admin(user=admin_user)
         assert result == admin_user
 
-    @pytest.mark.asyncio
     async def test_viewer_user_forbidden(self):
         """Non-admin user should get 403 Forbidden."""
         viewer_user = CurrentUser(
@@ -255,7 +247,6 @@ class TestRequireAdmin:
         assert exc_info.value.status_code == 403
         assert "Admin access required" in exc_info.value.detail
 
-    @pytest.mark.asyncio
     async def test_unknown_role_forbidden(self):
         """Unknown role should be treated as non-admin."""
         user = CurrentUser(
@@ -271,7 +262,6 @@ class TestRequireAdmin:
 
         assert exc_info.value.status_code == 403
 
-    @pytest.mark.asyncio
     async def test_empty_role_forbidden(self):
         """Empty role should be treated as non-admin."""
         user = CurrentUser(
@@ -287,7 +277,6 @@ class TestRequireAdmin:
 
         assert exc_info.value.status_code == 403
 
-    @pytest.mark.asyncio
     async def test_case_sensitive_admin_check(self):
         """Admin check should be case-sensitive (ADMIN != admin)."""
         user = CurrentUser(
@@ -308,7 +297,6 @@ class TestRequireAdmin:
 class TestSecurityEdgeCases:
     """Security-focused edge case tests."""
 
-    @pytest.mark.asyncio
     async def test_token_with_sql_injection_in_username(self):
         """Username with SQL injection should be safely handled."""
         mock_settings = MagicMock()
@@ -339,7 +327,6 @@ class TestSecurityEdgeCases:
                     user = await get_current_user(token="token", session=mock_session)
                     assert user is not None
 
-    @pytest.mark.asyncio
     async def test_extremely_long_username_handled(self):
         """Extremely long username should be handled."""
         mock_settings = MagicMock()

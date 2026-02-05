@@ -101,7 +101,6 @@ class TestGetJWKS:
         yield
         clear_jwks_cache()
 
-    @pytest.mark.asyncio
     async def test_fetches_jwks_from_azure(self):
         """Should fetch JWKS from Azure AD endpoint."""
         mock_jwks = {
@@ -126,7 +125,6 @@ class TestGetJWKS:
                 "https://login.microsoftonline.com/test-tenant-id/discovery/v2.0/keys"
             )
 
-    @pytest.mark.asyncio
     async def test_caches_jwks(self):
         """JWKS should be cached after first fetch."""
         mock_jwks = {"keys": [{"kid": "key1"}]}
@@ -149,7 +147,6 @@ class TestGetJWKS:
             # Should only call HTTP once
             assert mock_instance.get.call_count == 1
 
-    @pytest.mark.asyncio
     async def test_different_tenants_cached_separately(self):
         """Different tenants should have separate cache entries."""
         with patch("openlabels.auth.oauth.httpx.AsyncClient") as mock_client:
@@ -173,7 +170,6 @@ class TestGetJWKS:
 
             assert call_count == 2  # Only tenant-a and tenant-b, not third call
 
-    @pytest.mark.asyncio
     async def test_http_error_propagates(self):
         """HTTP errors should propagate to caller."""
         with patch("openlabels.auth.oauth.httpx.AsyncClient") as mock_client:
@@ -202,7 +198,6 @@ class TestValidateToken:
         yield
         clear_jwks_cache()
 
-    @pytest.mark.asyncio
     async def test_dev_mode_returns_mock_claims(self):
         """In dev mode (provider=none), should return mock claims."""
         mock_settings = MagicMock()
@@ -217,7 +212,6 @@ class TestValidateToken:
             assert claims.tenant_id == "dev-tenant"
             assert "admin" in claims.roles
 
-    @pytest.mark.asyncio
     async def test_dev_mode_ignores_token_content(self):
         """Dev mode should work with any token string, even empty."""
         mock_settings = MagicMock()
@@ -228,7 +222,6 @@ class TestValidateToken:
             claims = await validate_token("")
             assert claims.oid == "dev-user-oid"
 
-    @pytest.mark.asyncio
     async def test_missing_kid_raises_error(self):
         """Token without kid in header should fail."""
         mock_settings = MagicMock()
@@ -245,7 +238,6 @@ class TestValidateToken:
                     with pytest.raises(ValueError, match="Unable to find signing key"):
                         await validate_token("token-without-kid")
 
-    @pytest.mark.asyncio
     async def test_unknown_kid_raises_error(self):
         """Token with unknown kid should fail."""
         mock_settings = MagicMock()
@@ -262,7 +254,6 @@ class TestValidateToken:
                     with pytest.raises(ValueError, match="Unable to find signing key"):
                         await validate_token("token-with-unknown-kid")
 
-    @pytest.mark.asyncio
     async def test_jwt_decode_error_wrapped(self):
         """JWTError should be wrapped in ValueError."""
         from jose import JWTError
@@ -284,7 +275,6 @@ class TestValidateToken:
                         with pytest.raises(ValueError, match="Invalid token"):
                             await validate_token("expired-token")
 
-    @pytest.mark.asyncio
     async def test_valid_token_extracts_claims(self):
         """Valid token should have claims extracted correctly."""
         mock_settings = MagicMock()
@@ -316,7 +306,6 @@ class TestValidateToken:
                         assert claims.tenant_id == "tenant-guid"
                         assert claims.roles == ["app.read", "app.write"]
 
-    @pytest.mark.asyncio
     async def test_missing_optional_claims_handled(self):
         """Token without optional claims should still work."""
         mock_settings = MagicMock()

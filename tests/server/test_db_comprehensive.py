@@ -40,7 +40,6 @@ class TestBase:
 class TestGetSessionUninitialized:
     """Tests for get_session error handling when not initialized."""
 
-    @pytest.mark.asyncio
     async def test_raises_runtime_error(self):
         """get_session raises RuntimeError if database not initialized."""
         import openlabels.server.db as db_module
@@ -59,7 +58,6 @@ class TestGetSessionUninitialized:
 class TestGetSessionContextUninitialized:
     """Tests for get_session_context error handling."""
 
-    @pytest.mark.asyncio
     async def test_raises_runtime_error(self):
         """get_session_context raises RuntimeError if not initialized."""
         import openlabels.server.db as db_module
@@ -95,7 +93,6 @@ class TestGetSessionFactoryUninitialized:
 class TestCloseDatabaseUninitialized:
     """Tests for close_db when not initialized."""
 
-    @pytest.mark.asyncio
     async def test_handles_no_engine(self):
         """close_db should not raise when no engine exists."""
         import openlabels.server.db as db_module
@@ -139,7 +136,6 @@ class TestRunMigrationsConfiguration:
 class TestInitDbIntegration:
     """Integration tests for init_db with real PostgreSQL."""
 
-    @pytest.mark.asyncio
     async def test_creates_working_engine(self, database_url):
         """init_db should create an engine that can connect."""
         if not database_url:
@@ -175,7 +171,6 @@ class TestInitDbIntegration:
 class TestGetSessionIntegration:
     """Integration tests for get_session with real PostgreSQL."""
 
-    @pytest.mark.asyncio
     async def test_yields_working_session(self, database_url):
         """get_session should yield a session that can execute queries."""
         if not database_url:
@@ -200,7 +195,6 @@ class TestGetSessionIntegration:
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
-    @pytest.mark.asyncio
     async def test_commits_on_success(self, database_url):
         """get_session should commit changes on successful completion."""
         if not database_url:
@@ -248,7 +242,6 @@ class TestGetSessionIntegration:
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
-    @pytest.mark.asyncio
     async def test_rollbacks_on_exception(self, database_url):
         """get_session should rollback on exception."""
         if not database_url:
@@ -297,7 +290,6 @@ class TestGetSessionIntegration:
 class TestGetSessionContextIntegration:
     """Integration tests for get_session_context."""
 
-    @pytest.mark.asyncio
     async def test_yields_working_session(self, database_url):
         """get_session_context should yield a working session."""
         if not database_url:
@@ -321,7 +313,6 @@ class TestGetSessionContextIntegration:
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
-    @pytest.mark.asyncio
     async def test_commits_on_success(self, database_url):
         """get_session_context should commit on successful exit."""
         if not database_url:
@@ -361,7 +352,6 @@ class TestGetSessionContextIntegration:
             db_module._engine = original_engine
             db_module._session_factory = original_factory
 
-    @pytest.mark.asyncio
     async def test_rollbacks_on_exception(self, database_url):
         """get_session_context should rollback on exception."""
         if not database_url:
@@ -408,7 +398,6 @@ class TestGetSessionContextIntegration:
 class TestCloseDbIntegration:
     """Integration tests for close_db."""
 
-    @pytest.mark.asyncio
     async def test_disposes_engine(self, database_url):
         """close_db should dispose the engine properly."""
         if not database_url:
@@ -435,7 +424,6 @@ class TestCloseDbIntegration:
 class TestGetSessionFactoryIntegration:
     """Integration tests for get_session_factory."""
 
-    @pytest.mark.asyncio
     async def test_returns_working_factory(self, database_url):
         """get_session_factory should return a usable factory."""
         if not database_url:

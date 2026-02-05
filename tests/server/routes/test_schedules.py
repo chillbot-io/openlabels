@@ -55,7 +55,6 @@ async def setup_schedules_data(test_db):
 class TestListSchedules:
     """Tests for GET /api/schedules endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_schedules_data):
         """List schedules endpoint should return 200 OK."""
         response = await test_client.get("/api/schedules")
@@ -63,7 +62,6 @@ class TestListSchedules:
         data = response.json()
         assert isinstance(data, list), "Response should be a list"
 
-    @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_schedules_data):
         """List schedules should return a list."""
         response = await test_client.get("/api/schedules")
@@ -71,7 +69,6 @@ class TestListSchedules:
         data = response.json()
         assert isinstance(data, list)
 
-    @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_schedules(self, test_client, setup_schedules_data):
         """List should return empty list when no schedules exist."""
         response = await test_client.get("/api/schedules")
@@ -79,7 +76,6 @@ class TestListSchedules:
         data = response.json()
         assert data == []
 
-    @pytest.mark.asyncio
     async def test_returns_schedules(self, test_client, setup_schedules_data):
         """List should return created schedules."""
         from openlabels.server.models import ScanSchedule
@@ -106,7 +102,6 @@ class TestListSchedules:
         assert len(data) == 1
         assert data[0]["name"] == "Test Schedule"
 
-    @pytest.mark.asyncio
     async def test_schedule_response_structure(self, test_client, setup_schedules_data):
         """Schedule response should have all required fields."""
         from openlabels.server.models import ScanSchedule
@@ -143,7 +138,6 @@ class TestListSchedules:
 class TestCreateSchedule:
     """Tests for POST /api/schedules endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_201_status(self, test_client, setup_schedules_data):
         """Create schedule should return 201 Created."""
         target = setup_schedules_data["target"]
@@ -163,7 +157,6 @@ class TestCreateSchedule:
         assert "enabled" in data, "Response should contain 'enabled' field"
         assert isinstance(data["enabled"], bool), "Enabled should be a boolean"
 
-    @pytest.mark.asyncio
     async def test_returns_created_schedule(self, test_client, setup_schedules_data):
         """Create schedule should return the created schedule."""
         target = setup_schedules_data["target"]
@@ -184,7 +177,6 @@ class TestCreateSchedule:
         assert data["cron"] == "0 0 * * *"
         assert "id" in data
 
-    @pytest.mark.asyncio
     async def test_create_schedule_without_cron(self, test_client, setup_schedules_data):
         """Schedule can be created without cron (on-demand only)."""
         target = setup_schedules_data["target"]
@@ -201,7 +193,6 @@ class TestCreateSchedule:
 
         assert data["cron"] is None
 
-    @pytest.mark.asyncio
     async def test_schedule_is_enabled_by_default(self, test_client, setup_schedules_data):
         """New schedule should be enabled by default."""
         target = setup_schedules_data["target"]
@@ -218,7 +209,6 @@ class TestCreateSchedule:
 
         assert data["enabled"] is True
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_invalid_target(self, test_client, setup_schedules_data):
         """Create schedule with invalid target should return 404."""
         fake_target_id = uuid4()
@@ -232,7 +222,6 @@ class TestCreateSchedule:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_missing_name_returns_422(self, test_client, setup_schedules_data):
         """Create schedule without name should return 422."""
         target = setup_schedules_data["target"]
@@ -245,7 +234,6 @@ class TestCreateSchedule:
         )
         assert response.status_code == 422
 
-    @pytest.mark.asyncio
     async def test_missing_target_id_returns_422(self, test_client, setup_schedules_data):
         """Create schedule without target_id should return 422."""
         response = await test_client.post(
@@ -260,7 +248,6 @@ class TestCreateSchedule:
 class TestGetSchedule:
     """Tests for GET /api/schedules/{schedule_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_schedules_data):
         """Get schedule should return 200 OK."""
         from openlabels.server.models import ScanSchedule
@@ -289,7 +276,6 @@ class TestGetSchedule:
         assert "enabled" in data, "Response should contain 'enabled' field"
         assert "cron" in data, "Response should contain 'cron' field"
 
-    @pytest.mark.asyncio
     async def test_returns_schedule_details(self, test_client, setup_schedules_data):
         """Get schedule should return schedule details."""
         from openlabels.server.models import ScanSchedule
@@ -317,14 +303,12 @@ class TestGetSchedule:
         assert data["name"] == "Details Test"
         assert data["cron"] == "30 2 * * *"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_schedule(self, test_client, setup_schedules_data):
         """Get nonexistent schedule should return 404."""
         fake_id = uuid4()
         response = await test_client.get(f"/api/schedules/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_422_for_invalid_uuid(self, test_client, setup_schedules_data):
         """Get schedule with invalid UUID should return 422."""
         response = await test_client.get("/api/schedules/not-a-uuid")
@@ -334,7 +318,6 @@ class TestGetSchedule:
 class TestUpdateSchedule:
     """Tests for PUT /api/schedules/{schedule_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_schedules_data):
         """Update schedule should return 200 OK."""
         from openlabels.server.models import ScanSchedule
@@ -365,7 +348,6 @@ class TestUpdateSchedule:
         assert "target_id" in data, "Response should contain 'target_id' field"
         assert "enabled" in data, "Response should contain 'enabled' field"
 
-    @pytest.mark.asyncio
     async def test_updates_name(self, test_client, setup_schedules_data):
         """Update should change schedule name."""
         from openlabels.server.models import ScanSchedule
@@ -393,7 +375,6 @@ class TestUpdateSchedule:
 
         assert data["name"] == "New Name"
 
-    @pytest.mark.asyncio
     async def test_updates_cron(self, test_client, setup_schedules_data):
         """Update should change cron expression."""
         from openlabels.server.models import ScanSchedule
@@ -422,7 +403,6 @@ class TestUpdateSchedule:
 
         assert data["cron"] == "0 6 * * *"
 
-    @pytest.mark.asyncio
     async def test_updates_enabled_status(self, test_client, setup_schedules_data):
         """Update should change enabled status."""
         from openlabels.server.models import ScanSchedule
@@ -451,7 +431,6 @@ class TestUpdateSchedule:
 
         assert data["enabled"] is False
 
-    @pytest.mark.asyncio
     async def test_partial_update(self, test_client, setup_schedules_data):
         """Update should only change provided fields."""
         from openlabels.server.models import ScanSchedule
@@ -483,7 +462,6 @@ class TestUpdateSchedule:
         assert data["cron"] == "0 0 * * *"  # Unchanged
         assert data["enabled"] is True  # Unchanged
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_schedule(self, test_client, setup_schedules_data):
         """Update nonexistent schedule should return 404."""
         fake_id = uuid4()
@@ -497,7 +475,6 @@ class TestUpdateSchedule:
 class TestDeleteSchedule:
     """Tests for DELETE /api/schedules/{schedule_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_204_status(self, test_client, setup_schedules_data):
         """Delete schedule should return 204 No Content."""
         from openlabels.server.models import ScanSchedule
@@ -519,7 +496,6 @@ class TestDeleteSchedule:
         response = await test_client.delete(f"/api/schedules/{schedule.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_schedule_is_removed(self, test_client, setup_schedules_data):
         """Deleted schedule should no longer exist."""
         from openlabels.server.models import ScanSchedule
@@ -546,14 +522,12 @@ class TestDeleteSchedule:
         response = await test_client.get(f"/api/schedules/{schedule_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_schedule(self, test_client, setup_schedules_data):
         """Delete nonexistent schedule should return 404."""
         fake_id = uuid4()
         response = await test_client.delete(f"/api/schedules/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_htmx_request_returns_200_with_trigger(self, test_client, setup_schedules_data):
         """HTMX delete request should return 200 with HX-Trigger."""
         from openlabels.server.models import ScanSchedule
@@ -584,7 +558,6 @@ class TestDeleteSchedule:
 class TestTriggerSchedule:
     """Tests for POST /api/schedules/{schedule_id}/run endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_202_status(self, test_client, setup_schedules_data):
         """Trigger schedule should return 202 Accepted."""
         from openlabels.server.models import ScanSchedule
@@ -611,7 +584,6 @@ class TestTriggerSchedule:
         assert "job_id" in data, "Response should contain 'job_id' field"
         assert data["schedule_id"] == str(schedule.id), "Schedule ID should match request"
 
-    @pytest.mark.asyncio
     async def test_returns_job_info(self, test_client, setup_schedules_data):
         """Trigger should return job info."""
         from openlabels.server.models import ScanSchedule
@@ -639,7 +611,6 @@ class TestTriggerSchedule:
         assert "job_id" in data
         assert data["schedule_id"] == str(schedule.id)
 
-    @pytest.mark.asyncio
     async def test_creates_scan_job(self, test_client, setup_schedules_data):
         """Trigger should create a scan job."""
         from openlabels.server.models import ScanSchedule, ScanJob
@@ -672,7 +643,6 @@ class TestTriggerSchedule:
         assert job is not None
         assert job.status == "pending"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_schedule(self, test_client, setup_schedules_data):
         """Trigger nonexistent schedule should return 404."""
         fake_id = uuid4()
@@ -683,7 +653,6 @@ class TestTriggerSchedule:
 class TestScheduleTenantIsolation:
     """Tests for tenant isolation in schedule endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_schedule(self, test_client, setup_schedules_data):
         """Should not be able to access schedules from other tenants."""
         from openlabels.server.models import Tenant, User, ScanTarget, ScanSchedule
@@ -731,7 +700,6 @@ class TestScheduleTenantIsolation:
         response = await test_client.get(f"/api/schedules/{other_schedule.id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_create_schedule_for_other_tenant_target(
         self, test_client, setup_schedules_data
     ):
@@ -782,13 +750,11 @@ class TestScheduleTenantIsolation:
 class TestScheduleContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_schedules_data):
         """List schedules should return JSON."""
         response = await test_client.get("/api/schedules")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_create_returns_json(self, test_client, setup_schedules_data):
         """Create schedule should return JSON."""
         target = setup_schedules_data["target"]
@@ -802,7 +768,6 @@ class TestScheduleContentType:
         )
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_trigger_returns_json(self, test_client, setup_schedules_data):
         """Trigger schedule should return JSON."""
         from openlabels.server.models import ScanSchedule

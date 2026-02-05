@@ -87,7 +87,6 @@ class TestExecuteLabelSyncTask:
         """Create a mock database session."""
         return AsyncMock()
 
-    @pytest.mark.asyncio
     async def test_returns_error_when_no_credentials(self, mock_session):
         """Should return error when credentials are missing."""
         with patch('openlabels.server.config.get_settings') as mock_settings:
@@ -108,7 +107,6 @@ class TestExecuteLabelSyncTask:
             assert result["success"] is False
             assert "not configured" in result["error"].lower() or "missing" in result["error"].lower()
 
-    @pytest.mark.asyncio
     async def test_uses_payload_credentials(self, mock_session):
         """Should use credentials from settings (credentials never from payload for security)."""
         tenant_id = uuid4()
@@ -137,7 +135,6 @@ class TestExecuteLabelSyncTask:
                 assert call_kwargs["azure_tenant_id"] == "azure-tenant"
                 assert call_kwargs["client_id"] == "client-id"
 
-    @pytest.mark.asyncio
     async def test_falls_back_to_settings_credentials(self, mock_session):
         """Should fall back to settings when payload missing credentials."""
         tenant_id = uuid4()
@@ -164,7 +161,6 @@ class TestExecuteLabelSyncTask:
                 assert call_kwargs["azure_tenant_id"] == "settings-tenant"
                 assert call_kwargs["client_id"] == "settings-client"
 
-    @pytest.mark.asyncio
     async def test_returns_success_when_no_errors(self, mock_session):
         """Should return success=True when no errors."""
         with patch('openlabels.server.config.get_settings') as mock_settings:
@@ -189,7 +185,6 @@ class TestExecuteLabelSyncTask:
                 assert result["success"] is True
                 assert result["labels_synced"] == 10
 
-    @pytest.mark.asyncio
     async def test_returns_failure_when_errors(self, mock_session):
         """Should return success=False when there are errors."""
         with patch('openlabels.server.config.get_settings') as mock_settings:
@@ -214,7 +209,6 @@ class TestExecuteLabelSyncTask:
                 assert result["success"] is False
                 assert "Error 1" in result["error"]
 
-    @pytest.mark.asyncio
     async def test_passes_remove_stale_option(self, mock_session):
         """Should pass remove_stale option to sync function."""
         with patch('openlabels.server.config.get_settings') as mock_settings:
@@ -257,7 +251,6 @@ class TestSyncLabelsFromGraph:
         session.execute = AsyncMock(return_value=mock_result)
         return session
 
-    @pytest.mark.asyncio
     async def test_returns_error_when_httpx_unavailable(self, mock_session):
         """Should return error when httpx is not available."""
         import openlabels.jobs.tasks.label_sync as module
@@ -278,7 +271,6 @@ class TestSyncLabelsFromGraph:
         finally:
             module.HTTPX_AVAILABLE = original
 
-    @pytest.mark.asyncio
     async def test_returns_error_when_token_fails(self, mock_session):
         """Should return error when token acquisition fails."""
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
@@ -295,7 +287,6 @@ class TestSyncLabelsFromGraph:
             assert len(result.errors) > 0
             assert "token" in result.errors[0].lower()
 
-    @pytest.mark.asyncio
     async def test_returns_error_when_fetch_fails(self, mock_session):
         """Should return error when label fetch fails."""
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
@@ -314,7 +305,6 @@ class TestSyncLabelsFromGraph:
                 assert len(result.errors) > 0
                 assert "fetch" in result.errors[0].lower()
 
-    @pytest.mark.asyncio
     async def test_adds_new_labels(self, mock_session):
         """Should add labels that don't exist in database."""
         # Mock batch query to return no existing labels
@@ -342,7 +332,6 @@ class TestSyncLabelsFromGraph:
                 assert result.labels_synced == 2
                 assert mock_session.add.call_count == 2
 
-    @pytest.mark.asyncio
     async def test_updates_existing_labels(self, mock_session):
         """Should update labels that exist in database."""
         label_id = str(uuid4())
@@ -373,7 +362,6 @@ class TestSyncLabelsFromGraph:
                 assert result.labels_updated == 1
                 assert existing_label.name == "New Name"
 
-    @pytest.mark.asyncio
     async def test_skips_labels_without_id(self, mock_session):
         """Should skip labels that don't have an ID."""
         # Mock batch query to return no existing labels
@@ -399,7 +387,6 @@ class TestSyncLabelsFromGraph:
 
                 assert result.labels_synced == 1
 
-    @pytest.mark.asyncio
     async def test_removes_stale_labels_when_enabled(self, mock_session):
         """Should remove stale labels when remove_stale=True."""
         # Mock batch query to return no existing labels
@@ -426,7 +413,6 @@ class TestSyncLabelsFromGraph:
                     mock_remove.assert_called_once()
                     assert result.labels_removed == 3
 
-    @pytest.mark.asyncio
     async def test_does_not_remove_stale_when_disabled(self, mock_session):
         """Should not remove stale labels when remove_stale=False."""
         mock_session.get = AsyncMock(return_value=None)
@@ -465,7 +451,6 @@ class TestLabelSyncPayloadParsing:
         """Create a mock database session."""
         return AsyncMock()
 
-    @pytest.mark.asyncio
     async def test_parses_tenant_id_from_payload(self, mock_session):
         """Should parse tenant_id UUID from payload."""
         tenant_id = uuid4()
@@ -503,7 +488,6 @@ class TestLabelFieldExtraction:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_extracts_label_description(self, mock_session):
         """Should extract description from label data."""
         label_id = str(uuid4())
@@ -533,7 +517,6 @@ class TestLabelFieldExtraction:
 
                 assert existing.description == "Test desc"
 
-    @pytest.mark.asyncio
     async def test_extracts_label_color(self, mock_session):
         """Should extract color from label data."""
         label_id = str(uuid4())
@@ -563,7 +546,6 @@ class TestLabelFieldExtraction:
 
                 assert existing.color == "#FF0000"
 
-    @pytest.mark.asyncio
     async def test_extracts_label_priority(self, mock_session):
         """Should extract priority from label data."""
         label_id = str(uuid4())
@@ -593,7 +575,6 @@ class TestLabelFieldExtraction:
 
                 assert existing.priority == 100
 
-    @pytest.mark.asyncio
     async def test_extracts_parent_id(self, mock_session):
         """Should extract parent_id from nested parent object."""
         label_id = str(uuid4())
@@ -625,7 +606,6 @@ class TestLabelFieldExtraction:
 
                 assert existing.parent_id == parent_id
 
-    @pytest.mark.asyncio
     async def test_updates_synced_at_timestamp(self, mock_session):
         """Should update synced_at to current time."""
         label_id = str(uuid4())
@@ -669,7 +649,6 @@ class TestLabelSyncErrorHandling:
         session.add = MagicMock()
         return session
 
-    @pytest.mark.asyncio
     async def test_catches_individual_label_errors(self, mock_session):
         """Should catch and record errors for individual labels."""
         # Mock batch query to raise exception
@@ -694,7 +673,6 @@ class TestLabelSyncErrorHandling:
                 # Should have an error since execute failed
                 assert len(result.errors) > 0
 
-    @pytest.mark.asyncio
     async def test_handles_settings_exception(self, mock_session):
         """Should handle exception when getting settings."""
         with patch('openlabels.server.config.get_settings') as mock_settings:

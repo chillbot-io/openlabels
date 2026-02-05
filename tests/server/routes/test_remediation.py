@@ -45,7 +45,6 @@ async def setup_remediation_data(test_db):
 class TestListRemediationActions:
     """Tests for GET /api/remediation endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """List remediation actions should return 200 OK."""
         response = await test_client.get("/api/remediation")
@@ -56,7 +55,6 @@ class TestListRemediationActions:
         assert "total" in data, "Response should contain 'total' field"
         assert isinstance(data["items"], list), "Items should be a list"
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_remediation_data):
         """List should return paginated structure."""
         response = await test_client.get("/api/remediation")
@@ -69,7 +67,6 @@ class TestListRemediationActions:
         assert "pages" in data
         assert isinstance(data["items"], list)
 
-    @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_actions(self, test_client, setup_remediation_data):
         """List should return empty items when no actions exist."""
         response = await test_client.get("/api/remediation")
@@ -79,7 +76,6 @@ class TestListRemediationActions:
         assert data["items"] == []
         assert data["total"] == 0
 
-    @pytest.mark.asyncio
     async def test_returns_actions(self, test_client, setup_remediation_data):
         """List should return created actions."""
         from openlabels.server.models import RemediationAction
@@ -106,7 +102,6 @@ class TestListRemediationActions:
         assert len(data["items"]) == 1
         assert data["items"][0]["action_type"] == "quarantine"
 
-    @pytest.mark.asyncio
     async def test_action_response_structure(self, test_client, setup_remediation_data):
         """Action response should have all required fields."""
         from openlabels.server.models import RemediationAction
@@ -139,7 +134,6 @@ class TestListRemediationActions:
         assert "error" in item
         assert "created_at" in item
 
-    @pytest.mark.asyncio
     async def test_filter_by_action_type(self, test_client, setup_remediation_data):
         """List should filter by action_type."""
         from openlabels.server.models import RemediationAction
@@ -169,7 +163,6 @@ class TestListRemediationActions:
         for item in data["items"]:
             assert item["action_type"] == "quarantine"
 
-    @pytest.mark.asyncio
     async def test_filter_by_status(self, test_client, setup_remediation_data):
         """List should filter by status."""
         from openlabels.server.models import RemediationAction
@@ -199,7 +192,6 @@ class TestListRemediationActions:
         for item in data["items"]:
             assert item["status"] == "completed"
 
-    @pytest.mark.asyncio
     async def test_pagination_default_limit(self, test_client, setup_remediation_data):
         """List should use default limit of 50."""
         from openlabels.server.models import RemediationAction
@@ -228,7 +220,6 @@ class TestListRemediationActions:
         assert len(data["items"]) == 50
         assert data["total"] == 60
 
-    @pytest.mark.asyncio
     async def test_pagination_custom_limit(self, test_client, setup_remediation_data):
         """List should respect custom limit."""
         from openlabels.server.models import RemediationAction
@@ -255,7 +246,6 @@ class TestListRemediationActions:
 
         assert len(data["items"]) == 5
 
-    @pytest.mark.asyncio
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
         response = await test_client.get("/api/remediation?page=1&limit=10")
@@ -272,7 +262,6 @@ class TestListRemediationActions:
 class TestGetRemediationAction:
     """Tests for GET /api/remediation/{action_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Get action should return 200 OK."""
         from openlabels.server.models import RemediationAction
@@ -300,7 +289,6 @@ class TestGetRemediationAction:
         assert data["status"] == "completed", "Status should be completed"
         assert data["source_path"] == "/test/get_file.txt", "Source path should match"
 
-    @pytest.mark.asyncio
     async def test_returns_action_details(self, test_client, setup_remediation_data):
         """Get action should return action details."""
         from openlabels.server.models import RemediationAction
@@ -327,7 +315,6 @@ class TestGetRemediationAction:
         assert data["action_type"] == "lockdown"
         assert data["source_path"] == "/test/details.xlsx"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_action(self, test_client, setup_remediation_data):
         """Get nonexistent action should return 404."""
         fake_id = uuid4()
@@ -338,7 +325,6 @@ class TestGetRemediationAction:
 class TestQuarantineFile:
     """Tests for POST /api/remediation/quarantine endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Quarantine action should return 200 OK."""
         response = await test_client.post(
@@ -356,7 +342,6 @@ class TestQuarantineFile:
         assert data["dry_run"] is True, "Dry run should be True"
         assert data["status"] in ("pending", "completed"), "Status should be valid"
 
-    @pytest.mark.asyncio
     async def test_creates_action_record(self, test_client, setup_remediation_data):
         """Quarantine should create an action record."""
         response = await test_client.post(
@@ -374,7 +359,6 @@ class TestQuarantineFile:
         assert data["source_path"] == "/test/record.txt"
         assert data["dry_run"] is True
 
-    @pytest.mark.asyncio
     async def test_dry_run_does_not_move_file(self, test_client, setup_remediation_data):
         """Dry run should not actually move the file."""
         response = await test_client.post(
@@ -391,7 +375,6 @@ class TestQuarantineFile:
         assert data["status"] == "pending"
         assert data["dry_run"] is True
 
-    @pytest.mark.asyncio
     async def test_custom_quarantine_dir(self, test_client, setup_remediation_data):
         """Quarantine should respect custom quarantine directory."""
         response = await test_client.post(
@@ -407,7 +390,6 @@ class TestQuarantineFile:
 
         assert "/secure/vault" in data["dest_path"]
 
-    @pytest.mark.asyncio
     async def test_default_quarantine_dir(self, test_client, setup_remediation_data):
         """Quarantine should use .quarantine as default directory."""
         response = await test_client.post(
@@ -422,7 +404,6 @@ class TestQuarantineFile:
 
         assert ".quarantine" in data["dest_path"]
 
-    @pytest.mark.asyncio
     async def test_missing_file_path_returns_422(self, test_client, setup_remediation_data):
         """Quarantine without file_path should return 422."""
         response = await test_client.post(
@@ -437,7 +418,6 @@ class TestQuarantineFile:
 class TestLockdownFile:
     """Tests for POST /api/remediation/lockdown endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Lockdown action should return 200 OK."""
         response = await test_client.post(
@@ -456,7 +436,6 @@ class TestLockdownFile:
         assert data["dry_run"] is True, "Dry run should be True"
         assert data["status"] in ("pending", "completed"), "Status should be valid"
 
-    @pytest.mark.asyncio
     async def test_creates_action_record(self, test_client, setup_remediation_data):
         """Lockdown should create an action record."""
         response = await test_client.post(
@@ -474,7 +453,6 @@ class TestLockdownFile:
         assert data["action_type"] == "lockdown"
         assert data["source_path"] == "/test/lockdown_record.txt"
 
-    @pytest.mark.asyncio
     async def test_dry_run_does_not_change_permissions(self, test_client, setup_remediation_data):
         """Dry run should not actually change permissions."""
         response = await test_client.post(
@@ -491,7 +469,6 @@ class TestLockdownFile:
         assert data["status"] == "pending"
         assert data["dry_run"] is True
 
-    @pytest.mark.asyncio
     async def test_missing_file_path_returns_422(self, test_client, setup_remediation_data):
         """Lockdown without file_path should return 422."""
         response = await test_client.post(
@@ -503,7 +480,6 @@ class TestLockdownFile:
         )
         assert response.status_code == 422
 
-    @pytest.mark.asyncio
     async def test_missing_allowed_principals_returns_422(self, test_client, setup_remediation_data):
         """Lockdown without allowed_principals should return 422."""
         response = await test_client.post(
@@ -519,7 +495,6 @@ class TestLockdownFile:
 class TestRollbackAction:
     """Tests for POST /api/remediation/rollback endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status_for_dry_run(self, test_client, setup_remediation_data):
         """Rollback dry run should return 200 OK."""
         from openlabels.server.models import RemediationAction
@@ -556,7 +531,6 @@ class TestRollbackAction:
         assert data["status"] in ("pending", "completed"), "Status should be valid"
         assert "source_path" in data, "Response should contain 'source_path' field"
 
-    @pytest.mark.asyncio
     async def test_creates_rollback_action_record(self, test_client, setup_remediation_data):
         """Rollback should create an action record."""
         from openlabels.server.models import RemediationAction
@@ -589,7 +563,6 @@ class TestRollbackAction:
 
         assert data["action_type"] == "rollback"
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_action(self, test_client, setup_remediation_data):
         """Rollback nonexistent action should return 404."""
         fake_id = uuid4()
@@ -602,7 +575,6 @@ class TestRollbackAction:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_rollback_already_rolled_back_action(
         self, test_client, setup_remediation_data
     ):
@@ -634,7 +606,6 @@ class TestRollbackAction:
         )
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
     async def test_cannot_rollback_a_rollback_action(self, test_client, setup_remediation_data):
         """Cannot rollback a rollback action."""
         from openlabels.server.models import RemediationAction
@@ -663,7 +634,6 @@ class TestRollbackAction:
         )
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
     async def test_cannot_rollback_dry_run_action(self, test_client, setup_remediation_data):
         """Cannot rollback a dry-run action (nothing was executed)."""
         from openlabels.server.models import RemediationAction
@@ -697,7 +667,6 @@ class TestRollbackAction:
 class TestRemediationStats:
     """Tests for GET /api/remediation/stats/summary endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_remediation_data):
         """Stats endpoint should return 200 OK."""
         response = await test_client.get("/api/remediation/stats/summary")
@@ -710,7 +679,6 @@ class TestRemediationStats:
         assert isinstance(data["by_type"], dict), "by_type should be a dictionary"
         assert isinstance(data["by_status"], dict), "by_status should be a dictionary"
 
-    @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_remediation_data):
         """Stats should return required structure."""
         response = await test_client.get("/api/remediation/stats/summary")
@@ -721,7 +689,6 @@ class TestRemediationStats:
         assert "by_type" in data
         assert "by_status" in data
 
-    @pytest.mark.asyncio
     async def test_returns_zero_values_when_empty(self, test_client, setup_remediation_data):
         """Stats should return zeros when no actions exist."""
         response = await test_client.get("/api/remediation/stats/summary")
@@ -733,7 +700,6 @@ class TestRemediationStats:
         assert data["by_type"]["lockdown"] == 0
         assert data["by_type"]["rollback"] == 0
 
-    @pytest.mark.asyncio
     async def test_counts_by_type(self, test_client, setup_remediation_data):
         """Stats should count actions by type."""
         from openlabels.server.models import RemediationAction
@@ -765,7 +731,6 @@ class TestRemediationStats:
         assert data["by_type"]["lockdown"] == 2
         assert data["by_type"]["rollback"] == 1
 
-    @pytest.mark.asyncio
     async def test_counts_by_status(self, test_client, setup_remediation_data):
         """Stats should count actions by status."""
         from openlabels.server.models import RemediationAction
@@ -800,7 +765,6 @@ class TestRemediationStats:
 class TestRemediationTenantIsolation:
     """Tests for tenant isolation in remediation endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_action(self, test_client, setup_remediation_data):
         """Should not be able to access actions from other tenants."""
         from openlabels.server.models import Tenant, User, RemediationAction
@@ -838,7 +802,6 @@ class TestRemediationTenantIsolation:
         response = await test_client.get(f"/api/remediation/{other_action.id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_rollback_other_tenant_action(self, test_client, setup_remediation_data):
         """Should not be able to rollback actions from other tenants."""
         from openlabels.server.models import Tenant, User, RemediationAction
@@ -886,13 +849,11 @@ class TestRemediationTenantIsolation:
 class TestRemediationContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_remediation_data):
         """List remediation should return JSON."""
         response = await test_client.get("/api/remediation")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_quarantine_returns_json(self, test_client, setup_remediation_data):
         """Quarantine should return JSON."""
         response = await test_client.post(
@@ -904,7 +865,6 @@ class TestRemediationContentType:
         )
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_stats_returns_json(self, test_client, setup_remediation_data):
         """Stats should return JSON."""
         response = await test_client.get("/api/remediation/stats/summary")

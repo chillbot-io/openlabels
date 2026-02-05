@@ -28,7 +28,6 @@ class TestSecurityHeadersMiddleware:
         settings.server.environment = "development"
         return settings
 
-    @pytest.mark.asyncio
     async def test_content_type_options_header(self, mock_settings_production):
         """X-Content-Type-Options should be set to nosniff."""
         from openlabels.server.app import add_security_headers
@@ -43,7 +42,6 @@ class TestSecurityHeadersMiddleware:
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-Content-Type-Options") == "nosniff"
 
-    @pytest.mark.asyncio
     async def test_frame_options_header(self, mock_settings_production):
         """X-Frame-Options should be SAMEORIGIN."""
         from openlabels.server.app import add_security_headers
@@ -58,7 +56,6 @@ class TestSecurityHeadersMiddleware:
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-Frame-Options") == "SAMEORIGIN"
 
-    @pytest.mark.asyncio
     async def test_xss_protection_header(self, mock_settings_production):
         """X-XSS-Protection should be set for legacy browsers."""
         from openlabels.server.app import add_security_headers
@@ -73,7 +70,6 @@ class TestSecurityHeadersMiddleware:
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-XSS-Protection") == "1; mode=block"
 
-    @pytest.mark.asyncio
     async def test_referrer_policy_header(self, mock_settings_production):
         """Referrer-Policy should limit referrer information."""
         from openlabels.server.app import add_security_headers
@@ -88,7 +84,6 @@ class TestSecurityHeadersMiddleware:
             result = await add_security_headers(request, call_next)
             assert result.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
 
-    @pytest.mark.asyncio
     async def test_csp_header_present(self, mock_settings_production):
         """Content-Security-Policy should be configured."""
         from openlabels.server.app import add_security_headers
@@ -107,7 +102,6 @@ class TestSecurityHeadersMiddleware:
             assert "script-src 'self'" in csp
             assert "frame-ancestors 'self'" in csp
 
-    @pytest.mark.asyncio
     async def test_permissions_policy_header(self, mock_settings_production):
         """Permissions-Policy should restrict browser features."""
         from openlabels.server.app import add_security_headers
@@ -126,7 +120,6 @@ class TestSecurityHeadersMiddleware:
             assert "microphone=()" in permissions
             assert "geolocation=()" in permissions
 
-    @pytest.mark.asyncio
     async def test_hsts_in_production(self, mock_settings_production):
         """HSTS should be set in production."""
         from openlabels.server.app import add_security_headers
@@ -144,7 +137,6 @@ class TestSecurityHeadersMiddleware:
             assert "max-age=31536000" in hsts
             assert "includeSubDomains" in hsts
 
-    @pytest.mark.asyncio
     async def test_hsts_not_in_development(self, mock_settings_development):
         """HSTS should not be set in development."""
         from openlabels.server.app import add_security_headers
@@ -164,7 +156,6 @@ class TestSecurityHeadersMiddleware:
 class TestCookieSecurityFlags:
     """Tests for cookie security configuration."""
 
-    @pytest.mark.asyncio
     async def test_session_cookie_has_security_flags(self):
         """Session cookie should have HttpOnly and SameSite flags."""
         from httpx import AsyncClient, ASGITransport
@@ -188,7 +179,6 @@ class TestCookieSecurityFlags:
                     assert "httponly" in set_cookie.lower(), \
                         "Session cookie missing HttpOnly flag"
 
-    @pytest.mark.asyncio
     async def test_api_responses_dont_set_tracking_cookies(self, test_client):
         """API responses should not set unnecessary cookies."""
         # Regular API calls should not set tracking cookies
@@ -225,7 +215,6 @@ class TestCookieSecurityFlags:
         # Token should be long enough (at least 128 bits = 16 bytes)
         assert CSRF_TOKEN_LENGTH >= 16
 
-    @pytest.mark.asyncio
     async def test_cookie_path_is_scoped(self, test_client):
         """Cookies should be scoped to the application path."""
         # Request that might set cookies
@@ -272,7 +261,6 @@ class TestCookieSecurityAttributes:
         # This is the correct behavior
         pass  # Verified via code review
 
-    @pytest.mark.asyncio
     async def test_no_sensitive_data_in_cookie_values(self, test_client):
         """Cookie values should not contain sensitive data."""
         response = await test_client.get("/api/health/status")
@@ -301,7 +289,6 @@ class TestCookieSecurityAttributes:
 class TestCSPDirectives:
     """Tests for Content-Security-Policy directives."""
 
-    @pytest.mark.asyncio
     async def test_csp_blocks_inline_scripts(self):
         """CSP should block inline scripts by not including 'unsafe-inline' for scripts."""
         from openlabels.server.app import add_security_headers
@@ -322,7 +309,6 @@ class TestCSPDirectives:
             assert "script-src 'self'" in csp
             assert "script-src 'self' 'unsafe-inline'" not in csp
 
-    @pytest.mark.asyncio
     async def test_csp_allows_websockets(self):
         """CSP should allow WebSocket connections for real-time updates."""
         from openlabels.server.app import add_security_headers

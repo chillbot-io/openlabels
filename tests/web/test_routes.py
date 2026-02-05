@@ -128,86 +128,72 @@ class TestTruncateString:
 class TestPageRoutes:
     """Tests for web page routes using actual test client."""
 
-    @pytest.mark.asyncio
     async def test_home_route(self, test_client: AsyncClient):
         """Home route should render dashboard template."""
         response = await test_client.get("/ui/")
         assert response.status_code == 200
         assert "dashboard" in response.text.lower() or response.headers.get("content-type", "").startswith("text/html")
 
-    @pytest.mark.asyncio
     async def test_dashboard_route(self, test_client: AsyncClient):
         """Dashboard route should render dashboard template."""
         response = await test_client.get("/ui/dashboard")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_targets_page_route(self, test_client: AsyncClient):
         """Targets page route should render targets template."""
         response = await test_client.get("/ui/targets")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_new_target_page_route(self, test_client: AsyncClient):
         """New target page route should render form."""
         response = await test_client.get("/ui/targets/new")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_scans_page_route(self, test_client: AsyncClient):
         """Scans page route should render scans template."""
         response = await test_client.get("/ui/scans")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_new_scan_page_route(self, test_client: AsyncClient):
         """New scan page route should render scan form template."""
         response = await test_client.get("/ui/scans/new")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_results_page_route(self, test_client: AsyncClient):
         """Results page route should render results template."""
         response = await test_client.get("/ui/results")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_results_page_with_scan_id(self, test_client: AsyncClient):
         """Results page route should accept scan_id filter."""
         response = await test_client.get("/ui/results?scan_id=test-scan-id")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_labels_page_route(self, test_client: AsyncClient):
         """Labels page route should render labels template."""
         response = await test_client.get("/ui/labels")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_labels_sync_page_route(self, test_client: AsyncClient):
         """Labels sync page route should render sync template."""
         response = await test_client.get("/ui/labels/sync")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_monitoring_page_route(self, test_client: AsyncClient):
         """Monitoring page route should render monitoring template."""
         response = await test_client.get("/ui/monitoring")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_schedules_page_route(self, test_client: AsyncClient):
         """Schedules page route should render schedules template."""
         response = await test_client.get("/ui/schedules")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_settings_page_route(self, test_client: AsyncClient):
         """Settings page should render with config values."""
         response = await test_client.get("/ui/settings")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_login_page_route(self, test_client: AsyncClient):
         """Login page route should render login template."""
         response = await test_client.get("/ui/login")
@@ -217,28 +203,24 @@ class TestPageRoutes:
 class TestDetailPages:
     """Tests for detail page routes with database interactions."""
 
-    @pytest.mark.asyncio
     async def test_edit_target_page_not_found(self, test_client: AsyncClient):
         """Edit target page should return 404 for non-existent target."""
         fake_id = uuid4()
         response = await test_client.get(f"/ui/targets/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_scan_detail_page_not_found(self, test_client: AsyncClient):
         """Scan detail page should return 404 for non-existent scan."""
         fake_id = uuid4()
         response = await test_client.get(f"/ui/scans/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_result_detail_page_not_found(self, test_client: AsyncClient):
         """Result detail page should return 404 for non-existent result."""
         fake_id = uuid4()
         response = await test_client.get(f"/ui/results/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_edit_schedule_page_not_found(self, test_client: AsyncClient):
         """Edit schedule page should return 404 for non-existent schedule."""
         fake_id = uuid4()
@@ -249,7 +231,6 @@ class TestDetailPages:
 class TestTargetCRUD:
     """Tests for target CRUD operations via web forms."""
 
-    @pytest.mark.asyncio
     async def test_create_target(self, test_client: AsyncClient, test_db):
         """Create target form should add target to database."""
         response = await test_client.post(
@@ -265,7 +246,6 @@ class TestTargetCRUD:
         # Should redirect after successful creation
         assert response.status_code in (303, 302, 200)
 
-    @pytest.mark.asyncio
     async def test_create_target_and_view(self, test_client: AsyncClient, test_db):
         """Create target and verify it appears in list."""
         # Create target
@@ -284,7 +264,6 @@ class TestTargetCRUD:
         assert response.status_code == 200
         assert "View Test Target" in response.text
 
-    @pytest.mark.asyncio
     async def test_create_and_edit_target(self, test_client: AsyncClient, test_db):
         """Create target, then edit it."""
         from openlabels.server.models import ScanTarget
@@ -322,13 +301,11 @@ class TestTargetCRUD:
 class TestScheduleCRUD:
     """Tests for schedule CRUD operations via web forms."""
 
-    @pytest.mark.asyncio
     async def test_new_schedule_page_loads(self, test_client: AsyncClient):
         """New schedule page should load successfully."""
         response = await test_client.get("/ui/schedules/new")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_create_schedule(self, test_client: AsyncClient, test_db):
         """Create schedule form should add schedule to database."""
         from openlabels.server.models import ScanTarget
@@ -368,7 +345,6 @@ class TestScheduleCRUD:
 class TestScanCreation:
     """Tests for scan creation via web forms."""
 
-    @pytest.mark.asyncio
     async def test_create_scan_no_targets(self, test_client: AsyncClient):
         """Create scan should handle case when no targets selected."""
         response = await test_client.post(
@@ -379,7 +355,6 @@ class TestScanCreation:
         # Should return error (400) when no targets selected
         assert response.status_code in (400, 200)
 
-    @pytest.mark.asyncio
     async def test_create_scan_with_target(self, test_client: AsyncClient, test_db):
         """Create scan should create job for selected target."""
         from openlabels.server.models import ScanTarget
@@ -416,135 +391,113 @@ class TestScanCreation:
 class TestHTMXPartials:
     """Tests for HTMX partial routes."""
 
-    @pytest.mark.asyncio
     async def test_dashboard_stats_partial(self, test_client: AsyncClient):
         """Dashboard stats partial should return stats HTML."""
         response = await test_client.get("/ui/partials/dashboard-stats")
         assert response.status_code == 200
         assert response.headers.get("content-type", "").startswith("text/html")
 
-    @pytest.mark.asyncio
     async def test_recent_scans_partial(self, test_client: AsyncClient):
         """Recent scans partial should return scan list HTML."""
         response = await test_client.get("/ui/partials/recent-scans")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_findings_by_type_partial(self, test_client: AsyncClient):
         """Findings by type partial should return findings HTML."""
         response = await test_client.get("/ui/partials/findings-by-type")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_risk_distribution_partial(self, test_client: AsyncClient):
         """Risk distribution partial should return distribution HTML."""
         response = await test_client.get("/ui/partials/risk-distribution")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_recent_activity_partial(self, test_client: AsyncClient):
         """Recent activity partial should return activity HTML."""
         response = await test_client.get("/ui/partials/recent-activity")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_health_status_partial(self, test_client: AsyncClient):
         """Health status partial should return healthy status."""
         response = await test_client.get("/ui/partials/health-status")
         assert response.status_code == 200
         assert "healthy" in response.text.lower()
 
-    @pytest.mark.asyncio
     async def test_system_health_partial(self, test_client: AsyncClient):
         """System health partial should check database."""
         response = await test_client.get("/ui/partials/system-health")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_targets_list_partial(self, test_client: AsyncClient):
         """Targets list partial should return targets HTML."""
         response = await test_client.get("/ui/partials/targets-list")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_targets_list_pagination(self, test_client: AsyncClient):
         """Targets list partial should handle pagination params."""
         response = await test_client.get("/ui/partials/targets-list?page=1&page_size=5")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_targets_list_adapter_filter(self, test_client: AsyncClient):
         """Targets list partial should filter by adapter."""
         response = await test_client.get("/ui/partials/targets-list?adapter=sharepoint")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_scans_list_partial(self, test_client: AsyncClient):
         """Scans list partial should return scans HTML."""
         response = await test_client.get("/ui/partials/scans-list")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_scans_list_status_filter(self, test_client: AsyncClient):
         """Scans list partial should filter by status."""
         response = await test_client.get("/ui/partials/scans-list?status=running")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_results_list_partial(self, test_client: AsyncClient):
         """Results list partial should return results HTML."""
         response = await test_client.get("/ui/partials/results-list")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_results_list_risk_filter(self, test_client: AsyncClient):
         """Results list partial should filter by risk tier."""
         response = await test_client.get("/ui/partials/results-list?risk_tier=HIGH")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_results_list_label_filter(self, test_client: AsyncClient):
         """Results list partial should filter by label status."""
         response = await test_client.get("/ui/partials/results-list?has_label=true")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_activity_log_partial(self, test_client: AsyncClient):
         """Activity log partial should return log HTML."""
         response = await test_client.get("/ui/partials/activity-log")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_activity_log_action_filter(self, test_client: AsyncClient):
         """Activity log partial should filter by action."""
         response = await test_client.get("/ui/partials/activity-log?action=scan_completed")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_job_queue_partial(self, test_client: AsyncClient):
         """Job queue partial should return queue stats HTML."""
         response = await test_client.get("/ui/partials/job-queue")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_labels_list_partial(self, test_client: AsyncClient):
         """Labels list partial should return labels HTML."""
         response = await test_client.get("/ui/partials/labels-list")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_label_mappings_partial(self, test_client: AsyncClient):
         """Label mappings partial should return mappings HTML."""
         response = await test_client.get("/ui/partials/label-mappings")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_target_checkboxes_partial(self, test_client: AsyncClient):
         """Target checkboxes partial should return checkbox HTML."""
         response = await test_client.get("/ui/partials/target-checkboxes")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_schedules_list_partial(self, test_client: AsyncClient):
         """Schedules list partial should return schedules HTML."""
         response = await test_client.get("/ui/partials/schedules-list")
@@ -554,7 +507,6 @@ class TestHTMXPartials:
 class TestDataWithResults:
     """Tests that verify correct data rendering with actual database records."""
 
-    @pytest.mark.asyncio
     async def test_target_appears_in_list(self, test_client: AsyncClient, test_db):
         """Created target should appear in targets list."""
         from openlabels.server.models import ScanTarget
@@ -579,7 +531,6 @@ class TestDataWithResults:
         assert response.status_code == 200
         assert "Visible Target" in response.text
 
-    @pytest.mark.asyncio
     async def test_scan_appears_in_recent(self, test_client: AsyncClient, test_db):
         """Created scan should appear in recent scans."""
         from openlabels.server.models import ScanJob, ScanTarget
@@ -616,7 +567,6 @@ class TestDataWithResults:
         assert response.status_code == 200
         assert "Recent Scan Target" in response.text
 
-    @pytest.mark.asyncio
     async def test_schedule_appears_in_list(self, test_client: AsyncClient, test_db):
         """Created schedule should appear in schedules list."""
         from openlabels.server.models import ScanSchedule, ScanTarget
@@ -654,7 +604,6 @@ class TestDataWithResults:
         assert response.status_code == 200
         assert "Visible Schedule" in response.text
 
-    @pytest.mark.asyncio
     async def test_result_appears_in_list(self, test_client: AsyncClient, test_db):
         """Created result should appear in results list."""
         from openlabels.server.models import ScanResult, ScanTarget, ScanJob
@@ -704,7 +653,6 @@ class TestDataWithResults:
         assert response.status_code == 200
         assert "visible_file" in response.text
 
-    @pytest.mark.asyncio
     async def test_dashboard_stats_with_data(self, test_client: AsyncClient, test_db):
         """Dashboard stats should reflect actual data."""
         from openlabels.server.models import ScanResult, ScanTarget, ScanJob
@@ -761,7 +709,6 @@ class TestDataWithResults:
 class TestEditPages:
     """Tests for edit page routes with actual data."""
 
-    @pytest.mark.asyncio
     async def test_edit_target_page_with_data(self, test_client: AsyncClient, test_db):
         """Edit target page should render for existing target."""
         from openlabels.server.models import ScanTarget
@@ -787,7 +734,6 @@ class TestEditPages:
         assert response.status_code == 200
         assert "Editable Target" in response.text
 
-    @pytest.mark.asyncio
     async def test_scan_detail_page_with_data(self, test_client: AsyncClient, test_db):
         """Scan detail page should render for existing scan."""
         from openlabels.server.models import ScanJob, ScanTarget
@@ -826,7 +772,6 @@ class TestEditPages:
         assert response.status_code == 200
         assert "Detail Test" in response.text
 
-    @pytest.mark.asyncio
     async def test_result_detail_page_with_data(self, test_client: AsyncClient, test_db):
         """Result detail page should render for existing result."""
         from openlabels.server.models import ScanResult, ScanTarget, ScanJob
@@ -877,7 +822,6 @@ class TestEditPages:
         assert response.status_code == 200
         assert "detail_test.pdf" in response.text
 
-    @pytest.mark.asyncio
     async def test_edit_schedule_page_with_data(self, test_client: AsyncClient, test_db):
         """Edit schedule page should render for existing schedule."""
         from openlabels.server.models import ScanSchedule, ScanTarget
@@ -918,7 +862,6 @@ class TestEditPages:
 class TestTenantIsolation:
     """Tests to verify tenant isolation in web routes."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_target(self, test_client: AsyncClient, test_db):
         """Should not be able to view another tenant's target."""
         from openlabels.server.models import ScanTarget, Tenant
@@ -948,7 +891,6 @@ class TestTenantIsolation:
         response = await test_client.get(f"/ui/targets/{other_target.id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_scan(self, test_client: AsyncClient, test_db):
         """Should not be able to view another tenant's scan."""
         from openlabels.server.models import ScanJob, ScanTarget, Tenant

@@ -378,7 +378,6 @@ class TestWebSocketOriginValidation:
 class TestWebSocketAuthentication:
     """Tests for WebSocket session-based authentication."""
 
-    @pytest.mark.asyncio
     async def test_authenticate_dev_mode_creates_user(self, test_db):
         """In dev mode (auth provider=none), authentication should auto-create dev user."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -401,7 +400,6 @@ class TestWebSocketAuthentication:
                 assert user_id is not None
                 assert tenant_id is not None
 
-    @pytest.mark.asyncio
     async def test_authenticate_no_session_cookie_rejected(self, test_db, setup_ws_test_data):
         """WebSocket without session cookie should be rejected."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -416,7 +414,6 @@ class TestWebSocketAuthentication:
             result = await authenticate_websocket(mock_websocket)
             assert result is None
 
-    @pytest.mark.asyncio
     async def test_authenticate_invalid_session_rejected(self, test_db, setup_ws_test_data):
         """WebSocket with invalid session ID should be rejected."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -434,7 +431,6 @@ class TestWebSocketAuthentication:
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_authenticate_expired_session_rejected(
         self, test_db, setup_ws_test_data, create_ws_session
     ):
@@ -474,7 +470,6 @@ class TestWebSocketAuthentication:
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_authenticate_missing_claims_rejected(
         self, test_db, setup_ws_test_data, create_ws_session
     ):
@@ -507,7 +502,6 @@ class TestWebSocketAuthentication:
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_authenticate_tenant_not_found_rejected(
         self, test_db, setup_ws_test_data, create_ws_session
     ):
@@ -534,7 +528,6 @@ class TestWebSocketAuthentication:
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_authenticate_user_not_found_rejected(
         self, test_db, setup_ws_test_data, create_ws_session
     ):
@@ -572,7 +565,6 @@ class TestWebSocketAuthentication:
 class TestConnectionManager:
     """Tests for WebSocket connection manager."""
 
-    @pytest.mark.asyncio
     async def test_manager_connect_adds_connection(self):
         """Connect should add connection to active list."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -592,7 +584,6 @@ class TestConnectionManager:
         assert conn.tenant_id == tenant_id
         mock_websocket.accept.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_manager_multiple_connections_same_scan(self):
         """Manager should support multiple connections to same scan."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -609,7 +600,6 @@ class TestConnectionManager:
 
         assert len(manager.active_connections[scan_id]) == 2
 
-    @pytest.mark.asyncio
     async def test_manager_disconnect_removes_connection(self):
         """Disconnect should remove connection from active list."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -626,7 +616,6 @@ class TestConnectionManager:
 
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_manager_disconnect_keeps_other_connections(self):
         """Disconnect should only remove specific connection."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -646,7 +635,6 @@ class TestConnectionManager:
         assert len(manager.active_connections[scan_id]) == 1
         assert manager.active_connections[scan_id][0] == conn2
 
-    @pytest.mark.asyncio
     async def test_manager_broadcast_sends_to_all(self):
         """Broadcast should send message to all connections for a scan."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -667,7 +655,6 @@ class TestConnectionManager:
         mock_websocket1.send_json.assert_called_once_with(message)
         mock_websocket2.send_json.assert_called_once_with(message)
 
-    @pytest.mark.asyncio
     async def test_manager_broadcast_handles_send_error(self):
         """Broadcast should handle errors when sending to individual connections."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -691,7 +678,6 @@ class TestConnectionManager:
         # Second connection should still receive message
         mock_websocket2.send_json.assert_called_once_with(message)
 
-    @pytest.mark.asyncio
     async def test_manager_broadcast_no_connections(self):
         """Broadcast to scan with no connections should not error."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -735,7 +721,6 @@ class TestAuthenticatedConnection:
 class TestRealTimeUpdateHelpers:
     """Tests for real-time update helper functions."""
 
-    @pytest.mark.asyncio
     async def test_send_scan_progress(self):
         """send_scan_progress should broadcast progress message."""
         from openlabels.server.routes.ws import send_scan_progress, manager
@@ -763,7 +748,6 @@ class TestRealTimeUpdateHelpers:
             # Clean up
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_send_scan_file_result(self):
         """send_scan_file_result should broadcast file result message."""
         from openlabels.server.routes.ws import send_scan_file_result, manager
@@ -795,7 +779,6 @@ class TestRealTimeUpdateHelpers:
             # Clean up
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_send_scan_completed(self):
         """send_scan_completed should broadcast completion message."""
         from openlabels.server.routes.ws import send_scan_completed, manager
@@ -832,7 +815,6 @@ class TestRealTimeUpdateHelpers:
 class TestTenantIsolation:
     """Tests for tenant isolation in WebSocket connections."""
 
-    @pytest.mark.asyncio
     async def test_scan_access_denied_different_tenant(self):
         """Users should not connect to scans from different tenants."""
         # This test verifies the logic in websocket_scan_progress
@@ -861,7 +843,6 @@ class TestTenantIsolation:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_broadcasts_isolated_by_scan_id(self):
         """Broadcasts should only go to connections watching the same scan."""
         from openlabels.server.routes.ws import manager
@@ -897,7 +878,6 @@ class TestTenantIsolation:
 class TestWebSocketMessageHandling:
     """Tests for WebSocket message handling."""
 
-    @pytest.mark.asyncio
     async def test_ping_pong_response(self):
         """Server should respond to 'ping' with 'pong'."""
         # This is tested by checking the websocket endpoint logic
@@ -914,7 +894,6 @@ class TestWebSocketMessageHandling:
 
         mock_websocket.send_text.assert_called_once_with("pong")
 
-    @pytest.mark.asyncio
     async def test_heartbeat_on_timeout(self):
         """Server should send heartbeat after receive timeout."""
         mock_websocket = AsyncMock()
@@ -933,7 +912,6 @@ class TestWebSocketMessageHandling:
 class TestWebSocketErrorHandling:
     """Tests for WebSocket error handling."""
 
-    @pytest.mark.asyncio
     async def test_disconnect_cleanup(self):
         """WebSocket disconnect should clean up connection."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -952,7 +930,6 @@ class TestWebSocketErrorHandling:
         # Connection should be removed
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_broadcast_continues_after_one_failure(self):
         """Broadcast should continue to other connections if one fails."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -995,7 +972,6 @@ class TestWebSocketErrorHandling:
 class TestWebSocketEndpointIntegration:
     """Integration tests for WebSocket endpoint using TestClient."""
 
-    @pytest.mark.asyncio
     async def test_endpoint_rejects_invalid_origin_in_production(self, test_db, setup_ws_test_data):
         """WebSocket endpoint should reject invalid origins in production."""
         from starlette.testclient import TestClient
@@ -1030,7 +1006,6 @@ class TestWebSocketEndpointIntegration:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_endpoint_requires_authentication(self, test_db, setup_ws_test_data):
         """WebSocket endpoint should require valid session."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -1079,7 +1054,6 @@ class TestWebSocketConstants:
 class TestConcurrentConnections:
     """Tests for multiple simultaneous WebSocket connections."""
 
-    @pytest.mark.asyncio
     async def test_multiple_users_same_scan(self):
         """Multiple users should be able to watch the same scan."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1108,7 +1082,6 @@ class TestConcurrentConnections:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_user_multiple_connections(self):
         """Same user can have multiple connections (e.g., multiple browser tabs)."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1137,7 +1110,6 @@ class TestConcurrentConnections:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_connections_across_multiple_scans(self):
         """Connections should be properly isolated across different scans."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1183,7 +1155,6 @@ class TestConcurrentConnections:
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
-    @pytest.mark.asyncio
     async def test_disconnect_nonexistent_scan(self):
         """Disconnect should handle non-existent scan gracefully."""
         from openlabels.server.routes.ws import ConnectionManager, AuthenticatedConnection
@@ -1197,7 +1168,6 @@ class TestEdgeCases:
         # Should not raise
         manager.disconnect(scan_id, conn)
 
-    @pytest.mark.asyncio
     async def test_disconnect_already_removed_connection(self):
         """Disconnect should handle already-removed connection gracefully."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1214,7 +1184,6 @@ class TestEdgeCases:
         manager.disconnect(scan_id, conn)
         manager.disconnect(scan_id, conn)  # Should not raise
 
-    @pytest.mark.asyncio
     async def test_broadcast_empty_message(self):
         """Broadcast should handle empty message dict."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1231,7 +1200,6 @@ class TestEdgeCases:
         finally:
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_broadcast_large_message(self):
         """Broadcast should handle large messages."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1298,7 +1266,6 @@ class TestWebSocketSecurity:
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             assert validate_websocket_origin(mock_websocket) is False
 
-    @pytest.mark.asyncio
     async def test_session_based_auth_prevents_unauthorized_access(self, test_db):
         """Session-based auth should prevent unauthorized WebSocket access."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -1346,7 +1313,6 @@ class TestWebSocketSecurity:
 class TestWebSocketIntegration:
     """Integration tests using Starlette's WebSocket TestClient."""
 
-    @pytest.mark.asyncio
     async def test_websocket_connection_dev_mode(self, test_db, setup_ws_test_data):
         """WebSocket should connect successfully in dev mode."""
         from starlette.testclient import TestClient
@@ -1379,7 +1345,6 @@ class TestWebSocketIntegration:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_websocket_receives_heartbeat(self, test_db, setup_ws_test_data):
         """WebSocket should receive heartbeat on timeout."""
         from starlette.testclient import TestClient
@@ -1414,7 +1379,6 @@ class TestWebSocketIntegration:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_websocket_invalid_scan_id_format(self, test_db, setup_ws_test_data):
         """WebSocket should handle invalid scan ID format gracefully."""
         from starlette.testclient import TestClient
@@ -1440,7 +1404,6 @@ class TestWebSocketIntegration:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_websocket_nonexistent_scan(self, test_db, setup_ws_test_data):
         """WebSocket should reject connection to non-existent scan."""
         from starlette.testclient import TestClient
@@ -1479,7 +1442,6 @@ class TestWebSocketIntegration:
 class TestMessageHandlingEdgeCases:
     """Tests for edge cases in WebSocket message handling."""
 
-    @pytest.mark.asyncio
     async def test_unknown_message_type_ignored(self):
         """Unknown message types should be handled gracefully (not crash)."""
         # The endpoint only handles "ping", other messages are ignored
@@ -1498,7 +1460,6 @@ class TestMessageHandlingEdgeCases:
         # send_text should not have been called (message wasn't "ping")
         mock_websocket.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_empty_message_handled(self):
         """Empty messages should not crash the WebSocket."""
         mock_websocket = AsyncMock()
@@ -1510,7 +1471,6 @@ class TestMessageHandlingEdgeCases:
 
         mock_websocket.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_whitespace_only_message_handled(self):
         """Whitespace-only messages should not crash the WebSocket."""
         mock_websocket = AsyncMock()
@@ -1522,7 +1482,6 @@ class TestMessageHandlingEdgeCases:
 
         mock_websocket.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_case_sensitive_ping(self):
         """Ping command should be case-sensitive."""
         mock_websocket = AsyncMock()
@@ -1540,7 +1499,6 @@ class TestMessageHandlingEdgeCases:
             # Only exact "ping" should trigger response
             mock_websocket.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_binary_message_handling(self):
         """Binary messages should be handled appropriately."""
         # Note: The current endpoint uses receive_text, so binary would
@@ -1552,7 +1510,6 @@ class TestMessageHandlingEdgeCases:
         data = await mock_websocket.receive_bytes()
         assert isinstance(data, bytes)
 
-    @pytest.mark.asyncio
     async def test_unicode_message_handling(self):
         """Unicode messages should be handled correctly."""
         mock_websocket = AsyncMock()
@@ -1568,7 +1525,6 @@ class TestMessageHandlingEdgeCases:
         # None of these should trigger pong response
         mock_websocket.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_very_long_message(self):
         """Very long messages should be handled without crashing."""
         mock_websocket = AsyncMock()
@@ -1587,7 +1543,6 @@ class TestMessageHandlingEdgeCases:
 class TestConnectionLifecycle:
     """Tests for WebSocket connection lifecycle management."""
 
-    @pytest.mark.asyncio
     async def test_rapid_connect_disconnect_cycles(self):
         """Manager should handle rapid connect/disconnect cycles."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1605,7 +1560,6 @@ class TestConnectionLifecycle:
         # Manager should be clean after all disconnects
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_interleaved_connect_disconnect(self):
         """Manager should handle interleaved connect/disconnect operations."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1636,7 +1590,6 @@ class TestConnectionLifecycle:
         # Should be clean
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_connection_memory_cleanup(self):
         """Verify connections are properly cleaned up to prevent memory leaks."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1661,7 +1614,6 @@ class TestConnectionLifecycle:
         # but the manager should not hold references
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_reconnection_after_disconnect(self):
         """Same user should be able to reconnect after disconnecting."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1687,7 +1639,6 @@ class TestConnectionLifecycle:
         # Clean up
         manager.disconnect(scan_id, conn2)
 
-    @pytest.mark.asyncio
     async def test_multiple_scans_same_user(self):
         """User should be able to watch multiple scans simultaneously."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1722,7 +1673,6 @@ class TestConnectionLifecycle:
 class TestBroadcastBehavior:
     """Tests for broadcast message delivery behavior."""
 
-    @pytest.mark.asyncio
     async def test_broadcast_message_ordering(self):
         """Messages should be delivered in order to each connection."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1759,7 +1709,6 @@ class TestBroadcastBehavior:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_broadcast_to_many_connections(self):
         """Broadcast should efficiently handle many connections."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1786,7 +1735,6 @@ class TestBroadcastBehavior:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_broadcast_partial_failure_continues(self):
         """Broadcast should continue even if some connections fail."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1814,7 +1762,6 @@ class TestBroadcastBehavior:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_broadcast_with_nested_data(self):
         """Broadcast should handle deeply nested message data."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1847,7 +1794,6 @@ class TestBroadcastBehavior:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_concurrent_broadcasts(self):
         """Multiple concurrent broadcasts should not interfere."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -1888,7 +1834,6 @@ class TestBroadcastBehavior:
 class TestAuthenticationEdgeCases:
     """Edge cases in WebSocket authentication."""
 
-    @pytest.mark.asyncio
     async def test_malformed_session_data(self, test_db, setup_ws_test_data, create_ws_session):
         """Authentication should handle malformed session data gracefully."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -1918,7 +1863,6 @@ class TestAuthenticationEdgeCases:
                 # Should fail gracefully (return None) rather than crash
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_session_without_expires_at(self, test_db, setup_ws_test_data, create_ws_session):
         """Session without expires_at field should be handled."""
         tenant = setup_ws_test_data["tenant"]
@@ -1957,7 +1901,6 @@ class TestAuthenticationEdgeCases:
                 # Should succeed since no expiry means not expired
                 assert result is not None
 
-    @pytest.mark.asyncio
     async def test_session_empty_claims(self, test_db, setup_ws_test_data, create_ws_session):
         """Session with empty claims should be rejected."""
         session = await create_ws_session(
@@ -1984,7 +1927,6 @@ class TestAuthenticationEdgeCases:
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
 
-    @pytest.mark.asyncio
     async def test_cookie_with_special_characters(self, test_db):
         """Session cookie with special characters should be handled."""
         from openlabels.server.routes.ws import authenticate_websocket
@@ -2012,7 +1954,6 @@ class TestAuthenticationEdgeCases:
 class TestTenantIsolationComprehensive:
     """Comprehensive tests for tenant data isolation."""
 
-    @pytest.mark.asyncio
     async def test_tenant_cannot_access_other_tenant_scan(self, test_db, setup_multi_tenant_data):
         """Verify tenant isolation - users cannot access other tenant's scans."""
         # This is enforced at the endpoint level before connecting
@@ -2023,7 +1964,6 @@ class TestTenantIsolationComprehensive:
         assert data["scan_a"].tenant_id != data["tenant_b"].id
         assert data["scan_b"].tenant_id != data["tenant_a"].id
 
-    @pytest.mark.asyncio
     async def test_broadcasts_never_cross_tenants(self, setup_multi_tenant_data):
         """Broadcasts should never leak data between tenants."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2061,7 +2001,6 @@ class TestTenantIsolationComprehensive:
         manager.active_connections.pop(data["scan_a"].id, None)
         manager.active_connections.pop(data["scan_b"].id, None)
 
-    @pytest.mark.asyncio
     async def test_scan_id_collision_different_tenants(self):
         """Even with hypothetical scan ID collision, tenant isolation should hold."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2101,7 +2040,6 @@ class TestTenantIsolationComprehensive:
 class TestStressAndPerformance:
     """Stress tests for WebSocket handling."""
 
-    @pytest.mark.asyncio
     async def test_high_volume_messages(self):
         """Manager should handle high volume of messages."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2122,7 +2060,6 @@ class TestStressAndPerformance:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_many_scans_many_connections(self):
         """Manager should handle many scans with many connections each."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2153,7 +2090,6 @@ class TestStressAndPerformance:
         for scan_id in scans:
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_connection_churn(self):
         """Manager should handle rapid connection churn (adds and removes)."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2317,7 +2253,6 @@ class TestOriginValidationEdgeCases:
 class TestHelperFunctionsComprehensive:
     """Comprehensive tests for WebSocket helper functions."""
 
-    @pytest.mark.asyncio
     async def test_send_scan_progress_with_all_fields(self):
         """send_scan_progress should include all expected fields."""
         from openlabels.server.routes.ws import send_scan_progress, manager
@@ -2346,7 +2281,6 @@ class TestHelperFunctionsComprehensive:
         finally:
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_send_scan_file_result_with_many_entities(self):
         """send_scan_file_result should handle many entity types."""
         from openlabels.server.routes.ws import send_scan_file_result, manager
@@ -2383,7 +2317,6 @@ class TestHelperFunctionsComprehensive:
         finally:
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_send_scan_completed_with_detailed_summary(self):
         """send_scan_completed should handle detailed summary data."""
         from openlabels.server.routes.ws import send_scan_completed, manager
@@ -2422,7 +2355,6 @@ class TestHelperFunctionsComprehensive:
         finally:
             manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_helper_functions_with_no_connections(self):
         """Helper functions should handle case with no active connections."""
         from openlabels.server.routes.ws import (
@@ -2447,7 +2379,6 @@ class TestHelperFunctionsComprehensive:
 class TestErrorConditions:
     """Tests for various error conditions."""
 
-    @pytest.mark.asyncio
     async def test_websocket_accept_failure(self):
         """Manager should handle websocket.accept() failure."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2464,7 +2395,6 @@ class TestErrorConditions:
         # Connection should not be added on failure
         assert scan_id not in manager.active_connections
 
-    @pytest.mark.asyncio
     async def test_broadcast_json_serialization_error(self):
         """Broadcast should handle JSON serialization errors gracefully."""
         from openlabels.server.routes.ws import ConnectionManager
@@ -2488,7 +2418,6 @@ class TestErrorConditions:
         # Clean up
         manager.active_connections.pop(scan_id, None)
 
-    @pytest.mark.asyncio
     async def test_disconnect_during_broadcast(self):
         """Broadcast should handle connections closing during iteration."""
         from openlabels.server.routes.ws import ConnectionManager

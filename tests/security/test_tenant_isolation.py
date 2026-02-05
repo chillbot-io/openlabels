@@ -230,7 +230,6 @@ async def create_client_for_user(test_db, user, tenant):
 class TestScanTenantIsolation:
     """Tests for tenant isolation in scan operations."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_scans(self, two_tenant_setup):
         """User from tenant B should not see tenant A's scans."""
         data = two_tenant_setup
@@ -248,7 +247,6 @@ class TestScanTenantIsolation:
                 f"Expected 404 for cross-tenant access, got {response.status_code}"
 
 
-    @pytest.mark.asyncio
     async def test_cannot_cancel_other_tenant_scans(self, two_tenant_setup):
         """User from tenant B should not cancel tenant A's scans."""
         from sqlalchemy import select
@@ -275,7 +273,6 @@ class TestScanTenantIsolation:
             f"TENANT ISOLATION BREACH: Scan status changed from '{original_status}' to '{scan_after.status}'!"
 
 
-    @pytest.mark.asyncio
     async def test_list_scans_only_shows_own_tenant(self, two_tenant_setup):
         """Listing scans should only return current tenant's scans."""
         data = two_tenant_setup
@@ -300,7 +297,6 @@ class TestScanTenantIsolation:
 class TestTargetTenantIsolation:
     """Tests for tenant isolation in target configuration."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_targets(self, two_tenant_setup):
         """User from tenant B should not see tenant A's targets."""
         data = two_tenant_setup
@@ -313,7 +309,6 @@ class TestTargetTenantIsolation:
             assert response.status_code == 404
 
 
-    @pytest.mark.asyncio
     async def test_cannot_modify_other_tenant_targets(self, two_tenant_setup):
         """User from tenant B should not modify tenant A's targets."""
         from sqlalchemy import select
@@ -341,7 +336,6 @@ class TestTargetTenantIsolation:
             f"TENANT ISOLATION BREACH: Target name changed from '{original_name}' to '{target_after.name}'!"
 
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_targets(self, two_tenant_setup):
         """User from tenant B should not delete tenant A's targets."""
         from sqlalchemy import select
@@ -364,7 +358,6 @@ class TestTargetTenantIsolation:
             "TENANT ISOLATION BREACH: Target deleted by user from different tenant!"
 
 
-    @pytest.mark.asyncio
     async def test_cannot_scan_using_other_tenant_target(self, two_tenant_setup):
         """User from tenant B should not create scan using tenant A's target."""
         from sqlalchemy import select, func
@@ -401,7 +394,6 @@ class TestTargetTenantIsolation:
 class TestResultTenantIsolation:
     """Tests for tenant isolation in scan results."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_results(self, two_tenant_setup):
         """User from tenant B should not see tenant A's results."""
         data = two_tenant_setup
@@ -414,7 +406,6 @@ class TestResultTenantIsolation:
             assert response.status_code == 404
 
 
-    @pytest.mark.asyncio
     async def test_cannot_apply_label_to_other_tenant_result(self, two_tenant_setup):
         """User from tenant B should not apply labels to tenant A's results."""
         data = two_tenant_setup
@@ -434,7 +425,6 @@ class TestResultTenantIsolation:
 class TestRemediationTenantIsolation:
     """Tests for tenant isolation in remediation actions."""
 
-    @pytest.mark.asyncio
     async def test_cannot_quarantine_other_tenant_files(self, two_tenant_setup):
         """User from tenant B should not quarantine tenant A's files."""
         data = two_tenant_setup
@@ -451,7 +441,6 @@ class TestRemediationTenantIsolation:
             assert response.status_code in (400, 404, 422)
 
 
-    @pytest.mark.asyncio
     async def test_cannot_lockdown_other_tenant_files(self, two_tenant_setup):
         """User from tenant B should not lockdown tenant A's files."""
         data = two_tenant_setup
@@ -471,7 +460,6 @@ class TestRemediationTenantIsolation:
 class TestScheduleTenantIsolation:
     """Tests for tenant isolation in schedules."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_schedules(self, two_tenant_setup):
         """User from tenant B should not see tenant A's schedules."""
         data = two_tenant_setup
@@ -484,7 +472,6 @@ class TestScheduleTenantIsolation:
             assert response.status_code == 404
 
 
-    @pytest.mark.asyncio
     async def test_cannot_trigger_other_tenant_schedules(self, two_tenant_setup):
         """User from tenant B should not trigger tenant A's schedules."""
         from sqlalchemy import select, func
@@ -513,7 +500,6 @@ class TestScheduleTenantIsolation:
             f"TENANT ISOLATION BREACH: Schedule triggered by user from different tenant! Created {count_after - count_before} scans"
 
 
-    @pytest.mark.asyncio
     async def test_list_schedules_only_shows_own_tenant(self, two_tenant_setup):
         """Listing schedules should only return current tenant's schedules."""
         data = two_tenant_setup
@@ -537,7 +523,6 @@ class TestScheduleTenantIsolation:
 class TestAuditLogTenantIsolation:
     """Tests for tenant isolation in audit logs."""
 
-    @pytest.mark.asyncio
     async def test_cannot_view_other_tenant_audit_logs(self, two_tenant_setup):
         """User from tenant B should not see tenant A's audit logs."""
         data = two_tenant_setup
@@ -550,7 +535,6 @@ class TestAuditLogTenantIsolation:
             assert response.status_code == 404
 
 
-    @pytest.mark.asyncio
     async def test_list_audit_logs_only_shows_own_tenant(self, two_tenant_setup):
         """Listing audit logs should only return current tenant's logs."""
         data = two_tenant_setup
@@ -574,7 +558,6 @@ class TestAuditLogTenantIsolation:
 class TestIDORPrevention:
     """Tests for Insecure Direct Object Reference prevention."""
 
-    @pytest.mark.asyncio
     async def test_uuid_enumeration_returns_404(self, two_tenant_setup):
         """Attempting to access non-existent UUIDs should return 404."""
         data = two_tenant_setup
@@ -597,7 +580,6 @@ class TestIDORPrevention:
                 assert response.status_code == 404
 
 
-    @pytest.mark.asyncio
     async def test_cross_tenant_returns_same_as_nonexistent(self, two_tenant_setup):
         """Cross-tenant access should return same error as non-existent resource."""
         data = two_tenant_setup

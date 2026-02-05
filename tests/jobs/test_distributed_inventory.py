@@ -98,7 +98,6 @@ class TestDistributedScanInventoryInitialize:
         """Create a DistributedScanInventory instance."""
         return DistributedScanInventory(uuid4(), uuid4())
 
-    @pytest.mark.asyncio
     async def test_initialize_uses_in_memory_when_redis_not_connected(self, inventory):
         """Should use in-memory cache when Redis is not connected."""
         mock_cache_manager = MagicMock()
@@ -110,7 +109,6 @@ class TestDistributedScanInventoryInitialize:
         assert inventory._initialized is True
         assert inventory._use_redis is False
 
-    @pytest.mark.asyncio
     async def test_initialize_uses_redis_when_connected(self, inventory):
         """Should use Redis when connected."""
         mock_redis_client = AsyncMock()
@@ -128,7 +126,6 @@ class TestDistributedScanInventoryInitialize:
         assert inventory._use_redis is True
         assert inventory._redis_client is mock_redis_client
 
-    @pytest.mark.asyncio
     async def test_initialize_handles_exception(self, inventory):
         """Should fall back to in-memory on exception."""
         inventory._cache_manager = None
@@ -139,7 +136,6 @@ class TestDistributedScanInventoryInitialize:
         assert inventory._initialized is True
         assert inventory._use_redis is False
 
-    @pytest.mark.asyncio
     async def test_initialize_only_runs_once(self, inventory):
         """Should only initialize once."""
         inventory._initialized = True
@@ -162,7 +158,6 @@ class TestDistributedScanInventoryFolderOperations:
         inv._use_redis = False
         return inv
 
-    @pytest.mark.asyncio
     async def test_set_folder_stores_in_local_cache(self, inventory):
         """Should store folder data in local cache."""
         folder_data = {"folder_path": "/test", "file_count": 5}
@@ -172,7 +167,6 @@ class TestDistributedScanInventoryFolderOperations:
         assert result is True
         assert inventory._local_folder_cache["/test"] == folder_data
 
-    @pytest.mark.asyncio
     async def test_get_folder_returns_from_local_cache(self, inventory):
         """Should return folder data from local cache."""
         folder_data = {"folder_path": "/test", "file_count": 5}
@@ -182,14 +176,12 @@ class TestDistributedScanInventoryFolderOperations:
 
         assert result == folder_data
 
-    @pytest.mark.asyncio
     async def test_get_folder_returns_none_for_missing(self, inventory):
         """Should return None for non-existent folder."""
         result = await inventory.get_folder("/nonexistent")
 
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_folder_increments_hits_on_hit(self, inventory):
         """Should increment hits counter on cache hit."""
         inventory._local_folder_cache["/test"] = {"data": "value"}
@@ -199,7 +191,6 @@ class TestDistributedScanInventoryFolderOperations:
 
         assert inventory._hits == initial_hits + 1
 
-    @pytest.mark.asyncio
     async def test_get_folder_increments_misses_on_miss(self, inventory):
         """Should increment misses counter on cache miss."""
         initial_misses = inventory._misses
@@ -208,7 +199,6 @@ class TestDistributedScanInventoryFolderOperations:
 
         assert inventory._misses == initial_misses + 1
 
-    @pytest.mark.asyncio
     async def test_get_all_folders_returns_all(self, inventory):
         """Should return all folder data."""
         inventory._local_folder_cache = {
@@ -222,7 +212,6 @@ class TestDistributedScanInventoryFolderOperations:
         assert "/a" in result
         assert "/b" in result
 
-    @pytest.mark.asyncio
     async def test_delete_folder_removes_from_cache(self, inventory):
         """Should remove folder from cache."""
         inventory._local_folder_cache["/test"] = {"data": "value"}
@@ -232,7 +221,6 @@ class TestDistributedScanInventoryFolderOperations:
         assert result is True
         assert "/test" not in inventory._local_folder_cache
 
-    @pytest.mark.asyncio
     async def test_delete_folder_returns_false_for_missing(self, inventory):
         """Should return False when deleting non-existent folder."""
         result = await inventory.delete_folder("/nonexistent")
@@ -251,7 +239,6 @@ class TestDistributedScanInventoryFileOperations:
         inv._use_redis = False
         return inv
 
-    @pytest.mark.asyncio
     async def test_set_file_stores_in_local_cache(self, inventory):
         """Should store file data in local cache."""
         file_data = {"file_path": "/test/file.txt", "content_hash": "abc123"}
@@ -261,7 +248,6 @@ class TestDistributedScanInventoryFileOperations:
         assert result is True
         assert inventory._local_file_cache["/test/file.txt"] == file_data
 
-    @pytest.mark.asyncio
     async def test_get_file_returns_from_local_cache(self, inventory):
         """Should return file data from local cache."""
         file_data = {"file_path": "/test/file.txt", "content_hash": "abc123"}
@@ -271,14 +257,12 @@ class TestDistributedScanInventoryFileOperations:
 
         assert result == file_data
 
-    @pytest.mark.asyncio
     async def test_get_file_returns_none_for_missing(self, inventory):
         """Should return None for non-existent file."""
         result = await inventory.get_file("/nonexistent.txt")
 
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_all_files_returns_all(self, inventory):
         """Should return all file data."""
         inventory._local_file_cache = {
@@ -292,7 +276,6 @@ class TestDistributedScanInventoryFileOperations:
         assert "/a.txt" in result
         assert "/b.txt" in result
 
-    @pytest.mark.asyncio
     async def test_delete_file_removes_from_cache(self, inventory):
         """Should remove file from cache."""
         inventory._local_file_cache["/test.txt"] = {"data": "value"}
@@ -314,7 +297,6 @@ class TestDistributedScanInventoryAtomicScanning:
         inv._use_redis = False
         return inv
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_returns_true_first_time(self, inventory):
         """Should return True when first marking a file."""
         result = await inventory.mark_file_scanned("/test/file.txt")
@@ -322,7 +304,6 @@ class TestDistributedScanInventoryAtomicScanning:
         assert result is True
         assert "/test/file.txt" in inventory._local_scanned_files
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_returns_false_second_time(self, inventory):
         """Should return False when file already marked."""
         await inventory.mark_file_scanned("/test/file.txt")
@@ -331,7 +312,6 @@ class TestDistributedScanInventoryAtomicScanning:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_is_file_scanned_returns_true_for_scanned(self, inventory):
         """Should return True for scanned files."""
         inventory._local_scanned_files.add("/test/file.txt")
@@ -340,14 +320,12 @@ class TestDistributedScanInventoryAtomicScanning:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_is_file_scanned_returns_false_for_not_scanned(self, inventory):
         """Should return False for unscanned files."""
         result = await inventory.is_file_scanned("/test/file.txt")
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_get_scanned_files_returns_all(self, inventory):
         """Should return all scanned files."""
         inventory._local_scanned_files = {"/a.txt", "/b.txt", "/c.txt"}
@@ -356,7 +334,6 @@ class TestDistributedScanInventoryAtomicScanning:
 
         assert result == {"/a.txt", "/b.txt", "/c.txt"}
 
-    @pytest.mark.asyncio
     async def test_get_scanned_count_returns_count(self, inventory):
         """Should return correct count of scanned files."""
         inventory._local_scanned_files = {"/a.txt", "/b.txt", "/c.txt"}
@@ -378,7 +355,6 @@ class TestDistributedScanInventoryRedisOperations:
         inv._redis_client = AsyncMock()
         return inv
 
-    @pytest.mark.asyncio
     async def test_set_folder_uses_redis_hset(self, inventory_with_redis):
         """Should use Redis HSET for folder storage."""
         inv = inventory_with_redis
@@ -391,7 +367,6 @@ class TestDistributedScanInventoryRedisOperations:
         inv._redis_client.hset.assert_called_once()
         inv._redis_client.expire.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_get_folder_uses_redis_hget(self, inventory_with_redis):
         """Should use Redis HGET for folder retrieval."""
         inv = inventory_with_redis
@@ -402,7 +377,6 @@ class TestDistributedScanInventoryRedisOperations:
         assert result == {"path": "/test"}
         inv._redis_client.hget.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_uses_redis_sadd(self, inventory_with_redis):
         """Should use Redis SADD for atomic file marking."""
         inv = inventory_with_redis
@@ -415,7 +389,6 @@ class TestDistributedScanInventoryRedisOperations:
         assert result is True
         inv._redis_client.sadd.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_returns_false_when_already_exists(self, inventory_with_redis):
         """Should return False when Redis SADD returns 0."""
         inv = inventory_with_redis
@@ -425,7 +398,6 @@ class TestDistributedScanInventoryRedisOperations:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_get_scanned_count_uses_redis_scard(self, inventory_with_redis):
         """Should use Redis SCARD for scanned file count."""
         inv = inventory_with_redis
@@ -435,7 +407,6 @@ class TestDistributedScanInventoryRedisOperations:
 
         assert result == 42
 
-    @pytest.mark.asyncio
     async def test_redis_error_falls_back_to_local_cache(self, inventory_with_redis):
         """Should fall back to local cache on Redis error."""
         inv = inventory_with_redis
@@ -458,7 +429,6 @@ class TestDistributedScanInventoryScanProgress:
         inv._use_redis = False
         return inv
 
-    @pytest.mark.asyncio
     async def test_get_scan_progress_returns_counts(self, inventory):
         """Should return correct progress counts."""
         inventory._local_folder_cache = {"/a": {}, "/b": {}}
@@ -472,7 +442,6 @@ class TestDistributedScanInventoryScanProgress:
         assert result["total_folders"] == 2
         assert result["progress_pct"] == pytest.approx(66.67, rel=0.01)
 
-    @pytest.mark.asyncio
     async def test_get_scan_progress_handles_zero_files(self, inventory):
         """Should handle zero files gracefully."""
         result = await inventory.get_scan_progress()
@@ -493,7 +462,6 @@ class TestDistributedScanInventoryCacheManagement:
         inv._use_redis = False
         return inv
 
-    @pytest.mark.asyncio
     async def test_clear_inventory_clears_all_local_caches(self, inventory):
         """Should clear all local caches."""
         inventory._local_folder_cache = {"/a": {}}
@@ -507,7 +475,6 @@ class TestDistributedScanInventoryCacheManagement:
         assert inventory._local_file_cache == {}
         assert inventory._local_scanned_files == set()
 
-    @pytest.mark.asyncio
     async def test_clear_inventory_deletes_redis_keys(self):
         """Should delete Redis keys when using Redis."""
         inv = DistributedScanInventory(uuid4(), uuid4())
@@ -520,14 +487,12 @@ class TestDistributedScanInventoryCacheManagement:
 
         inv._redis_client.delete.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_refresh_ttl_succeeds_for_local_cache(self, inventory):
         """Should return True for local cache (no TTL needed)."""
         result = await inventory.refresh_ttl()
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_refresh_ttl_calls_redis_expire(self):
         """Should call Redis EXPIRE for all keys."""
         inv = DistributedScanInventory(uuid4(), uuid4())
@@ -648,7 +613,6 @@ class TestInventoryServiceWithDistributedCache:
         """Should not create distributed inventory when disabled."""
         assert service_without_distributed_cache._distributed_inventory is None
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_distributed_returns_true_when_disabled(
         self, service_without_distributed_cache
     ):
@@ -657,7 +621,6 @@ class TestInventoryServiceWithDistributedCache:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_mark_file_scanned_distributed_uses_distributed_inventory(
         self, service_with_distributed_cache
     ):
@@ -671,7 +634,6 @@ class TestInventoryServiceWithDistributedCache:
         assert result is True
         assert "/test.txt" in service._distributed_inventory._local_scanned_files
 
-    @pytest.mark.asyncio
     async def test_is_file_scanned_distributed_returns_false_when_disabled(
         self, service_without_distributed_cache
     ):
@@ -680,7 +642,6 @@ class TestInventoryServiceWithDistributedCache:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_get_distributed_scan_progress_returns_none_when_disabled(
         self, service_without_distributed_cache
     ):
@@ -689,7 +650,6 @@ class TestInventoryServiceWithDistributedCache:
 
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_clear_distributed_cache_does_nothing_when_disabled(
         self, service_without_distributed_cache
     ):
@@ -701,7 +661,6 @@ class TestInventoryServiceWithDistributedCache:
         """Should expose distributed_inventory property."""
         assert service_with_distributed_cache.distributed_inventory is not None
 
-    @pytest.mark.asyncio
     async def test_sync_folder_to_distributed_cache(self, service_with_distributed_cache):
         """Should sync folder data to distributed cache."""
         service = service_with_distributed_cache
@@ -724,7 +683,6 @@ class TestInventoryServiceWithDistributedCache:
 
         assert "/test" in service._distributed_inventory._local_folder_cache
 
-    @pytest.mark.asyncio
     async def test_sync_file_to_distributed_cache(self, service_with_distributed_cache):
         """Should sync file data to distributed cache."""
         service = service_with_distributed_cache
@@ -761,7 +719,6 @@ class TestInventoryServiceWithDistributedCache:
 class TestDistributedScanInventoryConcurrency:
     """Tests for concurrent access patterns."""
 
-    @pytest.mark.asyncio
     async def test_concurrent_mark_file_scanned_local(self):
         """Test concurrent marking of same file returns correct results."""
         inv = DistributedScanInventory(uuid4(), uuid4())
@@ -779,7 +736,6 @@ class TestDistributedScanInventoryConcurrency:
         assert sum(results) == 1
         assert "/test/file.txt" in inv._local_scanned_files
 
-    @pytest.mark.asyncio
     async def test_concurrent_set_folder_operations(self):
         """Test concurrent folder set operations."""
         inv = DistributedScanInventory(uuid4(), uuid4())
@@ -796,7 +752,6 @@ class TestDistributedScanInventoryConcurrency:
         assert len(results) == 100
         assert len(inv._local_folder_cache) == 100
 
-    @pytest.mark.asyncio
     async def test_concurrent_get_and_set_operations(self):
         """Test concurrent get and set operations."""
         inv = DistributedScanInventory(uuid4(), uuid4())

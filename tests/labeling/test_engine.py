@@ -338,7 +338,6 @@ class TestLabelingEngineConfiguration:
 class TestLabelingEngineRouting:
     """Tests for labeling engine routing logic."""
 
-    @pytest.mark.asyncio
     async def test_apply_label_routes_filesystem_to_local(self):
         """Filesystem files should route to local labeling."""
         from openlabels.labeling.engine import LabelingEngine
@@ -364,7 +363,6 @@ class TestLabelingEngineRouting:
 
             mock_local.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_label_routes_sharepoint_to_graph(self):
         """SharePoint files should route to Graph API."""
         from openlabels.labeling.engine import LabelingEngine
@@ -391,7 +389,6 @@ class TestLabelingEngineRouting:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_label_routes_onedrive_to_graph(self):
         """OneDrive files should route to Graph API."""
         from openlabels.labeling.engine import LabelingEngine
@@ -418,7 +415,6 @@ class TestLabelingEngineRouting:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_label_fails_for_unknown_adapter(self):
         """Unknown adapter should return failure."""
         from openlabels.labeling.engine import LabelingEngine
