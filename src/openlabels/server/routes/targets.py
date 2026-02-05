@@ -299,13 +299,19 @@ class TargetResponse(BaseModel):
 
 
 class PaginatedTargetsResponse(BaseModel):
-    """Paginated list of scan targets."""
+    """
+    Paginated list of scan targets (legacy format).
+
+    Provides consistent field naming for backward compatibility.
+    """
 
     items: list[TargetResponse]
     total: int
     page: int
     page_size: int
     total_pages: int
+    # New field for forward compatibility
+    has_more: Optional[bool] = None
 
 
 @router.get("", response_model=PaginatedTargetsResponse)
@@ -316,7 +322,17 @@ async def list_targets(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> PaginatedTargetsResponse:
-    """List configured scan targets with pagination."""
+    """
+    List configured scan targets with pagination.
+
+    Uses standardized pagination format with consistent field naming:
+    - `items`: List of targets
+    - `total`: Total number of targets
+    - `page`: Current page number
+    - `page_size`: Items per page
+    - `total_pages`: Total number of pages
+    - `has_more`: Whether there are more pages
+    """
     # Base query with tenant filter
     base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
 
@@ -343,6 +359,7 @@ async def list_targets(
         page=page,
         page_size=page_size,
         total_pages=total_pages,
+        has_more=page < total_pages,
     )
 
 

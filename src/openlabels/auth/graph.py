@@ -20,6 +20,31 @@ logger = logging.getLogger(__name__)
 # Graph API base URL
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
+
+def escape_odata_string(value: str) -> str:
+    """
+    Escape a string value for safe use in OData filter expressions.
+
+    OData string literals are enclosed in single quotes. To include a single
+    quote within a string literal, it must be doubled (i.e., '' represents ').
+    Backslashes are also escaped for safety.
+
+    Args:
+        value: The raw string value to escape
+
+    Returns:
+        The escaped string safe for use in OData filters (without surrounding quotes)
+
+    Example:
+        escape_odata_string("O'Brien") -> "O''Brien"
+        escape_odata_string("path\\to\\file") -> "path\\\\to\\\\file"
+    """
+    # Escape backslashes first (before they could be confused with escape sequences)
+    escaped = value.replace("\\", "\\\\")
+    # Escape single quotes by doubling them (OData standard)
+    escaped = escaped.replace("'", "''")
+    return escaped
+
 # Scopes for client credentials flow (no user context)
 GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
 
@@ -237,7 +262,7 @@ class GraphClient:
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"onPremisesSecurityIdentifier eq '{sid}'",
+                    "$filter": f"onPremisesSecurityIdentifier eq '{escape_odata_string(sid)}'",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "jobTitle,department,officeLocation,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
@@ -273,7 +298,7 @@ class GraphClient:
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"onPremisesSamAccountName eq '{sam_account_name}'",
+                    "$filter": f"onPremisesSamAccountName eq '{escape_odata_string(sam_account_name)}'",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "jobTitle,department,officeLocation,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
@@ -306,8 +331,8 @@ class GraphClient:
                 "GET",
                 "/users",
                 params={
-                    "$filter": f"startswith(displayName, '{query}') or "
-                    f"startswith(userPrincipalName, '{query}')",
+                    "$filter": f"startswith(displayName, '{escape_odata_string(query)}') or "
+                    f"startswith(userPrincipalName, '{escape_odata_string(query)}')",
                     "$select": "id,displayName,userPrincipalName,mail,givenName,surname,"
                     "onPremisesSamAccountName,onPremisesSecurityIdentifier",
                     "$top": str(limit),

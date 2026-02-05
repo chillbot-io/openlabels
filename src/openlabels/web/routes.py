@@ -918,6 +918,7 @@ async def targets_list_partial(
                 "created_at": target.created_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/targets_list.html",
         {
@@ -926,7 +927,8 @@ async def targets_list_partial(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
         },
     )
 
@@ -976,6 +978,7 @@ async def scans_list_partial(
                 "created_at": scan.created_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/scans_list.html",
         {
@@ -984,7 +987,8 @@ async def scans_list_partial(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
         },
     )
 
@@ -992,8 +996,12 @@ async def scans_list_partial(
 @router.get("/partials/results-list", response_class=HTMLResponse)
 async def results_list_partial(
     request: Request,
+    # Cursor-based pagination (preferred for large datasets)
+    cursor: Optional[str] = Query(None, description="Cursor for next page"),
+    # Offset-based pagination (for backward compatibility)
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    # Filters
     risk_tier: Optional[str] = None,
     entity_type: Optional[str] = None,
     has_label: Optional[str] = None,
@@ -1001,31 +1009,81 @@ async def results_list_partial(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
-    """Results list partial for HTMX updates."""
+    """
+    Results list partial for HTMX updates.
+
+    Supports both cursor-based and offset-based pagination.
+    Cursor-based pagination is more efficient for large result sets.
+    """
+    from openlabels.server.pagination import (
+        CursorPaginationParams,
+        apply_cursor_pagination,
+        build_cursor_response,
+    )
+
     results = []
     total = 0
+    total_pages = 1
+    has_more = False
+    next_cursor = None
 
     if user:
-        query = select(ScanResult).where(ScanResult.tenant_id == user.tenant_id)
+        # Build base query with filters
+        base_conditions = [ScanResult.tenant_id == user.tenant_id]
         if risk_tier:
-            query = query.where(ScanResult.risk_tier == risk_tier)
+            base_conditions.append(ScanResult.risk_tier == risk_tier)
         if has_label == "true":
-            query = query.where(ScanResult.label_applied == True)  # noqa: E712
+            base_conditions.append(ScanResult.label_applied == True)  # noqa: E712
         elif has_label == "false":
-            query = query.where(ScanResult.label_applied == False)  # noqa: E712
+            base_conditions.append(ScanResult.label_applied == False)  # noqa: E712
         if scan_id:
-            query = query.where(ScanResult.job_id == UUID(scan_id))
+            base_conditions.append(ScanResult.job_id == UUID(scan_id))
 
         # Count total
-        count_query = select(func.count()).select_from(query.subquery())
+        count_query = select(func.count()).select_from(
+            select(ScanResult).where(*base_conditions).subquery()
+        )
         result = await session.execute(count_query)
         total = result.scalar() or 0
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
-        # Get page
-        query = query.order_by(desc(ScanResult.scanned_at))
-        query = query.offset((page - 1) * page_size).limit(page_size)
-        result = await session.execute(query)
-        result_rows = result.scalars().all()
+        # Use cursor-based pagination if cursor is provided
+        if cursor is not None:
+            query = select(ScanResult).where(*base_conditions)
+            pagination_params = CursorPaginationParams(
+                cursor=cursor,
+                limit=page_size,
+                include_total=False,
+            )
+            query, cursor_info = apply_cursor_pagination(
+                query,
+                ScanResult,
+                pagination_params,
+                sort_column=ScanResult.scanned_at,
+                sort_desc=True,
+            )
+            result = await session.execute(query)
+            result_rows = list(result.scalars().all())
+
+            # Build cursor response
+            pagination_meta = build_cursor_response(result_rows, cursor_info)
+            has_more = pagination_meta.has_more
+            next_cursor = pagination_meta.cursor
+
+            # Trim extra result
+            result_rows = result_rows[:page_size]
+        else:
+            # Offset-based pagination
+            query = (
+                select(ScanResult)
+                .where(*base_conditions)
+                .order_by(desc(ScanResult.scanned_at))
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            result = await session.execute(query)
+            result_rows = result.scalars().all()
+            has_more = page < total_pages
 
         for r in result_rows:
             file_path = r.file_path or ""
@@ -1053,7 +1111,9 @@ async def results_list_partial(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
+            "total_pages": total_pages,
+            "has_more": has_more,
+            "cursor": next_cursor,
         },
     )
 

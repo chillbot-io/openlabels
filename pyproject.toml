@@ -77,6 +77,10 @@ dependencies = [
     "slowapi>=0.1.9",  # Rate limiting
     "defusedxml>=0.7.0",  # XXE-safe XML parsing
 
+    # Monitoring
+    "sentry-sdk[fastapi]>=1.40.0",  # Error tracking and performance monitoring
+    "prometheus-client>=0.19.0",  # Prometheus metrics for production monitoring
+
     # ML Inference (core)
     "onnxruntime>=1.17.0",  # ONNX model inference
     "transformers>=4.36.0",  # NER models

@@ -8,11 +8,12 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
+from openlabels.server.errors import NotFoundError, BadRequestError
 from openlabels.jobs.queue import JobQueue
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
@@ -53,12 +54,18 @@ class QueueStatsResponse(BaseModel):
 
 
 class PaginatedJobsResponse(BaseModel):
-    """Paginated list of jobs."""
+    """
+    Paginated list of jobs.
+
+    Uses standardized pagination format with consistent field naming.
+    """
 
     items: list[JobResponse]
     total: int
     page: int
     page_size: int
+    total_pages: int
+    has_more: bool
 
 
 class RequeueRequest(BaseModel):
@@ -124,11 +131,22 @@ async def list_failed_jobs(
     List failed jobs (dead letter queue).
 
     Admin access required.
+
+    Uses standardized pagination format with consistent field naming:
+    - `items`: List of failed jobs
+    - `total`: Total number of failed jobs
+    - `page`: Current page number
+    - `page_size`: Items per page
+    - `total_pages`: Total number of pages
+    - `has_more`: Whether there are more pages
     """
     queue = JobQueue(session, user.tenant_id)
 
     # Get total count
     total = await queue.get_failed_count(task_type)
+
+    # Calculate pagination
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
     # Get paginated results
     offset = (page - 1) * page_size
@@ -139,6 +157,8 @@ async def list_failed_jobs(
         total=total,
         page=page,
         page_size=page_size,
+        total_pages=total_pages,
+        has_more=page < total_pages,
     )
 
 
@@ -153,7 +173,10 @@ async def get_job(
     job = await queue.get_job(job_id)
 
     if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise NotFoundError(
+            message="Job not found",
+            details={"job_id": str(job_id)}
+        )
 
     return JobResponse.model_validate(job)
 
@@ -174,9 +197,9 @@ async def requeue_job(
     success = await queue.requeue_failed(job_id, reset_retries=request.reset_retries)
 
     if not success:
-        raise HTTPException(
-            status_code=404,
-            detail="Job not found or not in failed status",
+        raise NotFoundError(
+            message="Job not found or not in failed status",
+            details={"job_id": str(job_id)}
         )
 
     return {"message": "Job requeued successfully", "job_id": str(job_id)}
@@ -237,9 +260,9 @@ async def cancel_job(
     success = await queue.cancel(job_id)
 
     if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="Job not found or not in cancellable status",
+        raise BadRequestError(
+            message="Job not found or not in cancellable status",
+            details={"job_id": str(job_id)}
         )
 
     return {"message": "Job cancelled successfully", "job_id": str(job_id)}
@@ -307,9 +330,9 @@ async def update_worker_config(
     current = get_worker_state()
 
     if current.get("status") != "running":
-        raise HTTPException(
-            status_code=400,
-            detail="No worker is currently running",
+        raise BadRequestError(
+            message="No worker is currently running",
+            details={"current_status": current.get("status")}
         )
 
     old_concurrency = current.get("target_concurrency", 0)

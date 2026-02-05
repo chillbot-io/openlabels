@@ -107,7 +107,11 @@ class Worker:
     async def start(self) -> None:
         """Start the worker loop with dynamic concurrency support."""
         settings = get_settings()
-        await init_db(settings.database.url)
+        await init_db(
+            settings.database.url,
+            pool_size=settings.database.pool_size,
+            max_overflow=settings.database.max_overflow,
+        )
 
         self.running = True
         logger.info(f"Worker {self.worker_id} started with concurrency={self.concurrency}")
