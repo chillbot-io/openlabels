@@ -10,16 +10,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.jobs.queue import JobQueue
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
+from openlabels.server.dependencies import (
+    JobServiceDep,
+    TenantContextDep,
+    AdminContextDep,
+)
+from openlabels.server.exceptions import NotFoundError, BadRequestError
 
 router = APIRouter()
 
@@ -79,8 +81,8 @@ class PurgeRequest(BaseModel):
 
 @router.get("", response_model=QueueStatsResponse)
 async def list_jobs(
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    job_service: JobServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> QueueStatsResponse:
     """
     Get job queue statistics.
@@ -88,23 +90,21 @@ async def list_jobs(
     Returns counts of jobs by status and failed jobs by task type.
     This is the default endpoint for /api/jobs.
     """
-    queue = JobQueue(session, user.tenant_id)
-    stats = await queue.get_queue_stats()
+    stats = await job_service.get_queue_stats()
     return QueueStatsResponse(**stats)
 
 
 @router.get("/stats", response_model=QueueStatsResponse)
 async def get_queue_stats(
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    job_service: JobServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> QueueStatsResponse:
     """
     Get job queue statistics.
 
     Returns counts of jobs by status and failed jobs by task type.
     """
-    queue = JobQueue(session, user.tenant_id)
-    stats = await queue.get_queue_stats()
+    stats = await job_service.get_queue_stats()
     return QueueStatsResponse(**stats)
 
 
@@ -112,22 +112,18 @@ async def get_queue_stats(
 async def list_failed_jobs(
     task_type: Optional[str] = Query(None, description="Filter by task type"),
     pagination: PaginationParams = Depends(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    job_service: JobServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> PaginatedResponse[JobResponse]:
     """
     List failed jobs (dead letter queue).
 
     Admin access required.
     """
-    queue = JobQueue(session, user.tenant_id)
-
-    # Get total count
-    total = await queue.get_failed_count(task_type)
-
-    # Get paginated results
-    jobs = await queue.get_failed_jobs(
-        task_type, limit=pagination.page_size, offset=pagination.offset
+    jobs, total = await job_service.get_failed_jobs(
+        task_type=task_type,
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
 
     return PaginatedResponse[JobResponse](
@@ -143,16 +139,11 @@ async def list_failed_jobs(
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    job_service: JobServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> JobResponse:
     """Get job details."""
-    queue = JobQueue(session, user.tenant_id)
-    job = await queue.get_job(job_id)
-
-    if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Job not found")
-
+    job = await job_service.get_job(job_id)
     return JobResponse.model_validate(job)
 
 
@@ -160,39 +151,30 @@ async def get_job(
 async def requeue_job(
     job_id: UUID,
     request: RequeueRequest = RequeueRequest(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    job_service: JobServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Requeue a failed job from the dead letter queue.
 
     Admin access required.
     """
-    queue = JobQueue(session, user.tenant_id)
-    success = await queue.requeue_failed(job_id, reset_retries=request.reset_retries)
-
-    if not success:
-        raise HTTPException(
-            status_code=404,
-            detail="Job not found or not in failed status",
-        )
-
+    await job_service.requeue_failed(job_id, reset_retries=request.reset_retries)
     return {"message": "Job requeued successfully", "job_id": str(job_id)}
 
 
 @router.post("/requeue-all")
 async def requeue_all_failed(
     request: RequeueAllRequest = RequeueAllRequest(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    job_service: JobServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Requeue all failed jobs.
 
     Admin access required. Use with caution in production.
     """
-    queue = JobQueue(session, user.tenant_id)
-    count = await queue.requeue_all_failed(
+    count = await job_service.requeue_all_failed(
         task_type=request.task_type,
         reset_retries=request.reset_retries,
     )
@@ -203,16 +185,15 @@ async def requeue_all_failed(
 @router.post("/purge")
 async def purge_failed_jobs(
     request: PurgeRequest = PurgeRequest(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    job_service: JobServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Delete failed jobs from the dead letter queue.
 
     Admin access required. Use with caution - this action is irreversible.
     """
-    queue = JobQueue(session, user.tenant_id)
-    count = await queue.purge_failed(
+    count = await job_service.purge_failed(
         task_type=request.task_type,
         older_than_days=request.older_than_days,
     )
@@ -223,23 +204,15 @@ async def purge_failed_jobs(
 @router.post("/{job_id}/cancel")
 async def cancel_job(
     job_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    job_service: JobServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Cancel a pending or running job.
 
     Admin access required.
     """
-    queue = JobQueue(session, user.tenant_id)
-    success = await queue.cancel(job_id)
-
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="Job not found or not in cancellable status",
-        )
-
+    await job_service.cancel_job(job_id)
     return {"message": "Job cancelled successfully", "job_id": str(job_id)}
 
 
@@ -266,7 +239,7 @@ class WorkerStatusResponse(BaseModel):
 
 @router.get("/workers/status", response_model=WorkerStatusResponse)
 async def get_worker_status(
-    user: CurrentUser = Depends(require_admin),
+    _admin: AdminContextDep = Depends(),
 ) -> WorkerStatusResponse:
     """
     Get current worker pool status.
@@ -290,7 +263,7 @@ async def get_worker_status(
 @router.post("/workers/config")
 async def update_worker_config(
     request: WorkerConfigRequest,
-    user: CurrentUser = Depends(require_admin),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Update worker pool configuration.
@@ -305,9 +278,9 @@ async def update_worker_config(
     current = get_worker_state()
 
     if current.get("status") != "running":
-        raise HTTPException(
-            status_code=400,
-            detail="No worker is currently running",
+        raise BadRequestError(
+            message="No worker is currently running",
+            details={"current_status": current.get("status")},
         )
 
     old_concurrency = current.get("target_concurrency", 0)

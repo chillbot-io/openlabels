@@ -2,28 +2,28 @@
 Scan management API endpoints.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from openlabels.server.db import get_session
 from openlabels.server.config import get_settings
-from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
-from openlabels.jobs import JobQueue
+from openlabels.server.dependencies import (
+    ScanServiceDep,
+    TenantContextDep,
+    AdminContextDep,
+)
+from openlabels.auth.dependencies import require_admin
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -60,74 +60,30 @@ class ScanResponse(BaseModel):
 async def create_scan(
     request: Request,
     scan_request: ScanCreate,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    scan_service: ScanServiceDep,
+    _admin: AdminContextDep = Depends(),
 ) -> ScanResponse:
     """Create a new scan job."""
-    # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
-    target = await session.get(ScanTarget, scan_request.target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Target not found",
-            resource_type="ScanTarget",
-            resource_id=str(scan_request.target_id),
-        )
-
-    # Create scan job
-    job = ScanJob(
-        tenant_id=user.tenant_id,
+    job = await scan_service.create_scan(
         target_id=scan_request.target_id,
-        name=scan_request.name or f"Scan: {target.name}",
-        status="pending",
-        created_by=user.id,
+        name=scan_request.name,
     )
-    session.add(job)
-    await session.flush()
-
-    # Enqueue the job in the job queue
-    queue = JobQueue(session, user.tenant_id)
-    await queue.enqueue(
-        task_type="scan",
-        payload={"job_id": str(job.id)},
-        priority=50,
-    )
-
-    # Refresh to load server-generated defaults (created_at)
-    await session.refresh(job)
-
-    return job
+    return ScanResponse.model_validate(job)
 
 
 @router.get("", response_model=PaginatedResponse[ScanResponse])
 async def list_scans(
     status: Optional[str] = Query(None, description="Filter by status"),
     pagination: PaginationParams = Depends(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    scan_service: ScanServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[ScanResponse]:
     """List scan jobs with pagination."""
-    from sqlalchemy import func
-
-    # Build base conditions
-    conditions = [ScanJob.tenant_id == user.tenant_id]
-    if status:
-        conditions.append(ScanJob.status == status)
-
-    # Count total using SQL COUNT (efficient, no row loading)
-    count_query = select(func.count()).select_from(ScanJob).where(*conditions)
-    count_result = await session.execute(count_query)
-    total = count_result.scalar() or 0
-
-    # Get paginated results
-    query = (
-        select(ScanJob)
-        .where(*conditions)
-        .order_by(ScanJob.created_at.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
+    jobs, total = await scan_service.list_scans(
+        status=status,
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
-    result = await session.execute(query)
-    jobs = result.scalars().all()
 
     return PaginatedResponse[ScanResponse](
         **create_paginated_response(
@@ -142,73 +98,33 @@ async def list_scans(
 @router.get("/{scan_id}", response_model=ScanResponse)
 async def get_scan(
     scan_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    scan_service: ScanServiceDep,
+    _tenant: TenantContextDep = Depends(),
 ) -> ScanResponse:
     """Get scan job details."""
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Scan not found",
-            resource_type="ScanJob",
-            resource_id=str(scan_id),
-        )
-    return job
+    job = await scan_service.get_scan(scan_id)
+    return ScanResponse.model_validate(job)
 
 
 @router.delete("/{scan_id}", status_code=204)
 async def delete_scan(
     scan_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    scan_service: ScanServiceDep,
+    _admin: AdminContextDep = Depends(),
 ) -> None:
     """Cancel a running scan (DELETE method)."""
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Scan not found",
-            resource_type="ScanJob",
-            resource_id=str(scan_id),
-        )
-
-    if job.status not in ("pending", "running"):
-        raise BadRequestError(
-            message="Scan cannot be cancelled",
-            details={"current_status": job.status, "allowed_statuses": ["pending", "running"]},
-        )
-
-    job.status = "cancelled"
-    job.completed_at = datetime.now(timezone.utc)
-    await session.flush()
+    await scan_service.cancel_scan(scan_id)
 
 
 @router.post("/{scan_id}/cancel")
 async def cancel_scan(
     scan_id: UUID,
     request: Request,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    scan_service: ScanServiceDep,
+    _admin: AdminContextDep = Depends(),
 ):
     """Cancel a running scan (POST method for HTMX)."""
-    from fastapi.responses import HTMLResponse, Response
-
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Scan not found",
-            resource_type="ScanJob",
-            resource_id=str(scan_id),
-        )
-
-    if job.status not in ("pending", "running"):
-        raise BadRequestError(
-            message="Scan cannot be cancelled",
-            details={"current_status": job.status, "allowed_statuses": ["pending", "running"]},
-        )
-
-    job.status = "cancelled"
-    job.completed_at = datetime.now(timezone.utc)
-    await session.flush()
+    await scan_service.cancel_scan(scan_id)
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
@@ -227,54 +143,11 @@ async def cancel_scan(
 async def retry_scan(
     scan_id: UUID,
     request: Request,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    scan_service: ScanServiceDep,
+    _admin: AdminContextDep = Depends(),
 ):
     """Retry a failed scan by creating a new scan job."""
-    from fastapi.responses import HTMLResponse, Response
-
-    job = await session.get(ScanJob, scan_id)
-    if not job or job.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Scan not found",
-            resource_type="ScanJob",
-            resource_id=str(scan_id),
-        )
-
-    if job.status not in ("failed", "cancelled"):
-        raise BadRequestError(
-            message="Only failed or cancelled scans can be retried",
-            details={"current_status": job.status, "allowed_statuses": ["failed", "cancelled"]},
-        )
-
-    # Get the target
-    target = await session.get(ScanTarget, job.target_id)
-    if not target:
-        raise NotFoundError(
-            message="Target no longer exists",
-            resource_type="ScanTarget",
-            resource_id=str(job.target_id),
-        )
-
-    # Create a new scan job
-    new_job = ScanJob(
-        tenant_id=user.tenant_id,
-        target_id=job.target_id,
-        target_name=target.name,
-        name=f"{job.name} (retry)",
-        status="pending",
-        created_by=user.id,
-    )
-    session.add(new_job)
-    await session.flush()
-
-    # Enqueue the job
-    queue = JobQueue(session, user.tenant_id)
-    await queue.enqueue(
-        task_type="scan",
-        payload={"job_id": str(new_job.id)},
-        priority=60,  # Slightly higher priority for retries
-    )
+    new_job = await scan_service.retry_scan(scan_id)
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):

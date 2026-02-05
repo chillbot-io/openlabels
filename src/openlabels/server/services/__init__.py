@@ -18,6 +18,7 @@ Available Services:
     - ScanService: Scan job creation, retrieval, and management
     - LabelService: Sensitivity label and label rule management
     - JobService: Background job queue management
+    - ResultService: Scan result querying and statistics
 
 Base Classes:
     - BaseService: Abstract base class with session, tenant, and settings
@@ -28,6 +29,7 @@ from openlabels.server.services.base import BaseService, TenantContext
 from openlabels.server.services.scan_service import ScanService
 from openlabels.server.services.label_service import LabelService
 from openlabels.server.services.job_service import JobService
+from openlabels.server.services.result_service import ResultService
 
 __all__ = [
     # Base classes
@@ -37,4 +39,5 @@ __all__ = [
     "ScanService",
     "LabelService",
     "JobService",
+    "ResultService",
 ]

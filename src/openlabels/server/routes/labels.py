@@ -14,39 +14,27 @@ Performance:
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
-from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
-from openlabels.server.cache import get_cache_manager, invalidate_cache
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
-    paginate_query,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
-from openlabels.jobs import JobQueue
+from openlabels.server.dependencies import (
+    LabelServiceDep,
+    TenantContextDep,
+    AdminContextDep,
+    DbSessionDep,
+)
+from openlabels.server.exceptions import NotFoundError, BadRequestError
 
 logger = logging.getLogger(__name__)
-
-# Cache key prefixes
-LABELS_CACHE_PREFIX = "labels"
-LABEL_MAPPINGS_CACHE_PREFIX = "label_mappings"
-
-# Check for httpx
-try:
-    import httpx
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
 
 router = APIRouter()
 
@@ -100,32 +88,6 @@ class ApplyLabelRequest(BaseModel):
     label_id: str
 
 
-@router.get("", response_model=PaginatedResponse[LabelResponse])
-async def list_labels(
-    pagination: PaginationParams = Depends(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
-) -> PaginatedResponse[LabelResponse]:
-    """
-    List available sensitivity labels with pagination.
-
-    Results are cached per tenant for improved performance.
-    Cache is invalidated when labels are synced.
-    """
-    query = select(SensitivityLabel).where(
-        SensitivityLabel.tenant_id == user.tenant_id
-    ).order_by(SensitivityLabel.priority)
-
-    result = await paginate_query(
-        session,
-        query,
-        pagination,
-        transformer=lambda l: LabelResponse.model_validate(l),
-    )
-
-    return PaginatedResponse[LabelResponse](**result)
-
-
 class LabelSyncRequest(BaseModel):
     """Request body for label sync options."""
 
@@ -133,11 +95,62 @@ class LabelSyncRequest(BaseModel):
     remove_stale: bool = False  # Remove labels not in M365
 
 
+class LabelMappingsResponse(BaseModel):
+    """Label mappings for each risk tier."""
+
+    CRITICAL: Optional[str] = None
+    HIGH: Optional[str] = None
+    MEDIUM: Optional[str] = None
+    LOW: Optional[str] = None
+    labels: list[LabelResponse] = []
+
+
+class LabelMappingsUpdate(BaseModel):
+    """Request to update label mappings."""
+
+    CRITICAL: Optional[str] = None
+    HIGH: Optional[str] = None
+    MEDIUM: Optional[str] = None
+    LOW: Optional[str] = None
+
+
+# =============================================================================
+# LABEL ENDPOINTS
+# =============================================================================
+
+
+@router.get("", response_model=PaginatedResponse[LabelResponse])
+async def list_labels(
+    pagination: PaginationParams = Depends(),
+    label_service: LabelServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
+) -> PaginatedResponse[LabelResponse]:
+    """
+    List available sensitivity labels with pagination.
+
+    Results are cached per tenant for improved performance.
+    Cache is invalidated when labels are synced.
+    """
+    labels, total = await label_service.list_labels(
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
+
+    return PaginatedResponse[LabelResponse](
+        **create_paginated_response(
+            items=[LabelResponse.model_validate(l) for l in labels],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
+    )
+
+
 @router.post("/sync", status_code=202)
 async def sync_labels(
     request: Optional[LabelSyncRequest] = None,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    label_service: LabelServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """
     Sync sensitivity labels from Microsoft 365.
@@ -146,103 +159,30 @@ async def sync_labels(
     - background: If true, runs sync as a background job (returns immediately)
     - remove_stale: If true, removes labels from DB that no longer exist in M365
     """
-    if not HTTPX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="httpx not installed - cannot sync labels"
-        )
-
     request = request or LabelSyncRequest()
-
-    try:
-        from openlabels.server.config import get_settings
-        settings = get_settings()
-        auth = settings.auth
-
-        # Check Azure AD configuration
-        if auth.provider != "azure_ad" or not all([auth.tenant_id, auth.client_id, auth.client_secret]):
-            raise HTTPException(
-                status_code=503,
-                detail="Azure AD not configured - cannot sync labels from M365"
-            )
-
-        # If background mode, enqueue as job
-        if request.background:
-            queue = JobQueue(session, user.tenant_id)
-            job_id = await queue.enqueue(
-                task_type="label_sync",
-                payload={
-                    "tenant_id": str(user.tenant_id),
-                    "azure_tenant_id": auth.tenant_id,
-                    "client_id": auth.client_id,
-                    "client_secret": auth.client_secret,
-                    "remove_stale": request.remove_stale,
-                },
-                priority=70,  # High priority
-            )
-            return {
-                "message": "Label sync job queued",
-                "job_id": str(job_id),
-                "background": True,
-            }
-
-        # Immediate sync
-        from openlabels.jobs.tasks.label_sync import sync_labels_from_graph
-
-        result = await sync_labels_from_graph(
-            session=session,
-            tenant_id=user.tenant_id,
-            azure_tenant_id=auth.tenant_id,
-            client_id=auth.client_id,
-            client_secret=auth.client_secret,
-            remove_stale=request.remove_stale,
-        )
-
-        await session.commit()
-
-        # Invalidate label cache after sync
-        try:
-            from openlabels.labeling.engine import get_label_cache
-            get_label_cache().invalidate()
-        except Exception as e:
-            # Cache invalidation failure is non-critical but may cause stale label data
-            logger.info(f"Failed to invalidate label cache after sync: {type(e).__name__}: {e}")
-
-        # Invalidate Redis/memory cache for labels
-        try:
-            await invalidate_cache(f"{LABELS_CACHE_PREFIX}:tenant:{user.tenant_id}")
-            logger.debug(f"Invalidated labels cache for tenant: {user.tenant_id}")
-        except Exception as e:
-            logger.debug(f"Failed to invalidate labels cache: {e}")
-
-        return {
-            "message": "Label sync completed",
-            **result.to_dict(),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Label sync failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Label sync failed: {str(e)}"
-        )
+    return await label_service.sync_labels(
+        background=request.background,
+    )
 
 
 @router.get("/sync/status")
 async def get_sync_status(
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    label_service: LabelServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> dict:
     """Get label sync status including last sync time and counts."""
+    from sqlalchemy import select, func
+    from openlabels.server.models import SensitivityLabel
+
+    db = label_service.session
+
     # Get label count and last sync time
     query = select(
         func.count(SensitivityLabel.id),
         func.max(SensitivityLabel.synced_at),
-    ).where(SensitivityLabel.tenant_id == user.tenant_id)
+    ).where(SensitivityLabel.tenant_id == label_service.tenant_id)
 
-    result = await session.execute(query)
+    result = await db.execute(query)
     row = result.one()
     label_count, last_synced = row
 
@@ -251,7 +191,6 @@ async def get_sync_status(
         from openlabels.labeling.engine import get_label_cache
         cache_stats = get_label_cache().stats
     except Exception as e:
-        # Cache stats are informational - log at debug level
         logger.debug(f"Failed to get label cache stats: {type(e).__name__}: {e}")
         cache_stats = None
 
@@ -264,7 +203,8 @@ async def get_sync_status(
 
 @router.post("/cache/invalidate", status_code=200)
 async def invalidate_label_cache(
-    user: CurrentUser = Depends(require_admin),
+    label_service: LabelServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> dict:
     """Invalidate the label cache, forcing a refresh on next access."""
     errors = []
@@ -277,9 +217,10 @@ async def invalidate_label_cache(
         errors.append(f"Label engine cache: {e}")
 
     # Invalidate Redis/memory cache for this tenant
+    from openlabels.server.cache import invalidate_cache
     try:
-        await invalidate_cache(f"{LABELS_CACHE_PREFIX}:tenant:{user.tenant_id}")
-        await invalidate_cache(f"{LABEL_MAPPINGS_CACHE_PREFIX}:tenant:{user.tenant_id}")
+        await invalidate_cache(f"labels:tenant:{label_service.tenant_id}")
+        await invalidate_cache(f"label_mappings:tenant:{label_service.tenant_id}")
     except Exception as e:
         errors.append(f"Redis cache: {e}")
 
@@ -295,40 +236,25 @@ async def invalidate_label_cache(
     }
 
 
+# =============================================================================
+# LABEL RULES ENDPOINTS
+# =============================================================================
+
+
 @router.get("/rules", response_model=PaginatedResponse[LabelRuleResponse])
 async def list_label_rules(
     pagination: PaginationParams = Depends(),
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    label_service: LabelServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[LabelRuleResponse]:
     """List label mapping rules with label names using a single JOIN query."""
-    # Use JOIN to fetch rules with their labels in a single query (avoids N+1)
-    # Build base query for count
-    base_query = select(LabelRule).where(LabelRule.tenant_id == user.tenant_id)
-
-    # Get total count
-    count_query = select(func.count()).select_from(base_query.subquery())
-    count_result = await session.execute(count_query)
-    total = count_result.scalar() or 0
-
-    # Get paginated results with label names
-    query = (
-        select(LabelRule, SensitivityLabel.name.label("label_name"))
-        .outerjoin(SensitivityLabel, LabelRule.label_id == SensitivityLabel.id)
-        .where(LabelRule.tenant_id == user.tenant_id)
-        .order_by(LabelRule.priority.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
+    rules, total = await label_service.get_label_rules(
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
-    result = await session.execute(query)
-    rows = result.all()
 
-    # Build responses with label names from the join
-    items = []
-    for rule, label_name in rows:
-        response = LabelRuleResponse.model_validate(rule)
-        response.label_name = label_name
-        items.append(response)
+    # Build responses - rules come back as LabelRule objects
+    items = [LabelRuleResponse.model_validate(rule) for rule in rules]
 
     return PaginatedResponse[LabelRuleResponse](
         **create_paginated_response(
@@ -343,67 +269,64 @@ async def list_label_rules(
 @router.post("/rules", response_model=LabelRuleResponse, status_code=201)
 async def create_label_rule(
     request: LabelRuleCreate,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    label_service: LabelServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> LabelRuleResponse:
     """Create a label mapping rule."""
-    if request.rule_type not in ("risk_tier", "entity_type"):
-        raise HTTPException(status_code=400, detail="Invalid rule type")
+    rule = await label_service.create_label_rule({
+        "rule_type": request.rule_type,
+        "match_value": request.match_value,
+        "label_id": request.label_id,
+        "priority": request.priority,
+    })
 
-    # Verify label exists
-    label = await session.get(SensitivityLabel, request.label_id)
-    if not label or label.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Label not found")
-
-    rule = LabelRule(
-        tenant_id=user.tenant_id,
-        rule_type=request.rule_type,
-        match_value=request.match_value,
-        label_id=request.label_id,
-        priority=request.priority,
-        created_by=user.id,
-    )
-    session.add(rule)
-    await session.flush()
-
-    # Refresh to load server-generated defaults and ensure proper types
-    await session.refresh(rule)
-
-    response = LabelRuleResponse.model_validate(rule)
-    return response.model_copy(update={"label_name": label.name})
+    return LabelRuleResponse.model_validate(rule)
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
 async def delete_label_rule(
     rule_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    label_service: LabelServiceDep = Depends(),
+    _admin: AdminContextDep = Depends(),
 ) -> None:
     """Delete a label rule."""
-    rule = await session.get(LabelRule, rule_id)
-    if not rule or rule.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Rule not found")
+    await label_service.delete_label_rule(rule_id)
 
-    await session.delete(rule)
+
+# =============================================================================
+# LABEL APPLICATION ENDPOINTS
+# =============================================================================
 
 
 @router.post("/apply", status_code=202)
 async def apply_label(
     request: ApplyLabelRequest,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    db: DbSessionDep = Depends(),
+    label_service: LabelServiceDep = Depends(),
+    admin: AdminContextDep = Depends(),
 ) -> dict:
     """Apply a sensitivity label to a file."""
-    result = await session.get(ScanResult, request.result_id)
-    if not result or result.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Result not found")
+    from openlabels.server.models import ScanResult, SensitivityLabel
+    from openlabels.jobs import JobQueue
 
-    label = await session.get(SensitivityLabel, request.label_id)
-    if not label or label.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Label not found")
+    result = await db.get(ScanResult, request.result_id)
+    if not result or result.tenant_id != admin.tenant_id:
+        raise NotFoundError(
+            message="Result not found",
+            resource_type="ScanResult",
+            resource_id=str(request.result_id),
+        )
+
+    label = await db.get(SensitivityLabel, request.label_id)
+    if not label or label.tenant_id != admin.tenant_id:
+        raise NotFoundError(
+            message="Label not found",
+            resource_type="SensitivityLabel",
+            resource_id=request.label_id,
+        )
 
     # Enqueue labeling job
-    queue = JobQueue(session, user.tenant_id)
+    queue = JobQueue(db, admin.tenant_id)
     job_id = await queue.enqueue(
         task_type="label",
         payload={
@@ -427,29 +350,11 @@ async def apply_label(
 # =============================================================================
 
 
-class LabelMappingsResponse(BaseModel):
-    """Label mappings for each risk tier."""
-
-    CRITICAL: Optional[str] = None
-    HIGH: Optional[str] = None
-    MEDIUM: Optional[str] = None
-    LOW: Optional[str] = None
-    labels: list[LabelResponse] = []
-
-
-class LabelMappingsUpdate(BaseModel):
-    """Request to update label mappings."""
-
-    CRITICAL: Optional[str] = None
-    HIGH: Optional[str] = None
-    MEDIUM: Optional[str] = None
-    LOW: Optional[str] = None
-
-
 @router.get("/mappings", response_model=LabelMappingsResponse)
 async def get_label_mappings(
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(get_current_user),
+    db: DbSessionDep = Depends(),
+    label_service: LabelServiceDep = Depends(),
+    _tenant: TenantContextDep = Depends(),
 ) -> LabelMappingsResponse:
     """
     Get label mappings for each risk tier.
@@ -457,13 +362,19 @@ async def get_label_mappings(
     Results are cached per tenant for improved performance.
     Cache is invalidated when mappings are updated.
     """
+    from openlabels.server.cache import get_cache_manager
+    from openlabels.server.models import LabelRule, SensitivityLabel
+    from sqlalchemy import select
+
+    tenant_id = label_service.tenant_id
+    cache_key = f"label_mappings:tenant:{tenant_id}"
+
     # Try to get from cache first
-    cache_key = f"{LABEL_MAPPINGS_CACHE_PREFIX}:tenant:{user.tenant_id}"
     try:
         cache = await get_cache_manager()
         cached = await cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Cache hit for label mappings (tenant: {user.tenant_id})")
+            logger.debug(f"Cache hit for label mappings (tenant: {tenant_id})")
             return LabelMappingsResponse(
                 CRITICAL=cached.get("CRITICAL"),
                 HIGH=cached.get("HIGH"),
@@ -476,10 +387,10 @@ async def get_label_mappings(
 
     # Get all rules for risk_tier type
     query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id,
+        LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
     )
-    result = await session.execute(query)
+    result = await db.execute(query)
     rules = result.scalars().all()
 
     # Build mappings dict
@@ -489,9 +400,9 @@ async def get_label_mappings(
 
     # Get available labels
     label_query = select(SensitivityLabel).where(
-        SensitivityLabel.tenant_id == user.tenant_id
+        SensitivityLabel.tenant_id == tenant_id
     ).order_by(SensitivityLabel.priority)
-    label_result = await session.execute(label_query)
+    label_result = await db.execute(label_query)
     labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
 
     response = LabelMappingsResponse(
@@ -513,24 +424,27 @@ async def get_label_mappings(
             "labels": [l.model_dump() for l in response.labels],
         }
         await cache.set(cache_key, cache_data)
-        logger.debug(f"Cached label mappings for tenant: {user.tenant_id}")
+        logger.debug(f"Cached label mappings for tenant: {tenant_id}")
     except Exception as e:
         logger.debug(f"Cache write failed: {e}")
 
     return response
 
 
-from fastapi import Request
-from fastapi.responses import HTMLResponse
-
-
 @router.post("/mappings")
 async def update_label_mappings(
     request: Request,
-    session: AsyncSession = Depends(get_session),
-    user: CurrentUser = Depends(require_admin),
+    db: DbSessionDep = Depends(),
+    label_service: LabelServiceDep = Depends(),
+    admin: AdminContextDep = Depends(),
 ):
     """Update label mappings for risk tiers."""
+    from openlabels.server.cache import invalidate_cache
+    from openlabels.server.models import LabelRule, SensitivityLabel
+    from sqlalchemy import select
+
+    tenant_id = label_service.tenant_id
+
     # Try to get JSON body, fallback to form data
     content_type = request.headers.get("content-type", "")
 
@@ -547,15 +461,15 @@ async def update_label_mappings(
 
     # Delete existing risk_tier rules
     existing_query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id,
+        LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
     )
-    existing_result = await session.execute(existing_query)
+    existing_result = await db.execute(existing_query)
     for rule in existing_result.scalars().all():
-        await session.delete(rule)
+        await db.delete(rule)
 
     # Flush after deletes to avoid sentinel matching issues with asyncpg
-    await session.flush()
+    await db.flush()
 
     # Batch fetch all requested labels in a single query (avoids N+1)
     requested_label_ids = [lid for lid in data.values() if lid]
@@ -563,9 +477,9 @@ async def update_label_mappings(
     if requested_label_ids:
         labels_query = select(SensitivityLabel).where(
             SensitivityLabel.id.in_(requested_label_ids),
-            SensitivityLabel.tenant_id == user.tenant_id,
+            SensitivityLabel.tenant_id == tenant_id,
         )
-        labels_result = await session.execute(labels_query)
+        labels_result = await db.execute(labels_query)
         valid_labels = {label.id: label for label in labels_result.scalars().all()}
 
     # Create new rules for non-empty mappings using pre-fetched labels
@@ -574,22 +488,22 @@ async def update_label_mappings(
         label_id = data.get(risk_tier)
         if label_id and label_id in valid_labels:
             rule = LabelRule(
-                tenant_id=user.tenant_id,
+                tenant_id=tenant_id,
                 rule_type="risk_tier",
                 match_value=risk_tier,
                 label_id=label_id,
                 priority=priority,
-                created_by=user.id,
+                created_by=admin.user_id,
             )
-            session.add(rule)
+            db.add(rule)
             # Flush each insert individually to avoid asyncpg sentinel matching issues
-            await session.flush()
+            await db.flush()
         priority -= 10
 
     # Invalidate cache for label mappings
     try:
-        await invalidate_cache(f"{LABEL_MAPPINGS_CACHE_PREFIX}:tenant:{user.tenant_id}")
-        logger.debug(f"Invalidated label mappings cache for tenant: {user.tenant_id}")
+        await invalidate_cache(f"label_mappings:tenant:{tenant_id}")
+        logger.debug(f"Invalidated label mappings cache for tenant: {tenant_id}")
     except Exception as e:
         logger.debug(f"Failed to invalidate label mappings cache: {e}")
 

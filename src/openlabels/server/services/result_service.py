@@ -7,18 +7,13 @@ Provides business logic for scan results with:
 - Proper tenant isolation
 """
 
-import logging
 from collections.abc import AsyncIterator
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanResult
 from openlabels.server.services.base import BaseService
-
-logger = logging.getLogger(__name__)
 
 # Default chunk size for streaming operations
 DEFAULT_CHUNK_SIZE = 1000
@@ -35,7 +30,11 @@ class ResultService(BaseService):
     All methods automatically filter by tenant_id for proper isolation.
 
     Example:
-        service = ResultService(session, tenant_id)
+        from openlabels.server.services import ResultService, TenantContext
+        from openlabels.server.config import get_settings
+
+        tenant = TenantContext.from_current_user(user)
+        service = ResultService(session, tenant, get_settings())
 
         # Stream all results for a job
         async for result in service.stream_results(job_id=job_id):
@@ -51,8 +50,8 @@ class ResultService(BaseService):
 
     async def stream_results(
         self,
-        job_id: Optional[UUID] = None,
-        risk_tier: Optional[str] = None,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> AsyncIterator[ScanResult]:
         """
@@ -74,13 +73,8 @@ class ResultService(BaseService):
             async for result in service.stream_results(job_id=job_id):
                 yield export_row(result)
         """
-        self._logger.debug(
-            "Starting result stream",
-            extra={
-                "job_id": str(job_id) if job_id else None,
-                "risk_tier": risk_tier,
-                "chunk_size": chunk_size,
-            },
+        self._log_debug(
+            f"Starting result stream job_id={job_id} risk_tier={risk_tier} chunk_size={chunk_size}"
         )
 
         # Track cursor position for keyset pagination
@@ -90,7 +84,7 @@ class ResultService(BaseService):
 
         while True:
             # Build query with tenant isolation
-            conditions = [ScanResult.tenant_id == self._tenant_id]
+            conditions = [ScanResult.tenant_id == self.tenant_id]
 
             if job_id:
                 conditions.append(ScanResult.job_id == job_id)
@@ -112,14 +106,11 @@ class ResultService(BaseService):
                 .limit(chunk_size)
             )
 
-            result = await self._session.execute(query)
+            result = await self.session.execute(query)
             results = result.scalars().all()
 
             if not results:
-                self._logger.debug(
-                    "Stream completed",
-                    extra={"total_yielded": total_yielded},
-                )
+                self._log_debug(f"Stream completed total_yielded={total_yielded}")
                 break
 
             # Yield each result individually
@@ -132,8 +123,8 @@ class ResultService(BaseService):
 
     async def stream_results_as_dicts(
         self,
-        job_id: Optional[UUID] = None,
-        fields: Optional[list[str]] = None,
+        job_id: UUID | None = None,
+        fields: list[str] | None = None,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> AsyncIterator[dict]:
         """
@@ -175,13 +166,8 @@ class ResultService(BaseService):
                 "label_applied",
             ]
 
-        self._logger.debug(
-            "Starting dict stream",
-            extra={
-                "job_id": str(job_id) if job_id else None,
-                "fields": fields,
-                "chunk_size": chunk_size,
-            },
+        self._log_debug(
+            f"Starting dict stream job_id={job_id} fields={len(fields)} chunk_size={chunk_size}"
         )
 
         # Track cursor position for keyset pagination
@@ -191,7 +177,7 @@ class ResultService(BaseService):
 
         while True:
             # Build query with tenant isolation
-            conditions = [ScanResult.tenant_id == self._tenant_id]
+            conditions = [ScanResult.tenant_id == self.tenant_id]
 
             if job_id:
                 conditions.append(ScanResult.job_id == job_id)
@@ -210,14 +196,11 @@ class ResultService(BaseService):
                 .limit(chunk_size)
             )
 
-            result = await self._session.execute(query)
+            result = await self.session.execute(query)
             results = result.scalars().all()
 
             if not results:
-                self._logger.debug(
-                    "Dict stream completed",
-                    extra={"total_yielded": total_yielded},
-                )
+                self._log_debug(f"Dict stream completed total_yielded={total_yielded}")
                 break
 
             # Yield dictionaries with only requested fields
@@ -239,7 +222,7 @@ class ResultService(BaseService):
     # STANDARD METHODS
     # =========================================================================
 
-    async def get_result(self, result_id: UUID) -> Optional[ScanResult]:
+    async def get_result(self, result_id: UUID) -> ScanResult | None:
         """
         Get a single scan result by ID.
 
@@ -254,15 +237,15 @@ class ResultService(BaseService):
             if result:
                 return ResultResponse.model_validate(result)
         """
-        result = await self._session.get(ScanResult, result_id)
-        if result and result.tenant_id == self._tenant_id:
+        result = await self.session.get(ScanResult, result_id)
+        if result and result.tenant_id == self.tenant_id:
             return result
         return None
 
     async def list_results(
         self,
-        job_id: Optional[UUID] = None,
-        risk_tier: Optional[str] = None,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanResult], int]:
@@ -287,7 +270,7 @@ class ResultService(BaseService):
             )
         """
         # Build filter conditions
-        conditions = [ScanResult.tenant_id == self._tenant_id]
+        conditions = [ScanResult.tenant_id == self.tenant_id]
 
         if job_id:
             conditions.append(ScanResult.job_id == job_id)
@@ -296,7 +279,7 @@ class ResultService(BaseService):
 
         # Get total count
         count_query = select(func.count()).where(*conditions).select_from(ScanResult)
-        count_result = await self._session.execute(count_query)
+        count_result = await self.session.execute(count_query)
         total = count_result.scalar() or 0
 
         # Get paginated results
@@ -308,17 +291,11 @@ class ResultService(BaseService):
             .limit(limit)
         )
 
-        result = await self._session.execute(query)
+        result = await self.session.execute(query)
         results = list(result.scalars().all())
 
-        self._logger.debug(
-            "Listed results",
-            extra={
-                "job_id": str(job_id) if job_id else None,
-                "risk_tier": risk_tier,
-                "count": len(results),
-                "total": total,
-            },
+        self._log_debug(
+            f"Listed results job_id={job_id} risk_tier={risk_tier} count={len(results)} total={total}"
         )
 
         return results, total
@@ -341,29 +318,25 @@ class ResultService(BaseService):
         count_query = (
             select(func.count())
             .where(
-                ScanResult.tenant_id == self._tenant_id,
+                ScanResult.tenant_id == self.tenant_id,
                 ScanResult.job_id == job_id,
             )
             .select_from(ScanResult)
         )
-        count_result = await self._session.execute(count_query)
+        count_result = await self.session.execute(count_query)
         deleted_count = count_result.scalar() or 0
 
         if deleted_count > 0:
             # Delete the results
             delete_query = delete(ScanResult).where(
-                ScanResult.tenant_id == self._tenant_id,
+                ScanResult.tenant_id == self.tenant_id,
                 ScanResult.job_id == job_id,
             )
-            await self._session.execute(delete_query)
-            await self._session.flush()
+            await self.session.execute(delete_query)
+            await self.session.flush()
 
-            self._logger.info(
-                "Deleted results for job",
-                extra={
-                    "job_id": str(job_id),
-                    "deleted_count": deleted_count,
-                },
+            self._log_info(
+                f"Deleted results for job job_id={job_id} deleted_count={deleted_count}"
             )
 
         return deleted_count
@@ -372,7 +345,7 @@ class ResultService(BaseService):
     # STATISTICS (Efficient SQL Aggregation)
     # =========================================================================
 
-    async def get_stats(self, job_id: Optional[UUID] = None) -> dict:
+    async def get_stats(self, job_id: UUID | None = None) -> dict:
         """
         Get aggregated statistics for scan results.
 
@@ -398,7 +371,7 @@ class ResultService(BaseService):
             print(f"Found {stats['files_with_pii']} files with PII")
         """
         # Build filter conditions
-        conditions = [ScanResult.tenant_id == self._tenant_id]
+        conditions = [ScanResult.tenant_id == self.tenant_id]
         if job_id:
             conditions.append(ScanResult.job_id == job_id)
 
@@ -428,7 +401,7 @@ class ResultService(BaseService):
             ).label("labels_applied"),
         ).where(*conditions)
 
-        result = await self._session.execute(stats_query)
+        result = await self.session.execute(stats_query)
         row = result.one()
 
         stats = {
@@ -442,20 +415,16 @@ class ResultService(BaseService):
             "labels_applied": row.labels_applied or 0,
         }
 
-        self._logger.debug(
-            "Computed statistics",
-            extra={
-                "job_id": str(job_id) if job_id else None,
-                "total_files": stats["total_files"],
-                "files_with_pii": stats["files_with_pii"],
-            },
+        self._log_debug(
+            f"Computed statistics job_id={job_id} total_files={stats['total_files']} "
+            f"files_with_pii={stats['files_with_pii']}"
         )
 
         return stats
 
     async def get_entity_type_stats(
         self,
-        job_id: Optional[UUID] = None,
+        job_id: UUID | None = None,
         limit: int = 10,
         sample_size: int = 5000,
     ) -> dict[str, int]:
@@ -480,7 +449,7 @@ class ResultService(BaseService):
         """
         # Build filter conditions
         conditions = [
-            ScanResult.tenant_id == self._tenant_id,
+            ScanResult.tenant_id == self.tenant_id,
             ScanResult.entity_counts.isnot(None),
             ScanResult.total_entities > 0,
         ]
@@ -495,7 +464,7 @@ class ResultService(BaseService):
             .limit(sample_size)
         )
 
-        result = await self._session.execute(query)
+        result = await self.session.execute(query)
         entity_counts_list = result.scalars().all()
 
         # Aggregate entity counts in Python
@@ -515,14 +484,9 @@ class ResultService(BaseService):
 
         top_entities = dict(sorted_entities)
 
-        self._logger.debug(
-            "Computed entity type statistics",
-            extra={
-                "job_id": str(job_id) if job_id else None,
-                "sample_size": len(entity_counts_list),
-                "unique_types": len(entity_totals),
-                "returned_types": len(top_entities),
-            },
+        self._log_debug(
+            f"Computed entity type statistics job_id={job_id} sample_size={len(entity_counts_list)} "
+            f"unique_types={len(entity_totals)} returned_types={len(top_entities)}"
         )
 
         return top_entities

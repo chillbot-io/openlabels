@@ -444,8 +444,7 @@ async def get_result_service(
     db: DbSessionDep,
     tenant: TenantContextDep,
     settings: SettingsDep,
-    cache: CacheDep,
-) -> Any:  # Will be: ResultService
+) -> ResultService:
     """
     Get the result service for managing scan results.
 
@@ -458,14 +457,9 @@ async def get_result_service(
         db: Database session (injected by FastAPI).
         tenant: Tenant context (injected by FastAPI).
         settings: Application settings (injected by FastAPI).
-        cache: Cache manager (injected by FastAPI).
 
     Returns:
         ResultService: The result service instance.
-
-    Note:
-        This is a forward reference. The actual ResultService class
-        will be implemented in src/openlabels/services/result_service.py.
 
     Example:
         @router.get("/results")
@@ -473,22 +467,22 @@ async def get_result_service(
             risk_tier: str | None = None,
             result_service: ResultServiceDep,
         ) -> list[ScanResult]:
-            return await result_service.get_results(risk_tier=risk_tier)
+            return await result_service.list_results(risk_tier=risk_tier)
     """
-    # TODO: Replace with actual service implementation
-    # from openlabels.services.result_service import ResultService
-    # return ResultService(db=db, tenant=tenant, settings=settings, cache=cache)
-    raise NotImplementedError(
-        "ResultService is not yet implemented. "
-        "Create src/openlabels/services/result_service.py"
+    service_tenant = ServiceTenantContext(
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        user_email=tenant.user_email,
+        user_role="admin" if tenant.is_admin else "viewer",
     )
+    return ResultService(db, service_tenant, settings)
 
 
-# Annotated dependencies for services (using Any until services are implemented)
-ScanServiceDep = Annotated[Any, Depends(get_scan_service)]
-LabelServiceDep = Annotated[Any, Depends(get_label_service)]
-JobServiceDep = Annotated[Any, Depends(get_job_service)]
-ResultServiceDep = Annotated[Any, Depends(get_result_service)]
+# Annotated dependencies for services
+ScanServiceDep = Annotated[ScanService, Depends(get_scan_service)]
+LabelServiceDep = Annotated[LabelService, Depends(get_label_service)]
+JobServiceDep = Annotated[JobService, Depends(get_job_service)]
+ResultServiceDep = Annotated[ResultService, Depends(get_result_service)]
 
 
 # =============================================================================
