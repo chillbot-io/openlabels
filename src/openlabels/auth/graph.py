@@ -22,30 +22,6 @@ logger = logging.getLogger(__name__)
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
 
-def escape_odata_string(value: str) -> str:
-    """
-    Escape a string value for safe use in OData filter expressions.
-
-    OData string literals are enclosed in single quotes. To include a single
-    quote within a string literal, it must be doubled (i.e., '' represents ').
-    Backslashes are also escaped for safety.
-
-    Args:
-        value: The raw string value to escape
-
-    Returns:
-        The escaped string safe for use in OData filters (without surrounding quotes)
-
-    Example:
-        escape_odata_string("O'Brien") -> "O''Brien"
-        escape_odata_string("path\\to\\file") -> "path\\\\to\\\\file"
-    """
-    # Escape backslashes first (before they could be confused with escape sequences)
-    escaped = value.replace("\\", "\\\\")
-    # Escape single quotes by doubling them (OData standard)
-    escaped = escaped.replace("'", "''")
-    return escaped
-
 # Scopes for client credentials flow (no user context)
 GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
 

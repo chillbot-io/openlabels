@@ -513,7 +513,7 @@ async def execute_scan_task(
     finally:
         # Release ML processor to free memory (200-500MB)
         # This ensures cleanup happens whether scan completes, fails, or is cancelled
-        release_processor()
+        cleanup_processor()
 
 
 def _get_adapter(adapter_type: str, config: dict):
@@ -1081,4 +1081,4 @@ async def execute_parallel_scan_task(
     finally:
         # Release ML processor to free memory (200-500MB)
         # This ensures cleanup happens whether scan completes, fails, or is cancelled
-        release_processor()
+        cleanup_processor()

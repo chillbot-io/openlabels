@@ -376,7 +376,7 @@ class ScanService(BaseService):
                 },
             )
 
-        await self.session.delete(job)
+        self.session.delete(job)  # delete() is synchronous
         await self.flush()
 
         self._log_info(

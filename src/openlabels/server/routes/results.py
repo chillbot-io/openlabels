@@ -32,7 +32,11 @@ from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError
+from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
+from openlabels.server.errors import ErrorCode
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -88,12 +92,12 @@ class ResultStats(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[ResultResponse])
 async def list_results(
+    result_service: ResultServiceDep,
+    _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
-    result_service: ResultServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
     # Note: has_pii filter is handled at query level in service
@@ -116,12 +120,12 @@ async def list_results(
 
 @router.get("/cursor", response_model=CursorPaginatedResponse[ResultResponse])
 async def list_results_cursor(
+    db: DbSessionDep,
+    _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
-    db: DbSessionDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
     """
     List scan results using cursor-based pagination.
@@ -166,9 +170,9 @@ async def list_results_cursor(
 
 @router.get("/stats", response_model=ResultStats)
 async def get_result_stats(
+    result_service: ResultServiceDep,
+    _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    result_service: ResultServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> ResultStats:
     """
     Get aggregated statistics for scan results using efficient SQL aggregation.
@@ -195,12 +199,12 @@ async def get_result_stats(
 
 @router.get("/export")
 async def export_results(
+    result_service: ResultServiceDep,
+    _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
     has_label: Optional[str] = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
-    result_service: ResultServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
 ) -> StreamingResponse:
     """Export scan results as CSV or JSON using memory-efficient streaming."""
     import csv
@@ -276,8 +280,8 @@ async def export_results(
 @router.get("/{result_id}", response_model=ResultDetailResponse)
 async def get_result(
     result_id: UUID,
-    result_service: ResultServiceDep = Depends(),
-    _tenant: TenantContextDep = Depends(),
+    result_service: ResultServiceDep,
+    _tenant: TenantContextDep,
 ) -> ResultDetailResponse:
     """Get detailed scan result."""
     result = await result_service.get_result(result_id)
@@ -293,8 +297,8 @@ async def get_result(
 @router.delete("")
 async def clear_all_results(
     request: Request,
-    result_service: ResultServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    result_service: ResultServiceDep,
+    _admin: AdminContextDep,
 ):
     """Clear all scan results for the tenant."""
     deleted_count = await result_service.delete_results(job_id=None)
@@ -314,9 +318,9 @@ async def clear_all_results(
 async def delete_result(
     result_id: UUID,
     request: Request,
-    db: DbSessionDep = Depends(),
-    result_service: ResultServiceDep = Depends(),
-    _admin: AdminContextDep = Depends(),
+    db: DbSessionDep,
+    result_service: ResultServiceDep,
+    _admin: AdminContextDep,
 ):
     """Delete a single scan result."""
     from openlabels.server.models import ScanResult
@@ -348,9 +352,9 @@ async def delete_result(
 async def apply_recommended_label(
     result_id: UUID,
     request: Request,
-    db: DbSessionDep = Depends(),
-    result_service: ResultServiceDep = Depends(),
-    admin: AdminContextDep = Depends(),
+    db: DbSessionDep,
+    result_service: ResultServiceDep,
+    admin: AdminContextDep,
 ):
     """Apply the recommended label to a scan result."""
     from openlabels.jobs import JobQueue
@@ -398,9 +402,9 @@ async def apply_recommended_label(
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error applying label to result {result_id}: {e}")
-        raise InternalServerError(
-            code=ErrorCode.DATABASE_ERROR,
+        raise InternalError(
             message="Database error occurred while applying label",
+            details={"error_code": ErrorCode.DATABASE_ERROR},
         )
 
 
@@ -408,9 +412,9 @@ async def apply_recommended_label(
 async def rescan_file(
     result_id: UUID,
     request: Request,
-    db: DbSessionDep = Depends(),
-    result_service: ResultServiceDep = Depends(),
-    admin: AdminContextDep = Depends(),
+    db: DbSessionDep,
+    result_service: ResultServiceDep,
+    admin: AdminContextDep,
 ):
     """Rescan a specific file."""
     from openlabels.server.models import ScanJob

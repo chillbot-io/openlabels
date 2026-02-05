@@ -294,6 +294,8 @@ async def get_entity_trends(
     # For top types, get daily counts with a more targeted query
     # Only fetch scanned_at and entity_counts for files with entities
     daily_counts: dict[str, dict[str, int]] = {}
+    total_records = 0
+    detail_limit = 5000
     if top_types:
         detailed_query = select(
             ScanResult.scanned_at,
@@ -305,10 +307,12 @@ async def get_entity_trends(
                 ScanResult.entity_counts.isnot(None),
                 ScanResult.total_entities > 0,
             )
-        ).limit(5000)  # Cap to prevent memory issues on very large datasets
+        ).limit(detail_limit)  # Cap to prevent memory issues on very large datasets
 
         detailed_result = await session.execute(detailed_query)
-        for row in detailed_result.all():
+        rows = detailed_result.all()
+        total_records = len(rows)
+        for row in rows:
             date_str = row.scanned_at.strftime("%Y-%m-%d")
             if date_str not in daily_counts:
                 daily_counts[date_str] = {}
@@ -318,6 +322,7 @@ async def get_entity_trends(
                     daily_counts[date_str][entity_type] = (
                         daily_counts[date_str].get(entity_type, 0) + entity_counts[entity_type]
                     )
+    truncated = total_records >= detail_limit
 
     # Build series data - always include Total
     series: dict[str, list[tuple[str, int]]] = {"Total": []}
@@ -575,15 +580,19 @@ async def get_heatmap(
                 entity_counts=data["_stats"]["entity_counts"],
             )
 
+        # It's a folder - process children
         children = []
         total_score = 0
         total_entities: dict[str, int] = {}
 
-    async for row in _stream_heatmap_results(
-        session, user.tenant_id, job_id, effective_limit
-    ):
-        _add_file_to_tree(tree, row.file_path, row.risk_score, row.entity_counts)
-        file_count += 1
+        for child_name, child_data in data.get("_children", {}).items():
+            child_path = f"{path}/{child_name}" if path else child_name
+            child_node = build_node(child_name, child_data, child_path)
+            children.append(child_node)
+            total_score += child_node.risk_score
+            # Aggregate entity counts
+            for entity_type, count in (child_node.entity_counts or {}).items():
+                total_entities[entity_type] = total_entities.get(entity_type, 0) + count
 
         # Sort children by risk_score descending for better visualization
         children.sort(key=lambda n: n.risk_score, reverse=True)
@@ -600,7 +609,7 @@ async def get_heatmap(
     # Build response tree
     roots = []
     for root_name, root_data in tree.items():
-        roots.append(_build_node(root_name, root_data, root_name))
+        roots.append(build_node(root_name, root_data, root_name))
 
     # Sort roots by risk_score descending
     roots.sort(key=lambda n: n.risk_score, reverse=True)
