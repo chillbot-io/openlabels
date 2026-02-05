@@ -284,7 +284,8 @@ class AgentPool:
             try:
                 await self._result_task
             except asyncio.CancelledError:
-                pass
+                # Expected when cancelling the task - not an error
+                logger.debug("Result collection task cancelled during pool shutdown")
 
         # Clean up queues
         if self._input_queue:
@@ -364,6 +365,7 @@ class AgentPool:
                 )
                 yield result
             except asyncio.TimeoutError:
+                # Timeout is expected - allows checking for shutdown between waits
                 continue
 
     async def results_batched(

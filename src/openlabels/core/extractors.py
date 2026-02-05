@@ -20,6 +20,7 @@ from .constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_EXTRACTION_RATIO,
 )
+from .exceptions import ExtractionError, SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,8 @@ class PDFExtractor(BaseExtractor):
                         ))
 
                     except Exception as e:
-                        logger.warning(f"OCR failed for page {i+1}: {e}")
+                        # Log OCR failures with full context - may indicate corrupted pages or OCR issues
+                        logger.warning(f"OCR failed for page {i+1} of {filename}: {type(e).__name__}: {e}")
                         pages_text.append("")
                         warnings.append(f"OCR failed for page {i+1}: {e}")
                         page_infos.append(PageInfo(
@@ -313,6 +315,8 @@ class DOCXExtractor(BaseExtractor):
                 warnings=["Legacy .doc format - extraction may be incomplete"],
             )
         except Exception as e:
+            # Log legacy doc extraction failures - may indicate corrupt files
+            logger.info(f"Legacy .doc extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -347,13 +351,14 @@ class XLSXExtractor(BaseExtractor):
 
     def _extract_csv(self, content: bytes, delimiter: str) -> ExtractionResult:
         """Extract from CSV/TSV."""
-        # Try common encodings
+        # Try common encodings - UnicodeDecodeError is expected for wrong encodings
         text_content = None
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         if text_content is None:
@@ -560,7 +565,8 @@ class ImageExtractor(BaseExtractor):
             )
 
         except Exception as e:
-            logger.error(f"Image extraction failed: {e}")
+            # Log image extraction failures with context
+            logger.warning(f"Image extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -604,8 +610,8 @@ class ImageExtractor(BaseExtractor):
                 page_num += 1
 
         except EOFError:
-            # End of pages
-            pass
+            # End of pages - expected when all TIFF frames have been processed
+            logger.debug(f"TIFF extraction complete: {page_num} pages processed from {filename}")
 
         return ExtractionResult(
             text="\n\n".join(pages_text),
@@ -626,7 +632,7 @@ class TextExtractor(BaseExtractor):
         )
 
     def extract(self, content: bytes, filename: str) -> ExtractionResult:
-        # Try common encodings
+        # Try common encodings - UnicodeDecodeError is expected for wrong encodings
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text = content.decode(encoding)
@@ -635,6 +641,7 @@ class TextExtractor(BaseExtractor):
                     pages=1,
                 )
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         return ExtractionResult(
@@ -659,12 +666,13 @@ class RTFExtractor(BaseExtractor):
         except ImportError:
             raise ImportError("striprtf not installed. Run: pip install striprtf")
 
-        # Try to decode
+        # Try to decode - UnicodeDecodeError is expected for wrong encodings
         for encoding in ["utf-8", "latin-1", "cp1252"]:
             try:
                 rtf_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
         else:
             return ExtractionResult(
@@ -680,6 +688,8 @@ class RTFExtractor(BaseExtractor):
                 pages=1,
             )
         except Exception as e:
+            # Log RTF extraction failures
+            logger.info(f"RTF extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -786,6 +796,8 @@ class PPTXExtractor(BaseExtractor):
                 warnings=["Legacy .ppt format - extraction may be incomplete"],
             )
         except Exception as e:
+            # Log legacy PowerPoint extraction failures
+            logger.info(f"Legacy .ppt extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -871,6 +883,8 @@ class EmailExtractor(BaseExtractor):
             )
 
         except Exception as e:
+            # Log MSG file extraction failures
+            logger.info(f"MSG extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -964,6 +978,8 @@ class EmailExtractor(BaseExtractor):
             )
 
         except Exception as e:
+            # Log EML file extraction failures
+            logger.info(f"EML extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -1011,13 +1027,14 @@ class HTMLExtractor(BaseExtractor):
         )
 
     def extract(self, content: bytes, filename: str) -> ExtractionResult:
-        # Try to decode with various encodings
+        # Try to decode with various encodings - UnicodeDecodeError is expected for wrong encodings
         text_content = None
         for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
                 text_content = content.decode(encoding)
                 break
             except UnicodeDecodeError:
+                # This encoding doesn't work - try next one
                 continue
 
         if text_content is None:

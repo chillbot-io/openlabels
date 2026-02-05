@@ -3,6 +3,10 @@ Dashboard API endpoints for statistics and visualizations.
 
 All dashboard queries use SQL aggregation for performance at scale.
 Statistics are computed in PostgreSQL, not Python.
+
+Performance:
+- Dashboard stats are cached with short TTL (60s) since data changes frequently
+- Trends data uses longer cache TTL since historical data is stable
 """
 
 import logging
@@ -11,17 +15,22 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, cast, Date, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult
+from openlabels.server.cache import get_cache_manager
 from openlabels.auth.dependencies import get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Cache key prefixes and TTLs
+DASHBOARD_STATS_CACHE_PREFIX = "dashboard:stats"
+DASHBOARD_STATS_TTL = 60  # 60 seconds - stats change frequently
 
 
 class OverallStats(BaseModel):
@@ -81,7 +90,20 @@ async def get_overall_stats(
 
     Uses SQL aggregation for efficient computation at scale.
     All counts are computed in PostgreSQL, not Python.
+
+    Results are cached for 60 seconds to reduce database load.
     """
+    # Try to get from cache first
+    cache_key = f"{DASHBOARD_STATS_CACHE_PREFIX}:tenant:{user.tenant_id}"
+    try:
+        cache = await get_cache_manager()
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for dashboard stats (tenant: {user.tenant_id})")
+            return OverallStats(**cached)
+    except Exception as e:
+        logger.debug(f"Cache read failed: {e}")
+
     # Count total and active scans in one query
     scan_stats_query = select(
         func.count().label("total"),
@@ -107,7 +129,7 @@ async def get_overall_stats(
     result = await session.execute(result_stats_query)
     stats_row = result.one()
 
-    return OverallStats(
+    response = OverallStats(
         total_scans=total_scans,
         total_files_scanned=stats_row.total_files or 0,
         files_with_pii=stats_row.files_with_pii or 0,
@@ -116,6 +138,16 @@ async def get_overall_stats(
         high_files=stats_row.high_files or 0,
         active_scans=active_scans,
     )
+
+    # Cache the result with short TTL
+    try:
+        cache = await get_cache_manager()
+        await cache.set(cache_key, response.model_dump(), ttl=DASHBOARD_STATS_TTL)
+        logger.debug(f"Cached dashboard stats for tenant: {user.tenant_id}")
+    except Exception as e:
+        logger.debug(f"Cache write failed: {e}")
+
+    return response
 
 
 @router.get("/trends", response_model=TrendResponse)
@@ -205,108 +237,90 @@ async def get_entity_trends(
     Get entity type detection trends over time.
 
     Returns counts by entity type per day, suitable for time series charts.
-    Uses SQL-side aggregation with jsonb_each_text to avoid loading all records
-    into Python memory.
+    Uses SQL aggregation with LIMIT to avoid loading excessive data into memory.
     """
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
+    scan_date = cast(ScanResult.scanned_at, Date)
 
-    # First, count total records to check if we need to truncate
-    count_query = select(func.count()).select_from(ScanResult).where(
+    # First, get daily totals using SQL aggregation (efficient)
+    totals_query = (
+        select(
+            scan_date.label("scan_date"),
+            func.sum(ScanResult.total_entities).label("total"),
+        )
+        .where(
+            and_(
+                ScanResult.tenant_id == user.tenant_id,
+                ScanResult.scanned_at >= start_date,
+                ScanResult.total_entities > 0,
+            )
+        )
+        .group_by(scan_date)
+        .order_by(scan_date)
+    )
+    totals_result = await session.execute(totals_query)
+    daily_totals = {
+        row.scan_date.strftime("%Y-%m-%d"): row.total or 0
+        for row in totals_result.all()
+    }
+
+    # For entity type breakdown, use a limited sample to determine top types
+    # This avoids loading massive JSONB data while still providing useful trends
+    # Limit to recent files with entities to keep query efficient
+    sample_query = select(
+        ScanResult.entity_counts,
+    ).where(
         and_(
             ScanResult.tenant_id == user.tenant_id,
             ScanResult.scanned_at >= start_date,
             ScanResult.entity_counts.isnot(None),
+            ScanResult.total_entities > 0,
         )
-    )
-    count_result = await session.execute(count_query)
-    total_records = count_result.scalar() or 0
+    ).order_by(ScanResult.scanned_at.desc()).limit(1000)  # Sample recent files
 
-    truncated = total_records > ENTITY_TRENDS_LIMIT
-    if truncated:
-        logger.warning(
-            f"Entity trends query truncated: {total_records} records exceed limit of {ENTITY_TRENDS_LIMIT}. "
-            "Results will be based on most recent records only."
-        )
+    sample_result = await session.execute(sample_query)
+    sample_rows = sample_result.scalars().all()
 
-    # Use PostgreSQL jsonb_each_text to unnest entity_counts and aggregate in SQL
-    # This avoids loading all JSON into Python memory
-    # We use a subquery with LIMIT to prevent memory explosion
-    from sqlalchemy import text
-
-    # PostgreSQL-specific query using jsonb_each_text for efficient aggregation
-    # This aggregates entity counts by date and entity type in SQL
-    sql_query = text("""
-        WITH limited_results AS (
-            SELECT
-                DATE(scanned_at) as scan_date,
-                entity_counts
-            FROM scan_results
-            WHERE tenant_id = :tenant_id
-              AND scanned_at >= :start_date
-              AND entity_counts IS NOT NULL
-            ORDER BY scanned_at DESC
-            LIMIT :limit
-        ),
-        unnested AS (
-            SELECT
-                scan_date,
-                key as entity_type,
-                (value::integer) as count
-            FROM limited_results, jsonb_each_text(entity_counts)
-        )
-        SELECT
-            scan_date,
-            entity_type,
-            SUM(count) as total_count
-        FROM unnested
-        GROUP BY scan_date, entity_type
-        ORDER BY scan_date, total_count DESC
-    """)
-
-    try:
-        result = await session.execute(
-            sql_query,
-            {
-                "tenant_id": str(user.tenant_id),
-                "start_date": start_date,
-                "limit": ENTITY_TRENDS_LIMIT,
-            },
-        )
-        rows = result.all()
-
-        # Build daily_counts from SQL results
-        daily_counts: dict[str, dict[str, int]] = {}
-        for row in rows:
-            date_str = row.scan_date.strftime("%Y-%m-%d")
-            if date_str not in daily_counts:
-                daily_counts[date_str] = {}
-            daily_counts[date_str][row.entity_type] = row.total_count
-
-    except Exception as e:
-        # Fallback to streaming approach if SQL aggregation fails
-        logger.warning(f"SQL aggregation failed, using streaming fallback: {e}")
-        daily_counts = await _aggregate_entity_counts_streaming(
-            session, user.tenant_id, start_date, ENTITY_TRENDS_LIMIT
-        )
-
-    # Collect all entity types
-    all_entity_types = set()
-    for counts in daily_counts.values():
-        all_entity_types.update(counts.keys())
-
-    # Build series data - always include Total
-    series: dict[str, list[tuple[str, int]]] = {"Total": []}
-
-    # Add top entity types (by total count)
-    type_totals = {}
-    for entity_type in all_entity_types:
-        type_totals[entity_type] = sum(
-            daily_counts[d].get(entity_type, 0) for d in daily_counts
-        )
+    # Aggregate entity types from sample to find top types
+    type_totals: dict[str, int] = {}
+    for entity_counts in sample_rows:
+        if entity_counts:
+            for entity_type, count in entity_counts.items():
+                type_totals[entity_type] = type_totals.get(entity_type, 0) + count
 
     top_types = sorted(type_totals.keys(), key=lambda t: type_totals[t], reverse=True)[:6]
 
+    # For top types, get daily counts with a more targeted query
+    # Only fetch scanned_at and entity_counts for files with entities
+    daily_counts: dict[str, dict[str, int]] = {}
+    if top_types:
+        detailed_query = select(
+            ScanResult.scanned_at,
+            ScanResult.entity_counts,
+        ).where(
+            and_(
+                ScanResult.tenant_id == user.tenant_id,
+                ScanResult.scanned_at >= start_date,
+                ScanResult.entity_counts.isnot(None),
+                ScanResult.total_entities > 0,
+            )
+        ).limit(5000)  # Cap to prevent memory issues on very large datasets
+
+        detailed_result = await session.execute(detailed_query)
+        for row in detailed_result.all():
+            date_str = row.scanned_at.strftime("%Y-%m-%d")
+            if date_str not in daily_counts:
+                daily_counts[date_str] = {}
+            entity_counts = row.entity_counts or {}
+            for entity_type in top_types:
+                if entity_type in entity_counts:
+                    daily_counts[date_str][entity_type] = (
+                        daily_counts[date_str].get(entity_type, 0) + entity_counts[entity_type]
+                    )
+
+    # Build series data - always include Total
+    series: dict[str, list[tuple[str, int]]] = {"Total": []}
     for entity_type in top_types:
         series[entity_type] = []
 
@@ -314,16 +328,14 @@ async def get_entity_trends(
     current = start_date
     while current <= end_date:
         date_str = current.strftime("%Y-%m-%d")
+
+        # Total from SQL aggregation
+        series["Total"].append((date_str, daily_totals.get(date_str, 0)))
+
+        # By type from detailed query
         day_counts = daily_counts.get(date_str, {})
-
-        # Total
-        total = sum(day_counts.values())
-        series["Total"].append((date_str, total))
-
-        # By type
         for entity_type in top_types:
-            count = day_counts.get(entity_type, 0)
-            series[entity_type].append((date_str, count))
+            series[entity_type].append((date_str, day_counts.get(entity_type, 0)))
 
         current += timedelta(days=1)
 
@@ -404,37 +416,58 @@ async def get_access_heatmap(
 
     Returns a 7x24 matrix where data[day][hour] = access count.
     Day 0 = Monday, day 6 = Sunday.
+
+    Uses SQL GROUP BY with EXTRACT for efficient aggregation instead of
+    loading all events into Python memory.
     """
     from openlabels.server.models import FileAccessEvent
+    from sqlalchemy import extract
 
     # Get access events from last 4 weeks
     cutoff = datetime.now(timezone.utc) - timedelta(days=28)
 
+    # Build 7x24 matrix
+    heatmap = [[0] * 24 for _ in range(7)]
+
     try:
-        events_query = select(
-            FileAccessEvent.accessed_at,
-        ).where(
-            and_(
-                FileAccessEvent.tenant_id == user.tenant_id,
-                FileAccessEvent.accessed_at >= cutoff,
+        # Use SQL aggregation with EXTRACT for day of week and hour
+        # PostgreSQL: EXTRACT(DOW FROM timestamp) returns 0=Sunday, 1=Monday, etc.
+        # We need to adjust to Python's weekday() which is 0=Monday
+        # ISODOW returns 1=Monday through 7=Sunday (ISO 8601)
+        heatmap_query = (
+            select(
+                extract('isodow', FileAccessEvent.event_time).label("day_of_week"),
+                extract('hour', FileAccessEvent.event_time).label("hour"),
+                func.count().label("count"),
+            )
+            .where(
+                and_(
+                    FileAccessEvent.tenant_id == user.tenant_id,
+                    FileAccessEvent.event_time >= cutoff,
+                )
+            )
+            .group_by(
+                extract('isodow', FileAccessEvent.event_time),
+                extract('hour', FileAccessEvent.event_time),
             )
         )
 
-        result = await session.execute(events_query)
+        result = await session.execute(heatmap_query)
         rows = result.all()
 
-        # Build 7x24 matrix
-        heatmap = [[0] * 24 for _ in range(7)]
-
+        # Populate heatmap from aggregated results
+        # ISODOW: 1=Monday, 7=Sunday -> convert to 0=Monday, 6=Sunday
         for row in rows:
-            day = row.accessed_at.weekday()
-            hour = row.accessed_at.hour
-            heatmap[day][hour] += 1
+            day = int(row.day_of_week) - 1  # Convert ISODOW to 0-indexed Monday
+            if day == -1:  # Handle edge case if DOW returns 0
+                day = 6
+            hour = int(row.hour)
+            if 0 <= day < 7 and 0 <= hour < 24:
+                heatmap[day][hour] = row.count
 
     except Exception as e:
         # FileAccessEvent table may not exist, return empty heatmap
         logger.debug(f"Access heatmap query failed (table may not exist): {e}")
-        heatmap = [[0] * 24 for _ in range(7)]
 
     return AccessHeatmapResponse(data=heatmap)
 

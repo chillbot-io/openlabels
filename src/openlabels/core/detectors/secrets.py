@@ -215,6 +215,7 @@ class SecretsDetector(BaseDetector):
                 padded = padded.replace('-', '+').replace('_', '/')
                 base64.b64decode(padded)
             except (ValueError, binascii.Error):
+                # Invalid Base64 in header or payload - not a valid JWT
                 return False
 
         return True

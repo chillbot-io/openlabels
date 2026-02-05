@@ -61,6 +61,7 @@ def _validate_cusip(cusip: str) -> bool:
     try:
         return int(cusip[8]) == check_digit
     except ValueError:
+        # Check digit is not numeric - invalid CUSIP
         return False
 
 
@@ -117,6 +118,7 @@ def _validate_sedol(sedol: str) -> bool:
     try:
         return int(sedol[6]) == check_digit
     except ValueError:
+        # Check digit is not numeric - invalid SEDOL
         return False
 
 
@@ -183,6 +185,7 @@ def _validate_bitcoin_base58(address: str) -> bool:
         hash2 = hashlib.sha256(hash1).digest()
         return hash2[:4] == checksum
     except (OverflowError, ValueError):
+        # Invalid Base58 encoding or address too large
         return False
 
 
@@ -224,6 +227,7 @@ def _validate_ethereum(address: str) -> bool:
         int(hex_part, 16)
         return True
     except ValueError:
+        # Contains non-hex characters - invalid Ethereum address
         return False
 
 

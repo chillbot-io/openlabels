@@ -11,6 +11,7 @@ import os
 
 from ..types import Span, Tier
 from ..constants import PRODUCT_CODE_PREFIXES
+from ..exceptions import ModelLoadError, DetectionError
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 
@@ -190,11 +191,37 @@ class MLDetector(BaseDetector):
             self._loaded = True
             return True
 
-        except ImportError:
-            logger.warning(f"{self.name}: transformers not installed")
+        except ImportError as e:
+            logger.warning(
+                f"{self.name}: transformers library not installed - "
+                f"ML detection disabled. Install with: pip install transformers"
+            )
             return False
-        except Exception as e:
-            logger.error(f"{self.name}: Failed to load model: {e}")
+        except OSError as e:
+            # Model files corrupted or inaccessible
+            logger.error(
+                f"{self.name}: Failed to load model from {self.model_path} - "
+                f"files may be corrupted or inaccessible: {e}"
+            )
+            return False
+        except MemoryError as e:
+            logger.error(
+                f"{self.name}: Insufficient memory to load model from {self.model_path}. "
+                f"Consider using a smaller model or increasing available memory."
+            )
+            return False
+        except RuntimeError as e:
+            # CUDA errors, model architecture mismatch, etc.
+            logger.error(
+                f"{self.name}: Runtime error loading model - {type(e).__name__}: {e}. "
+                f"Model path: {self.model_path}"
+            )
+            return False
+        except ValueError as e:
+            # Invalid model configuration
+            logger.error(
+                f"{self.name}: Invalid model configuration at {self.model_path}: {e}"
+            )
             return False
 
     def detect(self, text: str) -> List[Span]:
@@ -208,8 +235,31 @@ class MLDetector(BaseDetector):
 
         try:
             results = self._pipeline(text)
-        except Exception as e:
-            logger.error(f"{self.name}: Inference failed: {e}")
+        except RuntimeError as e:
+            # CUDA out of memory, tensor errors, etc.
+            logger.error(
+                f"{self.name}: Inference failed with runtime error - {type(e).__name__}: {e}. "
+                f"Input length: {len(text)} chars"
+            )
+            return []
+        except MemoryError as e:
+            logger.error(
+                f"{self.name}: Insufficient memory for inference on text of {len(text)} chars. "
+                f"Consider processing smaller chunks."
+            )
+            return []
+        except ValueError as e:
+            # Invalid input format
+            logger.warning(
+                f"{self.name}: Invalid input for inference: {e}. "
+                f"Input length: {len(text)} chars"
+            )
+            return []
+        except TypeError as e:
+            # Unexpected input type
+            logger.error(
+                f"{self.name}: Type error during inference - expected string input: {e}"
+            )
             return []
 
         spans = []

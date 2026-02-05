@@ -229,22 +229,22 @@ class JobQueue:
         return True
 
     async def get_pending_count(self) -> int:
-        """Get count of pending jobs."""
-        query = select(JobQueueModel.id).where(
+        """Get count of pending jobs using efficient SQL COUNT."""
+        query = select(func.count()).select_from(JobQueueModel).where(
             JobQueueModel.tenant_id == self.tenant_id,
             JobQueueModel.status == "pending",
         )
         result = await self.session.execute(query)
-        return len(result.all())
+        return result.scalar() or 0
 
     async def get_running_count(self) -> int:
-        """Get count of running jobs."""
-        query = select(JobQueueModel.id).where(
+        """Get count of running jobs using efficient SQL COUNT."""
+        query = select(func.count()).select_from(JobQueueModel).where(
             JobQueueModel.tenant_id == self.tenant_id,
             JobQueueModel.status == "running",
         )
         result = await self.session.execute(query)
-        return len(result.all())
+        return result.scalar() or 0
 
     # =========================================================================
     # Dead Letter Queue (DLQ) Operations
@@ -566,7 +566,10 @@ class JobQueue:
             settings = get_settings()
             completed_ttl_days = completed_ttl_days or settings.jobs.completed_job_ttl_days
             failed_ttl_days = failed_ttl_days or settings.jobs.failed_job_ttl_days
-        except Exception:
+        except Exception as config_err:
+            # Settings may not be available in tests or standalone usage - use defaults
+            import logging
+            logging.getLogger(__name__).debug(f"Using default TTL values (config unavailable): {config_err}")
             completed_ttl_days = completed_ttl_days or 7
             failed_ttl_days = failed_ttl_days or 30
 
@@ -639,7 +642,10 @@ class JobQueue:
             from openlabels.server.config import get_settings
             settings = get_settings()
             max_age_hours = max_age_hours or settings.jobs.pending_job_max_age_hours
-        except Exception:
+        except Exception as config_err:
+            # Settings may not be available in tests or standalone usage - use defaults
+            import logging
+            logging.getLogger(__name__).debug(f"Using default max_age_hours (config unavailable): {config_err}")
             max_age_hours = max_age_hours or 24
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
@@ -659,45 +665,68 @@ class JobQueue:
 
     async def get_job_age_stats(self) -> dict:
         """
-        Get statistics about job ages for monitoring.
+        Get statistics about job ages for monitoring using efficient SQL aggregation.
+
+        Uses SQL MIN and AVG functions instead of loading all jobs into memory.
 
         Returns:
             Dictionary with age statistics by status
         """
+        from sqlalchemy import extract
+
         now = datetime.now(timezone.utc)
 
         stats = {
-            "pending": {"count": 0, "oldest_hours": 0, "avg_hours": 0},
-            "running": {"count": 0, "oldest_hours": 0, "avg_hours": 0},
+            "pending": {"count": 0, "oldest_hours": 0.0, "avg_hours": 0.0},
+            "running": {"count": 0, "oldest_hours": 0.0, "avg_hours": 0.0},
         }
 
-        # Pending jobs stats
-        pending_query = select(JobQueueModel.created_at).where(
+        # Pending jobs stats using SQL aggregation
+        # Get count, oldest (MIN created_at), and average age
+        pending_query = select(
+            func.count().label("count"),
+            func.min(JobQueueModel.created_at).label("oldest"),
+            func.avg(
+                extract('epoch', func.cast(now, JobQueueModel.created_at.type))
+                - extract('epoch', JobQueueModel.created_at)
+            ).label("avg_age_seconds"),
+        ).where(
             JobQueueModel.tenant_id == self.tenant_id,
             JobQueueModel.status == "pending",
         )
         pending_result = await self.session.execute(pending_query)
-        pending_times = [r for r in pending_result.scalars().all()]
+        pending_row = pending_result.one()
 
-        if pending_times:
-            ages = [(now - t).total_seconds() / 3600 for t in pending_times]
-            stats["pending"]["count"] = len(ages)
-            stats["pending"]["oldest_hours"] = round(max(ages), 2)
-            stats["pending"]["avg_hours"] = round(sum(ages) / len(ages), 2)
+        if pending_row.count and pending_row.count > 0:
+            stats["pending"]["count"] = pending_row.count
+            if pending_row.oldest:
+                oldest_age = (now - pending_row.oldest).total_seconds() / 3600
+                stats["pending"]["oldest_hours"] = round(oldest_age, 2)
+            if pending_row.avg_age_seconds:
+                stats["pending"]["avg_hours"] = round(pending_row.avg_age_seconds / 3600, 2)
 
-        # Running jobs stats
-        running_query = select(JobQueueModel.started_at).where(
+        # Running jobs stats using SQL aggregation
+        running_query = select(
+            func.count().label("count"),
+            func.min(JobQueueModel.started_at).label("oldest"),
+            func.avg(
+                extract('epoch', func.cast(now, JobQueueModel.started_at.type))
+                - extract('epoch', JobQueueModel.started_at)
+            ).label("avg_age_seconds"),
+        ).where(
             JobQueueModel.tenant_id == self.tenant_id,
             JobQueueModel.status == "running",
             JobQueueModel.started_at.isnot(None),
         )
         running_result = await self.session.execute(running_query)
-        running_times = [r for r in running_result.scalars().all()]
+        running_row = running_result.one()
 
-        if running_times:
-            ages = [(now - t).total_seconds() / 3600 for t in running_times]
-            stats["running"]["count"] = len(ages)
-            stats["running"]["oldest_hours"] = round(max(ages), 2)
-            stats["running"]["avg_hours"] = round(sum(ages) / len(ages), 2)
+        if running_row.count and running_row.count > 0:
+            stats["running"]["count"] = running_row.count
+            if running_row.oldest:
+                oldest_age = (now - running_row.oldest).total_seconds() / 3600
+                stats["running"]["oldest_hours"] = round(oldest_age, 2)
+            if running_row.avg_age_seconds:
+                stats["running"]["avg_hours"] = round(running_row.avg_age_seconds / 3600, 2)
 
         return stats

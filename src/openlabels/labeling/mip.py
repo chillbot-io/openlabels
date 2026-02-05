@@ -42,6 +42,8 @@ try:
     import clr
     PYTHONNET_AVAILABLE = True
 except ImportError:
+    # pythonnet not installed - MIP SDK functionality unavailable
+    logger.debug("pythonnet not installed - MIP SDK features disabled")
     PYTHONNET_AVAILABLE = False
     clr = None
 

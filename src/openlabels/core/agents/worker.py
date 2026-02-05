@@ -260,7 +260,8 @@ class ClassificationAgent:
             import setproctitle
             setproctitle.setproctitle(f"openlabels-agent-{self.agent_id}")
         except ImportError:
-            pass
+            # setproctitle is optional - process will use default name
+            logger.debug(f"setproctitle not installed, agent {self.agent_id} using default process name")
 
         # Load model (expensive, do once)
         self._load_model()

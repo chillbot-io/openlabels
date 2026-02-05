@@ -24,6 +24,8 @@ try:
     from PySide6.QtCore import Qt, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - results widget unavailable
+    logger.debug("PySide6 not installed - results widget disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 
@@ -336,7 +338,11 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
             QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
+        except IOError as e:
+            logger.error(f"I/O error while exporting CSV to '{validated_path}': {e}", exc_info=True)
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
         except Exception as e:
+            logger.error(f"Unexpected error while exporting CSV to '{validated_path}': {e}", exc_info=True)
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def _on_export_json(self) -> None:
@@ -368,7 +374,11 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
             QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
+        except IOError as e:
+            logger.error(f"I/O error while exporting JSON to '{validated_path}': {e}", exc_info=True)
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
         except Exception as e:
+            logger.error(f"Unexpected error while exporting JSON to '{validated_path}': {e}", exc_info=True)
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def load_results(self, results: List[dict]) -> None:

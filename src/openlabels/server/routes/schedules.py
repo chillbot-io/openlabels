@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -18,6 +18,12 @@ from openlabels.server.db import get_session
 
 logger = logging.getLogger(__name__)
 from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    paginate_query,
+)
+from openlabels.server.exceptions import NotFoundError
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue, parse_cron_expression
 
@@ -55,20 +61,27 @@ class ScheduleResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("", response_model=list[ScheduleResponse])
+@router.get("", response_model=PaginatedResponse[ScheduleResponse])
 async def list_schedules(
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> list[ScheduleResponse]:
-    """List configured scan schedules."""
-    try:
-        query = select(ScanSchedule).where(ScanSchedule.tenant_id == user.tenant_id)
-        result = await session.execute(query)
-        schedules = result.scalars().all()
-        return [ScheduleResponse.model_validate(s) for s in schedules]
-    except SQLAlchemyError as e:
-        logger.error(f"Database error listing schedules: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+) -> PaginatedResponse[ScheduleResponse]:
+    """List configured scan schedules with pagination."""
+    query = (
+        select(ScanSchedule)
+        .where(ScanSchedule.tenant_id == user.tenant_id)
+        .order_by(ScanSchedule.created_at.desc())
+    )
+
+    result = await paginate_query(
+        session,
+        query,
+        pagination,
+        transformer=lambda s: ScheduleResponse.model_validate(s),
+    )
+
+    return PaginatedResponse[ScheduleResponse](**result)
 
 
 @router.post("", response_model=ScheduleResponse, status_code=201)
@@ -78,20 +91,23 @@ async def create_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> ScheduleResponse:
     """Create a new scan schedule."""
-    try:
-        # Verify target exists
-        target = await session.get(ScanTarget, request.target_id)
-        if not target or target.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Target not found")
-
-        schedule = ScanSchedule(
-            tenant_id=user.tenant_id,
-            name=request.name,
-            target_id=request.target_id,
-            cron=request.cron,
-            enabled=True,  # Explicitly set default to ensure it's available before flush
-            created_by=user.id,
+    # Verify target exists
+    target = await session.get(ScanTarget, request.target_id)
+    if not target or target.tenant_id != user.tenant_id:
+        raise NotFoundError(
+            message="Target not found",
+            resource_type="ScanTarget",
+            resource_id=str(request.target_id),
         )
+
+    schedule = ScanSchedule(
+        tenant_id=user.tenant_id,
+        name=request.name,
+        target_id=request.target_id,
+        cron=request.cron,
+        enabled=True,  # Explicitly set default to ensure it's available before flush
+        created_by=user.id,
+    )
 
         # Calculate next run time if cron is set
         if request.cron:
@@ -118,16 +134,14 @@ async def get_schedule(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScheduleResponse:
     """Get schedule details."""
-    try:
-        schedule = await session.get(ScanSchedule, schedule_id)
-        if not schedule or schedule.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Schedule not found")
-        return schedule
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error getting schedule {schedule_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+    schedule = await session.get(ScanSchedule, schedule_id)
+    if not schedule or schedule.tenant_id != user.tenant_id:
+        raise NotFoundError(
+            message="Schedule not found",
+            resource_type="ScanSchedule",
+            resource_id=str(schedule_id),
+        )
+    return schedule
 
 
 @router.put("/{schedule_id}", response_model=ScheduleResponse)
@@ -138,26 +152,24 @@ async def update_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> ScheduleResponse:
     """Update a scan schedule."""
-    try:
-        schedule = await session.get(ScanSchedule, schedule_id)
-        if not schedule or schedule.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Schedule not found")
+    schedule = await session.get(ScanSchedule, schedule_id)
+    if not schedule or schedule.tenant_id != user.tenant_id:
+        raise NotFoundError(
+            message="Schedule not found",
+            resource_type="ScanSchedule",
+            resource_id=str(schedule_id),
+        )
 
-        if request.name is not None:
-            schedule.name = request.name
-        if request.cron is not None:
-            schedule.cron = request.cron
-            # Recalculate next run time
-            schedule.next_run_at = parse_cron_expression(request.cron)
-        if request.enabled is not None:
-            schedule.enabled = request.enabled
+    if request.name is not None:
+        schedule.name = request.name
+    if request.cron is not None:
+        schedule.cron = request.cron
+        # Recalculate next run time
+        schedule.next_run_at = parse_cron_expression(request.cron)
+    if request.enabled is not None:
+        schedule.enabled = request.enabled
 
-        return schedule
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error updating schedule {schedule_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+    return schedule
 
 
 @router.delete("/{schedule_id}")
@@ -168,32 +180,30 @@ async def delete_schedule(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a scan schedule."""
-    try:
-        schedule = await session.get(ScanSchedule, schedule_id)
-        if not schedule or schedule.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Schedule not found")
+    schedule = await session.get(ScanSchedule, schedule_id)
+    if not schedule or schedule.tenant_id != user.tenant_id:
+        raise NotFoundError(
+            message="Schedule not found",
+            resource_type="ScanSchedule",
+            resource_id=str(schedule_id),
+        )
 
-        schedule_name = schedule.name
-        await session.delete(schedule)
-        await session.flush()
+    schedule_name = schedule.name
+    await session.delete(schedule)
+    await session.flush()
 
-        # Check if this is an HTMX request
-        if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": f'{{"notify": {{"message": "Schedule \\"{schedule_name}\\" deleted", "type": "success"}}, "refreshSchedules": true}}',
-                },
-            )
+    # Check if this is an HTMX request
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={
+                "HX-Trigger": f'{{"notify": {{"message": "Schedule \\"{schedule_name}\\" deleted", "type": "success"}}, "refreshSchedules": true}}',
+            },
+        )
 
-        # Regular REST response
-        return Response(status_code=204)
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error deleting schedule {schedule_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+    # Regular REST response
+    return Response(status_code=204)
 
 
 @router.post("/{schedule_id}/run", status_code=202)
@@ -203,41 +213,39 @@ async def trigger_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Trigger an immediate run of a schedule."""
-    try:
-        schedule = await session.get(ScanSchedule, schedule_id)
-        if not schedule or schedule.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Schedule not found")
-
-        # Create scan job
-        target = await session.get(ScanTarget, schedule.target_id)
-        job = ScanJob(
-            tenant_id=user.tenant_id,
-            target_id=schedule.target_id,
-            name=f"{schedule.name} (manual trigger)",
-            status="pending",
-            created_by=user.id,
-        )
-        session.add(job)
-        await session.flush()
-
-        # Enqueue the scan job
-        queue = JobQueue(session, user.tenant_id)
-        await queue.enqueue(
-            task_type="scan",
-            payload={"job_id": str(job.id)},
-            priority=70,  # Higher priority for manual triggers
+    schedule = await session.get(ScanSchedule, schedule_id)
+    if not schedule or schedule.tenant_id != user.tenant_id:
+        raise NotFoundError(
+            message="Schedule not found",
+            resource_type="ScanSchedule",
+            resource_id=str(schedule_id),
         )
 
-        # Update last run time
-        schedule.last_run_at = datetime.now(timezone.utc)
+    # Create scan job
+    target = await session.get(ScanTarget, schedule.target_id)
+    job = ScanJob(
+        tenant_id=user.tenant_id,
+        target_id=schedule.target_id,
+        name=f"{schedule.name} (manual trigger)",
+        status="pending",
+        created_by=user.id,
+    )
+    session.add(job)
+    await session.flush()
 
-        return {
-            "message": "Scan triggered",
-            "schedule_id": str(schedule_id),
-            "job_id": str(job.id),
-        }
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error triggering schedule {schedule_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+    # Enqueue the scan job
+    queue = JobQueue(session, user.tenant_id)
+    await queue.enqueue(
+        task_type="scan",
+        payload={"job_id": str(job.id)},
+        priority=70,  # Higher priority for manual triggers
+    )
+
+    # Update last run time
+    schedule.last_run_at = datetime.now(timezone.utc)
+
+    return {
+        "message": "Scan triggered",
+        "schedule_id": str(schedule_id),
+        "job_id": str(job.id),
+    }

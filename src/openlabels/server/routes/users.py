@@ -6,14 +6,19 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import User, Tenant
-from openlabels.server.errors import NotFoundError, ConflictError, BadRequestError
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    paginate_query,
+)
+from openlabels.server.exceptions import NotFoundError, ConflictError, BadRequestError
 from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
@@ -47,67 +52,27 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-class UserListResponse(BaseModel):
-    """
-    Paginated list of users.
-
-    Uses standardized pagination format with consistent field naming.
-    """
-
-    items: list[UserResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-    has_more: bool
-
-
-@router.get("", response_model=UserListResponse)
+@router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, alias="limit", description="Items per page"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
-) -> UserListResponse:
-    """
-    List all users in the tenant with pagination.
-
-    Uses standardized pagination format with consistent field naming:
-    - `items`: List of users
-    - `total`: Total number of users
-    - `page`: Current page number
-    - `page_size`: Items per page
-    - `total_pages`: Total number of pages
-    - `has_more`: Whether there are more pages
-    """
-    # Get total count
-    count_query = select(func.count(User.id)).where(User.tenant_id == user.tenant_id)
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Calculate pagination
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-
-    # Get users
-    offset = (page - 1) * page_size
+) -> PaginatedResponse[UserResponse]:
+    """List all users in the tenant."""
     query = (
         select(User)
         .where(User.tenant_id == user.tenant_id)
         .order_by(User.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
     )
-    result = await session.execute(query)
-    users = result.scalars().all()
 
-    return UserListResponse(
-        items=[UserResponse.model_validate(u) for u in users],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-        has_more=page < total_pages,
+    result = await paginate_query(
+        session,
+        query,
+        pagination,
+        transformer=lambda u: UserResponse.model_validate(u),
     )
+
+    return PaginatedResponse[UserResponse](**result)
 
 
 @router.post("", response_model=UserResponse, status_code=201)
@@ -127,7 +92,7 @@ async def create_user(
     if existing.scalar_one_or_none():
         raise ConflictError(
             message="User with this email already exists",
-            details={"email": user_data.email}
+            conflicting_field="email",
         )
 
     # Create user
@@ -157,7 +122,8 @@ async def get_user(
     if not user or user.tenant_id != current_user.tenant_id:
         raise NotFoundError(
             message="User not found",
-            details={"user_id": str(user_id)}
+            resource_type="User",
+            resource_id=str(user_id),
         )
     return user
 
@@ -174,7 +140,8 @@ async def update_user(
     if not user or user.tenant_id != current_user.tenant_id:
         raise NotFoundError(
             message="User not found",
-            details={"user_id": str(user_id)}
+            resource_type="User",
+            resource_id=str(user_id),
         )
 
     if user_data.name is not None:
@@ -197,15 +164,13 @@ async def delete_user(
     if not user or user.tenant_id != current_user.tenant_id:
         raise NotFoundError(
             message="User not found",
-            details={"user_id": str(user_id)}
+            resource_type="User",
+            resource_id=str(user_id),
         )
 
     # Prevent self-deletion
     if user.id == current_user.id:
-        raise BadRequestError(
-            message="Cannot delete yourself",
-            details={"user_id": str(user_id)}
-        )
+        raise BadRequestError(message="Cannot delete yourself")
 
     await session.delete(user)
     await session.flush()

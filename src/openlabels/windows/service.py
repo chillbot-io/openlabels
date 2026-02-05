@@ -41,6 +41,8 @@ try:
     import servicemanager
     PYWIN32_AVAILABLE = True
 except ImportError:
+    # pywin32 not installed - Windows service functionality unavailable
+    logger.debug("pywin32 not installed - Windows service features disabled")
     PYWIN32_AVAILABLE = False
     # Stub classes for non-Windows development
     class win32serviceutil:

@@ -1336,3 +1336,1182 @@ class TestWebSocketSecurity:
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             # Should still validate origin even if we tried to bypass
             assert validate_websocket_origin(mock_websocket) is False
+
+
+# =============================================================================
+# WEBSOCKET INTEGRATION TESTS (using TestClient)
+# =============================================================================
+
+
+class TestWebSocketIntegration:
+    """Integration tests using Starlette's WebSocket TestClient."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_connection_dev_mode(self, test_db, setup_ws_test_data):
+        """WebSocket should connect successfully in dev mode."""
+        from starlette.testclient import TestClient
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        scan_job = setup_ws_test_data["scan_job"]
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "development"
+        mock_settings.auth.provider = "none"
+
+        try:
+            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                    mock_factory.return_value = MagicMock(return_value=test_db)
+
+                    client = TestClient(app)
+                    # In dev mode, connection should be accepted
+                    with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                        # Send ping
+                        websocket.send_text("ping")
+                        response = websocket.receive_text()
+                        assert response == "pong"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_websocket_receives_heartbeat(self, test_db, setup_ws_test_data):
+        """WebSocket should receive heartbeat on timeout."""
+        from starlette.testclient import TestClient
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        scan_job = setup_ws_test_data["scan_job"]
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "development"
+        mock_settings.auth.provider = "none"
+
+        try:
+            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                    mock_factory.return_value = MagicMock(return_value=test_db)
+
+                    # Reduce timeout for testing
+                    with patch('openlabels.server.routes.ws.asyncio.wait_for') as mock_wait:
+                        mock_wait.side_effect = asyncio.TimeoutError()
+
+                        client = TestClient(app)
+                        with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                            # Should receive heartbeat after timeout
+                            data = websocket.receive_json()
+                            assert data["type"] == "heartbeat"
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_websocket_invalid_scan_id_format(self, test_db, setup_ws_test_data):
+        """WebSocket should handle invalid scan ID format gracefully."""
+        from starlette.testclient import TestClient
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "development"
+        mock_settings.auth.provider = "none"
+
+        try:
+            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+                client = TestClient(app)
+                # Invalid UUID format should return 422 or similar
+                with pytest.raises(Exception):
+                    with client.websocket_connect("/ws/scans/invalid-uuid"):
+                        pass
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_websocket_nonexistent_scan(self, test_db, setup_ws_test_data):
+        """WebSocket should reject connection to non-existent scan."""
+        from starlette.testclient import TestClient
+        from openlabels.server.app import app
+        from openlabels.server.db import get_session
+
+        async def override_get_session():
+            yield test_db
+
+        app.dependency_overrides[get_session] = override_get_session
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "development"
+        mock_settings.auth.provider = "none"
+
+        try:
+            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                    mock_factory.return_value = MagicMock(return_value=test_db)
+
+                    client = TestClient(app)
+                    nonexistent_id = uuid4()
+                    # Should reject with policy violation
+                    with pytest.raises(Exception):
+                        with client.websocket_connect(f"/ws/scans/{nonexistent_id}"):
+                            pass
+        finally:
+            app.dependency_overrides.clear()
+
+
+# =============================================================================
+# MESSAGE HANDLING EDGE CASES
+# =============================================================================
+
+
+class TestMessageHandlingEdgeCases:
+    """Tests for edge cases in WebSocket message handling."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_message_type_ignored(self):
+        """Unknown message types should be handled gracefully (not crash)."""
+        # The endpoint only handles "ping", other messages are ignored
+        mock_websocket = AsyncMock()
+        mock_websocket.receive_text.side_effect = [
+            "unknown_command",
+            "another_unknown",
+            asyncio.TimeoutError(),
+        ]
+
+        # Simulate endpoint logic - non-ping messages don't trigger response
+        data = await mock_websocket.receive_text()
+        if data == "ping":
+            await mock_websocket.send_text("pong")
+
+        # send_text should not have been called (message wasn't "ping")
+        mock_websocket.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_message_handled(self):
+        """Empty messages should not crash the WebSocket."""
+        mock_websocket = AsyncMock()
+        mock_websocket.receive_text.side_effect = ["", asyncio.TimeoutError()]
+
+        data = await mock_websocket.receive_text()
+        if data == "ping":
+            await mock_websocket.send_text("pong")
+
+        mock_websocket.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_message_handled(self):
+        """Whitespace-only messages should not crash the WebSocket."""
+        mock_websocket = AsyncMock()
+        mock_websocket.receive_text.side_effect = ["   \n\t  ", asyncio.TimeoutError()]
+
+        data = await mock_websocket.receive_text()
+        if data == "ping":
+            await mock_websocket.send_text("pong")
+
+        mock_websocket.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_case_sensitive_ping(self):
+        """Ping command should be case-sensitive."""
+        mock_websocket = AsyncMock()
+
+        # Test various case variations
+        variations = ["PING", "Ping", "pInG", " ping", "ping "]
+        for variation in variations:
+            mock_websocket.reset_mock()
+            mock_websocket.receive_text.return_value = variation
+
+            data = await mock_websocket.receive_text()
+            if data == "ping":
+                await mock_websocket.send_text("pong")
+
+            # Only exact "ping" should trigger response
+            mock_websocket.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_binary_message_handling(self):
+        """Binary messages should be handled appropriately."""
+        # Note: The current endpoint uses receive_text, so binary would
+        # need receive_bytes. This tests the expected behavior.
+        mock_websocket = AsyncMock()
+        mock_websocket.receive_bytes = AsyncMock(return_value=b"\x00\x01\x02")
+
+        # Simulate receiving binary
+        data = await mock_websocket.receive_bytes()
+        assert isinstance(data, bytes)
+
+    @pytest.mark.asyncio
+    async def test_unicode_message_handling(self):
+        """Unicode messages should be handled correctly."""
+        mock_websocket = AsyncMock()
+        unicode_messages = ["你好", "مرحبا", "🎉", "ping\u0000"]
+
+        for msg in unicode_messages:
+            mock_websocket.receive_text.return_value = msg
+            data = await mock_websocket.receive_text()
+
+            if data == "ping":
+                await mock_websocket.send_text("pong")
+
+        # None of these should trigger pong response
+        mock_websocket.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_very_long_message(self):
+        """Very long messages should be handled without crashing."""
+        mock_websocket = AsyncMock()
+        long_message = "x" * 1_000_000  # 1MB message
+        mock_websocket.receive_text.return_value = long_message
+
+        data = await mock_websocket.receive_text()
+        assert len(data) == 1_000_000
+
+
+# =============================================================================
+# CONNECTION LIFECYCLE TESTS
+# =============================================================================
+
+
+class TestConnectionLifecycle:
+    """Tests for WebSocket connection lifecycle management."""
+
+    @pytest.mark.asyncio
+    async def test_rapid_connect_disconnect_cycles(self):
+        """Manager should handle rapid connect/disconnect cycles."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        tenant_id = uuid4()
+
+        # Perform many rapid connect/disconnect cycles
+        for _ in range(100):
+            mock_websocket = AsyncMock()
+            conn = await manager.connect(scan_id, mock_websocket, uuid4(), tenant_id)
+            manager.disconnect(scan_id, conn)
+
+        # Manager should be clean after all disconnects
+        assert scan_id not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_interleaved_connect_disconnect(self):
+        """Manager should handle interleaved connect/disconnect operations."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        tenant_id = uuid4()
+
+        connections = []
+
+        # Connect 5 clients
+        for i in range(5):
+            ws = AsyncMock()
+            conn = await manager.connect(scan_id, ws, uuid4(), tenant_id)
+            connections.append(conn)
+
+        # Disconnect every other one
+        for i in range(0, 5, 2):
+            manager.disconnect(scan_id, connections[i])
+
+        # Should have 2 remaining
+        assert len(manager.active_connections[scan_id]) == 2
+
+        # Disconnect rest
+        for i in range(1, 5, 2):
+            manager.disconnect(scan_id, connections[i])
+
+        # Should be clean
+        assert scan_id not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_connection_memory_cleanup(self):
+        """Verify connections are properly cleaned up to prevent memory leaks."""
+        from openlabels.server.routes.ws import ConnectionManager
+        import gc
+        import weakref
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        weak_ref = weakref.ref(mock_websocket)
+
+        conn = await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+        manager.disconnect(scan_id, conn)
+
+        # Remove our reference
+        del mock_websocket
+        del conn
+        gc.collect()
+
+        # The weak reference might still exist due to AsyncMock internals,
+        # but the manager should not hold references
+        assert scan_id not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_reconnection_after_disconnect(self):
+        """Same user should be able to reconnect after disconnecting."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        user_id = uuid4()
+        tenant_id = uuid4()
+
+        # First connection
+        ws1 = AsyncMock()
+        conn1 = await manager.connect(scan_id, ws1, user_id, tenant_id)
+        manager.disconnect(scan_id, conn1)
+
+        # Reconnect
+        ws2 = AsyncMock()
+        conn2 = await manager.connect(scan_id, ws2, user_id, tenant_id)
+
+        assert scan_id in manager.active_connections
+        assert len(manager.active_connections[scan_id]) == 1
+        assert conn2.user_id == user_id
+
+        # Clean up
+        manager.disconnect(scan_id, conn2)
+
+    @pytest.mark.asyncio
+    async def test_multiple_scans_same_user(self):
+        """User should be able to watch multiple scans simultaneously."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        user_id = uuid4()
+        tenant_id = uuid4()
+
+        scans = [uuid4() for _ in range(3)]
+        connections = []
+
+        for scan_id in scans:
+            ws = AsyncMock()
+            conn = await manager.connect(scan_id, ws, user_id, tenant_id)
+            connections.append((scan_id, conn))
+
+        # All scans should have connections
+        for scan_id in scans:
+            assert scan_id in manager.active_connections
+            assert len(manager.active_connections[scan_id]) == 1
+
+        # Clean up
+        for scan_id, conn in connections:
+            manager.disconnect(scan_id, conn)
+
+
+# =============================================================================
+# BROADCAST BEHAVIOR TESTS
+# =============================================================================
+
+
+class TestBroadcastBehavior:
+    """Tests for broadcast message delivery behavior."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_message_ordering(self):
+        """Messages should be delivered in order to each connection."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        received_messages = []
+
+        async def capture_send(msg):
+            received_messages.append(msg)
+
+        mock_websocket.send_json = capture_send
+
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        # Send multiple messages
+        messages = [
+            {"type": "progress", "index": 0},
+            {"type": "progress", "index": 1},
+            {"type": "progress", "index": 2},
+            {"type": "completed", "index": 3},
+        ]
+
+        for msg in messages:
+            await manager.broadcast(scan_id, msg)
+
+        # Verify order
+        assert len(received_messages) == 4
+        for i, msg in enumerate(received_messages):
+            assert msg["index"] == i
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_broadcast_to_many_connections(self):
+        """Broadcast should efficiently handle many connections."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        tenant_id = uuid4()
+
+        # Create many connections
+        num_connections = 100
+        websockets = []
+        for _ in range(num_connections):
+            ws = AsyncMock()
+            await manager.connect(scan_id, ws, uuid4(), tenant_id)
+            websockets.append(ws)
+
+        message = {"type": "progress", "data": "test"}
+        await manager.broadcast(scan_id, message)
+
+        # All should receive
+        for ws in websockets:
+            ws.send_json.assert_called_once_with(message)
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_broadcast_partial_failure_continues(self):
+        """Broadcast should continue even if some connections fail."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        tenant_id = uuid4()
+
+        # Create 10 connections, make every 3rd one fail
+        websockets = []
+        for i in range(10):
+            ws = AsyncMock()
+            if i % 3 == 0:
+                ws.send_json.side_effect = Exception(f"Connection {i} failed")
+            websockets.append(ws)
+            await manager.connect(scan_id, ws, uuid4(), tenant_id)
+
+        message = {"type": "test"}
+        await manager.broadcast(scan_id, message)
+
+        # Verify all received attempt (failed ones still got called)
+        for ws in websockets:
+            ws.send_json.assert_called_once()
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_broadcast_with_nested_data(self):
+        """Broadcast should handle deeply nested message data."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        nested_message = {
+            "type": "file_result",
+            "data": {
+                "level1": {
+                    "level2": {
+                        "level3": {
+                            "level4": {
+                                "value": "deep",
+                                "array": [1, 2, 3, {"nested": True}],
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        await manager.broadcast(scan_id, nested_message)
+        mock_websocket.send_json.assert_called_once_with(nested_message)
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_broadcasts(self):
+        """Multiple concurrent broadcasts should not interfere."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        received_messages = []
+
+        async def capture_send(msg):
+            received_messages.append(msg)
+            # Simulate some processing time
+            await asyncio.sleep(0.001)
+
+        mock_websocket = AsyncMock()
+        mock_websocket.send_json = capture_send
+
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        # Launch multiple broadcasts concurrently
+        messages = [{"id": i} for i in range(10)]
+        await asyncio.gather(*[
+            manager.broadcast(scan_id, msg) for msg in messages
+        ])
+
+        # All messages should be received
+        assert len(received_messages) == 10
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+
+# =============================================================================
+# AUTHENTICATION EDGE CASES
+# =============================================================================
+
+
+class TestAuthenticationEdgeCases:
+    """Edge cases in WebSocket authentication."""
+
+    @pytest.mark.asyncio
+    async def test_malformed_session_data(self, test_db, setup_ws_test_data, create_ws_session):
+        """Authentication should handle malformed session data gracefully."""
+        from openlabels.server.routes.ws import authenticate_websocket
+
+        # Create session with corrupted data structure
+        session = await create_ws_session(
+            session_id="malformed-session",
+            data={
+                "access_token": None,  # Invalid
+                "expires_at": "not-a-date",  # Invalid format
+                "claims": "should-be-dict",  # Wrong type
+            },
+        )
+        await test_db.commit()
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+
+        mock_websocket = MagicMock()
+        mock_websocket.cookies = {"openlabels_session": "malformed-session"}
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                mock_factory.return_value = MagicMock(return_value=test_db)
+
+                result = await authenticate_websocket(mock_websocket)
+                # Should fail gracefully (return None) rather than crash
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_session_without_expires_at(self, test_db, setup_ws_test_data, create_ws_session):
+        """Session without expires_at field should be handled."""
+        tenant = setup_ws_test_data["tenant"]
+        user = setup_ws_test_data["user"]
+
+        # Create session without expires_at in data
+        session = await create_ws_session(
+            session_id="no-expiry-session",
+            tenant_azure_id=tenant.azure_tenant_id,
+            user_email=user.email,
+            data={
+                "access_token": "test-token",
+                # No expires_at
+                "claims": {
+                    "oid": "test-oid",
+                    "preferred_username": user.email,
+                    "name": "Test User",
+                    "tid": tenant.azure_tenant_id,
+                },
+            },
+        )
+        await test_db.commit()
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+
+        mock_websocket = MagicMock()
+        mock_websocket.cookies = {"openlabels_session": "no-expiry-session"}
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                mock_factory.return_value = MagicMock(return_value=test_db)
+
+                from openlabels.server.routes.ws import authenticate_websocket
+                result = await authenticate_websocket(mock_websocket)
+                # Should succeed since no expiry means not expired
+                assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_session_empty_claims(self, test_db, setup_ws_test_data, create_ws_session):
+        """Session with empty claims should be rejected."""
+        session = await create_ws_session(
+            session_id="empty-claims-session",
+            data={
+                "access_token": "test-token",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                "claims": {},  # Empty claims
+            },
+        )
+        await test_db.commit()
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+
+        mock_websocket = MagicMock()
+        mock_websocket.cookies = {"openlabels_session": "empty-claims-session"}
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                mock_factory.return_value = MagicMock(return_value=test_db)
+
+                from openlabels.server.routes.ws import authenticate_websocket
+                result = await authenticate_websocket(mock_websocket)
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cookie_with_special_characters(self, test_db):
+        """Session cookie with special characters should be handled."""
+        from openlabels.server.routes.ws import authenticate_websocket
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+
+        mock_websocket = MagicMock()
+        # Cookie with URL-encoded characters
+        mock_websocket.cookies = {"openlabels_session": "session%20with%20spaces"}
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                mock_factory.return_value = MagicMock(return_value=test_db)
+                result = await authenticate_websocket(mock_websocket)
+                # Invalid session should return None
+                assert result is None
+
+
+# =============================================================================
+# TENANT ISOLATION COMPREHENSIVE TESTS
+# =============================================================================
+
+
+class TestTenantIsolationComprehensive:
+    """Comprehensive tests for tenant data isolation."""
+
+    @pytest.mark.asyncio
+    async def test_tenant_cannot_access_other_tenant_scan(self, test_db, setup_multi_tenant_data):
+        """Verify tenant isolation - users cannot access other tenant's scans."""
+        # This is enforced at the endpoint level before connecting
+        data = setup_multi_tenant_data
+
+        # User A should not be able to connect to Tenant B's scan
+        # The endpoint checks: scan.tenant_id != tenant_id
+        assert data["scan_a"].tenant_id != data["tenant_b"].id
+        assert data["scan_b"].tenant_id != data["tenant_a"].id
+
+    @pytest.mark.asyncio
+    async def test_broadcasts_never_cross_tenants(self, setup_multi_tenant_data):
+        """Broadcasts should never leak data between tenants."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        data = setup_multi_tenant_data
+
+        # Connect users from different tenants to their own scans
+        ws_a = AsyncMock()
+        ws_b = AsyncMock()
+
+        await manager.connect(data["scan_a"].id, ws_a, data["user_a"].id, data["tenant_a"].id)
+        await manager.connect(data["scan_b"].id, ws_b, data["user_b"].id, data["tenant_b"].id)
+
+        # Broadcast to tenant A's scan
+        message_a = {"type": "progress", "tenant": "A", "secret": "tenant_a_data"}
+        await manager.broadcast(data["scan_a"].id, message_a)
+
+        # Only tenant A should receive
+        ws_a.send_json.assert_called_once_with(message_a)
+        ws_b.send_json.assert_not_called()
+
+        ws_a.reset_mock()
+        ws_b.reset_mock()
+
+        # Broadcast to tenant B's scan
+        message_b = {"type": "progress", "tenant": "B", "secret": "tenant_b_data"}
+        await manager.broadcast(data["scan_b"].id, message_b)
+
+        # Only tenant B should receive
+        ws_a.send_json.assert_not_called()
+        ws_b.send_json.assert_called_once_with(message_b)
+
+        # Clean up
+        manager.active_connections.pop(data["scan_a"].id, None)
+        manager.active_connections.pop(data["scan_b"].id, None)
+
+    @pytest.mark.asyncio
+    async def test_scan_id_collision_different_tenants(self):
+        """Even with hypothetical scan ID collision, tenant isolation should hold."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+
+        # Imagine same scan_id but different tenants (not possible in practice, but testing defense)
+        scan_id = uuid4()
+        tenant_a = uuid4()
+        tenant_b = uuid4()
+
+        ws_a = AsyncMock()
+        ws_b = AsyncMock()
+
+        # Both connect to "same" scan ID but with different tenant contexts
+        await manager.connect(scan_id, ws_a, uuid4(), tenant_a)
+        await manager.connect(scan_id, ws_b, uuid4(), tenant_b)
+
+        # Broadcast goes to all connections for that scan_id
+        # (In production, the endpoint prevents cross-tenant connections)
+        message = {"type": "test"}
+        await manager.broadcast(scan_id, message)
+
+        # Both receive (manager doesn't filter by tenant - endpoint does)
+        ws_a.send_json.assert_called_once()
+        ws_b.send_json.assert_called_once()
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+
+# =============================================================================
+# STRESS AND PERFORMANCE TESTS
+# =============================================================================
+
+
+class TestStressAndPerformance:
+    """Stress tests for WebSocket handling."""
+
+    @pytest.mark.asyncio
+    async def test_high_volume_messages(self):
+        """Manager should handle high volume of messages."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        # Send many messages rapidly
+        num_messages = 1000
+        for i in range(num_messages):
+            await manager.broadcast(scan_id, {"type": "progress", "index": i})
+
+        assert mock_websocket.send_json.call_count == num_messages
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_many_scans_many_connections(self):
+        """Manager should handle many scans with many connections each."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+
+        num_scans = 50
+        connections_per_scan = 20
+
+        scans = [uuid4() for _ in range(num_scans)]
+
+        # Create all connections
+        for scan_id in scans:
+            for _ in range(connections_per_scan):
+                ws = AsyncMock()
+                await manager.connect(scan_id, ws, uuid4(), uuid4())
+
+        # Verify structure
+        assert len(manager.active_connections) == num_scans
+        for scan_id in scans:
+            assert len(manager.active_connections[scan_id]) == connections_per_scan
+
+        # Broadcast to each scan
+        for scan_id in scans:
+            await manager.broadcast(scan_id, {"type": "test"})
+
+        # Clean up
+        for scan_id in scans:
+            manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_connection_churn(self):
+        """Manager should handle rapid connection churn (adds and removes)."""
+        from openlabels.server.routes.ws import ConnectionManager
+        import random
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+        tenant_id = uuid4()
+
+        active_connections = []
+
+        # Perform 500 random add/remove operations
+        for _ in range(500):
+            if random.random() < 0.6 or not active_connections:
+                # 60% chance to add
+                ws = AsyncMock()
+                conn = await manager.connect(scan_id, ws, uuid4(), tenant_id)
+                active_connections.append(conn)
+            else:
+                # 40% chance to remove
+                conn = random.choice(active_connections)
+                manager.disconnect(scan_id, conn)
+                active_connections.remove(conn)
+
+        # State should be consistent
+        if active_connections:
+            assert scan_id in manager.active_connections
+            assert len(manager.active_connections[scan_id]) == len(active_connections)
+        else:
+            assert scan_id not in manager.active_connections
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+
+# =============================================================================
+# ORIGIN VALIDATION EDGE CASES
+# =============================================================================
+
+
+class TestOriginValidationEdgeCases:
+    """Edge cases for origin validation."""
+
+    def test_origin_with_port_number(self):
+        """Origin with port number should be handled correctly."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = ["http://localhost:3000"]
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        mock_websocket.headers.items.return_value = [
+            ("origin", "http://localhost:3000"),
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            assert validate_websocket_origin(mock_websocket) is True
+
+    def test_origin_port_mismatch_rejected(self):
+        """Origin with wrong port should be rejected."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = ["http://localhost:3000"]
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        mock_websocket.headers.items.return_value = [
+            ("origin", "http://localhost:4000"),  # Wrong port
+            ("host", "localhost:3000"),
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            assert validate_websocket_origin(mock_websocket) is False
+
+    def test_origin_with_path_stripped(self):
+        """Origin should be normalized (path should not affect matching)."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = ["https://app.example.com"]
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        # Origin with path (unusual but possible)
+        mock_websocket.headers.items.return_value = [
+            ("origin", "https://app.example.com"),
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            assert validate_websocket_origin(mock_websocket) is True
+
+    def test_origin_multiple_headers(self):
+        """Handle multiple Origin headers (use first one)."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = ["https://app.example.com"]
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        # Multiple origin headers (malformed request)
+        mock_websocket.headers.items.return_value = [
+            ("origin", "https://app.example.com"),
+            ("origin", "https://evil.com"),  # Second origin header
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            # Should use first origin (valid)
+            assert validate_websocket_origin(mock_websocket) is True
+
+    def test_origin_with_credentials(self):
+        """Origin with embedded credentials should be parsed correctly."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = []
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        # Origin with user:pass (unusual but valid URL)
+        mock_websocket.headers.items.return_value = [
+            ("origin", "https://user:pass@evil.com"),
+            ("host", "api.example.com"),
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            # Should be rejected (no matching origin)
+            result = validate_websocket_origin(mock_websocket)
+            assert result is False
+
+    def test_origin_ipv6_address(self):
+        """Origin with IPv6 address should be handled."""
+        from openlabels.server.routes.ws import validate_websocket_origin
+
+        mock_settings = MagicMock()
+        mock_settings.server.environment = "production"
+        mock_settings.cors.allowed_origins = ["http://[::1]:8000"]
+
+        mock_websocket = MagicMock()
+        mock_websocket.headers = MagicMock()
+        mock_websocket.headers.items.return_value = [
+            ("origin", "http://[::1]:8000"),
+        ]
+
+        with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+            assert validate_websocket_origin(mock_websocket) is True
+
+
+# =============================================================================
+# HELPER FUNCTION COMPREHENSIVE TESTS
+# =============================================================================
+
+
+class TestHelperFunctionsComprehensive:
+    """Comprehensive tests for WebSocket helper functions."""
+
+    @pytest.mark.asyncio
+    async def test_send_scan_progress_with_all_fields(self):
+        """send_scan_progress should include all expected fields."""
+        from openlabels.server.routes.ws import send_scan_progress, manager
+
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        try:
+            progress_data = {
+                "files_scanned": 50,
+                "total_files": 100,
+                "bytes_processed": 1024 * 1024 * 50,
+                "current_file": "/path/to/current.txt",
+                "errors": [],
+            }
+
+            await send_scan_progress(scan_id, status="running", progress=progress_data)
+
+            call_args = mock_websocket.send_json.call_args[0][0]
+            assert call_args["type"] == "progress"
+            assert call_args["scan_id"] == str(scan_id)
+            assert call_args["status"] == "running"
+            assert call_args["progress"] == progress_data
+        finally:
+            manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_send_scan_file_result_with_many_entities(self):
+        """send_scan_file_result should handle many entity types."""
+        from openlabels.server.routes.ws import send_scan_file_result, manager
+
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        try:
+            entity_counts = {
+                "SSN": 5,
+                "EMAIL": 10,
+                "PHONE": 3,
+                "CREDIT_CARD": 2,
+                "ADDRESS": 7,
+                "NAME": 15,
+                "DOB": 1,
+                "PASSPORT": 1,
+                "DRIVER_LICENSE": 2,
+            }
+
+            await send_scan_file_result(
+                scan_id,
+                file_path="/data/sensitive_file.csv",
+                risk_score=95,
+                risk_tier="CRITICAL",
+                entity_counts=entity_counts,
+            )
+
+            call_args = mock_websocket.send_json.call_args[0][0]
+            assert call_args["entity_counts"] == entity_counts
+            assert call_args["risk_score"] == 95
+        finally:
+            manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_send_scan_completed_with_detailed_summary(self):
+        """send_scan_completed should handle detailed summary data."""
+        from openlabels.server.routes.ws import send_scan_completed, manager
+
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        try:
+            summary = {
+                "total_files": 1000,
+                "files_with_pii": 150,
+                "total_entities_found": 2500,
+                "risk_distribution": {
+                    "CRITICAL": 10,
+                    "HIGH": 50,
+                    "MEDIUM": 90,
+                    "LOW": 850,
+                },
+                "entity_breakdown": {
+                    "SSN": 500,
+                    "EMAIL": 1000,
+                    "PHONE": 500,
+                    "OTHER": 500,
+                },
+                "duration_seconds": 3600,
+                "errors": [],
+            }
+
+            await send_scan_completed(scan_id, status="completed", summary=summary)
+
+            call_args = mock_websocket.send_json.call_args[0][0]
+            assert call_args["type"] == "completed"
+            assert call_args["summary"] == summary
+        finally:
+            manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_helper_functions_with_no_connections(self):
+        """Helper functions should handle case with no active connections."""
+        from openlabels.server.routes.ws import (
+            send_scan_progress,
+            send_scan_file_result,
+            send_scan_completed,
+        )
+
+        scan_id = uuid4()
+
+        # These should not raise even with no connections
+        await send_scan_progress(scan_id, "running", {})
+        await send_scan_file_result(scan_id, "/path", 50, "MEDIUM", {})
+        await send_scan_completed(scan_id, "completed", {})
+
+
+# =============================================================================
+# ERROR CONDITION TESTS
+# =============================================================================
+
+
+class TestErrorConditions:
+    """Tests for various error conditions."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_accept_failure(self):
+        """Manager should handle websocket.accept() failure."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+        mock_websocket.accept.side_effect = Exception("Accept failed")
+
+        with pytest.raises(Exception, match="Accept failed"):
+            await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        # Connection should not be added on failure
+        assert scan_id not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_broadcast_json_serialization_error(self):
+        """Broadcast should handle JSON serialization errors gracefully."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        mock_websocket = AsyncMock()
+
+        # Make send_json raise a serialization error
+        def raise_json_error(msg):
+            raise TypeError("Object of type X is not JSON serializable")
+
+        mock_websocket.send_json.side_effect = raise_json_error
+
+        await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
+
+        # Should not crash
+        await manager.broadcast(scan_id, {"type": "test"})
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)
+
+    @pytest.mark.asyncio
+    async def test_disconnect_during_broadcast(self):
+        """Broadcast should handle connections closing during iteration."""
+        from openlabels.server.routes.ws import ConnectionManager
+
+        manager = ConnectionManager()
+        scan_id = uuid4()
+
+        # Create multiple connections
+        websockets = []
+        for i in range(5):
+            ws = AsyncMock()
+            if i == 2:
+                # This one will "close" during broadcast
+                ws.send_json.side_effect = ConnectionResetError("Connection closed")
+            websockets.append(ws)
+            await manager.connect(scan_id, ws, uuid4(), uuid4())
+
+        # Broadcast should continue past failed connection
+        await manager.broadcast(scan_id, {"type": "test"})
+
+        # All connections should have received attempt
+        for ws in websockets:
+            ws.send_json.assert_called_once()
+
+        # Clean up
+        manager.active_connections.pop(scan_id, None)

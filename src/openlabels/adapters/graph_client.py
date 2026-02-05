@@ -25,6 +25,7 @@ from openlabels.core.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitOpenError,
 )
+from openlabels.core.exceptions import GraphAPIError, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +165,31 @@ class GraphClient:
                 recovery_timeout=settings.circuit_breaker.recovery_timeout,
                 exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
             )
-        except Exception:
-            # Fallback to defaults if settings not available
+        except ImportError as settings_err:
+            # Fallback to defaults if settings module not available (e.g., during tests)
+            logger.debug(
+                f"Using default Graph client config (settings module not available): {settings_err}",
+                exc_info=True
+            )
+            self._timeout = timeout or 30.0
+            self._connect_timeout = connect_timeout or 10.0
+            cb_config = CircuitBreakerConfig()
+        except (AttributeError, KeyError, TypeError) as settings_err:
+            # Fallback to defaults if settings are misconfigured
+            logger.debug(
+                f"Using default Graph client config (settings misconfigured): {settings_err}",
+                exc_info=True
+            )
+            self._timeout = timeout or 30.0
+            self._connect_timeout = connect_timeout or 10.0
+            cb_config = CircuitBreakerConfig()
+        except Exception as settings_err:
+            # Catch-all for unexpected errors during settings loading
+            logger.warning(
+                f"Using default Graph client config (unexpected error loading settings: "
+                f"{type(settings_err).__name__}): {settings_err}",
+                exc_info=True
+            )
             self._timeout = timeout or 30.0
             self._connect_timeout = connect_timeout or 10.0
             cb_config = CircuitBreakerConfig()
@@ -261,14 +285,44 @@ class GraphClient:
             }
 
             # Use connection pool if available, otherwise create temp client
-            if self._client:
-                response = await self._client.post(auth_url, data=data)
-            else:
-                async with httpx.AsyncClient() as temp_client:
-                    response = await temp_client.post(auth_url, data=data)
+            try:
+                if self._client:
+                    response = await self._client.post(auth_url, data=data)
+                else:
+                    async with httpx.AsyncClient() as temp_client:
+                        response = await temp_client.post(auth_url, data=data)
 
-            response.raise_for_status()
-            token_data = response.json()
+                if response.status_code == 401:
+                    raise GraphAPIError(
+                        "Authentication failed - invalid client credentials",
+                        status_code=401,
+                        endpoint=auth_url,
+                        context="acquiring access token for Graph API",
+                    )
+                elif response.status_code == 400:
+                    error_detail = response.json().get("error_description", "Bad request")
+                    raise GraphAPIError(
+                        f"Token request failed: {error_detail}",
+                        status_code=400,
+                        endpoint=auth_url,
+                        context="acquiring access token for Graph API",
+                    )
+
+                response.raise_for_status()
+                token_data = response.json()
+
+            except httpx.TimeoutException as e:
+                raise GraphAPIError(
+                    "Timeout while acquiring access token",
+                    endpoint=auth_url,
+                    context="connection to Azure AD timed out",
+                ) from e
+            except httpx.ConnectError as e:
+                raise GraphAPIError(
+                    "Failed to connect to Azure AD for authentication",
+                    endpoint=auth_url,
+                    context="network connectivity issue to login.microsoftonline.com",
+                ) from e
 
             self._access_token = token_data["access_token"]
             expires_in = token_data.get("expires_in", 3600)
@@ -357,17 +411,54 @@ class GraphClient:
                 await self._circuit_breaker.record_success()
                 return response
 
-            except httpx.TransportError as e:
-                last_error = e
+            except httpx.TimeoutException as e:
+                last_error = GraphAPIError(
+                    f"Request timed out after {self._timeout}s",
+                    endpoint=url,
+                    context=f"{method} request to Graph API",
+                )
+                last_error.__cause__ = e
                 backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
-                logger.warning(f"Transport error: {e}, retrying in {backoff}s")
+                logger.warning(f"Timeout error on {url}: {e}, retrying in {backoff}s")
+                await asyncio.sleep(backoff)
+                self.stats["retries"] += 1
+                await self._circuit_breaker.record_failure(e)
+
+            except httpx.ConnectError as e:
+                last_error = GraphAPIError(
+                    "Failed to connect to Graph API",
+                    endpoint=url,
+                    context="network connectivity issue to graph.microsoft.com",
+                )
+                last_error.__cause__ = e
+                backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
+                logger.warning(f"Connection error on {url}: {e}, retrying in {backoff}s")
+                await asyncio.sleep(backoff)
+                self.stats["retries"] += 1
+                await self._circuit_breaker.record_failure(e)
+
+            except httpx.TransportError as e:
+                last_error = GraphAPIError(
+                    f"Transport error during Graph API request: {type(e).__name__}",
+                    endpoint=url,
+                    context=f"{method} request encountered network issue",
+                )
+                last_error.__cause__ = e
+                backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
+                logger.warning(f"Transport error on {url}: {e}, retrying in {backoff}s")
                 await asyncio.sleep(backoff)
                 self.stats["retries"] += 1
                 # Record failure for circuit breaker
                 await self._circuit_breaker.record_failure(e)
 
         self.stats["errors"] += 1
-        raise last_error or RuntimeError("Max retries exceeded")
+        if last_error:
+            raise last_error
+        raise GraphAPIError(
+            "Max retries exceeded for Graph API request",
+            endpoint=url,
+            context=f"failed after {self.rate_config.max_retries} attempts",
+        )
 
     async def get(self, path: str, **kwargs) -> dict[str, Any]:
         """GET request returning JSON."""

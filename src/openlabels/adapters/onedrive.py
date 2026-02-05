@@ -113,8 +113,23 @@ class OneDriveAdapter:
         # Get user's drive
         try:
             drive = await client.get(f"/users/{user_id}/drive")
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(
+                f"Cannot access OneDrive for {user_id} due to network issue: {e}",
+                exc_info=True
+            )
+            return
+        except PermissionError as e:
+            logger.warning(
+                f"Cannot access OneDrive for {user_id} - permission denied: {e}",
+                exc_info=True
+            )
+            return
         except Exception as e:
-            logger.warning(f"Cannot access OneDrive for {user_id}: {e}")
+            logger.warning(
+                f"Cannot access OneDrive for {user_id} - unexpected error ({type(e).__name__}): {e}",
+                exc_info=True
+            )
             return
 
         drive_id = drive["id"]
@@ -179,9 +194,25 @@ class OneDriveAdapter:
 
         try:
             items = await client.get_all_pages(endpoint)
-        except Exception as e:
+        except PermissionError as e:
             # Handle 403 for inaccessible folders
-            logger.debug(f"Cannot access {path} for {user_id}: {e}")
+            logger.debug(
+                f"Cannot access {path} for {user_id} - permission denied: {e}",
+                exc_info=True
+            )
+            return
+        except (ConnectionError, TimeoutError) as e:
+            logger.debug(
+                f"Cannot access {path} for {user_id} - network error: {e}",
+                exc_info=True
+            )
+            return
+        except Exception as e:
+            # Log unexpected errors with full context for debugging
+            logger.debug(
+                f"Cannot access {path} for {user_id} - unexpected error ({type(e).__name__}): {e}",
+                exc_info=True
+            )
             return
 
         for item in items:
@@ -274,8 +305,23 @@ class OneDriveAdapter:
             client = await self._get_client()
             await client.get("/users?$top=1")
             return True
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(
+                f"OneDrive connection test failed due to network issue: {e}",
+                exc_info=True
+            )
+            return False
+        except PermissionError as e:
+            logger.warning(
+                f"OneDrive connection test failed due to permission denied: {e}",
+                exc_info=True
+            )
+            return False
         except Exception as e:
-            logger.warning(f"OneDrive connection test failed: {e}")
+            logger.warning(
+                f"OneDrive connection test failed with unexpected error: {type(e).__name__}: {e}",
+                exc_info=True
+            )
             return False
 
     def get_stats(self) -> dict:

@@ -82,8 +82,11 @@ def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
     # Parse the URL for validation
     try:
         parsed = urlparse(redirect_uri)
-    except Exception:
-        logger.warning(f"Failed to parse redirect URI: {redirect_uri}")
+    except Exception as e:
+        # Log the exception type and message for debugging URL parsing failures
+        logger.warning(
+            f"Failed to parse redirect URI '{redirect_uri}': {type(e).__name__}: {e}"
+        )
         return "/"
 
     # Must have a valid scheme
@@ -112,7 +115,7 @@ def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
     )
     return "/"
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter()
 limiter = Limiter(key_func=get_client_ip)
 
 # Token cookie settings
@@ -584,7 +587,9 @@ async def get_token(
             except HTTPException:
                 raise
             except Exception as e:
-                logger.debug(f"Session validation error: {e}")
+                # SECURITY: Log token refresh failures for security monitoring
+                # This could indicate token theft, expired credentials, or service issues
+                logger.warning(f"Token refresh failed during session validation: {type(e).__name__}: {e}")
                 await session_store.delete(session_id)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

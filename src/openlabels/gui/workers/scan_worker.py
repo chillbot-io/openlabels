@@ -21,6 +21,8 @@ try:
     import httpx
     HTTPX_AVAILABLE = True
 except ImportError:
+    # httpx not installed - HTTP client functionality unavailable
+    logger.debug("httpx not installed - HTTP client features disabled")
     HTTPX_AVAILABLE = False
 
 # Check for websockets
@@ -29,12 +31,16 @@ try:
     import asyncio
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
+    # websockets not installed - real-time streaming unavailable
+    logger.debug("websockets not installed - WebSocket features disabled")
     WEBSOCKETS_AVAILABLE = False
 
 try:
     from PySide6.QtCore import QThread, Signal, QObject
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - GUI worker unavailable
+    logger.debug("PySide6 not installed - GUI worker features disabled")
     PYSIDE_AVAILABLE = False
     QThread = object
     QObject = object

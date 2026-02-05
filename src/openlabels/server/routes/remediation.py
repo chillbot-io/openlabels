@@ -31,6 +31,11 @@ from openlabels.server.models import (
     FileInventory,
     AuditLog,
 )
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 from openlabels.auth.dependencies import require_admin
 from openlabels.adapters.base import FileInfo
 from openlabels.adapters.filesystem import FilesystemAdapter
@@ -171,28 +176,18 @@ class RemediationResponse(BaseModel):
         from_attributes = True
 
 
-class RemediationListResponse(BaseModel):
-    """Paginated list of remediation actions."""
-
-    items: list[RemediationResponse]
-    total: int
-    page: int
-    pages: int
-
-
-@router.get("", response_model=RemediationListResponse)
+@router.get("", response_model=PaginatedResponse[RemediationResponse])
 async def list_remediation_actions(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
     action_type: Optional[str] = Query(
         None, description="Filter by action type (quarantine, lockdown, rollback)"
     ),
     status: Optional[str] = Query(
         None, description="Filter by status (pending, completed, failed, rolled_back)"
     ),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
-):
+) -> PaginatedResponse[RemediationResponse]:
     """
     List remediation actions with pagination.
 
@@ -209,31 +204,23 @@ async def list_remediation_actions(
         query = query.where(RemediationAction.status == status)
 
     # Get total count
-    count_query = select(func.count()).where(
-        RemediationAction.tenant_id == user.tenant_id
-    )
-    if action_type:
-        count_query = count_query.where(RemediationAction.action_type == action_type)
-    if status:
-        count_query = count_query.where(RemediationAction.status == status)
-
+    count_query = select(func.count()).select_from(query.subquery())
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
     # Get paginated results
-    offset = (page - 1) * limit
-    query = query.order_by(RemediationAction.created_at.desc()).offset(offset).limit(limit)
+    query = query.order_by(RemediationAction.created_at.desc()).offset(pagination.offset).limit(pagination.limit)
 
     result = await session.execute(query)
     actions = result.scalars().all()
 
-    pages = (total + limit - 1) // limit if total > 0 else 1
-
-    return RemediationListResponse(
-        items=actions,
-        total=total,
-        page=page,
-        pages=pages,
+    return PaginatedResponse[RemediationResponse](
+        **create_paginated_response(
+            items=[RemediationResponse.model_validate(a) for a in actions],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 

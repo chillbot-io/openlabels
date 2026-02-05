@@ -19,12 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog
-from openlabels.server.pagination import (
-    CursorPaginationParams,
-    PaginationMeta,
-    CursorPaginationMeta,
-    apply_cursor_pagination,
-    build_cursor_response,
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
 )
 from openlabels.auth.dependencies import get_current_user, require_admin
 
@@ -46,33 +44,6 @@ class AuditLogResponse(BaseModel):
         from_attributes = True
 
 
-# Legacy response format for backward compatibility
-class PaginatedAuditResponse(BaseModel):
-    """
-    Paginated list of audit log entries (legacy format).
-
-    DEPRECATED: New clients should use the standardized format.
-    """
-
-    items: list[AuditLogResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-    # New fields for forward compatibility
-    has_more: Optional[bool] = None
-
-
-# New standardized response format
-class AuditPaginatedResponse(BaseModel):
-    """Standardized paginated response for audit logs."""
-
-    data: list[AuditLogResponse] = Field(description="List of audit log entries")
-    pagination: Union[CursorPaginationMeta, PaginationMeta] = Field(
-        description="Pagination metadata"
-    )
-
-
 class AuditLogFilters(BaseModel):
     """Available filter options for audit logs."""
 
@@ -80,7 +51,7 @@ class AuditLogFilters(BaseModel):
     resource_types: list[str]
 
 
-@router.get("")
+@router.get("", response_model=PaginatedResponse[AuditLogResponse])
 async def list_audit_logs(
     action: Optional[str] = Query(None, description="Filter by action type"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -88,27 +59,10 @@ async def list_audit_logs(
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     start_date: Optional[datetime] = Query(None, description="Start of date range"),
     end_date: Optional[datetime] = Query(None, description="End of date range"),
-    # Cursor-based pagination (recommended for large audit logs)
-    cursor: Optional[str] = Query(
-        None,
-        description="Cursor for next page (recommended for large datasets)",
-    ),
-    # Offset-based pagination (for backward compatibility)
-    page: int = Query(1, ge=1, description="Page number (ignored if cursor provided)"),
-    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
-    # Optional total count
-    include_total: bool = Query(
-        True,
-        description="Include total count (set to false for faster queries)",
-    ),
-    # Response format
-    format: str = Query(
-        "legacy",
-        description="Response format: 'legacy' or 'standard' (data/pagination)",
-    ),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
-) -> Union[PaginatedAuditResponse, AuditPaginatedResponse]:
+) -> PaginatedResponse[AuditLogResponse]:
     """
     List audit log entries with filtering and pagination.
 
@@ -199,33 +153,24 @@ async def list_audit_logs(
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
 
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-    offset = (page - 1) * page_size
-
     # Get paginated results (newest first)
     paginated_query = (
         select(AuditLog)
         .where(and_(*conditions))
         .order_by(AuditLog.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
     )
     result = await session.execute(paginated_query)
     logs = result.scalars().all()
 
-    if format == "standard":
-        return AuditPaginatedResponse(
-            data=[AuditLogResponse.model_validate(log) for log in logs],
-            pagination=PaginationMeta.from_offset(total, page, page_size),
+    return PaginatedResponse[AuditLogResponse](
+        **create_paginated_response(
+            items=[AuditLogResponse.model_validate(log) for log in logs],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
         )
-
-    return PaginatedAuditResponse(
-        items=[AuditLogResponse.model_validate(log) for log in logs],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-        has_more=page < total_pages,
     )
 
 
@@ -279,30 +224,45 @@ async def get_audit_log(
     return AuditLogResponse.model_validate(log)
 
 
-@router.get("/resource/{resource_type}/{resource_id}", response_model=list[AuditLogResponse])
+@router.get("/resource/{resource_type}/{resource_id}", response_model=PaginatedResponse[AuditLogResponse])
 async def get_resource_history(
     resource_type: str,
     resource_id: UUID,
-    limit: int = Query(50, ge=1, le=200, description="Max entries to return"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
-):
+) -> PaginatedResponse[AuditLogResponse]:
     """
-    Get audit history for a specific resource.
+    Get audit history for a specific resource with pagination.
 
     Useful for tracking all actions performed on a particular target, schedule, etc.
     """
+    base_query = select(AuditLog).where(
+        AuditLog.tenant_id == user.tenant_id,
+        AuditLog.resource_type == resource_type,
+        AuditLog.resource_id == resource_id,
+    )
+
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    count_result = await session.execute(count_query)
+    total = count_result.scalar() or 0
+
+    # Get paginated results
     query = (
-        select(AuditLog)
-        .where(
-            AuditLog.tenant_id == user.tenant_id,
-            AuditLog.resource_type == resource_type,
-            AuditLog.resource_id == resource_id,
-        )
+        base_query
         .order_by(AuditLog.created_at.desc())
-        .limit(limit)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
     )
     result = await session.execute(query)
     logs = result.scalars().all()
 
-    return [AuditLogResponse.model_validate(log) for log in logs]
+    return PaginatedResponse[AuditLogResponse](
+        **create_paginated_response(
+            items=[AuditLogResponse.model_validate(log) for log in logs],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
+    )

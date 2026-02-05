@@ -267,8 +267,23 @@ class SharePointAdapter:
             client = await self._get_client()
             await client.get("/sites?$top=1")
             return True
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(
+                f"SharePoint connection test failed due to network issue: {e}",
+                exc_info=True
+            )
+            return False
+        except PermissionError as e:
+            logger.warning(
+                f"SharePoint connection test failed due to permission denied: {e}",
+                exc_info=True
+            )
+            return False
         except Exception as e:
-            logger.warning(f"SharePoint connection test failed: {e}")
+            logger.warning(
+                f"SharePoint connection test failed with unexpected error: {type(e).__name__}: {e}",
+                exc_info=True
+            )
             return False
 
     def get_stats(self) -> dict:

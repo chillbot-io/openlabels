@@ -22,6 +22,7 @@ import aiofiles
 import aiofiles.os
 
 from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
+from openlabels.core.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,20 @@ class FilesystemAdapter:
         target_path = Path(target)
 
         if not target_path.exists():
-            raise ValueError(f"Target path does not exist: {target}")
+            raise FilesystemError(
+                f"Target path does not exist",
+                path=target,
+                operation="list_files",
+                context="ensure the path exists and is accessible",
+            )
 
         if not target_path.is_dir():
-            raise ValueError(f"Target path is not a directory: {target}")
+            raise FilesystemError(
+                f"Target path is not a directory",
+                path=target,
+                operation="list_files",
+                context="provide a directory path, not a file path",
+            )
 
         async for file_info in self._walk_directory(target_path, recursive, filter_config):
             yield file_info
@@ -271,8 +282,26 @@ class FilesystemAdapter:
                     try:
                         name, domain, _ = win32security.LookupAccountSid(None, sid)
                         trustee = f"{domain}\\{name}"
+                    except LookupError as e:
+                        # SID not found in local or domain account databases
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - account not found: {e}",
+                            exc_info=True
+                        )
+                        trustee = str(sid)
+                    except OSError as e:
+                        # Network or system error during SID lookup
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - OS error: {e}",
+                            exc_info=True
+                        )
+                        trustee = str(sid)
                     except Exception as e:
-                        logger.debug(f"Failed to lookup SID {sid}: {e}")
+                        # Catch-all for unexpected win32security errors
+                        logger.debug(
+                            f"Failed to lookup SID {sid} - unexpected error ({type(e).__name__}): {e}",
+                            exc_info=True
+                        )
                         trustee = str(sid)
 
                     permissions["aces"].append({

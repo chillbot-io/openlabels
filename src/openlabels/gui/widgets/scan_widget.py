@@ -23,6 +23,8 @@ try:
     from PySide6.QtCore import Qt, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - GUI functionality unavailable
+    logger.debug("PySide6 not installed - GUI features disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 

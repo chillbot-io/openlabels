@@ -13,7 +13,7 @@ import re
 from typing import TYPE_CHECKING, Optional, TypeVar, Type, Any
 from uuid import UUID
 
-from fastapi import HTTPException
+from openlabels.server.exceptions import NotFoundError, InternalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Use TYPE_CHECKING to avoid circular imports
@@ -51,15 +51,17 @@ async def get_resource_with_tenant_check(
         The requested resource if it exists and belongs to user's tenant
 
     Raises:
-        HTTPException: 404 if resource not found or belongs to different tenant
+        NotFoundError: If resource not found or belongs to different tenant
+        InternalError: If model is missing tenant_id attribute
     """
     resource = await session.get(model_class, resource_id)
 
     if not resource:
         logger.debug(f"{resource_name} not found: {resource_id}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"{resource_name} not found"
+        raise NotFoundError(
+            message=f"{resource_name} not found",
+            resource_type=resource_name,
+            resource_id=str(resource_id),
         )
 
     # Check tenant isolation
@@ -69,7 +71,7 @@ async def get_resource_with_tenant_check(
         logger.error(
             f"SECURITY: Model {model_class.__name__} missing tenant_id attribute"
         )
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise InternalError(message="Internal server error")
 
     if resource_tenant_id != user.tenant_id:
         # Log potential IDOR attempt for security monitoring
@@ -78,9 +80,10 @@ async def get_resource_with_tenant_check(
             f"attempted to access {resource_name} {resource_id} belonging to tenant {resource_tenant_id}"
         )
         # Return 404 to prevent tenant enumeration
-        raise HTTPException(
-            status_code=404,
-            detail=f"{resource_name} not found"
+        raise NotFoundError(
+            message=f"{resource_name} not found",
+            resource_type=resource_name,
+            resource_id=str(resource_id),
         )
 
     return resource
@@ -107,7 +110,7 @@ def validate_tenant_id(
         True if tenant matches
 
     Raises:
-        HTTPException: 404 if tenant doesn't match
+        NotFoundError: If tenant doesn't match
     """
     if resource_tenant_id != user.tenant_id:
         # Log potential IDOR attempt
@@ -121,9 +124,10 @@ def validate_tenant_id(
                 f"SECURITY: Potential IDOR attempt - User {user.id} (tenant {user.tenant_id}) "
                 f"attempted to access {resource_name} belonging to tenant {resource_tenant_id}"
             )
-        raise HTTPException(
-            status_code=404,
-            detail=f"{resource_name} not found"
+        raise NotFoundError(
+            message=f"{resource_name} not found",
+            resource_type=resource_name,
+            resource_id=str(resource_id) if resource_id else None,
         )
 
     return True

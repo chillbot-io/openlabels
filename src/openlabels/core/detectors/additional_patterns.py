@@ -226,6 +226,7 @@ class AdditionalPatternDetector(BaseDetector):
                                 if age < 0 or age > 120:
                                     continue
                         except ValueError:
+                            # Non-numeric age - skip this match
                             continue
                     
                     spans.append(Span(

@@ -19,6 +19,8 @@ try:
     from apscheduler.jobstores.memory import MemoryJobStore
     APSCHEDULER_AVAILABLE = True
 except ImportError:
+    # APScheduler not installed - scheduling functionality unavailable
+    logger.debug("APScheduler not installed - cron scheduling disabled")
     APSCHEDULER_AVAILABLE = False
     AsyncIOScheduler = None
     CronTrigger = None
@@ -162,7 +164,8 @@ class Scheduler:
             self._scheduler.pause_job(schedule_id)
             return True
         except Exception as e:
-            logger.debug(f"Failed to pause schedule {schedule_id}: {e}")
+            # Log at info level since failing to pause a schedule may affect scan timing
+            logger.info(f"Failed to pause schedule {schedule_id}: {type(e).__name__}: {e}")
             return False
 
     def resume_schedule(self, schedule_id: str) -> bool:
@@ -173,7 +176,8 @@ class Scheduler:
             self._scheduler.resume_job(schedule_id)
             return True
         except Exception as e:
-            logger.debug(f"Failed to resume schedule {schedule_id}: {e}")
+            # Log at info level since failing to resume a schedule may affect scan timing
+            logger.info(f"Failed to resume schedule {schedule_id}: {type(e).__name__}: {e}")
             return False
 
     def get_next_run(self, schedule_id: str) -> Optional[datetime]:
@@ -193,7 +197,8 @@ class Scheduler:
             if job:
                 return job.next_run_time
         except Exception as e:
-            logger.debug(f"Failed to get next run for {schedule_id}: {e}")
+            # Non-critical but worth logging for debugging schedule issues
+            logger.debug(f"Failed to get next run for {schedule_id}: {type(e).__name__}: {e}")
         return None
 
     def list_schedules(self) -> List[dict]:
@@ -233,7 +238,8 @@ def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
         trigger = CronTrigger.from_crontab(cron_expr)
         return trigger.get_next_fire_time(None, datetime.now(timezone.utc))
     except Exception as e:
-        logger.debug(f"Invalid cron expression '{cron_expr}': {e}")
+        # Log at info level since invalid cron expressions may indicate configuration issues
+        logger.info(f"Invalid cron expression '{cron_expr}': {type(e).__name__}: {e}")
         return None
 
 

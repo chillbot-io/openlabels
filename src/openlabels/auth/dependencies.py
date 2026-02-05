@@ -158,7 +158,13 @@ async def get_optional_user(
         claims = await validate_token(token)
         user = await get_or_create_user(session, claims)
         return CurrentUser.model_validate(user)
-    except (ValueError, Exception):
+    except ValueError:
+        # Invalid token - user is not authenticated
+        return None
+    except Exception as e:
+        # Log unexpected errors in authentication
+        import logging
+        logging.getLogger(__name__).debug(f"Authentication check failed: {type(e).__name__}: {e}")
         return None
 
 

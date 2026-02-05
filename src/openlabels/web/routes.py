@@ -1227,7 +1227,9 @@ async def system_health_partial(
     # Check database
     try:
         await session.execute(select(1))
-    except Exception:
+    except Exception as db_err:
+        # Database connectivity is critical - log the failure
+        logger.error(f"Database health check failed: {type(db_err).__name__}: {db_err}")
         health["status"] = "unhealthy"
         health["components"]["database"] = "error"
 

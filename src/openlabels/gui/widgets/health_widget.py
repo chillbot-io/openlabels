@@ -23,6 +23,8 @@ try:
     from PySide6.QtGui import QColor
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - health widget unavailable
+    logger.debug("PySide6 not installed - health widget disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 

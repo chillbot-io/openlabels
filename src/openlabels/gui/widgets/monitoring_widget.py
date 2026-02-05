@@ -24,6 +24,8 @@ try:
     from PySide6.QtCore import Qt, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
+    # PySide6 not installed - monitoring widget unavailable
+    logger.debug("PySide6 not installed - monitoring widget disabled")
     PYSIDE_AVAILABLE = False
     QWidget = object
 
@@ -188,6 +190,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
                 "Monitoring module not available"
             )
         except Exception as e:
+            logger.error(f"Failed to enable monitoring for path '{path}': {e}", exc_info=True)
             QMessageBox.warning(self, "Error", str(e))
 
     def _on_remove_monitoring(self) -> None:
@@ -225,6 +228,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
                     "Monitoring module not available"
                 )
             except Exception as e:
+                logger.error(f"Failed to disable monitoring for path '{path}': {e}", exc_info=True)
                 QMessageBox.warning(self, "Error", str(e))
 
     def _on_refresh(self) -> None:
@@ -337,6 +341,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
                 "Monitoring module not available"
             )
         except Exception as e:
+            logger.error(f"Failed to load access history for path '{path}' (days={days}): {e}", exc_info=True)
             QMessageBox.warning(self, "Error", str(e))
 
     def _update_history_table(self) -> None:

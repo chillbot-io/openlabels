@@ -113,6 +113,7 @@ def validate_ipv4(text: str) -> bool:
             if not 0 <= n <= 255:
                 return False
         except ValueError:
+            # Non-numeric octet - invalid IPv4
             return False
 
     return True
@@ -185,6 +186,7 @@ def validate_cusip(text: str) -> bool:
     try:
         return int(cleaned[8]) == check_digit
     except ValueError:
+        # Check digit is not numeric - invalid CUSIP
         return False
 
 

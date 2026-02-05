@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult, JobQueue
+from openlabels.server.cache import get_cache_manager, get_cache_stats
 from openlabels.auth.dependencies import get_current_user
 from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.jobs.queue import JobQueue as JobQueueService
@@ -179,14 +180,16 @@ async def get_health_status(
             if detector._session is not None:
                 models_available.append("PII-BERT")
         except Exception as e:
-            logger.debug(f"PII-BERT model not available: {e}")
+            # Model loading failures are expected if models aren't installed
+            logger.info(f"PII-BERT model not available: {type(e).__name__}: {e}")
 
         try:
             detector = PHIBertONNXDetector()
             if detector._session is not None:
                 models_available.append("PHI-BERT")
         except Exception as e:
-            logger.debug(f"PHI-BERT model not available: {e}")
+            # Model loading failures are expected if models aren't installed
+            logger.info(f"PHI-BERT model not available: {type(e).__name__}: {e}")
 
         if models_available:
             status["ml"] = "healthy"
@@ -198,7 +201,8 @@ async def get_health_status(
         status["ml"] = "warning"
         status["ml_text"] = "Not installed"
     except Exception as e:
-        logger.debug(f"ML check failed: {e}")
+        # Log ML check failures - may indicate configuration issues
+        logger.warning(f"ML health check failed: {type(e).__name__}: {e}")
         status["ml"] = "warning"
         status["ml_text"] = "Not loaded"
 
@@ -215,7 +219,8 @@ async def get_health_status(
         status["mip"] = "warning"
         status["mip_text"] = "Not installed"
     except Exception as e:
-        logger.debug(f"MIP SDK check failed: {e}")
+        # Log MIP SDK failures - labeling features will be unavailable
+        logger.info(f"MIP SDK check failed (labeling unavailable): {type(e).__name__}: {e}")
         status["mip"] = "warning"
         status["mip_text"] = "Not available"
 
@@ -229,7 +234,8 @@ async def get_health_status(
         status["ocr"] = "warning"
         status["ocr_text"] = "Not installed"
     except Exception as e:
-        logger.debug(f"OCR check failed: {e}")
+        # Log OCR failures - image processing will be degraded
+        logger.info(f"OCR check failed (image text extraction unavailable): {type(e).__name__}: {e}")
         status["ocr"] = "warning"
         status["ocr_text"] = "Not available"
 
@@ -286,7 +292,8 @@ async def get_health_status(
             ))
         status["circuit_breakers"] = cb_statuses
     except Exception as e:
-        logger.debug(f"Circuit breaker status failed: {e}")
+        # Circuit breaker status is informational - log at debug level
+        logger.debug(f"Could not retrieve circuit breaker status: {type(e).__name__}: {e}")
 
     # Add job metrics
     try:
@@ -305,7 +312,8 @@ async def get_health_status(
             oldest_running_hours=age_stats.get("oldest_running_hours"),
         )
     except Exception as e:
-        logger.debug(f"Job metrics failed: {e}")
+        # Job metrics failure may indicate queue issues
+        logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
     # Add system info
     status["python_version"] = platform.python_version()
@@ -313,3 +321,39 @@ async def get_health_status(
     status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
+
+
+class CacheStats(BaseModel):
+    """Cache statistics response."""
+
+    enabled: bool
+    backend: dict[str, Any]
+    default_ttl: int
+    key_prefix: str
+
+
+@router.get("/cache", response_model=CacheStats)
+async def get_cache_health(
+    user=Depends(get_current_user),
+):
+    """
+    Get cache statistics and health status.
+
+    Returns:
+    - Cache enabled status
+    - Backend type (redis or memory)
+    - Connection status (for Redis)
+    - Hit/miss statistics
+    - Hit rate percentage
+    """
+    try:
+        stats = await get_cache_stats()
+        return CacheStats(**stats)
+    except Exception as e:
+        logger.warning(f"Failed to get cache stats: {e}")
+        return CacheStats(
+            enabled=False,
+            backend={"type": "unknown", "error": str(e)},
+            default_ttl=0,
+            key_prefix="",
+        )

@@ -23,6 +23,11 @@ from openlabels.server.models import (
     FileInventory,
     AuditLog,
 )
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin
 from openlabels.core.path_validation import validate_path, PathValidationError
 
@@ -52,15 +57,6 @@ class MonitoredFileResponse(BaseModel):
         from_attributes = True
 
 
-class MonitoredFileListResponse(BaseModel):
-    """Paginated list of monitored files."""
-
-    items: list[MonitoredFileResponse]
-    total: int
-    page: int
-    pages: int
-
-
 class AccessEventResponse(BaseModel):
     """File access event response."""
 
@@ -75,15 +71,6 @@ class AccessEventResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class AccessEventListResponse(BaseModel):
-    """Paginated list of access events."""
-
-    items: list[AccessEventResponse]
-    total: int
-    page: int
-    pages: int
 
 
 class EnableMonitoringRequest(BaseModel):
@@ -110,16 +97,15 @@ class AccessStatsResponse(BaseModel):
 # =============================================================================
 
 
-@router.get("/files", response_model=MonitoredFileListResponse)
+@router.get("/files", response_model=PaginatedResponse[MonitoredFileResponse])
 async def list_monitored_files(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
-):
+) -> PaginatedResponse[MonitoredFileResponse]:
     """
-    List all monitored files.
+    List all monitored files with pagination.
 
     Returns files that have monitoring enabled for access auditing.
     """
@@ -130,29 +116,23 @@ async def list_monitored_files(
         query = query.where(MonitoredFile.risk_tier == risk_tier)
 
     # Get total count
-    count_query = select(func.count()).select_from(MonitoredFile).where(
-        MonitoredFile.tenant_id == user.tenant_id
-    )
-    if risk_tier:
-        count_query = count_query.where(MonitoredFile.risk_tier == risk_tier)
-
+    count_query = select(func.count()).select_from(query.subquery())
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
     # Get paginated results
-    offset = (page - 1) * limit
-    query = query.order_by(MonitoredFile.added_at.desc()).offset(offset).limit(limit)
+    query = query.order_by(MonitoredFile.added_at.desc()).offset(pagination.offset).limit(pagination.limit)
 
     result = await session.execute(query)
     files = result.scalars().all()
 
-    pages = (total + limit - 1) // limit if total > 0 else 1
-
-    return MonitoredFileListResponse(
-        items=files,
-        total=total,
-        page=page,
-        pages=pages,
+    return PaginatedResponse[MonitoredFileResponse](
+        **create_paginated_response(
+            items=[MonitoredFileResponse.model_validate(f) for f in files],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 
@@ -269,19 +249,18 @@ async def disable_file_monitoring(
 # =============================================================================
 
 
-@router.get("/events", response_model=AccessEventListResponse)
+@router.get("/events", response_model=PaginatedResponse[AccessEventResponse])
 async def list_access_events(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
     file_path: Optional[str] = Query(None, description="Filter by file path"),
     user_name: Optional[str] = Query(None, description="Filter by user name"),
     action: Optional[str] = Query(None, description="Filter by action type"),
     since: Optional[datetime] = Query(None, description="Filter events after this time"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
-):
+) -> PaginatedResponse[AccessEventResponse]:
     """
-    List file access events with filtering.
+    List file access events with filtering and pagination.
 
     Returns access events collected from SACL (Windows) or auditd (Linux).
     """
@@ -297,50 +276,36 @@ async def list_access_events(
     if since:
         query = query.where(FileAccessEvent.event_time >= since)
 
-    # Get total count for pagination
-    count_conditions = [FileAccessEvent.tenant_id == user.tenant_id]
-    if file_path:
-        count_conditions.append(FileAccessEvent.file_path == file_path)
-    if user_name:
-        count_conditions.append(FileAccessEvent.user_name.ilike(f"%{user_name}%"))
-    if action:
-        count_conditions.append(FileAccessEvent.action == action)
-    if since:
-        count_conditions.append(FileAccessEvent.event_time >= since)
-
-    count_query = select(func.count()).select_from(FileAccessEvent).where(
-        and_(*count_conditions)
-    )
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
     # Get paginated results
-    offset = (page - 1) * limit
-    query = query.order_by(FileAccessEvent.event_time.desc()).offset(offset).limit(limit)
+    query = query.order_by(FileAccessEvent.event_time.desc()).offset(pagination.offset).limit(pagination.limit)
 
     result = await session.execute(query)
     events = result.scalars().all()
 
-    pages = (total + limit - 1) // limit if total > 0 else 1
-
-    return AccessEventListResponse(
-        items=events,
-        total=total,
-        page=page,
-        pages=pages,
+    return PaginatedResponse[AccessEventResponse](
+        **create_paginated_response(
+            items=[AccessEventResponse.model_validate(e) for e in events],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 
-@router.get("/events/file/{file_path:path}", response_model=AccessEventListResponse)
+@router.get("/events/file/{file_path:path}", response_model=PaginatedResponse[AccessEventResponse])
 async def get_file_access_history(
     file_path: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
-):
+) -> PaginatedResponse[AccessEventResponse]:
     """
-    Get access history for a specific file.
+    Get access history for a specific file with pagination.
 
     Returns all access events for the given file path.
     """
@@ -350,41 +315,36 @@ async def get_file_access_history(
     )
 
     # Get total count
-    count_query = select(func.count()).select_from(FileAccessEvent).where(
-        FileAccessEvent.tenant_id == user.tenant_id,
-        FileAccessEvent.file_path == file_path,
-    )
+    count_query = select(func.count()).select_from(query.subquery())
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
     # Get paginated results
-    offset = (page - 1) * limit
-    query = query.order_by(FileAccessEvent.event_time.desc()).offset(offset).limit(limit)
+    query = query.order_by(FileAccessEvent.event_time.desc()).offset(pagination.offset).limit(pagination.limit)
 
     result = await session.execute(query)
     events = result.scalars().all()
 
-    pages = (total + limit - 1) // limit if total > 0 else 1
-
-    return AccessEventListResponse(
-        items=events,
-        total=total,
-        page=page,
-        pages=pages,
+    return PaginatedResponse[AccessEventResponse](
+        **create_paginated_response(
+            items=[AccessEventResponse.model_validate(e) for e in events],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 
-@router.get("/events/user/{user_name}", response_model=AccessEventListResponse)
+@router.get("/events/user/{user_name}", response_model=PaginatedResponse[AccessEventResponse])
 async def get_user_access_history(
     user_name: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
     since: Optional[datetime] = Query(None, description="Filter events after this time"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
-):
+) -> PaginatedResponse[AccessEventResponse]:
     """
-    Get access history for a specific user.
+    Get access history for a specific user with pagination.
 
     Returns all access events performed by the given user.
     """
@@ -398,26 +358,23 @@ async def get_user_access_history(
     query = select(FileAccessEvent).where(and_(*conditions))
 
     # Get total count
-    count_query = select(func.count()).select_from(FileAccessEvent).where(
-        and_(*conditions)
-    )
+    count_query = select(func.count()).select_from(query.subquery())
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
     # Get paginated results
-    offset = (page - 1) * limit
-    query = query.order_by(FileAccessEvent.event_time.desc()).offset(offset).limit(limit)
+    query = query.order_by(FileAccessEvent.event_time.desc()).offset(pagination.offset).limit(pagination.limit)
 
     result = await session.execute(query)
     events = result.scalars().all()
 
-    pages = (total + limit - 1) // limit if total > 0 else 1
-
-    return AccessEventListResponse(
-        items=events,
-        total=total,
-        page=page,
-        pages=pages,
+    return PaginatedResponse[AccessEventResponse](
+        **create_paginated_response(
+            items=[AccessEventResponse.model_validate(e) for e in events],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 
