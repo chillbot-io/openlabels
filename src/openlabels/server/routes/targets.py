@@ -22,6 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanTarget
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 logger = logging.getLogger(__name__)
@@ -300,24 +305,13 @@ class TargetResponse(BaseModel):
         from_attributes = True
 
 
-class PaginatedTargetsResponse(BaseModel):
-    """Paginated list of scan targets."""
-
-    items: list[TargetResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-
-
-@router.get("", response_model=PaginatedTargetsResponse)
+@router.get("", response_model=PaginatedResponse[TargetResponse])
 async def list_targets(
     adapter: Optional[str] = Query(None, description="Filter by adapter type"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> PaginatedTargetsResponse:
+) -> PaginatedResponse[TargetResponse]:
     """List configured scan targets with pagination."""
     # Base query with tenant filter
     base_query = select(ScanTarget).where(ScanTarget.tenant_id == user.tenant_id)
@@ -330,21 +324,23 @@ async def list_targets(
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
-    # Calculate pagination
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-    offset = (page - 1) * page_size
-
     # Get paginated results
-    paginated_query = base_query.order_by(ScanTarget.name).offset(offset).limit(page_size)
+    paginated_query = (
+        base_query
+        .order_by(ScanTarget.name)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+    )
     result = await session.execute(paginated_query)
     targets = result.scalars().all()
 
-    return PaginatedTargetsResponse(
-        items=[TargetResponse.model_validate(t) for t in targets],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
+    return PaginatedResponse[TargetResponse](
+        **create_paginated_response(
+            items=[TargetResponse.model_validate(t) for t in targets],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 

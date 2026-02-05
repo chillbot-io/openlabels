@@ -163,7 +163,22 @@ async def sync_labels_from_graph(
         # Track which labels we've seen (for stale removal)
         seen_label_ids = set()
 
-        # Process each label
+        # Extract all label IDs from the incoming data
+        incoming_label_ids = [
+            label_data.get("id") for label_data in labels_data if label_data.get("id")
+        ]
+
+        # Batch fetch all existing labels in a single query (avoids N+1)
+        existing_labels = {}
+        if incoming_label_ids:
+            existing_query = select(SensitivityLabel).where(
+                SensitivityLabel.id.in_(incoming_label_ids),
+                SensitivityLabel.tenant_id == tenant_id,
+            )
+            existing_result = await session.execute(existing_query)
+            existing_labels = {label.id: label for label in existing_result.scalars().all()}
+
+        # Process each label using pre-fetched data
         for label_data in labels_data:
             label_id = label_data.get("id")
             if not label_id:
@@ -172,8 +187,8 @@ async def sync_labels_from_graph(
             seen_label_ids.add(label_id)
 
             try:
-                # Check if label exists
-                existing = await session.get(SensitivityLabel, label_id)
+                # Check if label exists using pre-fetched data
+                existing = existing_labels.get(label_id)
 
                 if existing:
                     # Update existing label

@@ -103,7 +103,12 @@ async def execute_scan_task(
     job = await session.get(ScanJob, job_id)
 
     if not job:
-        raise ValueError(f"Job not found: {job_id}")
+        raise JobError(
+            f"Scan job not found in database",
+            job_id=str(job_id),
+            job_type="scan",
+            context="job may have been deleted or never created",
+        )
 
     # Check if job was cancelled before we start
     if job.status == "cancelled":
@@ -112,7 +117,12 @@ async def execute_scan_task(
 
     target = await session.get(ScanTarget, job.target_id)
     if not target:
-        raise ValueError(f"Target not found: {job.target_id}")
+        raise JobError(
+            f"Scan target not found for job",
+            job_id=str(job_id),
+            job_type="scan",
+            context=f"target_id={job.target_id} may have been deleted",
+        )
 
     # Update job status
     job.status = "running"
@@ -768,7 +778,12 @@ async def execute_parallel_scan_task(
 
     job = await session.get(ScanJob, job_id)
     if not job:
-        raise ValueError(f"Job not found: {job_id}")
+        raise JobError(
+            f"Parallel scan job not found in database",
+            job_id=str(job_id),
+            job_type="parallel_scan",
+            context="job may have been deleted or never created",
+        )
 
     # Check if job was cancelled before we start
     if job.status == "cancelled":
@@ -777,7 +792,12 @@ async def execute_parallel_scan_task(
 
     target = await session.get(ScanTarget, job.target_id)
     if not target:
-        raise ValueError(f"Target not found: {job.target_id}")
+        raise JobError(
+            f"Scan target not found for parallel job",
+            job_id=str(job_id),
+            job_type="parallel_scan",
+            context=f"target_id={job.target_id} may have been deleted",
+        )
 
     # Update job status
     job.status = "running"

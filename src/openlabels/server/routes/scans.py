@@ -55,15 +55,6 @@ class ScanResponse(BaseModel):
         from_attributes = True
 
 
-class ScanListResponse(BaseModel):
-    """Paginated list of scans."""
-
-    items: list[ScanResponse]
-    total: int
-    page: int
-    pages: int
-
-
 @router.post("", response_model=ScanResponse, status_code=201)
 @limiter.limit(lambda: get_settings().rate_limit.scan_create_limit)
 async def create_scan(
@@ -107,15 +98,14 @@ async def create_scan(
     return job
 
 
-@router.get("", response_model=ScanListResponse)
+@router.get("", response_model=PaginatedResponse[ScanResponse])
 async def list_scans(
     status: Optional[str] = Query(None, description="Filter by status"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> ScanListResponse:
-    """List scan jobs."""
+) -> PaginatedResponse[ScanResponse]:
+    """List scan jobs with pagination."""
     from sqlalchemy import func
 
     # Build base conditions
@@ -133,17 +123,19 @@ async def list_scans(
         select(ScanJob)
         .where(*conditions)
         .order_by(ScanJob.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
     )
     result = await session.execute(query)
     jobs = result.scalars().all()
 
-    return ScanListResponse(
-        items=[ScanResponse.model_validate(j) for j in jobs],
-        total=total,
-        page=page,
-        pages=(total + limit - 1) // limit if total > 0 else 1,
+    return PaginatedResponse[ScanResponse](
+        **create_paginated_response(
+            items=[ScanResponse.model_validate(j) for j in jobs],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 

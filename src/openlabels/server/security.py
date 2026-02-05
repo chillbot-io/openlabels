@@ -110,7 +110,7 @@ def validate_tenant_id(
         True if tenant matches
 
     Raises:
-        HTTPException: 404 if tenant doesn't match
+        NotFoundError: If tenant doesn't match
     """
     if resource_tenant_id != user.tenant_id:
         # Log potential IDOR attempt
@@ -124,9 +124,10 @@ def validate_tenant_id(
                 f"SECURITY: Potential IDOR attempt - User {user.id} (tenant {user.tenant_id}) "
                 f"attempted to access {resource_name} belonging to tenant {resource_tenant_id}"
             )
-        raise HTTPException(
-            status_code=404,
-            detail=f"{resource_name} not found"
+        raise NotFoundError(
+            message=f"{resource_name} not found",
+            resource_type=resource_name,
+            resource_id=str(resource_id) if resource_id else None,
         )
 
     return True

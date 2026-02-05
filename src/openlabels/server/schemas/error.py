@@ -1,8 +1,8 @@
 """
-Pydantic schemas for API responses and requests.
+Standardized error response schemas for API responses.
 
-This module contains shared schemas used across multiple endpoints,
-including standardized error responses.
+This module contains Pydantic models for error responses,
+ensuring consistent error handling across all API endpoints.
 """
 
 from typing import Optional, Any
