@@ -14,6 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanResult
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    CursorPaginatedResponse,
+    CursorPaginationParams,
+    create_paginated_response,
+    cursor_paginate_query,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
 router = APIRouter()
@@ -53,15 +61,6 @@ class ResultDetailResponse(ResultResponse):
     label_error: Optional[str] = None
 
 
-class ResultListResponse(BaseModel):
-    """Paginated list of results."""
-
-    items: list[ResultResponse]
-    total: int
-    page: int
-    pages: int
-
-
 class ResultStats(BaseModel):
     """Aggregated result statistics."""
 
@@ -77,16 +76,15 @@ class ResultStats(BaseModel):
     labels_pending: int
 
 
-@router.get("", response_model=ResultListResponse)
+@router.get("", response_model=PaginatedResponse[ResultResponse])
 async def list_results(
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
     risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> ResultListResponse:
+) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
     # Build base filter conditions
     conditions = [ScanResult.tenant_id == user.tenant_id]
@@ -105,23 +103,69 @@ async def list_results(
     query = select(ScanResult).where(*conditions).order_by(ScanResult.risk_score.desc())
 
     # Count total (with same filters)
-    count_query = select(func.count()).select_from(
-        select(ScanResult.id).where(*conditions)
-    )
-    result = await session.execute(count_query)
-    total = result.scalar() or 0
+    count_query = select(func.count()).select_from(query.subquery())
+    count_result = await session.execute(count_query)
+    total = count_result.scalar() or 0
 
     # Paginate
-    query = query.offset((page - 1) * limit).limit(limit)
+    query = query.offset(pagination.offset).limit(pagination.limit)
     result = await session.execute(query)
     results = result.scalars().all()
 
-    return ResultListResponse(
-        items=[ResultResponse.model_validate(r) for r in results],
-        total=total,
-        page=page,
-        pages=(total + limit - 1) // limit if total > 0 else 1,
+    return PaginatedResponse[ResultResponse](
+        **create_paginated_response(
+            items=[ResultResponse.model_validate(r) for r in results],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
+
+
+@router.get("/cursor", response_model=CursorPaginatedResponse[ResultResponse])
+async def list_results_cursor(
+    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
+    pagination: CursorPaginationParams = Depends(),
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
+) -> CursorPaginatedResponse[ResultResponse]:
+    """
+    List scan results using cursor-based pagination.
+
+    Cursor pagination is more efficient for large datasets and provides
+    stable pagination even when data changes between requests.
+    """
+    # Build base filter conditions
+    conditions = [ScanResult.tenant_id == user.tenant_id]
+
+    if job_id:
+        conditions.append(ScanResult.job_id == job_id)
+    if risk_tier:
+        conditions.append(ScanResult.risk_tier == risk_tier)
+    if has_pii is not None:
+        if has_pii:
+            conditions.append(ScanResult.total_entities > 0)
+        else:
+            conditions.append(ScanResult.total_entities == 0)
+
+    # Build query sorted by scanned_at desc, id desc for stable cursor
+    query = (
+        select(ScanResult)
+        .where(*conditions)
+        .order_by(ScanResult.scanned_at.desc(), ScanResult.id.desc())
+    )
+
+    result = await cursor_paginate_query(
+        session,
+        query,
+        pagination,
+        cursor_columns=[(ScanResult.scanned_at, "scanned_at"), (ScanResult.id, "id")],
+        transformer=lambda r: ResultResponse.model_validate(r),
+    )
+
+    return CursorPaginatedResponse[ResultResponse](**result)
 
 
 @router.get("/stats", response_model=ResultStats)
@@ -130,60 +174,46 @@ async def get_result_stats(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> ResultStats:
-    """Get aggregated statistics for scan results using efficient SQL aggregation."""
+    """
+    Get aggregated statistics for scan results using efficient SQL aggregation.
+
+    Combines multiple counts into a single query using CASE expressions for
+    better database performance.
+    """
+    from sqlalchemy import case
+
     # Build base filter conditions
     conditions = [ScanResult.tenant_id == user.tenant_id]
     if job_id:
         conditions.append(ScanResult.job_id == job_id)
 
-    # Total files count
-    total_query = select(func.count()).select_from(ScanResult).where(*conditions)
-    total_result = await session.execute(total_query)
-    total_files = total_result.scalar() or 0
+    # Combined aggregation query - get all counts in a single database round-trip
+    stats_query = select(
+        func.count().label("total_files"),
+        func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+        func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_count"),
+        func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label("high_count"),
+        func.sum(case((ScanResult.risk_tier == "MEDIUM", 1), else_=0)).label("medium_count"),
+        func.sum(case((ScanResult.risk_tier == "LOW", 1), else_=0)).label("low_count"),
+        func.sum(case((ScanResult.risk_tier == "MINIMAL", 1), else_=0)).label("minimal_count"),
+        func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
+        func.sum(case(
+            (ScanResult.label_applied == False, case((ScanResult.recommended_label_id.isnot(None), 1), else_=0)),  # noqa: E712
+            else_=0
+        )).label("labels_pending"),
+    ).where(*conditions)
 
-    # Files with PII count
-    pii_conditions = conditions + [ScanResult.total_entities > 0]
-    pii_query = select(func.count()).select_from(ScanResult).where(*pii_conditions)
-    pii_result = await session.execute(pii_query)
-    files_with_pii = pii_result.scalar() or 0
+    stats_result = await session.execute(stats_query)
+    row = stats_result.one()
 
-    # Count by risk tier (single aggregation query)
-    tier_query = (
-        select(ScanResult.risk_tier, func.count())
-        .where(*conditions)
-        .group_by(ScanResult.risk_tier)
-    )
-    tier_result = await session.execute(tier_query)
-    tier_counts_raw = dict(tier_result.all())
-    tier_counts = {
-        "CRITICAL": tier_counts_raw.get("CRITICAL", 0),
-        "HIGH": tier_counts_raw.get("HIGH", 0),
-        "MEDIUM": tier_counts_raw.get("MEDIUM", 0),
-        "LOW": tier_counts_raw.get("LOW", 0),
-        "MINIMAL": tier_counts_raw.get("MINIMAL", 0),
-    }
-
-    # Labels applied count
-    applied_conditions = conditions + [ScanResult.label_applied == True]  # noqa: E712
-    applied_query = select(func.count()).select_from(ScanResult).where(*applied_conditions)
-    applied_result = await session.execute(applied_query)
-    labels_applied = applied_result.scalar() or 0
-
-    # Labels pending count (has recommended but not applied)
-    pending_conditions = conditions + [
-        ScanResult.label_applied == False,  # noqa: E712
-        ScanResult.recommended_label_id.isnot(None),
-    ]
-    pending_query = select(func.count()).select_from(ScanResult).where(*pending_conditions)
-    pending_result = await session.execute(pending_query)
-    labels_pending = pending_result.scalar() or 0
-
-    # For entity type aggregation, we need to query entity_counts JSON
-    # This requires fetching just the entity_counts column, not full rows
+    # For entity type aggregation, use a limited sample to avoid memory issues
+    # Only fetch entity_counts for files with entities, with a reasonable limit
     entity_query = select(ScanResult.entity_counts).where(
         *conditions,
         ScanResult.entity_counts.isnot(None),
-    )
+        ScanResult.total_entities > 0,
+    ).limit(5000)  # Cap to prevent memory issues on very large datasets
+
     entity_result = await session.execute(entity_query)
     entity_rows = entity_result.scalars().all()
 
@@ -198,16 +228,16 @@ async def get_result_stats(
     top_entities = dict(sorted(entity_totals.items(), key=lambda x: x[1], reverse=True)[:10])
 
     return ResultStats(
-        total_files=total_files,
-        files_with_pii=files_with_pii,
-        critical_count=tier_counts["CRITICAL"],
-        high_count=tier_counts["HIGH"],
-        medium_count=tier_counts["MEDIUM"],
-        low_count=tier_counts["LOW"],
-        minimal_count=tier_counts["MINIMAL"],
+        total_files=row.total_files or 0,
+        files_with_pii=row.files_with_pii or 0,
+        critical_count=row.critical_count or 0,
+        high_count=row.high_count or 0,
+        medium_count=row.medium_count or 0,
+        low_count=row.low_count or 0,
+        minimal_count=row.minimal_count or 0,
         top_entity_types=top_entities,
-        labels_applied=labels_applied,
-        labels_pending=labels_pending,
+        labels_applied=row.labels_applied or 0,
+        labels_pending=row.labels_pending or 0,
     )
 
 

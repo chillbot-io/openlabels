@@ -23,6 +23,7 @@ from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAd
 from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
+from openlabels.core.exceptions import AdapterError, JobError, ValidationError
 from openlabels.labeling.engine import LabelingEngine
 
 logger = logging.getLogger(__name__)
@@ -437,7 +438,19 @@ async def execute_scan_task(
 
 
 def _get_adapter(adapter_type: str, config: dict):
-    """Get the appropriate adapter instance."""
+    """
+    Get the appropriate adapter instance.
+
+    Args:
+        adapter_type: Type of adapter (filesystem, sharepoint, onedrive)
+        config: Adapter-specific configuration
+
+    Returns:
+        Configured adapter instance
+
+    Raises:
+        AdapterError: If adapter type is unknown or configuration is invalid
+    """
     settings = get_settings()
 
     if adapter_type == "filesystem":
@@ -445,19 +458,35 @@ def _get_adapter(adapter_type: str, config: dict):
             service_account=config.get("service_account"),
         )
     elif adapter_type == "sharepoint":
+        if not settings.auth.tenant_id or not settings.auth.client_id:
+            raise AdapterError(
+                "SharePoint adapter requires auth configuration",
+                adapter_type="sharepoint",
+                context="missing tenant_id or client_id in settings",
+            )
         return SharePointAdapter(
             tenant_id=settings.auth.tenant_id,
             client_id=settings.auth.client_id,
             client_secret=settings.auth.client_secret,
         )
     elif adapter_type == "onedrive":
+        if not settings.auth.tenant_id or not settings.auth.client_id:
+            raise AdapterError(
+                "OneDrive adapter requires auth configuration",
+                adapter_type="onedrive",
+                context="missing tenant_id or client_id in settings",
+            )
         return OneDriveAdapter(
             tenant_id=settings.auth.tenant_id,
             client_id=settings.auth.client_id,
             client_secret=settings.auth.client_secret,
         )
     else:
-        raise ValueError(f"Unknown adapter type: {adapter_type}")
+        raise AdapterError(
+            f"Unknown adapter type: {adapter_type}",
+            adapter_type=adapter_type,
+            context="valid types are: filesystem, sharepoint, onedrive",
+        )
 
 
 async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
@@ -484,12 +513,28 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
     rules_result = await session.execute(rules_query)
     rules_data = rules_result.all()
 
+    # Prefetch all labels by name for settings fallback (avoids N+1 queries)
+    # This loads all tenant labels once instead of querying per-result
+    labels_by_name: dict[str, SensitivityLabel] = {}
+    if settings.labeling.risk_tier_mapping and any(settings.labeling.risk_tier_mapping.values()):
+        label_names_needed = [name for name in settings.labeling.risk_tier_mapping.values() if name]
+        if label_names_needed:
+            labels_query = select(SensitivityLabel).where(
+                SensitivityLabel.tenant_id == job.tenant_id,
+                SensitivityLabel.name.in_(label_names_needed),
+            )
+            labels_result = await session.execute(labels_query)
+            labels_by_name = {label.name: label for label in labels_result.scalars().all()}
+
     if not rules_data:
         # No rules configured, use risk_tier_mapping from settings
         risk_tier_mapping = settings.labeling.risk_tier_mapping
         if not any(risk_tier_mapping.values()):
             logger.info("No label rules or risk tier mappings configured")
             return stats
+        # Build lookup from prefetched labels
+        risk_tier_rules = {}
+        entity_type_rules = {}
     else:
         # Build risk_tier and entity_type rule lookups
         risk_tier_rules = {}
@@ -547,20 +592,12 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                     matched_label = label.id
                     matched_label_name = label.name
                 elif settings.labeling.risk_tier_mapping:
-                    # Use settings mapping as fallback
+                    # Use settings mapping as fallback with prefetched labels
                     label_name = settings.labeling.risk_tier_mapping.get(result.risk_tier)
-                    if label_name:
-                        # Look up label by name
-                        label_query = (
-                            select(SensitivityLabel)
-                            .where(SensitivityLabel.tenant_id == job.tenant_id)
-                            .where(SensitivityLabel.name == label_name)
-                        )
-                        label_result = await session.execute(label_query)
-                        label = label_result.scalar_one_or_none()
-                        if label:
-                            matched_label = label.id
-                            matched_label_name = label.name
+                    if label_name and label_name in labels_by_name:
+                        label = labels_by_name[label_name]
+                        matched_label = label.id
+                        matched_label_name = label.name
 
             if not matched_label:
                 stats["skipped"] += 1

@@ -58,7 +58,8 @@ class StatusChecker:
             )
             return bool(result.stdout.strip())
         except Exception as e:
-            logger.debug(f"Docker check failed: {e}")
+            # Docker check failures are expected if Docker is not installed
+            logger.debug(f"Docker check failed: {type(e).__name__}: {e}")
             return False
 
 
@@ -254,6 +255,8 @@ class SystemTrayApp:
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         except Exception as e:
+            # Log viewing failures should be reported to user
+            logger.warning(f"Failed to open logs: {type(e).__name__}: {e}")
             QMessageBox.critical(None, "Error", f"Failed to open logs: {e}")
 
     def _quit(self):

@@ -192,7 +192,8 @@ class RedisCache:
             logger.warning("redis package not installed - falling back to memory cache")
             return False
         except Exception as e:
-            logger.warning(f"Redis connection failed: {e} - falling back to memory cache")
+            # Connection failures are expected if Redis is not available
+            logger.warning(f"Redis connection failed: {type(e).__name__}: {e} - falling back to memory cache")
             return False
 
     async def close(self) -> None:
@@ -223,7 +224,8 @@ class RedisCache:
                 return value
 
         except Exception as e:
-            logger.warning(f"Redis get error for {key}: {e}")
+            # Redis errors should be logged for monitoring
+            logger.warning(f"Redis get error for {key}: {type(e).__name__}: {e}")
             self._misses += 1
             return None
 
@@ -247,7 +249,8 @@ class RedisCache:
             return True
 
         except Exception as e:
-            logger.warning(f"Redis set error for {key}: {e}")
+            # Redis errors should be logged for monitoring
+            logger.warning(f"Redis set error for {key}: {type(e).__name__}: {e}")
             return False
 
     async def delete(self, key: str) -> bool:
@@ -261,7 +264,8 @@ class RedisCache:
             return result > 0
 
         except Exception as e:
-            logger.warning(f"Redis delete error for {key}: {e}")
+            # Redis errors should be logged for monitoring
+            logger.warning(f"Redis delete error for {key}: {type(e).__name__}: {e}")
             return False
 
     async def delete_pattern(self, pattern: str) -> int:
@@ -291,7 +295,8 @@ class RedisCache:
             return deleted
 
         except Exception as e:
-            logger.warning(f"Redis delete_pattern error for {pattern}: {e}")
+            # Redis errors should be logged for monitoring
+            logger.warning(f"Redis delete_pattern error for {pattern}: {type(e).__name__}: {e}")
             return 0
 
     async def clear(self) -> None:
@@ -307,7 +312,8 @@ class RedisCache:
             full_key = self._make_key(key)
             return await self._client.exists(full_key) > 0
         except Exception as e:
-            logger.warning(f"Redis exists error for {key}: {e}")
+            # Redis errors should be logged for monitoring
+            logger.warning(f"Redis exists error for {key}: {type(e).__name__}: {e}")
             return False
 
     @property
@@ -589,7 +595,8 @@ def cache(
             try:
                 cache_manager = await get_cache_manager()
             except Exception as e:
-                logger.debug(f"Cache unavailable: {e}")
+                # Cache unavailability is non-critical - proceed without cache
+                logger.debug(f"Cache unavailable: {type(e).__name__}: {e}")
                 return await func(*args, **kwargs)
 
             # Generate cache key
@@ -640,7 +647,8 @@ async def _invalidate_func_cache(
         cache_key = _make_cache_key(prefix, func_name, args, kwargs, key_builder)
         return await cache_manager.delete(cache_key)
     except Exception as e:
-        logger.warning(f"Cache invalidation failed: {e}")
+        # Cache invalidation failures should be logged for debugging
+        logger.warning(f"Cache invalidation failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -658,7 +666,8 @@ async def invalidate_cache(pattern: str) -> int:
         cache_manager = await get_cache_manager()
         return await cache_manager.delete_pattern(pattern)
     except Exception as e:
-        logger.warning(f"Cache invalidation failed for pattern {pattern}: {e}")
+        # Cache invalidation failures should be logged for debugging
+        logger.warning(f"Cache invalidation failed for pattern {pattern}: {type(e).__name__}: {e}")
         return 0
 
 
@@ -668,7 +677,8 @@ async def get_cache_stats() -> dict:
         cache_manager = await get_cache_manager()
         return cache_manager.stats
     except Exception as e:
-        logger.warning(f"Failed to get cache stats: {e}")
+        # Stats retrieval failures are non-critical
+        logger.warning(f"Failed to get cache stats: {type(e).__name__}: {e}")
         return {"error": str(e)}
 
 

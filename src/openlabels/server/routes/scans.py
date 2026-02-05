@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,12 @@ from slowapi.util import get_remote_address
 from openlabels.server.db import get_session
 from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanTarget
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
+from openlabels.server.exceptions import NotFoundError, BadRequestError
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue
 
@@ -70,7 +76,11 @@ async def create_scan(
     # Verify target exists AND belongs to user's tenant (prevent cross-tenant access)
     target = await session.get(ScanTarget, scan_request.target_id)
     if not target or target.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Target not found")
+        raise NotFoundError(
+            message="Target not found",
+            resource_type="ScanTarget",
+            resource_id=str(scan_request.target_id),
+        )
 
     # Create scan job
     job = ScanJob(
@@ -106,22 +116,26 @@ async def list_scans(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScanListResponse:
     """List scan jobs."""
-    query = select(ScanJob).where(ScanJob.tenant_id == user.tenant_id)
+    from sqlalchemy import func
 
+    # Build base conditions
+    conditions = [ScanJob.tenant_id == user.tenant_id]
     if status:
-        query = query.where(ScanJob.status == status)
+        conditions.append(ScanJob.status == status)
 
-    query = query.order_by(ScanJob.created_at.desc())
+    # Count total using SQL COUNT (efficient, no row loading)
+    count_query = select(func.count()).select_from(ScanJob).where(*conditions)
+    count_result = await session.execute(count_query)
+    total = count_result.scalar() or 0
 
-    # Count total
-    count_query = select(ScanJob.id).where(ScanJob.tenant_id == user.tenant_id)
-    if status:
-        count_query = count_query.where(ScanJob.status == status)
-    result = await session.execute(count_query)
-    total = len(result.all())
-
-    # Paginate
-    query = query.offset((page - 1) * limit).limit(limit)
+    # Get paginated results
+    query = (
+        select(ScanJob)
+        .where(*conditions)
+        .order_by(ScanJob.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     result = await session.execute(query)
     jobs = result.scalars().all()
 
@@ -129,7 +143,7 @@ async def list_scans(
         items=[ScanResponse.model_validate(j) for j in jobs],
         total=total,
         page=page,
-        pages=(total + limit - 1) // limit,
+        pages=(total + limit - 1) // limit if total > 0 else 1,
     )
 
 
@@ -142,7 +156,11 @@ async def get_scan(
     """Get scan job details."""
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise NotFoundError(
+            message="Scan not found",
+            resource_type="ScanJob",
+            resource_id=str(scan_id),
+        )
     return job
 
 
@@ -155,10 +173,17 @@ async def delete_scan(
     """Cancel a running scan (DELETE method)."""
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise NotFoundError(
+            message="Scan not found",
+            resource_type="ScanJob",
+            resource_id=str(scan_id),
+        )
 
     if job.status not in ("pending", "running"):
-        raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+        raise BadRequestError(
+            message="Scan cannot be cancelled",
+            details={"current_status": job.status, "allowed_statuses": ["pending", "running"]},
+        )
 
     job.status = "cancelled"
     job.completed_at = datetime.now(timezone.utc)
@@ -177,10 +202,17 @@ async def cancel_scan(
 
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise NotFoundError(
+            message="Scan not found",
+            resource_type="ScanJob",
+            resource_id=str(scan_id),
+        )
 
     if job.status not in ("pending", "running"):
-        raise HTTPException(status_code=400, detail="Scan cannot be cancelled")
+        raise BadRequestError(
+            message="Scan cannot be cancelled",
+            details={"current_status": job.status, "allowed_statuses": ["pending", "running"]},
+        )
 
     job.status = "cancelled"
     job.completed_at = datetime.now(timezone.utc)
@@ -211,15 +243,26 @@ async def retry_scan(
 
     job = await session.get(ScanJob, scan_id)
     if not job or job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise NotFoundError(
+            message="Scan not found",
+            resource_type="ScanJob",
+            resource_id=str(scan_id),
+        )
 
     if job.status not in ("failed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Only failed or cancelled scans can be retried")
+        raise BadRequestError(
+            message="Only failed or cancelled scans can be retried",
+            details={"current_status": job.status, "allowed_statuses": ["failed", "cancelled"]},
+        )
 
     # Get the target
     target = await session.get(ScanTarget, job.target_id)
     if not target:
-        raise HTTPException(status_code=404, detail="Target no longer exists")
+        raise NotFoundError(
+            message="Target no longer exists",
+            resource_type="ScanTarget",
+            resource_id=str(job.target_id),
+        )
 
     # Create a new scan job
     new_job = ScanJob(

@@ -251,7 +251,8 @@ class OCREngine:
             self.warm_up()
         except Exception as e:
             self._load_error = e
-            logger.error(f"Background OCR loading failed: {e}")
+            # Log OCR loading failures with full context for debugging
+            logger.error(f"Background OCR loading failed: {type(e).__name__}: {e}")
         finally:
             self._ready_event.set()
 
@@ -317,7 +318,8 @@ class OCREngine:
                 "Run: pip install rapidocr-onnxruntime"
             )
         except Exception as e:
-            logger.error(f"Failed to initialize RapidOCR: {e}")
+            # Log initialization failures with full context
+            logger.error(f"Failed to initialize RapidOCR: {type(e).__name__}: {e}")
             raise
 
     def warm_up(self) -> bool:
@@ -345,7 +347,8 @@ class OCREngine:
             return True
 
         except Exception as e:
-            logger.warning(f"RapidOCR warm-up failed: {e}")
+            # Warm-up failure is non-critical but worth logging with type
+            logger.warning(f"RapidOCR warm-up failed: {type(e).__name__}: {e}")
             return False
 
     def extract_text(

@@ -389,17 +389,54 @@ class GraphClient:
                 await self._circuit_breaker.record_success()
                 return response
 
-            except httpx.TransportError as e:
-                last_error = e
+            except httpx.TimeoutException as e:
+                last_error = GraphAPIError(
+                    f"Request timed out after {self._timeout}s",
+                    endpoint=url,
+                    context=f"{method} request to Graph API",
+                )
+                last_error.__cause__ = e
                 backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
-                logger.warning(f"Transport error: {e}, retrying in {backoff}s")
+                logger.warning(f"Timeout error on {url}: {e}, retrying in {backoff}s")
+                await asyncio.sleep(backoff)
+                self.stats["retries"] += 1
+                await self._circuit_breaker.record_failure(e)
+
+            except httpx.ConnectError as e:
+                last_error = GraphAPIError(
+                    "Failed to connect to Graph API",
+                    endpoint=url,
+                    context="network connectivity issue to graph.microsoft.com",
+                )
+                last_error.__cause__ = e
+                backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
+                logger.warning(f"Connection error on {url}: {e}, retrying in {backoff}s")
+                await asyncio.sleep(backoff)
+                self.stats["retries"] += 1
+                await self._circuit_breaker.record_failure(e)
+
+            except httpx.TransportError as e:
+                last_error = GraphAPIError(
+                    f"Transport error during Graph API request: {type(e).__name__}",
+                    endpoint=url,
+                    context=f"{method} request encountered network issue",
+                )
+                last_error.__cause__ = e
+                backoff = self.rate_config.base_backoff_seconds * (2 ** attempt)
+                logger.warning(f"Transport error on {url}: {e}, retrying in {backoff}s")
                 await asyncio.sleep(backoff)
                 self.stats["retries"] += 1
                 # Record failure for circuit breaker
                 await self._circuit_breaker.record_failure(e)
 
         self.stats["errors"] += 1
-        raise last_error or RuntimeError("Max retries exceeded")
+        if last_error:
+            raise last_error
+        raise GraphAPIError(
+            "Max retries exceeded for Graph API request",
+            endpoint=url,
+            context=f"failed after {self.rate_config.max_retries} attempts",
+        )
 
     async def get(self, path: str, **kwargs) -> dict[str, Any]:
         """GET request returning JSON."""

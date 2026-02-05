@@ -214,11 +214,12 @@ def _quarantine_windows(
             error=error_msg,
         )
     except Exception as e:
-        logger.error(f"Unexpected error quarantining {source}: {e}")
+        # Log unexpected errors with full exception type for debugging
+        logger.error(f"Unexpected error quarantining {source}: {type(e).__name__}: {e}")
         return RemediationResult.failure(
             action=RemediationAction.QUARANTINE,
             source=source,
-            error=str(e),
+            error=f"{type(e).__name__}: {e}",
         )
 
 
@@ -271,7 +272,8 @@ def _quarantine_unix(
                 logger.warning(f"rsync failed, falling back to shutil: {result.stderr}")
 
         except Exception as e:
-            logger.warning(f"rsync failed, falling back to shutil: {e}")
+            # Log rsync failures with exception type - non-critical as we have fallback
+            logger.info(f"rsync failed, falling back to shutil: {type(e).__name__}: {e}")
 
     # Fallback to shutil.move
     try:
@@ -283,9 +285,10 @@ def _quarantine_unix(
             performed_by=get_current_user(),
         )
     except Exception as e:
-        logger.error(f"Failed to quarantine {source}: {e}")
+        # Log quarantine failures with full exception type for debugging
+        logger.error(f"Failed to quarantine {source}: {type(e).__name__}: {e}")
         return RemediationResult.failure(
             action=RemediationAction.QUARANTINE,
             source=source,
-            error=str(e),
+            error=f"{type(e).__name__}: {e}",
         )

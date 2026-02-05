@@ -20,6 +20,7 @@ from .constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_EXTRACTION_RATIO,
 )
+from .exceptions import ExtractionError, SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,8 @@ class PDFExtractor(BaseExtractor):
                         ))
 
                     except Exception as e:
-                        logger.warning(f"OCR failed for page {i+1}: {e}")
+                        # Log OCR failures with full context - may indicate corrupted pages or OCR issues
+                        logger.warning(f"OCR failed for page {i+1} of {filename}: {type(e).__name__}: {e}")
                         pages_text.append("")
                         warnings.append(f"OCR failed for page {i+1}: {e}")
                         page_infos.append(PageInfo(
@@ -313,6 +315,8 @@ class DOCXExtractor(BaseExtractor):
                 warnings=["Legacy .doc format - extraction may be incomplete"],
             )
         except Exception as e:
+            # Log legacy doc extraction failures - may indicate corrupt files
+            logger.info(f"Legacy .doc extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -560,7 +564,8 @@ class ImageExtractor(BaseExtractor):
             )
 
         except Exception as e:
-            logger.error(f"Image extraction failed: {e}")
+            # Log image extraction failures with context
+            logger.warning(f"Image extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -680,6 +685,8 @@ class RTFExtractor(BaseExtractor):
                 pages=1,
             )
         except Exception as e:
+            # Log RTF extraction failures
+            logger.info(f"RTF extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -786,6 +793,8 @@ class PPTXExtractor(BaseExtractor):
                 warnings=["Legacy .ppt format - extraction may be incomplete"],
             )
         except Exception as e:
+            # Log legacy PowerPoint extraction failures
+            logger.info(f"Legacy .ppt extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -871,6 +880,8 @@ class EmailExtractor(BaseExtractor):
             )
 
         except Exception as e:
+            # Log MSG file extraction failures
+            logger.info(f"MSG extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,
@@ -964,6 +975,8 @@ class EmailExtractor(BaseExtractor):
             )
 
         except Exception as e:
+            # Log EML file extraction failures
+            logger.info(f"EML extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",
                 pages=1,

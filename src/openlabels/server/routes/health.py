@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult, JobQueue
+from openlabels.server.cache import get_cache_manager, get_cache_stats
 from openlabels.auth.dependencies import get_current_user
 from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.jobs.queue import JobQueue as JobQueueService
@@ -320,3 +321,39 @@ async def get_health_status(
     status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
+
+
+class CacheStats(BaseModel):
+    """Cache statistics response."""
+
+    enabled: bool
+    backend: dict[str, Any]
+    default_ttl: int
+    key_prefix: str
+
+
+@router.get("/cache", response_model=CacheStats)
+async def get_cache_health(
+    user=Depends(get_current_user),
+):
+    """
+    Get cache statistics and health status.
+
+    Returns:
+    - Cache enabled status
+    - Backend type (redis or memory)
+    - Connection status (for Redis)
+    - Hit/miss statistics
+    - Hit rate percentage
+    """
+    try:
+        stats = await get_cache_stats()
+        return CacheStats(**stats)
+    except Exception as e:
+        logger.warning(f"Failed to get cache stats: {e}")
+        return CacheStats(
+            enabled=False,
+            backend={"type": "unknown", "error": str(e)},
+            default_ttl=0,
+            key_prefix="",
+        )

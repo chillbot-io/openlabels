@@ -25,6 +25,7 @@ from .detectors.orchestrator import DetectorOrchestrator
 from .scoring.scorer import score
 from .constants import DEFAULT_MODELS_DIR
 from .extractors import extract_text as _extract_text_from_file, ExtractionResult
+from .exceptions import DetectionError, ExtractionError, SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +226,34 @@ class FileProcessor:
                 result.risk_score = score_result.score
                 result.risk_tier = score_result.tier
 
-        except Exception as e:
-            logger.error(f"Error processing {file_path}: {e}")
+        except (DetectionError, ExtractionError, SecurityError) as e:
+            # Domain-specific errors - log with full context
+            logger.error(f"Processing error for {file_path}: {e}")
             result.error = str(e)
+        except UnicodeDecodeError as e:
+            # Encoding issue during text extraction
+            error_msg = f"Failed to decode file content: encoding error at position {e.start}"
+            logger.warning(f"{file_path}: {error_msg}")
+            result.error = error_msg
+        except MemoryError as e:
+            # File too large to process in memory
+            error_msg = f"Insufficient memory to process file ({actual_size:,} bytes)"
+            logger.error(f"{file_path}: {error_msg}")
+            result.error = error_msg
+        except OSError as e:
+            # Filesystem or IO error
+            error_msg = f"IO error while processing file: {type(e).__name__}: {e}"
+            logger.error(f"{file_path}: {error_msg}")
+            result.error = error_msg
+        except ValueError as e:
+            # Invalid data or security violation (e.g., decompression bomb)
+            logger.error(f"Value/Security error processing {file_path}: {e}")
+            result.error = str(e)
+        except RuntimeError as e:
+            # Unexpected runtime issue
+            error_msg = f"Runtime error during processing: {type(e).__name__}: {e}"
+            logger.error(f"{file_path}: {error_msg}")
+            result.error = error_msg
 
         result.processing_time_ms = (time.time() - start_time) * 1000
         return result
@@ -309,7 +335,8 @@ class FileProcessor:
             logger.warning(f"Missing library for {file_path}: {e}")
             return await self._decode_text(content)
         except Exception as e:
-            logger.error(f"Extraction failed for {file_path}: {e}")
+            # Log extraction failures - may indicate unsupported format or corrupt file
+            logger.warning(f"Extraction failed for {file_path}: {type(e).__name__}: {e}")
             # Fall back to trying as text
             return await self._decode_text(content)
 
@@ -348,7 +375,8 @@ class FileProcessor:
             logger.warning(f"Image processing library not installed: {e}")
             return ""
         except Exception as e:
-            logger.error(f"Error extracting text from image: {e}")
+            # Log image OCR failures with context
+            logger.warning(f"Error extracting text from image: {type(e).__name__}: {e}")
             return ""
 
     async def _decode_text(self, content: bytes) -> str:

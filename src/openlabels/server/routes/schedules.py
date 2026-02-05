@@ -14,6 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    paginate_query,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.jobs import JobQueue, parse_cron_expression
 
@@ -51,16 +56,27 @@ class ScheduleResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("", response_model=list[ScheduleResponse])
+@router.get("", response_model=PaginatedResponse[ScheduleResponse])
 async def list_schedules(
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
-) -> list[ScheduleResponse]:
-    """List configured scan schedules."""
-    query = select(ScanSchedule).where(ScanSchedule.tenant_id == user.tenant_id)
-    result = await session.execute(query)
-    schedules = result.scalars().all()
-    return [ScheduleResponse.model_validate(s) for s in schedules]
+) -> PaginatedResponse[ScheduleResponse]:
+    """List configured scan schedules with pagination."""
+    query = (
+        select(ScanSchedule)
+        .where(ScanSchedule.tenant_id == user.tenant_id)
+        .order_by(ScanSchedule.created_at.desc())
+    )
+
+    result = await paginate_query(
+        session,
+        query,
+        pagination,
+        transformer=lambda s: ScheduleResponse.model_validate(s),
+    )
+
+    return PaginatedResponse[ScheduleResponse](**result)
 
 
 @router.post("", response_model=ScheduleResponse, status_code=201)

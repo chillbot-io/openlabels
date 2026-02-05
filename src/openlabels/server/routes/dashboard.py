@@ -3,6 +3,10 @@ Dashboard API endpoints for statistics and visualizations.
 
 All dashboard queries use SQL aggregation for performance at scale.
 Statistics are computed in PostgreSQL, not Python.
+
+Performance:
+- Dashboard stats are cached with short TTL (60s) since data changes frequently
+- Trends data uses longer cache TTL since historical data is stable
 """
 
 import logging
@@ -11,17 +15,22 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, cast, Date, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult
+from openlabels.server.cache import get_cache_manager
 from openlabels.auth.dependencies import get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Cache key prefixes and TTLs
+DASHBOARD_STATS_CACHE_PREFIX = "dashboard:stats"
+DASHBOARD_STATS_TTL = 60  # 60 seconds - stats change frequently
 
 
 class OverallStats(BaseModel):
@@ -78,7 +87,20 @@ async def get_overall_stats(
 
     Uses SQL aggregation for efficient computation at scale.
     All counts are computed in PostgreSQL, not Python.
+
+    Results are cached for 60 seconds to reduce database load.
     """
+    # Try to get from cache first
+    cache_key = f"{DASHBOARD_STATS_CACHE_PREFIX}:tenant:{user.tenant_id}"
+    try:
+        cache = await get_cache_manager()
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for dashboard stats (tenant: {user.tenant_id})")
+            return OverallStats(**cached)
+    except Exception as e:
+        logger.debug(f"Cache read failed: {e}")
+
     # Count total and active scans in one query
     scan_stats_query = select(
         func.count().label("total"),
@@ -104,7 +126,7 @@ async def get_overall_stats(
     result = await session.execute(result_stats_query)
     stats_row = result.one()
 
-    return OverallStats(
+    response = OverallStats(
         total_scans=total_scans,
         total_files_scanned=stats_row.total_files or 0,
         files_with_pii=stats_row.files_with_pii or 0,
@@ -113,6 +135,16 @@ async def get_overall_stats(
         high_files=stats_row.high_files or 0,
         active_scans=active_scans,
     )
+
+    # Cache the result with short TTL
+    try:
+        cache = await get_cache_manager()
+        await cache.set(cache_key, response.model_dump(), ttl=DASHBOARD_STATS_TTL)
+        logger.debug(f"Cached dashboard stats for tenant: {user.tenant_id}")
+    except Exception as e:
+        logger.debug(f"Cache write failed: {e}")
+
+    return response
 
 
 @router.get("/trends", response_model=TrendResponse)

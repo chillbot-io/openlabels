@@ -24,7 +24,7 @@ from fastapi import APIRouter, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter, _rate_limit_exceeded_handler as rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from pydantic import ValidationError as PydanticValidationError
@@ -86,7 +86,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         else:
             logger.info("Using in-memory cache (Redis not available)")
     except Exception as e:
-        logger.warning(f"Cache initialization failed: {e} - caching disabled")
+        # Cache is optional - log the failure type for debugging
+        logger.warning(f"Cache initialization failed: {type(e).__name__}: {e} - caching disabled")
 
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
@@ -126,7 +127,7 @@ def configure_middleware():
     # Rate limiting middleware
     if settings.rate_limit.enabled:
         app.add_middleware(SlowAPIMiddleware)
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
     # CSRF protection middleware
     app.add_middleware(CSRFMiddleware)
@@ -290,24 +291,249 @@ async def add_deprecation_warning(request: Request, call_next):
     return response
 
 
-# Global exception handler
+# =============================================================================
+# EXCEPTION HANDLERS
+# =============================================================================
+
+
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """
+    Handle rate limit exceeded errors with standardized format.
+
+    Converts slowapi's RateLimitExceeded to our ErrorResponse format.
+    """
+    request_id = get_request_id()
+    error_response = {
+        "error": "RATE_LIMIT_EXCEEDED",
+        "message": "Rate limit exceeded. Please try again later.",
+        "details": {"limit": str(exc.detail) if hasattr(exc, "detail") else None},
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+
+    response = JSONResponse(status_code=429, content=error_response)
+
+    # Add Retry-After header if available
+    if hasattr(exc, "headers") and exc.headers:
+        for key, value in exc.headers.items():
+            response.headers[key] = value
+
+    return response
+
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
+    """
+    Handle custom API exceptions with standardized format.
+
+    All custom exceptions (NotFoundError, ValidationError, etc.) inherit
+    from APIError and are automatically converted to ErrorResponse format.
+    """
+    request_id = get_request_id()
+    error_response = exc.to_dict(request_id=request_id)
+
+    # Log the error (debug level for client errors, warning for server errors)
+    if exc.status_code >= 500:
+        logger.warning(
+            f"API error: {exc.error_code} - {exc.message}",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "status_code": exc.status_code,
+                "error_code": exc.error_code,
+            }
+        )
+    else:
+        logger.debug(
+            f"API error: {exc.error_code} - {exc.message}",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "status_code": exc.status_code,
+                "error_code": exc.error_code,
+            }
+        )
+
+    response = JSONResponse(status_code=exc.status_code, content=error_response)
+
+    # Add Retry-After header for rate limit errors
+    if isinstance(exc, RateLimitError) and exc.retry_after:
+        response.headers["Retry-After"] = str(exc.retry_after)
+
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """
+    Handle FastAPI's HTTPException with standardized format.
+
+    This ensures that any HTTPException raised (including those from
+    dependencies and middleware) are converted to our standardized format.
+    """
+    request_id = get_request_id()
+
+    # Map HTTP status codes to error codes
+    error_code_map = {
+        400: "BAD_REQUEST",
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        405: "METHOD_NOT_ALLOWED",
+        409: "CONFLICT",
+        413: "REQUEST_TOO_LARGE",
+        422: "VALIDATION_ERROR",
+        429: "RATE_LIMIT_EXCEEDED",
+        500: "INTERNAL_ERROR",
+        502: "BAD_GATEWAY",
+        503: "SERVICE_UNAVAILABLE",
+        504: "GATEWAY_TIMEOUT",
+    }
+
+    error_code = error_code_map.get(exc.status_code, "ERROR")
+
+    error_response = {
+        "error": error_code,
+        "message": exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+
+    # Log server errors
+    if exc.status_code >= 500:
+        logger.warning(
+            f"HTTP exception: {exc.status_code} - {exc.detail}",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "status_code": exc.status_code,
+            }
+        )
+
+    return JSONResponse(status_code=exc.status_code, content=error_response)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """
+    Handle Pydantic request validation errors with standardized format.
+
+    Converts FastAPI's RequestValidationError (from request body/query validation)
+    to our standardized format with detailed field-level error information.
+    """
+    request_id = get_request_id()
+
+    # Extract validation error details
+    validation_errors = []
+    for error in exc.errors():
+        error_detail = {
+            "field": ".".join(str(loc) for loc in error.get("loc", [])),
+            "message": error.get("msg", "Validation error"),
+            "type": error.get("type", "value_error"),
+        }
+        # Include the invalid value if it's safe to expose
+        if "input" in error and error["input"] is not None:
+            # Don't expose potentially sensitive values
+            input_val = error["input"]
+            if isinstance(input_val, (str, int, float, bool)):
+                # Truncate long strings
+                if isinstance(input_val, str) and len(input_val) > 100:
+                    input_val = input_val[:100] + "..."
+                error_detail["input"] = input_val
+        validation_errors.append(error_detail)
+
+    error_response = {
+        "error": "VALIDATION_ERROR",
+        "message": "Request validation failed",
+        "details": {"validation_errors": validation_errors},
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+
+    logger.debug(
+        f"Validation error: {len(validation_errors)} field(s) failed validation",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "error_count": len(validation_errors),
+        }
+    )
+
+    return JSONResponse(status_code=422, content=error_response)
+
+
+@app.exception_handler(PydanticValidationError)
+async def pydantic_validation_error_handler(
+    request: Request, exc: PydanticValidationError
+) -> JSONResponse:
+    """
+    Handle Pydantic validation errors (not from request parsing).
+
+    This catches validation errors that occur during manual model validation
+    or data processing, converting them to our standardized format.
+    """
+    request_id = get_request_id()
+
+    # Extract validation error details
+    validation_errors = []
+    for error in exc.errors():
+        error_detail = {
+            "field": ".".join(str(loc) for loc in error.get("loc", [])),
+            "message": error.get("msg", "Validation error"),
+            "type": error.get("type", "value_error"),
+        }
+        validation_errors.append(error_detail)
+
+    error_response = {
+        "error": "VALIDATION_ERROR",
+        "message": "Data validation failed",
+        "details": {"validation_errors": validation_errors},
+    }
+    if request_id:
+        error_response["request_id"] = request_id
+
+    return JSONResponse(status_code=422, content=error_response)
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Handle unexpected exceptions."""
+    """
+    Handle unexpected exceptions with standardized format.
+
+    This is the fallback handler for any exception not caught by more
+    specific handlers. It logs the full exception for debugging while
+    returning a safe error message to the client.
+    """
     request_id = get_request_id()
+    settings = get_settings()
+
     logger.exception(
         f"Unhandled exception: {exc}",
         extra={
             "path": request.url.path,
             "method": request.method,
+            "exception_type": type(exc).__name__,
         }
     )
-    error_response = {
-        "error": "internal_server_error",
-        "message": str(exc) if get_settings().server.debug else "An unexpected error occurred",
-    }
+
+    # Only expose exception details in debug mode
+    if settings.server.debug:
+        error_response = {
+            "error": "INTERNAL_ERROR",
+            "message": str(exc),
+            "details": {"exception_type": type(exc).__name__},
+        }
+    else:
+        error_response = {
+            "error": "INTERNAL_ERROR",
+            "message": "An unexpected error occurred",
+        }
+
     if request_id:
         error_response["request_id"] = request_id
+
     return JSONResponse(status_code=500, content=error_response)
 
 

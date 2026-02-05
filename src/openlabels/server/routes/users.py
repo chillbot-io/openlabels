@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     paginate_query,
 )
+from openlabels.server.exceptions import NotFoundError, ConflictError, BadRequestError
 from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
@@ -89,7 +90,10 @@ async def create_user(
         )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="User with this email already exists")
+        raise ConflictError(
+            message="User with this email already exists",
+            conflicting_field="email",
+        )
 
     # Create user
     new_user = User(
@@ -116,7 +120,11 @@ async def get_user(
     """Get user details."""
     user = await session.get(User, user_id)
     if not user or user.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise NotFoundError(
+            message="User not found",
+            resource_type="User",
+            resource_id=str(user_id),
+        )
     return user
 
 
@@ -130,7 +138,11 @@ async def update_user(
     """Update user details."""
     user = await session.get(User, user_id)
     if not user or user.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise NotFoundError(
+            message="User not found",
+            resource_type="User",
+            resource_id=str(user_id),
+        )
 
     if user_data.name is not None:
         user.name = user_data.name
@@ -150,11 +162,15 @@ async def delete_user(
     """Delete a user."""
     user = await session.get(User, user_id)
     if not user or user.tenant_id != current_user.tenant_id:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise NotFoundError(
+            message="User not found",
+            resource_type="User",
+            resource_id=str(user_id),
+        )
 
     # Prevent self-deletion
     if user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+        raise BadRequestError(message="Cannot delete yourself")
 
     await session.delete(user)
     await session.flush()
