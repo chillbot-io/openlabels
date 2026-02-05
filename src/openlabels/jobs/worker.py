@@ -20,12 +20,15 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, get_session_context
 from openlabels.jobs.queue import JobQueue
 from openlabels.jobs.tasks.scan import execute_scan_task
 from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
+from openlabels.core.exceptions import JobError
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +76,9 @@ def set_worker_state(state: dict) -> None:
                 try:
                     with open(WORKER_STATE_FILE) as f:
                         current = json.load(f)
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, IOError) as parse_err:
+                    # Non-critical: state file may be corrupted or being written by another process
+                    logger.debug(f"Could not parse worker state file: {parse_err}")
             current.update(state)
             with open(WORKER_STATE_FILE, "w") as f:
                 json.dump(current, f)
@@ -182,7 +186,8 @@ class Worker:
                         logger.info(f"Reclaimed {total_reclaimed} stuck jobs")
 
             except Exception as e:
-                logger.debug(f"Stuck job reclaimer error: {e}")
+                # Log at warning level since stuck jobs could lead to data processing issues
+                logger.warning(f"Stuck job reclaimer error - jobs may remain stuck: {type(e).__name__}: {e}")
 
             await asyncio.sleep(reclaim_interval)
 
@@ -215,7 +220,8 @@ class Worker:
                         logger.info(f"Cleaned up {total_cleaned} expired jobs")
 
             except Exception as e:
-                logger.debug(f"Job cleanup task error: {e}")
+                # Log at warning level since cleanup failures could cause disk/DB bloat
+                logger.warning(f"Job cleanup task error - expired jobs may accumulate: {type(e).__name__}: {e}")
 
             await asyncio.sleep(cleanup_interval)
 
@@ -241,7 +247,8 @@ class Worker:
                 })
 
             except Exception as e:
-                logger.debug(f"Concurrency monitor error: {e}")
+                # Non-critical but worth logging at info level for operational visibility
+                logger.info(f"Concurrency monitor error - workers may not scale dynamically: {type(e).__name__}: {e}")
 
             await asyncio.sleep(self._concurrency_check_interval)
 
@@ -305,8 +312,24 @@ class Worker:
                             await self._execute_job(session, queue, job)
                             break  # Process one job at a time per tenant
 
-            except Exception as e:
-                logger.error(f"Worker {worker_tag} error: {e}")
+            except SQLAlchemyError as e:
+                logger.error(
+                    f"Worker {worker_tag} database error while polling for jobs: "
+                    f"{type(e).__name__}: {e}"
+                )
+            except OSError as e:
+                logger.error(
+                    f"Worker {worker_tag} OS error (network/filesystem issue): "
+                    f"{type(e).__name__}: {e}"
+                )
+            except asyncio.CancelledError:
+                logger.info(f"Worker {worker_tag} task cancelled during shutdown")
+                raise
+            except RuntimeError as e:
+                logger.error(
+                    f"Worker {worker_tag} runtime error during job polling: "
+                    f"{type(e).__name__}: {e}"
+                )
 
             # Sleep between poll cycles
             await asyncio.sleep(1)
@@ -330,14 +353,55 @@ class Worker:
             elif job.task_type == "label_sync":
                 result = await execute_label_sync_task(session, job.payload)
             else:
-                raise ValueError(f"Unknown task type: {job.task_type}")
+                raise JobError(
+                    f"Unknown task type: {job.task_type}",
+                    job_id=str(job.id),
+                    job_type=job.task_type,
+                    context="dispatching job to task handler",
+                )
 
             await queue.complete(job.id, result)
             logger.info(f"Job {job.id} completed successfully")
 
-        except Exception as e:
-            logger.error(f"Job {job.id} failed: {e}")
+        except JobError as e:
+            # Domain-specific job error - log with full context
+            logger.error(f"Job {job.id} ({job.task_type}) failed: {e}")
             await queue.fail(job.id, str(e))
+        except SQLAlchemyError as e:
+            # Database error during job execution
+            error_msg = f"Database error during {job.task_type} task: {type(e).__name__}: {e}"
+            logger.error(f"Job {job.id} failed with database error: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except PermissionError as e:
+            # File/resource permission issue
+            error_msg = f"Permission denied during {job.task_type} task: {e}"
+            logger.error(f"Job {job.id} failed with permission error: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except FileNotFoundError as e:
+            # Missing file/resource
+            error_msg = f"File not found during {job.task_type} task: {e}"
+            logger.error(f"Job {job.id} failed - file not found: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except OSError as e:
+            # General OS/IO error
+            error_msg = f"OS error during {job.task_type} task: {type(e).__name__}: {e}"
+            logger.error(f"Job {job.id} failed with OS error: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except ValueError as e:
+            # Invalid input/data
+            error_msg = f"Invalid data in {job.task_type} task: {e}"
+            logger.error(f"Job {job.id} failed with value error: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except asyncio.CancelledError:
+            # Task cancelled - re-raise to allow graceful shutdown
+            logger.warning(f"Job {job.id} cancelled during execution")
+            await queue.fail(job.id, "Job cancelled during execution")
+            raise
+        except RuntimeError as e:
+            # Catch-all for runtime issues
+            error_msg = f"Runtime error in {job.task_type} task: {type(e).__name__}: {e}"
+            logger.error(f"Job {job.id} failed with runtime error: {error_msg}")
+            await queue.fail(job.id, error_msg)
 
 
 def run_worker(concurrency: Optional[int] = None) -> None:

@@ -537,7 +537,10 @@ class JobQueue:
             settings = get_settings()
             completed_ttl_days = completed_ttl_days or settings.jobs.completed_job_ttl_days
             failed_ttl_days = failed_ttl_days or settings.jobs.failed_job_ttl_days
-        except Exception:
+        except Exception as config_err:
+            # Settings may not be available in tests or standalone usage - use defaults
+            import logging
+            logging.getLogger(__name__).debug(f"Using default TTL values (config unavailable): {config_err}")
             completed_ttl_days = completed_ttl_days or 7
             failed_ttl_days = failed_ttl_days or 30
 
@@ -610,7 +613,10 @@ class JobQueue:
             from openlabels.server.config import get_settings
             settings = get_settings()
             max_age_hours = max_age_hours or settings.jobs.pending_job_max_age_hours
-        except Exception:
+        except Exception as config_err:
+            # Settings may not be available in tests or standalone usage - use defaults
+            import logging
+            logging.getLogger(__name__).debug(f"Using default max_age_hours (config unavailable): {config_err}")
             max_age_hours = max_age_hours or 24
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)

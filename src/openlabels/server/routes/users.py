@@ -13,6 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
 from openlabels.server.models import User, Tenant
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    paginate_query,
+)
 from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
@@ -46,41 +51,27 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
-class UserListResponse(BaseModel):
-    """Paginated list of users."""
-
-    items: list[UserResponse]
-    total: int
-    page: int
-    pages: int
-
-
-@router.get("", response_model=list[UserResponse])
+@router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
-):
+) -> PaginatedResponse[UserResponse]:
     """List all users in the tenant."""
-    # Get total count
-    count_query = select(func.count(User.id)).where(User.tenant_id == user.tenant_id)
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Get users
-    offset = (page - 1) * limit
     query = (
         select(User)
         .where(User.tenant_id == user.tenant_id)
         .order_by(User.created_at.desc())
-        .offset(offset)
-        .limit(limit)
     )
-    result = await session.execute(query)
-    users = result.scalars().all()
 
-    return users
+    result = await paginate_query(
+        session,
+        query,
+        pagination,
+        transformer=lambda u: UserResponse.model_validate(u),
+    )
+
+    return PaginatedResponse[UserResponse](**result)
 
 
 @router.post("", response_model=UserResponse, status_code=201)

@@ -343,6 +343,33 @@ class JobSettings(BaseSettings):
     max_worker_concurrency: int = 32
 
 
+class RedisSettings(BaseSettings):
+    """
+    Redis caching configuration.
+
+    Redis is used for caching frequently accessed data to improve performance.
+    If Redis is unavailable, the system falls back to in-memory caching.
+
+    Environment variables:
+    - OPENLABELS_REDIS__URL: Redis connection URL
+    - OPENLABELS_REDIS__CACHE_TTL_SECONDS: Default cache TTL
+    - OPENLABELS_REDIS__ENABLED: Enable/disable caching
+    - OPENLABELS_REDIS__MAX_CONNECTIONS: Connection pool size
+    - OPENLABELS_REDIS__KEY_PREFIX: Prefix for all cache keys
+    """
+
+    url: str = "redis://localhost:6379"
+    cache_ttl_seconds: int = 300  # 5 minutes default
+    enabled: bool = True
+    max_connections: int = 10
+    key_prefix: str = "openlabels:"
+    # Connection timeouts
+    connect_timeout: float = 5.0
+    socket_timeout: float = 5.0
+    # In-memory fallback settings
+    memory_cache_max_size: int = 1000  # Max items in memory cache
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -365,6 +392,7 @@ class Settings(BaseSettings):
     timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
     circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
     jobs: JobSettings = Field(default_factory=JobSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

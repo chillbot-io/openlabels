@@ -7,26 +7,37 @@ Security features:
 - Request size limits
 - Security headers (HSTS, CSP, X-Frame-Options, etc.)
 - CSRF protection via double-submit cookie pattern
+
+API Versioning:
+- All API routes are available under /api/v1/ (recommended)
+- Legacy routes under /api/ are deprecated but still functional
+- Deprecation warnings are sent via X-API-Deprecation header
 """
 
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
 import uuid
+import warnings
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from pydantic import ValidationError as PydanticValidationError
 
 from openlabels import __version__
 from openlabels.server.config import get_settings
 from openlabels.server.utils import get_client_ip  # noqa: F401 - re-exported for backwards compatibility
 from openlabels.server.db import init_db, close_db
+from openlabels.server.cache import get_cache_manager, close_cache
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
+from openlabels.server.exceptions import APIError, RateLimitError
+from openlabels.server.schemas import ErrorResponse
 from openlabels.server.routes import (
     auth,
     audit,
@@ -66,9 +77,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     await init_db(settings.database.url)
+
+    # Initialize cache (Redis with in-memory fallback)
+    try:
+        cache_manager = await get_cache_manager()
+        if cache_manager.is_redis_connected:
+            logger.info("Redis cache initialized")
+        else:
+            logger.info("Using in-memory cache (Redis not available)")
+    except Exception as e:
+        logger.warning(f"Cache initialization failed: {e} - caching disabled")
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
     # Shutdown
+    await close_cache()
     await close_db()
     logger.info("OpenLabels shutting down")
 
@@ -138,12 +161,17 @@ async def limit_request_size(request: Request, call_next):
     # Check content-length header
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > max_size:
+        request_id = get_request_id()
+        error_response = {
+            "error": "REQUEST_TOO_LARGE",
+            "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
+            "details": {"max_size_mb": settings.security.max_request_size_mb},
+        }
+        if request_id:
+            error_response["request_id"] = request_id
         return JSONResponse(
             status_code=413,
-            content={
-                "error": "request_too_large",
-                "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
-            },
+            content=error_response,
         )
 
     return await call_next(request)
@@ -217,6 +245,51 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+# Deprecation warning middleware for non-versioned API calls
+@app.middleware("http")
+async def add_deprecation_warning(request: Request, call_next):
+    """
+    Add deprecation warning header for legacy API routes.
+
+    Routes matching /api/* but not /api/v1/* are considered deprecated.
+    This helps clients migrate to the versioned API endpoints.
+    """
+    response = await call_next(request)
+
+    path = request.url.path
+
+    # Check if this is a legacy API call (not versioned)
+    # Legacy routes: /api/scans, /api/results, etc.
+    # Versioned routes: /api/v1/scans, /api/v1/results, etc.
+    # Excluded: /api (info), /api/docs, /api/redoc, /api/openapi.json
+    if (
+        path.startswith("/api/")
+        and not path.startswith("/api/v1")
+        and not path.startswith("/api/docs")
+        and not path.startswith("/api/redoc")
+        and not path.startswith("/api/openapi")
+    ):
+        # Add deprecation warning headers
+        response.headers["X-API-Deprecation"] = "true"
+        response.headers["X-API-Deprecation-Date"] = "2025-06-01"
+        response.headers["X-API-Deprecation-Info"] = (
+            "This API endpoint is deprecated. Please migrate to /api/v1/. "
+            "See /api for version information."
+        )
+        # Standard Deprecation header (RFC 8594)
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "2025-06-01T00:00:00Z"
+        response.headers["Link"] = f'</api/v1{path[4:]}>; rel="successor-version"'
+
+        # Log deprecation warning (at debug level to avoid log spam)
+        logger.debug(
+            f"Deprecated API call: {request.method} {path} - "
+            f"Client should migrate to /api/v1{path[4:]}"
+        )
+
+    return response
+
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -253,24 +326,87 @@ async def api_info():
         "name": "OpenLabels API",
         "version": __version__,
         "docs": "/api/docs",
+        "current_version": "v1",
+        "versions": {
+            "v1": "/api/v1",
+        },
+        "deprecation_notice": "Direct /api/* routes are deprecated. Please use /api/v1/* instead.",
     }
 
 
-# Include routers
-app.include_router(auth.router, tags=["Authentication"])  # /auth/* endpoints
-app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
-app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
-app.include_router(scans.router, prefix="/api/scans", tags=["Scans"])
-app.include_router(results.router, prefix="/api/results", tags=["Results"])
-app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
-app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"])
-app.include_router(labels.router, prefix="/api/labels", tags=["Labels"])
-app.include_router(users.router, prefix="/api/users", tags=["Users"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(remediation.router, prefix="/api/remediation", tags=["Remediation"])
-app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
-app.include_router(health.router, prefix="/api/health", tags=["Health"])
-app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+@app.get("/api/v1")
+async def api_v1_info():
+    """API v1 information."""
+    return {
+        "name": "OpenLabels API",
+        "version": __version__,
+        "api_version": "v1",
+        "docs": "/api/docs",
+        "endpoints": {
+            "auth": "/api/v1/auth",
+            "scans": "/api/v1/scans",
+            "results": "/api/v1/results",
+            "targets": "/api/v1/targets",
+            "labels": "/api/v1/labels",
+            "jobs": "/api/v1/jobs",
+            "schedules": "/api/v1/schedules",
+            "users": "/api/v1/users",
+            "dashboard": "/api/v1/dashboard",
+            "remediation": "/api/v1/remediation",
+            "monitoring": "/api/v1/monitoring",
+            "health": "/api/v1/health",
+            "settings": "/api/v1/settings",
+            "audit": "/api/v1/audit",
+        },
+    }
+
+
+# Create versioned API router (v1)
+api_v1_router = APIRouter(prefix="/api/v1")
+
+# Include all API routes under v1
+api_v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_v1_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
+api_v1_router.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
+api_v1_router.include_router(scans.router, prefix="/scans", tags=["Scans"])
+api_v1_router.include_router(results.router, prefix="/results", tags=["Results"])
+api_v1_router.include_router(targets.router, prefix="/targets", tags=["Targets"])
+api_v1_router.include_router(schedules.router, prefix="/schedules", tags=["Schedules"])
+api_v1_router.include_router(labels.router, prefix="/labels", tags=["Labels"])
+api_v1_router.include_router(users.router, prefix="/users", tags=["Users"])
+api_v1_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+api_v1_router.include_router(remediation.router, prefix="/remediation", tags=["Remediation"])
+api_v1_router.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
+api_v1_router.include_router(health.router, prefix="/health", tags=["Health"])
+api_v1_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+
+# Mount versioned API router
+app.include_router(api_v1_router)
+
+# Create deprecated legacy API router (maintains backward compatibility)
+# These routes will be marked as deprecated and include warning headers
+api_legacy_router = APIRouter(prefix="/api", deprecated=True)
+
+# Include all API routes under legacy /api prefix (deprecated)
+api_legacy_router.include_router(auth.router, prefix="/auth", tags=["Authentication (Deprecated)"])
+api_legacy_router.include_router(audit.router, prefix="/audit", tags=["Audit (Deprecated)"])
+api_legacy_router.include_router(jobs.router, prefix="/jobs", tags=["Jobs (Deprecated)"])
+api_legacy_router.include_router(scans.router, prefix="/scans", tags=["Scans (Deprecated)"])
+api_legacy_router.include_router(results.router, prefix="/results", tags=["Results (Deprecated)"])
+api_legacy_router.include_router(targets.router, prefix="/targets", tags=["Targets (Deprecated)"])
+api_legacy_router.include_router(schedules.router, prefix="/schedules", tags=["Schedules (Deprecated)"])
+api_legacy_router.include_router(labels.router, prefix="/labels", tags=["Labels (Deprecated)"])
+api_legacy_router.include_router(users.router, prefix="/users", tags=["Users (Deprecated)"])
+api_legacy_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard (Deprecated)"])
+api_legacy_router.include_router(remediation.router, prefix="/remediation", tags=["Remediation (Deprecated)"])
+api_legacy_router.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring (Deprecated)"])
+api_legacy_router.include_router(health.router, prefix="/health", tags=["Health (Deprecated)"])
+api_legacy_router.include_router(settings.router, prefix="/settings", tags=["Settings (Deprecated)"])
+
+# Mount legacy API router (for backward compatibility)
+app.include_router(api_legacy_router)
+
+# WebSocket routes (not versioned - real-time communication)
 app.include_router(ws.router, tags=["WebSocket"])
 
 # Web UI

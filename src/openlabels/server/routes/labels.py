@@ -178,7 +178,8 @@ async def sync_labels(
             from openlabels.labeling.engine import get_label_cache
             get_label_cache().invalidate()
         except Exception as e:
-            logger.debug(f"Failed to invalidate label cache: {e}")
+            # Cache invalidation failure is non-critical but may cause stale label data
+            logger.info(f"Failed to invalidate label cache after sync: {type(e).__name__}: {e}")
 
         return {
             "message": "Label sync completed",
@@ -216,7 +217,8 @@ async def get_sync_status(
         from openlabels.labeling.engine import get_label_cache
         cache_stats = get_label_cache().stats
     except Exception as e:
-        logger.debug(f"Failed to get cache stats: {e}")
+        # Cache stats are informational - log at debug level
+        logger.debug(f"Failed to get label cache stats: {type(e).__name__}: {e}")
         cache_stats = None
 
     return {
@@ -247,20 +249,22 @@ async def list_label_rules(
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ) -> list[LabelRuleResponse]:
-    """List label mapping rules."""
-    query = select(LabelRule).where(
-        LabelRule.tenant_id == user.tenant_id
-    ).order_by(LabelRule.priority.desc())
+    """List label mapping rules with label names using a single JOIN query."""
+    # Use JOIN to fetch rules with their labels in a single query (avoids N+1)
+    query = (
+        select(LabelRule, SensitivityLabel.name.label("label_name"))
+        .outerjoin(SensitivityLabel, LabelRule.label_id == SensitivityLabel.id)
+        .where(LabelRule.tenant_id == user.tenant_id)
+        .order_by(LabelRule.priority.desc())
+    )
     result = await session.execute(query)
-    rules = result.scalars().all()
+    rows = result.all()
 
-    # Enrich with label names
+    # Build responses with label names from the join
     responses = []
-    for rule in rules:
-        label = await session.get(SensitivityLabel, rule.label_id)
+    for rule, label_name in rows:
         response = LabelRuleResponse.model_validate(rule)
-        if label:
-            response.label_name = label.name
+        response.label_name = label_name
         responses.append(response)
 
     return responses
@@ -441,28 +445,36 @@ async def update_label_mappings(
     for rule in existing_result.scalars().all():
         await session.delete(rule)
 
-    # Create new rules for non-empty mappings
     # Flush after deletes to avoid sentinel matching issues with asyncpg
     await session.flush()
 
+    # Batch fetch all requested labels in a single query (avoids N+1)
+    requested_label_ids = [lid for lid in data.values() if lid]
+    valid_labels = {}
+    if requested_label_ids:
+        labels_query = select(SensitivityLabel).where(
+            SensitivityLabel.id.in_(requested_label_ids),
+            SensitivityLabel.tenant_id == user.tenant_id,
+        )
+        labels_result = await session.execute(labels_query)
+        valid_labels = {label.id: label for label in labels_result.scalars().all()}
+
+    # Create new rules for non-empty mappings using pre-fetched labels
     priority = 100
     for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
         label_id = data.get(risk_tier)
-        if label_id:
-            # Verify label exists
-            label = await session.get(SensitivityLabel, label_id)
-            if label and label.tenant_id == user.tenant_id:
-                rule = LabelRule(
-                    tenant_id=user.tenant_id,
-                    rule_type="risk_tier",
-                    match_value=risk_tier,
-                    label_id=label_id,
-                    priority=priority,
-                    created_by=user.id,
-                )
-                session.add(rule)
-                # Flush each insert individually to avoid asyncpg sentinel matching issues
-                await session.flush()
+        if label_id and label_id in valid_labels:
+            rule = LabelRule(
+                tenant_id=user.tenant_id,
+                rule_type="risk_tier",
+                match_value=risk_tier,
+                label_id=label_id,
+                priority=priority,
+                created_by=user.id,
+            )
+            session.add(rule)
+            # Flush each insert individually to avoid asyncpg sentinel matching issues
+            await session.flush()
         priority -= 10
 
     # Check if HTMX request

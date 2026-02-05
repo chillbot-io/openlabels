@@ -13,6 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 from openlabels.jobs.queue import JobQueue
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 
@@ -50,15 +55,6 @@ class QueueStatsResponse(BaseModel):
     failed: int
     cancelled: int
     failed_by_type: dict[str, int]
-
-
-class PaginatedJobsResponse(BaseModel):
-    """Paginated list of jobs."""
-
-    items: list[JobResponse]
-    total: int
-    page: int
-    page_size: int
 
 
 class RequeueRequest(BaseModel):
@@ -112,14 +108,13 @@ async def get_queue_stats(
     return QueueStatsResponse(**stats)
 
 
-@router.get("/failed", response_model=PaginatedJobsResponse)
+@router.get("/failed", response_model=PaginatedResponse[JobResponse])
 async def list_failed_jobs(
     task_type: Optional[str] = Query(None, description="Filter by task type"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
-) -> PaginatedJobsResponse:
+) -> PaginatedResponse[JobResponse]:
     """
     List failed jobs (dead letter queue).
 
@@ -131,14 +126,17 @@ async def list_failed_jobs(
     total = await queue.get_failed_count(task_type)
 
     # Get paginated results
-    offset = (page - 1) * page_size
-    jobs = await queue.get_failed_jobs(task_type, limit=page_size, offset=offset)
+    jobs = await queue.get_failed_jobs(
+        task_type, limit=pagination.page_size, offset=pagination.offset
+    )
 
-    return PaginatedJobsResponse(
-        items=[JobResponse.model_validate(job) for job in jobs],
-        total=total,
-        page=page,
-        page_size=page_size,
+    return PaginatedResponse[JobResponse](
+        **create_paginated_response(
+            items=[JobResponse.model_validate(job) for job in jobs],
+            total=total,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
     )
 
 

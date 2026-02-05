@@ -85,8 +85,10 @@ def _safe_regex_match(pattern: str, text: str) -> bool:
     except re.error:
         # Invalid regex pattern
         return False
-    except Exception:
-        # Any other error - fail safely
+    except Exception as e:
+        # Any other error - fail safely but log for debugging
+        import logging
+        logging.getLogger(__name__).debug(f"Regex match failed safely: {type(e).__name__}: {e}")
         return False
 
 
@@ -329,5 +331,11 @@ def validate_filter(filter_str: str) -> Optional[str]:
     try:
         parse_filter(filter_str)
         return None
-    except Exception as e:
+    except (ValueError, SyntaxError) as e:
+        # Expected validation errors - return message
         return str(e)
+    except Exception as e:
+        # Unexpected errors - log and return generic message
+        import logging
+        logging.getLogger(__name__).warning(f"Unexpected error validating filter '{filter_str}': {type(e).__name__}: {e}")
+        return f"Invalid filter expression: {type(e).__name__}"

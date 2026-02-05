@@ -159,7 +159,9 @@ def validate_sharepoint_target_config(config: dict) -> dict:
     # Parse and validate URL
     try:
         parsed = urlparse(site_url)
-    except Exception:
+    except Exception as url_err:
+        # Log invalid URLs for security monitoring - could indicate injection attempts
+        logger.warning(f"Failed to parse SharePoint URL '{site_url[:100]}...': {type(url_err).__name__}")
         raise HTTPException(status_code=400, detail="Invalid site_url format")
 
     # Must be HTTPS

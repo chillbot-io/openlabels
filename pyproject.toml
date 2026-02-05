@@ -64,6 +64,9 @@ dependencies = [
     "psutil>=5.9.0",  # System resource monitoring
     "croniter>=2.0.0",  # Cron expression parsing for schedules
 
+    # Caching
+    "redis>=5.0.0",  # Redis client with async support
+
     # File extractors
     "pymupdf>=1.23.0",  # PDF text extraction
     "python-docx>=1.1.0",  # DOCX text extraction

@@ -25,6 +25,7 @@ from openlabels.core.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitOpenError,
 )
+from openlabels.core.exceptions import GraphAPIError, ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +165,9 @@ class GraphClient:
                 recovery_timeout=settings.circuit_breaker.recovery_timeout,
                 exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
             )
-        except Exception:
-            # Fallback to defaults if settings not available
+        except Exception as settings_err:
+            # Fallback to defaults if settings not available (e.g., during tests)
+            logger.debug(f"Using default Graph client config (settings unavailable): {settings_err}")
             self._timeout = timeout or 30.0
             self._connect_timeout = connect_timeout or 10.0
             cb_config = CircuitBreakerConfig()
@@ -261,14 +263,44 @@ class GraphClient:
             }
 
             # Use connection pool if available, otherwise create temp client
-            if self._client:
-                response = await self._client.post(auth_url, data=data)
-            else:
-                async with httpx.AsyncClient() as temp_client:
-                    response = await temp_client.post(auth_url, data=data)
+            try:
+                if self._client:
+                    response = await self._client.post(auth_url, data=data)
+                else:
+                    async with httpx.AsyncClient() as temp_client:
+                        response = await temp_client.post(auth_url, data=data)
 
-            response.raise_for_status()
-            token_data = response.json()
+                if response.status_code == 401:
+                    raise GraphAPIError(
+                        "Authentication failed - invalid client credentials",
+                        status_code=401,
+                        endpoint=auth_url,
+                        context="acquiring access token for Graph API",
+                    )
+                elif response.status_code == 400:
+                    error_detail = response.json().get("error_description", "Bad request")
+                    raise GraphAPIError(
+                        f"Token request failed: {error_detail}",
+                        status_code=400,
+                        endpoint=auth_url,
+                        context="acquiring access token for Graph API",
+                    )
+
+                response.raise_for_status()
+                token_data = response.json()
+
+            except httpx.TimeoutException as e:
+                raise GraphAPIError(
+                    "Timeout while acquiring access token",
+                    endpoint=auth_url,
+                    context="connection to Azure AD timed out",
+                ) from e
+            except httpx.ConnectError as e:
+                raise GraphAPIError(
+                    "Failed to connect to Azure AD for authentication",
+                    endpoint=auth_url,
+                    context="network connectivity issue to login.microsoftonline.com",
+                ) from e
 
             self._access_token = token_data["access_token"]
             expires_in = token_data.get("expires_in", 3600)

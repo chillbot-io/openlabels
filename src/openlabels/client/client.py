@@ -1,5 +1,9 @@
 """
 Python SDK client for OpenLabels API.
+
+Supports API versioning:
+- Default API version: v1 (/api/v1/)
+- Legacy routes (/api/) are deprecated but still supported
 """
 
 from typing import Optional
@@ -15,12 +19,17 @@ class OpenLabelsClient:
     Example:
         client = OpenLabelsClient("http://localhost:8000", token="...")
         scans = await client.list_scans()
+
+    API Versioning:
+        By default, the client uses /api/v1/ endpoints.
+        To use legacy (deprecated) endpoints, set api_version=None.
     """
 
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
         token: Optional[str] = None,
+        api_version: Optional[str] = "v1",
     ):
         """
         Initialize the client.
@@ -28,9 +37,18 @@ class OpenLabelsClient:
         Args:
             base_url: OpenLabels server URL
             token: Optional Bearer token for authentication
+            api_version: API version to use (default: "v1"). Set to None for legacy routes.
         """
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self.api_version = api_version
+
+    @property
+    def api_base(self) -> str:
+        """Get the base URL for API calls."""
+        if self.api_version:
+            return f"{self.base_url}/api/{self.api_version}"
+        return f"{self.base_url}/api"
 
     def _headers(self) -> dict:
         """Get request headers."""
@@ -54,7 +72,7 @@ class OpenLabelsClient:
         """Create a new scan."""
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.base_url}/api/scans",
+                f"{self.api_base}/scans",
                 headers=self._headers(),
                 json={"target_id": str(target_id), "name": name},
             )
@@ -74,7 +92,7 @@ class OpenLabelsClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/scans",
+                f"{self.api_base}/scans",
                 headers=self._headers(),
                 params=params,
             )
@@ -85,7 +103,7 @@ class OpenLabelsClient:
         """Get scan details."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/scans/{scan_id}",
+                f"{self.api_base}/scans/{scan_id}",
                 headers=self._headers(),
             )
             response.raise_for_status()
@@ -95,7 +113,7 @@ class OpenLabelsClient:
         """Cancel a scan."""
         async with httpx.AsyncClient() as client:
             response = await client.delete(
-                f"{self.base_url}/api/scans/{scan_id}",
+                f"{self.api_base}/scans/{scan_id}",
                 headers=self._headers(),
             )
             response.raise_for_status()
@@ -117,7 +135,7 @@ class OpenLabelsClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/results",
+                f"{self.api_base}/results",
                 headers=self._headers(),
                 params=params,
             )
@@ -128,7 +146,7 @@ class OpenLabelsClient:
         """Get result details."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/results/{result_id}",
+                f"{self.api_base}/results/{result_id}",
                 headers=self._headers(),
             )
             response.raise_for_status()
@@ -142,7 +160,7 @@ class OpenLabelsClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/results/stats",
+                f"{self.api_base}/results/stats",
                 headers=self._headers(),
                 params=params,
             )
@@ -158,7 +176,7 @@ class OpenLabelsClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/targets",
+                f"{self.api_base}/targets",
                 headers=self._headers(),
                 params=params,
             )
@@ -174,7 +192,7 @@ class OpenLabelsClient:
         """Create a scan target."""
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.base_url}/api/targets",
+                f"{self.api_base}/targets",
                 headers=self._headers(),
                 json={"name": name, "adapter": adapter, "config": config},
             )
@@ -186,7 +204,7 @@ class OpenLabelsClient:
         """Get dashboard statistics."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/dashboard/stats",
+                f"{self.api_base}/dashboard/stats",
                 headers=self._headers(),
             )
             response.raise_for_status()
@@ -200,7 +218,7 @@ class OpenLabelsClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/api/dashboard/heatmap",
+                f"{self.api_base}/dashboard/heatmap",
                 headers=self._headers(),
                 params=params,
             )
