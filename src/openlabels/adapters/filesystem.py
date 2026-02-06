@@ -9,6 +9,7 @@ Features:
 - Exposure level calculation from permissions
 """
 
+import asyncio
 import logging
 import platform
 import stat
@@ -98,15 +99,16 @@ class FilesystemAdapter:
     ) -> AsyncIterator[FileInfo]:
         """Recursively walk a directory with filtering."""
         try:
-            entries = list(directory.iterdir())
+            entries = await asyncio.to_thread(lambda: list(directory.iterdir()))
         except PermissionError:
             logger.debug(f"Permission denied: {directory}")
             return
 
         for entry in entries:
             try:
-                if entry.is_file():
-                    stat_info = entry.stat()
+                is_file = await asyncio.to_thread(entry.is_file)
+                if is_file:
+                    stat_info = await asyncio.to_thread(entry.stat)
                     file_info = FileInfo(
                         path=str(entry.absolute()),
                         name=entry.name,
@@ -122,7 +124,7 @@ class FilesystemAdapter:
                     if filter_config.should_include(file_info):
                         yield file_info
 
-                elif entry.is_dir() and recursive:
+                elif (await asyncio.to_thread(entry.is_dir)) and recursive:
                     # Check if directory should be skipped by pattern
                     dir_path = str(entry.absolute())
                     skip_dir = False

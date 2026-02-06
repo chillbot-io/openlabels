@@ -1461,6 +1461,7 @@ class PatternDetector(BaseDetector):
 
     def detect(self, text: str) -> List[Span]:
         spans = []
+        seen = {}  # (start, end, entity_type) -> index in spans (keep highest confidence)
 
         for idx, (pattern, entity_type, confidence, group_idx) in enumerate(PATTERNS):
             for match in pattern.finditer(text):
@@ -1526,6 +1527,24 @@ class PatternDetector(BaseDetector):
                     if _is_false_positive_name(value):
                         continue
 
+                # Deduplication: skip if same span already seen with equal or higher confidence
+                key = (start, end, entity_type)
+                if key in seen:
+                    existing_idx = seen[key]
+                    if confidence <= spans[existing_idx].confidence:
+                        continue
+                    # Replace existing span with higher-confidence match
+                    spans[existing_idx] = Span(
+                        start=start,
+                        end=end,
+                        text=value,
+                        entity_type=entity_type,
+                        confidence=confidence,
+                        detector=self.name,
+                        tier=self.tier,
+                    )
+                    continue
+
                 span = Span(
                     start=start,
                     end=end,
@@ -1535,6 +1554,7 @@ class PatternDetector(BaseDetector):
                     detector=self.name,
                     tier=self.tier,
                 )
+                seen[key] = len(spans)
                 spans.append(span)
 
         return spans

@@ -400,6 +400,16 @@ class LabelingEngine:
         else:
             return await self._apply_sidecar(file_path, label_id, label_name)
 
+    @staticmethod
+    def _read_file_bytes(path: str) -> bytes:
+        with open(path, "rb") as f:
+            return f.read()
+
+    @staticmethod
+    def _write_file_bytes(path: str, data: bytes) -> None:
+        with open(path, "wb") as f:
+            f.write(data)
+
     async def _apply_office_metadata(
         self,
         file_path: str,
@@ -408,8 +418,7 @@ class LabelingEngine:
     ) -> LabelResult:
         """Apply label via Office document custom properties."""
         try:
-            with open(file_path, "rb") as f:
-                content = f.read()
+            content = await asyncio.to_thread(self._read_file_bytes, file_path)
 
             with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
                 file_list = zf.namelist()
@@ -468,8 +477,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                             )
                             out_zf.writestr("[Content_Types].xml", content_types.encode("utf-8"))
 
-                with open(file_path, "wb") as f:
-                    f.write(output.getvalue())
+                await asyncio.to_thread(self._write_file_bytes, file_path, output.getvalue())
 
             return LabelResult(
                 success=True,
@@ -488,74 +496,54 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             logger.error(f"Invalid Office file format: {e}")
             return await self._apply_sidecar(file_path, label_id, label_name)
 
+    def _apply_pdf_metadata_sync(
+        self,
+        file_path: str,
+        label_id: str,
+        label_name: Optional[str] = None,
+    ) -> LabelResult:
+        """Sync implementation of PDF metadata labeling (runs in thread)."""
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError:
+            from PyPDF2 import PdfReader, PdfWriter
+
+        reader = PdfReader(file_path)
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            writer.add_page(page)
+
+        if reader.metadata:
+            writer.add_metadata(dict(reader.metadata))
+
+        writer.add_metadata({
+            "/OpenLabels_LabelId": label_id,
+            "/OpenLabels_LabelName": label_name or "",
+            "/Classification": label_name or label_id,
+        })
+
+        with open(file_path, "wb") as f:
+            writer.write(f)
+
+        return LabelResult(
+            success=True,
+            label_id=label_id,
+            label_name=label_name,
+            method="pdf_metadata",
+        )
+
     async def _apply_pdf_metadata(
         self,
         file_path: str,
         label_id: str,
         label_name: Optional[str] = None,
     ) -> LabelResult:
-        """Apply label via PDF metadata."""
+        """Apply label via PDF metadata (runs sync I/O in thread)."""
         try:
-            # Try pypdf first
-            try:
-                from pypdf import PdfReader, PdfWriter
-
-                reader = PdfReader(file_path)
-                writer = PdfWriter()
-
-                for page in reader.pages:
-                    writer.add_page(page)
-
-                # Copy existing metadata
-                if reader.metadata:
-                    writer.add_metadata(dict(reader.metadata))
-
-                # Add label metadata
-                writer.add_metadata({
-                    "/OpenLabels_LabelId": label_id,
-                    "/OpenLabels_LabelName": label_name or "",
-                    "/Classification": label_name or label_id,
-                })
-
-                with open(file_path, "wb") as f:
-                    writer.write(f)
-
-                return LabelResult(
-                    success=True,
-                    label_id=label_id,
-                    label_name=label_name,
-                    method="pdf_metadata",
-                )
-
-            except ImportError:
-                # Fallback to PyPDF2
-                from PyPDF2 import PdfReader, PdfWriter
-
-                reader = PdfReader(file_path)
-                writer = PdfWriter()
-
-                for page in reader.pages:
-                    writer.add_page(page)
-
-                if reader.metadata:
-                    writer.add_metadata(dict(reader.metadata))
-
-                writer.add_metadata({
-                    "/OpenLabels_LabelId": label_id,
-                    "/OpenLabels_LabelName": label_name or "",
-                    "/Classification": label_name or label_id,
-                })
-
-                with open(file_path, "wb") as f:
-                    writer.write(f)
-
-                return LabelResult(
-                    success=True,
-                    label_id=label_id,
-                    label_name=label_name,
-                    method="pdf_metadata",
-                )
-
+            return await asyncio.to_thread(
+                self._apply_pdf_metadata_sync, file_path, label_id, label_name
+            )
         except PermissionError as e:
             logger.error(f"Permission denied applying PDF metadata label: {e}")
             return await self._apply_sidecar(file_path, label_id, label_name)
@@ -582,8 +570,10 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
                 "applied_by": "openlabels",
             }
 
-            with open(sidecar_path, "w") as f:
-                json.dump(sidecar_data, f, indent=2)
+            def _write_sidecar():
+                with open(sidecar_path, "w") as f:
+                    json.dump(sidecar_data, f, indent=2)
+            await asyncio.to_thread(_write_sidecar)
 
             return LabelResult(
                 success=True,
