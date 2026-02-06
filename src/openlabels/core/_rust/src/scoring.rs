@@ -14,7 +14,6 @@ use std::collections::{HashMap, HashSet};
 use lazy_static::lazy_static;
 
 const WEIGHT_SCALE: f64 = 4.0;
-const DEFAULT_CONFIDENCE: f64 = 0.85;
 
 lazy_static! {
     static ref ENTITY_WEIGHTS: HashMap<&'static str, i32> = {

@@ -127,6 +127,19 @@ def _validate_single_span(span: Span, text: str, text_len: int) -> Optional[str]
     return None
 
 
+# =============================================================================
+# RUST ACCELERATION (default — Python below is fallback only)
+# =============================================================================
+
+_USE_RUST_SPANS = False
+try:
+    from openlabels_matcher import check_overlaps as _rust_check_overlaps
+    _USE_RUST_SPANS = True
+    logger.info("Span operations: using Rust acceleration")
+except ImportError:
+    logger.info("Span operations: using Python fallback")
+
+
 def check_for_overlaps(
     spans: List[Span],
     allow_identical: bool = True,
@@ -134,6 +147,9 @@ def check_for_overlaps(
 ) -> List[Tuple[Span, Span]]:
     """
     Find overlapping spans (diagnostic only, doesn't filter).
+
+    Uses Rust O(n log n) sort-and-sweep when available,
+    falls back to Python O(n²) nested loop otherwise.
 
     Args:
         spans: Spans to check
@@ -146,22 +162,36 @@ def check_for_overlaps(
     if not spans or len(spans) < 2:
         return []
 
+    if _USE_RUST_SPANS:
+        # Convert spans to (start, end) tuples for Rust
+        span_tuples = [(s.start, s.end) for s in spans]
+        # Sort to get a consistent index mapping
+        sorted_spans = sorted(range(len(spans)), key=lambda i: (spans[i].start, spans[i].end))
+        sorted_span_list = [spans[i] for i in sorted_spans]
+        sorted_tuples = [(s.start, s.end) for s in sorted_span_list]
+
+        rust_overlaps = _rust_check_overlaps(sorted_tuples, allow_identical)
+
+        overlaps = [(sorted_span_list[i], sorted_span_list[j]) for i, j in rust_overlaps]
+
+        if overlaps:
+            logger.debug(
+                f"[{context}] Found {len(overlaps)} overlapping span pairs"
+            )
+        return overlaps
+
+    # Python fallback: O(n²) nested loop
     overlaps: List[Tuple[Span, Span]] = []
 
-    # Sort by start position for efficient overlap detection
     sorted_spans = sorted(spans, key=lambda s: (s.start, s.end))
 
     for i in range(len(sorted_spans)):
         for j in range(i + 1, len(sorted_spans)):
             s1, s2 = sorted_spans[i], sorted_spans[j]
 
-            # s2.start >= s1.start due to sorting
-            # Overlap if s2.start < s1.end
             if s2.start >= s1.end:
-                # No overlap with s2 or any later spans
                 break
 
-            # Found overlap
             if allow_identical and s1.start == s2.start and s1.end == s2.end:
                 continue
 

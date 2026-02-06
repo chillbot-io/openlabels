@@ -74,7 +74,7 @@ pub fn checksum_ssn(ssn: &str) -> (bool, f64) {
     let area = &digits[..3];
     let group = &digits[3..5];
     let serial = &digits[5..];
-    let mut confidence = 0.99;
+    let mut confidence: f64 = 0.99;
 
     // Invalid area numbers (000, 666, 900-999)
     if area == "000" || area == "666" || area.starts_with('9') {

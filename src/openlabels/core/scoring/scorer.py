@@ -309,29 +309,12 @@ def score_to_tier(score: float) -> RiskTier:
         return RiskTier.MINIMAL
 
 
-def score(
+def _score_python(
     entities: Dict[str, int],
     exposure: str = 'PRIVATE',
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> ScoringResult:
-    """
-    Calculate risk score from detected entities and exposure context.
-
-    This is the main scoring function used by OpenLabels.
-
-    Args:
-        entities: Dict of {entity_type: count} from detection
-        exposure: Exposure level (PRIVATE, INTERNAL, ORG_WIDE, PUBLIC)
-        confidence: Average detection confidence
-
-    Returns:
-        ScoringResult with score, tier, and breakdown
-
-    Example:
-        >>> result = score({'SSN': 1, 'DIAGNOSIS': 1}, exposure='PUBLIC')
-        >>> print(f"Risk: {result.score} ({result.tier.value})")
-        Risk: 100 (CRITICAL)
-    """
+    """Python implementation of scoring (fallback)."""
     # Calculate content score
     content_score = calculate_content_score(entities, confidence)
 
@@ -355,3 +338,55 @@ def score(
         categories=get_categories(entities),
         exposure=exposure.upper(),
     )
+
+
+# =============================================================================
+# RUST ACCELERATION (default — Python above is fallback only)
+# =============================================================================
+
+_USE_RUST_SCORING = False
+try:
+    from openlabels_matcher import score_entities as _rust_score
+    _USE_RUST_SCORING = True
+    logger.info("Scoring engine: using Rust acceleration")
+except ImportError:
+    logger.info("Scoring engine: using Python fallback")
+
+
+def score(
+    entities: Dict[str, int],
+    exposure: str = 'PRIVATE',
+    confidence: float = DEFAULT_CONFIDENCE,
+) -> ScoringResult:
+    """
+    Calculate risk score from detected entities and exposure context.
+
+    This is the main scoring function used by OpenLabels.
+    Uses Rust acceleration when available, Python fallback otherwise.
+
+    Args:
+        entities: Dict of {entity_type: count} from detection
+        exposure: Exposure level (PRIVATE, INTERNAL, ORG_WIDE, PUBLIC)
+        confidence: Average detection confidence
+
+    Returns:
+        ScoringResult with score, tier, and breakdown
+
+    Example:
+        >>> result = score({'SSN': 1, 'DIAGNOSIS': 1}, exposure='PUBLIC')
+        >>> print(f"Risk: {result.score} ({result.tier.value})")
+        Risk: 100 (CRITICAL)
+    """
+    if _USE_RUST_SCORING:
+        r = _rust_score(entities, exposure, confidence)
+        return ScoringResult(
+            score=r.score,
+            tier=RiskTier(r.tier),
+            content_score=r.content_score,
+            exposure_multiplier=r.exposure_multiplier,
+            co_occurrence_multiplier=r.co_occurrence_multiplier,
+            co_occurrence_rules=r.co_occurrence_rules,
+            categories=set(r.categories),
+            exposure=r.exposure,
+        )
+    return _score_python(entities, exposure, confidence)
