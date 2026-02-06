@@ -69,8 +69,8 @@ All extraction now properly handled by `extractors.py` module.
 ### 4.2 Remove Unused Variable ✅
 Removed `_EXTRACTORS: List[BaseExtractor] = []` from `extractors.py`.
 
-### 4.3 Update Scrubiq Reference ✅
-Removed "Adapted from scrubiq" comment from `extractors.py`.
+### 4.3 Update Stale References ✅
+Removed all stale project name references from source code, tests, and docs.
 
 ### 4.4 Clean Up Empty Exception Handlers ✅
 **Reviewed and documented:** The empty exception handlers are intentional patterns:

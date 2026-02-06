@@ -247,6 +247,7 @@ class ResultService(BaseService):
         self,
         job_id: UUID | None = None,
         risk_tier: str | None = None,
+        has_pii: bool | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanResult], int]:
@@ -256,6 +257,7 @@ class ResultService(BaseService):
         Args:
             job_id: Optional job ID to filter results
             risk_tier: Optional risk tier filter
+            has_pii: Optional filter for files with/without PII detections
             limit: Maximum number of results to return (default: 50)
             offset: Number of results to skip (default: 0)
 
@@ -277,6 +279,11 @@ class ResultService(BaseService):
             conditions.append(ScanResult.job_id == job_id)
         if risk_tier:
             conditions.append(ScanResult.risk_tier == risk_tier)
+        if has_pii is not None:
+            if has_pii:
+                conditions.append(ScanResult.total_entities > 0)
+            else:
+                conditions.append(ScanResult.total_entities == 0)
 
         # Get total count
         count_query = select(func.count()).where(*conditions).select_from(ScanResult)

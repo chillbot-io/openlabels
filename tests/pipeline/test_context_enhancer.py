@@ -8,7 +8,7 @@ Tests cover:
 - ContextEnhancer class methods
 - EnhancementResult dataclass
 
-Adapted from scrubiq/tests/detectors/test_context_enhancer.py
+Tests context-aware PII detection enhancement.
 """
 
 import re

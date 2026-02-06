@@ -7,5 +7,5 @@ This package provides:
 - CLI: Command-line administration tools
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 __author__ = "Chillbot.io"
