@@ -9,11 +9,24 @@ Provides:
 """
 
 import fnmatch
+import logging
 import re
 from datetime import datetime
 from enum import Enum
 from typing import Protocol, AsyncIterator, Optional
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+# Rust file filter acceleration
+_USE_RUST_FILTER = False
+_RustFileFilter = None
+try:
+    from openlabels_matcher import FileFilter as _RustFileFilter
+    _USE_RUST_FILTER = True
+    logger.info("File filter: using Rust acceleration")
+except ImportError:
+    logger.info("File filter: using Python fallback")
 
 
 class ExposureLevel(str, Enum):
@@ -76,9 +89,23 @@ class FilterConfig:
             ext.lower().lstrip(".") for ext in self.exclude_extensions
         ]
 
+        # Compile Rust filter if available
+        self._rust_filter = None
+        if _USE_RUST_FILTER and _RustFileFilter is not None:
+            self._rust_filter = _RustFileFilter(
+                self.exclude_extensions,
+                self.exclude_patterns,
+                self.exclude_accounts,
+                self.min_size_bytes,
+                self.max_size_bytes,
+            )
+
     def should_include(self, file_info: "FileInfo") -> bool:
         """
         Check if a file should be included based on filter rules.
+
+        Uses Rust acceleration when available for O(1) extension lookup
+        and pre-compiled glob patterns.
 
         Args:
             file_info: File to check
@@ -86,6 +113,16 @@ class FilterConfig:
         Returns:
             True if file passes all filters, False to exclude
         """
+        # Rust fast path
+        if self._rust_filter is not None:
+            return self._rust_filter.should_include(
+                file_info.name,
+                file_info.path,
+                file_info.owner,
+                file_info.size,
+            )
+
+        # Python fallback
         # Check extension
         if self.exclude_extensions:
             ext = file_info.name.rsplit(".", 1)[-1].lower() if "." in file_info.name else ""

@@ -168,7 +168,7 @@ pub static BUILTIN_PATTERNS: &[(&str, &str, Option<&str>, f64)] = &[
     // API Keys (generic patterns)
     (
         "API_KEY_GENERIC",
-        r"\b(?:api[_-]?key|apikey|api[_-]?token)\s*[:=]\s*['\"]?([A-Za-z0-9_-]{20,})['\"]?",
+        r#"\b(?:api[_-]?key|apikey|api[_-]?token)\s*[:=]\s*['"]?([A-Za-z0-9_-]{20,})['"]?"#,
         None,
         0.70,
     ),
@@ -220,7 +220,7 @@ pub static BUILTIN_PATTERNS: &[(&str, &str, Option<&str>, f64)] = &[
     // Generic Passwords in Config
     (
         "PASSWORD_ASSIGNMENT",
-        r"(?i)(?:password|passwd|pwd)\s*[:=]\s*['\"]?[^\s'\"]{8,}['\"]?",
+        r#"(?i)(?:password|passwd|pwd)\s*[:=]\s*['"]?[^\s'"]{8,}['"]?"#,
         None,
         0.75,
     ),

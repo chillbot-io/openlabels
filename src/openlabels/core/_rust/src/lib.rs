@@ -4,13 +4,15 @@
 //! for parallel pattern matching and Rayon for batch processing.
 
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 use regex::{Regex, RegexSet};
 use rayon::prelude::*;
-use std::collections::HashMap;
 
 mod validators;
 mod patterns;
+mod checksum;
+mod scoring;
+mod file_filter;
+mod spans;
 
 use validators::*;
 use patterns::BUILTIN_PATTERNS;
@@ -249,7 +251,38 @@ fn validate(text: &str, validator: &str) -> (bool, f64) {
 /// Python module initialization.
 #[pymodule]
 fn openlabels_matcher(_py: Python, m: &PyModule) -> PyResult<()> {
+    // Pattern matcher
     m.add_class::<RawMatch>()?;
     m.add_class::<PatternMatcher>()?;
+
+    // Checksum validators (hot path: per-match during detection)
+    m.add_function(wrap_pyfunction!(checksum::checksum_ssn, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_credit_card, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_npi, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_dea, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_iban, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_vin, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_aba_routing, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_ups_tracking, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_fedex_tracking, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_usps_tracking, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_cusip, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_isin, m)?)?;
+    m.add_function(wrap_pyfunction!(checksum::checksum_batch, m)?)?;
+
+    // Scoring engine (hot path: per-file after detection)
+    m.add_class::<scoring::RustScoringResult>()?;
+    m.add_function(wrap_pyfunction!(scoring::score_entities, m)?)?;
+    m.add_function(wrap_pyfunction!(scoring::score_entities_batch, m)?)?;
+
+    // File filter (hot path: per-file during enumeration)
+    m.add_class::<file_filter::FileFilter>()?;
+
+    // Span operations (hot path: per-file during pipeline merge/dedup)
+    m.add_function(wrap_pyfunction!(spans::check_overlaps, m)?)?;
+    m.add_function(wrap_pyfunction!(spans::deduplicate_spans, m)?)?;
+    m.add_function(wrap_pyfunction!(spans::batch_overlap_check, m)?)?;
+    m.add_function(wrap_pyfunction!(spans::batch_deduplicate, m)?)?;
+
     Ok(())
 }

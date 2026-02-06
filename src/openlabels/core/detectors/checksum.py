@@ -15,15 +15,17 @@ These detections have the highest confidence (0.99) because
 they are mathematically validated, not just pattern-matched.
 """
 
+import logging
 import re
 from typing import List, Tuple
 
 from ..types import Span, Tier
 from .base import BaseDetector
 
+logger = logging.getLogger(__name__)
 
 # =============================================================================
-# VALIDATORS
+# VALIDATORS (Python fallback — Rust overrides these below)
 # =============================================================================
 
 def luhn_check(num: str) -> bool:
@@ -428,6 +430,45 @@ def validate_isin(isin: str) -> Tuple[bool, float]:
         return False, 0.0
 
     return True, 0.99
+
+
+# =============================================================================
+# RUST ACCELERATION (default — Python above is fallback only)
+# =============================================================================
+
+try:
+    from openlabels_matcher import (
+        checksum_ssn as _rust_ssn,
+        checksum_credit_card as _rust_cc,
+        checksum_npi as _rust_npi,
+        checksum_dea as _rust_dea,
+        checksum_iban as _rust_iban,
+        checksum_vin as _rust_vin,
+        checksum_aba_routing as _rust_aba,
+        checksum_ups_tracking as _rust_ups,
+        checksum_fedex_tracking as _rust_fedex,
+        checksum_usps_tracking as _rust_usps,
+        checksum_cusip as _rust_cusip,
+        checksum_isin as _rust_isin,
+    )
+
+    # Rebind module-level names so CHECKSUM_PATTERNS captures Rust functions
+    validate_ssn = _rust_ssn
+    validate_credit_card = _rust_cc
+    validate_npi = _rust_npi
+    validate_dea = _rust_dea
+    validate_iban = _rust_iban
+    validate_vin = _rust_vin
+    validate_aba_routing = _rust_aba
+    validate_ups_tracking = _rust_ups
+    validate_fedex_tracking = _rust_fedex
+    validate_usps_tracking = _rust_usps
+    validate_cusip = _rust_cusip
+    validate_isin = _rust_isin
+
+    logger.info("Checksum validators: using Rust acceleration")
+except ImportError:
+    logger.info("Checksum validators: using Python fallback")
 
 
 # =============================================================================

@@ -66,3 +66,6 @@ Thumbs.db
 credentials.json
 secrets.json
 dump.rdb
+
+# Rust
+target/
