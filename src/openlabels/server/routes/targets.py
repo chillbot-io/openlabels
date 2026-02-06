@@ -16,7 +16,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -284,6 +284,15 @@ class TargetCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Target name")
     adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive)$", description="Adapter type")
     config: dict = Field(..., description="Adapter-specific configuration")
+
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, v: str) -> str:
+        """Strip null bytes and other dangerous control characters."""
+        sanitized = v.replace("\x00", "")
+        if not sanitized or not sanitized.strip():
+            raise ValueError("Name must not be empty after sanitization")
+        return sanitized
 
 
 class TargetUpdate(BaseModel):

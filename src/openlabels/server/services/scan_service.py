@@ -194,8 +194,13 @@ class ScanService(BaseService):
             Tuple of (list of ScanJob objects, total count)
         """
         # Build base conditions
+        VALID_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
         conditions = [ScanJob.tenant_id == self.tenant_id]
         if status:
+            if status not in VALID_STATUSES:
+                # Return empty results for invalid status values rather than
+                # letting invalid enum values reach PostgreSQL
+                return [], 0
             conditions.append(ScanJob.status == status)
 
         # Get total count using efficient SQL COUNT
