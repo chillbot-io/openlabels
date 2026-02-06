@@ -264,7 +264,7 @@ class TieredPipeline:
                 )
             else:
                 logger.info(f"ML model check: {report.summary()}")
-        except Exception as e:
+        except (ImportError, OSError, RuntimeError) as e:
             logger.debug(f"Model availability check failed (non-fatal): {e}")
 
         if self.config.use_onnx:
@@ -451,7 +451,7 @@ class TieredPipeline:
                     for span in processed_spans
                 ]
                 policy_result = get_policy_engine().evaluate(entity_matches)
-            except Exception as e:
+            except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed: {e}")
 
         processing_time_ms = (time.time() - start_time) * 1000
@@ -488,7 +488,7 @@ class TieredPipeline:
                     all_spans.extend(spans)
                     if spans:
                         detectors_used.append(detector.name)
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError) as e:
                     logger.error(f"Stage 1 detector {detector.name} failed: {e}")
 
         return all_spans, detectors_used
@@ -505,7 +505,7 @@ class TieredPipeline:
                 all_spans.extend(spans)
                 if spans:
                     detectors_used.append(self._pii_bert.name)
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError) as e:
                 logger.error(f"PII-BERT failed: {e}")
 
         return all_spans, detectors_used
@@ -542,7 +542,7 @@ class TieredPipeline:
                     all_spans.extend(spans)
                     if spans:
                         detectors_used.append(detector.name)
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError) as e:
                     logger.error(f"Deep analysis detector {detector.name} failed: {e}")
 
         return all_spans, detectors_used
@@ -553,7 +553,7 @@ class TieredPipeline:
             if not detector.is_available():
                 return []
             return detector.detect(text)
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Detector {detector.name} error: {e}")
             return []
 
@@ -590,7 +590,7 @@ class TieredPipeline:
 
         try:
             return self._medical_detector.has_medical_context(text)
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             logger.debug(f"Medical context detection failed: {e}")
             return False
 
@@ -614,7 +614,7 @@ class TieredPipeline:
             if self._coref_resolver and deduped:
                 try:
                     deduped = self._coref_resolver(text, deduped)
-                except Exception as e:
+                except (RuntimeError, ValueError, IndexError) as e:
                     logger.error(f"Coreference resolution failed: {e}")
 
         # Optional context enhancement
@@ -623,7 +623,7 @@ class TieredPipeline:
             if self._context_enhancer and deduped:
                 try:
                     deduped = self._context_enhancer.enhance(text, deduped)
-                except Exception as e:
+                except (RuntimeError, ValueError, IndexError) as e:
                     logger.error(f"Context enhancement failed: {e}")
 
         # Sort by position
@@ -757,7 +757,7 @@ class TieredPipeline:
             # Future: could use text detection model only (faster than full OCR)
             return True
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.debug(f"Quick text check failed: {e}")
             return True  # Assume text exists on error
 
@@ -773,7 +773,7 @@ class TieredPipeline:
 
         try:
             return self._ocr_engine.extract_text(image_path)
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error(f"OCR extraction failed: {e}")
             return ""
 
@@ -810,7 +810,7 @@ class TieredPipeline:
         try:
             text = file_path.read_text(encoding="utf-8", errors="ignore")
             return self.detect(text)
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             logger.error(f"Failed to read file {file_path}: {e}")
             return PipelineResult(
                 result=DetectionResult(

@@ -374,7 +374,7 @@ if PYSIDE_AVAILABLE:
                 "About OpenLabels",
                 f"<h3>OpenLabels v{__version__}</h3>"
                 "<p>Open Source Data Classification & Auto-Labeling Platform</p>"
-                "<p>Copyright (c) 2024 Chillbot.io</p>"
+                "<p>Copyright (c) 2024-2026 Chillbot.io</p>"
                 "<p><a href='https://github.com/chillbot-io/openlabels'>GitHub</a></p>"
             )
 

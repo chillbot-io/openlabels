@@ -13,6 +13,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
+
 from openlabels.adapters.base import ExposureLevel
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 
@@ -142,7 +144,7 @@ class BaseGraphAdapter:
                 exc_info=True,
             )
             return False
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.warning(
                 f"{self.adapter_type} connection test failed with unexpected error: "
                 f"{type(e).__name__}: {e}",

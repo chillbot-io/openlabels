@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
@@ -170,8 +171,8 @@ async def get_optional_user(
     except ValueError:
         # Invalid token - user is not authenticated
         return None
-    except Exception as e:
-        # Log unexpected errors in authentication
+    except (SQLAlchemyError, RuntimeError) as e:
+        # Log unexpected errors in authentication (DB or runtime failures)
         import logging
         logging.getLogger(__name__).debug(f"Authentication check failed: {type(e).__name__}: {e}")
         return None

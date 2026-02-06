@@ -140,7 +140,7 @@ class SIDResolver:
             try:
                 from openlabels.auth.graph import get_graph_client
                 self._graph_client = get_graph_client()
-            except Exception as e:
+            except (ImportError, RuntimeError, OSError) as e:
                 logger.warning(f"Failed to initialize Graph client: {e}")
                 # Don't permanently disable — transient errors (network blips,
                 # service restarts) should not require a process restart to recover.
@@ -251,7 +251,7 @@ class SIDResolver:
                         )
                         self._add_to_cache(resolved)
                         return resolved
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError, KeyError, AttributeError) as e:
                 logger.warning(f"Graph API resolution failed for SID {sid}: {e}")
 
         # 4. Fallback - return SID as name

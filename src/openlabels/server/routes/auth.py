@@ -82,7 +82,7 @@ def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
     # Parse the URL for validation
     try:
         parsed = urlparse(redirect_uri)
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         # Log the exception type and message for debugging URL parsing failures
         logger.warning(
             f"Failed to parse redirect URI '{redirect_uri}': {type(e).__name__}: {e}"
@@ -361,7 +361,7 @@ async def auth_callback(
             scopes=["User.Read", "openid", "profile", "email"],
             redirect_uri=callback_url,
         )
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
         logger.error(f"Token acquisition failed: {e}")
         log_security_event(
             event_type="token_acquisition_failed",
@@ -581,7 +581,7 @@ async def get_token(
                     )
             except HTTPException:
                 raise
-            except Exception as e:
+            except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                 # SECURITY: Log token refresh failures for security monitoring
                 # This could indicate token theft, expired credentials, or service issues
                 logger.warning(f"Token refresh failed during session validation: {type(e).__name__}: {e}")

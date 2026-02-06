@@ -235,7 +235,7 @@ class ClassificationAgent:
                     source=entity.source,
                     metadata=entity.metadata if hasattr(entity, 'metadata') else {},
                 ))
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Agent {self.agent_id} classification error: {e}")
             error = str(e)
 
@@ -296,7 +296,7 @@ class ClassificationAgent:
             except mp.queues.Empty:
                 # No work available, continue waiting
                 continue
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, MemoryError) as e:
                 logger.error(f"Agent {self.agent_id} error: {e}")
 
         # Final stats

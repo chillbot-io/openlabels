@@ -280,7 +280,7 @@ def decode_cursor(cursor: str) -> tuple[dict[str, Any], str]:
     try:
         cursor_data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
         return cursor_data["v"], cursor_data.get("d", "forward")
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError) as e:
         raise ValueError(f"Invalid cursor: {e}")
 
 

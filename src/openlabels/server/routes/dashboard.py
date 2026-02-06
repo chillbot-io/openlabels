@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, cast, Date, and_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -101,7 +102,7 @@ async def get_overall_stats(
         if cached is not None:
             logger.debug(f"Cache hit for dashboard stats (tenant: {user.tenant_id})")
             return OverallStats(**cached)
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache read failed: {e}")
 
     # Count total and active scans in one query
@@ -144,7 +145,7 @@ async def get_overall_stats(
         cache = await get_cache_manager()
         await cache.set(cache_key, response.model_dump(), ttl=DASHBOARD_STATS_TTL)
         logger.debug(f"Cached dashboard stats for tenant: {user.tenant_id}")
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache write failed: {e}")
 
     return response
@@ -470,7 +471,7 @@ async def get_access_heatmap(
             if 0 <= day < 7 and 0 <= hour < 24:
                 heatmap[day][hour] = row.count
 
-    except Exception as e:
+    except (SQLAlchemyError, RuntimeError) as e:
         # FileAccessEvent table may not exist, return empty heatmap
         logger.debug(f"Access heatmap query failed (table may not exist): {e}")
 

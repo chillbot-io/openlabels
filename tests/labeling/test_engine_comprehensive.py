@@ -380,9 +380,12 @@ class TestLabelingEnginePDFMetadata:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_text("dummy")
 
-        # Mock PdfReader to raise PermissionError (which is caught and triggers fallback)
-        with patch("PyPDF2.PdfReader", side_effect=PermissionError("Access denied")):
-            with patch.object(engine, "_apply_sidecar") as mock_sidecar:
+        # Writer catches PermissionError internally and returns a failed result
+        with patch.object(
+            engine._writer, "apply_pdf_metadata",
+            return_value=LabelResult(success=False, error="Permission denied: Access denied"),
+        ):
+            with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
                 result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
@@ -401,9 +404,12 @@ class TestLabelingEnginePDFMetadata:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_text("dummy")
 
-        # Mock PdfReader to raise OSError (which is caught and triggers fallback)
-        with patch("PyPDF2.PdfReader", side_effect=OSError("File error")):
-            with patch.object(engine, "_apply_sidecar") as mock_sidecar:
+        # Writer catches OSError internally and returns a failed result
+        with patch.object(
+            engine._writer, "apply_pdf_metadata",
+            return_value=LabelResult(success=False, error="OS error: File error"),
+        ):
+            with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
                 result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
@@ -422,9 +428,12 @@ class TestLabelingEnginePDFMetadata:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_text("dummy")
 
-        # Mock PdfReader to raise ValueError (which is caught and triggers fallback)
-        with patch("PyPDF2.PdfReader", side_effect=ValueError("Invalid format")):
-            with patch.object(engine, "_apply_sidecar") as mock_sidecar:
+        # Writer catches ValueError internally and returns a failed result
+        with patch.object(
+            engine._writer, "apply_pdf_metadata",
+            return_value=LabelResult(success=False, error="Invalid PDF: Invalid format"),
+        ):
+            with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
                 result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")

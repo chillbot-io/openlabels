@@ -3,7 +3,7 @@
 Tests pronoun resolution, partial name linking, and the rule-based
 fallback (ONNX model tests require the actual model files).
 
-Adapted from scrubiq/tests/pipeline/test_coref.py
+Tests rule-based coreference resolution.
 """
 
 import pytest

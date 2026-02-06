@@ -12,6 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, delete
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import SensitivityLabel, Tenant
@@ -91,7 +92,7 @@ async def execute_label_sync_task(
                 "error": "Azure AD credentials not configured - check AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET",
                 **LabelSyncResult().to_dict(),
             }
-    except Exception as e:
+    except (ImportError, RuntimeError, AttributeError) as e:
         logger.error(f"Failed to get settings for label sync: {e}")
         return {
             "success": False,
@@ -216,7 +217,7 @@ async def sync_labels_from_graph(
 
                 result.labels_synced += 1
 
-            except Exception as e:
+            except (SQLAlchemyError, ValueError, KeyError) as e:
                 logger.error(f"Failed to sync label {label_id}: {e}")
                 result.errors.append(f"Label {label_id}: {e}")
 
@@ -233,7 +234,7 @@ async def sync_labels_from_graph(
             f"{result.labels_updated} updated, {result.labels_removed} removed"
         )
 
-    except Exception as e:
+    except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
         logger.error(f"Label sync failed: {e}")
         result.errors.append(str(e))
 
