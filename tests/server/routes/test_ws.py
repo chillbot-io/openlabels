@@ -112,7 +112,7 @@ async def setup_multi_tenant_data(test_client, test_db):
         tenant_id=tenant_b.id,
         email=f"other-user-{suffix}@localhost",
         name=f"Other User {suffix}",
-        role="user",
+        role="viewer",
     )
     test_db.add(user_b)
     await test_db.flush()

@@ -10,9 +10,11 @@ import contextlib
 import pytest
 from uuid import uuid4
 
+from unittest.mock import AsyncMock, patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from openlabels.server.app import app
 from openlabels.server.db import get_session
+from openlabels.server.dependencies import get_db_session
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import (
     Tenant, User, ScanJob, ScanResult, ScanTarget,
@@ -208,6 +210,7 @@ async def create_client_for_user(test_db, user, tenant):
 
     # Set up overrides
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_db_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
@@ -216,9 +219,15 @@ async def create_client_for_user(test_db, user, tenant):
     for limiter in limiters:
         limiter.enabled = False
 
+    mock_cache = MagicMock()
+    mock_cache.is_redis_connected = False
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            yield client
+        with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
+             patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
+             patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                yield client
     finally:
         # Always clean up, even if test fails
         app.dependency_overrides.clear()
