@@ -110,8 +110,8 @@ class TestAuthEndpoints:
     """Tests for authentication endpoints."""
 
     async def test_auth_status_unauthenticated(self, test_client):
-        """Test GET /auth/status when not authenticated."""
-        response = await test_client.get("/auth/status")
+        """Test GET /auth/status when not authenticated (follows legacy redirect)."""
+        response = await test_client.get("/auth/status", follow_redirects=True)
         assert response.status_code == 200
         data = response.json()
         assert data["authenticated"] is False

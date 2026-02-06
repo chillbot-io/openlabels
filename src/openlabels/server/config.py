@@ -517,3 +517,9 @@ def get_settings() -> Settings:
     return Settings(**yaml_config)
 
 
+def reload_settings() -> Settings:
+    """Clear settings cache and return a fresh instance."""
+    get_settings.cache_clear()
+    return get_settings()
+
+

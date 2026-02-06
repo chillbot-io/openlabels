@@ -414,12 +414,20 @@ async def test_db(database_url):
         else:
             # Subsequent tests: truncate all tables (fast, no DDL,
             # avoids asyncpg statement cache invalidation issues)
-            async with engine.begin() as conn:
-                table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
-                if table_names:
-                    await conn.execute(text(
-                        f"TRUNCATE TABLE {', '.join(table_names)} CASCADE"
-                    ))
+            try:
+                async with engine.begin() as conn:
+                    table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
+                    if table_names:
+                        await conn.execute(text(
+                            f"TRUNCATE TABLE {', '.join(table_names)} CASCADE"
+                        ))
+            except Exception:
+                # If truncate fails (e.g. missing tables from schema changes),
+                # fall back to full schema recreation
+                async with engine.begin() as conn:
+                    await conn.execute(text("DROP SCHEMA public CASCADE"))
+                    await conn.execute(text("CREATE SCHEMA public"))
+                    await conn.run_sync(Base.metadata.create_all)
     except Exception as exc:
         await engine.dispose()
         pytest.fail(f"PostgreSQL not reachable at {database_url}: {exc}")

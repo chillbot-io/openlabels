@@ -55,6 +55,7 @@ class CursorPaginationParams(BaseModel):
 
     cursor: Optional[str] = Field(None, description="Pagination cursor from previous response")
     limit: int = Field(50, ge=1, le=100, description="Number of items per page")
+    include_total: bool = Field(True, description="Whether to include total count")
 
     def decode(self) -> Optional[CursorData]:
         """Decode the cursor string into CursorData."""

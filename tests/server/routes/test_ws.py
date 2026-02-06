@@ -1262,28 +1262,37 @@ class TestWebSocketIntegration:
         from openlabels.server.db import get_session
 
         scan_job = setup_ws_test_data["scan_job"]
-
-        async def override_get_session():
-            yield test_db
-
-        app.dependency_overrides[get_session] = override_get_session
+        tenant = setup_ws_test_data["tenant"]
+        user = setup_ws_test_data["user"]
 
         mock_settings = MagicMock()
         mock_settings.server.environment = "development"
         mock_settings.auth.provider = "none"
 
         try:
-            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
-                with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                    mock_factory.return_value = _mock_session_factory(test_db)
+            # Mock authenticate_websocket directly to avoid event loop conflicts
+            # between TestClient (sync) and the async test_db session
+            mock_auth = AsyncMock(return_value=(user.id, tenant.id))
 
-                    client = TestClient(app)
-                    # In dev mode, connection should be accepted
-                    with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
-                        # Send ping
-                        websocket.send_text("ping")
-                        response = websocket.receive_text()
-                        assert response == "pong"
+            # Create a self-contained mock session factory that doesn't use test_db
+            # (which belongs to the pytest event loop, not TestClient's event loop)
+            mock_scan = MagicMock()
+            mock_scan.tenant_id = tenant.id
+            mock_session = AsyncMock()
+            mock_session.get = AsyncMock(return_value=mock_scan)
+
+            with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
+                with patch('openlabels.server.routes.ws.authenticate_websocket', mock_auth):
+                    with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                        mock_factory.return_value = _mock_session_factory(mock_session)
+
+                        client = TestClient(app)
+                        # In dev mode, connection should be accepted
+                        with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                            # Send ping
+                            websocket.send_text("ping")
+                            response = websocket.receive_text()
+                            assert response == "pong"
         finally:
             app.dependency_overrides.clear()
 
@@ -1294,30 +1303,38 @@ class TestWebSocketIntegration:
         from openlabels.server.db import get_session
 
         scan_job = setup_ws_test_data["scan_job"]
-
-        async def override_get_session():
-            yield test_db
-
-        app.dependency_overrides[get_session] = override_get_session
+        tenant = setup_ws_test_data["tenant"]
+        user = setup_ws_test_data["user"]
 
         mock_settings = MagicMock()
         mock_settings.server.environment = "development"
         mock_settings.auth.provider = "none"
 
         try:
+            # Mock authenticate_websocket directly to avoid event loop conflicts
+            # between TestClient (sync) and the async test_db session
+            mock_auth = AsyncMock(return_value=(user.id, tenant.id))
+
+            # Create a self-contained mock session factory that doesn't use test_db
+            mock_scan = MagicMock()
+            mock_scan.tenant_id = tenant.id
+            mock_session = AsyncMock()
+            mock_session.get = AsyncMock(return_value=mock_scan)
+
             with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
-                with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                    mock_factory.return_value = _mock_session_factory(test_db)
+                with patch('openlabels.server.routes.ws.authenticate_websocket', mock_auth):
+                    with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
+                        mock_factory.return_value = _mock_session_factory(mock_session)
 
-                    # Reduce timeout for testing
-                    with patch('openlabels.server.routes.ws.asyncio.wait_for') as mock_wait:
-                        mock_wait.side_effect = asyncio.TimeoutError()
+                        # Reduce timeout for testing
+                        with patch('openlabels.server.routes.ws.asyncio.wait_for') as mock_wait:
+                            mock_wait.side_effect = asyncio.TimeoutError()
 
-                        client = TestClient(app)
-                        with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
-                            # Should receive heartbeat after timeout
-                            data = websocket.receive_json()
-                            assert data["type"] == "heartbeat"
+                            client = TestClient(app)
+                            with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                                # Should receive heartbeat after timeout
+                                data = websocket.receive_json()
+                                assert data["type"] == "heartbeat"
         finally:
             app.dependency_overrides.clear()
 

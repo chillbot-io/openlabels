@@ -370,8 +370,9 @@ class TestDeleteLabelRule:
         delete_response = await test_client.delete(f"/api/labels/rules/{rule_id}")
         assert delete_response.status_code == 204
 
-        # Expire cached objects so the next query sees the delete
-        session.expire_all()
+        # Expunge all cached objects to avoid MissingGreenlet errors from
+        # lazy loading expired ORM objects in the shared async session
+        session.expunge_all()
 
         # Check rules list
         response = await test_client.get("/api/v1/labels/rules")

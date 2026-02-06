@@ -577,9 +577,10 @@ class TestClearAllResults:
         delete_response = await test_client.delete("/api/results")
         assert delete_response.status_code == 200
 
-        # Expire cached objects so the next query sees the deletions
+        # Expunge all cached objects to avoid MissingGreenlet errors from
+        # lazy loading expired ORM objects in the shared async session
         session = setup_results_data["session"]
-        session.expire_all()
+        session.expunge_all()
 
         response = await test_client.get("/api/v1/results")
         data = response.json()

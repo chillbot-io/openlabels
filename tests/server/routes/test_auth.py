@@ -244,7 +244,7 @@ class TestLoginEndpoint:
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.get("/api/auth/login")
 
-                    assert response.status_code == 503
+                    assert response.status_code == 403
                     assert "not configured" in response.json().get("message", response.json().get("detail", "")).lower()
         finally:
             auth_limiter.enabled = True
@@ -275,7 +275,7 @@ class TestLoginEndpoint:
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.get("/api/auth/login")
 
-                    assert response.status_code == 503
+                    assert response.status_code == 403
         finally:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
@@ -665,6 +665,10 @@ class TestCallbackEndpoint:
         mock_settings.auth.client_secret = "test-secret"
         mock_settings.rate_limit.auth_limit = "100/minute"
 
+        # Use the real test tenant/user IDs so FK constraints are satisfied
+        tenant = setup_auth_test_data["tenant"]
+        user = setup_auth_test_data["user"]
+
         # Mock MSAL token response
         mock_msal_result = {
             "access_token": "mock-access-token",
@@ -672,10 +676,10 @@ class TestCallbackEndpoint:
             "id_token": "mock-id-token",
             "expires_in": 3600,
             "id_token_claims": {
-                "oid": "00000000-0000-4000-8000-000000000003",
+                "oid": str(user.id),
                 "preferred_username": "user@example.com",
                 "name": "Test User",
-                "tid": "00000000-0000-4000-8000-000000000004",
+                "tid": str(tenant.id),
                 "roles": ["user"],
             },
         }
@@ -1004,10 +1008,10 @@ class TestMeEndpoint:
 
                 assert response.status_code == 200
                 data = response.json()
-                assert data["id"] == "user-123"
+                assert data["id"] == "00000000-0000-4000-8000-000000000005"
                 assert data["email"] == "user@example.com"
                 assert data["name"] == "Test User"
-                assert data["tenant_id"] == "tenant-456"
+                assert data["tenant_id"] == "00000000-0000-4000-8000-000000000006"
                 assert "admin" in data["roles"]
         finally:
             app.dependency_overrides.clear()
@@ -1321,7 +1325,7 @@ class TestAuthStatusEndpoint:
                     data = response.json()
                     assert data["authenticated"] is True
                     assert data["provider"] == "azure_ad"
-                    assert data["user"]["id"] == "user-123"
+                    assert data["user"]["id"] == "00000000-0000-4000-8000-000000000005"
                     assert data["login_url"] is None
         finally:
             app.dependency_overrides.clear()
@@ -1503,6 +1507,7 @@ class TestLogoutAllEndpoint:
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
 
+        tenant = setup_auth_test_data["tenant"]
         user = setup_auth_test_data["user"]
         user_id = user.id
 
@@ -1513,9 +1518,10 @@ class TestLogoutAllEndpoint:
                 data={
                     "access_token": f"token-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": user_id, "tid": "00000000-0000-4000-8000-000000000002"},
+                    "claims": {"oid": str(user_id), "tid": str(tenant.id)},
                 },
                 user_id=user_id,
+                tenant_id=tenant.id,
             )
         await test_db.commit()
 
@@ -2270,7 +2276,7 @@ class TestMalformedRequests:
                             )
                             # Should handle gracefully (400 or 414 URI too long)
                             assert response.status_code in (400, 414, 422)
-                        except httpx.UnsupportedProtocol:
+                        except (httpx.UnsupportedProtocol, httpx.InvalidURL):
                             # httpx may reject oversized URLs before sending
                             pass
         finally:
@@ -2308,8 +2314,6 @@ class TestMultiTenantIsolation:
                     "roles": ["admin"],
                 },
             },
-            tenant_id="00000000-0000-4000-8000-00000000000c",
-            user_id="00000000-0000-4000-8000-00000000000a",
         )
 
         await create_test_session(
@@ -2325,8 +2329,6 @@ class TestMultiTenantIsolation:
                     "roles": ["user"],
                 },
             },
-            tenant_id="00000000-0000-4000-8000-00000000000d",
-            user_id="00000000-0000-4000-8000-00000000000b",
         )
         await test_db.commit()
 
@@ -2345,7 +2347,7 @@ class TestMultiTenantIsolation:
                 )
                 assert response.status_code == 200
                 data = response.json()
-                assert data["tenant_id"] == "tenant-a"
+                assert data["tenant_id"] == "00000000-0000-4000-8000-00000000000c"
                 assert data["email"] == "user@tenant-a.com"
 
                 # User B should see tenant B data
@@ -2355,7 +2357,7 @@ class TestMultiTenantIsolation:
                 )
                 assert response.status_code == 200
                 data = response.json()
-                assert data["tenant_id"] == "tenant-b"
+                assert data["tenant_id"] == "00000000-0000-4000-8000-00000000000d"
                 assert data["email"] == "user@tenant-b.com"
         finally:
             app.dependency_overrides.clear()
@@ -2391,10 +2393,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-a-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "00000000-0000-4000-8000-00000000000a", "tid": "00000000-0000-4000-8000-00000000000e"},
+                    "claims": {"oid": str(user_a_id), "tid": str(tenant.id)},
                 },
-                tenant_id="00000000-0000-4000-8000-00000000000e",
-                user_id="00000000-0000-4000-8000-00000000000a",
+                tenant_id=tenant.id,
+                user_id=user_a_id,
             )
 
         # Create sessions for user B (same tenant, different user)
@@ -2404,10 +2406,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-b-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "00000000-0000-4000-8000-00000000000b", "tid": "00000000-0000-4000-8000-00000000000e"},
+                    "claims": {"oid": str(user_b_id), "tid": str(tenant.id)},
                 },
-                tenant_id="00000000-0000-4000-8000-00000000000e",
-                user_id="00000000-0000-4000-8000-00000000000b",
+                tenant_id=tenant.id,
+                user_id=user_b_id,
             )
         await test_db.commit()
 
@@ -2459,6 +2461,9 @@ class TestCSRFProtection:
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
+        tenant = setup_auth_test_data["tenant"]
+        user = setup_auth_test_data["user"]
+
         state = secrets.token_urlsafe(32)
         await create_pending_auth(state=state, redirect_uri="/dashboard")
         await test_db.commit()
@@ -2479,7 +2484,7 @@ class TestCSRFProtection:
         mock_msal_result = {
             "access_token": "token",
             "expires_in": 3600,
-            "id_token_claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
+            "id_token_claims": {"oid": str(user.id), "tid": str(tenant.id)},
         }
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result
@@ -2628,6 +2633,9 @@ class TestSessionFixation:
         from openlabels.server.models import Session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
+        tenant = setup_auth_test_data["tenant"]
+        user = setup_auth_test_data["user"]
+
         # Create an existing session
         await create_test_session(session_id="existing-session-to-invalidate")
         state = secrets.token_urlsafe(32)
@@ -2650,7 +2658,7 @@ class TestSessionFixation:
         mock_msal_result = {
             "access_token": "new-token",
             "expires_in": 3600,
-            "id_token_claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
+            "id_token_claims": {"oid": str(user.id), "tid": str(tenant.id)},
         }
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result

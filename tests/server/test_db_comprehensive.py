@@ -180,12 +180,12 @@ class TestGetSessionIntegration:
 
             tenant_name = f"test-commit-{id(self)}"
 
-            # Insert through get_session using async-for pattern
-            # (manual __anext__ / aclose can deadlock with asyncpg)
+            # Insert through get_session using async-for pattern.
+            # Do NOT use break - it triggers GeneratorExit which bypasses commit.
+            # The generator only yields once, so the loop exits naturally after commit.
             async for session in get_session():
                 tenant = Tenant(name=tenant_name)
                 session.add(tenant)
-                break  # exits normally → triggers commit
 
             # Verify commit in new session
             async for session2 in get_session():

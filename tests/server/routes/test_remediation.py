@@ -26,7 +26,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 async def setup_remediation_data(test_db):
     """Set up test data for remediation endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User
+    from openlabels.server.models import Tenant, User, ScanTarget, ScanJob, ScanResult
 
     # Get the existing tenant created by test_client (name includes random suffix)
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -34,6 +34,49 @@ async def setup_remediation_data(test_db):
 
     result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
     admin_user = result.scalar_one()
+
+    # Create scan target and job so we can add scan results for remediation file paths
+    target = ScanTarget(
+        tenant_id=tenant.id,
+        name="Remediation Test Target",
+        adapter="filesystem",
+        config={"path": "/test"},
+        enabled=True,
+        created_by=admin_user.id,
+    )
+    test_db.add(target)
+    await test_db.flush()
+
+    job = ScanJob(
+        tenant_id=tenant.id,
+        target_id=target.id,
+        status="completed",
+    )
+    test_db.add(job)
+    await test_db.flush()
+
+    # Create scan results for all file paths used in remediation tests
+    test_paths = [
+        "/test/sensitive.txt", "/test/record.txt", "/test/dry_run.txt",
+        "/test/custom_dir.txt", "/test/default_dir.txt",
+        "/test/lockdown.txt", "/test/lockdown_record.txt",
+        "/test/dry_run_lockdown.txt", "/test/no_principals.txt",
+        "/test/content_type.txt",
+    ]
+    for path in test_paths:
+        scan_result = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path=path,
+            file_name=path.split("/")[-1],
+            risk_score=80,
+            risk_tier="HIGH",
+            entity_counts={},
+            total_entities=0,
+        )
+        test_db.add(scan_result)
+        await test_db.flush()
+    await test_db.commit()
 
     return {
         "tenant": tenant,
