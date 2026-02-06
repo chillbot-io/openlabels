@@ -179,23 +179,6 @@ class OpenLabelsService(win32serviceutil.ServiceFramework):
         win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
 
 
-def install_service():
-    """Install the Windows service."""
-    if not PYWIN32_AVAILABLE:
-        print("Error: pywin32 is required for Windows service support")
-        print("Install it with: pip install pywin32")
-        sys.exit(1)
-
-    # Install service
-    win32serviceutil.InstallService(
-        OpenLabelsService._svc_name_,
-        OpenLabelsService._svc_display_name_,
-        startType=win32service.SERVICE_AUTO_START,
-        description=OpenLabelsService._svc_description_,
-    )
-    print(f"Service '{OpenLabelsService._svc_display_name_}' installed successfully")
-
-
 def main():
     """CLI entry point for service management."""
     if len(sys.argv) == 1:

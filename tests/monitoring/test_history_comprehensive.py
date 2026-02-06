@@ -241,8 +241,7 @@ class TestResolveLinuxUid:
         with patch.dict("sys.modules", {"pwd": None}):
             # This would raise ImportError
             result = _resolve_linux_uid("1000")
-            # Depending on implementation, might be None or the original
-            # Based on the code, it catches ImportError and returns None
+            assert result is None, "Should return None when pwd module unavailable"
 
 
 class TestParseAusearchCsv:

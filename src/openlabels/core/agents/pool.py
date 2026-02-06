@@ -477,8 +477,6 @@ class ScanOrchestrator:
         Returns:
             Final pool statistics
         """
-        from openlabels.core.pipeline.chunking import TextChunker
-
         async with AgentPool(self.pool_config) as pool:
             # Start concurrent tasks
             walker_task = asyncio.create_task(

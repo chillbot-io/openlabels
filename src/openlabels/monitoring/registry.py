@@ -8,6 +8,19 @@ This module handles:
 
 The actual access events are captured by the OS audit system; we just
 configure which files to audit.
+
+Persistence
+-----------
+The in-memory ``_watched_files`` dict serves as a **process-local cache** for
+fast synchronous lookups.  Durable state is persisted to the database via the
+async helpers in :mod:`openlabels.monitoring.db`.  Callers that run inside an
+async context (e.g. FastAPI routes or startup hooks) should call the
+corresponding ``db.upsert_monitored_file`` / ``db.remove_monitored_file``
+after a successful enable/disable to keep the database in sync.
+
+On application startup, call :func:`populate_cache_from_db` to pre-populate
+the in-memory cache from the database so that the registry reflects previously
+persisted state.
 """
 
 import logging
@@ -16,6 +29,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from .base import (
     WatchedFile,
@@ -27,8 +41,9 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-# In-memory registry of watched files
-# In production, this would be backed by a database
+# In-memory registry of watched files.
+# Acts as a process-local cache; durable state lives in the database
+# (see openlabels.monitoring.db for async persistence helpers).
 _watched_files: Dict[str, WatchedFile] = {}
 
 
@@ -87,6 +102,18 @@ def enable_monitoring(
             audit_rule_enabled=result.audit_rule_enabled,
             label_id=label_id,
         )
+        # NOTE: The in-memory cache has been updated.  Callers running in
+        # an async context should also persist to the database:
+        #
+        #   from openlabels.monitoring import db as monitoring_db
+        #   await monitoring_db.upsert_monitored_file(
+        #       session, tenant_id, str(path),
+        #       risk_tier=risk_tier,
+        #       sacl_enabled=result.sacl_enabled,
+        #       audit_rule_enabled=result.audit_rule_enabled,
+        #       audit_read=audit_read,
+        #       audit_write=audit_write,
+        #   )
 
     return result
 
@@ -122,6 +149,13 @@ def disable_monitoring(path: Path) -> MonitoringResult:
     # Remove from registry if successful
     if result.success:
         del _watched_files[str(path)]
+        # NOTE: The in-memory cache has been updated.  Callers running in
+        # an async context should also remove from the database:
+        #
+        #   from openlabels.monitoring import db as monitoring_db
+        #   await monitoring_db.remove_monitored_file(
+        #       session, tenant_id, str(path),
+        #   )
 
     return result
 
@@ -139,6 +173,79 @@ def get_watched_files() -> List[WatchedFile]:
 def get_watched_file(path: Path) -> Optional[WatchedFile]:
     """Get monitoring info for a specific file."""
     return _watched_files.get(str(Path(path).resolve()))
+
+
+# =============================================================================
+# DATABASE CACHE MANAGEMENT (async)
+# =============================================================================
+
+
+async def populate_cache_from_db(
+    session,  # AsyncSession
+    tenant_id: UUID,
+) -> int:
+    """
+    Pre-populate the in-memory ``_watched_files`` cache from the database.
+
+    Call this during application startup so the registry reflects previously
+    persisted monitoring state.  Only entries that are not already in the
+    cache are added (existing entries are left untouched).
+
+    Args:
+        session: An active :class:`~sqlalchemy.ext.asyncio.AsyncSession`.
+        tenant_id: The tenant whose monitored files to load.
+
+    Returns:
+        The number of entries added to the cache.
+    """
+    from openlabels.monitoring import db as monitoring_db
+
+    db_entries = await monitoring_db.load_from_db(session, tenant_id)
+    added = 0
+    for file_path, fields in db_entries.items():
+        if file_path not in _watched_files:
+            _watched_files[file_path] = WatchedFile(
+                path=fields["path"],
+                risk_tier=fields["risk_tier"],
+                added_at=fields["added_at"],
+                sacl_enabled=fields["sacl_enabled"],
+                audit_rule_enabled=fields["audit_rule_enabled"],
+                last_event_at=fields.get("last_event_at"),
+                access_count=fields.get("access_count", 0),
+            )
+            added += 1
+
+    logger.info(
+        "Populated in-memory cache with %d entries from database "
+        "(tenant %s, %d already cached)",
+        added,
+        tenant_id,
+        len(db_entries) - added,
+    )
+    return added
+
+
+async def sync_cache_to_db(
+    session,  # AsyncSession
+    tenant_id: UUID,
+) -> int:
+    """
+    Persist the current in-memory ``_watched_files`` cache to the database.
+
+    This is the inverse of :func:`populate_cache_from_db`.  Use it as a
+    periodic consistency check or a graceful-shutdown hook to ensure that
+    any in-memory-only state is durably persisted.
+
+    Args:
+        session: An active :class:`~sqlalchemy.ext.asyncio.AsyncSession`.
+        tenant_id: The tenant whose state to sync.
+
+    Returns:
+        The number of records written to the database.
+    """
+    from openlabels.monitoring import db as monitoring_db
+
+    return await monitoring_db.sync_to_db(session, tenant_id, _watched_files)
 
 
 # =============================================================================
@@ -245,9 +352,18 @@ Set-Acl -Path $path -AclObject $acl
 def _disable_monitoring_windows(path: Path) -> MonitoringResult:
     """Remove Windows SACL auditing from a file."""
 
+    # Validate path to prevent command injection (same as _enable_monitoring_windows)
+    resolved_path = str(Path(path).resolve())
+    if any(c in resolved_path for c in ['"', "'", '`', '$', '\n', '\r', ';', '&', '|']):
+        return MonitoringResult(
+            success=False,
+            path=path,
+            error="Path contains invalid characters",
+        )
+
     # PowerShell script to remove audit rules
     ps_script = f'''
-$path = "{path}"
+$path = "{resolved_path}"
 $acl = Get-Acl -Path $path -Audit
 $acl.Audit | ForEach-Object {{ $acl.RemoveAuditRule($_) }} | Out-Null
 Set-Acl -Path $path -AclObject $acl

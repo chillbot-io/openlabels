@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from openlabels.adapters.base import FileInfo, ExposureLevel
+from openlabels.adapters.base import ExposureLevel
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 
 logger = logging.getLogger(__name__)

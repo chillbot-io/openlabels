@@ -679,8 +679,8 @@ For PDFs where native text extraction yields minimal text:
 
 | Level | Requirements |
 |-------|--------------|
-| **Reader** | Read embedded and virtual labels |
-| **Writer** | Write embedded and virtual labels, maintain index |
+| **Reader** | Read label data from PostgreSQL database and query MIP label status |
+| **Writer** | Store label data in PostgreSQL database, apply MIP labels, maintain index |
 | **Remediator** | Writer + quarantine and lockdown capabilities |
 | **Monitor** | Remediator + access monitoring capabilities |
 | **Full** | All of the above |
@@ -965,11 +965,14 @@ Core categories:
 
 This section documents the current state of the OpenLabels reference implementation relative to this specification.
 
-### D.1 Label Portability (Sections 4-5)
+### D.1 Label Storage (Sections 4-5)
 
-**Spec:** Labels can be embedded in file metadata (XMP, custom properties) or stored as virtual labels in extended attributes.
+Labels live in exactly two places:
 
-**Current Implementation:** Labels are stored in the PostgreSQL database (`scan_results` table). File-embedded label storage is planned for a future release.
+1. **MIP labels** applied to files via Microsoft Graph API (SharePoint/OneDrive) or MIP SDK (local Windows files). These are the sensitivity labels that travel with the file.
+2. **PostgreSQL database** (`scan_results` table) for detection results, risk scores, entity counts, and audit history.
+
+OpenLabels does not write labels into file metadata (XMP, OOXML custom properties, extended attributes, etc.). Sensitivity classification is expressed through MIP labels; all scan and tracking data is stored in the database.
 
 ### D.2 Database Schema (Section 6)
 

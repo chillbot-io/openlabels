@@ -581,31 +581,3 @@ def load_policy_pack(source: Union[str, Path, dict]) -> PolicyPack:
     )
 
 
-def load_policies_from_directory(path: Union[str, Path]) -> list[PolicyPack]:
-    """
-    Load all policy packs from a directory.
-
-    Loads all .yaml and .json files from the directory.
-    """
-    path = Path(path)
-    if not path.is_dir():
-        raise ValueError(f"Not a directory: {path}")
-
-    policies = []
-    for file_path in path.glob("*.yaml"):
-        try:
-            policy = load_policy_pack(file_path)
-            policies.append(policy)
-            logger.debug(f"Loaded policy: {policy.name} from {file_path}")
-        except Exception as e:
-            logger.error(f"Failed to load policy from {file_path}: {e}")
-
-    for file_path in path.glob("*.json"):
-        try:
-            policy = load_policy_pack(file_path)
-            policies.append(policy)
-            logger.debug(f"Loaded policy: {policy.name} from {file_path}")
-        except Exception as e:
-            logger.error(f"Failed to load policy from {file_path}: {e}")
-
-    return policies

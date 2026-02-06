@@ -13,10 +13,8 @@ Features:
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from typing import Optional
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 

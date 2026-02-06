@@ -119,17 +119,6 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
-def get_engine() -> AsyncEngine | None:
-    """
-    Get the database engine for metrics and diagnostics.
-
-    Returns:
-        The AsyncEngine instance or None if not initialized.
-        Access the sync pool via engine.sync_engine.pool for pool metrics.
-    """
-    return _engine
-
-
 def run_migrations(revision: str, direction: str = "upgrade") -> None:
     """Run database migrations using Alembic."""
     from alembic import command

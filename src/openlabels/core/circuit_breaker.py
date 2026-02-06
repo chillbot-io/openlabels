@@ -31,7 +31,7 @@ Usage:
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Optional, TypeVar
@@ -281,49 +281,3 @@ class CircuitBreaker:
             cb._failure_count = 0
             cb._success_count = 0
             cb._last_failure_time = None
-
-
-# Pre-configured circuit breakers for common services
-def get_graph_api_breaker() -> CircuitBreaker:
-    """Get circuit breaker for Microsoft Graph API."""
-    if "graph_api" not in CircuitBreaker._registry:
-        from openlabels.server.config import get_settings
-
-        settings = get_settings()
-        config = CircuitBreakerConfig(
-            failure_threshold=settings.circuit_breaker.failure_threshold,
-            success_threshold=settings.circuit_breaker.success_threshold,
-            recovery_timeout=settings.circuit_breaker.recovery_timeout,
-            exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
-        )
-        return CircuitBreaker("graph_api", config)
-    return CircuitBreaker._registry["graph_api"]
-
-
-def get_oauth_breaker() -> CircuitBreaker:
-    """Get circuit breaker for OAuth token endpoints."""
-    if "oauth" not in CircuitBreaker._registry:
-        from openlabels.server.config import get_settings
-
-        settings = get_settings()
-        config = CircuitBreakerConfig(
-            failure_threshold=settings.circuit_breaker.failure_threshold,
-            success_threshold=settings.circuit_breaker.success_threshold,
-            recovery_timeout=settings.circuit_breaker.recovery_timeout,
-            exclude_status_codes=tuple(settings.circuit_breaker.exclude_status_codes),
-        )
-        return CircuitBreaker("oauth", config)
-    return CircuitBreaker._registry["oauth"]
-
-
-def get_database_breaker() -> CircuitBreaker:
-    """Get circuit breaker for database operations."""
-    if "database" not in CircuitBreaker._registry:
-        # Database uses shorter recovery time
-        config = CircuitBreakerConfig(
-            failure_threshold=3,
-            success_threshold=1,
-            recovery_timeout=30.0,
-        )
-        return CircuitBreaker("database", config)
-    return CircuitBreaker._registry["database"]

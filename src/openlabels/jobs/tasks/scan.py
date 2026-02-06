@@ -24,6 +24,8 @@ from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
 from openlabels.core.exceptions import AdapterError, JobError
+from openlabels.core.policies.engine import get_policy_engine
+from openlabels.core.policies.schema import EntityMatch
 from openlabels.labeling.engine import LabelingEngine
 from openlabels.server.metrics import (
     record_file_processed,
@@ -780,6 +782,32 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
                 "tier": span.tier.name,
             })
 
+        # Policy evaluation
+        policy_data = None
+        if result.spans:
+            try:
+                entity_matches = [
+                    EntityMatch(
+                        entity_type=span.entity_type,
+                        value=span.text,
+                        confidence=span.confidence,
+                        start=span.start,
+                        end=span.end,
+                        source=span.detector,
+                    )
+                    for span in result.spans
+                ]
+                policy_result = get_policy_engine().evaluate(entity_matches)
+                if policy_result.is_sensitive:
+                    policy_data = policy_result.to_dict()
+            except Exception as e:
+                logger.error(f"Policy evaluation failed for {file_info.path}: {e}")
+
+        # Merge policy data into findings dict
+        findings_dict = {"entities": findings}
+        if policy_data:
+            findings_dict["policy"] = policy_data
+
         return {
             "risk_score": result.risk_score,
             "risk_tier": result.risk_tier.value,
@@ -787,7 +815,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
             "total_entities": sum(result.entity_counts.values()),
             "content_score": float(result.risk_score),
             "exposure_multiplier": 1.0,  # Already factored into risk_score
-            "findings": findings,
+            "findings": findings_dict,
             "processing_time_ms": result.processing_time_ms,
             "error": result.error,
         }

@@ -383,8 +383,7 @@ class TestHasMedicalContext:
 
         # With stopwords excluded, "patient" shouldn't count as indicator
         result = loader.has_medical_context("patient data", exclude_stopwords=True)
-        # This depends on implementation - if only "patient" matches and it's a stopword, returns False
-        # If there are no other indicators, returns False
+        assert result is False, "Stopword-only match should not indicate medical context"
 
     def test_no_medical_context(self, tmp_path):
         """Returns False for non-medical text."""

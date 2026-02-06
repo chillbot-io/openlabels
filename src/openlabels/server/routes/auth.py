@@ -124,11 +124,6 @@ SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 SESSION_TTL_SECONDS = SESSION_COOKIE_MAX_AGE
 
 
-class LoginResponse(BaseModel):
-    """Response from login endpoint."""
-    login_url: str
-
-
 class UserInfoResponse(BaseModel):
     """Current user information."""
     id: str
@@ -554,7 +549,7 @@ async def get_token(
         )
 
     expires_at_str = session_data.get("expires_at")
-    expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min
+    expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
 
     if expires_at < datetime.now(timezone.utc):
         # Try to refresh

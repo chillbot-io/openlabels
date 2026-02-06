@@ -18,7 +18,7 @@ The enhancer adjusts confidence scores based on context, allowing:
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from ..types import Span, Tier
 
@@ -259,6 +259,7 @@ class EnhancementResult:
     action: str  # "keep", "reject", "verify" (send to LLM)
     confidence: float
     reasons: List[str] = field(default_factory=list)
+    span: Optional[Any] = None  # Updated span (if text was modified), else None
 
 
 class ContextEnhancer:
@@ -491,9 +492,9 @@ class ContextEnhancer:
             if reject_reason:
                 return EnhancementResult("reject", 0.0, [reject_reason])
             if cleaned_text:
-                span.start = span.start + start_offset
-                span.text = cleaned_text
-                span.end = span.start + len(cleaned_text)
+                from dataclasses import replace
+                new_start = span.start + start_offset
+                span = replace(span, start=new_start, text=cleaned_text, end=new_start + len(cleaned_text))
                 reasons.append(f"greeting_stripped:{cleaned_text}")
 
         # Stage 3: Hotword adjustment
@@ -503,11 +504,11 @@ class ContextEnhancer:
 
         # Stage 4: Route based on confidence
         if confidence >= self.high_threshold:
-            return EnhancementResult("keep", confidence, reasons + ["high_confidence"])
+            return EnhancementResult("keep", confidence, reasons + ["high_confidence"], span=span)
         elif confidence <= self.low_threshold:
-            return EnhancementResult("reject", confidence, reasons + ["low_confidence"])
+            return EnhancementResult("reject", confidence, reasons + ["low_confidence"], span=span)
         else:
-            return EnhancementResult("verify", confidence, reasons + ["needs_llm"])
+            return EnhancementResult("verify", confidence, reasons + ["needs_llm"], span=span)
 
     def enhance(
         self,
@@ -536,29 +537,31 @@ class ContextEnhancer:
 
         for span in spans:
             result = self.enhance_span(text, span)
+            # Use returned span (may be a new object if text was modified)
+            updated_span = result.span if result.span is not None else span
 
             if result.action == "keep":
-                span.confidence = result.confidence
-                kept.append(span)
+                from dataclasses import replace
+                updated_span = replace(updated_span, confidence=result.confidence)
+                kept.append(updated_span)
                 passed_through += 1
                 logger.debug(
-                    f"ContextEnhancer: KEEP '{span.text}' ({span.entity_type}) "
+                    f"ContextEnhancer: KEEP '{updated_span.text}' ({updated_span.entity_type}) "
                     f"conf={result.confidence:.2f} reasons={result.reasons}"
                 )
             elif result.action == "reject":
                 rejected += 1
                 logger.info(
-                    f"ContextEnhancer: REJECT '{span.text}' ({span.entity_type}) "
+                    f"ContextEnhancer: REJECT '{updated_span.text}' ({updated_span.entity_type}) "
                     f"reasons={result.reasons}"
                 )
             else:  # verify
-                span.confidence = result.confidence
-                span.needs_review = True
-                span.review_reason = "llm_verification"
-                kept.append(span)
+                from dataclasses import replace
+                updated_span = replace(updated_span, confidence=result.confidence, needs_review=True, review_reason="llm_verification")
+                kept.append(updated_span)
                 needs_llm += 1
                 logger.debug(
-                    f"ContextEnhancer: VERIFY '{span.text}' ({span.entity_type}) "
+                    f"ContextEnhancer: VERIFY '{updated_span.text}' ({updated_span.entity_type}) "
                     f"conf={result.confidence:.2f} reasons={result.reasons}"
                 )
 

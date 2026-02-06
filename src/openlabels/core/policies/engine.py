@@ -415,6 +415,3 @@ def get_policy_engine() -> PolicyEngine:
     return _engine_instance
 
 
-def evaluate_entities(entities: Sequence[EntityMatch]) -> PolicyResult:
-    """Convenience function to evaluate entities using the global engine."""
-    return get_policy_engine().evaluate(entities)

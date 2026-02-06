@@ -38,7 +38,7 @@ try:
 except ImportError:
     IntervalTree = None
 
-from .constants import MODEL_LOAD_TIMEOUT, OCR_READY_TIMEOUT, DEFAULT_MODELS_DIR
+from .constants import OCR_READY_TIMEOUT, DEFAULT_MODELS_DIR
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -391,13 +391,28 @@ class OCREngine:
         # Sort by y-coordinate (top of bounding box) for reading order
         # Then by x-coordinate for same line
 
+        # Compute adaptive line height from median bbox height (handles varying DPI/fonts)
+        heights = []
+        for item in result:
+            bbox = item[0]
+            y_top = min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
+            y_bot = max(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
+            h = y_bot - y_top
+            if h > 0:
+                heights.append(h)
+        if heights:
+            heights.sort()
+            median_height = heights[len(heights) // 2]
+            line_threshold = max(median_height * 0.6, 5)  # 60% of median height, min 5px
+        else:
+            line_threshold = 20  # fallback
+
         def sort_key(item):
             bbox = item[0]
             # Use top-left corner: bbox[0] = [x1, y1]
             y_top = min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
             x_left = min(bbox[0][0], bbox[1][0], bbox[2][0], bbox[3][0])
-            # Group into approximate lines (within 20px = same line)
-            line_group = int(y_top / 20)
+            line_group = int(y_top / line_threshold)
             return (line_group, x_left)
 
         result.sort(key=sort_key)
@@ -411,7 +426,7 @@ class OCREngine:
             bbox = item[0]
             text = item[1]
             y_top = min(bbox[0][1], bbox[1][1], bbox[2][1], bbox[3][1])
-            line_group = int(y_top / 20)
+            line_group = int(y_top / line_threshold)
 
             if current_line_group is None:
                 current_line_group = line_group

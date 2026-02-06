@@ -21,28 +21,22 @@ from typing import List, Tuple
 
 from ..types import Span, Tier
 from .base import BaseDetector
+from .._rust.validators_py import (
+    validate_luhn,
+    validate_ssn as _validate_ssn_bool,
+    validate_cusip as _validate_cusip_bool,
+    validate_isin as _validate_isin_bool,
+)
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
 # VALIDATORS (Python fallback — Rust overrides these below)
+# Core bool validators imported from _rust/validators_py (single source of truth).
+# Wrappers below add (bool, float) return signatures where needed.
 # =============================================================================
 
-def luhn_check(num: str) -> bool:
-    """Luhn algorithm for credit card / NPI validation."""
-    digits = [int(d) for d in num if d.isdigit()]
-    if len(digits) < 2:
-        return False
-
-    checksum = 0
-    for i, d in enumerate(reversed(digits)):
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        checksum += d
-
-    return checksum % 10 == 0
+luhn_check = validate_luhn
 
 
 def validate_ssn(ssn: str) -> Tuple[bool, float]:
@@ -50,6 +44,7 @@ def validate_ssn(ssn: str) -> Tuple[bool, float]:
     Validate SSN format and structure.
 
     Security-first: Invalid area codes still detected with lower confidence.
+    Core validation delegates to the canonical validator in _rust/validators_py.
 
     Confidence levels:
     - 0.99: Fully valid SSN
@@ -66,18 +61,16 @@ def validate_ssn(ssn: str) -> Tuple[bool, float]:
     if len(digits) != 9:
         return False, 0.0
 
+    # Use canonical validator for strict check
+    if _validate_ssn_bool(digits):
+        return True, 0.99
+
+    # The canonical validator rejected this SSN (invalid area, group, or serial),
+    # but we still detect it at lower confidence for security.
     area, group, serial = digits[:3], digits[3:5], digits[5:]
-    confidence = 0.99
-
-    # Invalid area numbers (000, 666, 900-999)
-    if area in ('000', '666') or area.startswith('9'):
-        confidence = 0.85
-
-    # Invalid group (00)
+    confidence = 0.85
     if group == '00':
         confidence = min(confidence, 0.80)
-
-    # Invalid serial (0000)
     if serial == '0000':
         confidence = min(confidence, 0.80)
 
@@ -373,62 +366,22 @@ def validate_usps_tracking(tracking: str) -> Tuple[bool, float]:
 # =============================================================================
 
 def validate_cusip(cusip: str) -> Tuple[bool, float]:
-    """Validate CUSIP (9-character security identifier)."""
-    cusip = cusip.upper().replace(' ', '').replace('-', '')
+    """Validate CUSIP (9-character security identifier).
 
-    if len(cusip) != 9:
+    Delegates to the canonical validator in _rust/validators_py.
+    """
+    if not _validate_cusip_bool(cusip):
         return False, 0.0
-
-    total = 0
-    for i, c in enumerate(cusip[:8]):
-        if c.isdigit():
-            value = int(c)
-        elif c.isalpha():
-            value = ord(c) - ord('A') + 10
-        elif c == '*':
-            value = 36
-        elif c == '@':
-            value = 37
-        elif c == '#':
-            value = 38
-        else:
-            return False, 0.0
-
-        if i % 2 == 1:
-            value *= 2
-        total += value // 10 + value % 10
-
-    check = (10 - (total % 10)) % 10
-    if not cusip[8].isdigit() or int(cusip[8]) != check:
-        return False, 0.0
-
     return True, 0.99
 
 
 def validate_isin(isin: str) -> Tuple[bool, float]:
-    """Validate ISIN (12-character international security identifier)."""
-    isin = isin.upper().replace(' ', '')
+    """Validate ISIN (12-character international security identifier).
 
-    if len(isin) != 12:
+    Delegates to the canonical validator in _rust/validators_py.
+    """
+    if not _validate_isin_bool(isin):
         return False, 0.0
-
-    if not isin[:2].isalpha():
-        return False, 0.0
-
-    # Convert to numeric string
-    numeric = ''
-    for c in isin[:-1]:
-        if c.isdigit():
-            numeric += c
-        elif c.isalpha():
-            numeric += str(ord(c) - ord('A') + 10)
-        else:
-            return False, 0.0
-
-    # Luhn check
-    if not luhn_check(numeric + isin[-1]):
-        return False, 0.0
-
     return True, 0.99
 
 

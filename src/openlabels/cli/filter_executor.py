@@ -7,7 +7,7 @@ Executes parsed filter expressions against scan results.
 import re
 import signal
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, List, Optional
 
 from openlabels.cli.filter_parser import (
     BinaryOp,
@@ -92,18 +92,6 @@ def _safe_regex_match(pattern: str, text: str) -> bool:
         import logging
         logging.getLogger(__name__).debug(f"Regex match failed safely: {type(e).__name__}: {e}")
         return False
-
-
-class FilterableResult(Protocol):
-    """Protocol for objects that can be filtered."""
-    file_path: str
-    file_name: str
-    risk_score: int
-    risk_tier: str
-    entity_counts: Dict[str, int]
-    exposure_level: Optional[str]
-    owner: Optional[str]
-    total_entities: int
 
 
 def _get_field_value(result: Any, field: str) -> Any:

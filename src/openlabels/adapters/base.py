@@ -10,7 +10,6 @@ Provides:
 
 import fnmatch
 import logging
-import re
 from datetime import datetime
 from enum import Enum
 from typing import Protocol, AsyncIterator, Optional

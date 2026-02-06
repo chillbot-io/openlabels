@@ -10,7 +10,7 @@ from typing import Optional
 import click
 import httpx
 
-from openlabels.cli.utils import get_httpx_client, get_server_url
+from openlabels.cli.utils import get_httpx_client, get_server_url, handle_http_error
 
 
 @click.group()
@@ -36,12 +36,8 @@ def labels_list():
         else:
             click.echo(f"Error: {response.status_code}", err=True)
 
-    except httpx.TimeoutException:
-        click.echo("Error: Request timed out connecting to server", err=True)
-    except httpx.ConnectError as e:
-        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
-    except httpx.HTTPStatusError as e:
-        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
     finally:
         client.close()
 
@@ -61,12 +57,8 @@ def labels_sync():
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
-    except httpx.TimeoutException:
-        click.echo("Error: Request timed out connecting to server", err=True)
-    except httpx.ConnectError as e:
-        click.echo(f"Error: Cannot connect to server at {server}: {e}", err=True)
-    except httpx.HTTPStatusError as e:
-        click.echo(f"Error: HTTP error {e.response.status_code}", err=True)
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
     finally:
         client.close()
 

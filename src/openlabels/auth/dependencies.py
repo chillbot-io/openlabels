@@ -99,6 +99,13 @@ async def get_current_user(
     settings = get_settings()
 
     if settings.auth.provider == "none":
+        if not settings.server.debug:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Auth provider 'none' requires server.debug=True. "
+                "Set AUTH_PROVIDER=azure_ad for production or "
+                "OPENLABELS_SERVER__DEBUG=true for development.",
+            )
         # Development mode - create/get dev user
         claims = TokenClaims(
             oid="dev-user-oid",
@@ -140,6 +147,8 @@ async def get_optional_user(
     settings = get_settings()
 
     if settings.auth.provider == "none":
+        if not settings.server.debug:
+            return None
         # Development mode - create/get dev user
         claims = TokenClaims(
             oid="dev-user-oid",

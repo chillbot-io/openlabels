@@ -198,7 +198,7 @@ async def monitoring_page(request: Request):
 
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
+async def settings_page(request: Request, user=Depends(get_current_user)):
     """Settings page with current configuration values."""
     from openlabels.server.config import get_settings
 
@@ -475,6 +475,17 @@ async def create_target_form(
             config_key = key[7:-1]  # Extract key from config[key]
             if value:  # Only include non-empty values
                 config[config_key] = value
+
+    # Validate target config (same as API endpoint)
+    from openlabels.server.routes.targets import validate_target_config
+    try:
+        config = validate_target_config(adapter, config)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "targets.html",
+            {"request": request, "active_page": "targets", "error": str(e), "targets": []},
+            status_code=400,
+        )
 
     target = ScanTarget(
         tenant_id=user.tenant_id,

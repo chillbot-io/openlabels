@@ -137,6 +137,8 @@ async def get_health_status(
         status["db_text"] = "Disconnected"
 
     # Check job queue
+    pending_count = 0
+    failed_count = 0
     try:
         queue_query = select(
             func.count().label("total"),

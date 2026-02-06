@@ -207,8 +207,8 @@ add_pattern(r'(?:phone|tel|call|contact)[:\s]+\((\d{3})\)\s*([lI1]\d{2})[-.]?(\d
 add_pattern(r'(?:phone|tel|call|contact)[:\s]+\((\d{3})\)\s*(\d{3})[-.]?(\d{3}[B8])', 'PHONE', 0.88, 0, re.I)
 
 # === Email ===
-add_pattern(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', 'EMAIL', 0.95)
-add_pattern(r'(?:email|e-mail)[:\s]+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})', 'EMAIL', 0.96, 1, re.I)
+add_pattern(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', 'EMAIL', 0.95)
+add_pattern(r'(?:email|e-mail)[:\s]+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', 'EMAIL', 0.96, 1, re.I)
 
 # === Dates ===
 add_pattern(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', 'DATE', 0.70)
@@ -1461,6 +1461,7 @@ class PatternDetector(BaseDetector):
 
     def detect(self, text: str) -> List[Span]:
         spans = []
+        seen = {}  # (start, end, entity_type) -> index in spans (keep highest confidence)
 
         for idx, (pattern, entity_type, confidence, group_idx) in enumerate(PATTERNS):
             for match in pattern.finditer(text):
@@ -1526,6 +1527,24 @@ class PatternDetector(BaseDetector):
                     if _is_false_positive_name(value):
                         continue
 
+                # Deduplication: skip if same span already seen with equal or higher confidence
+                key = (start, end, entity_type)
+                if key in seen:
+                    existing_idx = seen[key]
+                    if confidence <= spans[existing_idx].confidence:
+                        continue
+                    # Replace existing span with higher-confidence match
+                    spans[existing_idx] = Span(
+                        start=start,
+                        end=end,
+                        text=value,
+                        entity_type=entity_type,
+                        confidence=confidence,
+                        detector=self.name,
+                        tier=self.tier,
+                    )
+                    continue
+
                 span = Span(
                     start=start,
                     end=end,
@@ -1535,6 +1554,7 @@ class PatternDetector(BaseDetector):
                     detector=self.name,
                     tier=self.tier,
                 )
+                seen[key] = len(spans)
                 spans.append(span)
 
         return spans

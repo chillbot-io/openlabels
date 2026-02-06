@@ -773,3 +773,43 @@ class PendingAuth(Base):
     __table_args__ = (
         Index('ix_pending_auth_created', 'created_at'),
     )
+
+
+class TenantSettings(Base):
+    """
+    Tenant-specific settings overrides.
+
+    Stores per-tenant configuration such as Azure AD credentials,
+    scan parameters, and entity detection preferences. One row per tenant;
+    absence of a row means the tenant uses system defaults.
+
+    Note: Azure client secrets are NOT stored here. Only a boolean flag
+    tracks whether a secret has been configured (the actual secret would
+    be stored in a secrets manager in production).
+    """
+
+    __tablename__ = "tenant_settings"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), unique=True, nullable=False)
+
+    # Azure AD configuration
+    azure_tenant_id: Mapped[Optional[str]] = mapped_column(String(36))
+    azure_client_id: Mapped[Optional[str]] = mapped_column(String(36))
+    azure_client_secret_set: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Scan configuration
+    max_file_size_mb: Mapped[int] = mapped_column(Integer, default=100)
+    concurrent_files: Mapped[int] = mapped_column(Integer, default=10)
+    enable_ocr: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Entity detection configuration
+    enabled_entities: Mapped[list] = mapped_column(JSONB, default=list)
+
+    # Audit fields
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+
+    __table_args__ = (
+        Index('ix_tenant_settings_tenant_id', 'tenant_id', unique=True),
+    )

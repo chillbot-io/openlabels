@@ -5,6 +5,12 @@ Provides a unified interface for applying MIP sensitivity labels across:
 - Local files (MIP SDK or metadata fallback)
 - SharePoint/OneDrive (Microsoft Graph API)
 
+Architecture:
+- LocalLabelWriter: Pure synchronous class for all local file I/O (zipfile, pypdf,
+  sidecar files). Easy to unit test, no async, no asyncio.
+- LabelingEngine: Async orchestrator that handles Graph API calls (httpx) and
+  delegates local file operations to LocalLabelWriter via asyncio.to_thread().
+
 Features:
 - Label caching with TTL for performance
 - Automatic fallback chain (MIP SDK -> Office metadata -> PDF metadata -> Sidecar)
@@ -16,6 +22,7 @@ import asyncio
 import io
 import json
 import logging
+import re
 import threading
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -205,6 +212,398 @@ class TokenCache:
         return bool(self.access_token and datetime.now(timezone.utc) < (self.expires_at - timedelta(minutes=5)))
 
 
+# =============================================================================
+# LOCAL LABEL WRITER — pure synchronous file I/O
+# =============================================================================
+
+
+class LocalLabelWriter:
+    """
+    Pure synchronous handler for all local file labeling operations.
+
+    All methods are regular ``def`` (not async). They perform file reads,
+    writes, zipfile manipulation, and PDF metadata changes. Each method
+    handles its own exceptions and returns a ``LabelResult``.
+
+    Designed to be called from an async context via
+    ``await asyncio.to_thread(writer.method, ...)``.
+    """
+
+    # ------------------------------------------------------------------
+    # Apply helpers
+    # ------------------------------------------------------------------
+
+    def apply_office_metadata(
+        self,
+        file_path: str,
+        label_id: str,
+        label_name: Optional[str] = None,
+    ) -> LabelResult:
+        """Apply a sensitivity label to an Office document via custom properties.
+
+        Reads the Office Open XML package, inserts / updates the
+        ``OpenLabels_*`` and ``Classification`` custom properties, and
+        writes the modified package back to *file_path*.
+        """
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                file_list = zf.namelist()
+
+                # Read existing custom properties or create new
+                custom_props_path = "docProps/custom.xml"
+                if custom_props_path in file_list:
+                    custom_xml = zf.read(custom_props_path).decode("utf-8")
+                else:
+                    custom_xml = (
+                        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                        '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"\n'
+                        'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">\n'
+                        '</Properties>'
+                    )
+
+                # Remove existing label properties
+                custom_xml = re.sub(
+                    r'<property[^>]*name="OpenLabels_[^"]*"[^>]*>.*?</property>',
+                    '', custom_xml, flags=re.DOTALL,
+                )
+                custom_xml = re.sub(
+                    r'<property[^>]*name="Classification"[^>]*>.*?</property>',
+                    '', custom_xml, flags=re.DOTALL,
+                )
+
+                # Find highest pid
+                pids = re.findall(r'pid="(\d+)"', custom_xml)
+                next_pid = max([int(p) for p in pids], default=1) + 1
+
+                # Build new properties
+                new_props = (
+                    f'\n  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
+                    f' pid="{next_pid}" name="OpenLabels_LabelId">\n'
+                    f'    <vt:lpwstr>{label_id}</vt:lpwstr>\n'
+                    f'  </property>\n'
+                    f'  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
+                    f' pid="{next_pid + 1}" name="OpenLabels_LabelName">\n'
+                    f'    <vt:lpwstr>{label_name or ""}</vt:lpwstr>\n'
+                    f'  </property>\n'
+                    f'  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
+                    f' pid="{next_pid + 2}" name="Classification">\n'
+                    f'    <vt:lpwstr>{label_name or label_id}</vt:lpwstr>\n'
+                    f'  </property>\n'
+                )
+
+                # Insert before closing tag
+                custom_xml = custom_xml.replace("</Properties>", new_props + "</Properties>")
+
+                # Write updated file
+                output = io.BytesIO()
+                with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
+                    for item in file_list:
+                        if item != custom_props_path:
+                            out_zf.writestr(item, zf.read(item))
+                    out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
+
+                    # Update content types if custom.xml is new
+                    if custom_props_path not in file_list:
+                        content_types = zf.read("[Content_Types].xml").decode("utf-8")
+                        if "custom.xml" not in content_types:
+                            content_types = content_types.replace(
+                                "</Types>",
+                                '<Override PartName="/docProps/custom.xml" '
+                                'ContentType="application/vnd.openxmlformats-officedocument.'
+                                'custom-properties+xml"/></Types>',
+                            )
+                            out_zf.writestr("[Content_Types].xml", content_types.encode("utf-8"))
+
+                with open(file_path, "wb") as f:
+                    f.write(output.getvalue())
+
+            return LabelResult(
+                success=True,
+                label_id=label_id,
+                label_name=label_name,
+                method="office_metadata",
+            )
+
+        except PermissionError as e:
+            logger.error(f"Permission denied applying Office metadata label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Permission denied: {e}")
+        except OSError as e:
+            logger.error(f"OS error applying Office metadata label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"OS error: {e}")
+        except zipfile.BadZipFile as e:
+            logger.error(f"Invalid Office file format: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Invalid Office file: {e}")
+
+    def apply_pdf_metadata(
+        self,
+        file_path: str,
+        label_id: str,
+        label_name: Optional[str] = None,
+    ) -> LabelResult:
+        """Apply a sensitivity label to a PDF via document metadata."""
+        try:
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except ImportError:
+                from PyPDF2 import PdfReader, PdfWriter
+
+            reader = PdfReader(file_path)
+            writer = PdfWriter()
+
+            for page in reader.pages:
+                writer.add_page(page)
+
+            if reader.metadata:
+                writer.add_metadata(dict(reader.metadata))
+
+            writer.add_metadata({
+                "/OpenLabels_LabelId": label_id,
+                "/OpenLabels_LabelName": label_name or "",
+                "/Classification": label_name or label_id,
+            })
+
+            with open(file_path, "wb") as f:
+                writer.write(f)
+
+            return LabelResult(
+                success=True,
+                label_id=label_id,
+                label_name=label_name,
+                method="pdf_metadata",
+            )
+
+        except PermissionError as e:
+            logger.error(f"Permission denied applying PDF metadata label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Permission denied: {e}")
+        except OSError as e:
+            logger.error(f"OS error applying PDF metadata label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"OS error: {e}")
+        except ValueError as e:
+            logger.error(f"Invalid PDF format: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Invalid PDF: {e}")
+
+    def apply_sidecar(
+        self,
+        file_path: str,
+        label_id: str,
+        label_name: Optional[str] = None,
+    ) -> LabelResult:
+        """Apply a sensitivity label via a ``.openlabels`` sidecar file."""
+        try:
+            sidecar_path = f"{file_path}.openlabels"
+            sidecar_data = {
+                "label_id": label_id,
+                "label_name": label_name,
+                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "applied_by": "openlabels",
+            }
+
+            with open(sidecar_path, "w") as f:
+                json.dump(sidecar_data, f, indent=2)
+
+            return LabelResult(
+                success=True,
+                label_id=label_id,
+                label_name=label_name,
+                method="sidecar",
+            )
+
+        except PermissionError as e:
+            return LabelResult(
+                success=False,
+                label_id=label_id,
+                error=f"Permission denied creating sidecar file: {e}",
+            )
+        except OSError as e:
+            return LabelResult(
+                success=False,
+                label_id=label_id,
+                error=f"OS error creating sidecar file: {e}",
+            )
+
+    # ------------------------------------------------------------------
+    # Remove helpers
+    # ------------------------------------------------------------------
+
+    def remove_office_label(self, file_path: str) -> LabelResult:
+        """Remove sensitivity label from an Office document's custom properties."""
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                file_list = zf.namelist()
+                custom_props_path = "docProps/custom.xml"
+
+                if custom_props_path not in file_list:
+                    return LabelResult(success=True, method="no_label_found")
+
+                custom_xml = zf.read(custom_props_path).decode("utf-8")
+
+                # Remove OpenLabels and Classification properties
+                custom_xml = re.sub(
+                    r'<property[^>]*name="OpenLabels_[^"]*"[^>]*>.*?</property>\s*',
+                    '', custom_xml, flags=re.DOTALL,
+                )
+                custom_xml = re.sub(
+                    r'<property[^>]*name="Classification"[^>]*>.*?</property>\s*',
+                    '', custom_xml, flags=re.DOTALL,
+                )
+
+                # Write updated file
+                output = io.BytesIO()
+                with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
+                    for item in file_list:
+                        if item != custom_props_path:
+                            out_zf.writestr(item, zf.read(item))
+                    out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
+
+                with open(file_path, "wb") as f:
+                    f.write(output.getvalue())
+
+            return LabelResult(success=True, method="office_metadata_removed")
+
+        except PermissionError as e:
+            return LabelResult(success=False, error=f"Permission denied removing Office label: {e}")
+        except OSError as e:
+            return LabelResult(success=False, error=f"OS error removing Office label: {e}")
+        except zipfile.BadZipFile as e:
+            return LabelResult(success=False, error=f"Invalid Office file format: {e}")
+
+    def remove_pdf_label(self, file_path: str) -> LabelResult:
+        """Remove sensitivity label from PDF metadata."""
+        try:
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except ImportError:
+                from PyPDF2 import PdfReader, PdfWriter
+
+            reader = PdfReader(file_path)
+            writer = PdfWriter()
+
+            for page in reader.pages:
+                writer.add_page(page)
+
+            # Copy metadata except label fields
+            if reader.metadata:
+                clean_metadata = {
+                    k: v for k, v in dict(reader.metadata).items()
+                    if not k.startswith("/OpenLabels_") and k != "/Classification"
+                }
+                writer.add_metadata(clean_metadata)
+
+            with open(file_path, "wb") as f:
+                writer.write(f)
+
+            return LabelResult(success=True, method="pdf_metadata_removed")
+
+        except PermissionError as e:
+            return LabelResult(success=False, error=f"Permission denied removing PDF label: {e}")
+        except OSError as e:
+            return LabelResult(success=False, error=f"OS error removing PDF label: {e}")
+        except ValueError as e:
+            return LabelResult(success=False, error=f"Invalid PDF format: {e}")
+
+    # ------------------------------------------------------------------
+    # Read helpers
+    # ------------------------------------------------------------------
+
+    def get_local_label(self, file_path: str) -> Optional[dict]:
+        """Read the current sensitivity label from a local file.
+
+        Checks (in order): sidecar file, Office custom properties, PDF
+        metadata. Returns a dict with ``id`` and ``name`` keys, or
+        ``None`` if no label is found.
+        """
+        path = Path(file_path)
+        ext = path.suffix.lower()
+
+        # Check sidecar first
+        sidecar_path = Path(f"{file_path}.openlabels")
+        if sidecar_path.exists():
+            try:
+                with open(sidecar_path) as f:
+                    data = json.load(f)
+                return {
+                    "id": data.get("label_id"),
+                    "name": data.get("label_name"),
+                }
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading sidecar label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading sidecar label for {file_path}: {e}")
+            except json.JSONDecodeError as e:
+                logger.debug(f"Invalid JSON in sidecar for {file_path}: {e}")
+
+        # Check Office document metadata
+        if ext in (".docx", ".xlsx", ".pptx"):
+            try:
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    if "docProps/custom.xml" in zf.namelist():
+                        custom_xml = zf.read("docProps/custom.xml").decode("utf-8")
+                        label_match = re.search(
+                            r'name="OpenLabels_LabelId"[^>]*>.*?<vt:lpwstr>([^<]+)</vt:lpwstr>',
+                            custom_xml, re.DOTALL,
+                        )
+                        name_match = re.search(
+                            r'name="OpenLabels_LabelName"[^>]*>.*?<vt:lpwstr>([^<]+)</vt:lpwstr>',
+                            custom_xml, re.DOTALL,
+                        )
+                        if label_match:
+                            return {
+                                "id": label_match.group(1),
+                                "name": name_match.group(1) if name_match else None,
+                            }
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading Office metadata label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading Office metadata label for {file_path}: {e}")
+            except zipfile.BadZipFile as e:
+                logger.debug(f"Invalid Office file format for {file_path}: {e}")
+
+        # Check PDF metadata
+        if ext == ".pdf":
+            try:
+                try:
+                    from pypdf import PdfReader
+                except ImportError:
+                    from PyPDF2 import PdfReader
+
+                reader = PdfReader(file_path)
+                if reader.metadata:
+                    label_id = reader.metadata.get("/OpenLabels_LabelId")
+                    label_name = reader.metadata.get("/OpenLabels_LabelName")
+                    if label_id:
+                        return {"id": label_id, "name": label_name}
+            except PermissionError as e:
+                logger.debug(f"Permission denied reading PDF metadata label for {file_path}: {e}")
+            except OSError as e:
+                logger.debug(f"OS error reading PDF metadata label for {file_path}: {e}")
+            except ValueError as e:
+                logger.debug(f"Invalid PDF format for {file_path}: {e}")
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Sidecar cleanup
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def remove_sidecar(file_path: str) -> None:
+        """Delete the ``.openlabels`` sidecar file if it exists."""
+        sidecar = Path(f"{file_path}.openlabels")
+        if sidecar.exists():
+            sidecar.unlink()
+
+
+# =============================================================================
+# LABELING ENGINE — async orchestrator
+# =============================================================================
+
+
 class LabelingEngine:
     """
     Unified interface for applying sensitivity labels.
@@ -212,6 +611,10 @@ class LabelingEngine:
     Routes to appropriate labeling method based on file source:
     - Local files: MIP SDK via pythonnet (Windows) or metadata fallback
     - SharePoint/OneDrive: Microsoft Graph API
+
+    Local file I/O is delegated to :class:`LocalLabelWriter` and run in
+    a worker thread via ``asyncio.to_thread`` so the event loop is never
+    blocked.
     """
 
     def __init__(
@@ -232,10 +635,15 @@ class LabelingEngine:
         self.client_id = client_id
         self.client_secret = client_secret
         self._token_cache = TokenCache()
+        self._writer = LocalLabelWriter()
 
         # Retry configuration
         self._max_retries = 4
         self._base_delay = 2.0  # seconds
+
+    # -----------------------------------------------------------------
+    # Graph API helpers (async, httpx)
+    # -----------------------------------------------------------------
 
     async def _get_access_token(self) -> str:
         """Get Graph API access token with caching and retry logic."""
@@ -329,6 +737,10 @@ class LabelingEngine:
 
         raise Exception(f"Graph API request failed after {self._max_retries} retries: {last_error}")
 
+    # -----------------------------------------------------------------
+    # Public API — apply / remove / get
+    # -----------------------------------------------------------------
+
     async def apply_label(
         self,
         file_info: FileInfo,
@@ -355,6 +767,141 @@ class LabelingEngine:
                 success=False,
                 error=f"Unknown adapter type: {file_info.adapter}",
             )
+
+    async def remove_label(self, file_info: FileInfo) -> LabelResult:
+        """
+        Remove sensitivity label from a file.
+
+        Args:
+            file_info: File information from an adapter
+
+        Returns:
+            LabelResult with success status
+        """
+        if file_info.adapter == "filesystem":
+            return await self._remove_local_label(file_info.path)
+        elif file_info.adapter in ("sharepoint", "onedrive"):
+            return await self._remove_graph_label(file_info)
+        else:
+            return LabelResult(
+                success=False,
+                error=f"Unknown adapter type: {file_info.adapter}",
+            )
+
+    async def get_current_label(self, file_info: FileInfo) -> Optional[dict]:
+        """
+        Get the current label on a file.
+
+        Args:
+            file_info: File to check
+
+        Returns:
+            Label dict with id and name, or None if no label
+        """
+        if file_info.adapter == "filesystem":
+            return await asyncio.to_thread(self._writer.get_local_label, file_info.path)
+        elif file_info.adapter in ("sharepoint", "onedrive"):
+            return await self._get_graph_label(file_info)
+        return None
+
+    async def get_available_labels(self, use_cache: bool = True) -> list[dict]:
+        """
+        Get available sensitivity labels from M365.
+
+        Args:
+            use_cache: Whether to use cached labels (default True)
+
+        Returns:
+            List of label dictionaries with id, name, description, color, priority
+        """
+        # Check cache first
+        if use_cache and not _label_cache.is_expired():
+            cached = _label_cache.get_all()
+            if cached:
+                return [label.to_dict() for label in cached]
+
+        try:
+            response = await self._graph_request("GET", "/informationProtection/policy/labels")
+
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch labels: {response.text}")
+                # Return cached labels even if expired, if API fails
+                cached = _label_cache.get_all()
+                return [label.to_dict() for label in cached] if cached else []
+
+            data = response.json()
+            labels = []
+
+            for label in data.get("value", []):
+                labels.append({
+                    "id": label.get("id"),
+                    "name": label.get("name"),
+                    "description": label.get("description", ""),
+                    "color": label.get("color", ""),
+                    "priority": label.get("priority", 0),
+                    "parent_id": label.get("parent", {}).get("id") if label.get("parent") else None,
+                })
+
+            # Update cache
+            _label_cache.set(labels)
+
+            return labels
+
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout getting available labels: {e}")
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error getting available labels: {e}")
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error getting available labels: {e}")
+            cached = _label_cache.get_all()
+            return [label.to_dict() for label in cached] if cached else []
+
+    # -----------------------------------------------------------------
+    # Cache convenience methods
+    # -----------------------------------------------------------------
+
+    def get_cached_label(self, label_id: str) -> Optional[dict]:
+        """
+        Get a label from cache by ID.
+
+        Args:
+            label_id: The label GUID
+
+        Returns:
+            Label dict if cached, None otherwise
+        """
+        cached = _label_cache.get(label_id)
+        return cached.to_dict() if cached else None
+
+    def get_cached_label_by_name(self, name: str) -> Optional[dict]:
+        """
+        Get a label from cache by name.
+
+        Args:
+            name: The label name
+
+        Returns:
+            Label dict if cached, None otherwise
+        """
+        cached = _label_cache.get_by_name(name)
+        return cached.to_dict() if cached else None
+
+    def invalidate_label_cache(self) -> None:
+        """Invalidate the label cache, forcing a refresh on next access."""
+        _label_cache.invalidate()
+
+    @property
+    def label_cache_stats(self) -> dict:
+        """Get label cache statistics."""
+        return _label_cache.stats
+
+    # -----------------------------------------------------------------
+    # Local file orchestration (MIP SDK -> metadata fallback chain)
+    # -----------------------------------------------------------------
 
     async def _apply_local_label(
         self,
@@ -398,7 +945,9 @@ class LabelingEngine:
         elif ext == ".pdf":
             return await self._apply_pdf_metadata(file_path, label_id, label_name)
         else:
-            return await self._apply_sidecar(file_path, label_id, label_name)
+            return await asyncio.to_thread(
+                self._writer.apply_sidecar, file_path, label_id, label_name,
+            )
 
     async def _apply_office_metadata(
         self,
@@ -406,87 +955,15 @@ class LabelingEngine:
         label_id: str,
         label_name: Optional[str] = None,
     ) -> LabelResult:
-        """Apply label via Office document custom properties."""
-        try:
-            with open(file_path, "rb") as f:
-                content = f.read()
-
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                file_list = zf.namelist()
-
-                # Read existing custom properties or create new
-                custom_props_path = "docProps/custom.xml"
-                if custom_props_path in file_list:
-                    custom_xml = zf.read(custom_props_path).decode("utf-8")
-                else:
-                    custom_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
-xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-</Properties>'''
-
-                # Add/update label properties
-                import re
-
-                # Remove existing label properties
-                custom_xml = re.sub(r'<property[^>]*name="OpenLabels_[^"]*"[^>]*>.*?</property>', '', custom_xml, flags=re.DOTALL)
-                custom_xml = re.sub(r'<property[^>]*name="Classification"[^>]*>.*?</property>', '', custom_xml, flags=re.DOTALL)
-
-                # Find highest pid
-                pids = re.findall(r'pid="(\d+)"', custom_xml)
-                next_pid = max([int(p) for p in pids], default=1) + 1
-
-                # Build new properties
-                new_props = f'''
-  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{next_pid}" name="OpenLabels_LabelId">
-    <vt:lpwstr>{label_id}</vt:lpwstr>
-  </property>
-  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{next_pid + 1}" name="OpenLabels_LabelName">
-    <vt:lpwstr>{label_name or ''}</vt:lpwstr>
-  </property>
-  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{next_pid + 2}" name="Classification">
-    <vt:lpwstr>{label_name or label_id}</vt:lpwstr>
-  </property>
-'''
-                # Insert before closing tag
-                custom_xml = custom_xml.replace("</Properties>", new_props + "</Properties>")
-
-                # Write updated file
-                output = io.BytesIO()
-                with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
-                    for item in file_list:
-                        if item != custom_props_path:
-                            out_zf.writestr(item, zf.read(item))
-                    out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
-
-                    # Update content types if custom.xml is new
-                    if custom_props_path not in file_list:
-                        content_types = zf.read("[Content_Types].xml").decode("utf-8")
-                        if "custom.xml" not in content_types:
-                            content_types = content_types.replace(
-                                "</Types>",
-                                '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>'
-                            )
-                            out_zf.writestr("[Content_Types].xml", content_types.encode("utf-8"))
-
-                with open(file_path, "wb") as f:
-                    f.write(output.getvalue())
-
-            return LabelResult(
-                success=True,
-                label_id=label_id,
-                label_name=label_name,
-                method="office_metadata",
+        """Apply label via Office metadata, falling back to sidecar on failure."""
+        result = await asyncio.to_thread(
+            self._writer.apply_office_metadata, file_path, label_id, label_name,
+        )
+        if not result.success:
+            return await asyncio.to_thread(
+                self._writer.apply_sidecar, file_path, label_id, label_name,
             )
-
-        except PermissionError as e:
-            logger.error(f"Permission denied applying Office metadata label: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
-        except OSError as e:
-            logger.error(f"OS error applying Office metadata label: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
-        except zipfile.BadZipFile as e:
-            logger.error(f"Invalid Office file format: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
+        return result
 
     async def _apply_pdf_metadata(
         self,
@@ -494,116 +971,35 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
         label_id: str,
         label_name: Optional[str] = None,
     ) -> LabelResult:
-        """Apply label via PDF metadata."""
-        try:
-            # Try pypdf first
-            try:
-                from pypdf import PdfReader, PdfWriter
-
-                reader = PdfReader(file_path)
-                writer = PdfWriter()
-
-                for page in reader.pages:
-                    writer.add_page(page)
-
-                # Copy existing metadata
-                if reader.metadata:
-                    writer.add_metadata(dict(reader.metadata))
-
-                # Add label metadata
-                writer.add_metadata({
-                    "/OpenLabels_LabelId": label_id,
-                    "/OpenLabels_LabelName": label_name or "",
-                    "/Classification": label_name or label_id,
-                })
-
-                with open(file_path, "wb") as f:
-                    writer.write(f)
-
-                return LabelResult(
-                    success=True,
-                    label_id=label_id,
-                    label_name=label_name,
-                    method="pdf_metadata",
-                )
-
-            except ImportError:
-                # Fallback to PyPDF2
-                from PyPDF2 import PdfReader, PdfWriter
-
-                reader = PdfReader(file_path)
-                writer = PdfWriter()
-
-                for page in reader.pages:
-                    writer.add_page(page)
-
-                if reader.metadata:
-                    writer.add_metadata(dict(reader.metadata))
-
-                writer.add_metadata({
-                    "/OpenLabels_LabelId": label_id,
-                    "/OpenLabels_LabelName": label_name or "",
-                    "/Classification": label_name or label_id,
-                })
-
-                with open(file_path, "wb") as f:
-                    writer.write(f)
-
-                return LabelResult(
-                    success=True,
-                    label_id=label_id,
-                    label_name=label_name,
-                    method="pdf_metadata",
-                )
-
-        except PermissionError as e:
-            logger.error(f"Permission denied applying PDF metadata label: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
-        except OSError as e:
-            logger.error(f"OS error applying PDF metadata label: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
-        except ValueError as e:
-            logger.error(f"Invalid PDF format: {e}")
-            return await self._apply_sidecar(file_path, label_id, label_name)
-
-    async def _apply_sidecar(
-        self,
-        file_path: str,
-        label_id: str,
-        label_name: Optional[str] = None,
-    ) -> LabelResult:
-        """Apply label via sidecar file (fallback method)."""
-        try:
-            sidecar_path = f"{file_path}.openlabels"
-            sidecar_data = {
-                "label_id": label_id,
-                "label_name": label_name,
-                "applied_at": datetime.now(timezone.utc).isoformat(),
-                "applied_by": "openlabels",
-            }
-
-            with open(sidecar_path, "w") as f:
-                json.dump(sidecar_data, f, indent=2)
-
-            return LabelResult(
-                success=True,
-                label_id=label_id,
-                label_name=label_name,
-                method="sidecar",
+        """Apply label via PDF metadata, falling back to sidecar on failure."""
+        result = await asyncio.to_thread(
+            self._writer.apply_pdf_metadata, file_path, label_id, label_name,
+        )
+        if not result.success:
+            return await asyncio.to_thread(
+                self._writer.apply_sidecar, file_path, label_id, label_name,
             )
+        return result
 
-        except PermissionError as e:
-            return LabelResult(
-                success=False,
-                label_id=label_id,
-                error=f"Permission denied creating sidecar file: {e}",
-            )
-        except OSError as e:
-            return LabelResult(
-                success=False,
-                label_id=label_id,
-                error=f"OS error creating sidecar file: {e}",
-            )
+    async def _remove_local_label(self, file_path: str) -> LabelResult:
+        """Remove label from local file."""
+        path = Path(file_path)
+        ext = path.suffix.lower()
+
+        # Remove sidecar file if exists (blocking I/O in thread)
+        await asyncio.to_thread(self._writer.remove_sidecar, file_path)
+
+        if ext in (".docx", ".xlsx", ".pptx"):
+            return await asyncio.to_thread(self._writer.remove_office_label, file_path)
+        elif ext == ".pdf":
+            return await asyncio.to_thread(self._writer.remove_pdf_label, file_path)
+        else:
+            # Sidecar removal was enough
+            return LabelResult(success=True, method="sidecar_removed")
+
+    # -----------------------------------------------------------------
+    # Graph API operations (SharePoint / OneDrive)
+    # -----------------------------------------------------------------
 
     async def _apply_graph_label(
         self,
@@ -728,118 +1124,6 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             logger.error(f"HTTP error resolving share URL: {e}")
             return None
 
-    async def remove_label(self, file_info: FileInfo) -> LabelResult:
-        """
-        Remove sensitivity label from a file.
-
-        Args:
-            file_info: File information from an adapter
-
-        Returns:
-            LabelResult with success status
-        """
-        if file_info.adapter == "filesystem":
-            return await self._remove_local_label(file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
-            return await self._remove_graph_label(file_info)
-        else:
-            return LabelResult(
-                success=False,
-                error=f"Unknown adapter type: {file_info.adapter}",
-            )
-
-    async def _remove_local_label(self, file_path: str) -> LabelResult:
-        """Remove label from local file."""
-        path = Path(file_path)
-        ext = path.suffix.lower()
-
-        # Remove sidecar file if exists
-        sidecar_path = Path(f"{file_path}.openlabels")
-        if sidecar_path.exists():
-            sidecar_path.unlink()
-
-        if ext in (".docx", ".xlsx", ".pptx"):
-            return await self._remove_office_label(file_path)
-        elif ext == ".pdf":
-            return await self._remove_pdf_label(file_path)
-        else:
-            # Sidecar removal was enough
-            return LabelResult(success=True, method="sidecar_removed")
-
-    async def _remove_office_label(self, file_path: str) -> LabelResult:
-        """Remove label from Office document custom properties."""
-        try:
-            with open(file_path, "rb") as f:
-                content = f.read()
-
-            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
-                file_list = zf.namelist()
-                custom_props_path = "docProps/custom.xml"
-
-                if custom_props_path not in file_list:
-                    return LabelResult(success=True, method="no_label_found")
-
-                custom_xml = zf.read(custom_props_path).decode("utf-8")
-
-                import re
-                # Remove OpenLabels and Classification properties
-                custom_xml = re.sub(r'<property[^>]*name="OpenLabels_[^"]*"[^>]*>.*?</property>\s*', '', custom_xml, flags=re.DOTALL)
-                custom_xml = re.sub(r'<property[^>]*name="Classification"[^>]*>.*?</property>\s*', '', custom_xml, flags=re.DOTALL)
-
-                # Write updated file
-                output = io.BytesIO()
-                with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
-                    for item in file_list:
-                        if item != custom_props_path:
-                            out_zf.writestr(item, zf.read(item))
-                    out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
-
-                with open(file_path, "wb") as f:
-                    f.write(output.getvalue())
-
-            return LabelResult(success=True, method="office_metadata_removed")
-
-        except PermissionError as e:
-            return LabelResult(success=False, error=f"Permission denied removing Office label: {e}")
-        except OSError as e:
-            return LabelResult(success=False, error=f"OS error removing Office label: {e}")
-        except zipfile.BadZipFile as e:
-            return LabelResult(success=False, error=f"Invalid Office file format: {e}")
-
-    async def _remove_pdf_label(self, file_path: str) -> LabelResult:
-        """Remove label from PDF metadata."""
-        try:
-            try:
-                from pypdf import PdfReader, PdfWriter
-            except ImportError:
-                from PyPDF2 import PdfReader, PdfWriter
-
-            reader = PdfReader(file_path)
-            writer = PdfWriter()
-
-            for page in reader.pages:
-                writer.add_page(page)
-
-            # Copy metadata except label fields
-            if reader.metadata:
-                clean_metadata = {
-                    k: v for k, v in dict(reader.metadata).items()
-                    if not k.startswith("/OpenLabels_") and k != "/Classification"
-                }
-                writer.add_metadata(clean_metadata)
-
-            with open(file_path, "wb") as f:
-                writer.write(f)
-
-            return LabelResult(success=True, method="pdf_metadata_removed")
-
-        except PermissionError as e:
-            return LabelResult(success=False, error=f"Permission denied removing PDF label: {e}")
-        except OSError as e:
-            return LabelResult(success=False, error=f"OS error removing PDF label: {e}")
-        except ValueError as e:
-            return LabelResult(success=False, error=f"Invalid PDF format: {e}")
-
     async def _remove_graph_label(self, file_info: FileInfo) -> LabelResult:
         """Remove label from SharePoint/OneDrive file via Graph API."""
         try:
@@ -873,179 +1157,6 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             return LabelResult(success=False, error=f"Connection error: {e}")
         except httpx.HTTPStatusError as e:
             return LabelResult(success=False, error=f"HTTP error {e.response.status_code}")
-
-    async def get_available_labels(self, use_cache: bool = True) -> list[dict]:
-        """
-        Get available sensitivity labels from M365.
-
-        Args:
-            use_cache: Whether to use cached labels (default True)
-
-        Returns:
-            List of label dictionaries with id, name, description, color, priority
-        """
-        # Check cache first
-        if use_cache and not _label_cache.is_expired():
-            cached = _label_cache.get_all()
-            if cached:
-                return [label.to_dict() for label in cached]
-
-        try:
-            response = await self._graph_request("GET", "/informationProtection/policy/labels")
-
-            if response.status_code != 200:
-                logger.error(f"Failed to fetch labels: {response.text}")
-                # Return cached labels even if expired, if API fails
-                cached = _label_cache.get_all()
-                return [label.to_dict() for label in cached] if cached else []
-
-            data = response.json()
-            labels = []
-
-            for label in data.get("value", []):
-                labels.append({
-                    "id": label.get("id"),
-                    "name": label.get("name"),
-                    "description": label.get("description", ""),
-                    "color": label.get("color", ""),
-                    "priority": label.get("priority", 0),
-                    "parent_id": label.get("parent", {}).get("id") if label.get("parent") else None,
-                })
-
-            # Update cache
-            _label_cache.set(labels)
-
-            return labels
-
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout getting available labels: {e}")
-            cached = _label_cache.get_all()
-            return [label.to_dict() for label in cached] if cached else []
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error getting available labels: {e}")
-            cached = _label_cache.get_all()
-            return [label.to_dict() for label in cached] if cached else []
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting available labels: {e}")
-            cached = _label_cache.get_all()
-            return [label.to_dict() for label in cached] if cached else []
-
-    def get_cached_label(self, label_id: str) -> Optional[dict]:
-        """
-        Get a label from cache by ID.
-
-        Args:
-            label_id: The label GUID
-
-        Returns:
-            Label dict if cached, None otherwise
-        """
-        cached = _label_cache.get(label_id)
-        return cached.to_dict() if cached else None
-
-    def get_cached_label_by_name(self, name: str) -> Optional[dict]:
-        """
-        Get a label from cache by name.
-
-        Args:
-            name: The label name
-
-        Returns:
-            Label dict if cached, None otherwise
-        """
-        cached = _label_cache.get_by_name(name)
-        return cached.to_dict() if cached else None
-
-    def invalidate_label_cache(self) -> None:
-        """Invalidate the label cache, forcing a refresh on next access."""
-        _label_cache.invalidate()
-
-    @property
-    def label_cache_stats(self) -> dict:
-        """Get label cache statistics."""
-        return _label_cache.stats
-
-    async def get_current_label(self, file_info: FileInfo) -> Optional[dict]:
-        """
-        Get the current label on a file.
-
-        Args:
-            file_info: File to check
-
-        Returns:
-            Label dict with id and name, or None if no label
-        """
-        if file_info.adapter == "filesystem":
-            return await self._get_local_label(file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
-            return await self._get_graph_label(file_info)
-        return None
-
-    async def _get_local_label(self, file_path: str) -> Optional[dict]:
-        """Get label from local file metadata or sidecar."""
-        path = Path(file_path)
-        ext = path.suffix.lower()
-
-        # Check sidecar first
-        sidecar_path = Path(f"{file_path}.openlabels")
-        if sidecar_path.exists():
-            try:
-                with open(sidecar_path) as f:
-                    data = json.load(f)
-                return {
-                    "id": data.get("label_id"),
-                    "name": data.get("label_name"),
-                }
-            except PermissionError as e:
-                logger.debug(f"Permission denied reading sidecar label for {file_path}: {e}")
-            except OSError as e:
-                logger.debug(f"OS error reading sidecar label for {file_path}: {e}")
-            except json.JSONDecodeError as e:
-                logger.debug(f"Invalid JSON in sidecar for {file_path}: {e}")
-
-        # Check Office document metadata
-        if ext in (".docx", ".xlsx", ".pptx"):
-            try:
-                with zipfile.ZipFile(file_path, "r") as zf:
-                    if "docProps/custom.xml" in zf.namelist():
-                        custom_xml = zf.read("docProps/custom.xml").decode("utf-8")
-                        import re
-                        label_match = re.search(r'name="OpenLabels_LabelId"[^>]*>.*?<vt:lpwstr>([^<]+)</vt:lpwstr>', custom_xml, re.DOTALL)
-                        name_match = re.search(r'name="OpenLabels_LabelName"[^>]*>.*?<vt:lpwstr>([^<]+)</vt:lpwstr>', custom_xml, re.DOTALL)
-                        if label_match:
-                            return {
-                                "id": label_match.group(1),
-                                "name": name_match.group(1) if name_match else None,
-                            }
-            except PermissionError as e:
-                logger.debug(f"Permission denied reading Office metadata label for {file_path}: {e}")
-            except OSError as e:
-                logger.debug(f"OS error reading Office metadata label for {file_path}: {e}")
-            except zipfile.BadZipFile as e:
-                logger.debug(f"Invalid Office file format for {file_path}: {e}")
-
-        # Check PDF metadata
-        if ext == ".pdf":
-            try:
-                try:
-                    from pypdf import PdfReader
-                except ImportError:
-                    from PyPDF2 import PdfReader
-
-                reader = PdfReader(file_path)
-                if reader.metadata:
-                    label_id = reader.metadata.get("/OpenLabels_LabelId")
-                    label_name = reader.metadata.get("/OpenLabels_LabelName")
-                    if label_id:
-                        return {"id": label_id, "name": label_name}
-            except PermissionError as e:
-                logger.debug(f"Permission denied reading PDF metadata label for {file_path}: {e}")
-            except OSError as e:
-                logger.debug(f"OS error reading PDF metadata label for {file_path}: {e}")
-            except ValueError as e:
-                logger.debug(f"Invalid PDF format for {file_path}: {e}")
-
-        return None
 
     async def _get_graph_label(self, file_info: FileInfo) -> Optional[dict]:
         """Get label from SharePoint/OneDrive file via Graph API."""

@@ -13,8 +13,6 @@ Security features:
 
 import logging
 import os
-from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -182,32 +180,6 @@ def validate_output_path(output_path: str, *, create_parent: bool = False) -> st
     return canonical_path
 
 
-def validate_input_path(input_path: str) -> str:
-    """
-    Validate an input file path for safe reading.
-
-    This is specifically for CLI commands that read input files.
-
-    Args:
-        input_path: The input file path to validate
-
-    Returns:
-        Canonicalized safe path
-
-    Raises:
-        PathValidationError: If path is invalid, blocked, or doesn't exist
-    """
-    canonical_path = validate_path(input_path, require_exists=True)
-
-    if os.path.isdir(canonical_path):
-        raise PathValidationError(f"Expected a file, got a directory: {canonical_path}")
-
-    if not os.access(canonical_path, os.R_OK):
-        raise PathValidationError(f"Cannot read file (permission denied): {canonical_path}")
-
-    return canonical_path
-
-
 def _check_blocked_paths(path: str) -> None:
     """Check if path is in a blocked system directory."""
     path_lower = path.lower()
@@ -227,55 +199,3 @@ def _check_blocked_patterns(path: str) -> None:
             raise PathValidationError("Access to this file type is not allowed")
 
 
-def is_safe_path(file_path: str) -> bool:
-    """
-    Check if a path is safe without raising exceptions.
-
-    Useful for filtering/validation where you want a boolean result.
-
-    Args:
-        file_path: The file path to check
-
-    Returns:
-        True if path is safe, False otherwise
-    """
-    try:
-        validate_path(file_path)
-        return True
-    except PathValidationError:
-        return False
-
-
-def safe_join(base: str, *paths: str) -> str:
-    """
-    Safely join paths, preventing directory traversal.
-
-    The result is guaranteed to be under the base directory.
-
-    Args:
-        base: Base directory path
-        *paths: Path components to join
-
-    Returns:
-        Joined path that is under base directory
-
-    Raises:
-        PathValidationError: If resulting path escapes base directory
-    """
-    # Normalize base
-    base = os.path.normpath(os.path.abspath(base))
-
-    # Check each component for traversal attempts
-    for p in paths:
-        if ".." in p or p.startswith("/") or (len(p) > 1 and p[1] == ":"):
-            raise PathValidationError("Path traversal is not allowed")
-
-    # Join and normalize
-    joined = os.path.normpath(os.path.join(base, *paths))
-
-    # Ensure result is under base
-    if not joined.startswith(base + os.sep) and joined != base:
-        logger.warning(f"Path escape attempt: {paths} from base {base}")
-        raise PathValidationError("Path would escape base directory")
-
-    return joined

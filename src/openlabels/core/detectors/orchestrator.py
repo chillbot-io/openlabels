@@ -15,9 +15,11 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Union
 
-from ..types import Span, Tier, DetectionResult, normalize_entity_type
+from ..types import Span, DetectionResult, normalize_entity_type
+from ..policies.engine import get_policy_engine
+from ..policies.schema import EntityMatch
 from .base import BaseDetector
 from .checksum import ChecksumDetector
 from .secrets import SecretsDetector
@@ -80,6 +82,7 @@ class DetectorOrchestrator:
         enable_context_enhancement: bool = False,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         max_workers: int = 4,
+        enable_policy: bool = False,
     ):
         """
         Initialize the orchestrator with configured detectors.
@@ -101,6 +104,7 @@ class DetectorOrchestrator:
         """
         self.confidence_threshold = confidence_threshold
         self.max_workers = max_workers
+        self.enable_policy = enable_policy
         self.enable_coref = enable_coref
         self.enable_context_enhancement = enable_context_enhancement
         self.detectors: List[BaseDetector] = []
@@ -297,6 +301,25 @@ class DetectorOrchestrator:
             except Exception as e:
                 logger.error(f"Context enhancement failed: {e}")
 
+        # Policy evaluation
+        policy_result = None
+        if self.enable_policy and processed_spans:
+            try:
+                entity_matches = [
+                    EntityMatch(
+                        entity_type=span.entity_type,
+                        value=span.text,
+                        confidence=span.confidence,
+                        start=span.start,
+                        end=span.end,
+                        source=span.detector,
+                    )
+                    for span in processed_spans
+                ]
+                policy_result = get_policy_engine().evaluate(entity_matches)
+            except Exception as e:
+                logger.error(f"Policy evaluation failed: {e}")
+
         # Calculate entity counts
         entity_counts: Dict[str, int] = {}
         for span in processed_spans:
@@ -311,6 +334,7 @@ class DetectorOrchestrator:
             processing_time_ms=processing_time_ms,
             detectors_used=detectors_used,
             text_length=len(text),
+            policy_result=policy_result,
         )
 
     def _run_detector(self, detector: BaseDetector, text: str) -> List[Span]:
@@ -351,35 +375,128 @@ class DetectorOrchestrator:
         """
         Remove duplicate/overlapping detections.
 
-        When two spans overlap at the same position:
-        - Higher tier wins (CHECKSUM > STRUCTURED > PATTERN > ML)
-        - If same tier, higher confidence wins
+        Uses a sort + single-pass merge algorithm — O(n log n) for the sort
+        plus O(n) amortised for the merge — instead of the previous O(n²)
+        all-pairs comparison.
+
+        Overlap handling:
+        - Exact same position: higher tier wins (CHECKSUM > STRUCTURED >
+          PATTERN > ML), then higher confidence
+        - One span fully contains the other: the containing span is kept
+        - Partial overlap, same entity_type: merge into one span covering
+          the union of both character ranges
+        - Partial overlap, different entity_types: keep the span with the
+          higher confidence (ties broken by tier)
         """
         if not spans:
             return []
 
-        # Sort by start position, then by tier (descending), then by confidence (descending)
+        # O(n log n) sort by start position; ties broken by higher tier,
+        # then higher confidence so the best candidate is processed first
+        # when multiple spans share a start position.
         sorted_spans = sorted(
             spans,
-            key=lambda s: (s.start, -s.tier.value, -s.confidence)
+            key=lambda s: (s.start, -s.tier.value, -s.confidence),
         )
 
+        # ``result`` maintains the invariant: spans are non-overlapping and
+        # ordered by start, so result[j].end <= result[j+1].start.  This
+        # guarantees that once we find a result span whose end is at or
+        # before the current span's start, no earlier entry can overlap
+        # either, allowing an early exit from the backward scan.
         result: List[Span] = []
-        for span in sorted_spans:
-            # Check if this span overlaps with any already accepted span
-            overlaps = False
-            for accepted in result:
-                if span.overlaps(accepted):
-                    # If same position, the first one (higher tier) wins
-                    if span.start == accepted.start and span.end == accepted.end:
-                        overlaps = True
-                        break
-                    # If contained within, skip
-                    if accepted.contains(span):
-                        overlaps = True
-                        break
 
-            if not overlaps:
+        for span in sorted_spans:
+            absorbed = False
+            i = len(result) - 1
+
+            while i >= 0:
+                accepted = result[i]
+
+                # Early exit: non-overlapping result entries are sorted by
+                # start, so once accepted.end <= span.start nothing earlier
+                # can overlap.
+                if accepted.end <= span.start:
+                    break
+
+                if not accepted.overlaps(span):
+                    i -= 1
+                    continue
+
+                # -- exact same position ----------------------------------
+                if span.start == accepted.start and span.end == accepted.end:
+                    if (span.tier.value > accepted.tier.value
+                            or (span.tier.value == accepted.tier.value
+                                and span.confidence > accepted.confidence)):
+                        result[i] = span
+                    absorbed = True
+                    break
+
+                # -- accepted fully contains span -------------------------
+                if accepted.contains(span):
+                    absorbed = True
+                    break
+
+                # -- span fully contains accepted -------------------------
+                if span.contains(accepted):
+                    result.pop(i)
+                    i -= 1
+                    continue          # span may still overlap earlier entries
+
+                # -- partial overlap --------------------------------------
+                accepted_norm = normalize_entity_type(accepted.entity_type)
+                span_norm = normalize_entity_type(span.entity_type)
+
+                if accepted_norm == span_norm:
+                    # Same entity type: merge into the union span.
+                    new_start = min(accepted.start, span.start)
+                    new_end = max(accepted.end, span.end)
+
+                    # Stitch text: left text + non-overlapping right tail.
+                    if accepted.start <= span.start:
+                        left, right = accepted, span
+                    else:
+                        left, right = span, accepted
+                    overlap_chars = left.end - right.start
+                    merged_text = left.text + right.text[overlap_chars:]
+
+                    # Metadata from the higher-authority detection.
+                    if (span.tier.value > accepted.tier.value
+                            or (span.tier.value == accepted.tier.value
+                                and span.confidence > accepted.confidence)):
+                        base = span
+                    else:
+                        base = accepted
+
+                    span = Span(
+                        start=new_start,
+                        end=new_end,
+                        text=merged_text,
+                        entity_type=base.entity_type,
+                        confidence=max(accepted.confidence, span.confidence),
+                        detector=base.detector,
+                        tier=base.tier,
+                    )
+                    result.pop(i)
+                    i -= 1
+                    continue          # merged span may overlap earlier entries
+
+                else:
+                    # Different entity types: keep the higher-confidence one.
+                    span_wins = (
+                        span.confidence > accepted.confidence
+                        or (span.confidence == accepted.confidence
+                            and span.tier.value > accepted.tier.value)
+                    )
+                    if span_wins:
+                        result.pop(i)
+                        i -= 1
+                        continue      # span survives; check earlier entries
+                    else:
+                        absorbed = True
+                        break         # discard span
+
+            if not absorbed:
                 result.append(span)
 
         return result

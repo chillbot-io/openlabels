@@ -20,11 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, AsyncIterator, Union
 
-from .types import Span, DetectionResult, ScoringResult, RiskTier
+from .types import Span, RiskTier
 from .detectors.orchestrator import DetectorOrchestrator
 from .scoring.scorer import score
 from .constants import DEFAULT_MODELS_DIR
-from .extractors import extract_text as _extract_text_from_file, ExtractionResult
+from .extractors import extract_text as _extract_text_from_file
 from .exceptions import DetectionError, ExtractionError, SecurityError
 
 logger = logging.getLogger(__name__)

@@ -4,12 +4,12 @@ Classify command for local file classification.
 
 import asyncio
 import json
-import sys
 from pathlib import Path
 from typing import Optional
 
 import click
 
+from openlabels.cli.utils import collect_files
 from openlabels.core.path_validation import validate_output_path, PathValidationError
 
 
@@ -30,17 +30,10 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
         openlabels classify ./data/ --recursive --output results.json
         openlabels classify ./folder/ -r --min-score 50
     """
-    target_path = Path(path)
-
-    if target_path.is_dir():
-        if recursive:
-            files = list(target_path.rglob("*"))
-        else:
-            files = list(target_path.glob("*"))
-        files = [f for f in files if f.is_file()]
+    files = collect_files(path, recursive)
+    if Path(path).is_dir():
         click.echo(f"Classifying {len(files)} files...")
     else:
-        files = [target_path]
         click.echo(f"Classifying: {path}")
 
     try:

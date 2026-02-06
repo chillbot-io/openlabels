@@ -220,59 +220,66 @@ async def export_results(
         filename_parts.append(risk_tier.lower())
     filename = "_".join(filename_parts)
 
+    def _matches_filters(row_dict: dict) -> bool:
+        if risk_tier and row_dict.get("risk_tier") != risk_tier:
+            return False
+        if has_label == "true" and not row_dict.get("label_applied"):
+            return False
+        if has_label == "false" and row_dict.get("label_applied"):
+            return False
+        return True
+
     if format == "csv":
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow([
-            "file_path", "file_name", "risk_score", "risk_tier",
-            "total_entities", "exposure_level", "owner",
-            "current_label", "recommended_label", "label_applied",
-        ])
-
-        # Stream results using service
-        async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
-            # Apply additional filters if needed
-            if risk_tier and row_dict.get("risk_tier") != risk_tier:
-                continue
-            if has_label == "true" and not row_dict.get("label_applied"):
-                continue
-            if has_label == "false" and row_dict.get("label_applied"):
-                continue
-
+        async def _csv_generator():
+            header_buf = io.StringIO()
+            writer = csv.writer(header_buf)
             writer.writerow([
-                row_dict.get("file_path", ""),
-                row_dict.get("file_name", ""),
-                row_dict.get("risk_score", 0),
-                row_dict.get("risk_tier", ""),
-                row_dict.get("total_entities", 0),
-                row_dict.get("exposure_level", ""),
-                row_dict.get("owner", ""),
-                row_dict.get("current_label_name", ""),
-                row_dict.get("recommended_label_name", ""),
-                row_dict.get("label_applied", False),
+                "file_path", "file_name", "risk_score", "risk_tier",
+                "total_entities", "exposure_level", "owner",
+                "current_label", "recommended_label", "label_applied",
             ])
+            yield header_buf.getvalue()
 
-        output.seek(0)
+            async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
+                if not _matches_filters(row_dict):
+                    continue
+                row_buf = io.StringIO()
+                row_writer = csv.writer(row_buf)
+                row_writer.writerow([
+                    row_dict.get("file_path", ""),
+                    row_dict.get("file_name", ""),
+                    row_dict.get("risk_score", 0),
+                    row_dict.get("risk_tier", ""),
+                    row_dict.get("total_entities", 0),
+                    row_dict.get("exposure_level", ""),
+                    row_dict.get("owner", ""),
+                    row_dict.get("current_label_name", ""),
+                    row_dict.get("recommended_label_name", ""),
+                    row_dict.get("label_applied", False),
+                ])
+                yield row_buf.getvalue()
+
         return StreamingResponse(
-            iter([output.getvalue()]),
+            _csv_generator(),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
         )
     else:
-        # JSON export
-        data = []
-        async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
-            # Apply additional filters if needed
-            if risk_tier and row_dict.get("risk_tier") != risk_tier:
-                continue
-            if has_label == "true" and not row_dict.get("label_applied"):
-                continue
-            if has_label == "false" and row_dict.get("label_applied"):
-                continue
-            data.append(row_dict)
+        # JSON export — stream as JSON array, one object per yield
+        async def _json_generator():
+            yield "[\n"
+            first = True
+            async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
+                if not _matches_filters(row_dict):
+                    continue
+                if not first:
+                    yield ",\n"
+                first = False
+                yield json.dumps(row_dict, indent=2)
+            yield "\n]\n"
 
         return StreamingResponse(
-            iter([json.dumps(data, indent=2)]),
+            _json_generator(),
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename={filename}.json"},
         )

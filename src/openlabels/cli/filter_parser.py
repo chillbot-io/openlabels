@@ -21,7 +21,6 @@ Examples:
     NOT has(SSN)
 """
 
-import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List, Optional, Union
