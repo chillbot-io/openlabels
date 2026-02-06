@@ -1054,22 +1054,6 @@ async def legacy_auth_redirect(request: Request, path: str):
     )
 
 
-# Legacy /ws/* redirect to /api/v1/ws/*
-@app.api_route("/ws/{path:path}", methods=["GET"], include_in_schema=False)
-async def legacy_ws_redirect(request: Request, path: str):
-    """
-    Redirect legacy /ws/* WebSocket requests to /api/v1/ws/*.
-
-    Note: WebSocket upgrade requests may not follow redirects automatically.
-    Clients should update to use /api/v1/ws/* directly.
-    """
-    new_path = f"/api/v1/ws/{path}"
-    query_string = request.url.query
-    if query_string:
-        new_path = f"{new_path}?{query_string}"
-
-    return RedirectResponse(
-        url=new_path,
-        status_code=307,
-        headers={"X-API-Deprecation-Warning": "This endpoint is deprecated. Please use /api/v1/ws/* endpoints."},
-    )
+    # Note: No legacy redirect for /ws/* - WebSocket endpoints are mounted
+    # directly at /ws/scans/{scan_id} (not under /api/v1/). WebSocket upgrade
+    # requests don't follow HTTP redirects, so redirecting would break clients.
