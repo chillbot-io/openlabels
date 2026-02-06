@@ -468,7 +468,8 @@ class TestWorkerLoop:
             # Run the worker loop for worker_num=3
             await worker._worker_loop(3)
 
-        # Worker should have exited (no assertion needed, just no exception)
+        # Worker 3 exceeds target_concurrency=2, so it should have stopped
+        assert worker.running is False or len([t for t in worker._worker_tasks if not t.done()]) <= worker.target_concurrency
 
 
 
