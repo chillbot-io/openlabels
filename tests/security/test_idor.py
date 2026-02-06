@@ -19,9 +19,11 @@ import string
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from unittest.mock import AsyncMock, patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from openlabels.server.app import app
 from openlabels.server.db import get_session
+from openlabels.server.dependencies import get_db_session
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import (
     Tenant, User, ScanJob, ScanResult, ScanTarget,
@@ -345,6 +347,7 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
 
     # Set up overrides
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_db_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
@@ -353,12 +356,18 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
     for limiter in limiters:
         limiter.enabled = False
 
+    mock_cache = MagicMock()
+    mock_cache.is_redis_connected = False
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
-            yield client
+        with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
+             patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
+             patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test"
+            ) as client:
+                yield client
     finally:
         app.dependency_overrides.clear()
         for limiter, state in zip(limiters, original_states):
@@ -781,9 +790,10 @@ class TestAuditLogIDOR:
             )
             assert response.status_code == 200
 
-            # Should return empty list (not 404, as resource type is valid)
+            # Should return empty items (not 404, as resource type is valid)
             history = response.json()
-            assert history == [], \
+            items = history.get("items", []) if isinstance(history, dict) else history
+            assert items == [], \
                 "CRITICAL: Cross-tenant resource history was returned!"
 
 
@@ -940,13 +950,14 @@ class TestUserIDOR:
             response = await client.get("/api/users")
             assert response.status_code == 200
 
-            users = response.json()
+            users_response = response.json()
+            user_items = users_response.get("items", users_response) if isinstance(users_response, dict) else users_response
 
             tenant_a_user_ids = [
                 str(data["admin_a"].id),
                 str(data["viewer_a"].id),
             ]
-            for user in users:
+            for user in user_items:
                 assert user.get("id") not in tenant_a_user_ids, \
                     "CRITICAL: Tenant B can see Tenant A's users!"
 

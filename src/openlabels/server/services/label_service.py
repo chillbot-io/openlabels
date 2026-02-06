@@ -12,8 +12,9 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import delete as sa_delete, select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from openlabels.server.services.base import BaseService, TenantContext
 from openlabels.server.config import Settings
@@ -249,6 +250,7 @@ class LabelService(BaseService):
         # Get paginated rules with label names via JOIN
         query = (
             select(LabelRule)
+            .options(selectinload(LabelRule.label))
             .where(LabelRule.tenant_id == self.tenant_id)
             .order_by(LabelRule.priority.desc())
             .offset(offset)
@@ -404,15 +406,18 @@ class LabelService(BaseService):
         Raises:
             NotFoundError: If rule not found
         """
-        rule = await self.session.get(LabelRule, rule_id)
-        if not rule or rule.tenant_id != self.tenant_id:
+        result = await self.session.execute(
+            sa_delete(LabelRule).where(
+                LabelRule.id == rule_id,
+                LabelRule.tenant_id == self.tenant_id,
+            )
+        )
+        if result.rowcount == 0:
             raise NotFoundError(
                 message="Label rule not found",
                 resource_type="LabelRule",
                 resource_id=str(rule_id),
             )
-
-        self.session.delete(rule)  # delete() is synchronous
         await self.flush()
 
         self._log_info(f"Deleted label rule {rule_id}")

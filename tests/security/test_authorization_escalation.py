@@ -10,8 +10,10 @@ import pytest
 from uuid import uuid4
 
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch, MagicMock
 from openlabels.server.app import app
 from openlabels.server.db import get_session
+from openlabels.server.dependencies import get_db_session
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import Tenant, User, ScanTarget, ScanJob
 
@@ -91,6 +93,7 @@ async def viewer_client(test_db):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_db_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
@@ -105,9 +108,15 @@ async def viewer_client(test_db):
     for l in limiters:
         l.enabled = False
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, test_tenant, viewer_user, admin_user, target, test_db
+    mock_cache = MagicMock()
+    mock_cache.is_redis_connected = False
+    with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
+         patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
+         patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+         patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client, test_tenant, viewer_user, admin_user, target, test_db
 
     for l, state in zip(limiters, original_states):
         l.enabled = state
@@ -195,8 +204,8 @@ class TestRoleBasedAccessControl:
         """Viewer role should not be able to modify system settings."""
         client, tenant, viewer, admin, target, _db = viewer_client
 
-        response = await client.put(
-            "/api/settings",
+        response = await client.post(
+            "/api/settings/scan",
             json={"some_setting": "value"},
         )
         # Should be 403 (admin only) or 404/405 (endpoint doesn't exist)
@@ -246,7 +255,7 @@ class TestRoleEscalation:
         viewer_id = viewer.id
 
         # Try to update own user to admin
-        response = await client.patch(
+        response = await client.put(
             f"/api/users/{viewer.id}",
             json={"role": "admin"},
         )

@@ -12,7 +12,7 @@ Cursor-based pagination is more efficient for large datasets as it:
 
 import logging
 from datetime import datetime
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -95,7 +95,7 @@ async def list_results(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
@@ -123,7 +123,7 @@ async def list_results_cursor(
     db: DbSessionDep,
     _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
     has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
@@ -202,7 +202,7 @@ async def export_results(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
-    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
     has_label: Optional[str] = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
@@ -312,6 +312,8 @@ async def clear_all_results(
                 "HX-Trigger": f'{{"notify": {{"message": "{deleted_count} results cleared", "type": "success"}}}}',
             },
         )
+
+    return {"deleted_count": deleted_count}
 
 
 @router.delete("/{result_id}")

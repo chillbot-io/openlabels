@@ -19,6 +19,14 @@ from openlabels.server.models import Session, PendingAuth
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_id(value: str) -> str:
+    """Strip null bytes and control characters from session/state IDs."""
+    sanitized = value.replace("\x00", "").strip()
+    if not sanitized:
+        raise ValueError("Empty ID after sanitization")
+    return sanitized
+
+
 class SessionStore:
     """
     Database-backed session storage.
@@ -40,6 +48,10 @@ class SessionStore:
 
         Returns None if session doesn't exist or is expired.
         """
+        try:
+            session_id = _sanitize_id(session_id)
+        except ValueError:
+            return None
         result = await self.db.execute(
             select(Session).where(
                 Session.id == session_id,
@@ -70,6 +82,7 @@ class SessionStore:
             tenant_id: Optional tenant ID
             user_id: Optional user ID
         """
+        session_id = _sanitize_id(session_id)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
         # Check if session exists
@@ -101,6 +114,10 @@ class SessionStore:
 
         Returns True if session was deleted, False if it didn't exist.
         """
+        try:
+            session_id = _sanitize_id(session_id)
+        except ValueError:
+            return False
         result = await self.db.execute(
             delete(Session).where(Session.id == session_id)
         )
@@ -130,6 +147,10 @@ class SessionStore:
         Used for logout-all functionality.
         Returns number of sessions deleted.
         """
+        try:
+            user_id = _sanitize_id(user_id)
+        except ValueError:
+            return 0
         result = await self.db.execute(
             delete(Session).where(Session.user_id == user_id)
         )
@@ -168,6 +189,10 @@ class PendingAuthStore:
 
         Returns None if not found or expired.
         """
+        try:
+            state = _sanitize_id(state)
+        except ValueError:
+            return None
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
 
         result = await self.db.execute(
@@ -190,6 +215,7 @@ class PendingAuthStore:
         """
         Store pending auth state.
         """
+        state = _sanitize_id(state)
         pending = PendingAuth(
             state=state,
             redirect_uri=redirect_uri,
@@ -204,6 +230,10 @@ class PendingAuthStore:
 
         Returns True if deleted, False if not found.
         """
+        try:
+            state = _sanitize_id(state)
+        except ValueError:
+            return False
         result = await self.db.execute(
             delete(PendingAuth).where(PendingAuth.state == state)
         )
