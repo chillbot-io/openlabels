@@ -20,13 +20,13 @@ Exception Hierarchy:
     OpenLabelsError (base)
     ├── DetectionError - detection pipeline failures
     ├── ExtractionError - text extraction failures
-    ├── ScoringError - risk scoring failures
     ├── AdapterError - storage adapter failures
     │   ├── GraphAPIError - Microsoft Graph API errors
     │   └── FilesystemError - local filesystem errors
     ├── ConfigurationError - configuration/settings issues
     ├── ModelLoadError - ML model loading failures
-    └── JobError - background job processing failures
+    ├── JobError - background job processing failures
+    └── SecurityError - security check failures
 """
 
 from typing import Any, Optional
@@ -133,39 +133,6 @@ class ExtractionError(OpenLabelsError):
         super().__init__(message, details=details, **kwargs)
         self.file_path = file_path
         self.file_type = file_type
-
-
-class ScoringError(OpenLabelsError):
-    """
-    Raised when risk scoring calculation fails.
-
-    Examples:
-        - Invalid entity counts format
-        - Unknown exposure level
-        - Scoring engine misconfiguration
-
-    Usage:
-        try:
-            result = score(entities, exposure)
-        except ScoringError as e:
-            logger.error(f"Scoring failed: {e}")
-    """
-
-    def __init__(
-        self,
-        message: str,
-        entity_counts: Optional[dict[str, int]] = None,
-        exposure_level: Optional[str] = None,
-        **kwargs,
-    ):
-        details = kwargs.pop("details", {})
-        if entity_counts is not None:
-            details["entity_count"] = len(entity_counts)
-        if exposure_level:
-            details["exposure"] = exposure_level
-        super().__init__(message, details=details, **kwargs)
-        self.entity_counts = entity_counts
-        self.exposure_level = exposure_level
 
 
 class AdapterError(OpenLabelsError):
@@ -379,40 +346,6 @@ class JobError(OpenLabelsError):
         self.job_id = job_id
         self.job_type = job_type
         self.worker_id = worker_id
-
-
-class ValidationError(OpenLabelsError):
-    """
-    Raised when input validation fails.
-
-    Examples:
-        - Invalid file path format
-        - Malformed entity data
-        - Out-of-range values
-        - Required field missing
-
-    Usage:
-        try:
-            validate_scan_request(request)
-        except ValidationError as e:
-            return {"error": str(e)}, 400
-    """
-
-    def __init__(
-        self,
-        message: str,
-        field_name: Optional[str] = None,
-        field_value: Optional[Any] = None,
-        **kwargs,
-    ):
-        details = kwargs.pop("details", {})
-        if field_name:
-            details["field"] = field_name
-        if field_value is not None:
-            details["value"] = repr(field_value)
-        super().__init__(message, details=details, **kwargs)
-        self.field_name = field_name
-        self.field_value = field_value
 
 
 class SecurityError(OpenLabelsError):

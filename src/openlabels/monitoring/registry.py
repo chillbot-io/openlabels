@@ -177,9 +177,19 @@ def _enable_monitoring_windows(
 
     rights_str = ", ".join(rights)
 
-    # PowerShell script to add audit rule
+    # Validate path to prevent command injection
+    resolved_path = str(Path(path).resolve())
+    # Reject paths containing characters that could break out of PowerShell strings
+    if any(c in resolved_path for c in ['"', "'", '`', '$', '\n', '\r', ';', '&', '|']):
+        return MonitoringResult(
+            success=False,
+            path=path,
+            error="Path contains invalid characters",
+        )
+
+    # PowerShell script to add audit rule (path is validated above)
     ps_script = f'''
-$path = "{path}"
+$path = "{resolved_path}"
 $acl = Get-Acl -Path $path -Audit
 $rule = New-Object System.Security.AccessControl.FileSystemAuditRule(
     "Everyone",

@@ -4,6 +4,7 @@ Web UI routes for OpenLabels.
 Serves Jinja2 templates with HTMX support for dynamic updates.
 """
 
+import html
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1331,26 +1332,29 @@ async def target_checkboxes_partial(
             })
 
     if targets:
-        html = '<div class="divide-y divide-gray-200">'
+        markup = '<div class="divide-y divide-gray-200">'
         for target in targets:
-            html += f'''
+            safe_id = html.escape(target['id'])
+            safe_name = html.escape(target['name'])
+            safe_adapter = html.escape(target['adapter'])
+            markup += f'''
             <label class="flex items-center p-3 hover:bg-gray-50 cursor-pointer">
-                <input type="checkbox" name="target_ids[]" value="{target['id']}"
+                <input type="checkbox" name="target_ids[]" value="{safe_id}"
                     class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
                 <div class="ml-3">
-                    <span class="text-sm font-medium text-gray-900">{target['name']}</span>
-                    <span class="ml-2 text-xs text-gray-500">{target['adapter']}</span>
+                    <span class="text-sm font-medium text-gray-900">{safe_name}</span>
+                    <span class="ml-2 text-xs text-gray-500">{safe_adapter}</span>
                 </div>
             </label>'''
-        html += '</div>'
+        markup += '</div>'
     else:
-        html = '''
+        markup = '''
         <div class="p-4 text-center text-gray-500">
             <p>No enabled targets found.</p>
             <a href="/ui/targets/new" class="text-primary-600 hover:text-primary-800">Create a target</a>
         </div>'''
 
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=markup)
 
 
 @router.get("/partials/schedules-list", response_class=HTMLResponse)

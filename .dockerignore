@@ -1,0 +1,62 @@
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.env
+.env.*
+.venv/
+venv/
+
+# Testing
+tests/
+test_docs/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation (not needed in image)
+docs/
+*.md
+
+# CI/CD
+.github/
+
+# Models (mount at runtime if needed)
+models/
+*.onnx
+
+# Installer
+installer/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# Rust build artifacts
+target/
+
+# Lock files
+uv.lock

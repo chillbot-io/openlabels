@@ -13,6 +13,7 @@ from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel, FilterCon
 from openlabels.adapters.filesystem import FilesystemAdapter
 from openlabels.adapters.sharepoint import SharePointAdapter
 from openlabels.adapters.onedrive import OneDriveAdapter
+from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "FilesystemAdapter",
     "SharePointAdapter",
     "OneDriveAdapter",
+    "BaseGraphAdapter",
     "GraphClient",
     "RateLimiterConfig",
 ]

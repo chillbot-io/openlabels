@@ -11,8 +11,10 @@ Provides common functionality for all services:
 from abc import ABC
 from contextlib import asynccontextmanager
 import logging
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, TypeVar
 from uuid import UUID
+
+T = TypeVar("T")
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -262,6 +264,39 @@ class BaseService(ABC):
         except Exception:
             await self.rollback()
             raise
+
+    async def get_tenant_entity(
+        self,
+        model_class: type[T],
+        entity_id: UUID,
+        entity_name: str = "Resource",
+    ) -> T:
+        """
+        Fetch an entity by ID with tenant isolation.
+
+        Loads the entity and verifies it belongs to the current tenant.
+
+        Args:
+            model_class: SQLAlchemy model class to query
+            entity_id: Primary key of the entity
+            entity_name: Human-readable name for error messages
+
+        Returns:
+            The entity instance
+
+        Raises:
+            NotFoundError: If entity doesn't exist or belongs to another tenant
+        """
+        from openlabels.server.exceptions import NotFoundError
+
+        entity = await self._session.get(model_class, entity_id)
+        if not entity or getattr(entity, "tenant_id", None) != self.tenant_id:
+            raise NotFoundError(
+                message=f"{entity_name} not found",
+                resource_type=model_class.__name__,
+                resource_id=str(entity_id),
+            )
+        return entity
 
     def _log_debug(self, message: str, **kwargs) -> None:
         """Log a debug message with context."""

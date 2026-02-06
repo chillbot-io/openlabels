@@ -67,5 +67,13 @@ credentials.json
 secrets.json
 dump.rdb
 
+# Internal audit reports
+test_docs/
+
+# Linting / type checking caches
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+
 # Rust
 target/

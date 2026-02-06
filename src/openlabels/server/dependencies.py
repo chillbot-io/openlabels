@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING, Annotated, Any, AsyncGenerator
+from typing import Annotated, AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession

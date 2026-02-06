@@ -34,6 +34,7 @@ from openlabels.server.dependencies import (
 )
 from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -305,13 +306,7 @@ async def clear_all_results(
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "{deleted_count} results cleared", "type": "success"}}}}',
-            },
-        )
+        return htmx_notify(f"{deleted_count} results cleared")
 
     return {"deleted_count": deleted_count}
 
@@ -341,13 +336,7 @@ async def delete_result(
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "Result for \\"{file_name}\\" deleted", "type": "success"}}, "refreshResults": true}}',
-            },
-        )
+        return htmx_notify(f'Result for "{file_name}" deleted', refreshResults=True)
 
 
 @router.post("/{result_id}/apply-label")
@@ -391,13 +380,7 @@ async def apply_recommended_label(
 
         # Check if HTMX request
         if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": '{"notify": {"message": "Label application queued", "type": "success"}}',
-                },
-            )
+            return htmx_notify("Label application queued")
 
         return {"message": "Label application queued", "job_id": str(job_id)}
     except (NotFoundError, BadRequestError):
@@ -472,12 +455,6 @@ async def rescan_file(
 
     # Check if HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Rescan queued", "type": "success"}}',
-            },
-        )
+        return htmx_notify("Rescan queued")
 
     return {"message": "Rescan queued", "job_id": str(new_job.id)}

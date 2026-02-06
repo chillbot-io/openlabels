@@ -34,6 +34,7 @@ from openlabels.server.dependencies import (
 )
 from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -519,12 +520,6 @@ async def update_label_mappings(
 
     # Check if HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Label mappings saved", "type": "success"}}',
-            },
-        )
+        return htmx_notify("Label mappings saved")
 
     return {"message": "Label mappings updated"}

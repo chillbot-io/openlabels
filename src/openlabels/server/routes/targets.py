@@ -29,6 +29,7 @@ from openlabels.server.schemas.pagination import (
     create_paginated_response,
 )
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
+from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -446,13 +447,7 @@ async def delete_target(
 
         # Check if this is an HTMX request
         if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": f'{{"notify": {{"message": "Target \\"{target_name}\\" deleted", "type": "success"}}, "refreshTargets": true}}',
-                },
-            )
+            return htmx_notify(f'Target "{target_name}" deleted', refreshTargets=True)
 
         # Regular REST response
         return Response(status_code=204)

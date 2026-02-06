@@ -100,4 +100,4 @@ For labeling:
 
 ## License
 
-Apache-2.0
+MIT — see [LICENSE](./LICENSE) for details.

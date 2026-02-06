@@ -8,29 +8,15 @@ Note: For security, Azure client secrets are write-only (cannot be retrieved).
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Response
+from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 
 from openlabels.auth.dependencies import require_admin
+from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-class AzureSettingsForm(BaseModel):
-    """Azure AD configuration form data."""
-    tenant_id: str
-    client_id: str
-    client_secret: Optional[str] = None
-
-
-class ScanSettingsForm(BaseModel):
-    """Scan configuration form data."""
-    max_file_size_mb: int
-    concurrent_files: int
-    enable_ocr: bool = False
 
 
 @router.post("/azure", response_class=HTMLResponse)
@@ -52,13 +38,7 @@ async def update_azure_settings(
         extra={"tenant_id": tenant_id, "client_id": client_id},
     )
 
-    # Return success toast trigger for HTMX
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Azure settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Azure settings updated")
 
 
 @router.post("/scan", response_class=HTMLResponse)
@@ -85,12 +65,7 @@ async def update_scan_settings(
         },
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Scan settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Scan settings updated")
 
 
 @router.post("/entities", response_class=HTMLResponse)
@@ -109,12 +84,7 @@ async def update_entity_settings(
         extra={"enabled_entities": entities},
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Entity detection settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Entity detection settings updated")
 
 
 @router.post("/reset", response_class=HTMLResponse)
@@ -130,9 +100,4 @@ async def reset_settings(
         f"Settings reset requested by user {user.email}",
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Settings reset to defaults", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Settings reset to defaults")

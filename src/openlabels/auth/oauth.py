@@ -5,7 +5,7 @@ OAuth 2.0 / OIDC authentication with Azure AD.
 from typing import Optional
 import httpx
 from jose import jwt, JWTError
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from openlabels.server.config import get_settings
 
@@ -19,46 +19,48 @@ class TokenClaims(BaseModel):
     tenant_id: str
     roles: list[str] = []
 
+    @model_validator(mode="before")
     @classmethod
-    def model_validator_oid(cls, v):
-        """Validate that oid is not empty - prevents impersonation attacks."""
-        if not v or not v.strip():
-            raise ValueError("oid cannot be empty - this would allow impersonation")
-        return v
-
-    @classmethod
-    def model_validator_tenant(cls, v):
-        """Validate that tenant_id is not empty."""
-        if not v or not v.strip():
-            raise ValueError("tenant_id cannot be empty")
-        return v
-
-    def __init__(self, **data):
-        # Validate oid before Pydantic processing
-        oid = data.get("oid", "")
-        if not oid or not oid.strip():
-            raise ValueError("oid cannot be empty - this would allow impersonation")
-        tenant_id = data.get("tenant_id", "")
-        if not tenant_id or not tenant_id.strip():
-            raise ValueError("tenant_id cannot be empty")
-        super().__init__(**data)
+    def validate_required_claims(cls, data):
+        """Validate security-critical claims are not empty."""
+        if isinstance(data, dict):
+            oid = data.get("oid", "")
+            if not oid or not str(oid).strip():
+                raise ValueError("oid cannot be empty - this would allow impersonation")
+            tenant_id = data.get("tenant_id", "")
+            if not tenant_id or not str(tenant_id).strip():
+                raise ValueError("tenant_id cannot be empty")
+        return data
 
 
-# Cache for JWKS
-_jwks_cache: dict = {}
+# Cache for JWKS: maps tenant_id -> (jwks_data, fetched_at)
+_jwks_cache: dict[str, tuple[dict, float]] = {}
+
+# JWKS cache TTL in seconds (1 hour) — ensures rotated keys are picked up
+_JWKS_CACHE_TTL_SECONDS = 3600
+
+# Timeout for JWKS fetch to prevent hanging the server
+_JWKS_FETCH_TIMEOUT_SECONDS = 10.0
 
 
 async def get_jwks(tenant_id: str) -> dict:
-    """Fetch JWKS (JSON Web Key Set) from Azure AD."""
+    """Fetch JWKS (JSON Web Key Set) from Azure AD with TTL-based caching."""
+    import time
+
+    now = time.monotonic()
+
     if tenant_id in _jwks_cache:
-        return _jwks_cache[tenant_id]
+        cached_data, fetched_at = _jwks_cache[tenant_id]
+        if now - fetched_at < _JWKS_CACHE_TTL_SECONDS:
+            return cached_data
 
     jwks_uri = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_JWKS_FETCH_TIMEOUT_SECONDS) as client:
         response = await client.get(jwks_uri)
         response.raise_for_status()
-        _jwks_cache[tenant_id] = response.json()
-        return _jwks_cache[tenant_id]
+        jwks_data = response.json()
+        _jwks_cache[tenant_id] = (jwks_data, now)
+        return jwks_data
 
 
 async def validate_token(token: str) -> TokenClaims:
@@ -66,6 +68,11 @@ async def validate_token(token: str) -> TokenClaims:
     settings = get_settings()
 
     if settings.auth.provider == "none":
+        if not settings.server.debug:
+            raise ValueError(
+                "Auth provider 'none' is only allowed when server.debug is True. "
+                "Refusing to bypass authentication in non-debug mode."
+            )
         # Return mock claims for development
         return TokenClaims(
             oid="dev-user-oid",
@@ -116,5 +123,4 @@ async def validate_token(token: str) -> TokenClaims:
 
 def clear_jwks_cache():
     """Clear the JWKS cache (useful for testing or key rotation)."""
-    global _jwks_cache
-    _jwks_cache = {}
+    _jwks_cache.clear()

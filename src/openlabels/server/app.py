@@ -20,11 +20,10 @@ import logging
 import re
 import time
 import uuid
-import warnings
 
 from fastapi import APIRouter, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.exceptions import RequestValidationError
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -42,6 +41,7 @@ from openlabels.server.logging import setup_logging, set_request_id, get_request
 from openlabels.server.exceptions import APIError, RateLimitError
 from openlabels.server.schemas import ErrorResponse
 from openlabels.server.metrics import http_active_connections, record_http_request
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from openlabels.server.routes import (
     auth,
     audit,
@@ -938,9 +938,6 @@ async def api_v1_info():
         },
     }
 
-
-# Create versioned API router (v1)
-api_v1_router = APIRouter(prefix="/api/v1")
 
 # Include all API routes under v1
 api_v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
