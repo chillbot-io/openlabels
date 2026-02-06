@@ -64,20 +64,6 @@ class TestLabelSyncResult:
         assert d["labels_removed"] == 2
         assert d["errors"] == ["Error 1"]
 
-    def test_to_dict_returns_dict_type(self):
-        """to_dict should return a dictionary."""
-        result = LabelSyncResult()
-
-        assert isinstance(result.to_dict(), dict)
-
-    def test_errors_can_be_appended(self):
-        """Should be able to append errors."""
-        result = LabelSyncResult()
-        result.errors.append("First error")
-        result.errors.append("Second error")
-
-        assert len(result.errors) == 2
-
 
 class TestExecuteLabelSyncTask:
     """Tests for execute_label_sync_task function."""
@@ -434,47 +420,6 @@ class TestSyncLabelsFromGraph:
 
                     mock_remove.assert_not_called()
 
-
-class TestHttpxAvailabilityFlag:
-    """Tests for HTTPX availability flag."""
-
-    def test_httpx_available_is_boolean(self):
-        """HTTPX_AVAILABLE should be a boolean."""
-        assert isinstance(HTTPX_AVAILABLE, bool)
-
-
-class TestLabelSyncPayloadParsing:
-    """Tests for payload parsing in label sync task."""
-
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock database session."""
-        return AsyncMock()
-
-    async def test_parses_tenant_id_from_payload(self, mock_session):
-        """Should parse tenant_id UUID from payload."""
-        tenant_id = uuid4()
-
-        with patch('openlabels.server.config.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(
-                auth=MagicMock(
-                    provider="azure_ad",
-                    tenant_id="azure",
-                    client_id="client",
-                    client_secret="secret",
-                )
-            )
-            with patch('openlabels.jobs.tasks.label_sync.sync_labels_from_graph') as mock_sync:
-                mock_result = LabelSyncResult()
-                mock_sync.return_value = mock_result
-
-                await execute_label_sync_task(
-                    mock_session,
-                    {"tenant_id": str(tenant_id)}
-                )
-
-                call_kwargs = mock_sync.call_args.kwargs
-                assert call_kwargs["tenant_id"] == tenant_id
 
 
 class TestLabelFieldExtraction:

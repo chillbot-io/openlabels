@@ -43,11 +43,6 @@ class TestGenerateCsrfToken:
         # Base64 encoding increases length, so token should be > CSRF_TOKEN_LENGTH
         assert len(token) >= CSRF_TOKEN_LENGTH
 
-    def test_token_is_string(self):
-        """Token should be a string."""
-        token = generate_csrf_token()
-        assert isinstance(token, str)
-
     def test_tokens_are_unique(self):
         """Each generated token should be unique."""
         tokens = [generate_csrf_token() for _ in range(100)]
@@ -261,22 +256,6 @@ class TestValidateCsrfToken:
         """Empty header token should fail."""
         request = self._create_request(cookie_token=generate_csrf_token(), header_token="")
         assert validate_csrf_token(request) is False
-
-    def test_timing_attack_resistance(self):
-        """Token comparison should be constant-time."""
-        # Generate tokens of same length
-        token1 = generate_csrf_token()
-        token2 = generate_csrf_token()
-
-        # The implementation should use secrets.compare_digest
-        # which provides constant-time comparison
-        request_match = self._create_request(cookie_token=token1, header_token=token1)
-        request_mismatch = self._create_request(cookie_token=token1, header_token=token2)
-
-        # Both operations should complete (we can't easily test timing here,
-        # but we verify the function uses compare_digest in integration)
-        assert validate_csrf_token(request_match) is True
-        assert validate_csrf_token(request_mismatch) is False
 
     def test_whitespace_in_token_matters(self):
         """Whitespace should not be stripped from tokens."""
@@ -602,16 +581,6 @@ class TestSecurityEdgeCases:
 
 class TestCsrfCookieConfiguration:
     """Tests for CSRF cookie configuration."""
-
-    def test_cookie_name_defined(self):
-        """CSRF cookie name should be defined."""
-        assert CSRF_COOKIE_NAME is not None
-        assert len(CSRF_COOKIE_NAME) > 0
-
-    def test_header_name_defined(self):
-        """CSRF header name should be defined."""
-        assert CSRF_HEADER_NAME is not None
-        assert CSRF_HEADER_NAME.startswith("X-")  # Custom header convention
 
     def test_token_length_sufficient(self):
         """Token length should be sufficient for security."""

@@ -193,23 +193,6 @@ class TestResourceExhaustionPrevention:
 class TestRateLimitBypass:
     """Tests that rate limiting cannot be bypassed."""
 
-    async def test_xff_header_not_trusted_by_default(self, test_client):
-        """X-Forwarded-For should not be trusted without proper config."""
-        # Make requests with spoofed X-Forwarded-For
-        responses = await asyncio.gather(*[
-            test_client.get(
-                "/api/dashboard/stats",
-                headers={"X-Forwarded-For": f"192.168.1.{i}"},
-            )
-            for i in range(20)
-        ])
-
-        # All requests should be treated as same origin unless
-        # trusted proxies are configured
-        # Just verify no server errors
-        for r in responses:
-            assert r.status_code < 500
-
     async def test_case_variation_in_paths_handled(self, test_client):
         """Path case variations should not bypass rate limits."""
         # Try different case variations of same endpoint

@@ -263,31 +263,6 @@ class TestHeaderInjection:
                 "CRLF injection succeeded in setting cookie!"
 
 
-class TestLogInjection:
-    """Tests for log injection prevention."""
-
-    async def test_newline_in_user_input_sanitized(self, test_client):
-        """Newlines in user input should not corrupt logs."""
-        log_injection_payloads = [
-            "normal\n[CRITICAL] Fake critical message",
-            "user\r\nINFO: Forged log entry",
-            "test%0a[ERROR] Injected error",
-        ]
-
-        for payload in log_injection_payloads:
-            # Create target with log injection payload
-            response = await test_client.post(
-                "/api/targets",
-                json={
-                    "name": payload,
-                    "adapter": "filesystem",
-                    "config": {"path": "/test"},
-                },
-            )
-            # Should be handled - either stored or rejected
-            assert response.status_code in (200, 201, 400, 422)
-
-
 class TestMassAssignment:
     """Tests for mass assignment vulnerabilities."""
 

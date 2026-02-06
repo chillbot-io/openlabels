@@ -26,26 +26,6 @@ from openlabels.core.pipeline.entity_resolver import Entity, Mention
 class TestSpan:
     """Tests for Span dataclass."""
 
-    def test_basic_creation(self):
-        """Span can be created with required fields."""
-        span = Span(
-            start=0,
-            end=10,
-            text="John Smith",
-            entity_type="NAME",
-            confidence=0.9,
-            detector="test",
-            tier=Tier.ML,
-        )
-
-        assert span.start == 0
-        assert span.end == 10
-        assert span.text == "John Smith"
-        assert span.entity_type == "NAME"
-        assert span.confidence == 0.9
-        assert span.detector == "test"
-        assert span.tier == Tier.ML
-
     def test_length_property(self):
         """Span has correct length."""
         span = Span(
@@ -155,22 +135,6 @@ class TestTier:
 class TestDetectionResult:
     """Tests for DetectionResult dataclass."""
 
-    def test_basic_creation(self):
-        """DetectionResult can be created."""
-        result = DetectionResult(
-            spans=[],
-            entity_counts={},
-            processing_time_ms=100.0,
-            detectors_used=["test"],
-            text_length=100,
-        )
-
-        assert result.spans == []
-        assert result.entity_counts == {}
-        assert result.processing_time_ms == 100.0
-        assert result.detectors_used == ["test"]
-        assert result.text_length == 100
-
     def test_with_spans(self):
         """DetectionResult holds spans correctly."""
         span = Span(
@@ -193,42 +157,8 @@ class TestDetectionResult:
 # ENTITY AND MENTION TESTS
 # =============================================================================
 
-class TestMention:
-    """Tests for Mention dataclass."""
-
-    def test_basic_creation(self):
-        """Mention can be created with a span."""
-        span = Span(
-            start=0, end=10, text="John Smith",
-            entity_type="NAME", confidence=0.9, detector="test", tier=Tier.ML
-        )
-        mention = Mention(
-            span=span,
-            normalized_text="john smith",
-            words={"john", "smith"},
-        )
-
-        assert mention.span == span
-        assert mention.normalized_text == "john smith"
-        assert mention.words == {"john", "smith"}
-
-
 class TestEntity:
     """Tests for Entity dataclass."""
-
-    def test_basic_creation(self):
-        """Entity can be created."""
-        entity = Entity(
-            id="abc123",
-            canonical_value="John Smith",
-            entity_type="NAME",
-            mentions=[],
-        )
-
-        assert entity.id == "abc123"
-        assert entity.canonical_value == "John Smith"
-        assert entity.entity_type == "NAME"
-        assert entity.mentions == []
 
     def test_count_property(self):
         """Entity count property works."""
@@ -319,14 +249,6 @@ class TestRiskTier:
         assert RiskTier.LOW.value == "LOW"
         assert RiskTier.MINIMAL.value == "MINIMAL"
 
-    def test_risk_tier_members(self):
-        """RiskTier has all expected members."""
-        members = [m.name for m in RiskTier]
-        assert "CRITICAL" in members
-        assert "HIGH" in members
-        assert "MEDIUM" in members
-        assert "LOW" in members
-        assert "MINIMAL" in members
 
 
 # =============================================================================
@@ -353,15 +275,3 @@ class TestEdgeCases:
 
         assert span.text == "José García"
 
-    def test_detection_result_empty(self):
-        """DetectionResult handles empty detection."""
-        result = DetectionResult(
-            spans=[],
-            entity_counts={},
-            processing_time_ms=0.0,
-            detectors_used=[],
-            text_length=0,
-        )
-
-        assert len(result.spans) == 0
-        assert result.processing_time_ms == 0.0

@@ -408,11 +408,6 @@ class TestResolveCoreferences:
 class TestOnnxAvailability:
     """Tests for ONNX availability checking."""
 
-    def test_is_onnx_available_function(self):
-        """is_onnx_available() returns bool."""
-        result = coref_module.is_onnx_available()
-        assert isinstance(result, bool)
-
     def test_is_fastcoref_available_alias(self):
         """is_fastcoref_available() is alias for is_onnx_available()."""
         with patch.object(coref_module, '_check_onnx_available', return_value=True):

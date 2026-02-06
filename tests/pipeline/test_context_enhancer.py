@@ -243,23 +243,6 @@ class TestHotwordRules:
         assert isinstance(first_rule, HotwordRule), "Hotwords should be HotwordRule instances"
         assert first_rule.confidence_delta < 0, "Negative hotwords should have negative delta"
 
-    def test_hotword_rule_structure(self):
-        """HotwordRule has required attributes."""
-        from openlabels.core.pipeline.context_enhancer import HotwordRule
-
-        rule = HotwordRule(
-            pattern=re.compile(r'\btest\b'),
-            confidence_delta=0.2,
-            window_before=50,
-            window_after=30,
-            description="Test rule"
-        )
-
-        assert rule.pattern is not None
-        assert rule.confidence_delta == 0.2
-        assert rule.window_before == 50
-        assert rule.window_after == 30
-        assert rule.description == "Test rule"
 
 
 # =============================================================================
@@ -311,36 +294,6 @@ class TestPatterns:
         assert ALL_CAPS_PATTERN.match("ABC")
         assert ALL_CAPS_PATTERN.match("USA")
         assert not ALL_CAPS_PATTERN.match("Abc")
-
-
-# =============================================================================
-# ENHANCEMENT RESULT TESTS
-# =============================================================================
-
-class TestEnhancementResult:
-    """Tests for EnhancementResult dataclass."""
-
-    def test_basic_result(self):
-        """EnhancementResult stores basic data."""
-        from openlabels.core.pipeline.context_enhancer import EnhancementResult
-
-        result = EnhancementResult(
-            action="keep",
-            confidence=0.9,
-            reasons=["high_confidence"]
-        )
-
-        assert result.action == "keep"
-        assert result.confidence == 0.9
-        assert result.reasons == ["high_confidence"]
-
-    def test_default_reasons(self):
-        """EnhancementResult has default empty reasons."""
-        from openlabels.core.pipeline.context_enhancer import EnhancementResult
-
-        result = EnhancementResult(action="reject", confidence=0.1)
-
-        assert result.reasons == []
 
 
 # =============================================================================

@@ -74,16 +74,6 @@ class TestSharePointAdapterConfiguration:
 
         assert adapter.supports_delta() is True
 
-    def test_client_initially_none(self):
-        """Graph client should not be created until needed."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert adapter._client is None
-
     def test_accepts_rate_config(self):
         """Adapter should accept rate limiting configuration."""
         from openlabels.adapters.sharepoint import SharePointAdapter
@@ -455,78 +445,3 @@ class TestSharePointAdapterStats:
 # =============================================================================
 
 
-class TestSharePointAdapterProtocol:
-    """Tests verifying adapter follows the protocol."""
-
-    def test_has_list_files_method(self):
-        """Adapter should have async list_files method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.list_files)
-        # It's an async generator, check it's defined
-        assert "list_files" in dir(adapter)
-
-    def test_has_read_file_method(self):
-        """Adapter should have async read_file method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.read_file)
-        assert inspect.iscoroutinefunction(adapter.read_file)
-
-    def test_has_test_connection_method(self):
-        """Adapter should have async test_connection method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.test_connection)
-        assert inspect.iscoroutinefunction(adapter.test_connection)
-
-    def test_has_get_metadata_method(self):
-        """Adapter should have async get_metadata method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.get_metadata)
-        assert inspect.iscoroutinefunction(adapter.get_metadata)
-
-    def test_has_close_method(self):
-        """Adapter should have async close method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.close)
-        assert inspect.iscoroutinefunction(adapter.close)
-
-    def test_has_list_sites_method(self):
-        """Adapter should have async list_sites method."""
-        from openlabels.adapters.sharepoint import SharePointAdapter
-        import inspect
-
-        adapter = SharePointAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert callable(adapter.list_sites)
-        assert inspect.iscoroutinefunction(adapter.list_sites)

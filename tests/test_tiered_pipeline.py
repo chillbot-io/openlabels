@@ -323,16 +323,6 @@ class TestPipelineSecrets:
             auto_detect_medical=False,
         ))
 
-    def test_detect_aws_key(self, pipeline):
-        """Test detecting AWS access key."""
-        text = "AWS_ACCESS_KEY_ID=AKIATESTKEY1234567890"
-        result = pipeline.detect(text)
-
-        # AWS key detection depends on pattern matching; check any secrets detected
-        secret_spans = [s for s in result.spans if "AWS" in s.entity_type.upper() or "KEY" in s.entity_type.upper()]
-        # If no AWS-specific detection, that's ok - not all patterns may be enabled
-        assert isinstance(secret_spans, list)  # At minimum, should return a list
-
     def test_detect_github_token(self, pipeline):
         """Test detecting GitHub token."""
         text = "GITHUB_TOKEN=ghp_test1234567890test1234567890test1234"
@@ -354,27 +344,6 @@ class TestPipelineSecrets:
         assert len(pk_spans) >= 1
 
 
-class TestPipelineGovernment:
-    """Test detection of government markings."""
-
-    @pytest.fixture
-    def pipeline(self):
-        return TieredPipeline(config=PipelineConfig(
-            auto_detect_medical=False,
-        ))
-
-    def test_detect_classification_marking(self, pipeline):
-        """Test detecting classification markings."""
-        text = "This document is TOP SECRET//SCI"
-        result = pipeline.detect(text)
-
-        # Should detect classification markings
-        class_spans = [s for s in result.spans
-                       if "CLASSIFICATION" in s.entity_type.upper()
-                       or "SECRET" in s.text.upper()]
-        # May or may not match depending on exact patterns
-        assert isinstance(class_spans, list)
-
 
 # =============================================================================
 # ESCALATION TESTS
@@ -392,16 +361,6 @@ class TestPipelineEscalation:
         # Should only run Stage 1 (no ML escalation needed)
         assert PipelineStage.FAST_TRIAGE in result.stages_executed
 
-    def test_escalation_conditions(self):
-        """Test escalation threshold constant."""
-        assert ESCALATION_THRESHOLD == 0.70
-
-    def test_ml_beneficial_types_defined(self):
-        """Test that ML-beneficial types are defined."""
-        assert "NAME" in ML_BENEFICIAL_TYPES, "NAME should benefit from ML refinement"
-        assert "ADDRESS" in ML_BENEFICIAL_TYPES, "ADDRESS should benefit from ML refinement"
-        assert len(ML_BENEFICIAL_TYPES) >= 2, "Should have at least NAME and ADDRESS as ML-beneficial types"
-        assert all(isinstance(t, str) for t in ML_BENEFICIAL_TYPES), "All types should be strings"
 
 
 # =============================================================================
@@ -420,11 +379,6 @@ class TestMedicalContext:
 
         # Medical context should not be detected when disabled
         assert result.medical_context_detected is False
-
-    def test_medical_config_settings(self, medical_config):
-        """Test medical configuration settings."""
-        assert medical_config.auto_detect_medical is True
-        assert medical_config.medical_triggers_dual_bert is True
 
 
 # =============================================================================

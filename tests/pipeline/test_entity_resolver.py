@@ -53,22 +53,6 @@ class TestConstants:
 
 
 # =============================================================================
-# ENTITY RESOLVER INITIALIZATION TESTS
-# =============================================================================
-
-class TestEntityResolverInit:
-    """Tests for EntityResolver initialization."""
-
-    def test_creates_with_defaults(self):
-        """EntityResolver creates with default settings."""
-        resolver = EntityResolver()
-
-        # Verify it's the correct type and has the resolve method
-        assert isinstance(resolver, EntityResolver)
-        assert callable(resolver.resolve)
-
-
-# =============================================================================
 # ENTITY RESOLVER RESOLVE TESTS
 # =============================================================================
 

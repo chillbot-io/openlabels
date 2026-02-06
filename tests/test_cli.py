@@ -250,19 +250,6 @@ class TestReportCommands:
         assert "Usage:" in result.output
 
 
-class TestStatusCommand:
-    """Tests for status command."""
-
-    def test_status_help_shows_options(self):
-        """status --help should show available options."""
-        from openlabels.__main__ import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["status", "--help"])
-
-        assert result.exit_code == 0
-
-
 class TestWorkerCommand:
     """Tests for worker command."""
 
@@ -305,16 +292,6 @@ class TestQuarantineCommand:
         assert result.exit_code == 0
         assert "Usage:" in result.output
 
-    def test_quarantine_without_args_shows_help_or_fails(self):
-        """quarantine without argument should show help or fail gracefully."""
-        from openlabels.__main__ import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["quarantine"])
-
-        # Arguments are optional, so it may show help, fail with runtime error, or usage error
-        # The key is it doesn't crash unexpectedly
-        assert result.exit_code in (0, 1, 2)
 
 
 class TestLockdownCommand:

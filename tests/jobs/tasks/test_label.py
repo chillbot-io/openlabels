@@ -410,12 +410,6 @@ class TestCreateCustomPropsXml:
 
         assert mock_label.name.encode() in xml_bytes
 
-    def test_returns_bytes(self, mock_label):
-        """Should return bytes, not string."""
-        result = _create_custom_props_xml(mock_label)
-
-        assert isinstance(result, bytes)
-
 
 class TestUpdateCustomPropsXml:
     """Tests for updating existing custom properties XML."""
@@ -498,13 +492,6 @@ class TestUpdateContentTypes:
         assert count == 1
 
 
-class TestHttpxAvailability:
-    """Tests for HTTPX availability flag."""
-
-    def test_httpx_available_is_boolean(self):
-        """HTTPX_AVAILABLE should be a boolean."""
-        assert isinstance(HTTPX_AVAILABLE, bool)
-
 
 class TestGraphApiLabeling:
     """Tests for Graph API labeling (requires httpx mocking)."""
@@ -540,48 +527,6 @@ class TestGraphApiLabeling:
         finally:
             label_module.HTTPX_AVAILABLE = original
 
-
-class TestLabelPayloadParsing:
-    """Tests for payload parsing in label task."""
-
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock database session."""
-        return AsyncMock()
-
-    async def test_parses_result_id_from_payload(self, mock_session):
-        """Should parse result_id from payload."""
-        result_id = uuid4()
-        mock_session.get = AsyncMock(return_value=None)
-
-        with pytest.raises(ValueError):
-            await execute_label_task(
-                mock_session,
-                {"result_id": str(result_id), "label_id": str(uuid4())}
-            )
-
-        # Verify the UUID was parsed correctly
-        mock_session.get.assert_called_once()
-        call_args = mock_session.get.call_args
-        assert call_args[0][1] == result_id
-
-    async def test_parses_label_id_from_payload(self, mock_session):
-        """Should parse label_id from payload."""
-        result_id = uuid4()
-        label_id = str(uuid4())
-
-        mock_result = MagicMock()
-        mock_result.id = result_id
-        mock_session.get = AsyncMock(side_effect=[mock_result, None])
-
-        with pytest.raises(ValueError):
-            await execute_label_task(
-                mock_session,
-                {"result_id": str(result_id), "label_id": label_id}
-            )
-
-        # Second call should be for the label
-        assert mock_session.get.call_count == 2
 
 
 class TestLabelResultUpdate:

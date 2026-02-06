@@ -64,18 +64,6 @@ requires_pillow = pytest.mark.skipif(not has_pillow(), reason="Pillow not instal
 class TestExtractionResult:
     """Tests for ExtractionResult dataclass."""
 
-    def test_create_result(self):
-        """Test creating an extraction result."""
-        from openlabels.core.extractors import ExtractionResult
-
-        result = ExtractionResult(
-            text="Sample extracted text",
-            pages=3,
-        )
-
-        assert result.text == "Sample extracted text"
-        assert result.pages == 3
-
     def test_result_with_warnings(self):
         """Test result with warnings."""
         from openlabels.core.extractors import ExtractionResult
@@ -105,35 +93,6 @@ class TestExtractionResult:
         assert result.ocr_pages == [0, 1]
         assert result.confidence == 0.85
 
-
-class TestPageInfo:
-    """Tests for PageInfo dataclass."""
-
-    def test_create_page_info(self):
-        """Test creating page info."""
-        from openlabels.core.extractors import PageInfo
-
-        page = PageInfo(
-            page_num=0,
-            text="Page content",
-            is_scanned=False,
-        )
-
-        assert page.page_num == 0
-        assert page.text == "Page content"
-        assert page.is_scanned is False
-
-    def test_scanned_page(self):
-        """Test scanned page info."""
-        from openlabels.core.extractors import PageInfo
-
-        page = PageInfo(
-            page_num=1,
-            text="OCR text",
-            is_scanned=True,
-        )
-
-        assert page.is_scanned is True
 
 
 # =============================================================================
@@ -500,23 +459,3 @@ class TestExtractorRegistry:
 # Security Tests
 # =============================================================================
 
-class TestExtractorSecurity:
-    """Tests for extractor security features."""
-
-    @requires_openpyxl
-    def test_xlsx_decompression_limit(self):
-        """Test XLSX has decompression limit."""
-        from openlabels.core.extractors import XLSXExtractor
-        from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
-
-        # MAX_DECOMPRESSED_SIZE should be set
-        assert MAX_DECOMPRESSED_SIZE > 0
-
-    @requires_pymupdf
-    def test_pdf_page_limit(self):
-        """Test PDF has page limit."""
-        from openlabels.core.constants import MAX_DOCUMENT_PAGES
-
-        # MAX_DOCUMENT_PAGES should be set
-        assert MAX_DOCUMENT_PAGES > 0
-        assert MAX_DOCUMENT_PAGES <= 10000  # Reasonable upper bound

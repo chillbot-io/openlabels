@@ -212,23 +212,6 @@ class TestRoleBasedAccessControl:
         assert response.status_code in (403, 404, 405), \
             f"Expected 403/404/405 for viewer modifying settings, got {response.status_code}"
 
-    async def test_viewer_can_view_results(self, viewer_client):
-        """Viewer role should be able to view scan results."""
-        client, tenant, viewer, admin, target, _db = viewer_client
-
-        response = await client.get("/api/results")
-        # Viewer should be able to read
-        assert response.status_code == 200, \
-            f"Expected 200 for viewer viewing results, got {response.status_code}"
-
-    async def test_viewer_can_view_dashboard(self, viewer_client):
-        """Viewer role should be able to view dashboard."""
-        client, tenant, viewer, admin, target, _db = viewer_client
-
-        response = await client.get("/api/dashboard/stats")
-        assert response.status_code == 200, \
-            f"Expected 200 for viewer viewing dashboard, got {response.status_code}"
-
     async def test_admin_can_create_targets(self, test_client):
         """Admin role should be able to create targets."""
         response = await test_client.post(

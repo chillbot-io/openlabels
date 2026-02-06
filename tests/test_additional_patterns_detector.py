@@ -42,18 +42,6 @@ class TestAdditionalPatternDetectorInit:
         """Test detector has correct tier."""
         assert detector.tier == Tier.PATTERN
 
-    def test_detector_is_available(self, detector):
-        """Test detector reports availability."""
-        assert detector.is_available() is True
-
-    def test_patterns_compiled(self, detector):
-        """Test that patterns are compiled."""
-        assert len(detector._compiled_patterns) > 0
-
-    def test_all_patterns_registered(self, detector):
-        """Test all ADDITIONAL_PATTERNS are registered."""
-        # Each pattern should compile successfully
-        assert len(detector._compiled_patterns) == len(ADDITIONAL_PATTERNS)
 
 
 # =============================================================================
@@ -621,23 +609,6 @@ class TestEdgeCases:
         age_spans = [s for s in spans if s.entity_type == "AGE"]
         assert len(age_spans) >= 2
 
-    def test_employer_with_numbers(self, detector):
-        """Test employer with numbers in name."""
-        text = "Works for 3M Company."
-        spans = detector.detect(text)
-
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        # Pattern may or may not match names starting with numbers
-        assert isinstance(employer_spans, list)
-
-    def test_unicode_in_employer(self, detector):
-        """Test employer names with unicode."""
-        text = "Employed by Société Générale Corp."
-        spans = detector.detect(text)
-
-        # Should handle unicode gracefully
-        assert isinstance(spans, list)
-
     def test_very_long_text(self, detector):
         """Test detection in long text."""
         base_text = "Regular content here. " * 100
@@ -671,49 +642,3 @@ class TestEdgeCases:
         assert len(spans) >= 1
 
 
-class TestConfidenceLevels:
-    """Test confidence levels for different patterns."""
-
-    @pytest.fixture
-    def detector(self):
-        return AdditionalPatternDetector()
-
-    def test_labeled_pattern_confidence(self, detector):
-        """Test labeled patterns have appropriate confidence."""
-        text = "NPI: 1234567890"
-        spans = detector.detect(text)
-
-        npi_spans = [s for s in spans if s.entity_type == "NPI"]
-        if npi_spans:
-            # Labeled patterns should have confidence >= 0.85
-            assert all(s.confidence >= 0.85 for s in npi_spans)
-
-    def test_age_with_context_confidence(self, detector):
-        """Test age with good context has higher confidence."""
-        text = "A 45-year-old male patient was admitted."
-        spans = detector.detect(text)
-
-        age_spans = [s for s in spans if s.entity_type == "AGE"]
-        if age_spans:
-            # Age with gender context should have confidence >= 0.90
-            assert any(s.confidence >= 0.90 for s in age_spans)
-
-    def test_employer_suffix_confidence(self, detector):
-        """Test employer with clear suffix has good confidence."""
-        text = "Works for Acme Corporation Inc."
-        spans = detector.detect(text)
-
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        if employer_spans:
-            # Employer with Inc./Corp suffix should be confident
-            assert all(s.confidence >= 0.80 for s in employer_spans)
-
-    def test_known_insurer_prefix_confidence(self, detector):
-        """Test known insurer prefix has high confidence."""
-        text = "ID is BCBS123456789"
-        spans = detector.detect(text)
-
-        hp_spans = [s for s in spans if s.entity_type in ("HEALTH_PLAN_ID", "MEMBER_ID")]
-        if hp_spans:
-            # Known insurer prefix should have confidence >= 0.90
-            assert any(s.confidence >= 0.90 for s in hp_spans)

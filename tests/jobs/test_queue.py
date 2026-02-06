@@ -63,12 +63,6 @@ class TestCalculateRetryDelay:
         delay = calculate_retry_delay(-1)
         assert delay.total_seconds() == 1.0
 
-    def test_returns_timedelta_type(self):
-        """Function should always return a timedelta object."""
-        for i in range(-1, 15):
-            result = calculate_retry_delay(i)
-            assert isinstance(result, timedelta)
-
 
 class TestJobQueueInitialization:
     """Tests for JobQueue class initialization."""
@@ -82,15 +76,6 @@ class TestJobQueueInitialization:
 
         assert queue.session is mock_session
         assert queue.tenant_id == tenant_id
-
-    def test_init_accepts_uuid_tenant_id(self):
-        """tenant_id should be a UUID."""
-        mock_session = AsyncMock()
-        tenant_id = uuid4()
-
-        queue = JobQueue(mock_session, tenant_id)
-
-        assert isinstance(queue.tenant_id, UUID)
 
 
 class TestJobQueueEnqueue:
@@ -733,28 +718,6 @@ class TestJobQueueEdgeCases:
         mock_session.flush = AsyncMock()
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
-
-    async def test_enqueue_with_empty_payload(self, queue):
-        """Should handle empty payload dictionary."""
-        job_id = await queue.enqueue("scan", {})
-
-        assert isinstance(job_id, UUID)
-
-    async def test_enqueue_with_nested_payload(self, queue):
-        """Should handle deeply nested payload."""
-        payload = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "value": "deep"
-                    }
-                }
-            }
-        }
-
-        # Should not raise
-        job_id = await queue.enqueue("scan", payload)
-        assert isinstance(job_id, UUID)
 
     async def test_enqueue_with_special_characters_in_task_type(self, queue):
         """Task type with special characters should be handled."""

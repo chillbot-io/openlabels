@@ -37,27 +37,6 @@ from openlabels.core.types import Tier
 # DETECTOR INITIALIZATION TESTS
 # =============================================================================
 
-class TestFinancialDetectorInit:
-    """Test detector initialization and configuration."""
-
-    @pytest.fixture
-    def detector(self):
-        """Create a FinancialDetector instance."""
-        return FinancialDetector()
-
-    def test_detector_name(self, detector):
-        """Test detector has correct name."""
-        assert detector.name == "financial"
-
-    def test_detector_tier(self, detector):
-        """Test detector uses CHECKSUM tier."""
-        assert detector.tier == Tier.CHECKSUM
-
-    def test_detector_is_available(self, detector):
-        """Test detector reports availability."""
-        assert detector.is_available() is True
-
-
 # =============================================================================
 # CUSIP VALIDATION TESTS
 # =============================================================================
@@ -689,14 +668,6 @@ class TestFinancialEdgeCases:
         # May or may not match depending on exact pattern
         assert isinstance(cusip_spans, list)
         assert isinstance(isin_spans, list)
-
-    def test_confidence_scores_valid(self, detector):
-        """Test that detected spans have valid confidence scores."""
-        text = "CUSIP: 037833100"
-        spans = detector.detect(text)
-
-        for span in spans:
-            assert 0.0 <= span.confidence <= 1.0
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""

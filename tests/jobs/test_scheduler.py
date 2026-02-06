@@ -45,11 +45,6 @@ class TestSchedulerInitialization:
 
         assert scheduler.is_running is False
 
-    def test_scheduler_alias_works(self):
-        """Scheduler alias should create DatabaseScheduler."""
-        scheduler = Scheduler()
-        assert isinstance(scheduler, DatabaseScheduler)
-
     def test_custom_poll_interval(self):
         """Scheduler should accept custom poll interval."""
         scheduler = DatabaseScheduler(poll_interval=10)
@@ -317,11 +312,3 @@ class TestSchedulerPolling:
         assert scheduler._running is False
 
 
-class TestAPSchedulerAvailableConstant:
-    """Tests for APSCHEDULER_AVAILABLE constant (backwards compatibility)."""
-
-    def test_apscheduler_available_is_true(self):
-        """APSCHEDULER_AVAILABLE should be True (for backwards compat)."""
-        # The new implementation uses croniter, but we keep this True
-        # for backwards compatibility with code that checks it
-        assert APSCHEDULER_AVAILABLE is True

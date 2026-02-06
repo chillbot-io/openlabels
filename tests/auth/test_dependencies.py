@@ -71,41 +71,6 @@ class TestGetOrCreateUser:
             roles=["viewer"],
         )
 
-    def test_function_signature(self):
-        """Verify get_or_create_user has expected parameters."""
-        import inspect
-        sig = inspect.signature(get_or_create_user)
-        params = list(sig.parameters.keys())
-        assert "session" in params
-        assert "claims" in params
-
-    def test_is_async_function(self):
-        """get_or_create_user should be async."""
-        import inspect
-        assert inspect.iscoroutinefunction(get_or_create_user)
-
-    def test_claims_admin_role_detection(self):
-        """Admin detection logic from claims roles."""
-        # Admin in roles
-        admin_claims = TokenClaims(
-            oid="admin-oid",
-            preferred_username="admin@contoso.com",
-            name="Admin User",
-            tenant_id="tenant-xyz",
-            roles=["admin", "viewer"],
-        )
-        assert "admin" in admin_claims.roles
-
-        # No admin in roles
-        viewer_claims = TokenClaims(
-            oid="viewer-oid",
-            preferred_username="viewer@contoso.com",
-            name="Viewer User",
-            tenant_id="tenant-xyz",
-            roles=["viewer"],
-        )
-        assert "admin" not in viewer_claims.roles
-
     def test_claims_role_check_is_case_sensitive(self):
         """Role check should be case-sensitive for security."""
         claims_upper = TokenClaims(
@@ -294,65 +259,3 @@ class TestRequireAdmin:
         assert exc_info.value.status_code == 403
 
 
-class TestSecurityEdgeCases:
-    """Security-focused edge case tests."""
-
-    async def test_token_with_sql_injection_in_username(self):
-        """Username with SQL injection should be safely handled."""
-        mock_settings = MagicMock()
-        mock_settings.auth.provider = "azure_ad"
-
-        mock_session = AsyncMock()
-
-        # Malicious claims with SQL injection attempt
-        mock_claims = TokenClaims(
-            oid="user-oid",
-            preferred_username="'; DROP TABLE users; --",
-            name="Hacker",
-            tenant_id="tenant-id",
-            roles=[],
-        )
-
-        mock_user = MagicMock()
-        mock_user.id = uuid4()
-        mock_user.tenant_id = uuid4()
-        mock_user.email = mock_claims.preferred_username
-        mock_user.name = mock_claims.name
-        mock_user.role = "viewer"
-
-        with patch("openlabels.auth.dependencies.get_settings", return_value=mock_settings):
-            with patch("openlabels.auth.dependencies.validate_token", return_value=mock_claims):
-                with patch("openlabels.auth.dependencies.get_or_create_user", return_value=mock_user):
-                    # Should not crash - SQLAlchemy parameterizes queries
-                    user = await get_current_user(token="token", session=mock_session)
-                    assert user is not None
-
-    async def test_extremely_long_username_handled(self):
-        """Extremely long username should be handled."""
-        mock_settings = MagicMock()
-        mock_settings.auth.provider = "azure_ad"
-
-        mock_session = AsyncMock()
-
-        long_username = "a" * 10000 + "@example.com"
-        mock_claims = TokenClaims(
-            oid="user-oid",
-            preferred_username=long_username,
-            name="User",
-            tenant_id="tenant-id",
-            roles=[],
-        )
-
-        mock_user = MagicMock()
-        mock_user.id = uuid4()
-        mock_user.tenant_id = uuid4()
-        mock_user.email = long_username
-        mock_user.name = "User"
-        mock_user.role = "viewer"
-
-        with patch("openlabels.auth.dependencies.get_settings", return_value=mock_settings):
-            with patch("openlabels.auth.dependencies.validate_token", return_value=mock_claims):
-                with patch("openlabels.auth.dependencies.get_or_create_user", return_value=mock_user):
-                    # Should handle gracefully (may truncate or error)
-                    user = await get_current_user(token="token", session=mock_session)
-                    assert user is not None

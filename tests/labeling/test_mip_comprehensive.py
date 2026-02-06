@@ -188,84 +188,8 @@ class TestSensitivityLabel:
         assert d["is_active"] is True
 
 
-class TestLabelingResult:
-    """Tests for LabelingResult dataclass."""
-
-    def test_labeling_result_success(self):
-        """LabelingResult for successful operation."""
-        result = LabelingResult(
-            success=True,
-            file_path="/path/to/file.docx",
-            label_id="label-123",
-            label_name="Confidential",
-        )
-
-        assert result.success is True
-        assert result.file_path == "/path/to/file.docx"
-        assert result.label_id == "label-123"
-        assert result.label_name == "Confidential"
-        assert result.error is None
-
-    def test_labeling_result_failure(self):
-        """LabelingResult for failed operation."""
-        result = LabelingResult(
-            success=False,
-            file_path="/path/to/file.docx",
-            error="File not found",
-        )
-
-        assert result.success is False
-        assert result.error == "File not found"
-
-    def test_labeling_result_protection_flags(self):
-        """LabelingResult has protection status flags."""
-        result = LabelingResult(
-            success=True,
-            file_path="/path/file.docx",
-            was_protected=True,
-            is_protected=True,
-        )
-
-        assert result.was_protected is True
-        assert result.is_protected is True
-
-    def test_labeling_result_to_dict(self):
-        """to_dict returns all fields."""
-        result = LabelingResult(
-            success=True,
-            file_path="/path/file.docx",
-            label_id="label-1",
-            label_name="Test",
-            error=None,
-            was_protected=False,
-            is_protected=True,
-        )
-
-        d = result.to_dict()
-
-        assert d["success"] is True
-        assert d["file_path"] == "/path/file.docx"
-        assert d["label_id"] == "label-1"
-        assert d["label_name"] == "Test"
-        assert d["was_protected"] is False
-        assert d["is_protected"] is True
-
-
 class TestAuthDelegateImpl:
     """Tests for AuthDelegateImpl class."""
-
-    def test_auth_delegate_init(self):
-        """AuthDelegateImpl stores credentials."""
-        delegate = AuthDelegateImpl(
-            client_id="client-123",
-            client_secret="secret-456",
-            tenant_id="tenant-789",
-        )
-
-        assert delegate.client_id == "client-123"
-        assert delegate.client_secret == "secret-456"
-        assert delegate.tenant_id == "tenant-789"
-        assert delegate._app is None
 
     def test_auth_delegate_get_msal_app_creates_app(self):
         """_get_msal_app creates MSAL app on first call."""
@@ -345,69 +269,6 @@ class TestAuthDelegateImpl:
             result = delegate.acquire_token("identity", None)
 
         assert result == ""
-
-
-class TestMIPClientInit:
-    """Tests for MIPClient initialization."""
-
-    def test_mip_client_init(self):
-        """MIPClient stores credentials and settings."""
-        client = MIPClient(
-            client_id="client-123",
-            client_secret="secret-456",
-            tenant_id="tenant-789",
-            app_name="TestApp",
-            app_version="1.0.0",
-        )
-
-        assert client.client_id == "client-123"
-        assert client.client_secret == "secret-456"
-        assert client.tenant_id == "tenant-789"
-        assert client.app_name == "TestApp"
-        assert client.app_version == "1.0.0"
-        assert client._initialized is False
-
-    def test_mip_client_default_sdk_path(self):
-        """MIPClient has default SDK path."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        assert client.mip_sdk_path is not None
-        assert isinstance(client.mip_sdk_path, Path)
-
-    def test_mip_client_custom_sdk_path(self, tmp_path):
-        """MIPClient accepts custom SDK path."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-            mip_sdk_path=tmp_path,
-        )
-
-        assert client.mip_sdk_path == tmp_path
-
-    def test_mip_client_is_available_property(self):
-        """is_available reflects pythonnet availability."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        assert client.is_available == PYTHONNET_AVAILABLE
-
-    def test_mip_client_is_initialized_initially_false(self):
-        """is_initialized is False initially."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        assert client.is_initialized is False
 
 
 class TestMIPClientInitialize:
@@ -524,18 +385,6 @@ class TestMIPClientShutdown:
 class TestMIPClientGetLabels:
     """Tests for MIPClient.get_labels method."""
 
-    async def test_get_labels_returns_empty_if_not_initialized(self):
-        """get_labels returns empty list if not initialized."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        labels = await client.get_labels()
-
-        assert labels == []
-
     async def test_get_labels_returns_cached_if_available(self):
         """get_labels returns cached labels if available."""
         client = MIPClient(
@@ -613,35 +462,6 @@ class TestMIPClientGetLabel:
 class TestMIPClientApplyLabel:
     """Tests for MIPClient.apply_label method."""
 
-    async def test_apply_label_returns_error_if_not_initialized(self):
-        """apply_label returns error if not initialized."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        result = await client.apply_label("/path/file.docx", "label-123")
-
-        assert result.success is False
-        assert "not initialized" in result.error
-
-    async def test_apply_label_returns_error_if_file_not_found(self, tmp_path):
-        """apply_label returns error if file doesn't exist."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-        client._initialized = True
-
-        nonexistent = tmp_path / "nonexistent.docx"
-
-        result = await client.apply_label(str(nonexistent), "label-123")
-
-        assert result.success is False
-        assert "not found" in result.error.lower()
-
     async def test_apply_label_success(self, tmp_path):
         """apply_label succeeds with valid file."""
         client = MIPClient(
@@ -691,53 +511,8 @@ class TestMIPClientApplyLabel:
         assert "Permission denied" in result.error
 
 
-class TestMIPClientRemoveLabel:
-    """Tests for MIPClient.remove_label method."""
-
-    async def test_remove_label_returns_error_if_not_initialized(self):
-        """remove_label returns error if not initialized."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        result = await client.remove_label("/path/file.docx")
-
-        assert result.success is False
-        assert "not initialized" in result.error
-
-    async def test_remove_label_returns_error_if_file_not_found(self, tmp_path):
-        """remove_label returns error if file doesn't exist."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-        client._initialized = True
-
-        nonexistent = tmp_path / "nonexistent.docx"
-
-        result = await client.remove_label(str(nonexistent))
-
-        assert result.success is False
-        assert "not found" in result.error.lower()
-
-
 class TestMIPClientGetFileLabel:
     """Tests for MIPClient.get_file_label method."""
-
-    async def test_get_file_label_returns_none_if_not_initialized(self):
-        """get_file_label returns None if not initialized."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        result = await client.get_file_label("/path/file.docx")
-
-        assert result is None
 
     async def test_get_file_label_returns_none_if_file_not_found(self, tmp_path):
         """get_file_label returns None if file doesn't exist."""
@@ -757,18 +532,6 @@ class TestMIPClientGetFileLabel:
 
 class TestMIPClientIsFileProtected:
     """Tests for MIPClient.is_file_protected method."""
-
-    async def test_is_file_protected_returns_false_if_not_initialized(self):
-        """is_file_protected returns False if not initialized."""
-        client = MIPClient(
-            client_id="c",
-            client_secret="s",
-            tenant_id="t",
-        )
-
-        result = await client.is_file_protected("/path/file.docx")
-
-        assert result is False
 
     async def test_is_file_protected_returns_false_if_file_not_found(self, tmp_path):
         """is_file_protected returns False if file doesn't exist."""

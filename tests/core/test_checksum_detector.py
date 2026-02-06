@@ -284,18 +284,6 @@ class TestChecksumDetector:
             for s2 in spans[i + 1:]:
                 assert not s1.overlaps(s2), f"Overlapping spans: {s1} and {s2}"
 
-    def test_detector_name(self, detector):
-        """Test detector name is set correctly."""
-        assert detector.name == "checksum"
-
-    def test_detector_tier(self, detector):
-        """Test detector tier is highest (Tier 4)."""
-        from openlabels.core.types import Tier
-        text = "SSN: 123-45-6789"
-        spans = detector.detect(text)
-
-        if spans:
-            assert spans[0].tier == Tier.CHECKSUM
 
 
 class TestEdgeCases:
