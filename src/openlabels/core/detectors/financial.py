@@ -19,77 +19,14 @@ Entity Types:
 
 import re
 import hashlib
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 from ..types import Span, Tier
 from .base import BaseDetector
-
-
-# =============================================================================
-# VALIDATORS
-# =============================================================================
-
-def _validate_cusip(cusip: str) -> bool:
-    """Validate CUSIP check digit (9 chars)."""
-    cusip = cusip.upper().replace(' ', '').replace('-', '')
-    if len(cusip) != 9:
-        return False
-
-    def char_value(c: str) -> int:
-        if c.isdigit():
-            return int(c)
-        elif c.isalpha():
-            return ord(c) - ord('A') + 10
-        elif c == '*':
-            return 36
-        elif c == '@':
-            return 37
-        elif c == '#':
-            return 38
-        return -1
-
-    total = 0
-    for i, c in enumerate(cusip[:8]):
-        val = char_value(c)
-        if val < 0:
-            return False
-        if i % 2 == 1:
-            val *= 2
-        total += val // 10 + val % 10
-
-    check_digit = (10 - (total % 10)) % 10
-    try:
-        return int(cusip[8]) == check_digit
-    except ValueError:
-        # Check digit is not numeric - invalid CUSIP
-        return False
-
-
-def _validate_isin(isin: str) -> bool:
-    """Validate ISIN using Luhn algorithm (12 chars)."""
-    isin = isin.upper().replace(' ', '').replace('-', '')
-    if len(isin) != 12 or not isin[:2].isalpha():
-        return False
-
-    numeric = ''
-    for c in isin:
-        if c.isdigit():
-            numeric += c
-        elif c.isalpha():
-            numeric += str(ord(c) - ord('A') + 10)
-        else:
-            return False
-
-    total = 0
-    for i, digit in enumerate(reversed(numeric)):
-        d = int(digit)
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-
-    return total % 10 == 0
+from .._rust.validators_py import (
+    validate_cusip as _validate_cusip,
+    validate_isin as _validate_isin,
+)
 
 
 def _validate_sedol(sedol: str) -> bool:

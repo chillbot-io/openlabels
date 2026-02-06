@@ -22,6 +22,11 @@ from dataclasses import dataclass, field
 from enum import IntFlag
 from typing import Callable, Optional
 
+from .._rust.validators_py import (
+    validate_luhn as luhn_check,
+    validate_ssn as ssn_validate,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -336,54 +341,9 @@ PII_PATTERNS: list[Pattern] = [
 
 
 # ============================================================================
-# Validators (Luhn, checksum verification, etc.)
+# Validators
+# luhn_check and ssn_validate imported from _rust/validators_py (single source of truth).
 # ============================================================================
-
-def luhn_check(number: str) -> bool:
-    """Validate a number using the Luhn algorithm (credit cards, etc.)."""
-    digits = [int(d) for d in number if d.isdigit()]
-    if len(digits) < 2:
-        return False
-
-    # Double every second digit from the right
-    for i in range(len(digits) - 2, -1, -2):
-        digits[i] *= 2
-        if digits[i] > 9:
-            digits[i] -= 9
-
-    return sum(digits) % 10 == 0
-
-
-def ssn_validate(ssn: str) -> bool:
-    """Validate SSN format and known invalid patterns."""
-    digits = ''.join(c for c in ssn if c.isdigit())
-    if len(digits) != 9:
-        return False
-
-    # Invalid patterns
-    area = int(digits[:3])
-    group = int(digits[3:5])
-    serial = int(digits[5:])
-
-    # Area number cannot be 000, 666, or 900-999
-    if area == 0 or area == 666 or area >= 900:
-        return False
-
-    # Group and serial cannot be 00 or 0000
-    if group == 0 or serial == 0:
-        return False
-
-    # Known invalid SSNs (advertising, etc.)
-    known_invalid = {
-        '078051120',  # Woolworth wallet
-        '219099999',  # Advertising
-        '457555462',  # Life Lock CEO
-    }
-    if digits in known_invalid:
-        return False
-
-    return True
-
 
 # Map pattern names to validators
 VALIDATORS: dict[str, Callable[[str], bool]] = {
