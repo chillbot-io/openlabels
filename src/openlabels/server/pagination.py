@@ -165,39 +165,3 @@ def decode_cursor(cursor: str) -> Optional[CursorData]:
         return None
 
 
-def build_cursor_condition(
-    cursor_data: CursorData,
-    timestamp_column: Any,
-    id_column: Any,
-    descending: bool = True,
-) -> Any:
-    """
-    Build a SQLAlchemy condition for cursor-based pagination.
-
-    For descending order (newest first):
-        WHERE (timestamp, id) < (cursor_timestamp, cursor_id)
-
-    For ascending order (oldest first):
-        WHERE (timestamp, id) > (cursor_timestamp, cursor_id)
-
-    This uses tuple comparison which is supported by PostgreSQL and most databases.
-    The database can use a composite index on (timestamp, id) for efficient seeks.
-
-    Args:
-        cursor_data: Decoded cursor containing position
-        timestamp_column: SQLAlchemy column for timestamp (e.g., Model.created_at)
-        id_column: SQLAlchemy column for ID (e.g., Model.id)
-        descending: If True, paginate from newest to oldest
-
-    Returns:
-        SQLAlchemy condition for WHERE clause
-    """
-    from sqlalchemy import tuple_
-
-    cursor_tuple = tuple_(timestamp_column, id_column)
-    position_tuple = (cursor_data.timestamp, cursor_data.id)
-
-    if descending:
-        return cursor_tuple < position_tuple
-    else:
-        return cursor_tuple > position_tuple

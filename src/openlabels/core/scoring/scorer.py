@@ -17,14 +17,11 @@ Weights are on a 1-10 scale:
 - 1: Minimal
 """
 
-import logging
 import math
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
 from ..types import RiskTier, ScoringResult, normalize_entity_type
-
-logger = logging.getLogger(__name__)
 
 # =============================================================================
 # CALIBRATION PARAMETERS

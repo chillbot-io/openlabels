@@ -108,15 +108,6 @@ class LabelMappingsResponse(BaseModel):
     labels: list[LabelResponse] = []
 
 
-class LabelMappingsUpdate(BaseModel):
-    """Request to update label mappings."""
-
-    CRITICAL: Optional[str] = None
-    HIGH: Optional[str] = None
-    MEDIUM: Optional[str] = None
-    LOW: Optional[str] = None
-
-
 # =============================================================================
 # LABEL ENDPOINTS
 # =============================================================================

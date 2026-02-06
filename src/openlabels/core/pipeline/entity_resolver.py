@@ -19,14 +19,11 @@ Sieves (applied in order):
 3. Coreference links: Use coref_anchor_value from pronoun resolution
 """
 
-import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional
 
 from ..types import Span
-
-logger = logging.getLogger(__name__)
 
 
 # Entity types that should only match exactly (isolated)

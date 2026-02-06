@@ -17,7 +17,6 @@ Constraints:
 """
 
 import heapq
-import json
 import logging
 import re
 import threading

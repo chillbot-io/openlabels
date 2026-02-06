@@ -8,7 +8,6 @@ Provides a service-layer wrapper around JobQueue with:
 - Type hints and documentation
 """
 
-import logging
 from typing import Optional
 from uuid import UUID
 
@@ -23,8 +22,6 @@ from openlabels.server.exceptions import (
     BadRequestError,
 )
 from openlabels.jobs.queue import JobQueue
-
-logger = logging.getLogger(__name__)
 
 
 class JobService(BaseService):

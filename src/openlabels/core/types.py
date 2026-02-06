@@ -9,7 +9,7 @@ This module defines the fundamental types used throughout the detection system:
 These types are used by all detectors and the scoring engine.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum, Enum
 from typing import Optional, List, Dict, Any, Set, FrozenSet
 import logging

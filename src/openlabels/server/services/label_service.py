@@ -8,7 +8,6 @@ Provides:
 - Bulk label application to scan results
 """
 
-import logging
 from typing import Optional
 from uuid import UUID
 
@@ -25,8 +24,6 @@ from openlabels.server.exceptions import (
     BadRequestError,
     InternalError,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class LabelService(BaseService):

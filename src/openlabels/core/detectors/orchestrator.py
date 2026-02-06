@@ -15,9 +15,9 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Union
 
-from ..types import Span, Tier, DetectionResult, normalize_entity_type
+from ..types import Span, DetectionResult, normalize_entity_type
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
 from .base import BaseDetector

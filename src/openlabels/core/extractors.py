@@ -11,7 +11,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Any
 
 from .constants import (
     MIN_NATIVE_TEXT_LENGTH,
@@ -20,7 +20,7 @@ from .constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_EXTRACTION_RATIO,
 )
-from .exceptions import ExtractionError, SecurityError
+from .exceptions import ExtractionError
 
 logger = logging.getLogger(__name__)
 

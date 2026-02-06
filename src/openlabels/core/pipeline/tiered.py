@@ -29,12 +29,12 @@ Usage:
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from ..types import Span, Tier, DetectionResult, normalize_entity_type
+from ..types import Span, DetectionResult, normalize_entity_type
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch, PolicyResult
 

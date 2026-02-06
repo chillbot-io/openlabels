@@ -7,14 +7,11 @@ Defines the core data structures used across the monitoring module:
 - MonitoringResult: Result of monitoring operations
 """
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
-
-logger = logging.getLogger(__name__)
 
 
 class AccessAction(str, Enum):

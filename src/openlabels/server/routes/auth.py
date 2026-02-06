@@ -124,11 +124,6 @@ SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 SESSION_TTL_SECONDS = SESSION_COOKIE_MAX_AGE
 
 
-class LoginResponse(BaseModel):
-    """Response from login endpoint."""
-    login_url: str
-
-
 class UserInfoResponse(BaseModel):
     """Current user information."""
     id: str

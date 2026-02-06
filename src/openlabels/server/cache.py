@@ -680,14 +680,3 @@ async def get_cache_stats() -> dict:
         # Stats retrieval failures are non-critical
         logger.warning(f"Failed to get cache stats: {type(e).__name__}: {e}")
         return {"error": str(e)}
-
-
-# Cache key builders for common patterns
-def tenant_key_builder(tenant_id: Any, *args, **kwargs) -> str:
-    """Build cache key based on tenant ID."""
-    return f"tenant:{tenant_id}"
-
-
-def tenant_resource_key_builder(tenant_id: Any, resource_id: Any, *args, **kwargs) -> str:
-    """Build cache key based on tenant and resource ID."""
-    return f"tenant:{tenant_id}:resource:{resource_id}"

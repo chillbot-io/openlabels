@@ -38,7 +38,7 @@ try:
 except ImportError:
     IntervalTree = None
 
-from .constants import MODEL_LOAD_TIMEOUT, OCR_READY_TIMEOUT, DEFAULT_MODELS_DIR
+from .constants import OCR_READY_TIMEOUT, DEFAULT_MODELS_DIR
 
 if TYPE_CHECKING:
     from PIL import Image
