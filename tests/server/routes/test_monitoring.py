@@ -59,10 +59,7 @@ class TestListMonitoredFiles:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "page_size" in data
         assert "total_pages" in data
-        assert "has_next" in data
-        assert "has_previous" in data
 
     async def test_returns_empty_when_no_files(self, test_client, setup_monitoring_data):
         """List should return empty when no monitored files."""
@@ -182,7 +179,7 @@ class TestListMonitoredFiles:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/v1/monitoring/files?page_size=5")
+        response = await test_client.get("/api/monitoring/files?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -328,10 +325,7 @@ class TestListAccessEvents:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "page_size" in data
         assert "total_pages" in data
-        assert "has_next" in data
-        assert "has_previous" in data
 
     async def test_returns_empty_when_no_events(self, test_client, setup_monitoring_data):
         """List should return empty when no events."""

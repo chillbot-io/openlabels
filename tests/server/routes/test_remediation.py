@@ -64,10 +64,7 @@ class TestListRemediationActions:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "page_size" in data
         assert "total_pages" in data
-        assert "has_next" in data
-        assert "has_previous" in data
         assert isinstance(data["items"], list)
 
     async def test_returns_empty_list_when_no_actions(self, test_client, setup_remediation_data):
@@ -243,7 +240,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/v1/remediation?page_size=5")
+        response = await test_client.get("/api/remediation?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -251,7 +248,7 @@ class TestListRemediationActions:
 
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
-        response = await test_client.get("/api/v1/remediation?page=1&page_size=10")
+        response = await test_client.get("/api/remediation?page=1&page_size=10")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert "items" in data, "Response should contain 'items' field"

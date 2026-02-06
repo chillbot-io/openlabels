@@ -44,26 +44,29 @@ class TestListUsers:
         response = await test_client.get("/api/users")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
-        assert isinstance(data, list), "Response should be a list"
+        assert "items" in data, "Response should be paginated with 'items' key"
+        items = data["items"]
         # Should have at least the admin user from setup
-        assert len(data) >= 1, "Response should contain at least one user"
+        assert len(items) >= 1, "Response should contain at least one user"
 
     async def test_returns_list(self, test_client, setup_users_data):
-        """List users should return a list."""
+        """List users should return a paginated response with items."""
         response = await test_client.get("/api/users")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "items" in data
+        assert isinstance(data["items"], list)
 
     async def test_includes_test_user(self, test_client, setup_users_data):
         """List should include the test user."""
         response = await test_client.get("/api/users")
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
 
         # Should have at least the test user
-        assert len(data) >= 1
-        emails = [u["email"] for u in data]
+        assert len(items) >= 1
+        emails = [u["email"] for u in items]
         # Test user email format: test-{suffix}@localhost
         test_user_found = any(
             e.startswith("test") and "@localhost" in e for e in emails
@@ -76,7 +79,7 @@ class TestListUsers:
         assert response.status_code == 200
         data = response.json()
 
-        user = data[0]
+        user = data["items"][0]
         assert "id" in user
         assert "email" in user
         assert "name" in user
@@ -106,11 +109,11 @@ class TestListUsers:
         assert response.status_code == 200
         data = response.json()
 
-        # Default limit is 50
-        assert len(data) <= 50
+        # Default page_size is 50
+        assert len(data["items"]) <= 50
 
     async def test_pagination_custom_limit(self, test_client, setup_users_data):
-        """List should respect custom limit."""
+        """List should respect custom page_size."""
         from openlabels.server.models import User
 
         session = setup_users_data["session"]
@@ -128,19 +131,19 @@ class TestListUsers:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/users?limit=5")
+        response = await test_client.get("/api/users?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
-        assert len(data) == 5
+        assert len(data["items"]) == 5
 
     async def test_pagination_page_parameter(self, test_client, setup_users_data):
         """List should respect page parameter."""
-        response = await test_client.get("/api/users?page=1&limit=10")
+        response = await test_client.get("/api/users?page=1&page_size=10")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
-        assert isinstance(data, list), "Response should be a list"
-        assert len(data) <= 10, "Response should respect the limit parameter"
+        assert "items" in data, "Response should be paginated"
+        assert len(data["items"]) <= 10, "Response should respect the page_size parameter"
 
     async def test_pagination_validation_min_page(self, test_client, setup_users_data):
         """Page parameter should be >= 1."""
@@ -148,13 +151,13 @@ class TestListUsers:
         assert response.status_code == 422  # Validation error
 
     async def test_pagination_validation_min_limit(self, test_client, setup_users_data):
-        """Limit parameter should be >= 1."""
-        response = await test_client.get("/api/users?limit=0")
+        """page_size parameter should be >= 1."""
+        response = await test_client.get("/api/users?page_size=0")
         assert response.status_code == 422  # Validation error
 
     async def test_pagination_validation_max_limit(self, test_client, setup_users_data):
-        """Limit parameter should be <= 100."""
-        response = await test_client.get("/api/users?limit=200")
+        """page_size parameter should be <= 100."""
+        response = await test_client.get("/api/users?page_size=200")
         assert response.status_code == 422  # Validation error
 
 
@@ -527,7 +530,7 @@ class TestDeleteUser:
 
         response = await test_client.delete(f"/api/users/{admin_user.id}")
         assert response.status_code == 400
-        assert "Cannot delete yourself" in response.json()["detail"]
+        assert "Cannot delete yourself" in response.json()["message"]
 
 
 class TestUserTenantIsolation:

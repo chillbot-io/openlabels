@@ -22,7 +22,7 @@ from starlette.websockets import WebSocketDisconnect
 
 
 @pytest.fixture
-async def setup_ws_test_data(test_db):
+async def setup_ws_test_data(test_client, test_db):
     """Set up test data for WebSocket endpoint tests."""
     from sqlalchemy import select
     from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, Session
@@ -84,7 +84,7 @@ async def setup_ws_test_data(test_db):
 
 
 @pytest.fixture
-async def setup_multi_tenant_data(test_db):
+async def setup_multi_tenant_data(test_client, test_db):
     """Set up multi-tenant test data for isolation tests."""
     from sqlalchemy import select
     from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, Session
@@ -182,7 +182,7 @@ async def setup_multi_tenant_data(test_db):
 
 
 @pytest.fixture
-async def create_ws_session(test_db):
+async def create_ws_session(test_client, test_db):
     """Factory fixture to create test sessions for WebSocket auth."""
     from openlabels.server.models import Session
 

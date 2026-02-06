@@ -236,8 +236,8 @@ async def login(
             session_id,
             session_data,
             SESSION_TTL_SECONDS,
-            tenant_id="dev-tenant",
-            user_id="dev-user-oid",
+            tenant_id=None,
+            user_id=None,
         )
 
         # Validate redirect URI to prevent open redirect attacks
