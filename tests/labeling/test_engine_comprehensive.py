@@ -332,7 +332,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
         bad_file = tmp_path / "bad.docx"
         bad_file.write_text("This is not a ZIP file")
 
-        with patch.object(engine, "_apply_sidecar") as mock_sidecar:
+        with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
             mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
             result = await engine._apply_office_metadata(str(bad_file), "label-1", "Label")
@@ -341,7 +341,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             mock_sidecar.assert_called_once()
 
     async def test_apply_office_metadata_permission_error(self, tmp_path):
-        """_apply_office_metadata handles permission errors."""
+        """_apply_office_metadata handles permission errors via fallback to sidecar."""
         engine = LabelingEngine(
             tenant_id="t",
             client_id="c",
@@ -351,8 +351,12 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
         test_file = tmp_path / "test.docx"
         test_file.write_text("dummy")
 
-        with patch("builtins.open", side_effect=PermissionError("Access denied")):
-            with patch.object(engine, "_apply_sidecar") as mock_sidecar:
+        # Writer catches PermissionError internally and returns a failed result
+        with patch.object(
+            engine._writer, "apply_office_metadata",
+            return_value=LabelResult(success=False, error="Permission denied: Access denied"),
+        ):
+            with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
                 await engine._apply_office_metadata(str(test_file), "label-1", "Label")
@@ -454,21 +458,19 @@ class TestLabelingEnginePDFMetadata:
             await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
 
 
-class TestLabelingEngineSidecar:
-    """Tests for sidecar file labeling."""
+class TestLocalLabelWriterSidecar:
+    """Tests for sidecar file labeling via LocalLabelWriter."""
 
-    async def test_apply_sidecar_creates_file(self, tmp_path):
-        """_apply_sidecar creates .openlabels sidecar file."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
+    def test_apply_sidecar_creates_file(self, tmp_path):
+        """apply_sidecar creates .openlabels sidecar file."""
+        from openlabels.labeling.engine import LocalLabelWriter
+
+        writer = LocalLabelWriter()
 
         test_file = tmp_path / "test.txt"
         test_file.write_text("test content")
 
-        result = await engine._apply_sidecar(str(test_file), "label-123", "Confidential")
+        result = writer.apply_sidecar(str(test_file), "label-123", "Confidential")
 
         assert result.success is True
         assert result.method == "sidecar"
@@ -483,19 +485,17 @@ class TestLabelingEngineSidecar:
             assert sidecar_data["label_name"] == "Confidential"
             assert "applied_at" in sidecar_data
 
-    async def test_apply_sidecar_permission_error(self, tmp_path):
-        """_apply_sidecar handles permission errors."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
+    def test_apply_sidecar_permission_error(self, tmp_path):
+        """apply_sidecar handles permission errors."""
+        from openlabels.labeling.engine import LocalLabelWriter
+
+        writer = LocalLabelWriter()
 
         test_file = tmp_path / "test.txt"
         test_file.write_text("test")
 
         with patch("builtins.open", side_effect=PermissionError("Access denied")):
-            result = await engine._apply_sidecar(str(test_file), "label-1", "Label")
+            result = writer.apply_sidecar(str(test_file), "label-1", "Label")
 
         assert result.success is False
         assert "Permission denied" in result.error

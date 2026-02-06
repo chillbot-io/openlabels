@@ -18,7 +18,7 @@ The enhancer adjusts confidence scores based on context, allowing:
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from ..types import Span, Tier
 
