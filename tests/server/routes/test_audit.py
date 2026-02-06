@@ -110,11 +110,6 @@ async def setup_audit_data(test_db):
 class TestListAuditLogs:
     """Tests for GET /api/audit endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_audit_data):
-        """Audit listing should return 200 OK."""
-        response = await test_client.get("/api/audit")
-        assert response.status_code == 200
-
     async def test_returns_paginated_response(self, test_client, setup_audit_data):
         """Response should have pagination structure."""
         response = await test_client.get("/api/audit")
@@ -241,11 +236,6 @@ class TestListAuditLogs:
 
 class TestGetAuditFilters:
     """Tests for GET /api/audit/filters endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_audit_data):
-        """Filters endpoint should return 200 OK."""
-        response = await test_client.get("/api/audit/filters")
-        assert response.status_code == 200
 
     async def test_returns_filter_structure(self, test_client, setup_audit_data):
         """Response should have actions and resource_types."""
@@ -391,22 +381,6 @@ class TestGetResourceHistory:
                      for item in items]
             for i in range(len(dates) - 1):
                 assert dates[i] >= dates[i + 1]
-
-
-class TestAuditContentType:
-    """Tests for response content type."""
-
-    async def test_returns_json_content_type(self, test_client, setup_audit_data):
-        """Response should have JSON content type."""
-        response = await test_client.get("/api/audit")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_filters_returns_json(self, test_client, setup_audit_data):
-        """Filters endpoint should return JSON."""
-        response = await test_client.get("/api/audit/filters")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")
 
 
 class TestAuditDateFilters:

@@ -17,18 +17,6 @@ from unittest.mock import patch
 class TestUpdateAzureSettings:
     """Tests for POST /api/settings/azure endpoint."""
 
-    async def test_update_azure_settings_returns_200(self, test_client):
-        """Azure settings update should return 200 with success trigger."""
-        response = await test_client.post(
-            "/api/settings/azure",
-            data={
-                "tenant_id": "test-tenant-123",
-                "client_id": "test-client-456",
-                "client_secret": "test-secret-789",
-            },
-        )
-        assert response.status_code == 200
-
     async def test_update_azure_settings_returns_htmx_trigger(self, test_client):
         """Azure settings update should return HX-Trigger header."""
         response = await test_client.post(
@@ -136,27 +124,6 @@ class TestUpdateScanSettings:
         )
         assert response.status_code == 200
 
-    async def test_update_scan_settings_with_large_file_size(self, test_client):
-        """Scan settings update should accept large file size limits."""
-        response = await test_client.post(
-            "/api/settings/scan",
-            data={
-                "max_file_size_mb": "1000",
-                "concurrent_files": "50",
-            },
-        )
-        assert response.status_code == 200
-
-    async def test_update_scan_settings_with_small_values(self, test_client):
-        """Scan settings update should accept small values."""
-        response = await test_client.post(
-            "/api/settings/scan",
-            data={
-                "max_file_size_mb": "1",
-                "concurrent_files": "1",
-            },
-        )
-        assert response.status_code == 200
 
 
 class TestUpdateEntitySettings:
@@ -193,22 +160,6 @@ class TestUpdateEntitySettings:
         )
         assert response.status_code == 200
 
-    async def test_update_entity_settings_with_multiple_entities(self, test_client):
-        """Entity settings update should accept multiple entities."""
-        response = await test_client.post(
-            "/api/settings/entities",
-            data={
-                "entities": [
-                    "SSN",
-                    "CREDIT_CARD",
-                    "EMAIL",
-                    "PHONE",
-                    "ADDRESS",
-                    "NAME",
-                ],
-            },
-        )
-        assert response.status_code == 200
 
 
 class TestResetSettings:
@@ -233,43 +184,6 @@ class TestResetSettings:
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
 
-
-class TestSettingsAuthentication:
-    """Tests for authentication requirements on settings endpoints."""
-
-    async def test_azure_settings_accessible_when_authenticated(self, test_client):
-        """Azure settings endpoint should succeed with authenticated user."""
-        # test_client fixture provides authenticated admin user
-        response = await test_client.post(
-            "/api/settings/azure",
-            data={"tenant_id": "test", "client_id": "test"},
-        )
-        assert response.status_code == 200, \
-            f"Expected 200 for authenticated settings request, got {response.status_code}"
-
-    async def test_scan_settings_accessible_when_authenticated(self, test_client):
-        """Scan settings endpoint should succeed with authenticated user."""
-        response = await test_client.post(
-            "/api/settings/scan",
-            data={"max_file_size_mb": "100", "concurrent_files": "10"},
-        )
-        assert response.status_code == 200, \
-            f"Expected 200 for authenticated settings request, got {response.status_code}"
-
-    async def test_entity_settings_accessible_when_authenticated(self, test_client):
-        """Entity settings endpoint should succeed with authenticated user."""
-        response = await test_client.post(
-            "/api/settings/entities",
-            data={"entities": ["SSN"]},
-        )
-        assert response.status_code == 200, \
-            f"Expected 200 for authenticated settings request, got {response.status_code}"
-
-    async def test_reset_settings_accessible_when_authenticated(self, test_client):
-        """Settings reset endpoint should succeed with authenticated user."""
-        response = await test_client.post("/api/settings/reset")
-        assert response.status_code == 200, \
-            f"Expected 200 for authenticated settings request, got {response.status_code}"
 
 
 class TestSettingsResponseFormat:

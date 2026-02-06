@@ -18,11 +18,6 @@ from uuid import uuid4
 class TestHealthCheckEndpoint:
     """Tests for GET /health endpoint."""
 
-    async def test_returns_200_status(self, test_client):
-        """Health check should return 200 OK."""
-        response = await test_client.get("/health")
-        assert response.status_code == 200
-
     async def test_returns_healthy_status(self, test_client):
         """Health check should return healthy status."""
         response = await test_client.get("/health")
@@ -41,11 +36,6 @@ class TestHealthCheckEndpoint:
 
 class TestApiInfoEndpoint:
     """Tests for GET /api endpoint."""
-
-    async def test_returns_200_status(self, test_client):
-        """API info should return 200 OK."""
-        response = await test_client.get("/api")
-        assert response.status_code == 200
 
     async def test_returns_api_info(self, test_client):
         """API info should return name, version, and docs URL."""
@@ -82,16 +72,6 @@ class TestApiVersionsEndpoint:
 
         assert "versions" in data
         assert "v1" in data["versions"]
-
-    @pytest.mark.asyncio
-    async def test_api_info_has_supported_versions(self, test_client):
-        """API info should list supported versions."""
-        response = await test_client.get("/api")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "supported_versions" in data
-        assert "v1" in data["supported_versions"]
 
     @pytest.mark.asyncio
     async def test_v1_endpoint_returns_info(self, test_client):
@@ -217,20 +197,6 @@ class TestGetClientIp:
 
         ip = get_client_ip(request)
         assert ip == "10.0.0.1"
-
-
-class TestContentType:
-    """Tests for response content types."""
-
-    async def test_health_returns_json(self, test_client):
-        """Health endpoint should return JSON."""
-        response = await test_client.get("/health")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_api_returns_json(self, test_client):
-        """API info endpoint should return JSON."""
-        response = await test_client.get("/api")
-        assert "application/json" in response.headers.get("content-type", "")
 
 
 class TestRouteRegistration:

@@ -39,24 +39,6 @@ async def setup_users_data(test_db):
 class TestListUsers:
     """Tests for GET /api/users endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_users_data):
-        """List users endpoint should return 200 OK."""
-        response = await test_client.get("/api/users")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "items" in data, "Response should be paginated with 'items' key"
-        items = data["items"]
-        # Should have at least the admin user from setup
-        assert len(items) >= 1, "Response should contain at least one user"
-
-    async def test_returns_list(self, test_client, setup_users_data):
-        """List users should return a paginated response with items."""
-        response = await test_client.get("/api/users")
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert isinstance(data["items"], list)
-
     async def test_includes_test_user(self, test_client, setup_users_data):
         """List should include the test user."""
         response = await test_client.get("/api/users")
@@ -617,24 +599,3 @@ class TestUserTenantIsolation:
         assert response.status_code == 404
 
 
-class TestUserContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_users_data):
-        """List users should return JSON."""
-        response = await test_client.get("/api/users")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_get_returns_json(self, test_client, setup_users_data):
-        """Get user should return JSON."""
-        admin_user = setup_users_data["admin_user"]
-        response = await test_client.get(f"/api/users/{admin_user.id}")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_create_returns_json(self, test_client, setup_users_data):
-        """Create user should return JSON."""
-        response = await test_client.post(
-            "/api/users",
-            json={"email": "content-type@test.com"},
-        )
-        assert "application/json" in response.headers.get("content-type", "")

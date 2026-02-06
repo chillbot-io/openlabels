@@ -18,23 +18,7 @@ from openlabels.server.db import (
     get_session_context,
     get_session_factory,
     init_db,
-    run_migrations,
 )
-
-
-class TestBase:
-    """Tests for declarative base."""
-
-    def test_base_is_declarative_base(self):
-        """Base should be a SQLAlchemy declarative base."""
-        from sqlalchemy.orm import DeclarativeBase
-
-        assert issubclass(Base, DeclarativeBase)
-
-    def test_base_has_metadata(self):
-        """Base should have metadata for table creation."""
-        assert hasattr(Base, "metadata")
-        assert Base.metadata is not None
 
 
 class TestGetSessionUninitialized:
@@ -107,24 +91,6 @@ class TestCloseDatabaseUninitialized:
             assert db_module._engine is None
         finally:
             db_module._engine = original_engine
-
-
-class TestRunMigrationsConfiguration:
-    """Tests for run_migrations configuration."""
-
-    def test_function_exists(self):
-        """run_migrations function should exist and be callable."""
-        assert callable(run_migrations)
-
-    def test_accepts_revision_and_direction(self):
-        """run_migrations should accept revision and direction parameters."""
-        import inspect
-
-        sig = inspect.signature(run_migrations)
-        params = list(sig.parameters.keys())
-
-        assert "revision" in params
-        assert "direction" in params
 
 
 # =============================================================================

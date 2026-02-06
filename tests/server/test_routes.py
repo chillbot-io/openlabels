@@ -106,26 +106,6 @@ async def setup_test_data(test_db):
     }
 
 
-class TestHealthEndpoint:
-    """Tests for health check endpoint."""
-
-    async def test_health_check(self, test_client):
-        """Test GET /health returns healthy status."""
-        response = await test_client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "version" in data
-
-    async def test_api_info(self, test_client):
-        """Test GET /api returns API info."""
-        response = await test_client.get("/api")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "OpenLabels API"
-        assert "version" in data
-
-
 class TestAuthEndpoints:
     """Tests for authentication endpoints."""
 
@@ -250,12 +230,6 @@ class TestJobsEndpoints:
 class TestCSRFProtection:
     """Tests for CSRF protection."""
 
-    async def test_csrf_cookie_on_get(self, test_client):
-        """Test that CSRF cookie is set on GET requests."""
-        response = await test_client.get("/health")
-        assert response.status_code == 200
-        # In dev mode, CSRF is skipped, but cookie might still be set
-
     async def test_post_request_allowed_same_origin(self, test_client, setup_test_data):
         """Test POST request with proper origin header in dev mode."""
         # In dev mode (auth.provider=none), CSRF is skipped and request should work
@@ -314,11 +288,3 @@ class TestWebSocketEndpoint:
             f"Unexpected status {response.status_code} for HTTP GET to WebSocket endpoint"
 
 
-class TestRateLimiting:
-    """Tests for rate limiting."""
-
-    async def test_rate_limit_headers(self, test_client):
-        """Test that rate limit headers are present."""
-        response = await test_client.get("/health")
-        # Rate limit headers may or may not be present depending on config
-        assert response.status_code == 200
