@@ -802,7 +802,7 @@ def resolve_coreferences(
                 text, spans, window_sentences, max_expansions_per_anchor,
                 min_anchor_confidence, confidence_decay
             )
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"ONNX FastCoref failed: {e}, falling back to rules")
             result = _resolve_with_rules(
                 text, spans, window_sentences, max_expansions_per_anchor,

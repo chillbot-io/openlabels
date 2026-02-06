@@ -187,7 +187,7 @@ def _get_bip39_words() -> set:
             if len(words) >= 2048:
                 _bip39_words = words
                 return _bip39_words
-    except Exception:
+    except (OSError, ImportError, ValueError):
         pass
 
     # Fallback: 512 most common BIP-39 words (covers >95% of real seed phrases)

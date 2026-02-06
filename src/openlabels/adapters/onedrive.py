@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
+import httpx
+
 from openlabels.adapters.base import FileInfo, FilterConfig, DEFAULT_FILTER
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
@@ -75,7 +77,7 @@ class OneDriveAdapter(BaseGraphAdapter):
                 exc_info=True
             )
             return
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.warning(
                 f"Cannot access OneDrive for {user_id} - unexpected error ({type(e).__name__}): {e}",
                 exc_info=True
@@ -157,7 +159,7 @@ class OneDriveAdapter(BaseGraphAdapter):
                 exc_info=True
             )
             return
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
             # Log unexpected errors with full context for debugging
             logger.debug(
                 f"Cannot access {path} for {user_id} - unexpected error ({type(e).__name__}): {e}",

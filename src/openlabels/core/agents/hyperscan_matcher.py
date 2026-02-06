@@ -441,7 +441,7 @@ class HyperscanMatcher:
                 self._compiled = True
                 logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database (mode={mode_name})")
                 return  # Success
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, MemoryError) as e:
                 logger.debug(f"Hyperscan compile with mode {mode_name} failed: {e}")
                 self._db = None
                 self._scratch = None
@@ -570,7 +570,7 @@ class HyperscanMatcher:
                 # Debug: no callbacks at all - this helps diagnose scanning issues
                 import sys
                 print(f"DEBUG: Hyperscan scan returned 0 callbacks for text len={len(text)}", file=sys.stderr)
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Hyperscan scan error: {e}")
             import sys
             print(f"DEBUG: Hyperscan scan exception: {e}", file=sys.stderr)

@@ -191,7 +191,7 @@ async def get_sync_status(
     try:
         from openlabels.labeling.engine import get_label_cache
         cache_stats = get_label_cache().stats
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError) as e:
         logger.debug(f"Failed to get label cache stats: {type(e).__name__}: {e}")
         cache_stats = None
 
@@ -214,7 +214,7 @@ async def invalidate_label_cache(
     try:
         from openlabels.labeling.engine import get_label_cache
         get_label_cache().invalidate()
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError) as e:
         errors.append(f"Label engine cache: {e}")
 
     # Invalidate Redis/memory cache for this tenant
@@ -222,7 +222,7 @@ async def invalidate_label_cache(
     try:
         await invalidate_cache(f"labels:tenant:{label_service.tenant_id}")
         await invalidate_cache(f"label_mappings:tenant:{label_service.tenant_id}")
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         errors.append(f"Redis cache: {e}")
 
     if errors and len(errors) == 2:
@@ -384,7 +384,7 @@ async def get_label_mappings(
                 LOW=cached.get("LOW"),
                 labels=[LabelResponse(**l) for l in cached.get("labels", [])],
             )
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache read failed: {e}")
 
     # Get all rules for risk_tier type
@@ -427,7 +427,7 @@ async def get_label_mappings(
         }
         await cache.set(cache_key, cache_data)
         logger.debug(f"Cached label mappings for tenant: {tenant_id}")
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache write failed: {e}")
 
     return response
@@ -506,7 +506,7 @@ async def update_label_mappings(
     try:
         await invalidate_cache(f"label_mappings:tenant:{tenant_id}")
         logger.debug(f"Invalidated label mappings cache for tenant: {tenant_id}")
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Failed to invalidate label mappings cache: {e}")
 
     # Check if HTMX request

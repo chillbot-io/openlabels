@@ -206,7 +206,7 @@ def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> boo
     except ImportError:
         logger.warning("sentry-sdk not installed, error tracking disabled")
         return False
-    except Exception as e:
+    except (ValueError, RuntimeError, OSError) as e:
         logger.error(f"Failed to initialize Sentry: {e}")
         return False
 
@@ -271,7 +271,7 @@ def _create_rate_limit_storage():
                 "limits[redis] not installed - using in-memory rate limiting. "
                 "Install with: pip install limits[redis]"
             )
-        except Exception as e:
+        except (ConnectionError, OSError, RuntimeError) as e:
             logger.warning(
                 f"Redis unavailable for rate limiting ({type(e).__name__}: {e}) - "
                 "using in-memory fallback"
@@ -327,7 +327,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Redis cache initialized")
         else:
             logger.info("Using in-memory cache (Redis not available)")
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         # Cache is optional - log the failure type for debugging
         logger.warning(f"Cache initialization failed: {type(e).__name__}: {e} - caching disabled")
 
@@ -341,7 +341,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Also update the module-level limiter reference
             global limiter
             limiter = configured_limiter
-        except Exception as e:
+        except (ConnectionError, OSError, RuntimeError, ImportError) as e:
             logger.warning(
                 f"Rate limiter initialization failed ({type(e).__name__}: {e}) - "
                 "using default in-memory limiter"
@@ -363,7 +363,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 )
             else:
                 logger.warning("Scheduler failed to start")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"Failed to initialize scheduler: {type(e).__name__}: {e}")
     else:
         logger.info("Scheduler disabled by configuration")
@@ -377,7 +377,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             await scheduler.stop()
             logger.info("Scheduler stopped")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
 
     await close_cache()
@@ -504,7 +504,7 @@ async def track_metrics(request: Request, call_next):
         )
 
         return response
-    except Exception:
+    except Exception:  # Intentionally broad: must record metrics for any error before re-raising
         duration = time.perf_counter() - start_time
         record_http_request(
             method=request.method,
@@ -637,14 +637,14 @@ async def add_deprecation_warning(request: Request, call_next):
     ):
         # Add deprecation warning headers
         response.headers["X-API-Deprecation"] = "true"
-        response.headers["X-API-Deprecation-Date"] = "2025-06-01"
+        response.headers["X-API-Deprecation-Date"] = "2026-06-01"
         response.headers["X-API-Deprecation-Info"] = (
             "This API endpoint is deprecated. Please migrate to /api/v1/. "
             "See /api for version information."
         )
         # Standard Deprecation header (RFC 8594)
         response.headers["Deprecation"] = "true"
-        response.headers["Sunset"] = "2025-06-01T00:00:00Z"
+        response.headers["Sunset"] = "2026-06-01T00:00:00Z"
         response.headers["Link"] = f'</api/v1{path[4:]}>; rel="successor-version"'
 
         # Log deprecation warning (at debug level to avoid log spam)

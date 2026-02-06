@@ -160,7 +160,7 @@ def decode_cursor(cursor: str) -> Optional[CursorData]:
     except (ValueError, json.JSONDecodeError, KeyError) as e:
         logger.warning(f"Failed to decode cursor: {e}")
         return None
-    except Exception as e:
+    except (TypeError, UnicodeDecodeError, AttributeError) as e:
         logger.error(f"Unexpected error decoding cursor: {e}")
         return None
 

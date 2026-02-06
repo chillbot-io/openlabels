@@ -180,7 +180,7 @@ class PDFExtractor(BaseExtractor):
                             is_scanned=True,
                         ))
 
-                    except Exception as e:
+                    except (OSError, ValueError, RuntimeError, MemoryError) as e:
                         # Log OCR failures with full context - may indicate corrupted pages or OCR issues
                         logger.warning(f"OCR failed for page {i+1} of {filename}: {type(e).__name__}: {e}")
                         pages_text.append("")
@@ -314,7 +314,7 @@ class DOCXExtractor(BaseExtractor):
                 pages=1,
                 warnings=["Legacy .doc format - extraction may be incomplete"],
             )
-        except Exception as e:
+        except (UnicodeDecodeError, ValueError, OSError) as e:
             # Log legacy doc extraction failures - may indicate corrupt files
             logger.info(f"Legacy .doc extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
@@ -564,7 +564,7 @@ class ImageExtractor(BaseExtractor):
                 page_infos=[page_info],
             )
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError, MemoryError) as e:
             # Log image extraction failures with context
             logger.warning(f"Image extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
@@ -687,7 +687,7 @@ class RTFExtractor(BaseExtractor):
                 text=text,
                 pages=1,
             )
-        except Exception as e:
+        except (ValueError, OSError, UnicodeDecodeError) as e:
             # Log RTF extraction failures
             logger.info(f"RTF extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
@@ -795,7 +795,7 @@ class PPTXExtractor(BaseExtractor):
                 pages=1,
                 warnings=["Legacy .ppt format - extraction may be incomplete"],
             )
-        except Exception as e:
+        except (UnicodeDecodeError, ValueError, OSError) as e:
             # Log legacy PowerPoint extraction failures
             logger.info(f"Legacy .ppt extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
@@ -882,7 +882,7 @@ class EmailExtractor(BaseExtractor):
                 pages=1,
             )
 
-        except Exception as e:
+        except (OSError, ValueError, KeyError, AttributeError, RuntimeError) as e:
             # Log MSG file extraction failures
             logger.info(f"MSG extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
@@ -977,7 +977,7 @@ class EmailExtractor(BaseExtractor):
                 pages=1,
             )
 
-        except Exception as e:
+        except (ValueError, OSError, KeyError, UnicodeDecodeError) as e:
             # Log EML file extraction failures
             logger.info(f"EML extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
