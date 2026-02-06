@@ -66,6 +66,11 @@ async def validate_token(token: str) -> TokenClaims:
     settings = get_settings()
 
     if settings.auth.provider == "none":
+        if not settings.server.debug:
+            raise ValueError(
+                "Auth provider 'none' is only allowed when server.debug is True. "
+                "Refusing to bypass authentication in non-debug mode."
+            )
         # Return mock claims for development
         return TokenClaims(
             oid="dev-user-oid",

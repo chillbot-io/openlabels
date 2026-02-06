@@ -16,12 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy project metadata and source, then install
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[server]"
-
-# Copy application code
 COPY src/ src/
+
+RUN pip install --no-cache-dir .
+
+# Copy migration assets
 COPY alembic/ alembic/
 COPY alembic.ini .
 
