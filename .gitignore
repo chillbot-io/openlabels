@@ -65,3 +65,4 @@ Thumbs.db
 *.key
 credentials.json
 secrets.json
+dump.rdb
