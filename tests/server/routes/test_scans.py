@@ -171,7 +171,7 @@ class TestListScans:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "total_pages" in data
 
     @pytest.mark.asyncio
     async def test_returns_scan_list(self, test_client, setup_scans_data):
@@ -200,7 +200,7 @@ class TestListScans:
     @pytest.mark.asyncio
     async def test_pagination_works(self, test_client, setup_scans_data):
         """Should respect pagination parameters."""
-        response = await test_client.get("/api/scans?page=1&limit=3")
+        response = await test_client.get("/api/scans?page=1&page_size=3")
         assert response.status_code == 200
         data = response.json()
 

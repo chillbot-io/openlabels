@@ -365,8 +365,8 @@ class TestGetResourceHistory:
         assert response.status_code == 200
         data = response.json()
 
-        assert isinstance(data, list)
-        assert len(data) >= 3  # scan_started, scan_completed, scan_failed
+        assert "items" in data
+        assert len(data["items"]) >= 3  # scan_started, scan_completed, scan_failed
 
     @pytest.mark.asyncio
     async def test_all_entries_match_resource(self, test_client, setup_audit_data):
@@ -376,7 +376,7 @@ class TestGetResourceHistory:
         assert response.status_code == 200
         data = response.json()
 
-        for item in data:
+        for item in data["items"]:
             assert item["resource_type"] == "scan"
             assert item["resource_id"] == str(resource_id)
 
@@ -388,20 +388,20 @@ class TestGetResourceHistory:
         assert response.status_code == 200
         data = response.json()
 
-        assert isinstance(data, list)
-        assert len(data) == 0
+        assert "items" in data
+        assert len(data["items"]) == 0
 
     @pytest.mark.asyncio
-    async def test_respects_limit_parameter(self, test_client, setup_audit_data):
-        """Should respect the limit parameter."""
+    async def test_respects_page_size_parameter(self, test_client, setup_audit_data):
+        """Should respect the page_size parameter."""
         resource_id = setup_audit_data["scan_resource_id"]
         response = await test_client.get(
-            f"/api/audit/resource/scan/{resource_id}?limit=1"
+            f"/api/audit/resource/scan/{resource_id}?page_size=1"
         )
         assert response.status_code == 200
         data = response.json()
 
-        assert len(data) <= 1
+        assert len(data["items"]) <= 1
 
     @pytest.mark.asyncio
     async def test_results_ordered_newest_first(self, test_client, setup_audit_data):
@@ -410,10 +410,11 @@ class TestGetResourceHistory:
         response = await test_client.get(f"/api/audit/resource/scan/{resource_id}")
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
 
-        if len(data) >= 2:
+        if len(items) >= 2:
             dates = [datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
-                     for item in data]
+                     for item in items]
             for i in range(len(dates) - 1):
                 assert dates[i] >= dates[i + 1]
 

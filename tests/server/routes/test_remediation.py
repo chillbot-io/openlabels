@@ -66,7 +66,7 @@ class TestListRemediationActions:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "total_pages" in data
         assert isinstance(data["items"], list)
 
     @pytest.mark.asyncio
@@ -249,7 +249,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation?limit=5")
+        response = await test_client.get("/api/remediation?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -258,15 +258,15 @@ class TestListRemediationActions:
     @pytest.mark.asyncio
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
-        response = await test_client.get("/api/remediation?page=1&limit=10")
+        response = await test_client.get("/api/remediation?page=1&page_size=10")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
         assert "items" in data, "Response should contain 'items' field"
         assert "page" in data, "Response should contain 'page' field"
-        assert "pages" in data, "Response should contain 'pages' field"
+        assert "total_pages" in data, "Response should contain 'total_pages' field"
         assert data["page"] == 1, "Page should be 1"
         assert isinstance(data["items"], list), "Items should be a list"
-        assert len(data["items"]) <= 10, "Items should respect limit parameter"
+        assert len(data["items"]) <= 10, "Items should respect page_size parameter"
 
 
 class TestGetRemediationAction:

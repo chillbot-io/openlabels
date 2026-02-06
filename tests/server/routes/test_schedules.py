@@ -61,23 +61,24 @@ class TestListSchedules:
         response = await test_client.get("/api/schedules")
         assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
         data = response.json()
-        assert isinstance(data, list), "Response should be a list"
+        assert "items" in data, "Response should be paginated with 'items' key"
 
     @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_schedules_data):
-        """List schedules should return a list."""
+        """List schedules should return a paginated response with items."""
         response = await test_client.get("/api/schedules")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "items" in data
+        assert isinstance(data["items"], list)
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_schedules(self, test_client, setup_schedules_data):
-        """List should return empty list when no schedules exist."""
+        """List should return empty when no schedules exist."""
         response = await test_client.get("/api/schedules")
         assert response.status_code == 200
         data = response.json()
-        assert data == []
+        assert data["items"] == []
 
     @pytest.mark.asyncio
     async def test_returns_schedules(self, test_client, setup_schedules_data):
@@ -102,9 +103,10 @@ class TestListSchedules:
         response = await test_client.get("/api/schedules")
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
 
-        assert len(data) == 1
-        assert data[0]["name"] == "Test Schedule"
+        assert len(items) == 1
+        assert items[0]["name"] == "Test Schedule"
 
     @pytest.mark.asyncio
     async def test_schedule_response_structure(self, test_client, setup_schedules_data):
@@ -130,7 +132,7 @@ class TestListSchedules:
         assert response.status_code == 200
         data = response.json()
 
-        sched = data[0]
+        sched = data["items"][0]
         assert "id" in sched
         assert "name" in sched
         assert "target_id" in sched

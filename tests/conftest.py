@@ -377,13 +377,18 @@ def database_url():
     return url
 
 
+# Track whether tables have been created in the test database
+_tables_initialized = False
+
+
 @pytest.fixture
 async def test_db(database_url):
     """
     Create a test database session.
 
     Requires PostgreSQL (models use JSONB which SQLite doesn't support).
-    Yields a session that rolls back after each test.
+    Creates a fresh engine per test (required by pytest-asyncio's per-test
+    event loop), but only runs DDL once. Uses TRUNCATE for fast cleanup.
     """
     if not database_url:
         pytest.skip("PostgreSQL not available - set TEST_DATABASE_URL")
@@ -391,16 +396,35 @@ async def test_db(database_url):
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker
     from openlabels.server.models import Base
+    from sqlalchemy import text
+
+    global _tables_initialized
 
     engine = create_async_engine(
         database_url,
         echo=False,
-        connect_args={"timeout": 5},
+        pool_size=1,
+        max_overflow=0,
+        connect_args={"timeout": 10, "statement_cache_size": 0},
     )
 
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        if not _tables_initialized:
+            # First test: drop and recreate schema for clean slate
+            async with engine.begin() as conn:
+                await conn.execute(text("DROP SCHEMA public CASCADE"))
+                await conn.execute(text("CREATE SCHEMA public"))
+                await conn.run_sync(Base.metadata.create_all)
+            _tables_initialized = True
+        else:
+            # Subsequent tests: truncate all tables (fast, no DDL,
+            # avoids asyncpg statement cache invalidation issues)
+            async with engine.begin() as conn:
+                table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
+                if table_names:
+                    await conn.execute(text(
+                        f"TRUNCATE TABLE {', '.join(table_names)} CASCADE"
+                    ))
     except Exception as exc:
         await engine.dispose()
         pytest.fail(f"PostgreSQL not reachable: {exc}")
@@ -412,10 +436,6 @@ async def test_db(database_url):
     async with async_session() as session:
         yield session
         await session.rollback()
-
-    # Clean up tables after test
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
 
@@ -436,6 +456,7 @@ async def test_client(test_db):
     from httpx import AsyncClient, ASGITransport
     from openlabels.server.app import app
     from openlabels.server.db import get_session
+    from openlabels.server.dependencies import get_db_session
     from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
     from openlabels.server.models import Tenant, User
 
@@ -489,6 +510,7 @@ async def test_client(test_db):
         return _create_test_current_user()
 
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_db_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
@@ -504,9 +526,19 @@ async def test_client(test_db):
     for l in limiters:
         l.enabled = False
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
+    # Patch lifespan-related functions to prevent the app from creating its
+    # own DB engine, connecting to Redis, or starting the scheduler during tests.
+    # The test_db fixture already provides the DB session.
+    from unittest.mock import AsyncMock, patch, MagicMock
+    mock_cache = MagicMock()
+    mock_cache.is_redis_connected = False
+    with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
+         patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
+         patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+         patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
 
     # Re-enable rate limiting
     for l, state in zip(limiters, original_states):

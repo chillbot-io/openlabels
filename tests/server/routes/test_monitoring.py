@@ -48,7 +48,7 @@ class TestListMonitoredFiles:
         assert "items" in data, "Response should contain 'items' field"
         assert "total" in data, "Response should contain 'total' field"
         assert "page" in data, "Response should contain 'page' field"
-        assert "pages" in data, "Response should contain 'pages' field"
+        assert "total_pages" in data, "Response should contain 'total_pages' field"
         assert isinstance(data["items"], list), "Items should be a list"
 
     @pytest.mark.asyncio
@@ -61,7 +61,7 @@ class TestListMonitoredFiles:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "total_pages" in data
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_files(self, test_client, setup_monitoring_data):
@@ -182,7 +182,7 @@ class TestListMonitoredFiles:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/monitoring/files?limit=5")
+        response = await test_client.get("/api/monitoring/files?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -323,7 +323,7 @@ class TestListAccessEvents:
         assert "items" in data, "Response should contain 'items' field"
         assert "total" in data, "Response should contain 'total' field"
         assert "page" in data, "Response should contain 'page' field"
-        assert "pages" in data, "Response should contain 'pages' field"
+        assert "total_pages" in data, "Response should contain 'total_pages' field"
         assert isinstance(data["items"], list), "Items should be a list"
 
     @pytest.mark.asyncio
@@ -336,7 +336,7 @@ class TestListAccessEvents:
         assert "items" in data
         assert "total" in data
         assert "page" in data
-        assert "pages" in data
+        assert "total_pages" in data
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_events(self, test_client, setup_monitoring_data):
