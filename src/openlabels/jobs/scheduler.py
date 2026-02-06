@@ -21,6 +21,7 @@ from typing import Optional
 
 from croniter import croniter
 from sqlalchemy import select, and_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanSchedule, ScanJob, ScanTarget
@@ -120,7 +121,7 @@ class DatabaseScheduler:
                 f"Database scheduler started (poll interval: {self._poll_interval}s)"
             )
             return True
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.error(f"Failed to start scheduler: {e}")
             self._running = False
             return False
@@ -156,7 +157,7 @@ class DatabaseScheduler:
         while self._running:
             try:
                 await self._check_due_schedules()
-            except Exception as e:
+            except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
                 # Log but don't crash - continue polling
                 logger.error(f"Error checking schedules: {e}", exc_info=True)
 
@@ -205,7 +206,7 @@ class DatabaseScheduler:
             for schedule in schedules:
                 try:
                     await self._maybe_trigger_schedule(session, schedule, now)
-                except Exception as e:
+                except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
                     # Log but continue with other schedules
                     logger.error(
                         f"Error processing schedule {schedule.id} ({schedule.name}): {e}",
@@ -315,7 +316,7 @@ class DatabaseScheduler:
             # Schedule is due if the next occurrence after last run is <= now
             return next_occurrence <= now
 
-        except Exception as e:
+        except (ValueError, KeyError, TypeError) as e:
             logger.warning(
                 f"Invalid cron expression for schedule {schedule.id}: "
                 f"'{schedule.cron}' - {e}"
@@ -340,7 +341,7 @@ class DatabaseScheduler:
         try:
             cron = croniter(cron_expr, from_time)
             return cron.get_next(datetime)
-        except Exception as e:
+        except (ValueError, KeyError, TypeError) as e:
             logger.warning(f"Failed to calculate next run time: {e}")
             return None
 
@@ -362,7 +363,7 @@ def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
         now = datetime.now(timezone.utc)
         cron = croniter(cron_expr, now)
         return cron.get_next(datetime)
-    except Exception as e:
+    except (ValueError, KeyError, TypeError) as e:
         logger.info(f"Invalid cron expression '{cron_expr}': {e}")
         return None
 
