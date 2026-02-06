@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, field_validator, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
@@ -516,7 +516,3 @@ def get_settings() -> Settings:
     return Settings(**yaml_config)
 
 
-def reload_settings() -> Settings:
-    """Force reload of settings (clears cache)."""
-    get_settings.cache_clear()
-    return get_settings()

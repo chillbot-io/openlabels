@@ -8,29 +8,14 @@ Note: For security, Azure client secrets are write-only (cannot be retrieved).
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Response
+from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 
 from openlabels.auth.dependencies import require_admin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-class AzureSettingsForm(BaseModel):
-    """Azure AD configuration form data."""
-    tenant_id: str
-    client_id: str
-    client_secret: Optional[str] = None
-
-
-class ScanSettingsForm(BaseModel):
-    """Scan configuration form data."""
-    max_file_size_mb: int
-    concurrent_files: int
-    enable_ocr: bool = False
 
 
 @router.post("/azure", response_class=HTMLResponse)

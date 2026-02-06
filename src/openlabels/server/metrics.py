@@ -8,7 +8,7 @@ Provides metrics for monitoring:
 - Detection/scan processing statistics
 """
 
-from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry, REGISTRY
+from prometheus_client import Counter, Histogram, Gauge, REGISTRY
 
 # Use the default registry
 registry = REGISTRY
