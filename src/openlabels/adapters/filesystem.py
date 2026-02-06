@@ -10,7 +10,6 @@ Features:
 """
 
 import logging
-import os
 import platform
 import stat
 import sys
@@ -21,7 +20,7 @@ from typing import AsyncIterator, Optional
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import Adapter, FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
+from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
 from openlabels.core.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
@@ -266,7 +265,6 @@ class FilesystemAdapter:
         """Get NTFS permissions on Windows."""
         try:
             import win32security
-            import ntsecuritycon as con
 
             sd = win32security.GetFileSecurity(
                 str(path),
@@ -476,7 +474,6 @@ class FilesystemAdapter:
         """Get Windows ACL (DACL)."""
         try:
             import win32security
-            import ntsecuritycon
 
             sd = win32security.GetFileSecurity(
                 str(path),
@@ -562,7 +559,6 @@ class FilesystemAdapter:
         """Set Windows ACL."""
         try:
             import win32security
-            import ntsecuritycon
 
             # Create new DACL
             dacl = win32security.ACL()
