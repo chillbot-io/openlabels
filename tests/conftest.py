@@ -389,8 +389,8 @@ async def test_db(database_url):
     engine = create_async_engine(
         database_url,
         echo=False,
-        pool_size=1,
-        max_overflow=0,
+        pool_size=5,
+        max_overflow=5,
         connect_args={"timeout": 10, "statement_cache_size": 0},
     )
 

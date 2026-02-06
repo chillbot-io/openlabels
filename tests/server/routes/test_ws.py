@@ -15,6 +15,7 @@ import asyncio
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from contextlib import asynccontextmanager
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from starlette.testclient import TestClient
@@ -389,7 +390,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 # Call authenticate (it handles dev mode internally with its own session)
                 result = await authenticate_websocket(mock_websocket)
@@ -426,7 +430,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
@@ -465,7 +472,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None
@@ -496,7 +506,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 from openlabels.server.routes.ws import authenticate_websocket
                 result = await authenticate_websocket(mock_websocket)
@@ -522,7 +535,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 from openlabels.server.routes.ws import authenticate_websocket
                 result = await authenticate_websocket(mock_websocket)
@@ -550,7 +566,10 @@ class TestWebSocketAuthentication:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 from openlabels.server.routes.ws import authenticate_websocket
                 result = await authenticate_websocket(mock_websocket)
@@ -1279,7 +1298,10 @@ class TestWebSocketSecurity:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 result = await authenticate_websocket(mock_websocket)
                 assert result is None  # Should be rejected
@@ -1333,7 +1355,10 @@ class TestWebSocketIntegration:
         try:
             with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                    mock_factory.return_value = MagicMock(return_value=test_db)
+                    @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                     client = TestClient(app)
                     # In dev mode, connection should be accepted
@@ -1365,7 +1390,10 @@ class TestWebSocketIntegration:
         try:
             with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                    mock_factory.return_value = MagicMock(return_value=test_db)
+                    @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                     # Reduce timeout for testing
                     with patch('openlabels.server.routes.ws.asyncio.wait_for') as mock_wait:
@@ -1422,7 +1450,10 @@ class TestWebSocketIntegration:
         try:
             with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                    mock_factory.return_value = MagicMock(return_value=test_db)
+                    @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                     client = TestClient(app)
                     nonexistent_id = uuid4()
@@ -1857,7 +1888,10 @@ class TestAuthenticationEdgeCases:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 result = await authenticate_websocket(mock_websocket)
                 # Should fail gracefully (return None) rather than crash
@@ -1894,7 +1928,10 @@ class TestAuthenticationEdgeCases:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 from openlabels.server.routes.ws import authenticate_websocket
                 result = await authenticate_websocket(mock_websocket)
@@ -1921,7 +1958,10 @@ class TestAuthenticationEdgeCases:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
 
                 from openlabels.server.routes.ws import authenticate_websocket
                 result = await authenticate_websocket(mock_websocket)
@@ -1940,7 +1980,10 @@ class TestAuthenticationEdgeCases:
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
-                mock_factory.return_value = MagicMock(return_value=test_db)
+                @asynccontextmanager
+                async def _mock_session():
+                    yield test_db
+                mock_factory.return_value = _mock_session
                 result = await authenticate_websocket(mock_websocket)
                 # Invalid session should return None
                 assert result is None

@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,7 @@ router = APIRouter()
 class ScheduleCreate(BaseModel):
     """Request to create a scan schedule."""
 
-    name: str
+    name: str = Field(max_length=255)
     target_id: UUID
     cron: Optional[str] = None  # Cron expression, None = on-demand only
 
@@ -41,7 +41,7 @@ class ScheduleCreate(BaseModel):
 class ScheduleUpdate(BaseModel):
     """Request to update a scan schedule."""
 
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
     cron: Optional[str] = None
     enabled: Optional[bool] = None
 

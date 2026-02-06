@@ -30,6 +30,7 @@ from openlabels.server.models import (
     RemediationAction,
     FileInventory,
     AuditLog,
+    ScanResult,
 )
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -267,6 +268,16 @@ async def quarantine_file(
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
 
+    # Security: Verify file belongs to the requesting tenant
+    result = await session.execute(
+        select(ScanResult).where(
+            ScanResult.file_path == validated_path,
+            ScanResult.tenant_id == user.tenant_id,
+        ).limit(1)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
+
     # Security: Validate quarantine directory
     quarantine_dir = validate_quarantine_dir(request.quarantine_dir, validated_path)
 
@@ -367,6 +378,16 @@ async def lockdown_file(
     """
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
+
+    # Security: Verify file belongs to the requesting tenant
+    result = await session.execute(
+        select(ScanResult).where(
+            ScanResult.file_path == validated_path,
+            ScanResult.tenant_id == user.tenant_id,
+        ).limit(1)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
 
     # Create remediation action record
     action = RemediationAction(

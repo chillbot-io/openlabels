@@ -28,14 +28,14 @@ class UserCreate(BaseModel):
     """Request to create a new user."""
 
     email: EmailStr
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
     role: str = Field(default="viewer", pattern="^(admin|viewer)$")
 
 
 class UserUpdate(BaseModel):
     """Request to update a user."""
 
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
     role: Optional[str] = Field(default=None, pattern="^(admin|viewer)$")
 
 

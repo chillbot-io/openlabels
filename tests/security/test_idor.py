@@ -790,9 +790,10 @@ class TestAuditLogIDOR:
             )
             assert response.status_code == 200
 
-            # Should return empty list (not 404, as resource type is valid)
+            # Should return empty items (not 404, as resource type is valid)
             history = response.json()
-            assert history == [], \
+            items = history.get("items", []) if isinstance(history, dict) else history
+            assert items == [], \
                 "CRITICAL: Cross-tenant resource history was returned!"
 
 
@@ -949,13 +950,14 @@ class TestUserIDOR:
             response = await client.get("/api/users")
             assert response.status_code == 200
 
-            users = response.json()
+            users_response = response.json()
+            user_items = users_response.get("items", users_response) if isinstance(users_response, dict) else users_response
 
             tenant_a_user_ids = [
                 str(data["admin_a"].id),
                 str(data["viewer_a"].id),
             ]
-            for user in users:
+            for user in user_items:
                 assert user.get("id") not in tenant_a_user_ids, \
                     "CRITICAL: Tenant B can see Tenant A's users!"
 

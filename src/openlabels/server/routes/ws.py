@@ -214,7 +214,11 @@ async def authenticate_websocket(
         # Check expiration
         expires_at_str = session_data.get("expires_at")
         if expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str)
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+            except (ValueError, TypeError):
+                logger.warning("WebSocket connection rejected: invalid expires_at format")
+                return None
             if expires_at < datetime.now(timezone.utc):
                 logger.warning("WebSocket connection rejected: expired session")
                 return None

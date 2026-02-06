@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -39,7 +39,7 @@ class ScanCreate(BaseModel):
     """Request to create a new scan."""
 
     target_id: UUID
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
 
 
 class ScanResponse(BaseModel):

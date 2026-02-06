@@ -648,7 +648,7 @@ async def auth_status(
         "authenticated": authenticated,
         "provider": settings.auth.provider,
         "user": user_info,
-        "login_url": "/auth/login" if not authenticated else None,
+        "login_url": str(request.url.path).rsplit("/status", 1)[0] + "/login" if not authenticated else None,
     }
 
 
