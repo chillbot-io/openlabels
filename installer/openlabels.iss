@@ -91,6 +91,8 @@ begin
 end;
 
 procedure CheckDockerRequirement();
+var
+  ResultCode: Integer;
 begin
   if not IsDockerInstalled() then
   begin
