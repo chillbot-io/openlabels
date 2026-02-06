@@ -244,7 +244,7 @@ class TestLoginEndpoint:
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.get("/api/auth/login")
 
-                    assert response.status_code == 503
+                    assert response.status_code == 403
                     assert "not configured" in response.json().get("message", response.json().get("detail", "")).lower()
         finally:
             auth_limiter.enabled = True
@@ -275,7 +275,7 @@ class TestLoginEndpoint:
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.get("/api/auth/login")
 
-                    assert response.status_code == 503
+                    assert response.status_code == 403
         finally:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()

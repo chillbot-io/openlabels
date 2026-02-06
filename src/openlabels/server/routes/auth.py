@@ -196,7 +196,7 @@ async def login(
         if settings.server.environment == "production":
             logger.error("SECURITY: Dev mode auth (AUTH_PROVIDER=none) is disabled in production!")
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Authentication not configured. Set AUTH_PROVIDER=azure_ad for production.",
             )
 
@@ -208,7 +208,7 @@ async def login(
                 "Set AUTH_PROVIDER=azure_ad for production."
             )
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Authentication not configured for production. Contact administrator.",
             )
 

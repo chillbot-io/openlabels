@@ -18,11 +18,9 @@ class TestAuthRateLimiting:
         """Auth endpoints should handle rapid requests gracefully."""
         # Send requests sequentially but rapidly - true concurrency would
         # overload the shared test DB session (AsyncSession is not concurrent-safe)
-        # Use /api/v1/auth/status (read-only) to avoid DB mutation side effects
-        # from the login endpoint's session cleanup operations
         status_codes = []
         for _ in range(20):
-            response = await test_client.get("/api/v1/auth/status")
+            response = await test_client.get("/api/auth/login")
             status_codes.append(response.status_code)
 
         # Should either all succeed (no rate limiting) or some get 429

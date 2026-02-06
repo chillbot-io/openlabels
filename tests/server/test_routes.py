@@ -110,8 +110,8 @@ class TestAuthEndpoints:
     """Tests for authentication endpoints."""
 
     async def test_auth_status_unauthenticated(self, test_client):
-        """Test GET /api/v1/auth/status when not authenticated."""
-        response = await test_client.get("/api/v1/auth/status")
+        """Test GET /auth/status when not authenticated (follows legacy redirect)."""
+        response = await test_client.get("/auth/status", follow_redirects=True)
         assert response.status_code == 200
         data = response.json()
         assert data["authenticated"] is False
@@ -283,9 +283,8 @@ class TestWebSocketEndpoint:
         # The important thing is it does NOT return 200 (success)
         assert response.status_code != 200, \
             "WebSocket endpoint should not accept regular HTTP GET"
-        # Valid responses: 426 (upgrade required), 404 (not found), 400 (bad request),
-        # or 307 (legacy redirect to /api/v1/ws/*)
-        assert response.status_code in [307, 400, 404, 426], \
+        # Valid responses: 426 (upgrade required), 404 (not found), or 400 (bad request)
+        assert response.status_code in [400, 404, 426], \
             f"Unexpected status {response.status_code} for HTTP GET to WebSocket endpoint"
 
 
