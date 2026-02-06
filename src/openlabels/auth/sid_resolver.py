@@ -144,7 +144,9 @@ class SIDResolver:
                 self._graph_client = get_graph_client()
             except Exception as e:
                 logger.warning(f"Failed to initialize Graph client: {e}")
-                self.enable_graph = False
+                # Don't permanently disable — transient errors (network blips,
+                # service restarts) should not require a process restart to recover.
+                return None
         return self._graph_client
 
     def _check_well_known(self, sid: str) -> Optional[ResolvedUser]:
