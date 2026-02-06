@@ -20,6 +20,13 @@ from uuid import uuid4
 
 from sqlalchemy.exc import SQLAlchemyError
 
+try:
+    from redis.exceptions import RedisError
+except ImportError:
+    class RedisError(Exception):  # type: ignore[no-redef]
+        """Placeholder when redis is not installed."""
+        pass
+
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, get_session_context
 from openlabels.jobs.queue import JobQueue
@@ -150,7 +157,7 @@ class WorkerStateManager:
             logger.warning(
                 "redis package not installed - using in-memory worker state storage"
             )
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             logger.warning(
                 f"Redis connection failed: {type(e).__name__}: {e} - "
                 "falling back to in-memory worker state storage"
@@ -188,7 +195,7 @@ class WorkerStateManager:
                 value = json.dumps(state, default=str)
                 await self._redis_client.setex(key, ttl, value)
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(
                     f"Redis set_state error for worker {worker_id}: "
                     f"{type(e).__name__}: {e} - falling back to in-memory"
@@ -214,7 +221,7 @@ class WorkerStateManager:
                 if value:
                     return json.loads(value)
                 return None
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(
                     f"Redis get_state error for worker {worker_id}: "
                     f"{type(e).__name__}: {e} - falling back to in-memory"
@@ -258,7 +265,7 @@ class WorkerStateManager:
                         break
 
                 return workers
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(
                     f"Redis get_all_workers error: {type(e).__name__}: {e} - "
                     "falling back to in-memory"
@@ -282,7 +289,7 @@ class WorkerStateManager:
                 key = self._make_key(worker_id)
                 result = await self._redis_client.delete(key)
                 return result > 0
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(
                     f"Redis delete_state error for worker {worker_id}: "
                     f"{type(e).__name__}: {e} - falling back to in-memory"
@@ -425,7 +432,7 @@ class Worker:
         # Release heavy resources (ML models, etc.) to free memory
         try:
             run_shutdown_callbacks()
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"Error running shutdown callbacks: {e}")
 
     async def _update_stopping_state(self) -> None:
@@ -440,7 +447,7 @@ class Worker:
                     "pid": os.getpid(),
                     "hostname": socket.gethostname(),
                 })
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, RuntimeError) as e:
                 logger.debug(f"Failed to update stopping state: {e}")
 
     async def _stuck_job_reclaimer(self) -> None:
@@ -471,7 +478,7 @@ class Worker:
                         await session.commit()
                         logger.info(f"Reclaimed {total_reclaimed} stuck jobs")
 
-            except Exception as e:
+            except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
                 # Log at warning level since stuck jobs could lead to data processing issues
                 logger.warning(f"Stuck job reclaimer error - jobs may remain stuck: {type(e).__name__}: {e}")
 
@@ -505,7 +512,7 @@ class Worker:
                         await session.commit()
                         logger.info(f"Cleaned up {total_cleaned} expired jobs")
 
-            except Exception as e:
+            except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
                 # Log at warning level since cleanup failures could cause disk/DB bloat
                 logger.warning(f"Job cleanup task error - expired jobs may accumulate: {type(e).__name__}: {e}")
 
@@ -543,7 +550,7 @@ class Worker:
                     "hostname": socket.gethostname(),
                 })
 
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, RuntimeError) as e:
                 # Non-critical but worth logging at info level for operational visibility
                 logger.info(f"Concurrency monitor error - workers may not scale dynamically: {type(e).__name__}: {e}")
 
