@@ -72,6 +72,22 @@ async def list_audit_logs(
     conditions = [AuditLog.tenant_id == user.tenant_id]
 
     if action:
+        # Validate action against known enum values to prevent DB-level errors
+        VALID_AUDIT_ACTIONS = {
+            'scan_started', 'scan_completed', 'scan_failed', 'scan_cancelled',
+            'label_applied', 'label_removed', 'label_sync',
+            'target_created', 'target_updated', 'target_deleted',
+            'user_created', 'user_updated', 'user_deleted',
+            'schedule_created', 'schedule_updated', 'schedule_deleted',
+            'quarantine_executed', 'lockdown_executed', 'rollback_executed',
+            'monitoring_enabled', 'monitoring_disabled',
+        }
+        if action not in VALID_AUDIT_ACTIONS:
+            return PaginatedResponse[AuditLogResponse](
+                **create_paginated_response(
+                    items=[], total=0, page=pagination.page, page_size=pagination.page_size,
+                )
+            )
         conditions.append(AuditLog.action == action)
     if resource_type:
         conditions.append(AuditLog.resource_type == resource_type)
