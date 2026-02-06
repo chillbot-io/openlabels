@@ -23,7 +23,7 @@ from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAd
 from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
-from openlabels.core.exceptions import AdapterError, JobError, ValidationError
+from openlabels.core.exceptions import AdapterError, JobError
 from openlabels.labeling.engine import LabelingEngine
 from openlabels.server.metrics import (
     record_file_processed,
