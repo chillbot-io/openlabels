@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple
 from uuid import UUID
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanResult, SensitivityLabel
@@ -139,7 +140,7 @@ async def execute_label_task(
                 "method": labeling_result.get("method", "unknown"),
             }
 
-    except Exception as e:
+    except (SQLAlchemyError, OSError, RuntimeError, ConnectionError) as e:
         logger.error(f"Failed to apply label: {e}")
         result.label_error = str(e)
         raise
@@ -220,7 +221,7 @@ async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
             from openlabels.server.config import get_settings
             settings = get_settings()
             mip_config = getattr(settings, "mip", None)
-        except Exception as e:
+        except (ImportError, RuntimeError, AttributeError) as e:
             logger.debug(f"Failed to get MIP config: {e}")
             mip_config = None
 
@@ -268,7 +269,7 @@ async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
             "method": "mip",
             "error": "MIP SDK not available (module not found)",
         }
-    except Exception as e:
+    except (RuntimeError, OSError, ValueError) as e:
         logger.error(f"MIP SDK error: {e}")
         return {
             "success": False,
@@ -341,13 +342,13 @@ async def _apply_label_office_metadata(file_path: str, label: SensitivityLabel) 
             "method": "office_metadata",
         }
 
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as e:
         logger.error(f"Office metadata labeling failed: {e}")
         # Clean up temp file if it exists
         try:
             if temp_path.exists():
                 temp_path.unlink()
-        except Exception as cleanup_err:
+        except OSError as cleanup_err:
             logger.debug(f"Failed to clean up temp file: {cleanup_err}")
         return {
             "success": False,
