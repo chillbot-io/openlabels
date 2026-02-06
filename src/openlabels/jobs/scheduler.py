@@ -381,7 +381,7 @@ def validate_cron_expression(cron_expr: str) -> bool:
     try:
         croniter(cron_expr)
         return True
-    except Exception:
+    except (ValueError, KeyError, TypeError):
         return False
 
 
@@ -445,7 +445,7 @@ def get_cron_description(cron_expr: str) -> str:
 
         return " ".join(desc_parts)
 
-    except Exception:
+    except (ValueError, IndexError, TypeError):
         return "Invalid cron expression"
 
 

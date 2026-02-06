@@ -20,7 +20,15 @@ from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import select, and_, delete
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+try:
+    from redis.exceptions import RedisError
+except ImportError:
+    class RedisError(Exception):  # type: ignore[no-redef]
+        """Placeholder when redis is not installed."""
+        pass
 
 from openlabels.server.models import (
     FolderInventory,
@@ -132,7 +140,7 @@ class DistributedScanInventory:
                     f"tenant={self.tenant_id}, target={self.target_id}"
                 )
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             logger.warning(
                 f"Failed to initialize Redis for distributed inventory: "
                 f"{type(e).__name__}: {e}. Using in-memory fallback."
@@ -186,7 +194,7 @@ class DistributedScanInventory:
                     self._misses += 1
                     logger.debug(f"Cache miss: folder {path}")
                     return None
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_folder error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -225,7 +233,7 @@ class DistributedScanInventory:
                     await self._redis_client.expire(key, self.ttl)
                 logger.debug(f"Set folder in Redis: {path}")
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis set_folder error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
