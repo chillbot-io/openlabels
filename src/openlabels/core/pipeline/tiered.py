@@ -35,6 +35,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from ..types import Span, Tier, DetectionResult, normalize_entity_type
+from ..policies.engine import get_policy_engine
+from ..policies.schema import EntityMatch, PolicyResult
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +91,14 @@ class PipelineConfig:
     # ML settings
     ml_model_dir: Optional[Path] = None
     use_onnx: bool = True
+    eager_load_ml: bool = False  # If True, load ML detectors at init rather than on first escalation
 
     # Post-processing (coreference disabled by default)
     enable_coref: bool = False
     enable_context_enhancement: bool = False
+
+    # Policy evaluation
+    enable_policy_evaluation: bool = True
 
     # Performance
     max_workers: int = 4
@@ -108,6 +114,7 @@ class PipelineResult:
     escalation_reason: Optional[str]
     ocr_used: bool = False
     ocr_text_detected: bool = False
+    policy_result: Optional[PolicyResult] = None
 
     @property
     def spans(self) -> List[Span]:
@@ -159,6 +166,10 @@ class TieredPipeline:
 
         self._init_stage1_detectors()
         self._init_medical_detector()
+
+        if self.config.eager_load_ml:
+            logger.info("Eager ML loading enabled - initializing ML detectors at startup")
+            self._init_ml_detectors()
 
     def _init_stage1_detectors(self) -> None:
         """Initialize Stage 1 (fast triage) detectors."""
@@ -215,7 +226,12 @@ class TieredPipeline:
                 logger.warning(f"Dictionary loader not available: {e}")
 
     def _init_ml_detectors(self) -> None:
-        """Lazy-load ML detectors (called on first escalation)."""
+        """Load ML detectors (called eagerly or on first escalation).
+
+        Resolves the model directory, checks for model availability using
+        model_config, and attempts to load whichever models are present.
+        Logs clear diagnostics when models are missing.
+        """
         if self._ml_detectors:
             return  # Already loaded
 
@@ -226,8 +242,30 @@ class TieredPipeline:
         model_dir = Path(model_dir).expanduser()
 
         if not model_dir.exists():
-            logger.warning(f"ML model directory not found: {model_dir}")
+            logger.warning(
+                f"ML model directory not found: {model_dir}. "
+                f"ML detectors will be unavailable. "
+                f"To enable ML detection, create this directory and place model files there. "
+                f"See openlabels.core.detectors.model_config for expected file layout."
+            )
             return
+
+        # Check model availability and log a clear report
+        try:
+            from ..detectors.model_config import check_models_available
+            report = check_models_available(
+                model_dir=model_dir, use_onnx=self.config.use_onnx
+            )
+            if not report.any_available:
+                logger.warning(
+                    f"No ML models found in {model_dir}. "
+                    f"ML detectors will be unavailable. "
+                    f"Model status:\n{report.summary()}"
+                )
+            else:
+                logger.info(f"ML model check: {report.summary()}")
+        except Exception as e:
+            logger.debug(f"Model availability check failed (non-fatal): {e}")
 
         if self.config.use_onnx:
             try:
@@ -238,15 +276,28 @@ class TieredPipeline:
                     self._phi_bert = phi_bert
                     self._ml_detectors.append(phi_bert)
                     logger.info("PHI-BERT ONNX loaded for escalation")
+                else:
+                    logger.info(
+                        f"PHI-BERT ONNX not loaded: model files not found in {model_dir}. "
+                        f"Expected phi_bert_int8.onnx or phi_bert.onnx plus tokenizer."
+                    )
 
                 pii_bert = PIIBertONNXDetector(model_dir=model_dir)
                 if pii_bert.is_available():
                     self._pii_bert = pii_bert
                     self._ml_detectors.append(pii_bert)
                     logger.info("PII-BERT ONNX loaded for escalation")
+                else:
+                    logger.info(
+                        f"PII-BERT ONNX not loaded: model files not found in {model_dir}. "
+                        f"Expected pii_bert_int8.onnx or pii_bert.onnx plus tokenizer."
+                    )
 
-            except ImportError:
-                logger.warning("ONNX detectors not available")
+            except ImportError as e:
+                logger.warning(
+                    f"ONNX detectors not available (missing dependency): {e}. "
+                    f"Install onnxruntime to enable ONNX-based ML detection."
+                )
         else:
             try:
                 from ..detectors.ml import PHIBertDetector, PIIBertDetector
@@ -257,6 +308,12 @@ class TieredPipeline:
                     if phi_bert.is_available():
                         self._phi_bert = phi_bert
                         self._ml_detectors.append(phi_bert)
+                        logger.info("PHI-BERT (HuggingFace) loaded for escalation")
+                else:
+                    logger.info(
+                        f"PHI-BERT not loaded: directory not found at {phi_bert_dir}. "
+                        f"Expected config.json and model weights."
+                    )
 
                 pii_bert_dir = model_dir / "pii_bert"
                 if pii_bert_dir.exists():
@@ -264,9 +321,28 @@ class TieredPipeline:
                     if pii_bert.is_available():
                         self._pii_bert = pii_bert
                         self._ml_detectors.append(pii_bert)
+                        logger.info("PII-BERT (HuggingFace) loaded for escalation")
+                else:
+                    logger.info(
+                        f"PII-BERT not loaded: directory not found at {pii_bert_dir}. "
+                        f"Expected config.json and model weights."
+                    )
 
-            except ImportError:
-                logger.warning("HuggingFace detectors not available")
+            except ImportError as e:
+                logger.warning(
+                    f"HuggingFace detectors not available (missing dependency): {e}. "
+                    f"Install transformers and torch to enable HuggingFace-based ML detection."
+                )
+
+        if self._ml_detectors:
+            logger.info(
+                f"ML detectors initialized: {[d.name for d in self._ml_detectors]}"
+            )
+        else:
+            logger.warning(
+                "No ML detectors were loaded. Pipeline will operate with "
+                "pattern-based detection only (Stage 1)."
+            )
 
     def _init_post_processing(self) -> None:
         """Lazy-load post-processing components."""
@@ -359,6 +435,25 @@ class TieredPipeline:
             normalized = normalize_entity_type(span.entity_type)
             entity_counts[normalized] = entity_counts.get(normalized, 0) + 1
 
+        # Policy evaluation
+        policy_result = None
+        if self.config.enable_policy_evaluation and processed_spans:
+            try:
+                entity_matches = [
+                    EntityMatch(
+                        entity_type=span.entity_type,
+                        value=span.text,
+                        confidence=span.confidence,
+                        start=span.start,
+                        end=span.end,
+                        source=span.detector,
+                    )
+                    for span in processed_spans
+                ]
+                policy_result = get_policy_engine().evaluate(entity_matches)
+            except Exception as e:
+                logger.error(f"Policy evaluation failed: {e}")
+
         processing_time_ms = (time.time() - start_time) * 1000
 
         return PipelineResult(
@@ -372,6 +467,7 @@ class TieredPipeline:
             stages_executed=stages_executed,
             medical_context_detected=medical_context,
             escalation_reason=escalation_reason,
+            policy_result=policy_result,
         )
 
     def _run_stage1(self, text: str) -> Tuple[List[Span], List[str]]:
@@ -733,6 +829,46 @@ class TieredPipeline:
     def stage1_detector_names(self) -> List[str]:
         """Get names of Stage 1 detectors."""
         return [d.name for d in self._stage1_detectors]
+
+    def get_ml_status(self) -> Dict[str, object]:
+        """Return status of ML detectors for health checks and diagnostics.
+
+        Returns:
+            Dict with keys:
+                - ml_loaded: bool, whether any ML detectors are loaded
+                - phi_bert: dict with 'loaded' and 'name' keys (or None)
+                - pii_bert: dict with 'loaded' and 'name' keys (or None)
+                - detectors: list of loaded detector names
+                - model_dir: str, the resolved model directory path
+                - use_onnx: bool, whether ONNX backend is configured
+        """
+        model_dir = self.config.ml_model_dir
+        if model_dir is None:
+            from openlabels.core.constants import DEFAULT_MODELS_DIR
+            model_dir = DEFAULT_MODELS_DIR
+
+        status = {
+            "ml_loaded": bool(self._ml_detectors),
+            "phi_bert": None,
+            "pii_bert": None,
+            "detectors": [d.name for d in self._ml_detectors],
+            "model_dir": str(Path(model_dir).expanduser()),
+            "use_onnx": self.config.use_onnx,
+        }
+
+        if self._phi_bert is not None:
+            status["phi_bert"] = {
+                "loaded": self._phi_bert.is_available(),
+                "name": self._phi_bert.name,
+            }
+
+        if self._pii_bert is not None:
+            status["pii_bert"] = {
+                "loaded": self._pii_bert.is_available(),
+                "name": self._pii_bert.name,
+            }
+
+        return status
 
     @property
     def ml_available(self) -> bool:

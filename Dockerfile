@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy project metadata and source, then install
 COPY pyproject.toml .
+COPY README.md .
 COPY src/ src/
 
 RUN pip install --no-cache-dir .

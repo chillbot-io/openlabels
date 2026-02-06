@@ -10,13 +10,34 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import require_admin
+from openlabels.server.db import get_session
+from openlabels.server.models import TenantSettings
 from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _get_or_create_settings(
+    session: AsyncSession,
+    tenant_id,
+    user_id,
+) -> TenantSettings:
+    """Fetch existing TenantSettings for the tenant, or create a new row."""
+    result = await session.execute(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    settings = result.scalar_one_or_none()
+    if settings is None:
+        settings = TenantSettings(tenant_id=tenant_id, updated_by=user_id)
+        session.add(settings)
+        await session.flush()
+    return settings
 
 
 @router.post("/azure", response_class=HTMLResponse)
@@ -25,16 +46,26 @@ async def update_azure_settings(
     client_id: str = Form(""),
     client_secret: str = Form(""),
     user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Update Azure AD configuration.
 
-    Note: In production, these settings should be stored securely
-    (e.g., in a secrets manager or encrypted database).
-    This implementation logs the intent but doesn't persist changes.
+    The client_secret value is NOT stored in the database. If a non-empty
+    secret is provided we only record that one has been configured
+    (azure_client_secret_set = True).  In production the real secret
+    should be forwarded to a secrets manager.
     """
+    settings = await _get_or_create_settings(session, user.tenant_id, user.id)
+
+    settings.azure_tenant_id = tenant_id or None
+    settings.azure_client_id = client_id or None
+    if client_secret:
+        settings.azure_client_secret_set = True
+    settings.updated_by = user.id
+
     logger.info(
-        f"Azure settings update requested by user {user.email}",
+        f"Azure settings updated by user {user.email}",
         extra={"tenant_id": tenant_id, "client_id": client_id},
     )
 
@@ -47,17 +78,20 @@ async def update_scan_settings(
     concurrent_files: int = Form(10),
     enable_ocr: Optional[str] = Form(None),  # Checkbox sends "on" or nothing
     user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
-    """
-    Update scan configuration.
-
-    Note: Settings changes are logged but not persisted to config file.
-    In production, consider storing tenant-specific settings in database.
-    """
+    """Update scan configuration and persist to tenant settings."""
     ocr_enabled = enable_ocr == "on"
 
+    settings = await _get_or_create_settings(session, user.tenant_id, user.id)
+
+    settings.max_file_size_mb = max_file_size_mb
+    settings.concurrent_files = concurrent_files
+    settings.enable_ocr = ocr_enabled
+    settings.updated_by = user.id
+
     logger.info(
-        f"Scan settings update requested by user {user.email}",
+        f"Scan settings updated by user {user.email}",
         extra={
             "max_file_size_mb": max_file_size_mb,
             "concurrent_files": concurrent_files,
@@ -72,15 +106,20 @@ async def update_scan_settings(
 async def update_entity_settings(
     entities: list[str] = Form(default=[]),
     user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Update entity detection configuration.
 
     Controls which entity types are detected during scans.
     """
-    # Form sends entities[] as the field name
+    settings = await _get_or_create_settings(session, user.tenant_id, user.id)
+
+    settings.enabled_entities = entities
+    settings.updated_by = user.id
+
     logger.info(
-        f"Entity settings update requested by user {user.email}",
+        f"Entity settings updated by user {user.email}",
         extra={"enabled_entities": entities},
     )
 
@@ -90,14 +129,20 @@ async def update_entity_settings(
 @router.post("/reset", response_class=HTMLResponse)
 async def reset_settings(
     user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Reset all settings to defaults.
 
-    This clears any tenant-specific configuration overrides.
+    Deletes the tenant-specific TenantSettings row so the tenant
+    reverts to system defaults.
     """
+    await session.execute(
+        delete(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+    )
+
     logger.warning(
-        f"Settings reset requested by user {user.email}",
+        f"Settings reset to defaults by user {user.email}",
     )
 
     return htmx_notify("Settings reset to defaults")

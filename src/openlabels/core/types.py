@@ -405,6 +405,7 @@ class DetectionResult:
     processing_time_ms: float
     detectors_used: List[str]
     text_length: int
+    policy_result: Optional[Any] = None  # Optional[PolicyResult] -- avoids circular import
 
     def __repr__(self) -> str:
         return (

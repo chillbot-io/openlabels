@@ -83,10 +83,10 @@ def is_same_origin(request: Request) -> bool:
         logger.warning(f"CSRF: Referer mismatch - got {referer_origin}")
         return False
 
-    # No origin or referer - could be same-origin request without headers
-    # This is common for requests from the same page
-    # Allow but log for monitoring
-    return True
+    # No origin or referer — reject for state-changing requests.
+    # Legitimate browser requests always include at least one of these headers.
+    logger.warning("CSRF: No Origin or Referer header present")
+    return False
 
 
 def validate_csrf_token(request: Request) -> bool:
@@ -154,16 +154,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # Option 2: Double-submit token (additional layer for sensitive operations)
-        # Check if client sent CSRF token
-        if CSRF_HEADER_NAME in request.headers:
-            if not validate_csrf_token(request):
+        # Option 2: Double-submit token validation (required for all protected requests)
+        if not validate_csrf_token(request):
+            # Allow API requests that use Bearer auth (they don't need CSRF tokens)
+            auth_header = request.headers.get("authorization", "")
+            if not auth_header.startswith("Bearer "):
                 logger.warning(f"CSRF validation failed: token mismatch for {request.url.path}")
                 return JSONResponse(
                     status_code=403,
                     content={
                         "error": "csrf_validation_failed",
-                        "message": "CSRF validation failed: token mismatch",
+                        "message": "CSRF validation failed: missing or invalid token",
                     },
                 )
 

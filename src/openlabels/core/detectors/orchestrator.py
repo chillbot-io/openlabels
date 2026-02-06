@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
 from ..types import Span, Tier, DetectionResult, normalize_entity_type
+from ..policies.engine import get_policy_engine
+from ..policies.schema import EntityMatch
 from .base import BaseDetector
 from .checksum import ChecksumDetector
 from .secrets import SecretsDetector
@@ -80,6 +82,7 @@ class DetectorOrchestrator:
         enable_context_enhancement: bool = False,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         max_workers: int = 4,
+        enable_policy: bool = False,
     ):
         """
         Initialize the orchestrator with configured detectors.
@@ -101,6 +104,7 @@ class DetectorOrchestrator:
         """
         self.confidence_threshold = confidence_threshold
         self.max_workers = max_workers
+        self.enable_policy = enable_policy
         self.enable_coref = enable_coref
         self.enable_context_enhancement = enable_context_enhancement
         self.detectors: List[BaseDetector] = []
@@ -297,6 +301,25 @@ class DetectorOrchestrator:
             except Exception as e:
                 logger.error(f"Context enhancement failed: {e}")
 
+        # Policy evaluation
+        policy_result = None
+        if self.enable_policy and processed_spans:
+            try:
+                entity_matches = [
+                    EntityMatch(
+                        entity_type=span.entity_type,
+                        value=span.text,
+                        confidence=span.confidence,
+                        start=span.start,
+                        end=span.end,
+                        source=span.detector,
+                    )
+                    for span in processed_spans
+                ]
+                policy_result = get_policy_engine().evaluate(entity_matches)
+            except Exception as e:
+                logger.error(f"Policy evaluation failed: {e}")
+
         # Calculate entity counts
         entity_counts: Dict[str, int] = {}
         for span in processed_spans:
@@ -311,6 +334,7 @@ class DetectorOrchestrator:
             processing_time_ms=processing_time_ms,
             detectors_used=detectors_used,
             text_length=len(text),
+            policy_result=policy_result,
         )
 
     def _run_detector(self, detector: BaseDetector, text: str) -> List[Span]:

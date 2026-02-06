@@ -117,8 +117,14 @@ def _get_history_windows(
     start_time_str = start_time.strftime("%Y-%m-%dT%H:%M:%S")
 
     # PowerShell script to query events
-    # We escape the path for use in the XPath filter
-    escaped_path = str(path).replace("\\", "\\\\").replace("'", "''")
+    # Validate and escape the path for use in the PowerShell filter
+    resolved_path = str(path.resolve())
+    if any(c in resolved_path for c in ['"', "'", '`', '$', '\n', '\r', ';', '&', '|']):
+        logger.warning(f"Path contains invalid characters, refusing to query: {path}")
+        return []
+
+    # Escape the filename for use in -like pattern
+    escaped_name = path.name.replace('[', '`[').replace(']', '`]')
 
     ps_script = f'''
 $events = Get-WinEvent -FilterHashtable @{{
@@ -127,7 +133,7 @@ $events = Get-WinEvent -FilterHashtable @{{
     StartTime = '{start_time_str}'
 }} -MaxEvents {limit * 2} -ErrorAction SilentlyContinue |
 Where-Object {{
-    $_.Properties[6].Value -like "*{path.name}*"
+    $_.Properties[6].Value -like "*{escaped_name}*"
 }} |
 Select-Object -First {limit} |
 ForEach-Object {{

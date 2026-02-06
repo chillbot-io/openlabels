@@ -31,9 +31,10 @@ htmlcov/
 *.swp
 *.swo
 
-# Documentation (not needed in image)
+# Documentation (not needed in image, except README.md for build)
 docs/
 *.md
+!README.md
 
 # CI/CD
 .github/

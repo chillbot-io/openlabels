@@ -478,6 +478,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
     circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
+    sentry: SentrySettings = Field(default_factory=SentrySettings)
     jobs: JobSettings = Field(default_factory=JobSettings)
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)

@@ -34,10 +34,13 @@ from .registry import (
     disable_monitoring,
     is_monitored,
     get_watched_files,
+    populate_cache_from_db,
+    sync_cache_to_db,
 )
 from .history import (
     get_access_history,
 )
+from . import db  # noqa: F401 – async DB persistence helpers
 
 __all__ = [
     # Types
@@ -51,6 +54,10 @@ __all__ = [
     "disable_monitoring",
     "is_monitored",
     "get_watched_files",
+    # Registry – async DB integration
+    "populate_cache_from_db",
+    "sync_cache_to_db",
+    "db",
     # History
     "get_access_history",
 ]
