@@ -31,24 +31,6 @@ from openlabels.jobs.inventory import (
 class TestDistributedScanInventoryInit:
     """Tests for DistributedScanInventory initialization."""
 
-    def test_init_stores_tenant_id(self):
-        """Should store the tenant ID."""
-        tenant_id = uuid4()
-        target_id = uuid4()
-
-        inv = DistributedScanInventory(tenant_id, target_id)
-
-        assert inv.tenant_id == tenant_id
-
-    def test_init_stores_target_id(self):
-        """Should store the target ID."""
-        tenant_id = uuid4()
-        target_id = uuid4()
-
-        inv = DistributedScanInventory(tenant_id, target_id)
-
-        assert inv.target_id == target_id
-
     def test_init_default_ttl(self):
         """Should use default TTL if not specified."""
         inv = DistributedScanInventory(uuid4(), uuid4())
@@ -60,14 +42,6 @@ class TestDistributedScanInventoryInit:
         inv = DistributedScanInventory(uuid4(), uuid4(), ttl=7200)
 
         assert inv.ttl == 7200
-
-    def test_init_creates_empty_local_caches(self):
-        """Should initialize empty local caches."""
-        inv = DistributedScanInventory(uuid4(), uuid4())
-
-        assert inv._local_folder_cache == {}
-        assert inv._local_file_cache == {}
-        assert inv._local_scanned_files == set()
 
     def test_init_not_initialized(self):
         """Should not be initialized by default."""

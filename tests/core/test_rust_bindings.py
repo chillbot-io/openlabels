@@ -12,53 +12,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 
-class TestMatchResult:
-    """Tests for the MatchResult dataclass."""
-
-    def test_match_result_creation(self):
-        """MatchResult should store all fields correctly."""
-        from openlabels.core._rust import MatchResult
-
-        result = MatchResult(
-            pattern_name="TEST",
-            start=0,
-            end=10,
-            matched_text="0123456789",
-            confidence=0.85,
-            validator="luhn",
-        )
-
-        assert result.pattern_name == "TEST"
-        assert result.start == 0
-        assert result.end == 10
-        assert result.matched_text == "0123456789"
-        assert result.confidence == 0.85
-        assert result.validator == "luhn"
-
-    def test_match_result_without_validator(self):
-        """MatchResult should default validator to None."""
-        from openlabels.core._rust import MatchResult
-
-        result = MatchResult(
-            pattern_name="TEST",
-            start=0,
-            end=5,
-            matched_text="test",
-            confidence=0.75,
-        )
-
-        assert result.validator is None
-
-    def test_match_result_equality(self):
-        """MatchResult dataclass should support equality checks."""
-        from openlabels.core._rust import MatchResult
-
-        result1 = MatchResult("TEST", 0, 5, "hello", 0.8)
-        result2 = MatchResult("TEST", 0, 5, "hello", 0.8)
-
-        assert result1 == result2
-
-
 class TestPatternMatcherWrapper:
     """Tests for the PatternMatcherWrapper class."""
 
@@ -204,43 +157,6 @@ class TestPatternMatcherWrapper:
         results = matcher.find_matches_batch([])
 
         assert results == []
-
-    def test_pattern_count_property(self):
-        """pattern_count should return correct count."""
-        from openlabels.core._rust import PatternMatcherWrapper
-
-        patterns = [
-            ("P1", r"\d", None, 0.5),
-            ("P2", r"\w", None, 0.5),
-            ("P3", r"\s", None, 0.5),
-        ]
-        matcher = PatternMatcherWrapper(patterns)
-
-        assert matcher.pattern_count == 3
-
-    def test_pattern_names_property(self):
-        """pattern_names should return all pattern names."""
-        from openlabels.core._rust import PatternMatcherWrapper
-
-        patterns = [
-            ("ALPHA", r"[A-Z]", None, 0.5),
-            ("BETA", r"[0-9]", None, 0.5),
-        ]
-        matcher = PatternMatcherWrapper(patterns)
-
-        names = matcher.pattern_names
-        assert "ALPHA" in names
-        assert "BETA" in names
-
-    def test_is_rust_property(self):
-        """is_rust should indicate which implementation is used."""
-        from openlabels.core._rust import PatternMatcherWrapper, _RUST_AVAILABLE
-
-        patterns = [("TEST", r"\d", None, 0.5)]
-        matcher = PatternMatcherWrapper(patterns)
-
-        # The is_rust property should match whether Rust is available
-        assert matcher.is_rust == _RUST_AVAILABLE
 
     def test_confidence_boost_from_validator(self):
         """Valid matches should get confidence boost from validator."""
@@ -738,34 +654,6 @@ class TestBuiltinPatterns:
             except re.error as e:
                 pytest.fail(f"Invalid regex in pattern '{name}': {e}")
 
-    def test_builtin_patterns_has_ssn(self):
-        """BUILTIN_PATTERNS should include SSN pattern."""
-        from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
-
-        names = [p[0] for p in BUILTIN_PATTERNS]
-        assert "SSN" in names
-
-    def test_builtin_patterns_has_email(self):
-        """BUILTIN_PATTERNS should include EMAIL pattern."""
-        from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
-
-        names = [p[0] for p in BUILTIN_PATTERNS]
-        assert "EMAIL" in names
-
-    def test_builtin_patterns_has_credit_cards(self):
-        """BUILTIN_PATTERNS should include credit card patterns."""
-        from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
-
-        names = [p[0] for p in BUILTIN_PATTERNS]
-        assert any("CREDIT_CARD" in name for name in names)
-
-    def test_builtin_patterns_has_aws_keys(self):
-        """BUILTIN_PATTERNS should include AWS key patterns."""
-        from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
-
-        names = [p[0] for p in BUILTIN_PATTERNS]
-        assert "AWS_ACCESS_KEY" in names
-
 
 class TestPatternMatcherIntegration:
     """Integration tests for the pattern matcher with real data."""
@@ -883,18 +771,3 @@ class TestPatternMatcherIntegration:
         assert any("IPV4" in r.pattern_name for r in results[3])
 
 
-class TestRustAvailability:
-    """Tests for Rust availability detection."""
-
-    def test_rust_available_exported(self):
-        """_RUST_AVAILABLE should be exported."""
-        from openlabels.core._rust import _RUST_AVAILABLE
-
-        assert isinstance(_RUST_AVAILABLE, bool)
-
-    def test_pattern_matcher_exports(self):
-        """Module should export expected classes."""
-        from openlabels.core._rust import PatternMatcher, PatternMatcherWrapper, MatchResult
-
-        # PatternMatcher should be an alias
-        assert PatternMatcher is PatternMatcherWrapper

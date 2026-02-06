@@ -150,21 +150,6 @@ class TestReportTextFormat:
         assert "Total files" in result.output
         assert "By Risk Tier:" in result.output
 
-    def test_report_text_format_explicit(self, runner, temp_dir, mock_file_classification):
-        """Report with explicit text format."""
-        from openlabels.cli.commands.report import report
-
-        with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
-            mock_processor = MagicMock()
-            mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
-            mock_processor_cls.return_value = mock_processor
-
-            result = runner.invoke(report, [temp_dir, "--format", "text"])
-
-        assert result.exit_code == 0
-        assert "=" * 70 in result.output  # Header separator
-        assert "FINDINGS" in result.output
-
     def test_report_text_shows_entity_types(self, runner, temp_dir, mock_file_classification):
         """Text report shows entity type breakdown."""
         from openlabels.cli.commands.report import report

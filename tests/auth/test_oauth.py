@@ -27,21 +27,6 @@ from openlabels.auth.oauth import (
 class TestTokenClaims:
     """Tests for TokenClaims model validation."""
 
-    def test_valid_claims(self):
-        """Valid claims should be accepted."""
-        claims = TokenClaims(
-            oid="user-object-id",
-            preferred_username="user@example.com",
-            name="Test User",
-            tenant_id="tenant-id",
-            roles=["admin", "viewer"],
-        )
-        assert claims.oid == "user-object-id"
-        assert claims.preferred_username == "user@example.com"
-        assert claims.name == "Test User"
-        assert claims.tenant_id == "tenant-id"
-        assert claims.roles == ["admin", "viewer"]
-
     def test_minimal_claims(self):
         """Only required fields should be needed."""
         claims = TokenClaims(
@@ -351,7 +336,3 @@ class TestClearJWKSCache:
 
         assert len(oauth._jwks_cache) == 0
 
-    def test_clear_empty_cache_safe(self):
-        """Clearing empty cache should not error."""
-        clear_jwks_cache()
-        clear_jwks_cache()  # Should not raise

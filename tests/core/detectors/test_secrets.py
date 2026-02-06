@@ -73,27 +73,6 @@ def _fake_mailchimp_key() -> str:
 # DETECTOR INITIALIZATION TESTS
 # =============================================================================
 
-class TestSecretsDetectorInit:
-    """Test detector initialization and configuration."""
-
-    @pytest.fixture
-    def detector(self):
-        """Create a SecretsDetector instance."""
-        return SecretsDetector()
-
-    def test_detector_name(self, detector):
-        """Test detector has correct name."""
-        assert detector.name == "secrets"
-
-    def test_detector_tier(self, detector):
-        """Test detector uses PATTERN tier."""
-        assert detector.tier == Tier.PATTERN
-
-    def test_detector_is_available(self, detector):
-        """Test detector reports availability."""
-        assert detector.is_available() is True
-
-
 # =============================================================================
 # AWS CREDENTIAL TESTS
 # =============================================================================
@@ -1212,14 +1191,6 @@ env:
 
         assert len(stripe_spans) >= 1
         assert len(gh_spans) >= 1
-
-    def test_confidence_scores_valid(self, detector):
-        """Test that detected spans have valid confidence scores."""
-        text = "GITHUB_TOKEN=" + _fake_github_token("ghp_") + ""
-        spans = detector.detect(text)
-
-        for span in spans:
-            assert 0.0 <= span.confidence <= 1.0
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""

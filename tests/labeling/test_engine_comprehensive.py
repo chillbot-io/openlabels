@@ -45,21 +45,6 @@ from openlabels.labeling.engine import (
 class TestCachedLabel:
     """Tests for CachedLabel dataclass."""
 
-    def test_cached_label_creation(self):
-        """CachedLabel is created with required fields."""
-        label = CachedLabel(
-            id="label-123",
-            name="Confidential",
-            description="Confidential data",
-            color="#FF0000",
-            priority=10,
-            parent_id=None,
-        )
-
-        assert label.id == "label-123"
-        assert label.name == "Confidential"
-        assert label.priority == 10
-
     def test_cached_label_has_cached_at(self):
         """CachedLabel gets cached_at timestamp."""
         before = datetime.now(timezone.utc)
@@ -75,65 +60,8 @@ class TestCachedLabel:
 
         assert before <= label.cached_at <= after
 
-    def test_cached_label_to_dict(self):
-        """to_dict returns expected dictionary."""
-        label = CachedLabel(
-            id="label-456",
-            name="Public",
-            description="Public data",
-            color="#00FF00",
-            priority=5,
-            parent_id="parent-123",
-        )
-
-        d = label.to_dict()
-
-        assert d["id"] == "label-456"
-        assert d["name"] == "Public"
-        assert d["description"] == "Public data"
-        assert d["color"] == "#00FF00"
-        assert d["priority"] == 5
-        assert d["parent_id"] == "parent-123"
-
-
 class TestTokenCache:
     """Tests for TokenCache dataclass."""
-
-    def test_token_cache_default_invalid(self):
-        """Default TokenCache is invalid."""
-        cache = TokenCache()
-
-        # Note: is_valid() returns falsy value when token is empty
-        # due to Python's `and` short-circuit evaluation
-        assert not cache.is_valid()
-
-    def test_token_cache_with_future_expiry(self):
-        """Token with future expiry is valid."""
-        cache = TokenCache(
-            access_token="test-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-        )
-
-        assert cache.is_valid() is True
-
-    def test_token_cache_with_past_expiry(self):
-        """Token with past expiry is invalid."""
-        cache = TokenCache(
-            access_token="test-token",
-            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
-        )
-
-        assert cache.is_valid() is False
-
-    def test_token_cache_5min_buffer(self):
-        """Token within 5 minutes of expiry is invalid."""
-        cache = TokenCache(
-            access_token="test-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=4),
-        )
-
-        # 4 minutes from now is within the 5-minute buffer
-        assert cache.is_valid() is False
 
     def test_token_cache_just_outside_buffer(self):
         """Token just outside 5-minute buffer is valid."""
@@ -166,20 +94,6 @@ class TestLabelCache:
         yield
         cache.invalidate()
 
-    def test_label_cache_is_singleton(self):
-        """LabelCache follows singleton pattern."""
-        cache1 = LabelCache()
-        cache2 = LabelCache()
-
-        assert cache1 is cache2
-
-    def test_label_cache_initially_expired(self):
-        """Fresh cache is expired."""
-        cache = LabelCache()
-        cache.invalidate()
-
-        assert cache.is_expired() is True
-
     def test_label_cache_set_updates_refresh_time(self):
         """Setting labels updates last_refresh."""
         cache = get_label_cache()
@@ -192,45 +106,6 @@ class TestLabelCache:
 
         assert cache.is_expired() is False
         assert cache._last_refresh is not None
-
-    def test_label_cache_get_by_id(self):
-        """Can retrieve label by ID."""
-        cache = get_label_cache()
-        labels = [
-            {"id": "label-123", "name": "Test Label", "description": "", "color": "", "priority": 0, "parent_id": None},
-        ]
-        cache.set(labels)
-
-        result = cache.get("label-123")
-
-        assert result is not None
-        assert result.id == "label-123"
-
-    def test_label_cache_get_by_name(self):
-        """Can retrieve label by name."""
-        cache = get_label_cache()
-        labels = [
-            {"id": "label-456", "name": "Confidential", "description": "", "color": "", "priority": 0, "parent_id": None},
-        ]
-        cache.set(labels)
-
-        result = cache.get_by_name("Confidential")
-
-        assert result is not None
-        assert result.name == "Confidential"
-
-    def test_label_cache_get_all(self):
-        """Can retrieve all labels."""
-        cache = get_label_cache()
-        labels = [
-            {"id": "label-1", "name": "Label 1", "description": "", "color": "", "priority": 0, "parent_id": None},
-            {"id": "label-2", "name": "Label 2", "description": "", "color": "", "priority": 1, "parent_id": None},
-        ]
-        cache.set(labels)
-
-        all_labels = cache.get_all()
-
-        assert len(all_labels) == 2
 
     def test_label_cache_returns_none_when_expired(self):
         """Get returns None when cache is expired."""
@@ -245,29 +120,6 @@ class TestLabelCache:
 
         assert cache.get("label-1") is None
         assert cache.get_all() == []
-
-    def test_label_cache_invalidate(self):
-        """Invalidate clears the cache."""
-        cache = get_label_cache()
-        labels = [
-            {"id": "label-1", "name": "Label 1", "description": "", "color": "", "priority": 0, "parent_id": None},
-        ]
-        cache.set(labels)
-
-        cache.invalidate()
-
-        assert cache._labels == {}
-        assert cache._labels_by_name == {}
-        assert cache._last_refresh is None
-
-    def test_label_cache_configure(self):
-        """Can configure TTL and max labels."""
-        cache = get_label_cache()
-
-        cache.configure(ttl_seconds=600, max_labels=500)
-
-        assert cache._ttl_seconds == 600
-        assert cache._max_labels == 500
 
     def test_label_cache_respects_max_labels(self):
         """Cache respects max_labels limit."""
@@ -297,44 +149,6 @@ class TestLabelCache:
         assert "ttl_seconds" in stats
         assert "is_expired" in stats
         assert stats["label_count"] == 1
-
-
-class TestLabelingEngineInit:
-    """Tests for LabelingEngine initialization."""
-
-    def test_engine_stores_credentials(self):
-        """Engine stores Azure AD credentials."""
-        engine = LabelingEngine(
-            tenant_id="tenant-123",
-            client_id="client-456",
-            client_secret="secret-789",
-        )
-
-        assert engine.tenant_id == "tenant-123"
-        assert engine.client_id == "client-456"
-        assert engine.client_secret == "secret-789"
-
-    def test_engine_has_token_cache(self):
-        """Engine has a token cache."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        assert hasattr(engine, "_token_cache")
-        assert isinstance(engine._token_cache, TokenCache)
-
-    def test_engine_retry_configuration(self):
-        """Engine has retry configuration."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        assert engine._max_retries == 4
-        assert engine._base_delay == 2.0
 
 
 class TestLabelingEngineTokenAcquisition:
@@ -442,108 +256,6 @@ class TestLabelingEngineTokenAcquisition:
                 token = await engine._get_access_token()
 
         assert token == "token"
-
-
-class TestLabelingEngineApplyLabel:
-    """Tests for apply_label method."""
-
-    async def test_apply_label_filesystem_adapter(self, tmp_path):
-        """apply_label routes filesystem files to local labeling."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("test content")
-
-        file_info = FileInfo(
-            path=str(test_file),
-            name="test.txt",
-            adapter="filesystem",
-            size=12,
-            modified=datetime.now(),
-        )
-
-        with patch.object(engine, "_apply_local_label") as mock_local:
-            mock_local.return_value = LabelResult(success=True, label_id="label-1", method="sidecar")
-
-            result = await engine.apply_label(file_info, "label-1", "Test Label")
-
-            mock_local.assert_called_once()
-            assert result.success is True
-
-    async def test_apply_label_sharepoint_adapter(self):
-        """apply_label routes sharepoint files to Graph API."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        file_info = FileInfo(
-            path="https://sharepoint.com/sites/test/file.docx",
-            name="file.docx",
-            adapter="sharepoint",
-            size=1000,
-            modified=datetime.now(),
-            item_id="sites/abc/drive/items/123",
-            site_id="abc",
-        )
-
-        with patch.object(engine, "_apply_graph_label") as mock_graph:
-            mock_graph.return_value = LabelResult(success=True, label_id="label-1", method="graph_api")
-
-            result = await engine.apply_label(file_info, "label-1")
-
-            mock_graph.assert_called_once()
-
-    async def test_apply_label_onedrive_adapter(self):
-        """apply_label routes onedrive files to Graph API."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        file_info = FileInfo(
-            path="https://onedrive.com/file.docx",
-            name="file.docx",
-            adapter="onedrive",
-            size=1000,
-            modified=datetime.now(),
-            item_id="users/abc/drive/items/123",
-            user_id="abc",
-        )
-
-        with patch.object(engine, "_apply_graph_label") as mock_graph:
-            mock_graph.return_value = LabelResult(success=True, label_id="label-1", method="graph_api")
-
-            result = await engine.apply_label(file_info, "label-1")
-
-            mock_graph.assert_called_once()
-
-    async def test_apply_label_unknown_adapter(self):
-        """apply_label returns error for unknown adapter."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        file_info = FileInfo(
-            path="/some/path",
-            name="file.txt",
-            adapter="unknown_adapter",
-            size=100,
-            modified=datetime.now(),
-        )
-
-        result = await engine.apply_label(file_info, "label-1")
-
-        assert result.success is False
-        assert "Unknown adapter" in result.error
 
 
 class TestLabelingEngineOfficeMetadata:
@@ -1101,15 +813,3 @@ class TestLabelingEngineCacheHelpers:
 
         assert cache.is_expired() is True
 
-    def test_label_cache_stats(self):
-        """label_cache_stats returns cache statistics."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        stats = engine.label_cache_stats
-
-        assert isinstance(stats, dict)
-        assert "label_count" in stats

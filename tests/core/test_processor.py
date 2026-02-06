@@ -9,13 +9,6 @@ import pytest
 class TestFileProcessor:
     """Tests for FileProcessor class."""
 
-    def test_processor_creation(self):
-        """Test creating file processor."""
-        from openlabels.core.processor import FileProcessor
-
-        processor = FileProcessor()
-        assert processor is not None
-
     def test_processor_with_options(self):
         """Test processor with configuration options."""
         from openlabels.core.processor import FileProcessor
@@ -201,33 +194,3 @@ class TestProcessFileBatch:
         assert len(results) == 10
 
 
-class TestTextExtensions:
-    """Tests for text extension constants."""
-
-    def test_text_extensions_defined(self):
-        """Test TEXT_EXTENSIONS is defined."""
-        from openlabels.core.processor import TEXT_EXTENSIONS
-
-        assert ".txt" in TEXT_EXTENSIONS
-        assert ".md" in TEXT_EXTENSIONS
-        assert ".py" in TEXT_EXTENSIONS
-
-    def test_office_extensions_defined(self):
-        """Test OFFICE_EXTENSIONS is defined."""
-        from openlabels.core.processor import OFFICE_EXTENSIONS
-
-        assert ".docx" in OFFICE_EXTENSIONS
-        assert ".xlsx" in OFFICE_EXTENSIONS
-
-    def test_pdf_extensions_defined(self):
-        """Test PDF_EXTENSIONS is defined."""
-        from openlabels.core.processor import PDF_EXTENSIONS
-
-        assert ".pdf" in PDF_EXTENSIONS
-
-    def test_image_extensions_defined(self):
-        """Test IMAGE_EXTENSIONS is defined."""
-        from openlabels.core.processor import IMAGE_EXTENSIONS
-
-        assert ".png" in IMAGE_EXTENSIONS
-        assert ".jpg" in IMAGE_EXTENSIONS

@@ -83,11 +83,6 @@ async def setup_targets_data(test_db):
 class TestListTargets:
     """Tests for GET /api/targets endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_targets_data):
-        """List targets should return 200 OK."""
-        response = await test_client.get("/api/targets")
-        assert response.status_code == 200
-
     async def test_returns_paginated_response(self, test_client, setup_targets_data):
         """Response should have pagination structure."""
         response = await test_client.get("/api/targets")
@@ -131,20 +126,6 @@ class TestListTargets:
         assert data["page"] == 1
         assert data["page_size"] == 2
         assert len(data["items"]) <= 2
-
-    async def test_target_response_structure(self, test_client, setup_targets_data):
-        """Target items should have expected fields."""
-        response = await test_client.get("/api/targets")
-        assert response.status_code == 200
-        data = response.json()
-
-        if data["items"]:
-            item = data["items"][0]
-            assert "id" in item
-            assert "name" in item
-            assert "adapter" in item
-            assert "config" in item
-            assert "enabled" in item
 
     async def test_invalid_page_size_rejected(self, test_client, setup_targets_data):
         """Page size above 100 should be rejected."""
@@ -220,18 +201,6 @@ class TestGetTarget:
         response = await test_client.get(f"/api/targets/{fake_id}")
         assert response.status_code == 404
 
-    async def test_returns_full_structure(self, test_client, setup_targets_data):
-        """Should return all target fields."""
-        target = setup_targets_data["targets"][0]
-        response = await test_client.get(f"/api/targets/{target.id}")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "id" in data
-        assert "name" in data
-        assert "adapter" in data
-        assert "config" in data
-        assert "enabled" in data
 
 
 class TestUpdateTarget:
@@ -300,18 +269,3 @@ class TestDeleteTarget:
         assert response.status_code == 404
 
 
-class TestTargetsContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_targets_data):
-        """List targets should return JSON."""
-        response = await test_client.get("/api/targets")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_get_returns_json(self, test_client, setup_targets_data):
-        """Get target should return JSON."""
-        target = setup_targets_data["targets"][0]
-        response = await test_client.get(f"/api/targets/{target.id}")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")

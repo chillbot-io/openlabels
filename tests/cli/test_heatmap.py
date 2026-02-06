@@ -316,21 +316,6 @@ class TestHeatmapDepth:
 class TestHeatmapRecursive:
     """Tests for heatmap recursive option."""
 
-    def test_heatmap_recursive_includes_nested(self, runner, temp_dir, mock_file_classifications):
-        """Recursive heatmap includes nested directories."""
-        from openlabels.cli.commands.heatmap import heatmap
-
-        with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
-            mock_processor = MagicMock()
-            mock_processor.process_file = AsyncMock(side_effect=mock_file_classifications)
-            mock_processor_cls.return_value = mock_processor
-
-            result = runner.invoke(heatmap, [temp_dir, "--recursive"])
-
-        assert result.exit_code == 0
-        # Should process all files
-        assert mock_processor.process_file.call_count >= 1
-
     def test_heatmap_non_recursive(self, runner, temp_dir, mock_file_classifications):
         """Non-recursive heatmap excludes nested directories."""
         from openlabels.cli.commands.heatmap import heatmap

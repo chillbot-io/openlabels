@@ -90,17 +90,6 @@ class TestCleanOcrText:
 class TestOCRBlock:
     """Tests for OCRBlock dataclass."""
 
-    def test_create_block(self):
-        """Block can be created with required fields."""
-        block = OCRBlock(
-            text="Hello",
-            bbox=[[0, 0], [100, 0], [100, 20], [0, 20]],
-            confidence=0.95,
-        )
-        assert block.text == "Hello"
-        assert block.confidence == 0.95
-        assert len(block.bbox) == 4
-
     def test_bounding_rect_simple(self):
         """bounding_rect returns axis-aligned rectangle."""
         block = OCRBlock(
@@ -140,48 +129,6 @@ class TestOCRBlock:
 
 class TestOCRResult:
     """Tests for OCRResult dataclass."""
-
-    def test_empty_result(self):
-        """Empty result can be created."""
-        result = OCRResult(
-            full_text="",
-            blocks=[],
-            offset_map=[],
-            confidence=0.0,
-        )
-        assert result.full_text == ""
-        assert result.blocks == []
-        assert result.confidence == 0.0
-
-    def test_single_block_result(self):
-        """Result with single block."""
-        block = OCRBlock(
-            text="Hello",
-            bbox=[[0, 0], [50, 0], [50, 20], [0, 20]],
-            confidence=0.95,
-        )
-        result = OCRResult(
-            full_text="Hello",
-            blocks=[block],
-            offset_map=[(0, 5, 0)],
-            confidence=0.95,
-        )
-        assert len(result.blocks) == 1
-        assert result.full_text == "Hello"
-
-    def test_multi_block_result(self):
-        """Result with multiple blocks."""
-        blocks = [
-            OCRBlock("Hello", [[0, 0], [50, 0], [50, 20], [0, 20]], 0.95),
-            OCRBlock("World", [[60, 0], [110, 0], [110, 20], [60, 20]], 0.92),
-        ]
-        result = OCRResult(
-            full_text="Hello World",
-            blocks=blocks,
-            offset_map=[(0, 5, 0), (6, 11, 1)],
-            confidence=0.935,
-        )
-        assert len(result.blocks) == 2
 
     def test_get_blocks_for_span_single(self):
         """get_blocks_for_span finds overlapping block."""
@@ -272,21 +219,6 @@ class TestOCREngine:
         assert engine.is_initialized is False
         assert engine.is_loading is False
 
-    def test_is_available_checks_package(self):
-        """is_available checks for rapidocr-onnxruntime package."""
-        engine = OCREngine(models_dir=Path("/nonexistent/path"))
-        # Will be True if rapidocr-onnxruntime is installed, False otherwise
-        # We just check it returns a boolean
-        assert isinstance(engine.is_available, bool)
-
-    def test_start_loading_idempotent(self):
-        """start_loading can be called multiple times safely."""
-        engine = OCREngine()
-        engine.start_loading()
-        engine.start_loading()  # Should not raise
-        # Loading state should be set
-        # (actual loading may fail if package not installed, but that's OK)
-
     def test_extract_text_requires_initialization(self):
         """extract_text raises if rapidocr not available."""
         engine = OCREngine(models_dir=Path("/nonexistent/models"))
@@ -353,25 +285,6 @@ class TestOCREngineIntegration:
         assert result.full_text == ""
         assert result.blocks == []
 
-    def test_warm_up(self, ocr_engine):
-        """warm_up runs without error."""
-        try:
-            import numpy as np
-        except ImportError:
-            pytest.skip("numpy not installed")
-
-        result = ocr_engine.warm_up()
-        assert isinstance(result, bool)
-
-    def test_await_ready_timeout(self):
-        """await_ready respects timeout."""
-        engine = OCREngine()
-        if not engine.is_available:
-            pytest.skip("rapidocr-onnxruntime not installed")
-
-        # Should complete or timeout (both are valid behaviors)
-        result = engine.await_ready(timeout=5.0)
-        assert isinstance(result, bool)
 
 
 # =============================================================================
@@ -380,15 +293,6 @@ class TestOCREngineIntegration:
 
 class TestProcessorOCRIntegration:
     """Tests for OCR integration in FileProcessor."""
-
-    def test_processor_creates_ocr_engine(self):
-        """FileProcessor creates OCR engine when enabled."""
-        from openlabels.core.processor import FileProcessor
-
-        processor = FileProcessor(enable_ocr=True)
-        # OCR engine is created if rapidocr is available
-        # Either _ocr_engine is set or it's None (if not available)
-        assert hasattr(processor, '_ocr_engine')
 
     def test_processor_disables_ocr(self):
         """FileProcessor doesn't create OCR engine when disabled."""

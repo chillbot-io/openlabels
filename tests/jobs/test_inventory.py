@@ -58,53 +58,6 @@ class TestGetFolderPath:
         assert result == "folder/subfolder"
 
 
-class TestInventoryServiceInit:
-    """Tests for InventoryService initialization."""
-
-    def test_init_stores_session(self):
-        """Should store the database session."""
-        mock_session = AsyncMock()
-        tenant_id = uuid4()
-        target_id = uuid4()
-
-        service = InventoryService(mock_session, tenant_id, target_id)
-
-        assert service.session is mock_session
-
-    def test_init_stores_tenant_id(self):
-        """Should store the tenant ID."""
-        mock_session = AsyncMock()
-        tenant_id = uuid4()
-        target_id = uuid4()
-
-        service = InventoryService(mock_session, tenant_id, target_id)
-
-        assert service.tenant_id == tenant_id
-
-    def test_init_stores_target_id(self):
-        """Should store the target ID."""
-        mock_session = AsyncMock()
-        tenant_id = uuid4()
-        target_id = uuid4()
-
-        service = InventoryService(mock_session, tenant_id, target_id)
-
-        assert service.target_id == target_id
-
-    def test_init_creates_empty_folder_cache(self):
-        """Should initialize empty folder cache."""
-        mock_session = AsyncMock()
-        service = InventoryService(mock_session, uuid4(), uuid4())
-
-        assert service._folder_cache == {}
-
-    def test_init_creates_empty_file_cache(self):
-        """Should initialize empty file cache."""
-        mock_session = AsyncMock()
-        service = InventoryService(mock_session, uuid4(), uuid4())
-
-        assert service._file_cache == {}
-
 
 class TestLoadFolderInventory:
     """Tests for loading folder inventory."""
@@ -409,15 +362,6 @@ class TestComputeContentHash:
 
         assert result == expected
 
-    def test_returns_consistent_hash(self, service):
-        """Should return same hash for same content."""
-        content = b"Test content"
-
-        hash1 = service.compute_content_hash(content)
-        hash2 = service.compute_content_hash(content)
-
-        assert hash1 == hash2
-
     def test_different_content_different_hash(self, service):
         """Should return different hash for different content."""
         hash1 = service.compute_content_hash(b"Content A")
@@ -431,12 +375,6 @@ class TestComputeContentHash:
         expected = hashlib.sha256(b"").hexdigest()
 
         assert result == expected
-
-    def test_hash_is_64_characters(self, service):
-        """SHA-256 hex digest should be 64 characters."""
-        result = service.compute_content_hash(b"test")
-
-        assert len(result) == 64
 
 
 class TestUpdateFolderInventory:

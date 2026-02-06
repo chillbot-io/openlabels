@@ -388,23 +388,6 @@ class TestFindSorting:
         assert result.exit_code == 0
 
 
-class TestFindLimit:
-    """Tests for find limit option."""
-
-    def test_find_with_limit(self, runner, temp_dir, mock_file_classification):
-        """Find with result limit."""
-        from openlabels.cli.commands.find import find
-
-        with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
-            mock_processor = MagicMock()
-            mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
-            mock_processor_cls.return_value = mock_processor
-
-            result = runner.invoke(find, [temp_dir, "--limit", "1"])
-
-        assert result.exit_code == 0
-
-
 class TestFindNoResults:
     """Tests for find with no matching results."""
 

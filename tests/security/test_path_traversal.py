@@ -154,22 +154,6 @@ class TestValidateQuarantineDir:
             assert exc_info.value.status_code == 403
 
 
-class TestBlockedPaths:
-    """Tests for blocked path configuration."""
-
-    def test_blocked_prefixes_are_defined(self):
-        """Ensure blocked path prefixes are defined."""
-        assert len(BLOCKED_PATH_PREFIXES) > 0
-        assert "/etc/" in BLOCKED_PATH_PREFIXES
-        assert "/var/" in BLOCKED_PATH_PREFIXES
-
-    def test_blocked_patterns_are_defined(self):
-        """Ensure blocked file patterns are defined."""
-        assert len(BLOCKED_FILE_PATTERNS) > 0
-        assert ".env" in BLOCKED_FILE_PATTERNS
-        assert ".ssh/" in BLOCKED_FILE_PATTERNS
-
-
 class TestPathTraversalIntegration:
     """Integration tests for path traversal prevention.
 

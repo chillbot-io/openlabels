@@ -55,11 +55,6 @@ async def setup_dashboard_data(test_db):
 class TestOverallStats:
     """Tests for GET /api/dashboard/stats endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_dashboard_data):
-        """Stats endpoint should return 200 OK."""
-        response = await test_client.get("/api/dashboard/stats")
-        assert response.status_code == 200
-
     async def test_returns_all_required_fields(self, test_client, setup_dashboard_data):
         """Stats response should have all required fields."""
         response = await test_client.get("/api/dashboard/stats")
@@ -301,11 +296,6 @@ class TestOverallStats:
 class TestTrends:
     """Tests for GET /api/dashboard/trends endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_dashboard_data):
-        """Trends endpoint should return 200 OK."""
-        response = await test_client.get("/api/dashboard/trends")
-        assert response.status_code == 200
-
     async def test_returns_points_array(self, test_client, setup_dashboard_data):
         """Trends response should have points array."""
         response = await test_client.get("/api/dashboard/trends")
@@ -404,11 +394,6 @@ class TestTrends:
 
 class TestEntityTrends:
     """Tests for GET /api/dashboard/entity-trends endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_dashboard_data):
-        """Entity trends endpoint should return 200 OK."""
-        response = await test_client.get("/api/dashboard/entity-trends")
-        assert response.status_code == 200
 
     async def test_returns_series_dict(self, test_client, setup_dashboard_data):
         """Entity trends response should have series dict."""

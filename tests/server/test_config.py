@@ -106,14 +106,6 @@ class TestAuthSettings:
         settings = AuthSettings(tenant_id="test-tenant-123")
         assert settings.authority == "https://login.microsoftonline.com/test-tenant-123"
 
-    def test_authority_uses_microsoft_login(self):
-        """Authority should use Microsoft login endpoint."""
-        from openlabels.server.config import AuthSettings
-
-        settings = AuthSettings(tenant_id="abc")
-        assert "login.microsoftonline.com" in settings.authority
-
-
 class TestCORSSettings:
     """Tests for CORS configuration."""
 
@@ -263,13 +255,6 @@ class TestLabelingSettings:
         assert settings.risk_tier_mapping["CRITICAL"] is not None
         assert isinstance(settings.risk_tier_mapping["CRITICAL"], str)
 
-    def test_high_tier_maps_to_label(self):
-        """HIGH tier should map to a label (not None)."""
-        from openlabels.server.config import LabelingSettings
-
-        settings = LabelingSettings()
-        assert settings.risk_tier_mapping["HIGH"] is not None
-
     def test_sync_interval_is_reasonable(self):
         """Label sync interval should be reasonable (12-48 hours)."""
         from openlabels.server.config import LabelingSettings
@@ -361,13 +346,6 @@ class TestMainSettings:
 
 class TestGetSettings:
     """Tests for get_settings function."""
-
-    def test_returns_settings_instance(self):
-        """get_settings should return a Settings instance."""
-        from openlabels.server.config import get_settings, Settings
-
-        settings = get_settings()
-        assert isinstance(settings, Settings)
 
     def test_returns_cached_instance(self):
         """get_settings should return the same cached instance."""

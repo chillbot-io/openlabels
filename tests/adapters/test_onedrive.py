@@ -69,16 +69,6 @@ class TestOneDriveAdapterConfiguration:
 
         assert adapter.supports_delta() is True
 
-    def test_client_initially_none(self):
-        """Graph client should not be created until needed."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert adapter._client is None
-
 
 class TestOneDriveExposureMapping:
     """Tests for exposure level determination from sharing info."""
@@ -349,66 +339,3 @@ class TestOneDriveAdapterStats:
         assert isinstance(stats, dict)
 
 
-class TestOneDriveAdapterProtocol:
-    """Tests verifying adapter follows the protocol."""
-
-    def test_has_list_files_method(self):
-        """Adapter should have async list_files method (async generator)."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-        import inspect
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert hasattr(adapter, 'list_files')
-        # list_files is an async generator (yields FileInfo), not a coroutine
-        assert inspect.isasyncgenfunction(adapter.list_files)
-
-    def test_has_read_file_method(self):
-        """Adapter should have async read_file method."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-        import inspect
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert hasattr(adapter, 'read_file')
-        assert inspect.iscoroutinefunction(adapter.read_file)
-
-    def test_has_test_connection_method(self):
-        """Adapter should have async test_connection method."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-        import inspect
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert hasattr(adapter, 'test_connection')
-        assert inspect.iscoroutinefunction(adapter.test_connection)
-
-    def test_has_get_metadata_method(self):
-        """Adapter should have async get_metadata method."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-        import inspect
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert hasattr(adapter, 'get_metadata')
-        assert inspect.iscoroutinefunction(adapter.get_metadata)
-
-    def test_has_close_method(self):
-        """Adapter should have async close method."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
-        import inspect
-
-        adapter = OneDriveAdapter(
-            tenant_id="t", client_id="c", client_secret="s"
-        )
-
-        assert hasattr(adapter, 'close')
-        assert inspect.iscoroutinefunction(adapter.close)

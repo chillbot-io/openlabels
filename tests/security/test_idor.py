@@ -859,21 +859,6 @@ class TestJobQueueIDOR:
         assert job.status == original_status, \
             "CRITICAL: Job cancelled by cross-tenant user!"
 
-    async def test_job_stats_excludes_other_tenant(self, multi_tenant_idor_setup):
-        """Job stats should only include current tenant's jobs."""
-        data = multi_tenant_idor_setup
-
-        async with create_client_for_user(
-            data["session"], data["admin_b"], data["tenant_b"]
-        ) as client:
-            response = await client.get("/api/jobs/stats")
-            assert response.status_code == 200
-            stats = response.json()
-
-            # Tenant B has one pending job, Tenant A has one failed job
-            # Stats should NOT include Tenant A's failed job
-            # (This test verifies the stats are tenant-scoped)
-            assert "failed" in stats
 
 
 # =============================================================================

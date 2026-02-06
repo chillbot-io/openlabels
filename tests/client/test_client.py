@@ -547,15 +547,3 @@ class TestErrorHandling:
                 await client.health()
 
 
-class TestModuleExports:
-    """Tests for module exports."""
-
-    def test_client_exported_from_init(self):
-        """OpenLabelsClient should be exported from __init__."""
-        from openlabels.client import OpenLabelsClient as ImportedClient
-        assert ImportedClient is OpenLabelsClient
-
-    def test_all_exports(self):
-        """__all__ should contain OpenLabelsClient."""
-        from openlabels.client import __all__
-        assert "OpenLabelsClient" in __all__

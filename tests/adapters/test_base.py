@@ -23,26 +23,6 @@ class TestExposureLevel:
         # PUBLIC should be last (least restrictive)
         assert levels[-1] == ExposureLevel.PUBLIC
 
-    def test_exposure_level_values_are_uppercase(self):
-        """Exposure level values should be uppercase strings for consistency."""
-        from openlabels.adapters.base import ExposureLevel
-
-        for level in ExposureLevel:
-            assert level.value == level.value.upper()
-            assert level.value == level.name
-
-    def test_exposure_level_comparison_in_code(self):
-        """Exposure levels should be usable for access control comparisons."""
-        from openlabels.adapters.base import ExposureLevel
-
-        # Define ordering: PRIVATE < INTERNAL < ORG_WIDE < PUBLIC
-        order = [ExposureLevel.PRIVATE, ExposureLevel.INTERNAL,
-                 ExposureLevel.ORG_WIDE, ExposureLevel.PUBLIC]
-
-        # Verify we can find index for comparison
-        for i, level in enumerate(order):
-            assert order.index(level) == i
-
 
 class TestFileInfo:
     """Tests for FileInfo dataclass behavior."""
@@ -313,39 +293,3 @@ class TestDefaultFilter:
         assert DEFAULT_FILTER.should_include(node_file) is False
 
 
-class TestAdapterProtocol:
-    """Tests verifying the Adapter protocol definition."""
-
-    def test_protocol_defines_required_methods(self):
-        """Adapter protocol should define all required methods."""
-        from openlabels.adapters.base import Adapter
-        import inspect
-
-        # Get all methods defined in the protocol
-        methods = [name for name, _ in inspect.getmembers(Adapter, predicate=inspect.isfunction)]
-
-        required_methods = [
-            'list_files',
-            'read_file',
-            'get_metadata',
-            'test_connection',
-            'supports_delta',
-            'move_file',
-            'get_acl',
-            'set_acl',
-            'supports_remediation',
-        ]
-
-        for method in required_methods:
-            assert method in methods or hasattr(Adapter, method), \
-                f"Adapter protocol missing {method}"
-
-    def test_adapter_type_property_required(self):
-        """Adapter should have adapter_type property."""
-        from openlabels.adapters.base import Adapter
-        import typing
-
-        # Protocol should have adapter_type
-        hints = typing.get_type_hints(Adapter) if hasattr(Adapter, '__annotations__') else {}
-        # adapter_type is a property, check it exists in the class
-        assert hasattr(Adapter, 'adapter_type')

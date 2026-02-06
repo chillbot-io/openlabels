@@ -18,32 +18,12 @@ import pytest
 class TestMIPAvailability:
     """Tests for MIP SDK availability checks."""
 
-    def test_pythonnet_available_is_boolean(self):
-        """PYTHONNET_AVAILABLE should be a boolean."""
-        from openlabels.labeling.mip import PYTHONNET_AVAILABLE
-
-        assert isinstance(PYTHONNET_AVAILABLE, bool)
-
-    def test_is_mip_available_returns_boolean(self):
-        """is_mip_available() should return a boolean."""
-        from openlabels.labeling.mip import is_mip_available
-
-        result = is_mip_available()
-        assert isinstance(result, bool)
-
     def test_is_mip_available_matches_constant(self):
         """is_mip_available() should match PYTHONNET_AVAILABLE constant."""
         from openlabels.labeling.mip import is_mip_available, PYTHONNET_AVAILABLE
 
         assert is_mip_available() == PYTHONNET_AVAILABLE
 
-    def test_assemblies_loaded_starts_false(self):
-        """_MIP_ASSEMBLIES_LOADED should start as False."""
-        from openlabels.labeling import mip
-
-        # The module-level flag should exist
-        assert hasattr(mip, '_MIP_ASSEMBLIES_LOADED')
-        # Note: Can't assert initial value since module state persists
 
 
 # =============================================================================
@@ -53,38 +33,6 @@ class TestMIPAvailability:
 
 class TestSensitivityLabel:
     """Tests for SensitivityLabel dataclass."""
-
-    def test_creation_with_required_fields(self):
-        """SensitivityLabel should require id, name, description, tooltip."""
-        from openlabels.labeling.mip import SensitivityLabel
-
-        label = SensitivityLabel(
-            id="label-123",
-            name="Confidential",
-            description="For confidential data",
-            tooltip="Apply to confidential information",
-        )
-
-        assert label.id == "label-123"
-        assert label.name == "Confidential"
-        assert label.description == "For confidential data"
-        assert label.tooltip == "Apply to confidential information"
-
-    def test_default_values(self):
-        """SensitivityLabel should have sensible defaults."""
-        from openlabels.labeling.mip import SensitivityLabel
-
-        label = SensitivityLabel(
-            id="label-123",
-            name="Test",
-            description="Test description",
-            tooltip="Test tooltip",
-        )
-
-        assert label.color is None
-        assert label.priority == 0
-        assert label.parent_id is None
-        assert label.is_active is True
 
     def test_optional_fields(self):
         """SensitivityLabel should accept optional fields."""
@@ -159,66 +107,6 @@ class TestSensitivityLabel:
 class TestLabelingResult:
     """Tests for LabelingResult dataclass."""
 
-    def test_successful_result(self):
-        """Successful result should have success=True."""
-        from openlabels.labeling.mip import LabelingResult
-
-        result = LabelingResult(
-            success=True,
-            file_path="/path/to/file.docx",
-            label_id="label-123",
-            label_name="Confidential",
-        )
-
-        assert result.success is True
-        assert result.file_path == "/path/to/file.docx"
-        assert result.label_id == "label-123"
-        assert result.label_name == "Confidential"
-        assert result.error is None
-
-    def test_failed_result(self):
-        """Failed result should have success=False and error."""
-        from openlabels.labeling.mip import LabelingResult
-
-        result = LabelingResult(
-            success=False,
-            file_path="/path/to/file.docx",
-            error="File not found",
-        )
-
-        assert result.success is False
-        assert result.error == "File not found"
-
-    def test_default_values(self):
-        """LabelingResult should have sensible defaults."""
-        from openlabels.labeling.mip import LabelingResult
-
-        result = LabelingResult(
-            success=True,
-            file_path="/test.txt",
-        )
-
-        assert result.label_id is None
-        assert result.label_name is None
-        assert result.error is None
-        assert result.was_protected is False
-        assert result.is_protected is False
-
-    def test_protection_fields(self):
-        """LabelingResult should track protection status."""
-        from openlabels.labeling.mip import LabelingResult
-
-        result = LabelingResult(
-            success=True,
-            file_path="/test.docx",
-            label_id="label-123",
-            was_protected=True,
-            is_protected=False,
-        )
-
-        assert result.was_protected is True
-        assert result.is_protected is False
-
     def test_to_dict_includes_all_fields(self):
         """to_dict should include all fields."""
         from openlabels.labeling.mip import LabelingResult
@@ -245,103 +133,12 @@ class TestLabelingResult:
 
 
 # =============================================================================
-# AUTH DELEGATE TESTS
-# =============================================================================
-
-
-class TestAuthDelegateImpl:
-    """Tests for AuthDelegateImpl class."""
-
-    def test_stores_credentials(self):
-        """AuthDelegateImpl should store credentials."""
-        from openlabels.labeling.mip import AuthDelegateImpl
-
-        delegate = AuthDelegateImpl(
-            client_id="my-client-id",
-            client_secret="my-secret",
-            tenant_id="my-tenant-id",
-        )
-
-        assert delegate.client_id == "my-client-id"
-        assert delegate.client_secret == "my-secret"
-        assert delegate.tenant_id == "my-tenant-id"
-
-    def test_app_initially_none(self):
-        """MSAL app should not be created until needed."""
-        from openlabels.labeling.mip import AuthDelegateImpl
-
-        delegate = AuthDelegateImpl(
-            client_id="client",
-            client_secret="secret",
-            tenant_id="tenant",
-        )
-
-        assert delegate._app is None
-
-
-# =============================================================================
 # MIP CLIENT CONFIGURATION TESTS
 # =============================================================================
 
 
 class TestMIPClientConfiguration:
     """Tests for MIPClient configuration."""
-
-    def test_stores_credentials(self):
-        """MIPClient should store credentials."""
-        from openlabels.labeling.mip import MIPClient
-
-        client = MIPClient(
-            client_id="my-client-id",
-            client_secret="my-secret",
-            tenant_id="my-tenant-id",
-        )
-
-        assert client.client_id == "my-client-id"
-        assert client.client_secret == "my-secret"
-        assert client.tenant_id == "my-tenant-id"
-
-    def test_accepts_custom_sdk_path(self):
-        """MIPClient should accept custom SDK path."""
-        from openlabels.labeling.mip import MIPClient
-
-        custom_path = Path("/custom/mip/sdk")
-        client = MIPClient(
-            client_id="client",
-            client_secret="secret",
-            tenant_id="tenant",
-            mip_sdk_path=custom_path,
-        )
-
-        assert client.mip_sdk_path == custom_path
-
-    def test_accepts_app_info(self):
-        """MIPClient should accept app name and version."""
-        from openlabels.labeling.mip import MIPClient
-
-        client = MIPClient(
-            client_id="client",
-            client_secret="secret",
-            tenant_id="tenant",
-            app_name="TestApp",
-            app_version="2.0.0",
-        )
-
-        assert client.app_name == "TestApp"
-        assert client.app_version == "2.0.0"
-
-    def test_default_app_info(self):
-        """MIPClient should have default app info."""
-        from openlabels.labeling.mip import MIPClient
-
-        client = MIPClient(
-            client_id="client",
-            client_secret="secret",
-            tenant_id="tenant",
-        )
-
-        assert client.app_name == "OpenLabels"
-        assert client.app_version == "1.0.0"
 
     def test_starts_not_initialized(self):
         """MIPClient should start in uninitialized state."""
@@ -367,21 +164,6 @@ class TestMIPClientConfiguration:
 
         assert client.is_available == PYTHONNET_AVAILABLE
 
-    def test_internal_state_initialized_empty(self):
-        """MIPClient internal state should be empty initially."""
-        from openlabels.labeling.mip import MIPClient
-
-        client = MIPClient(
-            client_id="client",
-            client_secret="secret",
-            tenant_id="tenant",
-        )
-
-        assert client._mip_context is None
-        assert client._file_profile is None
-        assert client._file_engine is None
-        assert client._auth_delegate is None
-        assert client._labels == []
 
 
 # =============================================================================

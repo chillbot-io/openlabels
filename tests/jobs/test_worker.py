@@ -470,33 +470,6 @@ class TestWorkerLoop:
 
         # Worker should have exited (no assertion needed, just no exception)
 
-    async def test_worker_loop_processes_jobs(self):
-        """Worker should process jobs from the queue."""
-        worker = Worker(concurrency=1)
-        worker.running = False  # Will exit immediately after one iteration
-
-        # Verify worker is properly configured for job processing
-        assert worker.concurrency == 1
-        assert worker.running is False
-        assert worker._current_jobs == set()
-
-        # Verify worker has required methods for job processing
-        assert hasattr(worker, '_execute_job')
-        assert hasattr(worker, '_worker_loop')
-        assert callable(worker._execute_job)
-        assert callable(worker._worker_loop)
-
-
-class TestWorkerStateConfiguration:
-    """Tests for worker state configuration constants."""
-
-    def test_key_prefix_format(self):
-        """Key prefix should be properly formatted."""
-        assert WORKER_STATE_KEY_PREFIX == "openlabels:worker:state:"
-
-    def test_ttl_is_reasonable(self):
-        """TTL should be reasonable (30-120 seconds)."""
-        assert 30 <= WORKER_STATE_TTL_SECONDS <= 120
 
 
 class TestWorkerEdgeCases:
@@ -517,12 +490,6 @@ class TestWorkerEdgeCases:
         pid = str(os.getpid())
 
         assert pid in worker.worker_id
-
-    def test_concurrency_check_interval_is_reasonable(self):
-        """Concurrency check interval should be reasonable (1-60 seconds)."""
-        worker = Worker()
-
-        assert 1 <= worker._concurrency_check_interval <= 60
 
     async def test_concurrency_monitor_handles_errors(self):
         """Concurrency monitor should handle state manager errors gracefully."""
@@ -560,33 +527,6 @@ class TestWorkerEdgeCases:
         # 0 is falsy, so should fall back to CPU count
         assert worker.concurrency == 4
 
-
-class TestRunWorkerFunction:
-    """Tests for run_worker entry point."""
-
-    def test_run_worker_creates_worker(self):
-        """run_worker should create and start a Worker."""
-        from openlabels.jobs.worker import run_worker
-        import inspect
-
-        # Verify run_worker is callable and has expected signature
-        assert callable(run_worker)
-        sig = inspect.signature(run_worker)
-        assert "concurrency" in sig.parameters
-
-        # Verify Worker class is properly importable and constructable
-        worker = Worker(concurrency=2)
-        assert worker.concurrency == 2
-        assert hasattr(worker, 'start')
-        assert callable(worker.start)
-
-    def test_run_worker_accepts_concurrency(self):
-        """run_worker should accept concurrency parameter."""
-        from openlabels.jobs.worker import run_worker
-        import inspect
-
-        sig = inspect.signature(run_worker)
-        assert "concurrency" in sig.parameters
 
 
 class TestGetWorkerStateManager:

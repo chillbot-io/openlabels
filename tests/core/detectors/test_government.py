@@ -28,27 +28,6 @@ from openlabels.core.types import Tier
 # DETECTOR INITIALIZATION TESTS
 # =============================================================================
 
-class TestGovernmentDetectorInit:
-    """Test detector initialization and configuration."""
-
-    @pytest.fixture
-    def detector(self):
-        """Create a GovernmentDetector instance."""
-        return GovernmentDetector()
-
-    def test_detector_name(self, detector):
-        """Test detector has correct name."""
-        assert detector.name == "government"
-
-    def test_detector_tier(self, detector):
-        """Test detector uses PATTERN tier."""
-        assert detector.tier == Tier.PATTERN
-
-    def test_detector_is_available(self, detector):
-        """Test detector reports availability."""
-        assert detector.is_available() is True
-
-
 # =============================================================================
 # CLASSIFICATION LEVEL TESTS
 # =============================================================================
@@ -838,14 +817,6 @@ class TestGovernmentEdgeCases:
         entity_types = {s.entity_type for s in spans}
         # Should detect multiple types
         assert len(entity_types) >= 1
-
-    def test_confidence_scores_valid(self, detector):
-        """Test that detected spans have valid confidence scores."""
-        text = "Classification: TOP SECRET//SCI//NOFORN"
-        spans = detector.detect(text)
-
-        for span in spans:
-            assert 0.0 <= span.confidence <= 1.0
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""

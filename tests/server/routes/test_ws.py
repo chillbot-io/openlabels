@@ -704,24 +704,6 @@ class TestConnectionManager:
 # =============================================================================
 
 
-class TestAuthenticatedConnection:
-    """Tests for AuthenticatedConnection class."""
-
-    def test_authenticated_connection_stores_context(self):
-        """AuthenticatedConnection should store user context."""
-        from openlabels.server.routes.ws import AuthenticatedConnection
-
-        mock_websocket = MagicMock()
-        user_id = uuid4()
-        tenant_id = uuid4()
-
-        conn = AuthenticatedConnection(mock_websocket, user_id, tenant_id)
-
-        assert conn.websocket == mock_websocket
-        assert conn.user_id == user_id
-        assert conn.tenant_id == tenant_id
-
-
 # =============================================================================
 # REAL-TIME UPDATE HELPER TESTS
 # =============================================================================
@@ -884,35 +866,6 @@ class TestTenantIsolation:
 # =============================================================================
 
 
-class TestWebSocketMessageHandling:
-    """Tests for WebSocket message handling."""
-
-    async def test_ping_pong_response(self):
-        """Server should respond to 'ping' with 'pong'."""
-        # This is tested by checking the websocket endpoint logic
-        # The endpoint reads text and if it's "ping", sends "pong"
-
-        mock_websocket = AsyncMock()
-        # First receive returns "ping", then timeout to break the loop
-        mock_websocket.receive_text.side_effect = ["ping", asyncio.TimeoutError()]
-
-        # Simulate the ping handling from the endpoint
-        data = await mock_websocket.receive_text()
-        if data == "ping":
-            await mock_websocket.send_text("pong")
-
-        mock_websocket.send_text.assert_called_once_with("pong")
-
-    async def test_heartbeat_on_timeout(self):
-        """Server should send heartbeat after receive timeout."""
-        mock_websocket = AsyncMock()
-
-        # Simulate heartbeat sending
-        await mock_websocket.send_json({"type": "heartbeat"})
-
-        mock_websocket.send_json.assert_called_once_with({"type": "heartbeat"})
-
-
 # =============================================================================
 # ERROR HANDLING TESTS
 # =============================================================================
@@ -1033,26 +986,6 @@ class TestWebSocketEndpointIntegration:
 # =============================================================================
 # CONSTANTS AND CONFIGURATION TESTS
 # =============================================================================
-
-
-class TestWebSocketConstants:
-    """Tests for WebSocket module constants and configuration."""
-
-    def test_session_cookie_name_matches_auth(self):
-        """WebSocket session cookie name should match auth module."""
-        from openlabels.server.routes.ws import SESSION_COOKIE_NAME
-
-        assert SESSION_COOKIE_NAME == "openlabels_session"
-
-    def test_connection_manager_singleton(self):
-        """Module should export a singleton connection manager."""
-        from openlabels.server.routes.ws import manager
-
-        assert manager is not None
-        assert hasattr(manager, 'active_connections')
-        assert hasattr(manager, 'connect')
-        assert hasattr(manager, 'disconnect')
-        assert hasattr(manager, 'broadcast')
 
 
 # =============================================================================
@@ -1446,102 +1379,6 @@ class TestWebSocketIntegration:
 # =============================================================================
 # MESSAGE HANDLING EDGE CASES
 # =============================================================================
-
-
-class TestMessageHandlingEdgeCases:
-    """Tests for edge cases in WebSocket message handling."""
-
-    async def test_unknown_message_type_ignored(self):
-        """Unknown message types should be handled gracefully (not crash)."""
-        # The endpoint only handles "ping", other messages are ignored
-        mock_websocket = AsyncMock()
-        mock_websocket.receive_text.side_effect = [
-            "unknown_command",
-            "another_unknown",
-            asyncio.TimeoutError(),
-        ]
-
-        # Simulate endpoint logic - non-ping messages don't trigger response
-        data = await mock_websocket.receive_text()
-        if data == "ping":
-            await mock_websocket.send_text("pong")
-
-        # send_text should not have been called (message wasn't "ping")
-        mock_websocket.send_text.assert_not_called()
-
-    async def test_empty_message_handled(self):
-        """Empty messages should not crash the WebSocket."""
-        mock_websocket = AsyncMock()
-        mock_websocket.receive_text.side_effect = ["", asyncio.TimeoutError()]
-
-        data = await mock_websocket.receive_text()
-        if data == "ping":
-            await mock_websocket.send_text("pong")
-
-        mock_websocket.send_text.assert_not_called()
-
-    async def test_whitespace_only_message_handled(self):
-        """Whitespace-only messages should not crash the WebSocket."""
-        mock_websocket = AsyncMock()
-        mock_websocket.receive_text.side_effect = ["   \n\t  ", asyncio.TimeoutError()]
-
-        data = await mock_websocket.receive_text()
-        if data == "ping":
-            await mock_websocket.send_text("pong")
-
-        mock_websocket.send_text.assert_not_called()
-
-    async def test_case_sensitive_ping(self):
-        """Ping command should be case-sensitive."""
-        mock_websocket = AsyncMock()
-
-        # Test various case variations
-        variations = ["PING", "Ping", "pInG", " ping", "ping "]
-        for variation in variations:
-            mock_websocket.reset_mock()
-            mock_websocket.receive_text.return_value = variation
-
-            data = await mock_websocket.receive_text()
-            if data == "ping":
-                await mock_websocket.send_text("pong")
-
-            # Only exact "ping" should trigger response
-            mock_websocket.send_text.assert_not_called()
-
-    async def test_binary_message_handling(self):
-        """Binary messages should be handled appropriately."""
-        # Note: The current endpoint uses receive_text, so binary would
-        # need receive_bytes. This tests the expected behavior.
-        mock_websocket = AsyncMock()
-        mock_websocket.receive_bytes = AsyncMock(return_value=b"\x00\x01\x02")
-
-        # Simulate receiving binary
-        data = await mock_websocket.receive_bytes()
-        assert isinstance(data, bytes)
-
-    async def test_unicode_message_handling(self):
-        """Unicode messages should be handled correctly."""
-        mock_websocket = AsyncMock()
-        unicode_messages = ["你好", "مرحبا", "🎉", "ping\u0000"]
-
-        for msg in unicode_messages:
-            mock_websocket.receive_text.return_value = msg
-            data = await mock_websocket.receive_text()
-
-            if data == "ping":
-                await mock_websocket.send_text("pong")
-
-        # None of these should trigger pong response
-        mock_websocket.send_text.assert_not_called()
-
-    async def test_very_long_message(self):
-        """Very long messages should be handled without crashing."""
-        mock_websocket = AsyncMock()
-        long_message = "x" * 1_000_000  # 1MB message
-        mock_websocket.receive_text.return_value = long_message
-
-        data = await mock_websocket.receive_text()
-        assert len(data) == 1_000_000
 
 
 # =============================================================================

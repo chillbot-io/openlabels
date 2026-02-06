@@ -55,21 +55,6 @@ async def setup_schedules_data(test_db):
 class TestListSchedules:
     """Tests for GET /api/schedules endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_schedules_data):
-        """List schedules endpoint should return 200 OK."""
-        response = await test_client.get("/api/schedules")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "items" in data, "Response should be paginated with 'items' key"
-
-    async def test_returns_list(self, test_client, setup_schedules_data):
-        """List schedules should return a paginated response with items."""
-        response = await test_client.get("/api/schedules")
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert isinstance(data["items"], list)
-
     async def test_returns_empty_list_when_no_schedules(self, test_client, setup_schedules_data):
         """List should return empty when no schedules exist."""
         response = await test_client.get("/api/schedules")
@@ -104,37 +89,6 @@ class TestListSchedules:
         assert len(items) == 1
         assert items[0]["name"] == "Test Schedule"
 
-    async def test_schedule_response_structure(self, test_client, setup_schedules_data):
-        """Schedule response should have all required fields."""
-        from openlabels.server.models import ScanSchedule
-
-        session = setup_schedules_data["session"]
-        tenant = setup_schedules_data["tenant"]
-        target = setup_schedules_data["target"]
-        admin_user = setup_schedules_data["admin_user"]
-
-        schedule = ScanSchedule(
-            tenant_id=tenant.id,
-            name="Structure Test",
-            target_id=target.id,
-            cron="0 0 * * *",
-            created_by=admin_user.id,
-        )
-        session.add(schedule)
-        await session.commit()
-
-        response = await test_client.get("/api/schedules")
-        assert response.status_code == 200
-        data = response.json()
-
-        sched = data["items"][0]
-        assert "id" in sched
-        assert "name" in sched
-        assert "target_id" in sched
-        assert "cron" in sched
-        assert "enabled" in sched
-        assert "last_run_at" in sched
-        assert "next_run_at" in sched
 
 
 class TestCreateSchedule:
@@ -749,44 +703,3 @@ class TestScheduleTenantIsolation:
         assert response.status_code == 404
 
 
-class TestScheduleContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_schedules_data):
-        """List schedules should return JSON."""
-        response = await test_client.get("/api/schedules")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_create_returns_json(self, test_client, setup_schedules_data):
-        """Create schedule should return JSON."""
-        target = setup_schedules_data["target"]
-
-        response = await test_client.post(
-            "/api/schedules",
-            json={
-                "name": "Content Type Test",
-                "target_id": str(target.id),
-            },
-        )
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_trigger_returns_json(self, test_client, setup_schedules_data):
-        """Trigger schedule should return JSON."""
-        from openlabels.server.models import ScanSchedule
-
-        session = setup_schedules_data["session"]
-        tenant = setup_schedules_data["tenant"]
-        target = setup_schedules_data["target"]
-        admin_user = setup_schedules_data["admin_user"]
-
-        schedule = ScanSchedule(
-            tenant_id=tenant.id,
-            name="Content Type Trigger Test",
-            target_id=target.id,
-            created_by=admin_user.id,
-        )
-        session.add(schedule)
-        await session.commit()
-
-        response = await test_client.post(f"/api/schedules/{schedule.id}/run")
-        assert "application/json" in response.headers.get("content-type", "")

@@ -342,40 +342,6 @@ class TestClassifyErrorHandling:
         assert "Error" in result.output or "not installed" in result.output
 
 
-class TestClassifyFileTypes:
-    """Tests for classify with various file types."""
-
-    def test_classify_text_file(self, runner, temp_dir, mock_file_classification):
-        """Classify plain text file."""
-        from openlabels.cli.commands.classify import classify
-
-        test_file = Path(temp_dir) / "test_document.txt"
-
-        with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
-            mock_processor = MagicMock()
-            mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
-            mock_processor_cls.return_value = mock_processor
-
-            result = runner.invoke(classify, [str(test_file)])
-
-        assert result.exit_code == 0
-
-    def test_classify_csv_file(self, runner, temp_dir, mock_file_classification):
-        """Classify CSV file."""
-        from openlabels.cli.commands.classify import classify
-
-        test_file = Path(temp_dir) / "sensitive_data.csv"
-
-        with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
-            mock_processor = MagicMock()
-            mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
-            mock_processor_cls.return_value = mock_processor
-
-            result = runner.invoke(classify, [str(test_file)])
-
-        assert result.exit_code == 0
-
-
 class TestClassifyEntityDisplay:
     """Tests for entity display in classify output."""
 

@@ -215,30 +215,6 @@ class TestCookieSecurityFlags:
         assert "_ga" not in set_cookie  # Google Analytics
         assert "_fb" not in set_cookie  # Facebook
 
-    def test_session_cookie_configuration_in_code(self):
-        """Verify session cookie is configured with secure defaults."""
-        from openlabels.server.routes.auth import SESSION_COOKIE_NAME
-
-        # Cookie name should be application-specific
-        assert SESSION_COOKIE_NAME is not None
-        assert len(SESSION_COOKIE_NAME) > 0
-        assert "openlabels" in SESSION_COOKIE_NAME.lower()
-
-    def test_csrf_cookie_configuration_in_code(self):
-        """Verify CSRF cookie is configured correctly."""
-        from openlabels.server.middleware.csrf import (
-            CSRF_COOKIE_NAME,
-            CSRF_TOKEN_LENGTH,
-        )
-
-        # CSRF cookie should be accessible by JavaScript (not HttpOnly)
-        # but should have SameSite protection
-        assert CSRF_COOKIE_NAME is not None
-        assert len(CSRF_COOKIE_NAME) > 0
-
-        # Token should be long enough (at least 128 bits = 16 bytes)
-        assert CSRF_TOKEN_LENGTH >= 16
-
     async def test_cookie_path_is_scoped(self, test_client):
         """Cookies should be scoped to the application path."""
         # Request that might set cookies
@@ -253,37 +229,6 @@ class TestCookieSecurityFlags:
 
 class TestCookieSecurityAttributes:
     """Detailed tests for cookie security attributes."""
-
-    def test_samesite_lax_prevents_csrf(self):
-        """SameSite=Lax prevents most CSRF attacks while allowing navigation."""
-        # This is a documentation test - verifying our understanding
-        # SameSite=Lax: Cookie sent on top-level navigation GET requests
-        # SameSite=Strict: Cookie never sent cross-site
-        # SameSite=None: Cookie always sent (requires Secure)
-
-        # Our auth uses Lax which is a good balance
-        from openlabels.server.routes.auth import SESSION_COOKIE_NAME
-        assert SESSION_COOKIE_NAME is not None  # Config exists
-
-    def test_httponly_prevents_xss_cookie_theft(self):
-        """HttpOnly flag prevents JavaScript from accessing session cookie."""
-        # This is a security principle test
-        # HttpOnly cookies cannot be accessed via document.cookie
-        # This prevents XSS attacks from stealing session tokens
-
-        # Verify our session cookie config uses HttpOnly
-        # (actual behavior tested in integration tests)
-        from openlabels.server.routes.auth import SESSION_COOKIE_NAME
-        assert SESSION_COOKIE_NAME is not None
-
-    def test_secure_flag_requires_https(self):
-        """Secure flag should only be set when using HTTPS."""
-        # The cookie should be set with secure=True only over HTTPS
-        # This prevents cookie transmission over insecure connections
-
-        # Our implementation checks request.url.scheme == "https"
-        # This is the correct behavior
-        pass  # Verified via code review
 
     async def test_no_sensitive_data_in_cookie_values(self, test_client):
         """Cookie values should not contain sensitive data."""

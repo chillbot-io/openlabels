@@ -27,24 +27,6 @@ from openlabels.auth.graph import (
 class TestGraphUser:
     """Tests for GraphUser dataclass."""
 
-    def test_full_user(self):
-        """GraphUser with all fields populated."""
-        user = GraphUser(
-            id="user-guid",
-            display_name="John Smith",
-            user_principal_name="jsmith@contoso.com",
-            mail="john.smith@contoso.com",
-            given_name="John",
-            surname="Smith",
-            job_title="Software Engineer",
-            department="Engineering",
-            office_location="Building A",
-            on_premises_sam_account_name="CONTOSO\\jsmith",
-            on_premises_security_identifier="S-1-5-21-123-456-789-1001",
-        )
-        assert user.id == "user-guid"
-        assert user.display_name == "John Smith"
-
     def test_minimal_user(self):
         """GraphUser with only required id."""
         user = GraphUser(id="user-guid")
@@ -84,18 +66,6 @@ class TestGraphUser:
         user = GraphUser(id="user-guid")
         assert user.best_display_name == "user-guid"
 
-    def test_domain_username_property(self):
-        """domain_username should return SAM account name."""
-        user = GraphUser(
-            id="user-guid",
-            on_premises_sam_account_name="CONTOSO\\jsmith",
-        )
-        assert user.domain_username == "CONTOSO\\jsmith"
-
-    def test_domain_username_none_when_not_set(self):
-        """domain_username should be None when not set."""
-        user = GraphUser(id="user-guid")
-        assert user.domain_username is None
 
 
 class TestGraphClientInitialization:

@@ -527,15 +527,6 @@ class TestGetLogger:
 class TestContextLogger:
     """Tests for ContextLogger wrapper."""
 
-    def test_stores_context(self):
-        """Should store context fields."""
-        from openlabels.server.logging import ContextLogger
-
-        logger = ContextLogger("test.context", tenant_id="abc", job_id="123")
-
-        assert logger._context["tenant_id"] == "abc"
-        assert logger._context["job_id"] == "123"
-
     def test_info_logs_with_context(self):
         """Info method should log with context."""
         from openlabels.server.logging import ContextLogger

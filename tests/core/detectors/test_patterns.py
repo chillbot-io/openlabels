@@ -42,31 +42,6 @@ from openlabels.core.types import Tier
 # DETECTOR INITIALIZATION TESTS
 # =============================================================================
 
-class TestPatternDetectorInit:
-    """Test detector initialization and configuration."""
-
-    @pytest.fixture
-    def detector(self):
-        """Create a PatternDetector instance."""
-        return PatternDetector()
-
-    def test_detector_name(self, detector):
-        """Test detector has correct name."""
-        assert detector.name == "pattern"
-
-    def test_detector_tier(self, detector):
-        """Test detector uses PATTERN tier."""
-        assert detector.tier == Tier.PATTERN
-
-    def test_detector_is_available(self, detector):
-        """Test detector reports availability."""
-        assert detector.is_available() is True
-
-    def test_patterns_loaded(self, detector):
-        """Test that patterns are loaded."""
-        assert len(PATTERNS) > 0
-
-
 # =============================================================================
 # PHONE NUMBER TESTS
 # =============================================================================
@@ -800,14 +775,6 @@ class TestPatternEdgeCases:
         # Should detect multiple types
         assert len(entity_types) >= 2
 
-    def test_confidence_scores_valid(self, detector):
-        """Test that detected spans have valid confidence scores."""
-        text = "Phone: (555) 123-4567"
-        spans = detector.detect(text)
-
-        for span in spans:
-            assert 0.0 <= span.confidence <= 1.0
-
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""
         text = "DOB: 01/15/1985"
@@ -863,10 +830,6 @@ class TestPatternSpanValidation:
 
 class TestPatternRegistration:
     """Test pattern registration functionality."""
-
-    def test_patterns_list_not_empty(self):
-        """Test that patterns list is populated."""
-        assert len(PATTERNS) > 0
 
     def test_pattern_tuple_structure(self):
         """Test each pattern has correct tuple structure."""
