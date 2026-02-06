@@ -25,6 +25,7 @@ from openlabels.server.schemas.pagination import (
 )
 from openlabels.server.exceptions import NotFoundError
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
+from openlabels.server.routes import htmx_notify
 from openlabels.jobs import JobQueue, parse_cron_expression
 
 router = APIRouter()
@@ -195,13 +196,7 @@ async def delete_schedule(
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": f'{{"notify": {{"message": "Schedule \\"{schedule_name}\\" deleted", "type": "success"}}, "refreshSchedules": true}}',
-            },
-        )
+        return htmx_notify(f'Schedule "{schedule_name}" deleted', refreshSchedules=True)
 
     # Regular REST response
     return Response(status_code=204)

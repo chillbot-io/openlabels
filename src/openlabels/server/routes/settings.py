@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse
 
 from openlabels.auth.dependencies import require_admin
+from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +38,7 @@ async def update_azure_settings(
         extra={"tenant_id": tenant_id, "client_id": client_id},
     )
 
-    # Return success toast trigger for HTMX
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Azure settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Azure settings updated")
 
 
 @router.post("/scan", response_class=HTMLResponse)
@@ -70,12 +65,7 @@ async def update_scan_settings(
         },
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Scan settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Scan settings updated")
 
 
 @router.post("/entities", response_class=HTMLResponse)
@@ -94,12 +84,7 @@ async def update_entity_settings(
         extra={"enabled_entities": entities},
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Entity detection settings updated", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Entity detection settings updated")
 
 
 @router.post("/reset", response_class=HTMLResponse)
@@ -115,9 +100,4 @@ async def reset_settings(
         f"Settings reset requested by user {user.email}",
     )
 
-    return HTMLResponse(
-        content="",
-        headers={
-            "HX-Trigger": '{"notify": {"message": "Settings reset to defaults", "type": "success"}}',
-        },
-    )
+    return htmx_notify("Settings reset to defaults")

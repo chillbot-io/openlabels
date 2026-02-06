@@ -27,6 +27,7 @@ from openlabels.server.dependencies import (
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -134,13 +135,7 @@ async def cancel_scan(
 
     # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
-        return HTMLResponse(
-            content="",
-            status_code=200,
-            headers={
-                "HX-Trigger": '{"notify": {"message": "Scan cancelled", "type": "success"}, "refreshScans": true}',
-            },
-        )
+        return htmx_notify("Scan cancelled", refreshScans=True)
 
 
 @router.post("/{scan_id}/retry")
@@ -156,13 +151,7 @@ async def retry_scan(
 
         # Check if this is an HTMX request
         if request.headers.get("HX-Request"):
-            return HTMLResponse(
-                content="",
-                status_code=200,
-                headers={
-                    "HX-Trigger": '{"notify": {"message": "Scan retry queued", "type": "success"}, "refreshScans": true}',
-                },
-            )
+            return htmx_notify("Scan retry queued", refreshScans=True)
 
         return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
     except (NotFoundError, BadRequestError):
