@@ -91,25 +91,36 @@ class FilesystemAdapter:
         async for file_info in self._walk_directory(target_path, recursive, filter_config):
             yield file_info
 
-    async def _walk_directory(
+    def _collect_entries(
         self,
         directory: Path,
-        recursive: bool,
-        filter_config: FilterConfig,
-    ) -> AsyncIterator[FileInfo]:
-        """Recursively walk a directory with filtering."""
+    ) -> tuple[list[FileInfo], list[Path]]:
+        """Collect file infos and subdirectory paths from *directory*.
+
+        Performs **all** blocking I/O — ``iterdir()``, ``is_file()``,
+        ``is_dir()``, ``stat()``, owner / permission / exposure lookups —
+        in a single synchronous call so it can be dispatched once via
+        ``asyncio.to_thread`` instead of hopping to a thread per entry.
+
+        Returns:
+            A ``(files, subdirs)`` tuple where *files* is a list of
+            :class:`FileInfo` objects and *subdirs* is a list of
+            :class:`Path` objects for child directories.
+        """
+        files: list[FileInfo] = []
+        subdirs: list[Path] = []
+
         try:
-            entries = await asyncio.to_thread(lambda: list(directory.iterdir()))
+            entries = list(directory.iterdir())
         except PermissionError:
             logger.debug(f"Permission denied: {directory}")
-            return
+            return files, subdirs
 
         for entry in entries:
             try:
-                is_file = await asyncio.to_thread(entry.is_file)
-                if is_file:
-                    stat_info = await asyncio.to_thread(entry.stat)
-                    file_info = FileInfo(
+                if entry.is_file():
+                    stat_info = entry.stat()
+                    files.append(FileInfo(
                         path=str(entry.absolute()),
                         name=entry.name,
                         size=stat_info.st_size,
@@ -118,29 +129,47 @@ class FilesystemAdapter:
                         permissions=self._get_permissions(entry),
                         exposure=self._calculate_exposure(entry),
                         adapter=self.adapter_type,
-                    )
-
-                    # Apply filter
-                    if filter_config.should_include(file_info):
-                        yield file_info
-
-                elif (await asyncio.to_thread(entry.is_dir)) and recursive:
-                    # Check if directory should be skipped by pattern
-                    dir_path = str(entry.absolute())
-                    skip_dir = False
-                    for pattern in filter_config.exclude_patterns:
-                        # Check if directory name matches exclusion pattern
-                        if entry.name in pattern.replace("/*", "").replace("*", ""):
-                            skip_dir = True
-                            break
-
-                    if not skip_dir:
-                        async for file_info in self._walk_directory(entry, recursive, filter_config):
-                            yield file_info
-
+                    ))
+                elif entry.is_dir():
+                    subdirs.append(entry)
             except (PermissionError, OSError) as e:
                 logger.debug(f"Cannot access {entry}: {e}")
-                continue
+
+        return files, subdirs
+
+    async def _walk_directory(
+        self,
+        directory: Path,
+        recursive: bool,
+        filter_config: FilterConfig,
+    ) -> AsyncIterator[FileInfo]:
+        """Recursively walk a directory with filtering.
+
+        All blocking I/O for each directory level is batched into a
+        single ``asyncio.to_thread(_collect_entries, ...)`` call to
+        minimise thread-pool overhead.
+        """
+        files, subdirs = await asyncio.to_thread(
+            self._collect_entries, directory,
+        )
+
+        for file_info in files:
+            if filter_config.should_include(file_info):
+                yield file_info
+
+        if recursive:
+            for subdir in subdirs:
+                # Check if directory should be skipped by pattern
+                skip_dir = False
+                for pattern in filter_config.exclude_patterns:
+                    # Check if directory name matches exclusion pattern
+                    if subdir.name in pattern.replace("/*", "").replace("*", ""):
+                        skip_dir = True
+                        break
+
+                if not skip_dir:
+                    async for file_info in self._walk_directory(subdir, recursive, filter_config):
+                        yield file_info
 
     async def read_file(
         self,
