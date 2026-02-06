@@ -397,6 +397,15 @@ async def test_db(database_url):
     try:
         if not _tables_initialized:
             # First test: drop and recreate schema for clean slate
+            # Terminate stale connections first to avoid DROP SCHEMA
+            # hanging on lock contention from killed test runs
+            async with engine.begin() as conn:
+                await conn.execute(text(
+                    "SELECT pg_terminate_backend(pid) "
+                    "FROM pg_stat_activity "
+                    "WHERE datname = current_database() "
+                    "AND pid != pg_backend_pid()"
+                ))
             async with engine.begin() as conn:
                 await conn.execute(text("DROP SCHEMA public CASCADE"))
                 await conn.execute(text("CREATE SCHEMA public"))
