@@ -419,7 +419,8 @@ async def test_db(database_url):
         async_session = sessionmaker(
             engine, class_=AsyncSession, expire_on_commit=False
         )
-        yield async_session
+        async with async_session() as session:
+            yield session
     finally:
         await engine.dispose()
 
