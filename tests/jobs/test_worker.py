@@ -35,7 +35,6 @@ from openlabels.jobs.worker import (
 class TestInMemoryWorkerState:
     """Tests for InMemoryWorkerState class."""
 
-    @pytest.mark.asyncio
     async def test_set_and_get_state(self):
         """Should set and retrieve worker state."""
         state = InMemoryWorkerState()
@@ -48,14 +47,12 @@ class TestInMemoryWorkerState:
         retrieved = await state.get_state(worker_id)
         assert retrieved == worker_state
 
-    @pytest.mark.asyncio
     async def test_get_state_returns_none_for_missing(self):
         """Should return None for non-existent worker."""
         state = InMemoryWorkerState()
         result = await state.get_state("nonexistent-worker")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_state_expires_after_ttl(self):
         """Should return None for expired state."""
         state = InMemoryWorkerState()
@@ -71,7 +68,6 @@ class TestInMemoryWorkerState:
         result = await state.get_state(worker_id)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_all_workers(self):
         """Should return all non-expired worker states."""
         state = InMemoryWorkerState()
@@ -84,7 +80,6 @@ class TestInMemoryWorkerState:
         assert "worker-1" in workers
         assert "worker-2" in workers
 
-    @pytest.mark.asyncio
     async def test_delete_state(self):
         """Should delete worker state."""
         state = InMemoryWorkerState()
@@ -97,7 +92,6 @@ class TestInMemoryWorkerState:
         retrieved = await state.get_state(worker_id)
         assert retrieved is None
 
-    @pytest.mark.asyncio
     async def test_delete_nonexistent_returns_false(self):
         """Should return False when deleting non-existent worker."""
         state = InMemoryWorkerState()
@@ -108,7 +102,6 @@ class TestInMemoryWorkerState:
 class TestWorkerStateManager:
     """Tests for WorkerStateManager class."""
 
-    @pytest.mark.asyncio
     async def test_init_without_redis_uses_memory(self):
         """Should use in-memory storage when no Redis URL provided."""
         manager = WorkerStateManager(redis_url=None)
@@ -116,7 +109,6 @@ class TestWorkerStateManager:
 
         assert manager.is_redis_connected is False
 
-    @pytest.mark.asyncio
     async def test_set_and_get_state_in_memory(self):
         """Should work with in-memory fallback."""
         manager = WorkerStateManager(redis_url=None)
@@ -131,7 +123,6 @@ class TestWorkerStateManager:
         retrieved = await manager.get_state(worker_id)
         assert retrieved == state
 
-    @pytest.mark.asyncio
     async def test_get_all_workers_in_memory(self):
         """Should get all workers from in-memory storage."""
         manager = WorkerStateManager(redis_url=None)
@@ -143,7 +134,6 @@ class TestWorkerStateManager:
         workers = await manager.get_all_workers()
         assert len(workers) == 2
 
-    @pytest.mark.asyncio
     async def test_delete_state_in_memory(self):
         """Should delete state from in-memory storage."""
         manager = WorkerStateManager(redis_url=None)
@@ -156,19 +146,16 @@ class TestWorkerStateManager:
         retrieved = await manager.get_state("worker-1")
         assert retrieved is None
 
-    @pytest.mark.asyncio
     async def test_key_prefix_default(self):
         """Should use default key prefix."""
         manager = WorkerStateManager()
         assert manager._key_prefix == WORKER_STATE_KEY_PREFIX
 
-    @pytest.mark.asyncio
     async def test_custom_key_prefix(self):
         """Should accept custom key prefix."""
         manager = WorkerStateManager(key_prefix="custom:prefix:")
         assert manager._key_prefix == "custom:prefix:"
 
-    @pytest.mark.asyncio
     async def test_make_key(self):
         """Should create Redis key correctly."""
         manager = WorkerStateManager(key_prefix="test:")
@@ -179,7 +166,6 @@ class TestWorkerStateManager:
 class TestWorkerStateManagerWithMockedRedis:
     """Tests for WorkerStateManager with mocked Redis."""
 
-    @pytest.mark.asyncio
     async def test_redis_connection_failure_falls_back_to_memory(self):
         """Should fall back to memory on Redis connection failure."""
         manager = WorkerStateManager(redis_url="redis://nonexistent:6379")
@@ -198,7 +184,6 @@ class TestWorkerStateManagerWithMockedRedis:
         result = await manager.set_state("worker-1", {"status": "running"})
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_redis_operation_failure_falls_back_to_memory(self):
         """Should fall back to memory on Redis operation failure."""
         manager = WorkerStateManager(redis_url="redis://localhost:6379")
@@ -265,7 +250,6 @@ class TestWorkerInitialization:
 class TestWorkerConcurrencyAdjustment:
     """Tests for runtime concurrency adjustment."""
 
-    @pytest.mark.asyncio
     async def test_adjust_concurrency_clamps_minimum(self):
         """Concurrency should not go below 1."""
         worker = Worker(concurrency=4)
@@ -275,7 +259,6 @@ class TestWorkerConcurrencyAdjustment:
 
         assert worker.target_concurrency == 1
 
-    @pytest.mark.asyncio
     async def test_adjust_concurrency_clamps_maximum(self):
         """Concurrency should not exceed 32."""
         worker = Worker(concurrency=4)
@@ -285,7 +268,6 @@ class TestWorkerConcurrencyAdjustment:
 
         assert worker.target_concurrency == 32
 
-    @pytest.mark.asyncio
     async def test_adjust_concurrency_adds_workers(self):
         """Should create new worker tasks when increasing concurrency."""
         worker = Worker(concurrency=2)
@@ -307,7 +289,6 @@ class TestWorkerConcurrencyAdjustment:
         # Should have created 2 new tasks (4 - 2 = 2)
         assert mock_create.call_count == 2
 
-    @pytest.mark.asyncio
     async def test_adjust_concurrency_logs_reduction(self):
         """Should log when reducing concurrency."""
         worker = Worker(concurrency=4)
@@ -335,7 +316,6 @@ class TestWorkerShutdown:
 
         assert worker.running is False
 
-    @pytest.mark.asyncio
     async def test_handle_shutdown_schedules_state_update(self):
         """Shutdown handler should schedule async state update."""
         worker = Worker()
@@ -348,7 +328,6 @@ class TestWorkerShutdown:
         # Should have created a task to update stopping state
         mock_create_task.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_update_stopping_state(self):
         """Should update worker state to stopping."""
         worker = Worker()
@@ -371,7 +350,6 @@ class TestWorkerJobExecution:
         """Create a worker instance."""
         return Worker(concurrency=1)
 
-    @pytest.mark.asyncio
     async def test_execute_scan_job(self, worker):
         """Should route scan jobs to execute_scan_task."""
         mock_session = AsyncMock()
@@ -391,7 +369,6 @@ class TestWorkerJobExecution:
         mock_scan.assert_called_once_with(mock_session, mock_job.payload)
         mock_queue.complete.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_execute_label_job(self, worker):
         """Should route label jobs to execute_label_task."""
         mock_session = AsyncMock()
@@ -411,7 +388,6 @@ class TestWorkerJobExecution:
         mock_label.assert_called_once_with(mock_session, mock_job.payload)
         mock_queue.complete.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_execute_label_sync_job(self, worker):
         """Should route label_sync jobs to execute_label_sync_task."""
         mock_session = AsyncMock()
@@ -431,7 +407,6 @@ class TestWorkerJobExecution:
         mock_sync.assert_called_once_with(mock_session, mock_job.payload)
         mock_queue.complete.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_execute_unknown_task_type_fails(self, worker):
         """Unknown task type should fail the job."""
         mock_session = AsyncMock()
@@ -451,7 +426,6 @@ class TestWorkerJobExecution:
         call_args = mock_queue.fail.call_args
         assert "unknown_type" in call_args[0][1]
 
-    @pytest.mark.asyncio
     async def test_execute_job_handles_task_exception(self, worker):
         """Task exceptions should be caught and job marked failed."""
         mock_session = AsyncMock()
@@ -475,7 +449,6 @@ class TestWorkerJobExecution:
 class TestWorkerLoop:
     """Tests for worker loop behavior."""
 
-    @pytest.mark.asyncio
     async def test_worker_loop_exits_on_concurrency_reduction(self):
         """Worker should exit when its number exceeds target concurrency."""
         worker = Worker(concurrency=4)
@@ -497,7 +470,6 @@ class TestWorkerLoop:
 
         # Worker should have exited (no assertion needed, just no exception)
 
-    @pytest.mark.asyncio
     async def test_worker_loop_processes_jobs(self):
         """Worker should process jobs from the queue."""
         worker = Worker(concurrency=1)
@@ -552,7 +524,6 @@ class TestWorkerEdgeCases:
 
         assert 1 <= worker._concurrency_check_interval <= 60
 
-    @pytest.mark.asyncio
     async def test_concurrency_monitor_handles_errors(self):
         """Concurrency monitor should handle state manager errors gracefully."""
         worker = Worker()
@@ -568,7 +539,6 @@ class TestWorkerEdgeCases:
 
         # Should not raise, just continue
 
-    @pytest.mark.asyncio
     async def test_concurrency_monitor_handles_missing_state_manager(self):
         """Concurrency monitor should handle missing state manager."""
         worker = Worker()
@@ -622,7 +592,6 @@ class TestRunWorkerFunction:
 class TestGetWorkerStateManager:
     """Tests for get_worker_state_manager function."""
 
-    @pytest.mark.asyncio
     async def test_returns_state_manager(self):
         """Should return a WorkerStateManager instance."""
         # Reset global state
@@ -641,7 +610,6 @@ class TestGetWorkerStateManager:
         # Clean up
         await close_worker_state_manager()
 
-    @pytest.mark.asyncio
     async def test_returns_same_instance(self):
         """Should return the same instance on multiple calls."""
         await close_worker_state_manager()

@@ -40,25 +40,11 @@ def pytest_configure(config):
 
 def pytest_collection_modifyitems(config, items):
     """Skip tests based on available dependencies."""
-    import os
-
-    # Check for PostgreSQL availability
-    postgres_available = bool(os.getenv("TEST_DATABASE_URL"))
-
     for item in items:
         # Skip GUI tests if Qt is not available
         if not _qt_available:
             if "test_gui" in item.nodeid or "gui" in item.keywords:
                 item.add_marker(pytest.mark.skip(reason=_qt_skip_reason))
-
-        # Skip database integration tests if PostgreSQL is not available
-        if not postgres_available:
-            if "test_routes" in item.nodeid or "integration" in item.keywords:
-                item.add_marker(pytest.mark.skip(
-                    reason="PostgreSQL not available. Set TEST_DATABASE_URL or run: "
-                           "docker run -d --name test-postgres -e POSTGRES_PASSWORD=test "
-                           "-e POSTGRES_DB=openlabels_test -p 5432:5432 postgres:15"
-                ))
 
 
 if not _qt_available:
@@ -427,15 +413,12 @@ async def test_db(database_url):
                     ))
     except Exception as exc:
         await engine.dispose()
-        pytest.fail(f"PostgreSQL not reachable: {exc}")
+        pytest.fail(f"PostgreSQL not reachable at {database_url}: {exc}")
 
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-    async with async_session() as session:
-        yield session
-        await session.rollback()
+    try:
+        async_session = sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
 
     await engine.dispose()
 

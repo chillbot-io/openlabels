@@ -340,7 +340,6 @@ class TestLabelingEngineInit:
 class TestLabelingEngineTokenAcquisition:
     """Tests for token acquisition with retry logic."""
 
-    @pytest.mark.asyncio
     async def test_get_access_token_uses_cache(self):
         """_get_access_token returns cached token if valid."""
         engine = LabelingEngine(
@@ -357,7 +356,6 @@ class TestLabelingEngineTokenAcquisition:
 
         assert token == "cached-token"
 
-    @pytest.mark.asyncio
     async def test_get_access_token_fetches_new_when_expired(self):
         """_get_access_token fetches new token when expired."""
         engine = LabelingEngine(
@@ -379,7 +377,6 @@ class TestLabelingEngineTokenAcquisition:
         assert token == "new-token"
         assert engine._token_cache.access_token == "new-token"
 
-    @pytest.mark.asyncio
     async def test_get_access_token_handles_rate_limit(self):
         """_get_access_token handles 429 rate limiting."""
         engine = LabelingEngine(
@@ -413,7 +410,6 @@ class TestLabelingEngineTokenAcquisition:
         assert token == "token"
         assert call_count[0] == 2
 
-    @pytest.mark.asyncio
     async def test_get_access_token_retries_on_5xx(self):
         """_get_access_token retries on server errors."""
         engine = LabelingEngine(
@@ -451,7 +447,6 @@ class TestLabelingEngineTokenAcquisition:
 class TestLabelingEngineApplyLabel:
     """Tests for apply_label method."""
 
-    @pytest.mark.asyncio
     async def test_apply_label_filesystem_adapter(self, tmp_path):
         """apply_label routes filesystem files to local labeling."""
         engine = LabelingEngine(
@@ -479,7 +474,6 @@ class TestLabelingEngineApplyLabel:
             mock_local.assert_called_once()
             assert result.success is True
 
-    @pytest.mark.asyncio
     async def test_apply_label_sharepoint_adapter(self):
         """apply_label routes sharepoint files to Graph API."""
         engine = LabelingEngine(
@@ -505,7 +499,6 @@ class TestLabelingEngineApplyLabel:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_label_onedrive_adapter(self):
         """apply_label routes onedrive files to Graph API."""
         engine = LabelingEngine(
@@ -531,7 +524,6 @@ class TestLabelingEngineApplyLabel:
 
             mock_graph.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_label_unknown_adapter(self):
         """apply_label returns error for unknown adapter."""
         engine = LabelingEngine(
@@ -557,7 +549,6 @@ class TestLabelingEngineApplyLabel:
 class TestLabelingEngineOfficeMetadata:
     """Tests for Office document metadata labeling."""
 
-    @pytest.mark.asyncio
     async def test_apply_office_metadata_docx(self, tmp_path):
         """_apply_office_metadata adds custom properties to docx."""
         engine = LabelingEngine(
@@ -585,7 +576,6 @@ class TestLabelingEngineOfficeMetadata:
             assert "label-123" in custom_xml
             assert "OpenLabels_LabelId" in custom_xml
 
-    @pytest.mark.asyncio
     async def test_apply_office_metadata_with_existing_properties(self, tmp_path):
         """_apply_office_metadata updates existing custom properties."""
         engine = LabelingEngine(
@@ -618,7 +608,6 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             custom_xml = zf.read("docProps/custom.xml").decode("utf-8")
             assert "new-label" in custom_xml
 
-    @pytest.mark.asyncio
     async def test_apply_office_metadata_bad_zipfile(self, tmp_path):
         """_apply_office_metadata handles corrupt ZIP files."""
         engine = LabelingEngine(
@@ -639,7 +628,6 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
             # Should fall back to sidecar
             mock_sidecar.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_office_metadata_permission_error(self, tmp_path):
         """_apply_office_metadata handles permission errors."""
         engine = LabelingEngine(
@@ -665,7 +653,6 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
 class TestLabelingEnginePDFMetadata:
     """Tests for PDF metadata labeling."""
 
-    @pytest.mark.asyncio
     async def test_apply_pdf_metadata_fallback_on_permission_error(self, tmp_path):
         """_apply_pdf_metadata falls back to sidecar on permission error."""
         engine = LabelingEngine(
@@ -687,7 +674,6 @@ class TestLabelingEnginePDFMetadata:
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_pdf_metadata_fallback_on_os_error(self, tmp_path):
         """_apply_pdf_metadata falls back to sidecar on OS error."""
         engine = LabelingEngine(
@@ -709,7 +695,6 @@ class TestLabelingEnginePDFMetadata:
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_pdf_metadata_fallback_on_value_error(self, tmp_path):
         """_apply_pdf_metadata falls back to sidecar on invalid PDF format."""
         engine = LabelingEngine(
@@ -731,7 +716,6 @@ class TestLabelingEnginePDFMetadata:
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_apply_pdf_metadata_uncaught_exception_bug(self, tmp_path):
         """
         BUG EXPOSED: _apply_pdf_metadata doesn't catch PdfReadError.
@@ -761,7 +745,6 @@ class TestLabelingEnginePDFMetadata:
 class TestLabelingEngineSidecar:
     """Tests for sidecar file labeling."""
 
-    @pytest.mark.asyncio
     async def test_apply_sidecar_creates_file(self, tmp_path):
         """_apply_sidecar creates .openlabels sidecar file."""
         engine = LabelingEngine(
@@ -788,7 +771,6 @@ class TestLabelingEngineSidecar:
             assert sidecar_data["label_name"] == "Confidential"
             assert "applied_at" in sidecar_data
 
-    @pytest.mark.asyncio
     async def test_apply_sidecar_permission_error(self, tmp_path):
         """_apply_sidecar handles permission errors."""
         engine = LabelingEngine(
@@ -810,7 +792,6 @@ class TestLabelingEngineSidecar:
 class TestLabelingEngineGraphAPI:
     """Tests for Graph API label operations."""
 
-    @pytest.mark.asyncio
     async def test_apply_graph_label_success(self):
         """_apply_graph_label applies label via Graph API."""
         engine = LabelingEngine(
@@ -838,7 +819,6 @@ class TestLabelingEngineGraphAPI:
         assert result.success is True
         assert result.method == "graph_api"
 
-    @pytest.mark.asyncio
     async def test_apply_graph_label_error_response(self):
         """_apply_graph_label handles error responses."""
         engine = LabelingEngine(
@@ -868,7 +848,6 @@ class TestLabelingEngineGraphAPI:
         assert result.success is False
         assert "Forbidden" in result.error
 
-    @pytest.mark.asyncio
     async def test_apply_graph_label_timeout(self):
         """_apply_graph_label handles timeout."""
         engine = LabelingEngine(
@@ -897,7 +876,6 @@ class TestLabelingEngineGraphAPI:
 class TestLabelingEngineRemoveLabel:
     """Tests for remove_label method."""
 
-    @pytest.mark.asyncio
     async def test_remove_label_filesystem(self, tmp_path):
         """remove_label removes label from local file."""
         engine = LabelingEngine(
@@ -926,7 +904,6 @@ class TestLabelingEngineRemoveLabel:
         assert result.success is True
         assert not sidecar.exists()
 
-    @pytest.mark.asyncio
     async def test_remove_label_sharepoint(self):
         """remove_label removes label via Graph API."""
         engine = LabelingEngine(
@@ -957,7 +934,6 @@ class TestLabelingEngineRemoveLabel:
 class TestLabelingEngineGetCurrentLabel:
     """Tests for get_current_label method."""
 
-    @pytest.mark.asyncio
     async def test_get_current_label_from_sidecar(self, tmp_path):
         """get_current_label reads from sidecar file."""
         engine = LabelingEngine(
@@ -986,7 +962,6 @@ class TestLabelingEngineGetCurrentLabel:
         assert result["id"] == "label-123"
         assert result["name"] == "Confidential"
 
-    @pytest.mark.asyncio
     async def test_get_current_label_no_label(self, tmp_path):
         """get_current_label returns None when no label."""
         engine = LabelingEngine(
@@ -1021,7 +996,6 @@ class TestLabelingEngineGetAvailableLabels:
         yield
         get_label_cache().invalidate()
 
-    @pytest.mark.asyncio
     async def test_get_available_labels_from_cache(self):
         """get_available_labels returns cached labels if not expired."""
         engine = LabelingEngine(
@@ -1041,7 +1015,6 @@ class TestLabelingEngineGetAvailableLabels:
         assert len(labels) == 1
         assert labels[0]["id"] == "label-1"
 
-    @pytest.mark.asyncio
     async def test_get_available_labels_fetches_when_expired(self):
         """get_available_labels fetches from API when cache expired."""
         engine = LabelingEngine(

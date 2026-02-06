@@ -293,14 +293,12 @@ class TestSingleton:
 class TestAsyncResolution:
     """Tests for async resolution (mocked Graph API)."""
 
-    @pytest.mark.asyncio
     async def test_resolve_well_known_async(self):
         """Async resolve should handle well-known SIDs."""
         resolver = SIDResolver(enable_graph=False)
         result = await resolver.resolve("S-1-5-18")
         assert result.display_name == "Local System"
 
-    @pytest.mark.asyncio
     async def test_resolve_with_graph_mock(self):
         """Async resolve should use Graph API when available."""
         resolver = SIDResolver(enable_graph=True)
@@ -328,7 +326,6 @@ class TestAsyncResolution:
         assert result.entra_object_id == "user-guid"
         assert result.resolution_source == "graph_api"
 
-    @pytest.mark.asyncio
     async def test_resolve_graph_not_found(self):
         """Async resolve should fallback when user not found in Graph."""
         resolver = SIDResolver(enable_graph=True)
@@ -345,7 +342,6 @@ class TestAsyncResolution:
         assert result.resolution_source == "fallback"
         assert result.display_name == "S-1-5-21-123-456-789-9999"
 
-    @pytest.mark.asyncio
     async def test_resolve_batch(self):
         """Batch resolution should resolve multiple SIDs."""
         resolver = SIDResolver(enable_graph=False)

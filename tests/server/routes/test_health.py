@@ -52,13 +52,11 @@ async def setup_health_test_data(test_db):
 class TestHealthStatusEndpoint:
     """Tests for GET /api/health/status endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_health_test_data):
         """Health endpoint should return 200 OK."""
         response = await test_client.get("/api/health/status")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_health_status_structure(self, test_client, setup_health_test_data):
         """Response should have all required health status fields."""
         response = await test_client.get("/api/health/status")
@@ -86,7 +84,6 @@ class TestHealthStatusEndpoint:
         assert "files_processed" in data
         assert "success_rate" in data
 
-    @pytest.mark.asyncio
     async def test_api_status_is_healthy(self, test_client, setup_health_test_data):
         """API status should always be healthy if endpoint responds."""
         response = await test_client.get("/api/health/status")
@@ -96,7 +93,6 @@ class TestHealthStatusEndpoint:
         assert data["api"] == "healthy"
         assert data["api_text"] == "OK"
 
-    @pytest.mark.asyncio
     async def test_db_status_is_healthy(self, test_client, setup_health_test_data):
         """Database status should be healthy when connected."""
         response = await test_client.get("/api/health/status")
@@ -106,7 +102,6 @@ class TestHealthStatusEndpoint:
         assert data["db"] == "healthy"
         assert data["db_text"] == "Connected"
 
-    @pytest.mark.asyncio
     async def test_includes_python_version(self, test_client, setup_health_test_data):
         """Response should include Python version."""
         response = await test_client.get("/api/health/status")
@@ -118,7 +113,6 @@ class TestHealthStatusEndpoint:
         # Version format X.Y.Z
         assert "." in data["python_version"]
 
-    @pytest.mark.asyncio
     async def test_includes_platform(self, test_client, setup_health_test_data):
         """Response should include platform info."""
         response = await test_client.get("/api/health/status")
@@ -129,7 +123,6 @@ class TestHealthStatusEndpoint:
         assert data["platform"] is not None
         assert data["platform"] in ("Linux", "Windows", "Darwin")
 
-    @pytest.mark.asyncio
     async def test_includes_uptime(self, test_client, setup_health_test_data):
         """Response should include uptime in seconds."""
         response = await test_client.get("/api/health/status")
@@ -175,7 +168,6 @@ class TestHealthQueueStatus:
             "session": test_db,
         }
 
-    @pytest.mark.asyncio
     async def test_queue_healthy_with_few_pending(self, test_client, setup_queue_data):
         """Queue should be healthy with few pending jobs."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -203,7 +195,6 @@ class TestHealthQueueStatus:
         assert data["queue"] == "healthy"
         assert "5 pending" in data["queue_text"]
 
-    @pytest.mark.asyncio
     async def test_queue_warning_with_many_pending(self, test_client, setup_queue_data):
         """Queue should show warning with many pending jobs (>100)."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -231,7 +222,6 @@ class TestHealthQueueStatus:
         assert data["queue"] == "warning"
         assert "150 pending" in data["queue_text"]
 
-    @pytest.mark.asyncio
     async def test_queue_error_with_many_failed(self, test_client, setup_queue_data):
         """Queue should show error with many failed jobs (>10)."""
         from openlabels.server.models import JobQueue as JobQueueModel
@@ -302,7 +292,6 @@ class TestHealthScanStatistics:
             "session": test_db,
         }
 
-    @pytest.mark.asyncio
     async def test_scans_today_count(self, test_client, setup_scan_data):
         """Should return count of scans created today."""
         from openlabels.server.models import ScanJob
@@ -328,7 +317,6 @@ class TestHealthScanStatistics:
 
         assert data["scans_today"] == 5
 
-    @pytest.mark.asyncio
     async def test_files_processed_count(self, test_client, setup_scan_data):
         """Should return total files processed count."""
         from openlabels.server.models import ScanJob, ScanResult
@@ -369,7 +357,6 @@ class TestHealthScanStatistics:
 
         assert data["files_processed"] == 10
 
-    @pytest.mark.asyncio
     async def test_success_rate_calculation(self, test_client, setup_scan_data):
         """Should calculate success rate from completed/total scans."""
         from openlabels.server.models import ScanJob
@@ -404,7 +391,6 @@ class TestHealthScanStatistics:
 
         assert data["success_rate"] == 80.0
 
-    @pytest.mark.asyncio
     async def test_success_rate_100_when_no_scans(self, test_client, setup_scan_data):
         """Success rate should be 100% when no scans exist (no failures)."""
         response = await test_client.get("/api/health/status")
@@ -417,7 +403,6 @@ class TestHealthScanStatistics:
 class TestHealthServiceStatus:
     """Tests for service availability status."""
 
-    @pytest.mark.asyncio
     async def test_ml_status_present(self, test_client, setup_health_test_data):
         """ML status should be present in response."""
         response = await test_client.get("/api/health/status")
@@ -428,7 +413,6 @@ class TestHealthServiceStatus:
         assert data["ml"] in ("healthy", "warning", "error")
         assert "ml_text" in data
 
-    @pytest.mark.asyncio
     async def test_mip_status_present(self, test_client, setup_health_test_data):
         """MIP status should be present in response."""
         response = await test_client.get("/api/health/status")
@@ -439,7 +423,6 @@ class TestHealthServiceStatus:
         assert data["mip"] in ("healthy", "warning", "error")
         assert "mip_text" in data
 
-    @pytest.mark.asyncio
     async def test_mip_shows_windows_only_on_non_windows(self, test_client, setup_health_test_data):
         """MIP should show 'Windows only' on non-Windows platforms."""
         import sys
@@ -451,7 +434,6 @@ class TestHealthServiceStatus:
             assert data["mip"] == "warning"
             assert "Windows only" in data["mip_text"]
 
-    @pytest.mark.asyncio
     async def test_ocr_status_present(self, test_client, setup_health_test_data):
         """OCR status should be present in response."""
         response = await test_client.get("/api/health/status")
@@ -466,7 +448,6 @@ class TestHealthServiceStatus:
 class TestHealthStatusValues:
     """Tests for valid health status values."""
 
-    @pytest.mark.asyncio
     async def test_status_values_are_valid(self, test_client, setup_health_test_data):
         """All status fields should have valid values."""
         response = await test_client.get("/api/health/status")
@@ -482,7 +463,6 @@ class TestHealthStatusValues:
         assert data["mip"] in valid_statuses
         assert data["ocr"] in valid_statuses
 
-    @pytest.mark.asyncio
     async def test_numeric_fields_are_non_negative(self, test_client, setup_health_test_data):
         """Numeric fields should be non-negative."""
         response = await test_client.get("/api/health/status")
@@ -494,7 +474,6 @@ class TestHealthStatusValues:
         assert data["success_rate"] >= 0.0
         assert data["success_rate"] <= 100.0
 
-    @pytest.mark.asyncio
     async def test_uptime_increases_between_requests(self, test_client, setup_health_test_data):
         """Uptime should increase between requests."""
         import asyncio
@@ -513,7 +492,6 @@ class TestHealthStatusValues:
 class TestHealthEndpointAuthentication:
     """Tests for health endpoint authentication."""
 
-    @pytest.mark.asyncio
     async def test_health_rejects_unauthenticated_requests(self, test_db):
         """Health status endpoint should reject unauthenticated requests in production mode."""
         from httpx import AsyncClient, ASGITransport
@@ -545,7 +523,6 @@ class TestHealthEndpointAuthentication:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_health_succeeds_with_authentication(self, test_client, setup_health_test_data):
         """Health status endpoint should succeed when authenticated."""
         response = await test_client.get("/api/health/status")
@@ -557,14 +534,12 @@ class TestHealthEndpointAuthentication:
 class TestHealthContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_returns_json_content_type(self, test_client, setup_health_test_data):
         """Response should have JSON content type."""
         response = await test_client.get("/api/health/status")
         assert response.status_code == 200
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_response_is_valid_json(self, test_client, setup_health_test_data):
         """Response body should be valid JSON."""
         response = await test_client.get("/api/health/status")

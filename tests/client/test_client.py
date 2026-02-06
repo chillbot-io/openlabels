@@ -81,7 +81,6 @@ class TestHeaders:
 class TestHealthEndpoint:
     """Tests for health check endpoint."""
 
-    @pytest.mark.asyncio
     async def test_health_check_success(self):
         """Successful health check."""
         client = OpenLabelsClient("http://test")
@@ -102,7 +101,6 @@ class TestHealthEndpoint:
             call_kwargs = mock_instance.get.call_args
             assert "http://test/health" in str(call_kwargs)
 
-    @pytest.mark.asyncio
     async def test_health_check_failure(self):
         """Health check with server error."""
         client = OpenLabelsClient("http://test")
@@ -126,7 +124,6 @@ class TestHealthEndpoint:
 class TestScansEndpoints:
     """Tests for scan-related endpoints."""
 
-    @pytest.mark.asyncio
     async def test_create_scan(self):
         """Create scan should POST to /api/scans."""
         client = OpenLabelsClient("http://test", token="test-token")
@@ -151,7 +148,6 @@ class TestScansEndpoints:
             assert json_body["target_id"] == str(target_id)
             assert json_body["name"] == "Test Scan"
 
-    @pytest.mark.asyncio
     async def test_create_scan_includes_auth_header(self):
         """Create scan should include Authorization header."""
         client = OpenLabelsClient("http://test", token="secret-token")
@@ -172,7 +168,6 @@ class TestScansEndpoints:
             headers = call_kwargs[1]["headers"]
             assert headers["Authorization"] == "Bearer secret-token"
 
-    @pytest.mark.asyncio
     async def test_list_scans_default_params(self):
         """List scans with default parameters."""
         client = OpenLabelsClient("http://test")
@@ -194,7 +189,6 @@ class TestScansEndpoints:
             assert params["limit"] == 50
             assert "status" not in params
 
-    @pytest.mark.asyncio
     async def test_list_scans_with_filters(self):
         """List scans with status filter."""
         client = OpenLabelsClient("http://test")
@@ -216,7 +210,6 @@ class TestScansEndpoints:
             assert params["page"] == 2
             assert params["limit"] == 10
 
-    @pytest.mark.asyncio
     async def test_get_scan(self):
         """Get scan by ID."""
         client = OpenLabelsClient("http://test")
@@ -236,7 +229,6 @@ class TestScansEndpoints:
             mock_instance.get.assert_called_once()
             assert f"/api/v1/scans/{scan_id}" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_cancel_scan(self):
         """Cancel scan should DELETE."""
         client = OpenLabelsClient("http://test")
@@ -259,7 +251,6 @@ class TestScansEndpoints:
 class TestResultsEndpoints:
     """Tests for results endpoints."""
 
-    @pytest.mark.asyncio
     async def test_list_results_default(self):
         """List results with defaults."""
         client = OpenLabelsClient("http://test")
@@ -278,7 +269,6 @@ class TestResultsEndpoints:
             call_kwargs = mock_instance.get.call_args
             assert "/api/v1/results" in str(call_kwargs)
 
-    @pytest.mark.asyncio
     async def test_list_results_with_filters(self):
         """List results with job_id and risk_tier filters."""
         client = OpenLabelsClient("http://test")
@@ -300,7 +290,6 @@ class TestResultsEndpoints:
             assert params["job_id"] == str(job_id)
             assert params["risk_tier"] == "HIGH"
 
-    @pytest.mark.asyncio
     async def test_get_result(self):
         """Get result by ID."""
         client = OpenLabelsClient("http://test")
@@ -319,7 +308,6 @@ class TestResultsEndpoints:
 
             assert f"/api/v1/results/{result_id}" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_get_result_stats(self):
         """Get result statistics."""
         client = OpenLabelsClient("http://test")
@@ -337,7 +325,6 @@ class TestResultsEndpoints:
 
             assert "/api/v1/results/stats" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_get_result_stats_with_job_filter(self):
         """Get result statistics filtered by job."""
         client = OpenLabelsClient("http://test")
@@ -362,7 +349,6 @@ class TestResultsEndpoints:
 class TestTargetsEndpoints:
     """Tests for targets endpoints."""
 
-    @pytest.mark.asyncio
     async def test_list_targets(self):
         """List targets."""
         client = OpenLabelsClient("http://test")
@@ -380,7 +366,6 @@ class TestTargetsEndpoints:
 
             assert "/api/v1/targets" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_list_targets_with_adapter_filter(self):
         """List targets filtered by adapter type."""
         client = OpenLabelsClient("http://test")
@@ -400,7 +385,6 @@ class TestTargetsEndpoints:
             params = call_kwargs[1]["params"]
             assert params["adapter"] == "sharepoint"
 
-    @pytest.mark.asyncio
     async def test_create_target(self):
         """Create target."""
         client = OpenLabelsClient("http://test", token="token")
@@ -430,7 +414,6 @@ class TestTargetsEndpoints:
 class TestDashboardEndpoints:
     """Tests for dashboard endpoints."""
 
-    @pytest.mark.asyncio
     async def test_get_dashboard_stats(self):
         """Get dashboard statistics."""
         client = OpenLabelsClient("http://test")
@@ -448,7 +431,6 @@ class TestDashboardEndpoints:
 
             assert "/api/v1/dashboard/stats" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_get_heatmap(self):
         """Get heatmap data."""
         client = OpenLabelsClient("http://test")
@@ -466,7 +448,6 @@ class TestDashboardEndpoints:
 
             assert "/api/v1/dashboard/heatmap" in str(mock_instance.get.call_args)
 
-    @pytest.mark.asyncio
     async def test_get_heatmap_with_job_filter(self):
         """Get heatmap filtered by job."""
         client = OpenLabelsClient("http://test")
@@ -491,7 +472,6 @@ class TestDashboardEndpoints:
 class TestErrorHandling:
     """Tests for error handling."""
 
-    @pytest.mark.asyncio
     async def test_401_unauthorized(self):
         """401 error should raise HTTPStatusError."""
         client = OpenLabelsClient("http://test")
@@ -513,7 +493,6 @@ class TestErrorHandling:
 
             assert exc_info.value.response.status_code == 401
 
-    @pytest.mark.asyncio
     async def test_404_not_found(self):
         """404 error should raise HTTPStatusError."""
         client = OpenLabelsClient("http://test")
@@ -536,7 +515,6 @@ class TestErrorHandling:
 
             assert exc_info.value.response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_500_server_error(self):
         """500 error should raise HTTPStatusError."""
         client = OpenLabelsClient("http://test")
@@ -556,7 +534,6 @@ class TestErrorHandling:
             with pytest.raises(httpx.HTTPStatusError):
                 await client.health()
 
-    @pytest.mark.asyncio
     async def test_connection_error(self):
         """Connection error should propagate."""
         client = OpenLabelsClient("http://nonexistent")

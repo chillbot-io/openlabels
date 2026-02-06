@@ -76,13 +76,11 @@ async def test_tenant_id(test_tenant_and_user):
 class TestSessionStoreGet:
     """Integration tests for SessionStore.get method."""
 
-    @pytest.mark.asyncio
     async def test_get_nonexistent_session_returns_none(self, session_store):
         """Get for nonexistent session ID should return None."""
         result = await session_store.get("nonexistent-session-id")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_valid_session_returns_data(self, session_store):
         """Get for valid session should return stored data."""
         session_id = f"test-session-{uuid4()}"
@@ -95,7 +93,6 @@ class TestSessionStoreGet:
         assert result["access_token"] == "test-token"
         assert result["user_id"] == "123"
 
-    @pytest.mark.asyncio
     async def test_get_preserves_nested_data(self, session_store):
         """Get should preserve complex nested data structures."""
         session_id = f"test-session-{uuid4()}"
@@ -117,7 +114,6 @@ class TestSessionStoreGet:
         assert result["claims"]["nested"]["deep"]["value"] == 42
         assert result["numbers"] == [1, 2, 3]
 
-    @pytest.mark.asyncio
     async def test_get_empty_data_dict(self, session_store):
         """Get should handle empty data dict."""
         session_id = f"test-session-{uuid4()}"
@@ -132,7 +128,6 @@ class TestSessionStoreGet:
 class TestSessionStoreExpiration:
     """Integration tests for session expiration."""
 
-    @pytest.mark.asyncio
     async def test_expired_session_returns_none(self, session_store):
         """Expired session should return None."""
         from openlabels.server.models import Session
@@ -149,7 +144,6 @@ class TestSessionStoreExpiration:
         result = await session_store.get(session_id)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_session_with_future_expiry_returns_data(self, session_store):
         """Session with future expiry should return data."""
         session_id = f"test-valid-{uuid4()}"
@@ -164,7 +158,6 @@ class TestSessionStoreExpiration:
 class TestSessionStoreSet:
     """Integration tests for SessionStore.set method."""
 
-    @pytest.mark.asyncio
     async def test_set_creates_new_session(self, session_store):
         """Set should create new session when ID doesn't exist."""
         session_id = f"test-new-{uuid4()}"
@@ -174,7 +167,6 @@ class TestSessionStoreSet:
 
         assert result == {"new": True}
 
-    @pytest.mark.asyncio
     async def test_set_updates_existing_session(self, session_store):
         """Set should update existing session data."""
         session_id = f"test-update-{uuid4()}"
@@ -188,7 +180,6 @@ class TestSessionStoreSet:
         result = await session_store.get(session_id)
         assert result == {"version": 2, "updated": True}
 
-    @pytest.mark.asyncio
     async def test_set_with_tenant_and_user(self, session_store, test_tenant_id, test_user_id):
         """Set should store tenant_id and user_id."""
         session_id = f"test-with-ids-{uuid4()}"
@@ -204,7 +195,6 @@ class TestSessionStoreSet:
         result = await session_store.get(session_id)
         assert result == {"token": "abc"}
 
-    @pytest.mark.asyncio
     async def test_set_extends_expiry_on_update(self, session_store):
         """Updating a session should extend its expiry."""
         session_id = f"test-extend-{uuid4()}"
@@ -224,7 +214,6 @@ class TestSessionStoreSet:
 class TestSessionStoreDelete:
     """Integration tests for SessionStore.delete method."""
 
-    @pytest.mark.asyncio
     async def test_delete_existing_session_returns_true(self, session_store):
         """Delete existing session should return True."""
         session_id = f"test-delete-{uuid4()}"
@@ -234,13 +223,11 @@ class TestSessionStoreDelete:
 
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_delete_nonexistent_session_returns_false(self, session_store):
         """Delete nonexistent session should return False."""
         result = await session_store.delete("nonexistent-delete-test")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_delete_makes_session_unretrievable(self, session_store):
         """Deleted session should not be retrievable."""
         session_id = f"test-delete-verify-{uuid4()}"
@@ -256,7 +243,6 @@ class TestSessionStoreDelete:
 class TestSessionStoreCleanup:
     """Integration tests for SessionStore.cleanup_expired method."""
 
-    @pytest.mark.asyncio
     async def test_cleanup_removes_expired_sessions(self, session_store):
         """Cleanup should remove expired sessions."""
         # Create some expired sessions
@@ -271,7 +257,6 @@ class TestSessionStoreCleanup:
 
         assert count >= 3  # At least the 3 we created
 
-    @pytest.mark.asyncio
     async def test_cleanup_preserves_valid_sessions(self, session_store):
         """Cleanup should not remove valid sessions."""
         valid_id = f"test-valid-cleanup-{uuid4()}"
@@ -296,7 +281,6 @@ class TestSessionStoreCleanup:
 class TestSessionStoreDeleteAllForUser:
     """Integration tests for SessionStore.delete_all_for_user method."""
 
-    @pytest.mark.asyncio
     async def test_delete_all_removes_user_sessions(self, session_store, test_user_id):
         """delete_all_for_user should remove all sessions for that user."""
         # Create multiple sessions for the user
@@ -313,7 +297,6 @@ class TestSessionStoreDeleteAllForUser:
 
         assert count == 3
 
-    @pytest.mark.asyncio
     async def test_delete_all_preserves_other_user_sessions(self, session_store, test_db):
         """delete_all_for_user should not affect other users' sessions."""
         from openlabels.server.models import Tenant, User
@@ -374,7 +357,6 @@ class TestSessionStoreDeleteAllForUser:
         result = await session_store.get(user2_session_id)
         assert result == {"user": 2}
 
-    @pytest.mark.asyncio
     async def test_delete_all_for_user_with_no_sessions(self, session_store):
         """delete_all_for_user should return 0 when user has no sessions."""
         nonexistent_user = str(uuid4())
@@ -388,7 +370,6 @@ class TestSessionStoreDeleteAllForUser:
 class TestSessionStoreCountUserSessions:
     """Integration tests for SessionStore.count_user_sessions method."""
 
-    @pytest.mark.asyncio
     async def test_count_returns_correct_number(self, session_store, test_user_id):
         """count_user_sessions should return correct count."""
         for i in range(5):
@@ -403,7 +384,6 @@ class TestSessionStoreCountUserSessions:
 
         assert count == 5
 
-    @pytest.mark.asyncio
     async def test_count_excludes_expired_sessions(self, session_store, test_user_id):
         """count_user_sessions should not count expired sessions."""
         # Create valid session
@@ -429,7 +409,6 @@ class TestSessionStoreCountUserSessions:
 
         assert count == 1  # Only the valid one
 
-    @pytest.mark.asyncio
     async def test_count_returns_zero_for_no_sessions(self, session_store):
         """count_user_sessions should return 0 for user with no sessions."""
         count = await session_store.count_user_sessions(str(uuid4()))
@@ -440,7 +419,6 @@ class TestSessionStoreCountUserSessions:
 class TestPendingAuthStoreBasicOperations:
     """Integration tests for PendingAuthStore basic operations."""
 
-    @pytest.mark.asyncio
     async def test_set_and_get_pending_auth(self, pending_auth_store):
         """Should store and retrieve pending auth data."""
         state = f"state-{uuid4()}"
@@ -458,13 +436,11 @@ class TestPendingAuthStoreBasicOperations:
         assert result["callback_url"] == "https://app.example.com/auth/callback"
         assert "created_at" in result
 
-    @pytest.mark.asyncio
     async def test_get_nonexistent_state_returns_none(self, pending_auth_store):
         """Get for nonexistent state should return None."""
         result = await pending_auth_store.get("nonexistent-state")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_delete_pending_auth(self, pending_auth_store):
         """Should delete pending auth entry."""
         state = f"state-delete-{uuid4()}"
@@ -477,7 +453,6 @@ class TestPendingAuthStoreBasicOperations:
         get_result = await pending_auth_store.get(state)
         assert get_result is None
 
-    @pytest.mark.asyncio
     async def test_delete_nonexistent_returns_false(self, pending_auth_store):
         """Delete for nonexistent state should return False."""
         result = await pending_auth_store.delete("nonexistent-state")
@@ -488,7 +463,6 @@ class TestPendingAuthStoreBasicOperations:
 class TestPendingAuthStoreExpiration:
     """Integration tests for PendingAuthStore expiration."""
 
-    @pytest.mark.asyncio
     async def test_expired_pending_auth_returns_none(self, pending_auth_store, test_db):
         """Pending auth older than AUTH_TIMEOUT_MINUTES should return None."""
         from openlabels.server.models import PendingAuth as PendingAuthModel
@@ -515,7 +489,6 @@ class TestPendingAuthStoreExpiration:
 class TestPendingAuthStoreCleanup:
     """Integration tests for PendingAuthStore.cleanup_expired method."""
 
-    @pytest.mark.asyncio
     async def test_cleanup_removes_expired_entries(self, pending_auth_store, test_db):
         """Cleanup should remove expired pending auth entries."""
         from openlabels.server.models import PendingAuth as PendingAuthModel
@@ -552,7 +525,6 @@ class TestPendingAuthTimeout:
 class TestSessionStoreDataIntegrity:
     """Tests for data integrity and edge cases."""
 
-    @pytest.mark.asyncio
     async def test_unicode_data_preserved(self, session_store):
         """Unicode data should be preserved correctly."""
         session_id = f"unicode-test-{uuid4()}"
@@ -567,7 +539,6 @@ class TestSessionStoreDataIntegrity:
 
         assert result == unicode_data
 
-    @pytest.mark.asyncio
     async def test_large_data_stored(self, session_store):
         """Large data should be stored and retrieved correctly."""
         session_id = f"large-test-{uuid4()}"
@@ -583,7 +554,6 @@ class TestSessionStoreDataIntegrity:
         assert result["array"] == list(range(1000))
         assert len(result["string"]) == 10000
 
-    @pytest.mark.asyncio
     async def test_null_values_in_data(self, session_store):
         """Null values in data should be preserved."""
         session_id = f"null-test-{uuid4()}"
@@ -604,7 +574,6 @@ class TestSessionStoreDataIntegrity:
 class TestOAuthFlowLifecycle:
     """Integration tests for complete OAuth flow lifecycle."""
 
-    @pytest.mark.asyncio
     async def test_complete_oauth_flow(
         self, pending_auth_store, session_store, test_tenant_id, test_user_id
     ):

@@ -39,7 +39,6 @@ async def setup_users_data(test_db):
 class TestListUsers:
     """Tests for GET /api/users endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_users_data):
         """List users endpoint should return 200 OK."""
         response = await test_client.get("/api/users")
@@ -50,7 +49,6 @@ class TestListUsers:
         # Should have at least the admin user from setup
         assert len(items) >= 1, "Response should contain at least one user"
 
-    @pytest.mark.asyncio
     async def test_returns_list(self, test_client, setup_users_data):
         """List users should return a paginated response with items."""
         response = await test_client.get("/api/users")
@@ -59,7 +57,6 @@ class TestListUsers:
         assert "items" in data
         assert isinstance(data["items"], list)
 
-    @pytest.mark.asyncio
     async def test_includes_test_user(self, test_client, setup_users_data):
         """List should include the test user."""
         response = await test_client.get("/api/users")
@@ -76,7 +73,6 @@ class TestListUsers:
         )
         assert test_user_found, f"Test user not found in emails: {emails}"
 
-    @pytest.mark.asyncio
     async def test_user_response_structure(self, test_client, setup_users_data):
         """User response should have all required fields."""
         response = await test_client.get("/api/users")
@@ -90,7 +86,6 @@ class TestListUsers:
         assert "role" in user
         assert "created_at" in user
 
-    @pytest.mark.asyncio
     async def test_pagination_default(self, test_client, setup_users_data):
         """List should use default pagination."""
         from openlabels.server.models import User
@@ -117,7 +112,6 @@ class TestListUsers:
         # Default page_size is 50
         assert len(data["items"]) <= 50
 
-    @pytest.mark.asyncio
     async def test_pagination_custom_limit(self, test_client, setup_users_data):
         """List should respect custom page_size."""
         from openlabels.server.models import User
@@ -143,7 +137,6 @@ class TestListUsers:
 
         assert len(data["items"]) == 5
 
-    @pytest.mark.asyncio
     async def test_pagination_page_parameter(self, test_client, setup_users_data):
         """List should respect page parameter."""
         response = await test_client.get("/api/users?page=1&page_size=10")
@@ -152,19 +145,16 @@ class TestListUsers:
         assert "items" in data, "Response should be paginated"
         assert len(data["items"]) <= 10, "Response should respect the page_size parameter"
 
-    @pytest.mark.asyncio
     async def test_pagination_validation_min_page(self, test_client, setup_users_data):
         """Page parameter should be >= 1."""
         response = await test_client.get("/api/users?page=0")
         assert response.status_code == 422  # Validation error
 
-    @pytest.mark.asyncio
     async def test_pagination_validation_min_limit(self, test_client, setup_users_data):
         """page_size parameter should be >= 1."""
         response = await test_client.get("/api/users?page_size=0")
         assert response.status_code == 422  # Validation error
 
-    @pytest.mark.asyncio
     async def test_pagination_validation_max_limit(self, test_client, setup_users_data):
         """page_size parameter should be <= 100."""
         response = await test_client.get("/api/users?page_size=200")
@@ -174,7 +164,6 @@ class TestListUsers:
 class TestCreateUser:
     """Tests for POST /api/users endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_201_status(self, test_client, setup_users_data):
         """Create user should return 201 Created."""
         response = await test_client.post(
@@ -193,7 +182,6 @@ class TestCreateUser:
         assert data["role"] == "viewer", "Role should match request"
         assert "created_at" in data, "Response should contain 'created_at' field"
 
-    @pytest.mark.asyncio
     async def test_returns_created_user(self, test_client, setup_users_data):
         """Create user should return the created user."""
         response = await test_client.post(
@@ -213,7 +201,6 @@ class TestCreateUser:
         assert "id" in data
         assert "created_at" in data
 
-    @pytest.mark.asyncio
     async def test_create_admin_user(self, test_client, setup_users_data):
         """Should be able to create admin user."""
         response = await test_client.post(
@@ -229,7 +216,6 @@ class TestCreateUser:
 
         assert data["role"] == "admin"
 
-    @pytest.mark.asyncio
     async def test_create_user_default_role(self, test_client, setup_users_data):
         """User creation should default to viewer role."""
         response = await test_client.post(
@@ -243,7 +229,6 @@ class TestCreateUser:
 
         assert data["role"] == "viewer"
 
-    @pytest.mark.asyncio
     async def test_create_user_without_name(self, test_client, setup_users_data):
         """User can be created without name."""
         response = await test_client.post(
@@ -258,7 +243,6 @@ class TestCreateUser:
 
         assert data["name"] is None
 
-    @pytest.mark.asyncio
     async def test_create_duplicate_email_returns_409(self, test_client, setup_users_data):
         """Creating user with duplicate email should return 409."""
         # First creation
@@ -274,7 +258,6 @@ class TestCreateUser:
         )
         assert response.status_code == 409
 
-    @pytest.mark.asyncio
     async def test_create_user_invalid_email(self, test_client, setup_users_data):
         """Creating user with invalid email should return 422."""
         response = await test_client.post(
@@ -286,7 +269,6 @@ class TestCreateUser:
         )
         assert response.status_code == 422
 
-    @pytest.mark.asyncio
     async def test_create_user_invalid_role(self, test_client, setup_users_data):
         """Creating user with invalid role should return 422."""
         response = await test_client.post(
@@ -298,7 +280,6 @@ class TestCreateUser:
         )
         assert response.status_code == 422
 
-    @pytest.mark.asyncio
     async def test_create_user_missing_email(self, test_client, setup_users_data):
         """Creating user without email should return 422."""
         response = await test_client.post(
@@ -314,7 +295,6 @@ class TestCreateUser:
 class TestGetUser:
     """Tests for GET /api/users/{user_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_users_data):
         """Get user should return 200 OK."""
         admin_user = setup_users_data["admin_user"]
@@ -328,7 +308,6 @@ class TestGetUser:
         assert "name" in data, "Response should contain 'name' field"
         assert "role" in data, "Response should contain 'role' field"
 
-    @pytest.mark.asyncio
     async def test_returns_user_details(self, test_client, setup_users_data):
         """Get user should return user details."""
         admin_user = setup_users_data["admin_user"]
@@ -340,14 +319,12 @@ class TestGetUser:
         assert data["id"] == str(admin_user.id)
         assert data["email"] == admin_user.email
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_user(self, test_client, setup_users_data):
         """Get nonexistent user should return 404."""
         fake_id = uuid4()
         response = await test_client.get(f"/api/users/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_invalid_uuid(self, test_client, setup_users_data):
         """Get user with invalid UUID should return 422."""
         response = await test_client.get("/api/users/not-a-uuid")
@@ -357,7 +334,6 @@ class TestGetUser:
 class TestUpdateUser:
     """Tests for PUT /api/users/{user_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_users_data):
         """Update user should return 200 OK."""
         from openlabels.server.models import User
@@ -387,7 +363,6 @@ class TestUpdateUser:
         assert data["email"] == "toupdate@test.com", "Email should remain unchanged"
         assert data["role"] == "viewer", "Role should remain unchanged"
 
-    @pytest.mark.asyncio
     async def test_updates_name(self, test_client, setup_users_data):
         """Update user should update name."""
         from openlabels.server.models import User
@@ -413,7 +388,6 @@ class TestUpdateUser:
 
         assert data["name"] == "New Name"
 
-    @pytest.mark.asyncio
     async def test_updates_role(self, test_client, setup_users_data):
         """Update user should update role."""
         from openlabels.server.models import User
@@ -439,7 +413,6 @@ class TestUpdateUser:
 
         assert data["role"] == "admin"
 
-    @pytest.mark.asyncio
     async def test_partial_update(self, test_client, setup_users_data):
         """Update should only change provided fields."""
         from openlabels.server.models import User
@@ -467,7 +440,6 @@ class TestUpdateUser:
         assert data["name"] == "New Name"
         assert data["role"] == "viewer"  # Unchanged
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_user(self, test_client, setup_users_data):
         """Update nonexistent user should return 404."""
         fake_id = uuid4()
@@ -477,7 +449,6 @@ class TestUpdateUser:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_rejects_invalid_role(self, test_client, setup_users_data):
         """Update with invalid role should return 422."""
         from openlabels.server.models import User
@@ -504,7 +475,6 @@ class TestUpdateUser:
 class TestDeleteUser:
     """Tests for DELETE /api/users/{user_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_204_status(self, test_client, setup_users_data):
         """Delete user should return 204 No Content."""
         from openlabels.server.models import User
@@ -524,7 +494,6 @@ class TestDeleteUser:
         response = await test_client.delete(f"/api/users/{user.id}")
         assert response.status_code == 204
 
-    @pytest.mark.asyncio
     async def test_user_is_removed(self, test_client, setup_users_data):
         """Deleted user should no longer exist."""
         from openlabels.server.models import User
@@ -549,14 +518,12 @@ class TestDeleteUser:
         response = await test_client.get(f"/api/users/{user_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_user(self, test_client, setup_users_data):
         """Delete nonexistent user should return 404."""
         fake_id = uuid4()
         response = await test_client.delete(f"/api/users/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_prevents_self_deletion(self, test_client, setup_users_data):
         """User cannot delete themselves."""
         admin_user = setup_users_data["admin_user"]
@@ -569,7 +536,6 @@ class TestDeleteUser:
 class TestUserTenantIsolation:
     """Tests for tenant isolation in user endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_user(self, test_client, setup_users_data):
         """Should not be able to access users from other tenants."""
         from openlabels.server.models import Tenant, User
@@ -597,7 +563,6 @@ class TestUserTenantIsolation:
         response = await test_client.get(f"/api/users/{other_user.id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_update_other_tenant_user(self, test_client, setup_users_data):
         """Should not be able to update users from other tenants."""
         from openlabels.server.models import Tenant, User
@@ -626,7 +591,6 @@ class TestUserTenantIsolation:
         )
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_cannot_delete_other_tenant_user(self, test_client, setup_users_data):
         """Should not be able to delete users from other tenants."""
         from openlabels.server.models import Tenant, User
@@ -656,20 +620,17 @@ class TestUserTenantIsolation:
 class TestUserContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_users_data):
         """List users should return JSON."""
         response = await test_client.get("/api/users")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_get_returns_json(self, test_client, setup_users_data):
         """Get user should return JSON."""
         admin_user = setup_users_data["admin_user"]
         response = await test_client.get(f"/api/users/{admin_user.id}")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_create_returns_json(self, test_client, setup_users_data):
         """Create user should return JSON."""
         response = await test_client.post(

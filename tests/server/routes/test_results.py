@@ -60,18 +60,16 @@ async def setup_results_data(test_db):
 
 
 class TestListResults:
-    """Tests for GET /api/results endpoint."""
+    """Tests for GET /api/v1/results endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_results_data):
         """List results should return 200 OK."""
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_paginated_structure(self, test_client, setup_results_data):
         """List should return paginated structure."""
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
 
@@ -80,17 +78,15 @@ class TestListResults:
         assert "page" in data
         assert "total_pages" in data
 
-    @pytest.mark.asyncio
     async def test_returns_empty_when_no_results(self, test_client, setup_results_data):
         """List should return empty when no results."""
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
 
         assert data["items"] == []
         assert data["total"] == 0
 
-    @pytest.mark.asyncio
     async def test_returns_results(self, test_client, setup_results_data):
         """List should return scan results."""
         from openlabels.server.models import ScanResult
@@ -112,14 +108,13 @@ class TestListResults:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
 
         assert len(data["items"]) == 1
         assert data["items"][0]["file_path"] == "/test/file.txt"
 
-    @pytest.mark.asyncio
     async def test_result_response_structure(self, test_client, setup_results_data):
         """Result response should have required fields."""
         from openlabels.server.models import ScanResult
@@ -141,7 +136,7 @@ class TestListResults:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
 
@@ -156,7 +151,6 @@ class TestListResults:
         assert "total_entities" in item
         assert "scanned_at" in item
 
-    @pytest.mark.asyncio
     async def test_filter_by_job_id(self, test_client, setup_results_data):
         """List should filter by job_id."""
         from openlabels.server.models import ScanResult, ScanJob
@@ -202,14 +196,13 @@ class TestListResults:
         session.add(result2)
         await session.commit()
 
-        response = await test_client.get(f"/api/results?job_id={job.id}")
+        response = await test_client.get(f"/api/v1/results?job_id={job.id}")
         assert response.status_code == 200
         data = response.json()
 
         assert data["total"] == 1
         assert data["items"][0]["file_path"] == "/job1/file.txt"
 
-    @pytest.mark.asyncio
     async def test_filter_by_risk_tier(self, test_client, setup_results_data):
         """List should filter by risk_tier."""
         from openlabels.server.models import ScanResult
@@ -233,13 +226,12 @@ class TestListResults:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/results?risk_tier=HIGH")
+        response = await test_client.get("/api/v1/results?risk_tier=HIGH")
         assert response.status_code == 200
         data = response.json()
 
         assert data["total"] == 2
 
-    @pytest.mark.asyncio
     async def test_filter_by_has_pii(self, test_client, setup_results_data):
         """List should filter by has_pii."""
         from openlabels.server.models import ScanResult
@@ -280,31 +272,29 @@ class TestListResults:
         await session.commit()
 
         # Filter has_pii=true
-        response = await test_client.get("/api/results?has_pii=true")
+        response = await test_client.get("/api/v1/results?has_pii=true")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] >= 3
 
         # Filter has_pii=false
-        response = await test_client.get("/api/results?has_pii=false")
+        response = await test_client.get("/api/v1/results?has_pii=false")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] >= 2
 
 
 class TestGetResultStats:
-    """Tests for GET /api/results/stats endpoint."""
+    """Tests for GET /api/v1/results/stats endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_results_data):
         """Stats should return 200 OK."""
-        response = await test_client.get("/api/results/stats")
+        response = await test_client.get("/api/v1/results/stats")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_stats_structure(self, test_client, setup_results_data):
         """Stats should return required fields."""
-        response = await test_client.get("/api/results/stats")
+        response = await test_client.get("/api/v1/results/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -319,7 +309,6 @@ class TestGetResultStats:
         assert "labels_applied" in data
         assert "labels_pending" in data
 
-    @pytest.mark.asyncio
     async def test_counts_correctly(self, test_client, setup_results_data):
         """Stats should count files correctly."""
         from openlabels.server.models import ScanResult
@@ -352,7 +341,7 @@ class TestGetResultStats:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/results/stats")
+        response = await test_client.get("/api/v1/results/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -363,53 +352,46 @@ class TestGetResultStats:
 
 
 class TestExportResults:
-    """Tests for GET /api/results/export endpoint."""
+    """Tests for GET /api/v1/results/export endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status_csv(self, test_client, setup_results_data):
         """Export CSV should return 200 OK."""
-        response = await test_client.get("/api/results/export?format=csv")
+        response = await test_client.get("/api/v1/results/export?format=csv")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_200_status_json(self, test_client, setup_results_data):
         """Export JSON should return 200 OK."""
-        response = await test_client.get("/api/results/export?format=json")
+        response = await test_client.get("/api/v1/results/export?format=json")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_csv_content_type(self, test_client, setup_results_data):
         """Export CSV should return text/csv content type."""
-        response = await test_client.get("/api/results/export?format=csv")
+        response = await test_client.get("/api/v1/results/export?format=csv")
         assert "text/csv" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_json_content_type(self, test_client, setup_results_data):
         """Export JSON should return application/json content type."""
-        response = await test_client.get("/api/results/export?format=json")
+        response = await test_client.get("/api/v1/results/export?format=json")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_csv_has_content_disposition(self, test_client, setup_results_data):
         """Export CSV should have Content-Disposition header."""
-        response = await test_client.get("/api/results/export?format=csv")
-        assert "Content-Disposition" in response.headers
-        assert "attachment" in response.headers["Content-Disposition"]
-        assert ".csv" in response.headers["Content-Disposition"]
+        response = await test_client.get("/api/v1/results/export?format=csv")
+        content_disposition = response.headers.get("content-disposition", "")
+        assert "attachment" in content_disposition
+        assert ".csv" in content_disposition
 
-    @pytest.mark.asyncio
     async def test_json_has_content_disposition(self, test_client, setup_results_data):
         """Export JSON should have Content-Disposition header."""
-        response = await test_client.get("/api/results/export?format=json")
-        assert "Content-Disposition" in response.headers
-        assert "attachment" in response.headers["Content-Disposition"]
-        assert ".json" in response.headers["Content-Disposition"]
+        response = await test_client.get("/api/v1/results/export?format=json")
+        content_disposition = response.headers.get("content-disposition", "")
+        assert "attachment" in content_disposition
+        assert ".json" in content_disposition
 
 
 class TestGetResult:
-    """Tests for GET /api/results/{result_id} endpoint."""
+    """Tests for GET /api/v1/results/{result_id} endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_results_data):
         """Get result should return 200 OK."""
         from openlabels.server.models import ScanResult
@@ -431,10 +413,9 @@ class TestGetResult:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get(f"/api/results/{result.id}")
+        response = await test_client.get(f"/api/v1/results/{result.id}")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_result_details(self, test_client, setup_results_data):
         """Get should return result details."""
         from openlabels.server.models import ScanResult
@@ -456,7 +437,7 @@ class TestGetResult:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get(f"/api/results/{result.id}")
+        response = await test_client.get(f"/api/v1/results/{result.id}")
         assert response.status_code == 200
         data = response.json()
 
@@ -464,20 +445,18 @@ class TestGetResult:
         assert data["file_path"] == "/detail/result.txt"
         assert data["risk_score"] == 85
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_results_data):
         """Get nonexistent result should return 404."""
         fake_id = uuid4()
-        response = await test_client.get(f"/api/results/{fake_id}")
+        response = await test_client.get(f"/api/v1/results/{fake_id}")
         assert response.status_code == 404
 
 
 class TestDeleteResult:
-    """Tests for DELETE /api/results/{result_id} endpoint."""
+    """Tests for DELETE /api/v1/results/{result_id} endpoint."""
 
-    @pytest.mark.asyncio
-    async def test_returns_204_status(self, test_client, setup_results_data):
-        """Delete result should return 204 No Content."""
+    async def test_returns_200_status(self, test_client, setup_results_data):
+        """Delete result should return 200."""
         from openlabels.server.models import ScanResult
 
         session = setup_results_data["session"]
@@ -500,7 +479,6 @@ class TestDeleteResult:
         response = await test_client.delete(f"/api/results/{result.id}")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_result_is_removed(self, test_client, setup_results_data):
         """Deleted result should no longer exist."""
         from openlabels.server.models import ScanResult
@@ -523,19 +501,17 @@ class TestDeleteResult:
         await session.commit()
         result_id = result.id
 
-        await test_client.delete(f"/api/results/{result_id}")
+        await test_client.delete(f"/api/v1/results/{result_id}")
 
-        response = await test_client.get(f"/api/results/{result_id}")
+        response = await test_client.get(f"/api/v1/results/{result_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_results_data):
         """Delete nonexistent result should return 404."""
         fake_id = uuid4()
-        response = await test_client.delete(f"/api/results/{fake_id}")
+        response = await test_client.delete(f"/api/v1/results/{fake_id}")
         assert response.status_code == 404
 
-    @pytest.mark.asyncio
     async def test_htmx_request_returns_trigger(self, test_client, setup_results_data):
         """HTMX delete should return HX-Trigger header."""
         from openlabels.server.models import ScanResult
@@ -558,15 +534,15 @@ class TestDeleteResult:
         await session.commit()
 
         response = await test_client.delete(
-            f"/api/results/{result.id}",
+            f"/api/v1/results/{result.id}",
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200
-        assert "HX-Trigger" in response.headers
+        assert "hx-trigger" in response.headers
 
 
 class TestClearAllResults:
-    """Tests for DELETE /api/results endpoint."""
+    """Tests for DELETE /api/v1/results endpoint."""
 
     @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_results_data):
@@ -574,7 +550,6 @@ class TestClearAllResults:
         response = await test_client.delete("/api/results")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_removes_all_results(self, test_client, setup_results_data):
         """Clear should remove all results for tenant."""
         from openlabels.server.models import ScanResult
@@ -606,25 +581,23 @@ class TestClearAllResults:
         session = setup_results_data["session"]
         session.expire_all()
 
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         data = response.json()
         assert data["total"] == 0
 
-    @pytest.mark.asyncio
     async def test_htmx_request_returns_trigger(self, test_client, setup_results_data):
         """HTMX clear should return HX-Trigger header."""
         response = await test_client.delete(
-            "/api/results",
+            "/api/v1/results",
             headers={"HX-Request": "true"},
         )
         assert response.status_code == 200
-        assert "HX-Trigger" in response.headers
+        assert "hx-trigger" in response.headers
 
 
 class TestApplyRecommendedLabel:
-    """Tests for POST /api/results/{result_id}/apply-label endpoint."""
+    """Tests for POST /api/v1/results/{result_id}/apply-label endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_400_when_no_recommended_label(self, test_client, setup_results_data):
         """Apply should return 400 when no recommended label."""
         from openlabels.server.models import ScanResult
@@ -647,21 +620,19 @@ class TestApplyRecommendedLabel:
         session.add(result)
         await session.commit()
 
-        response = await test_client.post(f"/api/results/{result.id}/apply-label")
+        response = await test_client.post(f"/api/v1/results/{result.id}/apply-label")
         assert response.status_code == 400
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_results_data):
         """Apply to nonexistent result should return 404."""
         fake_id = uuid4()
-        response = await test_client.post(f"/api/results/{fake_id}/apply-label")
+        response = await test_client.post(f"/api/v1/results/{fake_id}/apply-label")
         assert response.status_code == 404
 
 
 class TestRescanFile:
-    """Tests for POST /api/results/{result_id}/rescan endpoint."""
+    """Tests for POST /api/v1/results/{result_id}/rescan endpoint."""
 
-    @pytest.mark.asyncio
     async def test_returns_200_status(self, test_client, setup_results_data):
         """Rescan should return 200 OK."""
         from openlabels.server.models import ScanResult
@@ -683,10 +654,9 @@ class TestRescanFile:
         session.add(result)
         await session.commit()
 
-        response = await test_client.post(f"/api/results/{result.id}/rescan")
+        response = await test_client.post(f"/api/v1/results/{result.id}/rescan")
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
     async def test_returns_job_id(self, test_client, setup_results_data):
         """Rescan should return job_id."""
         from openlabels.server.models import ScanResult
@@ -708,25 +678,23 @@ class TestRescanFile:
         session.add(result)
         await session.commit()
 
-        response = await test_client.post(f"/api/results/{result.id}/rescan")
+        response = await test_client.post(f"/api/v1/results/{result.id}/rescan")
         assert response.status_code == 200
         data = response.json()
 
         assert "job_id" in data
         assert "message" in data
 
-    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent(self, test_client, setup_results_data):
         """Rescan nonexistent result should return 404."""
         fake_id = uuid4()
-        response = await test_client.post(f"/api/results/{fake_id}/rescan")
+        response = await test_client.post(f"/api/v1/results/{fake_id}/rescan")
         assert response.status_code == 404
 
 
 class TestResultsTenantIsolation:
     """Tests for tenant isolation in results endpoints."""
 
-    @pytest.mark.asyncio
     async def test_cannot_access_other_tenant_results(self, test_client, setup_results_data):
         """Should not be able to see results from other tenants."""
         from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, ScanResult
@@ -782,7 +750,7 @@ class TestResultsTenantIsolation:
         session.add(other_result)
         await session.commit()
 
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
 
@@ -793,14 +761,12 @@ class TestResultsTenantIsolation:
 class TestResultsContentType:
     """Tests for response content type."""
 
-    @pytest.mark.asyncio
     async def test_list_returns_json(self, test_client, setup_results_data):
         """List results should return JSON."""
-        response = await test_client.get("/api/results")
+        response = await test_client.get("/api/v1/results")
         assert "application/json" in response.headers.get("content-type", "")
 
-    @pytest.mark.asyncio
     async def test_stats_returns_json(self, test_client, setup_results_data):
         """Stats should return JSON."""
-        response = await test_client.get("/api/results/stats")
+        response = await test_client.get("/api/v1/results/stats")
         assert "application/json" in response.headers.get("content-type", "")

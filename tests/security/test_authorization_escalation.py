@@ -19,10 +19,14 @@ from openlabels.server.models import Tenant, User, ScanTarget, ScanJob
 @pytest.fixture
 async def viewer_client(test_db):
     """Create a test client authenticated as a viewer (read-only) user."""
+    import random
+    import string
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
     # Create test tenant and user in the database
     test_tenant = Tenant(
-        name="Viewer Test Tenant",
-        azure_tenant_id="viewer-test-tenant-id",
+        name=f"Viewer Test Tenant {suffix}",
+        azure_tenant_id=f"viewer-test-tenant-id-{suffix}",
     )
     test_db.add(test_tenant)
     await test_db.flush()
@@ -30,8 +34,8 @@ async def viewer_client(test_db):
     # Create an admin user for creating targets
     admin_user = User(
         tenant_id=test_tenant.id,
-        email="admin@localhost",
-        name="Admin User",
+        email=f"admin-{suffix}@localhost",
+        name=f"Admin User {suffix}",
         role="admin",
     )
     test_db.add(admin_user)
@@ -40,8 +44,8 @@ async def viewer_client(test_db):
     # Create a viewer user
     viewer_user = User(
         tenant_id=test_tenant.id,
-        email="viewer@localhost",
-        name="Viewer User",
+        email=f"viewer-{suffix}@localhost",
+        name=f"Viewer User {suffix}",
         role="viewer",
     )
     test_db.add(viewer_user)
@@ -49,7 +53,7 @@ async def viewer_client(test_db):
     # Create a target owned by admin
     target = ScanTarget(
         tenant_id=test_tenant.id,
-        name="Test Target",
+        name=f"Test Target {suffix}",
         adapter="filesystem",
         config={"path": "/test"},
         enabled=True,
@@ -91,22 +95,33 @@ async def viewer_client(test_db):
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
 
+    from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.remediation import limiter as remediation_limiter
+    from openlabels.server.routes.scans import limiter as scans_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
+
+    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
+    original_states = [l.enabled for l in limiters]
+    for l in limiters:
+        l.enabled = False
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, test_tenant, viewer_user, admin_user, target
+        yield client, test_tenant, viewer_user, admin_user, target, test_db
 
+    for l, state in zip(limiters, original_states):
+        l.enabled = state
     app.dependency_overrides.clear()
 
 
 class TestRoleBasedAccessControl:
     """Tests for role-based access control enforcement."""
 
-    @pytest.mark.asyncio
-    async def test_viewer_cannot_create_targets(self, viewer_client, test_db):
+    async def test_viewer_cannot_create_targets(self, viewer_client):
         """Viewer role should not be able to create scan targets."""
         from sqlalchemy import select, func
 
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, test_db = viewer_client
 
         # Count targets before attempt
         count_before = (await test_db.execute(
@@ -131,12 +146,11 @@ class TestRoleBasedAccessControl:
         assert count_after == count_before, \
             f"Target created despite 403! Before: {count_before}, After: {count_after}"
 
-    @pytest.mark.asyncio
-    async def test_viewer_cannot_start_scans(self, viewer_client, test_db):
+    async def test_viewer_cannot_start_scans(self, viewer_client):
         """Viewer role should not be able to start scans."""
         from sqlalchemy import select, func
 
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, test_db = viewer_client
 
         # Count scans before attempt
         count_before = (await test_db.execute(
@@ -157,12 +171,11 @@ class TestRoleBasedAccessControl:
         assert count_after == count_before, \
             f"Scan created despite 403! Before: {count_before}, After: {count_after}"
 
-    @pytest.mark.asyncio
-    async def test_viewer_cannot_delete_targets(self, viewer_client, test_db):
+    async def test_viewer_cannot_delete_targets(self, viewer_client):
         """Viewer role should not be able to delete targets."""
         from sqlalchemy import select
 
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, test_db = viewer_client
         target_id = target.id
 
         response = await client.delete(f"/api/targets/{target.id}")
@@ -178,10 +191,9 @@ class TestRoleBasedAccessControl:
         assert target_after.name == target.name, \
             "Target was modified despite 403 response!"
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_modify_settings(self, viewer_client):
         """Viewer role should not be able to modify system settings."""
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, _db = viewer_client
 
         response = await client.put(
             "/api/settings",
@@ -191,26 +203,23 @@ class TestRoleBasedAccessControl:
         assert response.status_code in (403, 404, 405), \
             f"Expected 403/404/405 for viewer modifying settings, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_viewer_can_view_results(self, viewer_client):
         """Viewer role should be able to view scan results."""
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, _db = viewer_client
 
         response = await client.get("/api/results")
         # Viewer should be able to read
         assert response.status_code == 200, \
             f"Expected 200 for viewer viewing results, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_viewer_can_view_dashboard(self, viewer_client):
         """Viewer role should be able to view dashboard."""
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, _db = viewer_client
 
         response = await client.get("/api/dashboard/stats")
         assert response.status_code == 200, \
             f"Expected 200 for viewer viewing dashboard, got {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_admin_can_create_targets(self, test_client):
         """Admin role should be able to create targets."""
         response = await test_client.post(
@@ -229,12 +238,11 @@ class TestRoleBasedAccessControl:
 class TestRoleEscalation:
     """Tests for preventing role escalation attacks."""
 
-    @pytest.mark.asyncio
-    async def test_cannot_self_promote_to_admin(self, viewer_client, test_db):
+    async def test_cannot_self_promote_to_admin(self, viewer_client):
         """User should not be able to change their own role to admin."""
         from sqlalchemy import select
 
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, test_db = viewer_client
         viewer_id = viewer.id
 
         # Try to update own user to admin
@@ -253,12 +261,11 @@ class TestRoleEscalation:
         assert user_after.role == "viewer", \
             f"PRIVILEGE ESCALATION: User role changed to '{user_after.role}' despite error response!"
 
-    @pytest.mark.asyncio
-    async def test_viewer_cannot_create_admin_users(self, viewer_client, test_db):
+    async def test_viewer_cannot_create_admin_users(self, viewer_client):
         """Viewer should not be able to create users with admin role."""
         from sqlalchemy import select
 
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, test_db = viewer_client
 
         response = await client.post(
             "/api/users",
@@ -283,7 +290,6 @@ class TestRoleEscalation:
 class TestAuthenticationBypass:
     """Tests for authentication bypass attempts."""
 
-    @pytest.mark.asyncio
     async def test_missing_auth_header_rejected(self, test_db):
         """Requests without authentication should be rejected in production mode."""
         from unittest.mock import patch, MagicMock
@@ -310,7 +316,6 @@ class TestAuthenticationBypass:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     @pytest.mark.skip(reason="Requires full Azure AD configuration to test token validation")
     async def test_invalid_bearer_token_rejected(self, test_db):
         """Invalid JWT tokens should be rejected in production mode."""
@@ -339,7 +344,6 @@ class TestAuthenticationBypass:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.asyncio
     async def test_malformed_auth_header_rejected(self, test_db):
         """Malformed authorization headers should be rejected in production mode."""
         from unittest.mock import patch, MagicMock
@@ -375,7 +379,6 @@ class TestAuthenticationBypass:
 class TestSessionSecurity:
     """Tests for session security."""
 
-    @pytest.mark.asyncio
     async def test_user_sees_own_context(self, test_client):
         """User should see their own context via /users/me."""
         response = await test_client.get("/api/users/me")
@@ -391,7 +394,6 @@ class TestSessionSecurity:
 class TestAPIKeyAuthentication:
     """Tests for API key authentication (if implemented)."""
 
-    @pytest.mark.asyncio
     async def test_random_api_key_rejected(self, test_db):
         """Random API keys should be rejected in production mode."""
         from unittest.mock import patch, MagicMock
@@ -423,10 +425,9 @@ class TestAPIKeyAuthentication:
 class TestVerticalPrivilegeEscalation:
     """Tests specifically for vertical privilege escalation."""
 
-    @pytest.mark.asyncio
     async def test_viewer_cannot_access_admin_endpoints(self, viewer_client):
         """Viewer should not access admin-only endpoints."""
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, _db = viewer_client
 
         admin_endpoints = [
             ("POST", "/api/targets", {}),
@@ -447,10 +448,9 @@ class TestVerticalPrivilegeEscalation:
             assert response.status_code in (403, 404, 422), \
                 f"Viewer accessed {method} {endpoint} with status {response.status_code}"
 
-    @pytest.mark.asyncio
     async def test_viewer_can_access_read_endpoints(self, viewer_client):
         """Viewer should be able to access read-only endpoints."""
-        client, tenant, viewer, admin, target = viewer_client
+        client, tenant, viewer, admin, target, _db = viewer_client
 
         read_endpoints = [
             "/api/dashboard/stats",

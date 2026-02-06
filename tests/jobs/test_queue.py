@@ -104,28 +104,24 @@ class TestJobQueueEnqueue:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_enqueue_returns_job_id(self, queue):
         """Enqueue should return a UUID job ID."""
         job_id = await queue.enqueue("scan", {"path": "/data"})
 
         assert isinstance(job_id, UUID)
 
-    @pytest.mark.asyncio
     async def test_enqueue_adds_job_to_session(self, queue):
         """Enqueue should add a job model to the session."""
         await queue.enqueue("scan", {"path": "/data"})
 
         queue.session.add.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_enqueue_flushes_session(self, queue):
         """Enqueue should flush the session."""
         await queue.enqueue("scan", {"path": "/data"})
 
         queue.session.flush.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_default_priority(self, queue):
         """Default priority should be 50."""
         await queue.enqueue("scan", {"path": "/data"})
@@ -133,7 +129,6 @@ class TestJobQueueEnqueue:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.priority == 50
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_custom_priority(self, queue):
         """Should accept custom priority."""
         await queue.enqueue("scan", {"path": "/data"}, priority=100)
@@ -141,7 +136,6 @@ class TestJobQueueEnqueue:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.priority == 100
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_scheduled_time(self, queue):
         """Should accept scheduled_for time."""
         future_time = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -150,7 +144,6 @@ class TestJobQueueEnqueue:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.scheduled_for == future_time
 
-    @pytest.mark.asyncio
     async def test_enqueue_sets_pending_status(self, queue):
         """New jobs should have 'pending' status."""
         await queue.enqueue("scan", {"path": "/data"})
@@ -158,7 +151,6 @@ class TestJobQueueEnqueue:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.status == "pending"
 
-    @pytest.mark.asyncio
     async def test_enqueue_stores_payload(self, queue):
         """Payload should be stored in the job."""
         payload = {"path": "/data", "recursive": True}
@@ -167,7 +159,6 @@ class TestJobQueueEnqueue:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.payload == payload
 
-    @pytest.mark.asyncio
     async def test_enqueue_stores_task_type(self, queue):
         """Task type should be stored in the job."""
         await queue.enqueue("label", {"files": []})
@@ -187,7 +178,6 @@ class TestJobQueueDequeue:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_dequeue_returns_none_when_no_jobs(self, queue):
         """Dequeue should return None when no jobs available."""
         mock_result = MagicMock()
@@ -198,7 +188,6 @@ class TestJobQueueDequeue:
 
         assert job is None
 
-    @pytest.mark.asyncio
     async def test_dequeue_returns_job_model(self, queue):
         """Dequeue should return job model when available."""
         mock_job = MagicMock()
@@ -212,7 +201,6 @@ class TestJobQueueDequeue:
 
         assert job is mock_job
 
-    @pytest.mark.asyncio
     async def test_dequeue_sets_running_status(self, queue):
         """Dequeue should set job status to 'running'."""
         mock_job = MagicMock()
@@ -226,7 +214,6 @@ class TestJobQueueDequeue:
 
         assert mock_job.status == "running"
 
-    @pytest.mark.asyncio
     async def test_dequeue_sets_worker_id(self, queue):
         """Dequeue should set the worker_id on the job."""
         mock_job = MagicMock()
@@ -240,7 +227,6 @@ class TestJobQueueDequeue:
 
         assert mock_job.worker_id == "worker-abc"
 
-    @pytest.mark.asyncio
     async def test_dequeue_sets_started_at(self, queue):
         """Dequeue should set started_at timestamp."""
         mock_job = MagicMock()
@@ -257,7 +243,6 @@ class TestJobQueueDequeue:
         assert mock_job.started_at >= before
         assert mock_job.started_at <= after
 
-    @pytest.mark.asyncio
     async def test_dequeue_flushes_session(self, queue):
         """Dequeue should flush session after claiming job."""
         mock_job = MagicMock()
@@ -283,7 +268,6 @@ class TestJobQueueComplete:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_complete_executes_update(self, queue):
         """Complete should execute an update statement."""
         job_id = uuid4()
@@ -291,7 +275,6 @@ class TestJobQueueComplete:
 
         queue.session.execute.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_complete_accepts_result_data(self, queue):
         """Complete should accept optional result data."""
         job_id = uuid4()
@@ -303,7 +286,6 @@ class TestJobQueueComplete:
         # Verify database session was used to update the job
         queue.session.execute.assert_called()
 
-    @pytest.mark.asyncio
     async def test_complete_without_result(self, queue):
         """Complete should work without result data."""
         job_id = uuid4()
@@ -326,7 +308,6 @@ class TestJobQueueFail:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_fail_returns_early_if_job_not_found(self, queue):
         """Fail should return early if job doesn't exist."""
         queue.session.get = AsyncMock(return_value=None)
@@ -337,7 +318,6 @@ class TestJobQueueFail:
         # Should not flush if no job found
         queue.session.flush.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_fail_with_retry_reschedules_job(self, queue):
         """Fail with retry should reschedule job if retries remain."""
         mock_job = MagicMock()
@@ -354,7 +334,6 @@ class TestJobQueueFail:
         assert mock_job.started_at is None
         assert mock_job.scheduled_for is not None
 
-    @pytest.mark.asyncio
     async def test_fail_calculates_retry_delay(self, queue):
         """Fail should calculate proper exponential backoff delay."""
         mock_job = MagicMock()
@@ -375,7 +354,6 @@ class TestJobQueueFail:
         assert mock_job.scheduled_for >= min_scheduled
         assert mock_job.scheduled_for <= max_scheduled
 
-    @pytest.mark.asyncio
     async def test_fail_stores_error_message(self, queue):
         """Fail should store the error message."""
         mock_job = MagicMock()
@@ -388,7 +366,6 @@ class TestJobQueueFail:
 
         assert mock_job.error == "Connection timeout"
 
-    @pytest.mark.asyncio
     async def test_fail_moves_to_dead_letter_when_retries_exhausted(self, queue):
         """Job should be marked failed when max retries reached."""
         mock_job = MagicMock()
@@ -402,7 +379,6 @@ class TestJobQueueFail:
         assert mock_job.status == "failed"
         assert mock_job.completed_at is not None
 
-    @pytest.mark.asyncio
     async def test_fail_with_retry_false_moves_to_dead_letter(self, queue):
         """Fail with retry=False should move to dead letter immediately."""
         mock_job = MagicMock()
@@ -416,7 +392,6 @@ class TestJobQueueFail:
         assert mock_job.status == "failed"
         assert mock_job.retry_count == 0  # Not incremented
 
-    @pytest.mark.asyncio
     async def test_fail_flushes_session(self, queue):
         """Fail should flush the session."""
         mock_job = MagicMock()
@@ -441,7 +416,6 @@ class TestJobQueueCancel:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_cancel_returns_false_if_not_found(self, queue):
         """Cancel should return False if job doesn't exist."""
         queue.session.get = AsyncMock(return_value=None)
@@ -450,7 +424,6 @@ class TestJobQueueCancel:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_cancel_pending_job_succeeds(self, queue):
         """Should be able to cancel pending jobs."""
         mock_job = MagicMock()
@@ -463,7 +436,6 @@ class TestJobQueueCancel:
         assert result is True
         assert mock_job.status == "cancelled"
 
-    @pytest.mark.asyncio
     async def test_cancel_running_job_succeeds(self, queue):
         """Should be able to cancel running jobs."""
         mock_job = MagicMock()
@@ -476,7 +448,6 @@ class TestJobQueueCancel:
         assert result is True
         assert mock_job.status == "cancelled"
 
-    @pytest.mark.asyncio
     async def test_cancel_completed_job_fails(self, queue):
         """Cannot cancel completed jobs."""
         mock_job = MagicMock()
@@ -489,7 +460,6 @@ class TestJobQueueCancel:
         assert result is False
         assert mock_job.status == "completed"  # Unchanged
 
-    @pytest.mark.asyncio
     async def test_cancel_failed_job_fails(self, queue):
         """Cannot cancel already failed jobs."""
         mock_job = MagicMock()
@@ -501,7 +471,6 @@ class TestJobQueueCancel:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_cancel_sets_completed_at(self, queue):
         """Cancel should set completed_at timestamp."""
         mock_job = MagicMock()
@@ -527,7 +496,6 @@ class TestJobQueueCountMethods:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_get_pending_count_returns_count(self, queue):
         """get_pending_count should return number of pending jobs."""
         mock_result = MagicMock()
@@ -538,7 +506,6 @@ class TestJobQueueCountMethods:
 
         assert count == 3
 
-    @pytest.mark.asyncio
     async def test_get_running_count_returns_count(self, queue):
         """get_running_count should return number of running jobs."""
         mock_result = MagicMock()
@@ -561,7 +528,6 @@ class TestDeadLetterQueue:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_get_failed_jobs_returns_list(self, queue):
         """get_failed_jobs should return a list of failed jobs."""
         mock_jobs = [MagicMock(), MagicMock()]
@@ -573,7 +539,6 @@ class TestDeadLetterQueue:
 
         assert len(jobs) == 2
 
-    @pytest.mark.asyncio
     async def test_get_failed_jobs_with_task_type_filter(self, queue):
         """get_failed_jobs should accept task_type filter."""
         mock_result = MagicMock()
@@ -583,7 +548,6 @@ class TestDeadLetterQueue:
         # Should not raise
         await queue.get_failed_jobs(task_type="scan")
 
-    @pytest.mark.asyncio
     async def test_get_failed_count_returns_integer(self, queue):
         """get_failed_count should return count."""
         mock_result = MagicMock()
@@ -594,7 +558,6 @@ class TestDeadLetterQueue:
 
         assert count == 5
 
-    @pytest.mark.asyncio
     async def test_get_failed_count_returns_zero_when_none(self, queue):
         """get_failed_count should return 0 when scalar returns None."""
         mock_result = MagicMock()
@@ -605,7 +568,6 @@ class TestDeadLetterQueue:
 
         assert count == 0
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_returns_false_if_not_found(self, queue):
         """requeue_failed returns False if job not found."""
         queue.session.get = AsyncMock(return_value=None)
@@ -614,7 +576,6 @@ class TestDeadLetterQueue:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_returns_false_if_not_failed(self, queue):
         """requeue_failed returns False if job is not in failed state."""
         mock_job = MagicMock()
@@ -627,7 +588,6 @@ class TestDeadLetterQueue:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_returns_false_if_wrong_tenant(self, queue):
         """requeue_failed returns False if job belongs to different tenant."""
         mock_job = MagicMock()
@@ -640,7 +600,6 @@ class TestDeadLetterQueue:
 
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_resets_job_state(self, queue):
         """requeue_failed should reset job to pending state."""
         mock_job = MagicMock()
@@ -661,7 +620,6 @@ class TestDeadLetterQueue:
         assert mock_job.error is None
         assert mock_job.retry_count == 0
 
-    @pytest.mark.asyncio
     async def test_requeue_failed_preserves_retries_if_requested(self, queue):
         """requeue_failed with reset_retries=False should keep retry count."""
         mock_job = MagicMock()
@@ -675,7 +633,6 @@ class TestDeadLetterQueue:
 
         assert mock_job.retry_count == 3  # Unchanged
 
-    @pytest.mark.asyncio
     async def test_requeue_all_failed_returns_count(self, queue):
         """requeue_all_failed should return number of requeued jobs."""
         mock_result = MagicMock()
@@ -686,7 +643,6 @@ class TestDeadLetterQueue:
 
         assert count == 10
 
-    @pytest.mark.asyncio
     async def test_purge_failed_returns_deleted_count(self, queue):
         """purge_failed should return number of deleted jobs."""
         mock_result = MagicMock()
@@ -697,7 +653,6 @@ class TestDeadLetterQueue:
 
         assert count == 5
 
-    @pytest.mark.asyncio
     async def test_purge_failed_with_older_than_days(self, queue):
         """purge_failed should support older_than_days filter."""
         mock_result = MagicMock()
@@ -720,7 +675,6 @@ class TestQueueStats:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_get_queue_stats_returns_dict(self, queue):
         """get_queue_stats should return a dictionary."""
         # Mock status counts
@@ -750,7 +704,6 @@ class TestQueueStats:
         assert stats["failed"] == 5
         assert stats["failed_by_type"] == {"scan": 3, "label": 2}
 
-    @pytest.mark.asyncio
     async def test_get_queue_stats_returns_zero_for_missing(self, queue):
         """Stats should return 0 for statuses with no jobs."""
         status_result = MagicMock()
@@ -781,14 +734,12 @@ class TestJobQueueEdgeCases:
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_empty_payload(self, queue):
         """Should handle empty payload dictionary."""
         job_id = await queue.enqueue("scan", {})
 
         assert isinstance(job_id, UUID)
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_nested_payload(self, queue):
         """Should handle deeply nested payload."""
         payload = {
@@ -805,7 +756,6 @@ class TestJobQueueEdgeCases:
         job_id = await queue.enqueue("scan", payload)
         assert isinstance(job_id, UUID)
 
-    @pytest.mark.asyncio
     async def test_enqueue_with_special_characters_in_task_type(self, queue):
         """Task type with special characters should be handled."""
         # This tests that task_type is properly parameterized
@@ -813,7 +763,6 @@ class TestJobQueueEdgeCases:
 
         assert isinstance(job_id, UUID)
 
-    @pytest.mark.asyncio
     async def test_get_job_returns_job_model(self, queue):
         """get_job should return job by ID."""
         mock_job = MagicMock()
@@ -823,7 +772,6 @@ class TestJobQueueEdgeCases:
 
         assert job is mock_job
 
-    @pytest.mark.asyncio
     async def test_get_job_returns_none_if_not_found(self, queue):
         """get_job should return None if not found."""
         queue.session.get = AsyncMock(return_value=None)
@@ -832,7 +780,6 @@ class TestJobQueueEdgeCases:
 
         assert job is None
 
-    @pytest.mark.asyncio
     async def test_priority_zero_is_valid(self, queue):
         """Priority 0 (lowest) should be valid."""
         await queue.enqueue("scan", {}, priority=0)
@@ -840,7 +787,6 @@ class TestJobQueueEdgeCases:
         call_args = queue.session.add.call_args[0][0]
         assert call_args.priority == 0
 
-    @pytest.mark.asyncio
     async def test_priority_100_is_valid(self, queue):
         """Priority 100 (highest) should be valid."""
         await queue.enqueue("scan", {}, priority=100)
