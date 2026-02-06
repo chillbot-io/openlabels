@@ -549,7 +549,7 @@ async def get_token(
         )
 
     expires_at_str = session_data.get("expires_at")
-    expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min
+    expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
 
     if expires_at < datetime.now(timezone.utc):
         # Try to refresh

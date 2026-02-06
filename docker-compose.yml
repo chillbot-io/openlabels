@@ -16,7 +16,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only, use reverse proxy for external
     environment:
-      - DATABASE_URL=postgresql+asyncpg://openlabels:openlabels@db:5432/openlabels
+      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-openlabels}@db:5432/openlabels
       - AUTH_PROVIDER=azure_ad
       - AUTH_TENANT_ID=${AUTH_TENANT_ID}
       - AUTH_CLIENT_ID=${AUTH_CLIENT_ID}

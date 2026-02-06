@@ -163,7 +163,8 @@ class LabelService(BaseService):
                     "tenant_id": str(self.tenant_id),
                     "azure_tenant_id": auth.tenant_id,
                     "client_id": auth.client_id,
-                    "client_secret": auth.client_secret,
+                    # SECURITY: Never store client_secret in job payload (readable by admin API).
+                    # The worker reads credentials from server config at execution time.
                     "remove_stale": False,
                 },
                 priority=70,  # High priority
