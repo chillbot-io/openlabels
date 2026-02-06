@@ -204,8 +204,8 @@ class TestRoleBasedAccessControl:
         """Viewer role should not be able to modify system settings."""
         client, tenant, viewer, admin, target, _db = viewer_client
 
-        response = await client.put(
-            "/api/settings",
+        response = await client.post(
+            "/api/settings/scan",
             json={"some_setting": "value"},
         )
         # Should be 403 (admin only) or 404/405 (endpoint doesn't exist)
@@ -255,7 +255,7 @@ class TestRoleEscalation:
         viewer_id = viewer.id
 
         # Try to update own user to admin
-        response = await client.patch(
+        response = await client.put(
             f"/api/users/{viewer.id}",
             json={"role": "admin"},
         )

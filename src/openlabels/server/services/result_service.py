@@ -8,6 +8,7 @@ Provides business logic for scan results with:
 """
 
 from collections.abc import AsyncIterator
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
@@ -300,12 +301,13 @@ class ResultService(BaseService):
 
         return results, total
 
-    async def delete_results(self, job_id: UUID) -> int:
+    async def delete_results(self, job_id: Optional[UUID] = None) -> int:
         """
-        Delete all scan results for a specific job.
+        Delete scan results, optionally filtered by job.
 
         Args:
-            job_id: The job ID whose results should be deleted
+            job_id: If provided, only delete results for this job.
+                    If None, delete all results for the tenant.
 
         Returns:
             Number of results deleted
@@ -314,13 +316,15 @@ class ResultService(BaseService):
             deleted_count = await service.delete_results(job_id)
             logger.info(f"Deleted {deleted_count} results")
         """
+        # Build conditions
+        conditions = [ScanResult.tenant_id == self.tenant_id]
+        if job_id is not None:
+            conditions.append(ScanResult.job_id == job_id)
+
         # First count the results to be deleted
         count_query = (
             select(func.count())
-            .where(
-                ScanResult.tenant_id == self.tenant_id,
-                ScanResult.job_id == job_id,
-            )
+            .where(*conditions)
             .select_from(ScanResult)
         )
         count_result = await self.session.execute(count_query)
@@ -328,10 +332,7 @@ class ResultService(BaseService):
 
         if deleted_count > 0:
             # Delete the results
-            delete_query = delete(ScanResult).where(
-                ScanResult.tenant_id == self.tenant_id,
-                ScanResult.job_id == job_id,
-            )
+            delete_query = delete(ScanResult).where(*conditions)
             await self.session.execute(delete_query)
             await self.session.flush()
 

@@ -500,7 +500,7 @@ class TestScheduleTenantIsolation:
         async with create_client_for_user(
             data["session"], data["user_b"], data["tenant_b"]
         ) as client:
-            response = await client.post(f"/api/schedules/{schedule_a.id}/trigger")
+            response = await client.post(f"/api/schedules/{schedule_a.id}/run")
             assert response.status_code == 404
 
         # CRITICAL: Verify no scan was triggered for tenant A

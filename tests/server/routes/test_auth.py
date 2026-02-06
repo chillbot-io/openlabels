@@ -88,10 +88,10 @@ async def create_test_session(test_db):
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": user_id or "test-oid",
+                    "oid": user_id or "00000000-0000-4000-8000-000000000001",
                     "preferred_username": "test@localhost",
                     "name": "Test User",
-                    "tid": tenant_id or "test-tenant",
+                    "tid": tenant_id or "00000000-0000-4000-8000-000000000002",
                     "roles": ["admin"],
                 },
             }
@@ -672,10 +672,10 @@ class TestCallbackEndpoint:
             "id_token": "mock-id-token",
             "expires_in": 3600,
             "id_token_claims": {
-                "oid": "user-oid-123",
+                "oid": "00000000-0000-4000-8000-000000000003",
                 "preferred_username": "user@example.com",
                 "name": "Test User",
-                "tid": "tenant-id-123",
+                "tid": "00000000-0000-4000-8000-000000000004",
                 "roles": ["user"],
             },
         }
@@ -979,10 +979,10 @@ class TestMeEndpoint:
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": "user-123",
+                    "oid": "00000000-0000-4000-8000-000000000005",
                     "preferred_username": "user@example.com",
                     "name": "Test User",
-                    "tid": "tenant-456",
+                    "tid": "00000000-0000-4000-8000-000000000006",
                     "roles": ["admin", "user"],
                 },
             },
@@ -1070,10 +1070,10 @@ class TestMeEndpoint:
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),  # Expired
                 "claims": {
-                    "oid": "user-123",
+                    "oid": "00000000-0000-4000-8000-000000000005",
                     "preferred_username": "user@example.com",
                     "name": "Test User",
-                    "tid": "tenant-456",
+                    "tid": "00000000-0000-4000-8000-000000000006",
                     "roles": [],
                 },
             },
@@ -1292,7 +1292,7 @@ class TestAuthStatusEndpoint:
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": "user-123",
+                    "oid": "00000000-0000-4000-8000-000000000005",
                     "preferred_username": "user@example.com",
                     "name": "Test User",
                 },
@@ -1366,7 +1366,7 @@ class TestAuthStatusEndpoint:
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),  # Expired
                 "claims": {
-                    "oid": "user-123",
+                    "oid": "00000000-0000-4000-8000-000000000005",
                     "preferred_username": "user@example.com",
                     "name": "Test User",
                 },
@@ -1512,7 +1512,7 @@ class TestLogoutAllEndpoint:
                 data={
                     "access_token": f"token-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": user_id, "tid": "test-tenant"},
+                    "claims": {"oid": user_id, "tid": "00000000-0000-4000-8000-000000000002"},
                 },
                 user_id=user_id,
             )
@@ -1986,10 +1986,10 @@ class TestTokenTampering:
                 "access_token": "original-token",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": "user-123",
+                    "oid": "00000000-0000-4000-8000-000000000005",
                     "preferred_username": "user@example.com",
                     "name": "Original User",
-                    "tid": "tenant-123",
+                    "tid": "00000000-0000-4000-8000-000000000007",
                     "roles": ["user"],
                 },
             },
@@ -2084,7 +2084,7 @@ class TestTokenTampering:
             data={
                 "access_token": "test-token",
                 "expires_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),  # Token expired
-                "claims": {"oid": "user", "tid": "tenant"},
+                "claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
             },
             expires_at=datetime.now(timezone.utc) + timedelta(days=7),  # Row still valid
         )
@@ -2285,15 +2285,15 @@ class TestMultiTenantIsolation:
                 "access_token": "token-a",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": "user-a",
+                    "oid": "00000000-0000-4000-8000-00000000000a",
                     "preferred_username": "user@tenant-a.com",
                     "name": "User A",
-                    "tid": "tenant-a",
+                    "tid": "00000000-0000-4000-8000-00000000000c",
                     "roles": ["admin"],
                 },
             },
-            tenant_id="tenant-a",
-            user_id="user-a",
+            tenant_id="00000000-0000-4000-8000-00000000000c",
+            user_id="00000000-0000-4000-8000-00000000000a",
         )
 
         await create_test_session(
@@ -2302,15 +2302,15 @@ class TestMultiTenantIsolation:
                 "access_token": "token-b",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "claims": {
-                    "oid": "user-b",
+                    "oid": "00000000-0000-4000-8000-00000000000b",
                     "preferred_username": "user@tenant-b.com",
                     "name": "User B",
-                    "tid": "tenant-b",
+                    "tid": "00000000-0000-4000-8000-00000000000d",
                     "roles": ["user"],
                 },
             },
-            tenant_id="tenant-b",
-            user_id="user-b",
+            tenant_id="00000000-0000-4000-8000-00000000000d",
+            user_id="00000000-0000-4000-8000-00000000000b",
         )
         await test_db.commit()
 
@@ -2359,10 +2359,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-a-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "user-a", "tid": "tenant-1"},
+                    "claims": {"oid": "00000000-0000-4000-8000-00000000000a", "tid": "00000000-0000-4000-8000-00000000000e"},
                 },
-                tenant_id="tenant-1",
-                user_id="user-a",
+                tenant_id="00000000-0000-4000-8000-00000000000e",
+                user_id="00000000-0000-4000-8000-00000000000a",
             )
 
         # Create sessions for user B (same tenant, different user)
@@ -2372,10 +2372,10 @@ class TestMultiTenantIsolation:
                 data={
                     "access_token": f"token-b-{i}",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                    "claims": {"oid": "user-b", "tid": "tenant-1"},
+                    "claims": {"oid": "00000000-0000-4000-8000-00000000000b", "tid": "00000000-0000-4000-8000-00000000000e"},
                 },
-                tenant_id="tenant-1",
-                user_id="user-b",
+                tenant_id="00000000-0000-4000-8000-00000000000e",
+                user_id="00000000-0000-4000-8000-00000000000b",
             )
         await test_db.commit()
 
@@ -2447,7 +2447,7 @@ class TestCSRFProtection:
         mock_msal_result = {
             "access_token": "token",
             "expires_in": 3600,
-            "id_token_claims": {"oid": "user", "tid": "tenant"},
+            "id_token_claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
         }
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result
@@ -2618,7 +2618,7 @@ class TestSessionFixation:
         mock_msal_result = {
             "access_token": "new-token",
             "expires_in": 3600,
-            "id_token_claims": {"oid": "user", "tid": "tenant"},
+            "id_token_claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
         }
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_authorization_code.return_value = mock_msal_result
@@ -3084,7 +3084,7 @@ class TestSessionStoreBehavior:
             data={
                 "access_token": "test-token",
                 # No expires_at field
-                "claims": {"oid": "user", "tid": "tenant"},
+                "claims": {"oid": "00000000-0000-4000-8000-000000000008", "tid": "00000000-0000-4000-8000-000000000009"},
             },
         )
         await test_db.commit()
