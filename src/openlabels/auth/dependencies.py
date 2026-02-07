@@ -1,21 +1,27 @@
 """
-FastAPI dependencies for authentication.
+FastAPI dependencies for authentication and role-based access control.
 """
 
-from typing import Optional
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable, Coroutine
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.exceptions import AuthError
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.models import User, Tenant
 from openlabels.auth.oauth import validate_token, TokenClaims
 
+logger = logging.getLogger(__name__)
 
 # OAuth2 scheme
 settings = get_settings()
@@ -35,8 +41,7 @@ class CurrentUser(BaseModel):
     name: Optional[str]
     role: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 async def get_or_create_user(
@@ -48,8 +53,8 @@ async def get_or_create_user(
     tenant_query = select(Tenant).where(
         Tenant.azure_tenant_id == claims.tenant_id
     )
-    result = await session.execute(tenant_query)
-    tenant = result.scalar_one_or_none()
+    tenant_result = await session.execute(tenant_query)
+    tenant = tenant_result.scalar_one_or_none()
 
     if not tenant:
         # Create tenant
@@ -65,14 +70,14 @@ async def get_or_create_user(
         User.tenant_id == tenant.id,
         User.email == claims.preferred_username,
     )
-    result = await session.execute(user_query)
-    user = result.scalar_one_or_none()
+    user_result = await session.execute(user_query)
+    user = user_result.scalar_one_or_none()
 
     if not user:
         # Determine role - first user is admin
         count_query = select(User.id).where(User.tenant_id == tenant.id)
-        result = await session.execute(count_query)
-        is_first_user = len(result.all()) == 0
+        count_result = await session.execute(count_query)
+        is_first_user = len(count_result.all()) == 0
 
         user = User(
             tenant_id=tenant.id,
@@ -124,7 +129,7 @@ async def get_current_user(
 
         try:
             claims = await validate_token(token)
-        except ValueError as e:
+        except (ValueError, AuthError) as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=str(e),
@@ -167,23 +172,49 @@ async def get_optional_user(
         claims = await validate_token(token)
         user = await get_or_create_user(session, claims)
         return CurrentUser.model_validate(user)
-    except ValueError:
-        # Invalid token - user is not authenticated
+    except (ValueError, AuthError):
+        # Invalid or expired token — user is not authenticated
         return None
     except Exception as e:
-        # Log unexpected errors in authentication
-        import logging
-        logging.getLogger(__name__).debug(f"Authentication check failed: {type(e).__name__}: {e}")
+        # Log unexpected errors in authentication (e.g. DB issues)
+        logger.debug(f"Authentication check failed: {type(e).__name__}: {e}")
         return None
 
 
-async def require_admin(
-    user: CurrentUser = Depends(get_current_user),
-) -> CurrentUser:
-    """Require admin role for the current user."""
-    if user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return user
+# ---------------------------------------------------------------------------
+# Role-based access control
+# ---------------------------------------------------------------------------
+
+# Type alias for the dependency callable returned by require_role().
+_RoleDep = Callable[..., Coroutine[Any, Any, CurrentUser]]
+
+
+def require_role(*allowed_roles: str) -> _RoleDep:
+    """FastAPI dependency factory that enforces role-based access.
+
+    Usage::
+
+        @router.delete("/{id}", dependencies=[Depends(require_role("admin"))])
+        async def delete_item(id: UUID): ...
+
+        @router.get("/report", dependencies=[Depends(require_role("admin", "operator"))])
+        async def get_report(): ...
+    """
+    async def _check_role(
+        user: CurrentUser = Depends(get_current_user),
+    ) -> CurrentUser:
+        if user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires one of roles: {', '.join(allowed_roles)}. "
+                f"User has: {user.role}",
+            )
+        return user
+
+    return _check_role
+
+
+# Pre-built dependencies for common roles.
+require_admin: _RoleDep = require_role("admin")
+require_operator: _RoleDep = require_role("admin", "operator")
+require_viewer: _RoleDep = require_role("admin", "operator", "viewer")

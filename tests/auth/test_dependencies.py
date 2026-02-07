@@ -210,7 +210,7 @@ class TestRequireAdmin:
             await require_admin(user=viewer_user)
 
         assert exc_info.value.status_code == 403
-        assert "Admin access required" in exc_info.value.detail
+        assert "admin" in exc_info.value.detail.lower()
 
     async def test_unknown_role_forbidden(self):
         """Unknown role should be treated as non-admin."""
