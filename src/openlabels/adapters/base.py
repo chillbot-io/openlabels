@@ -68,20 +68,27 @@ class FilterConfig:
 
     def __post_init__(self):
         """Apply presets after initialization."""
+        # Copy lists to avoid mutating caller's arguments
+        extensions = list(self.exclude_extensions)
+        patterns = list(self.exclude_patterns)
+
         if self.exclude_temp_files:
-            self.exclude_extensions.extend([
+            extensions.extend([
                 "tmp", "temp", "bak", "swp", "swo", "pyc", "pyo",
                 "class", "o", "obj", "cache",
             ])
 
         if self.exclude_system_dirs:
-            self.exclude_patterns.extend([
+            patterns.extend([
                 ".git/*", ".svn/*", ".hg/*",
                 "node_modules/*", "__pycache__/*",
                 ".venv/*", "venv/*", ".env/*",
                 "*.egg-info/*", "dist/*", "build/*",
                 ".tox/*", ".pytest_cache/*",
             ])
+
+        self.exclude_extensions = extensions
+        self.exclude_patterns = patterns
 
         # Normalize extensions (lowercase, no dot)
         self.exclude_extensions = [
