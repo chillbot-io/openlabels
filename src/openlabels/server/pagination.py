@@ -166,3 +166,57 @@ def decode_cursor(cursor: str) -> Optional[CursorData]:
         return None
 
 
+async def apply_cursor_pagination(
+    session: Any,
+    query: Any,
+    model_class: Any,
+    params: CursorPaginationParams,
+    *,
+    timestamp_column: Any | None = None,
+) -> CursorPaginatedResponse[Any]:
+    """Apply cursor-based pagination to a SQLAlchemy query.
+
+    Uses the existing ``(id, timestamp)`` composite cursor format.
+    Fetches ``limit + 1`` rows to detect *has_more* without a COUNT query.
+
+    Args:
+        session: AsyncSession to execute the query.
+        query: SQLAlchemy ``select()`` statement (before ordering/limiting).
+        model_class: ORM model with ``.id`` and ``.created_at`` columns.
+        params: Decoded cursor and page-size limit.
+        timestamp_column: Column to sort on (defaults to ``model_class.created_at``).
+
+    Returns:
+        ``CursorPaginatedResponse`` with items, next_cursor, and has_more.
+    """
+    ts_col = timestamp_column if timestamp_column is not None else model_class.created_at
+    id_col = model_class.id
+
+    cursor_data = params.decode()
+    if cursor_data:
+        # Keyset pagination: WHERE (ts, id) < (cursor_ts, cursor_id)
+        query = query.where(
+            (ts_col < cursor_data.timestamp)
+            | ((ts_col == cursor_data.timestamp) & (id_col < cursor_data.id))
+        )
+
+    query = query.order_by(ts_col.desc(), id_col.desc())
+    query = query.limit(params.limit + 1)
+
+    result = await session.execute(query)
+    items = list(result.scalars().all())
+
+    has_more = len(items) > params.limit
+    if has_more:
+        items = items[: params.limit]
+
+    next_cursor: str | None = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = encode_cursor(last.id, getattr(last, ts_col.key))
+
+    return CursorPaginatedResponse(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
