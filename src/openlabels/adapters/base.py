@@ -5,14 +5,16 @@ Provides:
 - FileInfo dataclass for normalized file metadata
 - ExposureLevel enum for access classification
 - FilterConfig for file/account filtering
-- Adapter protocol defining the contract for all adapters
+- ReadAdapter protocol for scanning operations
+- RemediationAdapter protocol for write/remediation operations
 """
 
 import fnmatch
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Protocol, AsyncIterator, Optional
+from types import TracebackType
+from typing import Protocol, AsyncIterator, Optional, runtime_checkable
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -189,8 +191,16 @@ class FileInfo:
     change_type: Optional[str] = None  # 'created', 'modified', 'deleted' for delta queries
 
 
-class Adapter(Protocol):
-    """Protocol for storage adapters."""
+class ReadAdapter(Protocol):
+    """Protocol for storage adapters (read/scan operations).
+
+    All adapters must satisfy this protocol.  Use as an async context
+    manager to manage adapter resources (connections, sessions)::
+
+        async with SharePointAdapter(credentials) as adapter:
+            async for file_info in adapter.list_files(site_id):
+                content = await adapter.read_file(file_info)
+    """
 
     @property
     def adapter_type(self) -> str:
@@ -203,8 +213,7 @@ class Adapter(Protocol):
         recursive: bool = True,
         filter_config: Optional[FilterConfig] = None,
     ) -> AsyncIterator[FileInfo]:
-        """
-        List files in the target location.
+        """List files in the target location.
 
         Args:
             target: Path, URL, or identifier of the location to scan
@@ -217,8 +226,7 @@ class Adapter(Protocol):
         ...
 
     async def read_file(self, file_info: FileInfo) -> bytes:
-        """
-        Read file content.
+        """Read file content.
 
         Args:
             file_info: FileInfo object from list_files
@@ -229,8 +237,7 @@ class Adapter(Protocol):
         ...
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
-        """
-        Get updated metadata for a file.
+        """Get updated metadata for a file.
 
         Args:
             file_info: FileInfo object to refresh
@@ -241,8 +248,7 @@ class Adapter(Protocol):
         ...
 
     async def test_connection(self, config: dict) -> bool:
-        """
-        Test if the adapter can connect with the given configuration.
+        """Test if the adapter can connect with the given configuration.
 
         Args:
             config: Adapter configuration dictionary
@@ -253,19 +259,38 @@ class Adapter(Protocol):
         ...
 
     def supports_delta(self) -> bool:
-        """
-        Check if adapter supports delta/incremental queries.
+        """Check if adapter supports delta/incremental queries.
 
         Returns:
             True if adapter can track changes incrementally
         """
         ...
 
-    # Remediation methods
+    async def __aenter__(self) -> "ReadAdapter":
+        """Initialize adapter resources (connections, sessions)."""
+        ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Clean up adapter resources."""
+        ...
+
+
+@runtime_checkable
+class RemediationAdapter(Protocol):
+    """Protocol for adapters that support write/remediation operations.
+
+    Not all adapters implement this — only those that can move files,
+    read/write ACLs, etc.  Use :func:`supports_remediation` to check
+    at runtime.
+    """
 
     async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
-        """
-        Move a file to a new location (for quarantine).
+        """Move a file to a new location (for quarantine).
 
         Args:
             file_info: FileInfo object of the file to move
@@ -277,8 +302,7 @@ class Adapter(Protocol):
         ...
 
     async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
-        """
-        Get the access control list for a file.
+        """Get the access control list for a file.
 
         Args:
             file_info: FileInfo object
@@ -289,8 +313,7 @@ class Adapter(Protocol):
         ...
 
     async def set_acl(self, file_info: FileInfo, acl: dict) -> bool:
-        """
-        Set the access control list for a file (for lockdown/rollback).
+        """Set the access control list for a file (for lockdown/rollback).
 
         Args:
             file_info: FileInfo object
@@ -301,11 +324,7 @@ class Adapter(Protocol):
         """
         ...
 
-    def supports_remediation(self) -> bool:
-        """
-        Check if adapter supports remediation operations.
 
-        Returns:
-            True if adapter can perform move_file, get_acl, set_acl
-        """
-        ...
+def supports_remediation(adapter: ReadAdapter) -> bool:
+    """Check whether *adapter* supports remediation operations."""
+    return isinstance(adapter, RemediationAdapter)

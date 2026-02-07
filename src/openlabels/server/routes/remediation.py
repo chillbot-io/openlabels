@@ -38,7 +38,7 @@ from openlabels.server.schemas.pagination import (
     create_paginated_response,
 )
 from openlabels.auth.dependencies import require_admin
-from openlabels.adapters.base import FileInfo
+from openlabels.adapters.base import FileInfo, supports_remediation
 from openlabels.adapters.filesystem import FilesystemAdapter
 from openlabels.core.path_validation import (
     validate_path,
@@ -303,7 +303,7 @@ async def quarantine_file(
         # Execute actual quarantine operation via adapter
         adapter = _get_adapter_for_path(validated_path)
 
-        if not adapter.supports_remediation():
+        if not supports_remediation(adapter):
             action.status = "failed"
             action.error = "Adapter does not support remediation"
         else:
@@ -406,7 +406,7 @@ async def lockdown_file(
         # Execute actual lockdown operation via adapter
         adapter = _get_adapter_for_path(validated_path)
 
-        if not adapter.supports_remediation():
+        if not supports_remediation(adapter):
             action.status = "failed"
             action.error = "Adapter does not support remediation"
         else:
@@ -517,7 +517,7 @@ async def rollback_action(
         adapter = _get_adapter_for_path(original.source_path)
         rollback_success = False
 
-        if not adapter.supports_remediation():
+        if not supports_remediation(adapter):
             rollback.status = "failed"
             rollback.error = "Adapter does not support remediation"
         elif original.action_type == "quarantine":

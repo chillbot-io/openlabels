@@ -16,6 +16,7 @@ import stat
 import sys
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
 from typing import AsyncIterator, Optional
 
 import aiofiles
@@ -43,6 +44,18 @@ class FilesystemAdapter:
         """
         self.service_account = service_account
         self.is_windows = platform.system() == "Windows"
+
+    async def __aenter__(self) -> "FilesystemAdapter":
+        """No-op — filesystem adapter has no resources to initialize."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """No-op — filesystem adapter has no resources to clean up."""
 
     @property
     def adapter_type(self) -> str:
@@ -448,12 +461,6 @@ class FilesystemAdapter:
         except OSError as e:
             logger.debug(f"OS error getting POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
-
-    # Remediation methods
-
-    def supports_remediation(self) -> bool:
-        """Filesystem adapter supports remediation."""
-        return True
 
     async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
         """
