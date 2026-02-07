@@ -110,91 +110,73 @@ class DetectorOrchestrator:
 
 **Refactor scope:** Extract the 15+ constructor params into `DetectionConfig`. Update all callers (server startup, CLI, tests) to pass a config object. The orchestrator constructor becomes a single parameter.
 
-### 1.2 Declarative Pattern Definitions
+### 1.2 Immutable Pattern Definitions
 
 **Complexity:** M
 **Files to modify:** `core/detectors/government.py`, `core/detectors/secrets.py`, `core/detectors/additional_patterns.py`
-**Files to create:** `core/detectors/patterns/government.yaml`, `core/detectors/pattern_loader.py`
+**Files to create:** `core/detectors/pattern_registry.py`
 
-**Current state:** Patterns are defined via module-level `_add()` calls that mutate a global list at import time. This is fragile and hard to test/configure.
+**Current state:** Patterns are defined via module-level `_add()` calls that mutate a global list at import time. This is fragile — creating two instances doubles entries, test isolation is impossible, and the mutation order is implicit.
 
 **Plan:**
 
-Create `core/detectors/pattern_loader.py`:
+Replace mutable global lists with frozen dataclasses. No YAML files, no runtime file I/O, no new dependencies. Patterns stay in Python where they're testable, debuggable, and have zero overhead.
+
+Create `core/detectors/pattern_registry.py`:
 ```python
-"""Load detection patterns from YAML/JSON configuration files."""
+"""Immutable pattern definitions for all detectors."""
 
 import re
-import yaml
-from pathlib import Path
-from typing import List, Tuple
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class PatternDefinition:
-    """Immutable pattern definition."""
+    """Immutable, hashable pattern definition."""
     pattern: re.Pattern
     entity_type: str
     confidence: float
     group: int = 0
 
 
-def load_patterns(pattern_file: str | Path) -> List[PatternDefinition]:
-    """Load patterns from a YAML file.
+def _p(regex: str, entity_type: str, confidence: float,
+       group: int = 0, flags: int = re.IGNORECASE) -> PatternDefinition:
+    """Shorthand for defining a pattern."""
+    return PatternDefinition(
+        pattern=re.compile(regex, flags),
+        entity_type=entity_type,
+        confidence=confidence,
+        group=group,
+    )
 
-    YAML format:
-        patterns:
-          - pattern: '\\b(TOP\\s*SECRET)\\b'
-            entity_type: CLASSIFICATION_LEVEL
-            confidence: 0.98
-            group: 1
-            flags: [IGNORECASE]
-    """
-    path = Path(__file__).parent / "patterns" / pattern_file
-    with open(path) as f:
-        data = yaml.safe_load(f)
 
-    results = []
-    for entry in data.get("patterns", []):
-        flags = 0
-        for flag_name in entry.get("flags", []):
-            flags |= getattr(re, flag_name, 0)
+# --- Government patterns ---
+GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
+    _p(r'\b(TOP\s*SECRET)\b', 'CLASSIFICATION_LEVEL', 0.98, group=1),
+    _p(r'\b(SECRET)\b(?!\s*(?:santa|garden|service|recipe|ingredient|weapon|sauce))',
+       'CLASSIFICATION_LEVEL', 0.85, group=1),
+    # ... all government patterns
+)
 
-        results.append(PatternDefinition(
-            pattern=re.compile(entry["pattern"], flags),
-            entity_type=entry["entity_type"],
-            confidence=entry["confidence"],
-            group=entry.get("group", 0),
-        ))
-    return results
+# --- Secrets patterns ---
+SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
+    # ... all secrets patterns
+)
+
+# --- Financial patterns ---
+FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
+    # ... all financial patterns
+)
 ```
 
-Create YAML pattern files (e.g., `core/detectors/patterns/government.yaml`):
-```yaml
-patterns:
-  - pattern: '\b(TOP\s*SECRET)\b'
-    entity_type: CLASSIFICATION_LEVEL
-    confidence: 0.98
-    group: 1
-    flags: [IGNORECASE]
-
-  - pattern: '\b(SECRET)\b(?!\s*(?:santa|garden|service|recipe|ingredient|weapon|sauce))'
-    entity_type: CLASSIFICATION_LEVEL
-    confidence: 0.85
-    group: 1
-    flags: [IGNORECASE]
-    # ... etc
-```
-
-Modify detectors to use loaded patterns:
+Modify detectors to use the registry:
 ```python
 class GovernmentDetector(BaseDetector):
     name = "government"
     tier = Tier.PATTERN
 
     def __init__(self):
-        self._patterns = load_patterns("government.yaml")
+        self._patterns = GOVERNMENT_PATTERNS  # Immutable tuple, shared across instances
 
     def detect(self, text: str) -> List[Span]:
         spans = []
@@ -203,7 +185,9 @@ class GovernmentDetector(BaseDetector):
                 # ... same logic but using pdef.entity_type, pdef.confidence, etc.
 ```
 
-**Refactor scope:** Convert all detectors to YAML-loaded patterns in one pass. Remove the module-level `_add()` helper and `GOVERNMENT_PATTERNS` global list entirely. No Python-defined patterns should remain — YAML is the single source of truth.
+**Why not YAML:** Patterns rarely change independently of code. When you modify a regex, you need to test it, which means a code change anyway. YAML adds runtime file I/O, a PyYAML dependency, a new failure mode (missing/malformed files), and makes patterns harder to debug (no breakpoints in YAML). Frozen dataclasses in Python give you immutability, zero I/O overhead, and full IDE support.
+
+**Refactor scope:** Extract all `_add()` calls and mutable global lists into `pattern_registry.py` as frozen tuples. Delete the module-level mutation helpers. Each detector reads from a shared immutable tuple.
 
 ### 1.3 Async Detection Support
 
@@ -1968,6 +1952,18 @@ class JobQueue:
 
 This keeps it simple and extensible. When a webhook API is needed later, the webhook sender just becomes one implementation of `JobCallback`.
 
+### 7.3 Horizontal Scaling Path (future)
+
+**Complexity:** N/A (informational — no code changes now)
+
+The current `SELECT FOR UPDATE SKIP LOCKED` job queue already supports multiple consumers by design. If the single-server deployment ever becomes a bottleneck, the scaling path is straightforward:
+
+1. **Run a second worker process** pointing at the same PostgreSQL database. The `SKIP LOCKED` pattern means both workers will dequeue different jobs without conflicts. No code changes needed.
+2. **Split API and worker processes.** Run the FastAPI server and the job worker as separate processes (or containers). They share the same database. The API enqueues jobs; workers dequeue and execute. This is a deployment change, not a code change.
+3. **Only if PostgreSQL becomes the bottleneck** (unlikely below millions of jobs/day): consider Celery or Dramatiq with Redis/RabbitMQ as the broker. This is a significant rewrite and should not be done preemptively.
+
+The key insight: the current architecture already supports step 1 and 2 with zero code changes. Don't add distributed task queue infrastructure until you've measured that PostgreSQL job throughput is the actual bottleneck.
+
 ---
 
 ## 8. Labeling
@@ -2878,6 +2874,68 @@ def test_ssn_pattern_always_matches(ssn):
     assert len(ssn_spans) >= 1
 ```
 
+### 14.5 Database Connection Pool Configuration
+
+**Complexity:** S
+**Files to modify:** `server/db.py`, `server/config.py`
+
+**Current state:** SQLAlchemy async engine is created with default pool settings. Under load (concurrent API requests + async detection threads + job workers), the defaults will cause "too many connections" errors or connection starvation.
+
+**Plan:**
+
+```python
+# server/db.py
+from sqlalchemy.ext.asyncio import create_async_engine
+
+def create_engine(settings):
+    return create_async_engine(
+        settings.database_url,
+        # Pool sizing — these numbers assume a single-server deployment.
+        # Rule of thumb: pool_size = expected_concurrent_requests
+        # max_overflow = burst headroom (temporary connections beyond pool_size)
+        pool_size=20,          # Persistent connections in the pool
+        max_overflow=10,       # Burst capacity (pool_size + max_overflow = 30 max)
+        pool_timeout=30,       # Seconds to wait for a connection before erroring
+        pool_recycle=1800,     # Recycle connections after 30min (prevents stale connections)
+        pool_pre_ping=True,    # Verify connection is alive before using it
+        echo=settings.debug,   # SQL logging in debug mode only
+    )
+```
+
+Add to `server/config.py`:
+```python
+class DatabaseSettings(BaseSettings):
+    url: str
+    pool_size: int = 20
+    max_overflow: int = 10
+    pool_recycle: int = 1800
+```
+
+**Sizing rationale:**
+- Detection thread pool uses 4 threads (Section 1.3), each may hold a connection
+- Job worker(s) hold 1-2 connections for dequeue + status updates
+- API request concurrency depends on uvicorn workers (default: 1 process, many async tasks)
+- 20 pool + 10 overflow = 30 max connections, well within PostgreSQL's default 100 limit
+- `pool_pre_ping=True` adds a tiny overhead per checkout but prevents "connection already closed" errors
+
+### 14.6 Alembic Migration Discipline
+
+**Complexity:** S
+**Files to modify:** `alembic/env.py` (if not already configured)
+
+Any schema changes (new columns for SpanContext, cursor pagination bookmarks, etc.) must go through Alembic migrations. Each section that modifies database models should include migration steps.
+
+**Convention:**
+```bash
+# Generate migration after model changes
+alembic revision --autogenerate -m "add span_context to scan_results"
+
+# Review the generated migration before applying
+alembic upgrade head
+```
+
+No raw `CREATE TABLE` or `ALTER TABLE` statements. Alembic is the single source of truth for schema evolution.
+
 ---
 
 ## Implementation Priority Order
@@ -2932,3 +2990,41 @@ Recommended order for maximum impact with minimum risk:
 **Total estimated: ~140-220 hours of implementation work** (not counting Web rebuild)
 
 This document is designed so each section can be handed to a Claude agent as a self-contained task. The priority order minimizes dependency conflicts and maximizes value delivered at each phase.
+
+---
+
+## Execution Guidelines
+
+Rules for implementing this plan, whether by hand or by agent.
+
+### Agent Execution Model
+
+Each numbered section (e.g., "1.1 Configuration-Driven Detector Setup") is a self-contained task. When handing a section to a Claude agent:
+
+1. **Give it the section text** plus the relevant source files it references
+2. **One section per agent** — don't combine sections into a single prompt
+3. **Agent must read actual source files before writing code** — the plans contain code *examples*, not copy-paste solutions. The agent must adapt to the real codebase
+4. **Run tests after each section completes** — `pytest` should pass before moving to the next section
+
+### Ordering Constraints
+
+- **Phase 0 must complete before anything else starts.** The unified exception hierarchy (14.1) changes imports across every module. mypy strict (14.2) changes type annotations everywhere. These are global changes.
+- **Within Phases 1-4, sections are independent** and can run in parallel — with one exception: Section 2.1 (Service DI) should complete before 2.2 (Response Schemas), since the schemas depend on the service layer structure.
+- **Section 1.2 (Pattern Registry) and 1.3 (Async Detection) can run in parallel** — one changes pattern storage, the other changes the orchestrator's execution model. They touch different parts of the orchestrator.
+
+### Quality Standards
+
+Every implementation must:
+- Pass `mypy --strict` (after Phase 0 enables it)
+- Have unit tests for new code (not necessarily 100% coverage, but all happy paths and key error paths)
+- Use `datetime.now(timezone.utc)` not `datetime.utcnow()`
+- Use `asyncio.get_running_loop()` not `asyncio.get_event_loop()`
+- Import exceptions from `openlabels.exceptions` (after Phase 0)
+- Not introduce any `# type: ignore` unless there's a genuine stubs issue (e.g., PySide6)
+
+### What Not to Do
+
+- **Don't add features not in this document.** If you think something is missing, flag it — don't implement it.
+- **Don't introduce new dependencies without discussion.** The PyYAML decision (Section 1.2) was specifically rejected in favor of keeping patterns in Python.
+- **Don't create backwards-compatibility shims.** Old code paths get deleted, not wrapped.
+- **Don't phase rollouts.** Each section is a complete refactor — no "migrate gradually" or "support both old and new for now."
