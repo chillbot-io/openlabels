@@ -3,7 +3,7 @@
 **Goal:** Get every module to **Best (3/3)** quality rating.
 **Reference:** See `MODULE_QUALITY_REVIEW.md` for current ratings and findings.
 
-Each section below is a self-contained implementation plan with exact files, code examples, migration strategies, and complexity estimates. These are designed to be picked up by a Claude agent and executed module-by-module.
+Each section below is a self-contained implementation plan with exact files, code examples, and complexity estimates. These are designed to be picked up by a Claude agent and executed module-by-module. **All changes should be clean refactors — no backwards-compatibility shims, no deprecated fallbacks, no "keep old imports working" hacks. Do it the right way.**
 
 ---
 
@@ -124,7 +124,7 @@ class DetectorOrchestrator:
             self.detectors = create_all_detectors()
 ```
 
-**Migration:** Backwards compatible. Keep existing imports working via `__init__.py`. The `@register_detector` decorator is additive — old code continues to work, new code gets the registry.
+**Refactor scope:** Remove all hardcoded detector imports from the orchestrator. Every detector must use `@register_detector` — no exceptions. Update `__init__.py` exports to pull from the registry. Update all call sites and tests that reference detectors directly.
 
 ### 1.2 Declarative Pattern Definitions
 
@@ -219,7 +219,7 @@ class GovernmentDetector(BaseDetector):
                 # ... same logic but using pdef.entity_type, pdef.confidence, etc.
 ```
 
-**Migration:** Phase in per-detector. Keep Python patterns working alongside YAML. Mark Python-defined patterns as deprecated.
+**Refactor scope:** Convert all detectors to YAML-loaded patterns in one pass. Remove the module-level `_add()` helper and `GOVERNMENT_PATTERNS` global list entirely. No Python-defined patterns should remain — YAML is the single source of truth.
 
 ### 1.3 Async Detection Support
 
@@ -291,7 +291,7 @@ async def adetect(self, text: str) -> DetectionResult:
     return DetectionResult(spans=all_spans)
 ```
 
-**Migration:** Fully backwards compatible. `detect()` remains the primary interface. `adetect()` is additive. The orchestrator's existing `detect()` method continues working synchronously.
+**Refactor scope:** Make `adetect()` the primary interface on the orchestrator. The sync `detect()` on `BaseDetector` stays (detectors are inherently sync or async), but the orchestrator should always run detection through `adetect()`. Update all server/job call sites to use the async path. Remove any sync orchestrator entry points that bypass the async pipeline.
 
 ### 1.4 Confidence Calibration
 
@@ -547,7 +547,7 @@ class Span:
     context: SpanContext | None = None  # NEW: extraction context
 ```
 
-**Migration:** `context` defaults to `None` so all existing code continues to work. Extractors populate it when available.
+**Refactor scope:** Add `context: SpanContext | None = None` to `Span`. Update all extractors to populate `SpanContext` with whatever context they have available (page number, sheet name, etc.). Detectors that don't have context info can leave it as `None` — but extractors should always fill it in.
 
 ---
 
@@ -2793,11 +2793,11 @@ class ValidationError(OpenLabelsError):
     pass
 ```
 
-**Migration plan:**
-1. Create `exceptions.py` with full hierarchy
-2. Module by module, make existing exceptions inherit from the appropriate base
-3. Update catch blocks to use the new hierarchy
-4. Phase: core → server → adapters → auth → labeling → remediation → monitoring
+**Refactor scope:** Do this all at once, not phased:
+1. Create `exceptions.py` with the full hierarchy
+2. Delete all per-module exception definitions (e.g., `core/exceptions.py`, `remediation/base.py:QuarantineError`, `monitoring/base.py:MonitoringError`)
+3. Replace every import and catch block across the entire codebase to use the unified hierarchy
+4. No old exception classes should remain — the unified hierarchy is the single source of truth
 
 ### 14.2 Strict Type Safety (mypy)
 
