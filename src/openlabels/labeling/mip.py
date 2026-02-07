@@ -300,7 +300,7 @@ class MIPClient:
                 return False
 
             # Run initialization in thread pool (blocking .NET calls)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             success = await loop.run_in_executor(None, self._initialize_sync)
 
             return success
@@ -400,7 +400,7 @@ class MIPClient:
         """Shutdown the MIP client and release resources."""
         if self._file_engine:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._shutdown_sync)
             except RuntimeError as e:
                 logger.warning(f"CLR error during MIP shutdown: {e}")
@@ -436,7 +436,7 @@ class MIPClient:
             return self._labels
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             labels = await loop.run_in_executor(None, self._get_labels_sync)
             self._labels = labels
             return labels
@@ -534,7 +534,7 @@ class MIPClient:
             )
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 partial(
@@ -711,7 +711,7 @@ class MIPClient:
             )
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 partial(self._remove_label_sync, file_path)
@@ -826,7 +826,7 @@ class MIPClient:
             return None
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             label = await loop.run_in_executor(
                 None,
                 partial(self._get_file_label_sync, file_path)
@@ -901,7 +901,7 @@ class MIPClient:
             return False
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 partial(self._is_file_protected_sync, file_path)
