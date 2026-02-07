@@ -226,8 +226,11 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 class DetectorOrchestrator:
-    def __init__(self, ...):
-        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="detector")
+    def __init__(self, config: DetectionConfig | None = None):
+        self.config = config or DetectionConfig()
+        self._executor = ThreadPoolExecutor(
+            max_workers=self.config.max_workers, thread_name_prefix="detector"
+        )
 
     async def detect(self, text: str) -> DetectionResult:
         """Run all detectors concurrently in thread pool."""
@@ -342,6 +345,7 @@ def calibrate_confidence(
             confidence=round(confidence, 4),
             detector=span.detector,
             tier=span.tier,
+            context=span.context,  # Preserve SpanContext from Section 1.6
         ))
 
     return calibrated
@@ -473,6 +477,7 @@ def _merge_overlaps(spans: List[Span]) -> List[Span]:
                 confidence=max(prev.confidence, span.confidence),
                 detector=best.detector,
                 tier=best.tier,
+                context=best.context,  # Preserve SpanContext from Section 1.6
             )
         else:
             merged.append(span)
@@ -702,7 +707,7 @@ async def lifespan(app: FastAPI):
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from .schemas.error import ErrorResponse
-from .exceptions import NotFoundError, ConflictError, ForbiddenError
+from openlabels.exceptions import NotFoundError, ConflictError, AuthError
 
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(NotFoundError)
@@ -1020,11 +1025,11 @@ def __post_init__(self):
 
 **Plan:**
 
-Add async context manager to the Protocol and base:
+Add async context manager to the protocol. **Note:** Section 3.4 renames `Adapter` to `ReadAdapter` — implement these together or do 3.4 first. The lifecycle methods go on `ReadAdapter`:
 ```python
 # adapters/base.py
-class Adapter(Protocol):
-    async def __aenter__(self) -> "Adapter":
+class ReadAdapter(Protocol):
+    async def __aenter__(self) -> "ReadAdapter":
         """Initialize adapter resources (connections, sessions)."""
         ...
 
@@ -1032,7 +1037,7 @@ class Adapter(Protocol):
         """Clean up adapter resources."""
         ...
 
-    # ... existing methods ...
+    # ... existing methods (list_files, read_file, etc.) ...
 ```
 
 Implement in `graph_base.py`:
@@ -1274,7 +1279,7 @@ async def _find_signing_key(kid: str, tenant_id: str) -> dict:
         if k.get("kid") == kid:
             return k
 
-    raise TokenError("Unable to find signing key after cache refresh")
+    raise TokenInvalidError("Unable to find signing key after cache refresh")
 ```
 
 ### 4.3 Granular Token Error Types
@@ -1302,12 +1307,7 @@ except JWTError as e:
 **Files to modify:** `auth/dependencies.py`
 
 ```python
-# auth/dependencies.py - add role-based access control
-
-from functools import wraps
-from fastapi import Depends, HTTPException
-from .exceptions import InsufficientPermissionsError
-
+# auth/dependencies.py - add to existing file (get_current_user and CurrentUser are already defined here)
 
 def require_role(*allowed_roles: str):
     """FastAPI dependency that enforces role-based access.
@@ -1376,14 +1376,27 @@ def common_options(f):
 
 
 def api_client_options(f):
-    """Decorator that injects a configured API client."""
+    """Decorator that injects a configured API client.
+
+    Note: OpenLabelsClient is async (Section 13.1). CLI commands are sync (click).
+    This decorator bridges the gap with asyncio.run() and proper cleanup.
+    """
     @common_options
     @functools.wraps(f)
     def wrapper(*args, server, token, **kwargs):
+        import asyncio
         from openlabels.client import OpenLabelsClient
-        client = OpenLabelsClient(base_url=server, token=token)
-        kwargs["client"] = client
-        return f(*args, **kwargs)
+
+        async def _run():
+            async with OpenLabelsClient(base_url=server, token=token) as client:
+                kwargs["client"] = client
+                # If the wrapped function is async, await it
+                result = f(*args, **kwargs)
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+
+        return asyncio.run(_run())
     return wrapper
 ```
 
@@ -2757,6 +2770,49 @@ class SACLError(MonitoringError):
 class AuditRuleError(MonitoringError):
     """Linux auditd rule error."""
     pass
+
+
+# --- API-layer exceptions (used by server error handlers) ---
+
+class APIError(OpenLabelsError):
+    """Base for API-specific errors with HTTP status code."""
+    status_code: int = 500
+    def __init__(self, message: str, status_code: int = 500):
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class BadRequestError(APIError):
+    """400 Bad Request."""
+    def __init__(self, message: str = "Bad request"):
+        super().__init__(message, status_code=400)
+
+
+class ForbiddenError(AuthError):
+    """403 Forbidden — authenticated but insufficient permissions."""
+    pass
+
+
+class RateLimitError(APIError):
+    """429 Too Many Requests."""
+    def __init__(self, message: str = "Rate limit exceeded"):
+        super().__init__(message, status_code=429)
+
+
+class InternalError(APIError):
+    """500 Internal Server Error."""
+    def __init__(self, message: str = "Internal server error"):
+        super().__init__(message, status_code=500)
+
+
+class SecurityError(OpenLabelsError):
+    """Security check failure (path traversal, injection, etc.)."""
+    pass
+
+
+class ConfigurationError(ConfigError):
+    """Alias for ConfigError — matches existing core/exceptions.py naming."""
+    pass
 ```
 
 **Refactor scope:** Do this all at once, not phased:
@@ -3030,6 +3086,9 @@ Each numbered section (e.g., "1.1 Configuration-Driven Detector Setup") is a sel
 - **Phase 0 must complete before anything else starts.** The unified exception hierarchy (14.1) changes imports across every module. mypy strict (14.2) changes type annotations everywhere. These are global changes.
 - **Within Phases 1-4, sections are independent** and can run in parallel — with one exception: Section 2.1 (Service DI) should complete before 2.2 (Response Schemas), since the schemas depend on the service layer structure.
 - **Section 1.2 (Pattern Registry) and 1.3 (Async Detection) can run in parallel** — one changes pattern storage, the other changes the orchestrator's execution model. They touch different parts of the orchestrator.
+- **Section 3.2 (Adapter Lifecycle) and 3.4 (Split Protocol) must be done together** — both modify `adapters/base.py` and the Protocol definition. 3.4 renames `Adapter` to `ReadAdapter`, and 3.2 adds lifecycle methods to it.
+- **Sections 1.4/1.5 (Calibration/Spans) should be done after 1.6 (SpanContext)** — 1.4 and 1.5 construct new Span objects and must include the `context` field added by 1.6.
+- **Section 5.1 (CLI Base) depends on 13.1 (Client Persistent Connection)** — the CLI decorator uses `async with OpenLabelsClient(...)` which requires the context manager from 13.1.
 
 ### Quality Standards
 
