@@ -26,7 +26,7 @@ from openlabels.jobs.queue import JobQueue
 from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
 from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
-from openlabels.core.exceptions import JobError
+from openlabels.exceptions import JobError
 
 logger = logging.getLogger(__name__)
 

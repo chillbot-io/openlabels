@@ -112,7 +112,7 @@ class TestFilesystemAdapterListFiles:
 
     async def test_list_files_raises_on_nonexistent_path(self):
         """Should raise FilesystemError for non-existent path."""
-        from openlabels.core.exceptions import FilesystemError
+        from openlabels.exceptions import FilesystemError
         adapter = FilesystemAdapter()
 
         with pytest.raises(FilesystemError, match="does not exist"):
@@ -121,7 +121,7 @@ class TestFilesystemAdapterListFiles:
 
     async def test_list_files_raises_on_file_not_directory(self):
         """Should raise FilesystemError when target is a file, not directory."""
-        from openlabels.core.exceptions import FilesystemError
+        from openlabels.exceptions import FilesystemError
         adapter = FilesystemAdapter()
 
         with tempfile.NamedTemporaryFile() as f:

@@ -27,8 +27,8 @@ from .base import (
     AccessEvent,
     WatchedFile,
     MonitoringResult,
-    MonitoringError,
 )
+from openlabels.exceptions import MonitoringError
 from .registry import (
     enable_monitoring,
     disable_monitoring,

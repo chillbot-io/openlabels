@@ -18,7 +18,7 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     paginate_query,
 )
-from openlabels.server.exceptions import NotFoundError, ConflictError, BadRequestError
+from openlabels.exceptions import NotFoundError, ConflictError, BadRequestError
 from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()

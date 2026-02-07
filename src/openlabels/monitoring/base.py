@@ -5,6 +5,8 @@ Defines the core data structures used across the monitoring module:
 - AccessEvent: A single file access event
 - WatchedFile: A file registered for monitoring
 - MonitoringResult: Result of monitoring operations
+
+Exception classes live in openlabels.exceptions.
 """
 
 from dataclasses import dataclass, field
@@ -140,25 +142,6 @@ class MonitoringResult:
             "audit_rule_enabled": self.audit_rule_enabled,
         }
 
-
-class MonitoringError(Exception):
-    """Base exception for monitoring operations."""
-
-    def __init__(self, message: str, path: Optional[Path] = None):
-        super().__init__(message)
-        self.path = path
-
-
-class SACLError(MonitoringError):
-    """Error managing Windows SACL."""
-
-    pass
-
-
-class AuditRuleError(MonitoringError):
-    """Error managing Linux audit rules."""
-
-    pass
 
 
 # Windows Event IDs for file access

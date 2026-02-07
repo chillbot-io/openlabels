@@ -38,7 +38,14 @@ from openlabels.server.cache import get_cache_manager, close_cache
 from openlabels.jobs.scheduler import get_scheduler, DatabaseScheduler
 from openlabels.server.middleware.csrf import CSRFMiddleware
 from openlabels.server.logging import setup_logging, set_request_id, get_request_id
-from openlabels.server.exceptions import APIError, RateLimitError
+from openlabels.exceptions import (
+    APIError,
+    ConflictError,
+    NotFoundError,
+    OpenLabelsError,
+    RateLimitError,
+    ValidationError,
+)
 from openlabels.server.schemas import ErrorResponse
 from openlabels.server.metrics import http_active_connections, record_http_request
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -701,6 +708,42 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
         response.headers["Retry-After"] = str(exc.retry_after)
 
     return response
+
+
+# Domain exceptions that map to HTTP status codes but don't inherit APIError
+_DOMAIN_ERROR_STATUS: dict[type, tuple[int, str]] = {
+    NotFoundError: (404, "NOT_FOUND"),
+    ConflictError: (409, "CONFLICT"),
+    ValidationError: (400, "VALIDATION_ERROR"),
+}
+
+
+@app.exception_handler(OpenLabelsError)
+async def domain_error_handler(request: Request, exc: OpenLabelsError) -> JSONResponse:
+    """
+    Handle domain exceptions (NotFoundError, ConflictError, ValidationError).
+
+    These are not APIError subclasses but still need HTTP responses.
+    Any unmapped OpenLabelsError falls through as 500.
+    """
+    request_id = get_request_id()
+    status_code, error_code = _DOMAIN_ERROR_STATUS.get(type(exc), (500, "INTERNAL_ERROR"))
+
+    response_body: dict[str, Any] = {
+        "error": error_code,
+        "message": exc.message,
+    }
+    if exc.details:
+        response_body["details"] = exc.details
+    if request_id:
+        response_body["request_id"] = request_id
+
+    if status_code >= 500:
+        logger.warning(f"Domain error: {error_code} - {exc.message}")
+    else:
+        logger.debug(f"Domain error: {error_code} - {exc.message}")
+
+    return JSONResponse(status_code=status_code, content=response_body)
 
 
 @app.exception_handler(HTTPException)

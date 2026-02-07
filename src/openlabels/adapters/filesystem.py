@@ -22,7 +22,7 @@ import aiofiles
 import aiofiles.os
 
 from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
-from openlabels.core.exceptions import FilesystemError
+from openlabels.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
 

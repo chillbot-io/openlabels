@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from openlabels.core.exceptions import (
+from openlabels.exceptions import (
     DetectionError,
     ExtractionError,
     SecurityError,

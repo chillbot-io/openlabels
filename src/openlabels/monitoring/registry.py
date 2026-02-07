@@ -34,10 +34,8 @@ from uuid import UUID
 from .base import (
     WatchedFile,
     MonitoringResult,
-    MonitoringError,
-    SACLError,
-    AuditRuleError,
 )
+from openlabels.exceptions import MonitoringError, SACLError, AuditRuleError
 
 logger = logging.getLogger(__name__)
 

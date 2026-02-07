@@ -287,7 +287,7 @@ class BaseService(ABC):
         Raises:
             NotFoundError: If entity doesn't exist or belongs to another tenant
         """
-        from openlabels.server.exceptions import NotFoundError
+        from openlabels.exceptions import NotFoundError
 
         entity = await self._session.get(model_class, entity_id)
         if not entity or getattr(entity, "tenant_id", None) != self.tenant_id:

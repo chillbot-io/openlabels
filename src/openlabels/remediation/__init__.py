@@ -23,9 +23,12 @@ Usage:
 from .base import (
     RemediationResult,
     RemediationAction,
+    get_current_user,
+)
+from openlabels.exceptions import (
     RemediationError,
     QuarantineError,
-    PermissionError,
+    RemediationPermissionError,
 )
 from .quarantine import quarantine
 from .permissions import lock_down, get_current_acl
@@ -37,9 +40,10 @@ __all__ = [
     # Errors
     "RemediationError",
     "QuarantineError",
-    "PermissionError",
+    "RemediationPermissionError",
     # Functions
     "quarantine",
     "lock_down",
     "get_current_acl",
+    "get_current_user",
 ]
