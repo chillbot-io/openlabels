@@ -19,7 +19,7 @@ Each section below is a self-contained implementation plan with exact files, cod
 8. [Labeling](#8-labeling) (2→3)
 9. [Remediation](#9-remediation) (2→3)
 10. [Monitoring](#10-monitoring) (2→3)
-11. [Web](#11-web) (0→3)
+11. [Web](#11-web) (0→3, deferred)
 12. [Windows](#12-windows) (1→3)
 13. [Client](#13-client) (1→3)
 14. [Cross-Cutting Concerns](#14-cross-cutting-concerns)
@@ -31,64 +31,84 @@ Each section below is a self-contained implementation plan with exact files, cod
 **Current Rating:** 2 (Better) → **Target:** 3 (Best)
 **Module Path:** `src/openlabels/core/`
 
-### 1.1 Explicit Detector Configuration
+### 1.1 Configuration-Driven Detector Setup
 
 **Complexity:** M
-**Files to modify:** `core/detectors/orchestrator.py`, `core/detectors/__init__.py`
+**Files to modify:** `core/detectors/orchestrator.py`
 
-**Current state:** The orchestrator imports each detector class and instantiates them in a hardcoded list. No magic needed — just clean it up.
+**Current state:** The orchestrator already uses boolean flags (`enable_checksum`, `enable_secrets`, `enable_hyperscan`, `enable_ml`, etc.) to conditionally construct detectors. This is explicit and functional, but the flags are spread across 15+ constructor parameters which is unwieldy.
 
 **Plan:**
 
-The orchestrator should have one clear list of all detector classes. No decorator registry, no plugin system, no auto-discovery. Just an explicit, readable list:
+Replace the long parameter list with a single typed `DetectionConfig` dataclass. Keep the selective enable/disable capability — it's valuable for CLI vs. server vs. test scenarios — but consolidate the knobs into one config object:
 
 ```python
-# core/detectors/orchestrator.py
-"""Detection orchestrator — runs all detectors and merges results."""
+# core/detectors/config.py
+"""Detection configuration."""
 
-import logging
-from typing import List, Type
-
-from .base import BaseDetector
-from .government import GovernmentDetector
-from .secrets import SecretsDetector
-from .additional_patterns import AdditionalPatternsDetector
-from .hyperscan import HyperscanDetector
-from .ml_onnx import ONNXDetector
-from .labels import LabelDetector
-# ... all detectors
-
-logger = logging.getLogger(__name__)
-
-# The canonical list of all detectors, in execution order.
-# To add a detector: import it and add it here.
-ALL_DETECTOR_CLASSES: List[Type[BaseDetector]] = [
-    GovernmentDetector,
-    SecretsDetector,
-    AdditionalPatternsDetector,
-    HyperscanDetector,
-    ONNXDetector,
-    LabelDetector,
-    # ... all others
-]
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 
-class DetectorOrchestrator:
-    def __init__(self, detector_classes: list[Type[BaseDetector]] | None = None):
-        classes = detector_classes or ALL_DETECTOR_CLASSES
-        self.detectors: list[BaseDetector] = []
-        for cls in classes:
-            try:
-                detector = cls()
-                if detector.is_available():
-                    self.detectors.append(detector)
-                else:
-                    logger.info(f"Detector {cls.name} not available, skipping")
-            except Exception as e:
-                logger.warning(f"Failed to create detector {cls.__name__}: {e}")
+@dataclass(frozen=True)
+class DetectionConfig:
+    """Configuration for the detection pipeline.
+
+    Use class methods for common presets:
+        config = DetectionConfig.full()       # Everything enabled
+        config = DetectionConfig.patterns()   # Patterns only, no ML
+        config = DetectionConfig.quick()      # Fast detectors only
+    """
+    # Pattern detectors
+    enable_checksum: bool = True
+    enable_secrets: bool = True
+    enable_financial: bool = True
+    enable_government: bool = True
+    enable_patterns: bool = True
+
+    # Accelerated detection
+    enable_hyperscan: bool = False
+
+    # ML detectors
+    enable_ml: bool = False
+    ml_model_dir: Optional[Path] = None
+    use_onnx: bool = True
+
+    # Post-processing
+    enable_coref: bool = False
+    enable_context_enhancement: bool = False
+    enable_policy: bool = False
+
+    # Tuning
+    confidence_threshold: float = 0.70
+    max_workers: int = 4
+
+    @classmethod
+    def full(cls) -> "DetectionConfig":
+        return cls(enable_hyperscan=True, enable_ml=True,
+                   enable_coref=True, enable_context_enhancement=True)
+
+    @classmethod
+    def patterns_only(cls) -> "DetectionConfig":
+        return cls()
+
+    @classmethod
+    def quick(cls) -> "DetectionConfig":
+        return cls(enable_ml=False, enable_coref=False,
+                   enable_context_enhancement=False)
 ```
 
-**Refactor scope:** Clean up the orchestrator's init to use a single explicit list. Remove any scattered import hacks. The list is the single source of truth for which detectors run.
+Update orchestrator:
+```python
+class DetectorOrchestrator:
+    def __init__(self, config: DetectionConfig | None = None):
+        self.config = config or DetectionConfig()
+        self.detectors: list[BaseDetector] = []
+        # ... same conditional init logic, reading from self.config
+```
+
+**Refactor scope:** Extract the 15+ constructor params into `DetectionConfig`. Update all callers (server startup, CLI, tests) to pass a config object. The orchestrator constructor becomes a single parameter.
 
 ### 1.2 Declarative Pattern Definitions
 
@@ -755,6 +775,8 @@ app = create_app()
 
 **Plan:** Replace offset-based pagination with cursor-based. Offset pagination breaks on large datasets with concurrent writes and gets slower as offset increases. Remove the old offset approach entirely.
 
+Note: The existing `web/routes.py` already has partial cursor-based pagination on the results list endpoint. Build on that implementation rather than starting from scratch. The existing `server/pagination.py` module already has `CursorPaginationParams`, `apply_cursor_pagination`, and `build_cursor_response` helpers.
+
 ```python
 # server/schemas/pagination.py - replace offset pagination with cursor
 from typing import Optional, Generic, TypeVar
@@ -775,17 +797,20 @@ class CursorPage(BaseModel, Generic[T]):
     items: list[T]
     has_next: bool
     has_previous: bool
-    next_cursor: Optional[str] = None  # Encoded cursor for next page
+    next_cursor: Optional[str] = None
     previous_cursor: Optional[str] = None
 
 
-# server/pagination.py - add cursor query helper
+# server/pagination.py - cursor query helper
+from sqlalchemy.ext.asyncio import AsyncSession
+
 async def apply_cursor_pagination(
+    session: AsyncSession,
     query,
     model_class,
     params: CursorParams,
     order_column=None,
-) -> tuple:
+) -> CursorPage:
     """Apply cursor-based pagination to a SQLAlchemy query.
 
     Uses keyset pagination: WHERE id > :after ORDER BY id LIMIT :limit+1
@@ -793,8 +818,19 @@ async def apply_cursor_pagination(
     """
     order_col = order_column or model_class.id
 
+    has_previous = params.after is not None
+
     if params.after:
         query = query.where(order_col > params.after)
+    elif params.before:
+        query = query.where(order_col < params.before)
+        query = query.order_by(order_col.desc()).limit(params.limit + 1)
+        result = await session.execute(query)
+        items = list(reversed(result.scalars().all()))
+        has_next = len(items) > params.limit
+        if has_next:
+            items = items[1:]  # Remove the extra from the beginning
+        return items, has_next, True  # has_previous is always True for "before"
 
     query = query.order_by(order_col.asc()).limit(params.limit + 1)
 
@@ -805,8 +841,10 @@ async def apply_cursor_pagination(
     if has_next:
         items = items[:params.limit]
 
-    return items, has_next
+    return items, has_next, has_previous
 ```
+
+**Refactor scope:** Migrate all API endpoints and web partials from offset to cursor pagination in one pass. The web results list already uses cursor pagination — extend that pattern to all list endpoints (scans, targets, labels, schedules, audit logs). Remove offset pagination entirely.
 
 ### 2.5 Per-Tenant Rate Limiting
 
@@ -870,7 +908,32 @@ class TenantRateLimiter:
         self._hour_counts[tenant_id].append(now)
 ```
 
-The app already has optional Redis support (`server/cache.py`). Use it. If Redis is configured, use Redis sliding window counters (`INCR` + `EXPIRE`). If Redis is not configured, the in-memory approach above works for single-instance deployments. Make this a single implementation with a `RateLimitBackend` interface, not two separate code paths.
+The app already has optional Redis support (`server/cache.py`). Use a backend interface:
+
+```python
+from abc import ABC, abstractmethod
+
+class RateLimitBackend(ABC):
+    @abstractmethod
+    async def check_and_increment(self, key: str, limit: int, window_seconds: int) -> bool:
+        """Return True if under limit (and increment counter), False if exceeded."""
+        ...
+
+class InMemoryRateLimitBackend(RateLimitBackend):
+    """For single-instance deployments. Uses the TenantRateLimiter above."""
+    ...
+
+class RedisRateLimitBackend(RateLimitBackend):
+    """For multi-instance deployments. Uses INCR + EXPIRE sliding window."""
+    async def check_and_increment(self, key: str, limit: int, window_seconds: int) -> bool:
+        pipe = self._redis.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, window_seconds)
+        count, _ = await pipe.execute()
+        return count <= limit
+```
+
+The middleware instantiates the correct backend based on settings — never two code paths at runtime.
 
 ### 2.6 OpenTelemetry Tracing
 
@@ -1148,10 +1211,11 @@ class AdapterHealthChecker:
 
     async def check_all(self) -> Dict[str, AdapterHealth]:
         for name, adapter in self._adapters.items():
-            start = asyncio.get_event_loop().time()
+            loop = asyncio.get_running_loop()
+            start = loop.time()
             try:
                 healthy = await adapter.test_connection({})
-                latency = (asyncio.get_event_loop().time() - start) * 1000
+                latency = (loop.time() - start) * 1000
                 self._health[name] = AdapterHealth(
                     adapter_type=name, healthy=healthy,
                     last_check=datetime.now(timezone.utc), latency_ms=latency,
@@ -1202,7 +1266,8 @@ async def get_jwks(tenant_id: str) -> dict:
 
     # Acquire lock for cache update
     async with _jwks_lock:
-        # Double-check after acquiring lock (another coroutine may have updated)
+        # Re-check time after acquiring lock (may have waited)
+        now = time.monotonic()
         if tenant_id in _jwks_cache:
             cached_data, fetched_at = _jwks_cache[tenant_id]
             if now - fetched_at < _JWKS_CACHE_TTL_SECONDS:
@@ -1663,25 +1728,28 @@ class APIWorkerThread(QThread):
         super().__init__()
         self._base_url = base_url
         self._token = token
-        self._queue: list[APIRequest] = []
+        # Thread-safe queue — accessed from GUI thread (enqueue) and worker thread (get)
+        from queue import Queue, Empty
+        self._queue: Queue[APIRequest] = Queue()
         self._running = True
 
     def enqueue(self, request: APIRequest):
-        self._queue.append(request)
+        self._queue.put(request)
 
     def run(self):
         """Process queued requests in background thread."""
+        from queue import Empty
         with httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._token}"} if self._token else {},
             timeout=10.0,
         ) as client:
             while self._running:
-                if not self._queue:
-                    self.msleep(50)
+                try:
+                    request = self._queue.get(timeout=0.1)
+                except Empty:
                     continue
 
-                request = self._queue.pop(0)
                 try:
                     response = client.request(
                         request.method,
@@ -1874,18 +1942,31 @@ async def dequeue(self, worker_id: str, max_concurrent: int | None = None) -> Jo
     # ... existing dequeue logic
 ```
 
-### 7.2 Job Completion Webhooks
+### 7.2 Job Completion Callbacks
 
-**Complexity:** M
-**Files to create:** `jobs/webhooks.py`
+**Complexity:** S
+**Files to modify:** `jobs/queue.py`
 
-Design only — implement when webhook subscription API is ready:
+Add a simple callback mechanism to the job queue. No webhook infrastructure needed — just let callers register post-completion hooks:
+
 ```python
-async def notify_job_completed(job: JobQueueModel):
-    """Send webhook notification for completed job."""
-    # Look up subscriptions for this tenant + task_type
-    # POST to callback URL with job result
+# jobs/queue.py
+from typing import Callable, Awaitable
+
+JobCallback = Callable[["JobQueueModel"], Awaitable[None]]
+
+class JobQueue:
+    def __init__(self, session, tenant_id, on_complete: JobCallback | None = None):
+        self._on_complete = on_complete
+        # ...
+
+    async def mark_completed(self, job_id, result=None):
+        # ... existing completion logic ...
+        if self._on_complete:
+            await self._on_complete(job)
 ```
+
+This keeps it simple and extensible. When a webhook API is needed later, the webhook sender just becomes one implementation of `JobCallback`.
 
 ---
 
@@ -2076,7 +2157,7 @@ class QuarantineManifest:
         with open(self._path, "w") as f:
             json.dump({
                 "entries": [asdict(e) for e in self._entries.values()],
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }, f, indent=2)
 
     def add(self, original_path: Path, quarantine_path: Path,
@@ -2086,7 +2167,7 @@ class QuarantineManifest:
             id=str(uuid4()),
             original_path=str(original_path),
             quarantine_path=str(quarantine_path),
-            quarantined_at=datetime.utcnow().isoformat(),
+            quarantined_at=datetime.now(timezone.utc).isoformat(),
             reason=reason,
             risk_tier=risk_tier,
             triggered_by=triggered_by,
@@ -2105,7 +2186,7 @@ class QuarantineManifest:
     def mark_restored(self, entry_id: str):
         if entry_id in self._entries:
             self._entries[entry_id].restored = True
-            self._entries[entry_id].restored_at = datetime.utcnow().isoformat()
+            self._entries[entry_id].restored_at = datetime.now(timezone.utc).isoformat()
             self._save()
 
     def list_active(self) -> list[QuarantineEntry]:
@@ -2290,8 +2371,19 @@ def enable_monitoring_batch(
 
 def _enable_batch_windows(paths: list[Path], risk_tier: str) -> list[MonitoringResult]:
     """Single PowerShell invocation for all files."""
-    # Build one script with a loop
-    path_list = "\n".join(f'    "{str(p.resolve())}"' for p in paths)
+    # Validate all paths before building script (same rules as _enable_monitoring_windows)
+    _INJECTION_CHARS = set('"\'`$\n\r;&|')
+    validated_paths = []
+    results = []
+    for p in paths:
+        resolved = str(p.resolve())
+        if any(c in resolved for c in _INJECTION_CHARS):
+            results.append(MonitoringResult(success=False, path=p, error="Path contains invalid characters"))
+        else:
+            validated_paths.append(resolved)
+
+    # Build one script with a loop (only validated paths)
+    path_list = "\n".join(f'    "{p}"' for p in validated_paths)
     ps_script = f'''
 $paths = @(
 {path_list}
@@ -2369,101 +2461,18 @@ class EventCollector:
 **Current Rating:** 0 (OK) → **Target:** 3 (Best)
 **Module Path:** `src/openlabels/web/`
 
-### 11.1 Template Architecture
+**Status:** Skip for now. The existing `web/routes.py` has significant code (1400+ lines with HTMX partials, form handlers, etc.) but the architecture needs a from-scratch rebuild to reach Best. The current implementation bypasses the service layer by querying the database directly, lacks proper auth flow and CSRF protection, and has duplicated business logic.
 
-**Complexity:** L
-**Files to create:**
-- `web/templates/base.html` — base layout with nav, scripts, styles
-- `web/templates/components/` — reusable HTMX components
-- `web/templates/pages/` — full page templates
-- `web/templates/partials/` — HTMX partial responses
-- `web/static/` — CSS/JS assets
-- `web/tailwind.config.js`, `web/package.json` — build tooling
+**When ready to implement:** Build from scratch with:
+- HTMX + Tailwind + Alpine.js stack
+- Proper base template architecture (`base.html`, `components/`, `pages/`, `partials/`)
+- Web routes that call through the service layer (Section 2.1), not raw DB queries
+- Session-based auth flow with login redirect
+- CSRF token validation on all form submissions
+- Structured error states for partials (not silent empty data)
+- Static asset pipeline with Tailwind build step
 
-```html
-<!-- web/templates/base.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}OpenLabels{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
-    <script src="https://unpkg.com/htmx.org@1.9"></script>
-    <script src="https://unpkg.com/alpinejs@3.x"></script>
-    <meta name="csrf-token" content="{{ csrf_token }}">
-</head>
-<body class="bg-gray-50">
-    {% include "components/nav.html" %}
-    <main class="container mx-auto px-4 py-6">
-        {% block content %}{% endblock %}
-    </main>
-    {% block scripts %}{% endblock %}
-</body>
-</html>
-```
-
-### 11.2 Core Pages
-
-Map each page to existing API endpoints:
-
-| Page | Template | API Endpoints |
-|------|----------|---------------|
-| Dashboard | `pages/dashboard.html` | `GET /api/v1/dashboard/stats`, `/entity-trends`, `/access-heatmap` |
-| Scans | `pages/scans.html` | `GET/POST /api/v1/scans` |
-| Results | `pages/results.html` | `GET /api/v1/results` |
-| Targets | `pages/targets.html` | `GET/POST /api/v1/targets` |
-| Labels | `pages/labels.html` | `GET /api/v1/labels`, `/labels/rules` |
-| Settings | `pages/settings.html` | `GET/PUT /api/v1/settings` |
-| Health | `pages/health.html` | `GET /api/v1/health/status` |
-
-### 11.3 HTMX Partials Pattern
-
-```python
-# web/routes.py
-@router.get("/scans")
-async def scans_page(request: Request):
-    """Full page load."""
-    return templates.TemplateResponse("pages/scans.html", {"request": request})
-
-@router.get("/partials/scan-table")
-async def scan_table_partial(request: Request, page: int = 1):
-    """HTMX partial — just the table rows."""
-    # Fetch from API
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{API_BASE}/scans", params={"page": page})
-        data = resp.json()
-    return templates.TemplateResponse("partials/scan-table.html", {
-        "request": request, "scans": data["items"], "pagination": data,
-    })
-```
-
-```html
-<!-- pages/scans.html -->
-{% extends "base.html" %}
-{% block content %}
-<div hx-get="/web/partials/scan-table" hx-trigger="load" hx-swap="innerHTML">
-    <div class="animate-pulse">Loading scans...</div>
-</div>
-{% endblock %}
-```
-
-### 11.4 Static Asset Pipeline
-
-**Files to create:** `web/package.json`, `web/tailwind.config.js`, `web/postcss.config.js`
-
-```json
-// web/package.json
-{
-  "scripts": {
-    "build:css": "npx tailwindcss -i ./static/css/input.css -o ./static/css/app.css --minify",
-    "watch:css": "npx tailwindcss -i ./static/css/input.css -o ./static/css/app.css --watch"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.4"
-  }
-}
-```
+This is a large standalone effort. Prioritize the core platform improvements (Phases 0-3) first.
 
 ---
 
@@ -2602,21 +2611,29 @@ async def _request(self, method: str, url: str, max_retries: int = 3, **kwargs):
     raise last_error
 ```
 
-### 13.3 Auto-Pagination
+### 13.3 Auto-Pagination (Cursor-Based)
+
+Must be consistent with Section 2.4 (cursor-based pagination on the server).
 
 ```python
 from typing import AsyncIterator
 
 async def list_all_scans(self, **filters) -> AsyncIterator[dict]:
-    """Auto-paginating scan iterator."""
-    page = 1
+    """Auto-paginating scan iterator using cursor-based pagination."""
+    cursor = None
     while True:
-        data = await self.list_scans(page=page, **filters)
-        for item in data.get("items", []):
+        params = {**filters, "limit": 100}
+        if cursor:
+            params["after"] = cursor
+        data = await self._request("GET", "/scans", params=params)
+        body = data.json()
+        for item in body.get("items", []):
             yield item
-        if page >= data.get("pages", 1):
+        if not body.get("has_next", False):
             break
-        page += 1
+        cursor = body.get("next_cursor")
+        if not cursor:
+            break
 ```
 
 ### 13.4 Complete API Coverage
@@ -2804,6 +2821,14 @@ import json
 class StructuredFormatter(logging.Formatter):
     """JSON formatter for structured log output."""
 
+    # Standard LogRecord attributes to exclude from extra fields
+    _BUILTIN_ATTRS = frozenset({
+        "name", "msg", "args", "created", "relativeCreated", "exc_info",
+        "exc_text", "stack_info", "lineno", "funcName", "pathname", "filename",
+        "module", "thread", "threadName", "process", "processName", "getMessage",
+        "levelname", "levelno", "msecs", "taskName", "message",
+    })
+
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
             "timestamp": self.formatTime(record),
@@ -2812,17 +2837,15 @@ class StructuredFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Include extra fields
-        for key in ("tenant_id", "scan_id", "job_id", "user_id",
-                     "adapter", "detector", "file_path", "entity_type",
-                     "duration_ms", "error"):
-            if hasattr(record, key):
-                log_entry[key] = getattr(record, key)
+        # Automatically capture ALL extra fields (no hardcoded list)
+        for key, value in record.__dict__.items():
+            if key not in self._BUILTIN_ATTRS and not key.startswith("_"):
+                log_entry[key] = value
 
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
 
-        return json.dumps(log_entry)
+        return json.dumps(log_entry, default=str)
 ```
 
 ### 14.4 Testing Strategy
@@ -2863,48 +2886,49 @@ Recommended order for maximum impact with minimum risk:
 
 ### Phase 0: Foundation (do first)
 1. **14.1** Unified Exception Hierarchy — S/M effort, unblocks clean error handling everywhere
-2. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
+2. **14.2** mypy strict — L effort, catches bugs before they're written. Do this early so all subsequent code is type-safe from the start.
+3. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
 
 ### Phase 1: Critical Fixes
-3. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
-4. **13.1** Client Persistent Connection — M effort, major perf improvement
-5. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
+4. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
+5. **13.1** Client Persistent Connection — M effort, major perf improvement
+6. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
+7. **10.1** Thread-Safe _watched_files — S effort, concurrency fix
 
 ### Phase 2: Architecture Upgrades
-6. **2.3** Split app.py — M effort, improves maintainability
-7. **2.1** Service Dependency Injection — M effort, cleaner route handlers
-8. **1.1** Detector Plugin Registry — M effort, extensibility
-9. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
+8. **2.3** Split app.py — M effort, improves maintainability
+9. **2.1** Service Dependency Injection — M effort, cleaner route handlers
+10. **1.1** Configuration-Driven Detector Setup — M effort, clean config
+11. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
+12. **2.4** Cursor Pagination — M effort, scalability (extend existing implementation)
 
 ### Phase 3: Feature Additions
-10. **5.3** `openlabels doctor` — M effort, huge DX improvement
-11. **1.3** Async Detection — M effort, server performance
-12. **8.1** Labeling Code Deduplication — M effort, maintainability
-13. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
+13. **5.3** `openlabels doctor` — M effort, huge DX improvement
+14. **1.3** Async Detection — M effort, server performance
+15. **8.1** Labeling Code Deduplication — M effort, maintainability
+16. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
+17. **4.4** RBAC Dependencies — M effort, security
 
 ### Phase 4: Polish
-14. **2.2** Response Schema Declarations — M effort, API documentation
-15. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
-16. **4.4** RBAC Dependencies — M effort, security
-17. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
-18. **10.1-10.4** Monitoring improvements — M effort combined
+18. **2.2** Response Schema Declarations — M effort, API documentation
+19. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
+20. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
+21. **10.2-10.4** Monitoring improvements — M effort combined
+22. **2.6** OpenTelemetry Tracing — L effort, observability
 
 ### Phase 5: New Capabilities
-19. **11.x** Web UI buildout — L effort, new feature
-20. **2.6** OpenTelemetry Tracing — L effort, observability
-21. **2.4** Cursor Pagination — M effort, scalability
-22. **14.2** mypy strict — L effort, full project pass
+23. **11.x** Web UI rebuild — L effort, deferred (skip for now per project decision)
 
 ---
 
-## Estimated Total Effort
+## Estimated Total Effort (excluding Web rebuild)
 
 | Size | Count | Typical Effort |
 |------|-------|----------------|
-| S (Small) | 12 | 1-2 hours each |
-| M (Medium) | 28 | 3-6 hours each |
-| L (Large) | 5 | 8-16 hours each |
+| S (Small) | 11 | 1-2 hours each |
+| M (Medium) | 24 | 3-6 hours each |
+| L (Large) | 4 | 8-16 hours each |
 
-**Total estimated: ~180-280 hours of implementation work**
+**Total estimated: ~140-220 hours of implementation work** (not counting Web rebuild)
 
 This document is designed so each section can be handed to a Claude agent as a self-contained task. The priority order minimizes dependency conflicts and maximizes value delivered at each phase.
