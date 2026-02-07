@@ -15,7 +15,7 @@ Performance (typical on modern CPU):
 """
 
 import logging
-from typing import List, Optional
+from collections.abc import Sequence
 
 from ..types import Span, Tier
 from .base import BaseDetector
@@ -46,8 +46,8 @@ class HyperscanDetector(BaseDetector):
 
     def __init__(
         self,
-        patterns: Optional[List[Pattern]] = None,
-        additional_patterns: Optional[List[Pattern]] = None,
+        patterns: Sequence[Pattern] | None = None,
+        additional_patterns: Sequence[Pattern] | None = None,
     ):
         """
         Initialize the Hyperscan detector.
@@ -92,7 +92,7 @@ class HyperscanDetector(BaseDetector):
                 f"(Python regex fallback)"
             )
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         """
         Detect entities in text using Hyperscan.
 
