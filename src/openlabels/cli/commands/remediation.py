@@ -65,7 +65,7 @@ def quarantine(source: Optional[str], destination: Optional[str], where_filter: 
 
         click.echo(f"Scanning {len(files)} files...", err=True)
 
-        processor = FileProcessor(enable_ml=False)
+        processor = FileProcessor()
 
         async def find_matches():
             all_results = []
@@ -203,7 +203,7 @@ def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_pa
 
         click.echo(f"Scanning {len(files)} files...", err=True)
 
-        processor = FileProcessor(enable_ml=False)
+        processor = FileProcessor()
 
         async def find_matches():
             all_results = []

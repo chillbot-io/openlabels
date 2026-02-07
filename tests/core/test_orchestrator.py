@@ -7,6 +7,7 @@ Adapted from openrisk/tests/test_detector_orchestrator.py
 """
 
 import pytest
+from openlabels.core.detectors.config import DetectionConfig
 from openlabels.core.detectors.orchestrator import DetectorOrchestrator, detect
 
 
@@ -28,35 +29,35 @@ class TestOrchestratorInit:
 
     def test_secrets_detector_can_be_disabled(self):
         """Test secrets detector can be disabled."""
-        orchestrator = DetectorOrchestrator(enable_secrets=False)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_secrets=False))
 
         detector_names = orchestrator.detector_names
         assert "secrets" not in detector_names
 
     def test_financial_detector_can_be_disabled(self):
         """Test financial detector can be disabled."""
-        orchestrator = DetectorOrchestrator(enable_financial=False)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_financial=False))
 
         detector_names = orchestrator.detector_names
         assert "financial" not in detector_names
 
     def test_government_detector_can_be_disabled(self):
         """Test government detector can be disabled."""
-        orchestrator = DetectorOrchestrator(enable_government=False)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_government=False))
 
         detector_names = orchestrator.detector_names
         assert "government" not in detector_names
 
     def test_checksum_detector_can_be_disabled(self):
         """Test checksum detector can be disabled."""
-        orchestrator = DetectorOrchestrator(enable_checksum=False)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_checksum=False))
 
         detector_names = orchestrator.detector_names
         assert "checksum" not in detector_names
 
     def test_custom_confidence_threshold(self):
         """Test custom confidence threshold is respected."""
-        orchestrator = DetectorOrchestrator(confidence_threshold=0.95)
+        orchestrator = DetectorOrchestrator(DetectionConfig(confidence_threshold=0.95))
 
         assert orchestrator.confidence_threshold == 0.95
 
@@ -73,7 +74,7 @@ class TestOrchestratorDetect:
         orchestrator = DetectorOrchestrator()
         text = "Patient SSN: 123-45-6789"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should find at least one SSN span
         ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
@@ -84,7 +85,7 @@ class TestOrchestratorDetect:
         orchestrator = DetectorOrchestrator()
         text = "Card: 4111-1111-1111-1111"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should find credit card
         cc_spans = [s for s in result.spans if s.entity_type == "CREDIT_CARD"]
@@ -98,7 +99,7 @@ class TestOrchestratorDetect:
         Card: 4111-1111-1111-1111
         """
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should find multiple entity types
         entity_types = set(s.entity_type for s in result.spans)
@@ -109,7 +110,7 @@ class TestOrchestratorDetect:
         """Test detection on empty text."""
         orchestrator = DetectorOrchestrator()
 
-        result = orchestrator.detect("")
+        result = orchestrator.detect_sync("")
 
         assert result.spans == []
 
@@ -118,7 +119,7 @@ class TestOrchestratorDetect:
         orchestrator = DetectorOrchestrator()
         text = "The quick brown fox jumps over the lazy dog."
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should find no or very few spans
         assert len(result.spans) <= 3
@@ -133,20 +134,20 @@ class TestSecretsDetection:
 
     def test_detect_aws_access_key(self):
         """Test detection of AWS access key."""
-        orchestrator = DetectorOrchestrator(enable_secrets=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_secrets=True))
         text = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         aws_spans = [s for s in result.spans if "AWS" in s.entity_type]
         assert len(aws_spans) >= 1
 
     def test_detect_github_token(self):
         """Test detection of GitHub token."""
-        orchestrator = DetectorOrchestrator(enable_secrets=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_secrets=True))
         text = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         gh_spans = [s for s in result.spans if s.entity_type == "GITHUB_TOKEN"]
         assert len(gh_spans) >= 1
@@ -161,10 +162,10 @@ class TestConfidenceFiltering:
 
     def test_min_confidence_filters_low_confidence(self):
         """Test that confidence threshold filters low confidence spans."""
-        orchestrator = DetectorOrchestrator(confidence_threshold=0.95)
+        orchestrator = DetectorOrchestrator(DetectionConfig(confidence_threshold=0.95))
 
         text = "SSN: 123-45-6789"
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         for span in result.spans:
             assert span.confidence >= 0.95
@@ -182,7 +183,7 @@ class TestDetectionResult:
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         assert isinstance(result.entity_counts, dict)
         if result.spans:
@@ -202,7 +203,7 @@ class TestErrorHandling:
         orchestrator = DetectorOrchestrator()
         text = "Patient: José García, SSN: 123-45-6789"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should still detect SSN despite unicode characters
         ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
@@ -214,7 +215,7 @@ class TestErrorHandling:
         orchestrator = DetectorOrchestrator()
         text = ("Lorem ipsum " * 500) + "SSN: 123-45-6789" + (" dolor sit" * 500)
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
         assert len(ssn_spans) >= 1
@@ -232,7 +233,7 @@ class TestSpanProperties:
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         for span in result.spans:
             assert 0 <= span.start < len(text)
@@ -243,7 +244,7 @@ class TestSpanProperties:
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         for span in result.spans:
             assert span.text == text[span.start:span.end]
@@ -313,13 +314,22 @@ class TestConvenienceFunction:
         ssn_spans = [s for s in result.spans if s.entity_type == "SSN"]
         assert len(ssn_spans) >= 1
 
-    def test_detect_function_accepts_options(self):
-        """Test that the convenience function accepts options."""
+    def test_detect_function_accepts_config(self):
+        """Test that the convenience function accepts a config."""
+        text = "SSN: 123-45-6789"
+
+        result = detect(text, config=DetectionConfig(confidence_threshold=0.99))
+
+        # All returned spans should meet threshold
+        for span in result.spans:
+            assert span.confidence >= 0.99
+
+    def test_detect_function_accepts_kwargs(self):
+        """Test that the convenience function accepts keyword overrides."""
         text = "SSN: 123-45-6789"
 
         result = detect(text, confidence_threshold=0.99)
 
-        # All returned spans should meet threshold
         for span in result.spans:
             assert span.confidence >= 0.99
 
@@ -340,42 +350,42 @@ class TestIntegration:
         Card: 4111-1111-1111-1111
         """
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         entity_types = set(s.entity_type for s in result.spans)
         assert "SSN" in entity_types or "CREDIT_CARD" in entity_types
 
     def test_financial_document_detection(self):
         """Test detection on financial document-like text."""
-        orchestrator = DetectorOrchestrator(enable_financial=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_financial=True))
         text = """
         Card: 4111-1111-1111-1111
         IBAN: DE89370400440532013000
         """
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         entity_types = set(s.entity_type for s in result.spans)
         assert "CREDIT_CARD" in entity_types or "IBAN" in entity_types
 
     def test_secrets_document_detection(self):
         """Test detection on document with secrets."""
-        orchestrator = DetectorOrchestrator(enable_secrets=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_secrets=True))
         text = """
         AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
         """
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         aws_spans = [s for s in result.spans if "AWS" in s.entity_type]
         assert len(aws_spans) >= 1
 
     def test_government_document_detection(self):
         """Test detection on document with government markings."""
-        orchestrator = DetectorOrchestrator(enable_government=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_government=True))
         text = "Classification: TOP SECRET//SCI//NOFORN"
 
-        result = orchestrator.detect(text)
+        result = orchestrator.detect_sync(text)
 
         # Should find classification markings
         assert len(result.spans) >= 1, "Should detect government classification markings"

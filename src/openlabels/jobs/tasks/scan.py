@@ -75,10 +75,13 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
     global _processor
     if _processor is None:
         settings = get_settings()
+        from openlabels.core.detectors.config import DetectionConfig
         _processor = FileProcessor(
-            enable_ml=enable_ml,
-            ml_model_dir=getattr(settings, 'ml_model_dir', None),
-            confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+            config=DetectionConfig(
+                enable_ml=enable_ml,
+                ml_model_dir=getattr(settings, 'ml_model_dir', None),
+                confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+            ),
         )
         logger.debug("Created ML processor instance")
     return _processor

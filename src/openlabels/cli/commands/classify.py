@@ -37,9 +37,10 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
         click.echo(f"Classifying: {path}")
 
     try:
+        from openlabels.core.detectors.config import DetectionConfig
         from openlabels.core.processor import FileProcessor
 
-        processor = FileProcessor(enable_ml=enable_ml)
+        processor = FileProcessor(config=DetectionConfig(enable_ml=enable_ml))
         results = []
 
         async def process_all():

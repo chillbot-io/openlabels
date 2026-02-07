@@ -50,7 +50,7 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
     try:
         from openlabels.core.processor import FileProcessor
 
-        processor = FileProcessor(enable_ml=False)
+        processor = FileProcessor()
 
         async def process_all():
             all_results = []

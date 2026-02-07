@@ -92,7 +92,8 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
     """
     from openlabels.core.processor import FileProcessor
 
-    processor = FileProcessor(enable_ml=enable_ml)
+    from openlabels.core.detectors.config import DetectionConfig
+    processor = FileProcessor(config=DetectionConfig(enable_ml=enable_ml))
 
     async def _process_all():
         all_results = []

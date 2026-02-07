@@ -11,17 +11,20 @@ Supports:
 - Post-processing pipeline (coref, context enhancement)
 """
 
+import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..types import Span, DetectionResult, normalize_entity_type
+from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
 from .base import BaseDetector
 from .checksum import ChecksumDetector
+from .config import DetectionConfig
 from .secrets import SecretsDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
@@ -56,86 +59,55 @@ class DetectorOrchestrator:
             print(f"{span.entity_type}: {span.text}")
 
         # With Hyperscan acceleration:
-        orchestrator = DetectorOrchestrator(enable_hyperscan=True)
+        orchestrator = DetectorOrchestrator(DetectionConfig(enable_hyperscan=True))
 
-        # With ML detectors:
-        from openlabels.core.constants import DEFAULT_MODELS_DIR
-        orchestrator = DetectorOrchestrator(
-            enable_ml=True,
-            ml_model_dir=DEFAULT_MODELS_DIR,
-            use_onnx=True,
-        )
+        # Full config with ML:
+        orchestrator = DetectorOrchestrator(DetectionConfig.full())
     """
 
-    def __init__(
-        self,
-        enable_checksum: bool = True,
-        enable_secrets: bool = True,
-        enable_financial: bool = True,
-        enable_government: bool = True,
-        enable_patterns: bool = True,
-        enable_hyperscan: bool = False,
-        enable_ml: bool = False,
-        ml_model_dir: Optional[Path] = None,
-        use_onnx: bool = True,
-        enable_coref: bool = False,
-        enable_context_enhancement: bool = False,
-        confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
-        max_workers: int = 4,
-        enable_policy: bool = False,
-    ):
+    def __init__(self, config: DetectionConfig | None = None):
         """
         Initialize the orchestrator with configured detectors.
 
         Args:
-            enable_checksum: Enable checksum-validated detector
-            enable_secrets: Enable secrets/credentials detector
-            enable_financial: Enable financial instruments detector
-            enable_government: Enable government markings detector
-            enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
-            enable_hyperscan: Enable Hyperscan-accelerated detector (10-100x faster)
-            enable_ml: Enable ML-based detectors (requires model files)
-            ml_model_dir: Directory containing ML model files
-            use_onnx: Use ONNX-optimized ML detectors (faster)
-            enable_coref: Run coreference resolution on NAME entities
-            enable_context_enhancement: Run context enhancement for FP filtering
-            confidence_threshold: Minimum confidence to include results
-            max_workers: Max parallel detector threads
+            config: Detection configuration. Uses DetectionConfig() defaults
+                    (all pattern detectors enabled, no ML) when not provided.
         """
-        self.confidence_threshold = confidence_threshold
-        self.max_workers = max_workers
-        self.enable_policy = enable_policy
-        self.enable_coref = enable_coref
-        self.enable_context_enhancement = enable_context_enhancement
+        self.config = config or DetectionConfig()
+        self.confidence_threshold = self.config.confidence_threshold
+        self.max_workers = self.config.max_workers
         self.detectors: List[BaseDetector] = []
         self._using_hyperscan = False
 
         # Initialize Hyperscan detector if enabled
-        if enable_hyperscan:
+        if self.config.enable_hyperscan:
             self._init_hyperscan_detector()
 
         # Initialize pattern-based detectors
-        if enable_checksum:
+        if self.config.enable_checksum:
             self.detectors.append(ChecksumDetector())
-        if enable_secrets:
+        if self.config.enable_secrets:
             self.detectors.append(SecretsDetector())
-        if enable_financial:
+        if self.config.enable_financial:
             self.detectors.append(FinancialDetector())
-        if enable_government:
+        if self.config.enable_government:
             self.detectors.append(GovernmentDetector())
-        if enable_patterns:
+        if self.config.enable_patterns:
             self.detectors.append(PatternDetector())
             self.detectors.append(AdditionalPatternDetector())
 
         # Initialize ML detectors if enabled
-        if enable_ml:
-            self._init_ml_detectors(ml_model_dir, use_onnx)
+        if self.config.enable_ml:
+            self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
 
         # Initialize post-processing components
-        self._coref_resolver = None
-        self._context_enhancer = None
-        if enable_coref or enable_context_enhancement:
-            self._init_pipeline(enable_coref, enable_context_enhancement)
+        self._coref_resolver: Callable[..., List[Span]] | None = None
+        self._context_enhancer: Any = None
+        if self.config.enable_coref or self.config.enable_context_enhancement:
+            self._init_pipeline(
+                self.config.enable_coref,
+                self.config.enable_context_enhancement,
+            )
 
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "
@@ -205,17 +177,17 @@ class DetectorOrchestrator:
                 # PHI-BERT
                 phi_bert_dir = model_dir / "phi_bert"
                 if phi_bert_dir.exists():
-                    phi_bert = PHIBertDetector(model_path=phi_bert_dir)
-                    if phi_bert.is_available():
-                        self.detectors.append(phi_bert)
+                    phi_hf = PHIBertDetector(model_path=phi_bert_dir)
+                    if phi_hf.is_available():
+                        self.detectors.append(phi_hf)
                         logger.info("PHI-BERT HF detector loaded")
 
                 # PII-BERT
                 pii_bert_dir = model_dir / "pii_bert"
                 if pii_bert_dir.exists():
-                    pii_bert = PIIBertDetector(model_path=pii_bert_dir)
-                    if pii_bert.is_available():
-                        self.detectors.append(pii_bert)
+                    pii_hf = PIIBertDetector(model_path=pii_bert_dir)
+                    if pii_hf.is_available():
+                        self.detectors.append(pii_hf)
                         logger.info("PII-BERT HF detector loaded")
 
             except ImportError as e:
@@ -243,9 +215,19 @@ class DetectorOrchestrator:
             except ImportError as e:
                 logger.warning(f"Context enhancement not available: {e}")
 
-    def detect(self, text: str) -> DetectionResult:
+    async def detect(self, text: str) -> DetectionResult:
         """
-        Run all detectors on the input text.
+        Async: run all detectors via run_in_executor.
+
+        Use this from async code (server, jobs).  For synchronous
+        callers (CLI, tests), use ``detect_sync`` instead.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.detect_sync, text)
+
+    def detect_sync(self, text: str) -> DetectionResult:
+        """
+        Run all detectors on the input text (synchronous).
 
         Args:
             text: Text to scan for entities
@@ -303,7 +285,7 @@ class DetectorOrchestrator:
 
         # Policy evaluation
         policy_result = None
-        if self.enable_policy and processed_spans:
+        if self.config.enable_policy and processed_spans:
             try:
                 entity_matches = [
                     EntityMatch(
@@ -349,157 +331,11 @@ class DetectorOrchestrator:
             return []
 
     def _post_process(self, spans: List[Span]) -> List[Span]:
-        """
-        Post-process detected spans.
-
-        1. Filter by confidence threshold
-        2. Deduplicate overlapping spans (higher tier wins)
-        3. Sort by position
-        """
-        if not spans:
-            return []
-
-        # Filter by confidence
-        filtered = [s for s in spans if s.confidence >= self.confidence_threshold]
-
-        # Deduplicate: for overlapping spans, keep the one with higher tier
-        # (or higher confidence if same tier)
-        deduped = self._deduplicate(filtered)
-
-        # Sort by start position
-        deduped.sort(key=lambda s: (s.start, -s.end))
-
-        return deduped
-
-    def _deduplicate(self, spans: List[Span]) -> List[Span]:
-        """
-        Remove duplicate/overlapping detections.
-
-        Uses a sort + single-pass merge algorithm — O(n log n) for the sort
-        plus O(n) amortised for the merge — instead of the previous O(n²)
-        all-pairs comparison.
-
-        Overlap handling:
-        - Exact same position: higher tier wins (CHECKSUM > STRUCTURED >
-          PATTERN > ML), then higher confidence
-        - One span fully contains the other: the containing span is kept
-        - Partial overlap, same entity_type: merge into one span covering
-          the union of both character ranges
-        - Partial overlap, different entity_types: keep the span with the
-          higher confidence (ties broken by tier)
-        """
-        if not spans:
-            return []
-
-        # O(n log n) sort by start position; ties broken by higher tier,
-        # then higher confidence so the best candidate is processed first
-        # when multiple spans share a start position.
-        sorted_spans = sorted(
+        """Post-process: filter by confidence, deduplicate, sort."""
+        return resolve_spans(
             spans,
-            key=lambda s: (s.start, -s.tier.value, -s.confidence),
+            confidence_threshold=self.confidence_threshold,
         )
-
-        # ``result`` maintains the invariant: spans are non-overlapping and
-        # ordered by start, so result[j].end <= result[j+1].start.  This
-        # guarantees that once we find a result span whose end is at or
-        # before the current span's start, no earlier entry can overlap
-        # either, allowing an early exit from the backward scan.
-        result: List[Span] = []
-
-        for span in sorted_spans:
-            absorbed = False
-            i = len(result) - 1
-
-            while i >= 0:
-                accepted = result[i]
-
-                # Early exit: non-overlapping result entries are sorted by
-                # start, so once accepted.end <= span.start nothing earlier
-                # can overlap.
-                if accepted.end <= span.start:
-                    break
-
-                if not accepted.overlaps(span):
-                    i -= 1
-                    continue
-
-                # -- exact same position ----------------------------------
-                if span.start == accepted.start and span.end == accepted.end:
-                    if (span.tier.value > accepted.tier.value
-                            or (span.tier.value == accepted.tier.value
-                                and span.confidence > accepted.confidence)):
-                        result[i] = span
-                    absorbed = True
-                    break
-
-                # -- accepted fully contains span -------------------------
-                if accepted.contains(span):
-                    absorbed = True
-                    break
-
-                # -- span fully contains accepted -------------------------
-                if span.contains(accepted):
-                    result.pop(i)
-                    i -= 1
-                    continue          # span may still overlap earlier entries
-
-                # -- partial overlap --------------------------------------
-                accepted_norm = normalize_entity_type(accepted.entity_type)
-                span_norm = normalize_entity_type(span.entity_type)
-
-                if accepted_norm == span_norm:
-                    # Same entity type: merge into the union span.
-                    new_start = min(accepted.start, span.start)
-                    new_end = max(accepted.end, span.end)
-
-                    # Stitch text: left text + non-overlapping right tail.
-                    if accepted.start <= span.start:
-                        left, right = accepted, span
-                    else:
-                        left, right = span, accepted
-                    overlap_chars = left.end - right.start
-                    merged_text = left.text + right.text[overlap_chars:]
-
-                    # Metadata from the higher-authority detection.
-                    if (span.tier.value > accepted.tier.value
-                            or (span.tier.value == accepted.tier.value
-                                and span.confidence > accepted.confidence)):
-                        base = span
-                    else:
-                        base = accepted
-
-                    span = Span(
-                        start=new_start,
-                        end=new_end,
-                        text=merged_text,
-                        entity_type=base.entity_type,
-                        confidence=max(accepted.confidence, span.confidence),
-                        detector=base.detector,
-                        tier=base.tier,
-                    )
-                    result.pop(i)
-                    i -= 1
-                    continue          # merged span may overlap earlier entries
-
-                else:
-                    # Different entity types: keep the higher-confidence one.
-                    span_wins = (
-                        span.confidence > accepted.confidence
-                        or (span.confidence == accepted.confidence
-                            and span.tier.value > accepted.tier.value)
-                    )
-                    if span_wins:
-                        result.pop(i)
-                        i -= 1
-                        continue      # span survives; check earlier entries
-                    else:
-                        absorbed = True
-                        break         # discard span
-
-            if not absorbed:
-                result.append(span)
-
-        return result
 
     def add_detector(self, detector: BaseDetector) -> None:
         """Add a custom detector to the orchestrator."""
@@ -524,43 +360,28 @@ class DetectorOrchestrator:
 # Convenience function for simple usage
 def detect(
     text: str,
-    enable_ml: bool = False,
-    enable_patterns: bool = True,
-    enable_hyperscan: bool = False,
-    ml_model_dir: Optional[Union[str, Path]] = None,
-    use_onnx: bool = True,
-    enable_coref: bool = False,
-    enable_context_enhancement: bool = False,
-    **kwargs
+    config: DetectionConfig | None = None,
+    **kwargs: object,
 ) -> DetectionResult:
     """
     Convenience function to detect entities in text.
 
     Args:
         text: Text to scan
-        enable_ml: Enable ML-based detectors (requires model files)
-        enable_patterns: Enable general pattern detector (phone, email, date, name, etc.)
-        enable_hyperscan: Enable Hyperscan-accelerated detection (10-100x faster)
-        ml_model_dir: Directory containing ML model files
-        use_onnx: Use ONNX-optimized ML detectors (faster)
-        enable_coref: Run coreference resolution on NAME entities
-        enable_context_enhancement: Run context enhancement for FP filtering
-        **kwargs: Additional options passed to DetectorOrchestrator
+        config: Detection configuration (defaults to patterns-only)
+        **kwargs: Override individual DetectionConfig fields
 
     Returns:
         DetectionResult with detected spans
     """
-    if ml_model_dir is not None:
-        ml_model_dir = Path(ml_model_dir)
+    if config is None:
+        # Build config from kwargs for backwards-compatible call sites
+        from dataclasses import fields as dc_fields
+        config_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in {f.name for f in dc_fields(DetectionConfig)}
+        }
+        config = DetectionConfig(**config_kwargs)  # type: ignore[arg-type]
 
-    orchestrator = DetectorOrchestrator(
-        enable_ml=enable_ml,
-        enable_patterns=enable_patterns,
-        enable_hyperscan=enable_hyperscan,
-        ml_model_dir=ml_model_dir,
-        use_onnx=use_onnx,
-        enable_coref=enable_coref,
-        enable_context_enhancement=enable_context_enhancement,
-        **kwargs
-    )
-    return orchestrator.detect(text)
+    orchestrator = DetectorOrchestrator(config=config)
+    return orchestrator.detect_sync(text)
