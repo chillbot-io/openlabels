@@ -34,6 +34,7 @@ Each section below is a self-contained implementation plan with exact files, cod
 ### 1.1 Configuration-Driven Detector Setup
 
 **Complexity:** M
+**Files to create:** `core/detectors/config.py`
 **Files to modify:** `core/detectors/orchestrator.py`
 
 **Current state:** The orchestrator already uses boolean flags (`enable_checksum`, `enable_secrets`, `enable_hyperscan`, `enable_ml`, etc.) to conditionally construct detectors. This is explicit and functional, but the flags are spread across 15+ constructor parameters which is unwieldy.
@@ -46,7 +47,7 @@ Replace the long parameter list with a single typed `DetectionConfig` dataclass.
 # core/detectors/config.py
 """Detection configuration."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -192,7 +193,7 @@ class GovernmentDetector(BaseDetector):
 ### 1.3 Async Detection Support
 
 **Complexity:** M
-**Files to modify:** `core/detectors/base.py`, `core/detectors/orchestrator.py`, `core/detectors/ml_onnx.py`
+**Files to modify:** `core/detectors/base.py`, `core/detectors/orchestrator.py`
 
 **Current state:** `BaseDetector.detect()` is synchronous. ML/ONNX detectors block the event loop when called from async server code.
 
@@ -676,7 +677,7 @@ async def get_scan(...): ...
 ### 2.3 Split app.py
 
 **Complexity:** M
-**Files to create:** `server/factory.py`, `server/error_handlers.py`, `server/lifespan.py`
+**Files to create:** `server/error_handlers.py`, `server/lifespan.py`
 **Files to modify:** `server/app.py`, `server/middleware/__init__.py`
 
 **Plan:**
@@ -758,8 +759,7 @@ app = create_app()
 ### 2.4 Cursor-Based Pagination
 
 **Complexity:** M
-**Files to modify:** `server/schemas/pagination.py`, `server/pagination.py`
-**Files to modify:** Route files that use pagination
+**Files to modify:** `server/schemas/pagination.py`, `server/pagination.py`, route files that use pagination
 
 **Plan:** Replace offset-based pagination with cursor-based. Offset pagination breaks on large datasets with concurrent writes and gets slower as offset increases. Remove the old offset approach entirely.
 
@@ -833,7 +833,6 @@ async def apply_cursor_pagination(
 
 import time
 from collections import defaultdict
-from fastapi import Request, HTTPException
 
 
 class TenantRateLimiter:
@@ -849,8 +848,12 @@ class TenantRateLimiter:
         self._minute_counts: dict[str, list[float]] = defaultdict(list)
         self._hour_counts: dict[str, list[float]] = defaultdict(list)
 
-    def check_rate_limit(self, tenant_id: str) -> None:
-        """Check if tenant has exceeded rate limits."""
+    def check_rate_limit(self, tenant_id: str) -> bool:
+        """Check if tenant is under rate limits and record the request.
+
+        Returns True if under limit (request allowed), False if exceeded.
+        The middleware is responsible for raising HTTPException — not this class.
+        """
         now = time.monotonic()
 
         # Clean old entries and check per-minute
@@ -859,11 +862,7 @@ class TenantRateLimiter:
             t for t in self._minute_counts[tenant_id] if t > minute_ago
         ]
         if len(self._minute_counts[tenant_id]) >= self.rpm_limit:
-            raise HTTPException(
-                429,
-                detail=f"Rate limit exceeded: {self.rpm_limit} requests/minute",
-                headers={"Retry-After": "60"},
-            )
+            return False
 
         # Check per-hour
         hour_ago = now - 3600
@@ -871,15 +870,12 @@ class TenantRateLimiter:
             t for t in self._hour_counts[tenant_id] if t > hour_ago
         ]
         if len(self._hour_counts[tenant_id]) >= self.rph_limit:
-            raise HTTPException(
-                429,
-                detail=f"Rate limit exceeded: {self.rph_limit} requests/hour",
-                headers={"Retry-After": "3600"},
-            )
+            return False
 
         # Record this request
         self._minute_counts[tenant_id].append(now)
         self._hour_counts[tenant_id].append(now)
+        return True
 ```
 
 The app already has optional Redis support (`server/cache.py`). Use a backend interface:
@@ -922,6 +918,7 @@ The middleware instantiates the correct backend based on settings — never two 
 """OpenTelemetry distributed tracing setup."""
 
 from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -1893,6 +1890,8 @@ async def dequeue(self, worker_id: str, max_concurrent: int | None = None) -> Jo
 **Complexity:** S
 **Files to modify:** `jobs/queue.py`
 
+**Plan:**
+
 Add a simple callback mechanism to the job queue. No webhook infrastructure needed — just let callers register post-completion hooks:
 
 ```python
@@ -2073,7 +2072,7 @@ async def apply_labels_batch(
 
 import json
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -2539,6 +2538,9 @@ class OpenLabelsClient:
 
 ### 13.2 Retry Logic
 
+**Complexity:** S
+**Files to modify:** `client/client.py`
+
 ```python
 # client/client.py
 import asyncio
@@ -2599,6 +2601,9 @@ async def list_all_scans(self, **filters) -> AsyncIterator[dict]:
 ```
 
 ### 13.4 Complete API Coverage
+
+**Complexity:** M
+**Files to modify:** `client/client.py`
 
 Add methods for all missing endpoints:
 ```python
