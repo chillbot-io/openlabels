@@ -9,10 +9,12 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels.server.config import get_settings
@@ -21,6 +23,146 @@ from openlabels.server.metrics import http_active_connections, record_http_reque
 from openlabels.server.middleware.csrf import CSRFMiddleware
 
 logger = logging.getLogger(__name__)
+
+# Type alias for the ``call_next`` parameter of HTTP middleware.
+_CallNext = Callable[[Request], Coroutine[Any, Any, Response]]
+
+
+# ---------------------------------------------------------------------------
+# Standalone middleware functions (importable for unit testing)
+# ---------------------------------------------------------------------------
+
+
+async def add_request_id(request: Request, call_next: _CallNext) -> Response:
+    """Attach a correlation ID to every request/response."""
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    set_request_id(request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+async def track_metrics(request: Request, call_next: _CallNext) -> Response:
+    """Track HTTP request metrics for Prometheus."""
+    if request.url.path == "/metrics":
+        return await call_next(request)
+
+    http_active_connections.inc()
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+        duration = time.perf_counter() - start_time
+        record_http_request(
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration=duration,
+        )
+        return response
+    except Exception:
+        duration = time.perf_counter() - start_time
+        record_http_request(
+            method=request.method,
+            path=request.url.path,
+            status=500,
+            duration=duration,
+        )
+        raise
+    finally:
+        http_active_connections.dec()
+
+
+async def limit_request_size(request: Request, call_next: _CallNext) -> Response:
+    """Reject request bodies that exceed the configured size limit."""
+    settings = get_settings()
+    max_size = settings.security.max_request_size_mb * 1024 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_size:
+        request_id = get_request_id()
+        body: dict[str, Any] = {
+            "error": "REQUEST_TOO_LARGE",
+            "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
+            "details": {"max_size_mb": settings.security.max_request_size_mb},
+        }
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(status_code=413, content=body)
+    return await call_next(request)
+
+
+async def add_security_headers(request: Request, call_next: _CallNext) -> Response:
+    """Add security headers (HSTS, CSP, X-Frame-Options, etc.)."""
+    response = await call_next(request)
+    settings = get_settings()
+
+    if settings.server.environment == "production":
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    csp_directives = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "font-src 'self'",
+        "connect-src 'self' wss: ws:",
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "base-uri 'self'",
+    ]
+    response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+    permissions = [
+        "accelerometer=()",
+        "camera=()",
+        "geolocation=()",
+        "gyroscope=()",
+        "magnetometer=()",
+        "microphone=()",
+        "payment=()",
+        "usb=()",
+    ]
+    response.headers["Permissions-Policy"] = ", ".join(permissions)
+    return response
+
+
+async def add_deprecation_warning(request: Request, call_next: _CallNext) -> Response:
+    """Add deprecation headers for legacy /api/* (non-versioned) routes."""
+    response = await call_next(request)
+    path = request.url.path
+
+    if (
+        path.startswith("/api/")
+        and not path.startswith("/api/v1")
+        and not path.startswith("/api/docs")
+        and not path.startswith("/api/redoc")
+        and not path.startswith("/api/openapi")
+    ):
+        response.headers["X-API-Deprecation"] = "true"
+        response.headers["X-API-Deprecation-Date"] = "2025-06-01"
+        response.headers["X-API-Deprecation-Info"] = (
+            "This API endpoint is deprecated. Please migrate to /api/v1/. "
+            "See /api for version information."
+        )
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "2025-06-01T00:00:00Z"
+        response.headers["Link"] = f'</api/v1{path[4:]}>; rel="successor-version"'
+        logger.debug(
+            f"Deprecated API call: {request.method} {path} — "
+            f"Client should migrate to /api/v1{path[4:]}"
+        )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
 
 
 def register_middleware(app: FastAPI) -> None:
@@ -31,7 +173,7 @@ def register_middleware(app: FastAPI) -> None:
     """
     settings = get_settings()
 
-    # --- class-based middleware (outermost → innermost) ---
+    # --- class-based middleware ---
 
     # CORS
     app.add_middleware(
@@ -49,128 +191,11 @@ def register_middleware(app: FastAPI) -> None:
     # CSRF protection
     app.add_middleware(CSRFMiddleware)
 
-    # --- function-based middleware (registered via decorator) ---
-
-    @app.middleware("http")  # type: ignore[untyped-decorator]
-    async def add_request_id(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Attach a correlation ID to every request/response."""
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
-        set_request_id(request_id)
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-
-    @app.middleware("http")  # type: ignore[untyped-decorator]
-    async def track_metrics(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Track HTTP request metrics for Prometheus."""
-        if request.url.path == "/metrics":
-            return await call_next(request)
-
-        http_active_connections.inc()
-        start_time = time.perf_counter()
-        try:
-            response = await call_next(request)
-            duration = time.perf_counter() - start_time
-            record_http_request(
-                method=request.method,
-                path=request.url.path,
-                status=response.status_code,
-                duration=duration,
-            )
-            return response
-        except Exception:
-            duration = time.perf_counter() - start_time
-            record_http_request(
-                method=request.method,
-                path=request.url.path,
-                status=500,
-                duration=duration,
-            )
-            raise
-        finally:
-            http_active_connections.dec()
-
-    @app.middleware("http")  # type: ignore[untyped-decorator]
-    async def limit_request_size(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Reject request bodies that exceed the configured size limit."""
-        max_size = settings.security.max_request_size_mb * 1024 * 1024
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > max_size:
-            request_id = get_request_id()
-            body = {
-                "error": "REQUEST_TOO_LARGE",
-                "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
-                "details": {"max_size_mb": settings.security.max_request_size_mb},
-            }
-            if request_id:
-                body["request_id"] = request_id
-            return JSONResponse(status_code=413, content=body)
-        return await call_next(request)
-
-    @app.middleware("http")  # type: ignore[untyped-decorator]
-    async def add_security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Add security headers (HSTS, CSP, X-Frame-Options, etc.)."""
-        response = await call_next(request)
-
-        if settings.server.environment == "production":
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
-
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "SAMEORIGIN"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-        csp_directives = [
-            "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: https:",
-            "font-src 'self'",
-            "connect-src 'self' wss: ws:",
-            "frame-ancestors 'self'",
-            "form-action 'self'",
-            "base-uri 'self'",
-        ]
-        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
-
-        permissions = [
-            "accelerometer=()",
-            "camera=()",
-            "geolocation=()",
-            "gyroscope=()",
-            "magnetometer=()",
-            "microphone=()",
-            "payment=()",
-            "usb=()",
-        ]
-        response.headers["Permissions-Policy"] = ", ".join(permissions)
-        return response
-
-    @app.middleware("http")  # type: ignore[untyped-decorator]
-    async def add_deprecation_warning(request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Add deprecation headers for legacy /api/* (non-versioned) routes."""
-        response = await call_next(request)
-        path = request.url.path
-
-        if (
-            path.startswith("/api/")
-            and not path.startswith("/api/v1")
-            and not path.startswith("/api/docs")
-            and not path.startswith("/api/redoc")
-            and not path.startswith("/api/openapi")
-        ):
-            response.headers["X-API-Deprecation"] = "true"
-            response.headers["X-API-Deprecation-Date"] = "2025-06-01"
-            response.headers["X-API-Deprecation-Info"] = (
-                "This API endpoint is deprecated. Please migrate to /api/v1/."
-            )
-            response.headers["Deprecation"] = "true"
-            response.headers["Sunset"] = "2025-06-01T00:00:00Z"
-            response.headers["Link"] = f'</api/v1{path[4:]}>; rel="successor-version"'
-            logger.debug(
-                f"Deprecated API call: {request.method} {path} — "
-                f"Client should migrate to /api/v1{path[4:]}"
-            )
-        return response
+    # --- function-based middleware ---
+    # Registered via app.middleware() which wraps them in BaseHTTPMiddleware.
+    _register = app.middleware("http")
+    _register(add_request_id)
+    _register(track_metrics)
+    _register(limit_request_size)
+    _register(add_security_headers)
+    _register(add_deprecation_warning)

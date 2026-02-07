@@ -53,9 +53,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.rate_limit.enabled:
         try:
             from openlabels.server.middleware.rate_limit import create_limiter
+            import openlabels.server.app as _app_module
 
             configured_limiter = create_limiter()
             app.state.limiter = configured_limiter
+            _app_module.limiter = configured_limiter
         except Exception as e:
             logger.warning(
                 f"Rate limiter initialization failed ({type(e).__name__}: {e}) — "

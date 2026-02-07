@@ -54,6 +54,11 @@ SUPPORTED_API_VERSIONS = ["v1"]
 
 logger = logging.getLogger(__name__)
 
+# Default in-memory limiter — replaced during lifespan with Redis-backed if available.
+# Kept at module level because SlowAPIMiddleware reads ``app.state.limiter`` and several
+# route modules reference this for @limiter.limit() decorators.
+limiter = Limiter(key_func=get_client_ip)
+
 # Legacy API prefixes eligible for automatic redirect.
 _LEGACY_API_PREFIXES = [
     "audit", "jobs", "scans", "results", "targets", "schedules",
@@ -111,15 +116,15 @@ def _include_routes(app: FastAPI) -> None:
 def _register_root_endpoints(app: FastAPI) -> None:
     """Register endpoints that live outside the versioned API prefix."""
 
-    @app.get("/health")  # type: ignore[untyped-decorator]
+    @app.get("/health")
     async def health_check() -> dict[str, str]:
         return {"status": "healthy", "version": __version__}
 
-    @app.get("/metrics", include_in_schema=False)  # type: ignore[untyped-decorator]
+    @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-    @app.get("/api")  # type: ignore[untyped-decorator]
+    @app.get("/api")
     async def api_info() -> dict[str, object]:
         return {
             "name": "OpenLabels API",
@@ -134,7 +139,7 @@ def _register_root_endpoints(app: FastAPI) -> None:
             ),
         }
 
-    @app.get("/api/v1")  # type: ignore[untyped-decorator]
+    @app.get("/api/v1")
     async def api_v1_info() -> dict[str, object]:
         return {
             "name": "OpenLabels API",
@@ -151,7 +156,7 @@ def _register_root_endpoints(app: FastAPI) -> None:
 def _register_legacy_redirects(app: FastAPI) -> None:
     """Redirect ``/api/<resource>`` → ``/api/v1/<resource>`` (HTTP 307)."""
 
-    @app.api_route(  # type: ignore[untyped-decorator]
+    @app.api_route(
         "/api/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         include_in_schema=False,
@@ -180,7 +185,7 @@ def _register_legacy_redirects(app: FastAPI) -> None:
             },
         )
 
-    @app.api_route(  # type: ignore[untyped-decorator]
+    @app.api_route(
         "/auth/{path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         include_in_schema=False,
@@ -225,8 +230,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
-    # Default in-memory limiter — replaced by lifespan with Redis-backed if available.
-    application.state.limiter = Limiter(key_func=get_client_ip)
+    application.state.limiter = limiter
 
     register_middleware(application)
     register_error_handlers(application)

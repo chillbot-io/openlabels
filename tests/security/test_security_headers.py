@@ -30,7 +30,7 @@ class TestSecurityHeadersMiddleware:
 
     async def test_content_type_options_header(self, mock_settings_production):
         """X-Content-Type-Options should be set to nosniff."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -38,13 +38,13 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-Content-Type-Options") == "nosniff"
 
     async def test_frame_options_header(self, mock_settings_production):
         """X-Frame-Options should be SAMEORIGIN."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -52,13 +52,13 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-Frame-Options") == "SAMEORIGIN"
 
     async def test_xss_protection_header(self, mock_settings_production):
         """X-XSS-Protection should be set for legacy browsers."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -66,13 +66,13 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             assert result.headers.get("X-XSS-Protection") == "1; mode=block"
 
     async def test_referrer_policy_header(self, mock_settings_production):
         """Referrer-Policy should limit referrer information."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -80,13 +80,13 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             assert result.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
 
     async def test_csp_header_present(self, mock_settings_production):
         """Content-Security-Policy should be configured."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -94,7 +94,7 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             csp = result.headers.get("Content-Security-Policy")
             assert csp is not None
@@ -104,7 +104,7 @@ class TestSecurityHeadersMiddleware:
 
     async def test_permissions_policy_header(self, mock_settings_production):
         """Permissions-Policy should restrict browser features."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -112,7 +112,7 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             permissions = result.headers.get("Permissions-Policy")
             assert permissions is not None
@@ -122,7 +122,7 @@ class TestSecurityHeadersMiddleware:
 
     async def test_hsts_in_production(self, mock_settings_production):
         """HSTS should be set in production."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -130,7 +130,7 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_production):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_production):
             result = await add_security_headers(request, call_next)
             hsts = result.headers.get("Strict-Transport-Security")
             assert hsts is not None
@@ -139,7 +139,7 @@ class TestSecurityHeadersMiddleware:
 
     async def test_hsts_not_in_development(self, mock_settings_development):
         """HSTS should not be set in development."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         request = Mock(spec=Request)
         response = Response()
@@ -147,7 +147,7 @@ class TestSecurityHeadersMiddleware:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=mock_settings_development):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=mock_settings_development):
             result = await add_security_headers(request, call_next)
             hsts = result.headers.get("Strict-Transport-Security")
             assert hsts is None
@@ -260,7 +260,7 @@ class TestCSPDirectives:
 
     async def test_csp_blocks_inline_scripts(self):
         """CSP should block inline scripts by not including 'unsafe-inline' for scripts."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         settings = Mock()
         settings.server.environment = "production"
@@ -271,7 +271,7 @@ class TestCSPDirectives:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=settings):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=settings):
             result = await add_security_headers(request, call_next)
             csp = result.headers.get("Content-Security-Policy")
             # script-src should be 'self' only, not 'unsafe-inline'
@@ -280,7 +280,7 @@ class TestCSPDirectives:
 
     async def test_csp_allows_websockets(self):
         """CSP should allow WebSocket connections for real-time updates."""
-        from openlabels.server.app import add_security_headers
+        from openlabels.server.middleware.stack import add_security_headers
 
         settings = Mock()
         settings.server.environment = "production"
@@ -291,7 +291,7 @@ class TestCSPDirectives:
         async def call_next(req):
             return response
 
-        with patch("openlabels.server.app.get_settings", return_value=settings):
+        with patch("openlabels.server.middleware.stack.get_settings", return_value=settings):
             result = await add_security_headers(request, call_next)
             csp = result.headers.get("Content-Security-Policy")
             assert "connect-src" in csp

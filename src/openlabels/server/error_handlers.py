@@ -52,7 +52,7 @@ _HTTP_ERROR_CODES: dict[int, str] = {
 def register_error_handlers(app: FastAPI) -> None:
     """Register all exception handlers on *app*."""
 
-    @app.exception_handler(RateLimitExceeded)  # type: ignore[untyped-decorator]
+    @app.exception_handler(RateLimitExceeded)
     async def rate_limit_exceeded_handler(
         request: Request, exc: RateLimitExceeded,
     ) -> JSONResponse:
@@ -71,7 +71,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 response.headers[key] = value
         return response
 
-    @app.exception_handler(APIError)  # type: ignore[untyped-decorator]
+    @app.exception_handler(APIError)
     async def api_error_handler(
         request: Request, exc: APIError,
     ) -> JSONResponse:
@@ -94,7 +94,7 @@ def register_error_handlers(app: FastAPI) -> None:
             response.headers["Retry-After"] = str(exc.retry_after)
         return response
 
-    @app.exception_handler(OpenLabelsError)  # type: ignore[untyped-decorator]
+    @app.exception_handler(OpenLabelsError)
     async def domain_error_handler(
         request: Request, exc: OpenLabelsError,
     ) -> JSONResponse:
@@ -113,7 +113,7 @@ def register_error_handlers(app: FastAPI) -> None:
         log(f"Domain error: {error_code} - {exc.message}")
         return JSONResponse(status_code=status_code, content=body)
 
-    @app.exception_handler(HTTPException)  # type: ignore[untyped-decorator]
+    @app.exception_handler(HTTPException)
     async def http_exception_handler(
         request: Request, exc: HTTPException,
     ) -> JSONResponse:
@@ -138,7 +138,7 @@ def register_error_handlers(app: FastAPI) -> None:
             )
         return JSONResponse(status_code=exc.status_code, content=body)
 
-    @app.exception_handler(RequestValidationError)  # type: ignore[untyped-decorator]
+    @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(
         request: Request, exc: RequestValidationError,
     ) -> JSONResponse:
@@ -177,7 +177,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(status_code=422, content=body)
 
-    @app.exception_handler(PydanticValidationError)  # type: ignore[untyped-decorator]
+    @app.exception_handler(PydanticValidationError)
     async def pydantic_validation_error_handler(
         request: Request, exc: PydanticValidationError,
     ) -> JSONResponse:
@@ -201,7 +201,7 @@ def register_error_handlers(app: FastAPI) -> None:
             body["request_id"] = request_id
         return JSONResponse(status_code=422, content=body)
 
-    @app.exception_handler(Exception)  # type: ignore[untyped-decorator]
+    @app.exception_handler(Exception)
     async def global_exception_handler(
         request: Request, exc: Exception,
     ) -> JSONResponse:

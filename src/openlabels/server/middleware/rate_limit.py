@@ -16,6 +16,8 @@ from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
+_KEY_PREFIX = "openlabels:ratelimit"
+
 
 def _get_storage_uri() -> str | None:
     """Resolve the storage URI for rate-limit counters.
@@ -37,40 +39,42 @@ def _get_storage_uri() -> str | None:
     return None
 
 
-def _create_storage() -> object:
-    """Create rate-limit storage backend (Redis → in-memory fallback)."""
-    storage_uri = _get_storage_uri()
+def _validate_redis(storage_uri: str) -> bool:
+    """Check whether the Redis instance at *storage_uri* is reachable."""
+    try:
+        from limits.storage import RedisStorage
 
-    if storage_uri:
-        try:
-            from limits.storage import RedisStorage
-
-            class _PrefixedRedisStorage(RedisStorage):  # type: ignore[misc]
-                """Redis storage with ``openlabels:ratelimit`` key prefix."""
-                PREFIX = "openlabels:ratelimit"
-
-            storage = _PrefixedRedisStorage(storage_uri)
-            storage.check()
-            logger.info(f"Rate limiter using Redis storage: {storage_uri}")
-            return storage
-
-        except ImportError:
-            logger.warning(
-                "limits[redis] not installed — using in-memory rate limiting. "
-                "Install with: pip install limits[redis]"
-            )
-        except Exception as e:
-            logger.warning(
-                f"Redis unavailable for rate limiting ({type(e).__name__}: {e}) — "
-                "using in-memory fallback"
-            )
-
-    from limits.storage import MemoryStorage
-    logger.info("Rate limiter using in-memory storage")
-    return MemoryStorage()
+        storage = RedisStorage(storage_uri)
+        storage.check()
+        return True
+    except ImportError:
+        logger.warning(
+            "limits[redis] not installed — using in-memory rate limiting. "
+            "Install with: pip install limits[redis]"
+        )
+    except Exception as e:
+        logger.warning(
+            f"Redis unavailable for rate limiting ({type(e).__name__}: {e}) — "
+            "using in-memory fallback"
+        )
+    return False
 
 
 def create_limiter() -> Limiter:
-    """Create a :class:`Limiter` with the best available storage backend."""
-    storage = _create_storage()
-    return Limiter(key_func=get_client_ip, storage=storage)
+    """Create a :class:`Limiter` with the best available storage backend.
+
+    Tries Redis first (if configured and reachable), otherwise falls back
+    to in-memory storage.
+    """
+    storage_uri = _get_storage_uri()
+
+    if storage_uri and _validate_redis(storage_uri):
+        logger.info(f"Rate limiter using Redis storage: {storage_uri}")
+        return Limiter(
+            key_func=get_client_ip,
+            storage_uri=storage_uri,
+            key_prefix=_KEY_PREFIX,
+        )
+
+    logger.info("Rate limiter using in-memory storage")
+    return Limiter(key_func=get_client_ip, key_prefix=_KEY_PREFIX)
