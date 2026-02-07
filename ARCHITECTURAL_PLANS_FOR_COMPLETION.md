@@ -31,100 +31,64 @@ Each section below is a self-contained implementation plan with exact files, cod
 **Current Rating:** 2 (Better) → **Target:** 3 (Best)
 **Module Path:** `src/openlabels/core/`
 
-### 1.1 Detector Plugin Registry
+### 1.1 Explicit Detector Configuration
 
 **Complexity:** M
-**Files to modify:** `core/detectors/orchestrator.py`, `core/detectors/base.py`, `core/detectors/__init__.py`
-**Files to create:** `core/detectors/registry.py`
+**Files to modify:** `core/detectors/orchestrator.py`, `core/detectors/__init__.py`
 
-**Current state:** The orchestrator imports each detector class explicitly and instantiates them in a hardcoded list. Adding a new detector requires modifying the orchestrator.
+**Current state:** The orchestrator imports each detector class and instantiates them in a hardcoded list. No magic needed — just clean it up.
 
 **Plan:**
 
-Create `core/detectors/registry.py`:
-```python
-"""Detector plugin registry with decorator-based registration."""
+The orchestrator should have one clear list of all detector classes. No decorator registry, no plugin system, no auto-discovery. Just an explicit, readable list:
 
-from typing import Dict, Type, List
-from .base import BaseDetector
-
-_REGISTRY: Dict[str, Type[BaseDetector]] = {}
-
-
-def register_detector(cls: Type[BaseDetector]) -> Type[BaseDetector]:
-    """
-    Class decorator to register a detector.
-
-    Usage:
-        @register_detector
-        class MyDetector(BaseDetector):
-            name = "my_detector"
-            ...
-    """
-    if not hasattr(cls, 'name') or cls.name == "base":
-        raise ValueError(f"Detector {cls.__name__} must define a unique 'name' attribute")
-    if cls.name in _REGISTRY:
-        raise ValueError(f"Detector name '{cls.name}' already registered by {_REGISTRY[cls.name].__name__}")
-    _REGISTRY[cls.name] = cls
-    return cls
-
-
-def get_registered_detectors() -> Dict[str, Type[BaseDetector]]:
-    """Get all registered detector classes."""
-    return dict(_REGISTRY)
-
-
-def get_detector_names() -> List[str]:
-    """Get names of all registered detectors."""
-    return list(_REGISTRY.keys())
-
-
-def create_detector(name: str, **kwargs) -> BaseDetector:
-    """Instantiate a registered detector by name."""
-    if name not in _REGISTRY:
-        raise KeyError(f"Unknown detector: {name}. Available: {list(_REGISTRY.keys())}")
-    return _REGISTRY[name](**kwargs)
-
-
-def create_all_detectors(**kwargs) -> List[BaseDetector]:
-    """Instantiate all registered detectors."""
-    detectors = []
-    for name, cls in _REGISTRY.items():
-        try:
-            detector = cls(**kwargs)
-            if detector.is_available():
-                detectors.append(detector)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Failed to create detector {name}: {e}")
-    return detectors
-```
-
-Modify each detector file to use the decorator:
-```python
-# core/detectors/government.py
-from .registry import register_detector
-
-@register_detector
-class GovernmentDetector(BaseDetector):
-    name = "government"
-    ...
-```
-
-Modify orchestrator to use registry instead of hardcoded imports:
 ```python
 # core/detectors/orchestrator.py
-from .registry import create_all_detectors
+"""Detection orchestrator — runs all detectors and merges results."""
+
+import logging
+from typing import List, Type
+
+from .base import BaseDetector
+from .government import GovernmentDetector
+from .secrets import SecretsDetector
+from .additional_patterns import AdditionalPatternsDetector
+from .hyperscan import HyperscanDetector
+from .ml_onnx import ONNXDetector
+from .labels import LabelDetector
+# ... all detectors
+
+logger = logging.getLogger(__name__)
+
+# The canonical list of all detectors, in execution order.
+# To add a detector: import it and add it here.
+ALL_DETECTOR_CLASSES: List[Type[BaseDetector]] = [
+    GovernmentDetector,
+    SecretsDetector,
+    AdditionalPatternsDetector,
+    HyperscanDetector,
+    ONNXDetector,
+    LabelDetector,
+    # ... all others
+]
+
 
 class DetectorOrchestrator:
-    def __init__(self, detector_names: list[str] | None = None):
-        if detector_names:
-            self.detectors = [create_detector(n) for n in detector_names]
-        else:
-            self.detectors = create_all_detectors()
+    def __init__(self, detector_classes: list[Type[BaseDetector]] | None = None):
+        classes = detector_classes or ALL_DETECTOR_CLASSES
+        self.detectors: list[BaseDetector] = []
+        for cls in classes:
+            try:
+                detector = cls()
+                if detector.is_available():
+                    self.detectors.append(detector)
+                else:
+                    logger.info(f"Detector {cls.name} not available, skipping")
+            except Exception as e:
+                logger.warning(f"Failed to create detector {cls.__name__}: {e}")
 ```
 
-**Refactor scope:** Remove all hardcoded detector imports from the orchestrator. Every detector must use `@register_detector` — no exceptions. Update `__init__.py` exports to pull from the registry. Update all call sites and tests that reference detectors directly.
+**Refactor scope:** Clean up the orchestrator's init to use a single explicit list. Remove any scattered import hacks. The list is the single source of truth for which detectors run.
 
 ### 1.2 Declarative Pattern Definitions
 
@@ -230,68 +194,68 @@ class GovernmentDetector(BaseDetector):
 
 **Plan:**
 
-Extend `BaseDetector`:
+All detectors implement `detect()` synchronously — that's fine, the detection logic itself is CPU-bound. The orchestrator's job is to run them without blocking the event loop. Simple approach: orchestrator runs all detectors in a thread pool executor.
+
 ```python
 # core/detectors/base.py
-import asyncio
 from abc import ABC, abstractmethod
 from typing import List
 
 class BaseDetector(ABC):
     name: str = "base"
     tier: Tier = Tier.PATTERN
-    is_async: bool = False  # Override in async detectors
 
     @abstractmethod
     def detect(self, text: str) -> List[Span]:
-        """Synchronous detection. All detectors must implement this."""
+        """Detect entities in text. Always synchronous."""
         pass
 
-    async def adetect(self, text: str) -> List[Span]:
-        """
-        Async detection. Override for truly async detectors (ML inference, API calls).
-        Default: runs sync detect() in executor to avoid blocking.
-        """
-        if self.is_async:
-            # Subclasses that set is_async=True must override this
-            raise NotImplementedError("Async detectors must override adetect()")
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.detect, text)
+    def is_available(self) -> bool:
+        return True
 ```
 
-Modify ONNX detector:
-```python
-# core/detectors/ml_onnx.py
-class ONNXDetector(BaseDetector):
-    name = "ml_onnx"
-    is_async = True
+No `adetect()`, no `is_async` flag. Detectors stay simple. The orchestrator handles async:
 
-    async def adetect(self, text: str) -> List[Span]:
-        """Run ONNX inference without blocking the event loop."""
-        loop = asyncio.get_running_loop()
-        # ONNX inference is CPU-bound, run in thread pool
-        return await loop.run_in_executor(self._executor, self.detect, text)
-```
-
-Modify orchestrator to use async path:
 ```python
 # core/detectors/orchestrator.py
-async def adetect(self, text: str) -> DetectionResult:
-    """Async detection across all detectors."""
-    tasks = [detector.adetect(text) for detector in self.detectors]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
-    all_spans = []
-    for detector, result in zip(self.detectors, results):
-        if isinstance(result, Exception):
-            logger.warning(f"Detector {detector.name} failed: {result}")
-            continue
-        all_spans.extend(result)
+class DetectorOrchestrator:
+    def __init__(self, ...):
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="detector")
 
-    return DetectionResult(spans=all_spans)
+    async def detect(self, text: str) -> DetectionResult:
+        """Run all detectors concurrently in thread pool."""
+        loop = asyncio.get_running_loop()
+
+        tasks = [
+            loop.run_in_executor(self._executor, detector.detect, text)
+            for detector in self.detectors
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_spans = []
+        for detector, result in zip(self.detectors, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Detector {detector.name} failed: {result}")
+                continue
+            all_spans.extend(result)
+
+        return DetectionResult(spans=all_spans)
+
+    def detect_sync(self, text: str) -> DetectionResult:
+        """Synchronous detection for CLI/non-async contexts."""
+        all_spans = []
+        for detector in self.detectors:
+            try:
+                all_spans.extend(detector.detect(text))
+            except Exception as e:
+                logger.warning(f"Detector {detector.name} failed: {e}")
+        return DetectionResult(spans=all_spans)
 ```
 
-**Refactor scope:** Make `adetect()` the primary interface on the orchestrator. The sync `detect()` on `BaseDetector` stays (detectors are inherently sync or async), but the orchestrator should always run detection through `adetect()`. Update all server/job call sites to use the async path. Remove any sync orchestrator entry points that bypass the async pipeline.
+**Refactor scope:** The orchestrator gets two methods: `detect()` (async, for server/jobs) and `detect_sync()` (for CLI). All server and job code uses `detect()`. All CLI code uses `detect_sync()`. Remove the module-level `detect()` convenience function if it bypasses the orchestrator — everything should go through the orchestrator.
 
 ### 1.4 Confidence Calibration
 
@@ -789,10 +753,10 @@ app = create_app()
 **Files to modify:** `server/schemas/pagination.py`, `server/pagination.py`
 **Files to modify:** Route files that use pagination
 
-**Plan:**
+**Plan:** Replace offset-based pagination with cursor-based. Offset pagination breaks on large datasets with concurrent writes and gets slower as offset increases. Remove the old offset approach entirely.
 
 ```python
-# server/schemas/pagination.py - add cursor pagination
+# server/schemas/pagination.py - replace offset pagination with cursor
 from typing import Optional, Generic, TypeVar
 from uuid import UUID
 from pydantic import BaseModel, Field
@@ -906,11 +870,7 @@ class TenantRateLimiter:
         self._hour_counts[tenant_id].append(now)
 ```
 
-For production: replace in-memory dicts with Redis using sliding window counters:
-```python
-# Redis key: rate_limit:{tenant_id}:minute:{window}
-# Use INCR + EXPIRE for atomic counting
-```
+The app already has optional Redis support (`server/cache.py`). Use it. If Redis is configured, use Redis sliding window counters (`INCR` + `EXPIRE`). If Redis is not configured, the in-memory approach above works for single-instance deployments. Make this a single implementation with a `RateLimitBackend` interface, not two separate code paths.
 
 ### 2.6 OpenTelemetry Tracing
 
@@ -1139,15 +1099,9 @@ class RemediationAdapter(Protocol):
     async def set_acl(self, file_info: FileInfo, acl: dict) -> bool: ...
 
 
-# Type alias for adapters that support both
-FullAdapter = ReadAdapter  # All adapters are ReadAdapter
-
-
 def supports_remediation(adapter: ReadAdapter) -> bool:
     """Check if an adapter supports remediation operations."""
-    return isinstance(adapter, RemediationAdapter) or (
-        hasattr(adapter, 'supports_remediation') and adapter.supports_remediation()
-    )
+    return isinstance(adapter, RemediationAdapter)
 ```
 
 ### 3.5 Adapter Health Checks
@@ -2801,40 +2755,31 @@ class ValidationError(OpenLabelsError):
 
 ### 14.2 Strict Type Safety (mypy)
 
-**Complexity:** L (phased rollout)
-**Files to modify:** `pyproject.toml`, then every module gradually
+**Complexity:** L
+**Files to modify:** `pyproject.toml`, every module
+
+Enable strict mypy across the entire project. Fix all type errors in one pass.
 
 Add to `pyproject.toml`:
 ```toml
 [tool.mypy]
 python_version = "3.10"
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+no_implicit_reexport = true
 
-# Start strict per-module
+# PySide6 stubs are incomplete, need explicit overrides
 [[tool.mypy.overrides]]
-module = "openlabels.core.*"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "openlabels.server.*"
-strict = true
-
-# Relax for GUI (PySide6 stubs are incomplete)
-[[tool.mypy.overrides]]
-module = "openlabels.gui.*"
-disallow_untyped_defs = false
+module = "PySide6.*"
+ignore_missing_imports = true
 ```
 
 Create `src/openlabels/py.typed` marker file (empty).
 
-**Phased rollout:**
-1. Phase 1: `core/types.py`, `core/detectors/base.py`, `server/schemas/` — already well-typed
-2. Phase 2: `server/services/`, `adapters/base.py`, `auth/` — moderate effort
-3. Phase 3: `jobs/`, `labeling/`, `remediation/`, `monitoring/` — medium effort
-4. Phase 4: `cli/`, `gui/`, `web/`, `windows/`, `client/` — most effort
+**Refactor scope:** Run `mypy --strict src/openlabels/` and fix every error. Replace all bare `dict`, `list`, `tuple` with proper generics. Add return types to every function. No `# type: ignore` unless there's a genuine stubs issue (e.g., PySide6). This is a single effort, not a phased rollout.
 
 ### 14.3 Structured Logging Convention
 
@@ -2948,7 +2893,7 @@ Recommended order for maximum impact with minimum risk:
 19. **11.x** Web UI buildout — L effort, new feature
 20. **2.6** OpenTelemetry Tracing — L effort, observability
 21. **2.4** Cursor Pagination — M effort, scalability
-22. **14.2** mypy strict rollout — L effort, phased
+22. **14.2** mypy strict — L effort, full project pass
 
 ---
 
