@@ -645,11 +645,10 @@ class ScanJobResponse(BaseModel):
 
 
 class ScanJobListResponse(BaseModel):
+    """Cursor-paginated list of scans. Consistent with Section 2.4."""
     items: list[ScanJobResponse]
-    total: int
-    page: int
-    limit: int
-    pages: int
+    next_cursor: Optional[str] = None
+    has_more: bool = False
 
 
 class CreateScanRequest(BaseModel):
@@ -759,76 +758,62 @@ app = create_app()
 
 **Plan:** Replace offset-based pagination with cursor-based. Offset pagination breaks on large datasets with concurrent writes and gets slower as offset increases. Remove the old offset approach entirely.
 
-Note: The existing `web/routes.py` already has partial cursor-based pagination on the results list endpoint. Build on that implementation rather than starting from scratch. The existing `server/pagination.py` module already has `CursorPaginationParams`, `apply_cursor_pagination`, and `build_cursor_response` helpers.
+**Existing code:** `server/pagination.py` already has `CursorPaginationParams`, `CursorData`, `PaginatedResponse`, `CursorPaginatedResponse`, `encode_cursor()`, and `decode_cursor()`. The existing implementation uses composite `(id, timestamp)` cursors encoded as base64 JSON. Build on this — do not introduce a second cursor format.
+
+What's missing from the existing module: a reusable query helper. Add `apply_cursor_pagination`:
 
 ```python
-# server/schemas/pagination.py - replace offset pagination with cursor
-from typing import Optional, Generic, TypeVar
-from uuid import UUID
-from pydantic import BaseModel, Field
-
-T = TypeVar("T")
-
-class CursorParams(BaseModel):
-    """Cursor-based pagination parameters."""
-    after: Optional[UUID] = Field(None, description="Return items after this ID")
-    before: Optional[UUID] = Field(None, description="Return items before this ID")
-    limit: int = Field(50, ge=1, le=200, description="Items per page")
-
-
-class CursorPage(BaseModel, Generic[T]):
-    """Cursor-paginated response."""
-    items: list[T]
-    has_next: bool
-    has_previous: bool
-    next_cursor: Optional[str] = None
-    previous_cursor: Optional[str] = None
-
-
-# server/pagination.py - cursor query helper
+# server/pagination.py — add this function to the existing module
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def apply_cursor_pagination(
     session: AsyncSession,
     query,
     model_class,
-    params: CursorParams,
-    order_column=None,
-) -> CursorPage:
+    params: CursorPaginationParams,
+    timestamp_column=None,
+) -> CursorPaginatedResponse:
     """Apply cursor-based pagination to a SQLAlchemy query.
 
-    Uses keyset pagination: WHERE id > :after ORDER BY id LIMIT :limit+1
-    The +1 allows us to detect if there are more items.
+    Uses the existing (id, timestamp) composite cursor format.
+    Fetches limit+1 rows to detect has_more.
     """
-    order_col = order_column or model_class.id
+    ts_col = timestamp_column or model_class.created_at
+    id_col = model_class.id
 
-    has_previous = params.after is not None
+    # Decode cursor and apply WHERE clause
+    cursor_data = params.decode()
+    if cursor_data:
+        # Keyset pagination: WHERE (ts, id) < (cursor_ts, cursor_id)
+        query = query.where(
+            (ts_col < cursor_data.timestamp) |
+            ((ts_col == cursor_data.timestamp) & (id_col < cursor_data.id))
+        )
 
-    if params.after:
-        query = query.where(order_col > params.after)
-    elif params.before:
-        query = query.where(order_col < params.before)
-        query = query.order_by(order_col.desc()).limit(params.limit + 1)
-        result = await session.execute(query)
-        items = list(reversed(result.scalars().all()))
-        has_next = len(items) > params.limit
-        if has_next:
-            items = items[1:]  # Remove the extra from the beginning
-        return items, has_next, True  # has_previous is always True for "before"
-
-    query = query.order_by(order_col.asc()).limit(params.limit + 1)
+    # Order by timestamp desc, then id desc (most recent first)
+    query = query.order_by(ts_col.desc(), id_col.desc())
+    query = query.limit(params.limit + 1)
 
     result = await session.execute(query)
     items = list(result.scalars().all())
 
-    has_next = len(items) > params.limit
-    if has_next:
+    has_more = len(items) > params.limit
+    if has_more:
         items = items[:params.limit]
 
-    return items, has_next, has_previous
+    next_cursor = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = encode_cursor(last.id, getattr(last, ts_col.key))
+
+    return CursorPaginatedResponse(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 ```
 
-**Refactor scope:** Migrate all API endpoints and web partials from offset to cursor pagination in one pass. The web results list already uses cursor pagination — extend that pattern to all list endpoints (scans, targets, labels, schedules, audit logs). Remove offset pagination entirely.
+**Refactor scope:** Add `apply_cursor_pagination` to the existing `server/pagination.py`. Migrate all API list endpoints from offset to cursor pagination in one pass. The web results list already uses cursor pagination — extend that pattern to all list endpoints (scans, targets, labels, schedules, audit logs). Remove offset pagination (`PaginationParams` with `page`/`limit`) entirely.
 
 ### 2.5 Per-Tenant Rate Limiting
 
@@ -1295,34 +1280,9 @@ async def _find_signing_key(kid: str, tenant_id: str) -> dict:
 ### 4.3 Granular Token Error Types
 
 **Complexity:** S
-**Files to create:** `auth/exceptions.py`
 **Files to modify:** `auth/oauth.py`
 
-```python
-# auth/exceptions.py
-class AuthError(Exception):
-    """Base authentication error."""
-    pass
-
-class TokenExpiredError(AuthError):
-    """Token has expired. Client should refresh."""
-    pass
-
-class TokenInvalidError(AuthError):
-    """Token is malformed or signature invalid. Client should re-authenticate."""
-    pass
-
-class TokenRevokedError(AuthError):
-    """Token has been revoked. Client should re-authenticate."""
-    pass
-
-class InsufficientPermissionsError(AuthError):
-    """User lacks required role/permission."""
-    def __init__(self, required: str, actual: list[str]):
-        self.required = required
-        self.actual = actual
-        super().__init__(f"Required role '{required}', user has: {actual}")
-```
+**Note:** The exception classes (`AuthError`, `TokenExpiredError`, `TokenInvalidError`) are defined in the unified hierarchy (Section 14.1, `openlabels/exceptions.py`). Do NOT create a separate `auth/exceptions.py` — import from `openlabels.exceptions` instead.
 
 Update `validate_token()`:
 ```python
@@ -1349,39 +1309,28 @@ from fastapi import Depends, HTTPException
 from .exceptions import InsufficientPermissionsError
 
 
-def require_role(*roles: str):
+def require_role(*allowed_roles: str):
     """FastAPI dependency that enforces role-based access.
+
+    Note: CurrentUser.role is a single string (e.g., "admin", "operator", "viewer").
+    The existing `require_admin` dependency checks `user.role != "admin"`.
+    This generalizes it to accept multiple allowed roles.
 
     Usage:
         @router.delete("/{id}", dependencies=[Depends(require_role("admin"))])
         async def delete_item(id: UUID): ...
     """
     async def _check_role(user: CurrentUser = Depends(get_current_user)):
-        if not any(role in user.roles for role in roles):
+        if user.role not in allowed_roles:
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires one of roles: {roles}. User has: {user.roles}",
+                detail=f"Requires one of roles: {allowed_roles}. User has: {user.role}",
             )
         return user
     return _check_role
 
 
-def require_any_role(*roles: str):
-    """Require user to have at least one of the specified roles."""
-    return require_role(*roles)
-
-
-def require_all_roles(*roles: str):
-    """Require user to have ALL specified roles."""
-    async def _check_roles(user: CurrentUser = Depends(get_current_user)):
-        missing = [r for r in roles if r not in user.roles]
-        if missing:
-            raise HTTPException(403, detail=f"Missing roles: {missing}")
-        return user
-    return _check_roles
-
-
-# Pre-built dependencies for common roles
+# Pre-built dependencies for common roles (replaces existing require_admin)
 require_admin = require_role("admin")
 require_operator = require_role("admin", "operator")
 require_viewer = require_role("admin", "operator", "viewer")
@@ -2609,23 +2558,27 @@ async def _request(self, method: str, url: str, max_retries: int = 3, **kwargs):
 
 ### 13.3 Auto-Pagination (Cursor-Based)
 
-Must be consistent with Section 2.4 (cursor-based pagination on the server).
+Must be consistent with Section 2.4 and the existing `server/pagination.py` cursor format (base64-encoded `(id, timestamp)` composite cursor).
 
 ```python
 from typing import AsyncIterator
 
 async def list_all_scans(self, **filters) -> AsyncIterator[dict]:
-    """Auto-paginating scan iterator using cursor-based pagination."""
+    """Auto-paginating scan iterator using cursor-based pagination.
+
+    The server returns:
+      {"items": [...], "next_cursor": "<base64>", "has_more": true/false}
+    """
     cursor = None
     while True:
         params = {**filters, "limit": 100}
         if cursor:
-            params["after"] = cursor
+            params["cursor"] = cursor
         data = await self._request("GET", "/scans", params=params)
         body = data.json()
         for item in body.get("items", []):
             yield item
-        if not body.get("has_next", False):
+        if not body.get("has_more", False):
             break
         cursor = body.get("next_cursor")
         if not cursor:
@@ -2676,6 +2629,13 @@ These span all modules and should be implemented as a foundation before module-s
 **Complexity:** M
 **Files to create:** `src/openlabels/exceptions.py`
 **Files to modify:** Every module's exception classes
+**Existing files to consolidate:**
+- `core/exceptions.py` — already has `OpenLabelsError`, `DetectionError`, `ExtractionError`, `AdapterError`, `GraphAPIError`, `FilesystemError`, `ConfigurationError`, `ModelLoadError`, `JobError`, `SecurityError`
+- `server/exceptions.py` — has `APIError`, `NotFoundError`, `ValidationError`, `RateLimitError`, `ConflictError`, `BadRequestError`, `InternalError`
+- `remediation/base.py` — has `RemediationError`, `QuarantineError`, `PermissionError`
+- `monitoring/base.py` — has `MonitoringError`, `SACLError`, `AuditRuleError`
+
+**The task is to consolidate these into one file**, not create from scratch. Move the best definitions into `src/openlabels/exceptions.py`, merge overlaps, and update every import across the codebase.
 
 ```python
 # src/openlabels/exceptions.py
@@ -2758,11 +2718,50 @@ class ConflictError(OpenLabelsError):
 class ValidationError(OpenLabelsError):
     """Input validation error."""
     pass
+
+
+class ExtractionError(OpenLabelsError):
+    """Error during text/content extraction from files."""
+    pass
+
+
+class GraphAPIError(AdapterError):
+    """Microsoft Graph API error with response details."""
+    def __init__(self, message: str, status_code: int | None = None,
+                 error_code: str | None = None):
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
+
+class FilesystemError(AdapterError):
+    """Local filesystem adapter error."""
+    pass
+
+
+class ModelLoadError(OpenLabelsError):
+    """ML model loading failure."""
+    pass
+
+
+class JobError(OpenLabelsError):
+    """Background job processing failure."""
+    pass
+
+
+class SACLError(MonitoringError):
+    """Windows SACL audit rule error."""
+    pass
+
+
+class AuditRuleError(MonitoringError):
+    """Linux auditd rule error."""
+    pass
 ```
 
 **Refactor scope:** Do this all at once, not phased:
-1. Create `exceptions.py` with the full hierarchy
-2. Delete all per-module exception definitions (e.g., `core/exceptions.py`, `remediation/base.py:QuarantineError`, `monitoring/base.py:MonitoringError`)
+1. Create `exceptions.py` by consolidating from `core/exceptions.py`, `server/exceptions.py`, `remediation/base.py`, and `monitoring/base.py`
+2. Delete all per-module exception definitions after moving them
 3. Replace every import and catch block across the entire codebase to use the unified hierarchy
 4. No old exception classes should remain — the unified hierarchy is the single source of truth
 
@@ -2942,40 +2941,60 @@ No raw `CREATE TABLE` or `ALTER TABLE` statements. Alembic is the single source 
 
 Recommended order for maximum impact with minimum risk:
 
-### Phase 0: Foundation (do first)
-1. **14.1** Unified Exception Hierarchy — S/M effort, unblocks clean error handling everywhere
-2. **14.2** mypy strict — L effort, catches bugs before they're written. Do this early so all subsequent code is type-safe from the start.
-3. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
+### Phase 0: Foundation (do first — blocks everything else)
+1. **14.1** Unified Exception Hierarchy — M effort, consolidate 4 exception files into one
+2. **14.2** mypy strict — L effort, catches bugs before they're written
+3. **14.5** Database Connection Pool Configuration — S effort, prevents production issues
+4. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
+5. **8.2** Fix deprecated `asyncio.get_event_loop()` in labeling — S effort
 
 ### Phase 1: Critical Fixes
-4. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
-5. **13.1** Client Persistent Connection — M effort, major perf improvement
-6. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
-7. **10.1** Thread-Safe _watched_files — S effort, concurrency fix
+6. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
+7. **6.2** Fix Hardcoded Tab Indices — S effort, do with 6.1
+8. **6.3** Loading States — M effort, do with 6.1
+9. **13.1** Client Persistent Connection — M effort, major perf improvement
+10. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
+11. **4.2** JWKS Refresh on Key-Not-Found — S effort, do with 4.1
+12. **10.1** Thread-Safe _watched_files — S effort, concurrency fix
 
 ### Phase 2: Architecture Upgrades
-8. **2.3** Split app.py — M effort, improves maintainability
-9. **2.1** Service Dependency Injection — M effort, cleaner route handlers
-10. **1.1** Configuration-Driven Detector Setup — M effort, clean config
-11. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
-12. **2.4** Cursor Pagination — M effort, scalability (extend existing implementation)
+13. **2.3** Split app.py — M effort, improves maintainability
+14. **2.1** Service Dependency Injection — M effort, cleaner route handlers
+15. **1.1** Configuration-Driven Detector Setup — M effort, clean config
+16. **1.2** Immutable Pattern Definitions — M effort, can parallel with 1.1
+17. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
+18. **3.2** Adapter Lifecycle Management — M effort, do with 3.4
+19. **2.4** Cursor Pagination — M effort, extend existing implementation
+20. **2.5** Per-Tenant Rate Limiting — S effort, do with 2.4
+21. **14.3** Structured Logging Convention — M effort
 
 ### Phase 3: Feature Additions
-13. **5.3** `openlabels doctor` — M effort, huge DX improvement
-14. **1.3** Async Detection — M effort, server performance
-15. **8.1** Labeling Code Deduplication — M effort, maintainability
-16. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
-17. **4.4** RBAC Dependencies — M effort, security
+22. **5.3** `openlabels doctor` — M effort, huge DX improvement
+23. **1.3** Async Detection — M effort, biggest server performance unlock
+24. **8.1** Labeling Code Deduplication — M effort, maintainability
+25. **8.3** Batch Labeling — M effort, do with 8.1
+26. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
+27. **4.3-4.4** Granular Token Errors + RBAC — S+M effort, security
+28. **3.3** Adapter-Level Circuit Breaker — M effort
+29. **3.5** Adapter Health Checks — S effort, do with 3.3
+30. **7.1-7.2** Job max concurrency + callbacks — S effort combined
+31. **13.2** Client Retry Logic — S effort
 
 ### Phase 4: Polish
-18. **2.2** Response Schema Declarations — M effort, API documentation
-19. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
-20. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
-21. **10.2-10.4** Monitoring improvements — M effort combined
-22. **2.6** OpenTelemetry Tracing — L effort, observability
+32. **2.2** Response Schema Declarations — M effort, API documentation (requires 2.1)
+33. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
+34. **5.4** Progress Indicators — S effort, do with 5.1-5.2
+35. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
+36. **1.6** Structured Result Metadata — S effort, do with 1.4-1.5
+37. **10.2-10.4** Monitoring improvements — M+L effort combined
+38. **12.1-12.6** Windows tray improvements — M effort combined
+39. **13.3-13.4** Client auto-pagination + API coverage — M effort
+40. **2.6** OpenTelemetry Tracing — L effort, observability
+41. **14.4** Testing Strategy (property-based tests) — L effort
+42. **14.6** Alembic Migration Discipline — S effort (conventions, not code)
 
 ### Phase 5: New Capabilities
-23. **11.x** Web UI rebuild — L effort, deferred (skip for now per project decision)
+43. **11.x** Web UI rebuild — L effort, deferred (skip for now per project decision)
 
 ---
 
