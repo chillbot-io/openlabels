@@ -408,8 +408,10 @@ class TestFilesystemAdapterProperties:
 
     def test_supports_remediation_returns_true(self):
         """Filesystem adapter supports remediation."""
+        from openlabels.adapters.base import supports_remediation
+
         adapter = FilesystemAdapter()
-        assert adapter.supports_remediation() is True
+        assert supports_remediation(adapter) is True
 
     def test_service_account_stored(self):
         """Service account should be stored for Windows impersonation."""

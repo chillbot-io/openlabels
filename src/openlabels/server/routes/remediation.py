@@ -108,14 +108,11 @@ def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> st
     return canonical_dir
 
 
-def _get_adapter_for_path(file_path: str):
-    """
-    Get the appropriate adapter for a file path.
+def _get_adapter_for_path(file_path: str) -> FilesystemAdapter:
+    """Return the adapter for *file_path*.
 
-    Currently only supports filesystem. Future: detect SharePoint/OneDrive URLs.
+    Currently only supports filesystem.  Future: detect SharePoint/OneDrive URLs.
     """
-    # For now, use filesystem adapter for all paths
-    # Future: check if path is a SharePoint/OneDrive URL
     return FilesystemAdapter()
 
 

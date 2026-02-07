@@ -22,6 +22,7 @@ from openlabels.adapters.sharepoint import SharePointAdapter
 from openlabels.adapters.onedrive import OneDriveAdapter
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
+from openlabels.adapters.health import AdapterHealth, AdapterHealthChecker
 
 __all__ = [
     "ReadAdapter",
@@ -36,4 +37,6 @@ __all__ = [
     "BaseGraphAdapter",
     "GraphClient",
     "RateLimiterConfig",
+    "AdapterHealth",
+    "AdapterHealthChecker",
 ]
