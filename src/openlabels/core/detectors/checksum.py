@@ -428,7 +428,7 @@ except ImportError:
 # PATTERNS
 # =============================================================================
 
-CHECKSUM_PATTERNS = [
+CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
     # SSN - various formats with anti-evasion
     (re.compile(r'(?<![A-Za-z-])(\d{3}-\d{2}-\d{4})(?![A-Za-z])'), 'SSN', validate_ssn),
     (re.compile(r'(?<![A-Za-z])(\d{3}\s\d{2}\s\d{4})(?![A-Za-z])'), 'SSN', validate_ssn),
@@ -466,7 +466,7 @@ CHECKSUM_PATTERNS = [
     (re.compile(r'\b(92\d{20})\b'), 'TRACKING_NUMBER', validate_fedex_tracking),
     (re.compile(r'\b(\d{20,22})\b'), 'TRACKING_NUMBER', validate_usps_tracking),
     (re.compile(r'\b([A-Z]{2}\d{9}[A-Z]{2})\b'), 'TRACKING_NUMBER', validate_usps_tracking),
-]
+)
 
 
 # =============================================================================

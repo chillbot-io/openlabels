@@ -143,7 +143,7 @@ def is_hyperscan_available() -> bool:
 
 # Additional patterns to supplement the built-in PII_PATTERNS
 # These can be imported and added to the detector
-SUPPLEMENTAL_PATTERNS: List[Pattern] = [
+SUPPLEMENTAL_PATTERNS: tuple[Pattern, ...] = (
     # VIN (Vehicle Identification Number)
     Pattern(
         id=100,
@@ -210,4 +210,4 @@ SUPPLEMENTAL_PATTERNS: List[Pattern] = [
         regex=r"\b[sr]k_live_[0-9a-zA-Z]{24}\b",
         confidence=0.99,
     ),
-]
+)
