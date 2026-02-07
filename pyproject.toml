@@ -179,15 +179,65 @@ known-first-party = ["openlabels"]
 
 [tool.mypy]
 python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
+strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = [
-    "msal.*",
-    "pythonnet.*",
-    "clr.*",
+    # Auth / .NET interop
+    "msal", "msal.*",
+    "pythonnet", "pythonnet.*",
+    "clr", "clr.*",
+    "Microsoft", "Microsoft.*",
+    # GUI
+    "PySide6", "PySide6.*",
+    "pyqtgraph", "pyqtgraph.*",
+    # Web framework
+    "fastapi", "fastapi.*",
+    "starlette", "starlette.*",
+    "uvicorn", "uvicorn.*",
+    "slowapi", "slowapi.*",
+    "websockets", "websockets.*",
+    # Database
+    "sqlalchemy", "sqlalchemy.*",
+    "alembic", "alembic.*",
+    "redis", "redis.*",
+    # HTTP / async
+    "httpx", "httpx.*",
+    "aiofiles", "aiofiles.*",
+    # ML / ONNX / NLP
+    "onnxruntime", "onnxruntime.*",
+    "openlabels_matcher", "openlabels_matcher.*",
+    "torch", "torch.*",
+    "intel_extension_for_pytorch", "intel_extension_for_pytorch.*",
+    "transformers", "transformers.*",
+    "tokenizers", "tokenizers.*",
+    "optimum", "optimum.*",
+    "numpy", "numpy.*",
+    "hyperscan", "hyperscan.*",
+    # Document extraction
+    "docx", "docx.*",
+    "pptx", "pptx.*",
+    "PyPDF2", "PyPDF2.*",
+    "pypdf", "pypdf.*",
+    "fitz", "fitz.*",
+    "bs4", "bs4.*",
+    "extract_msg", "extract_msg.*",
+    "striprtf", "striprtf.*",
+    "PIL", "PIL.*",
+    "pillow_heif", "pillow_heif.*",
+    "pytesseract", "pytesseract.*",
+    "rapidocr_onnxruntime", "rapidocr_onnxruntime.*",
+    # Observability
+    "prometheus_client", "prometheus_client.*",
+    "sentry_sdk", "sentry_sdk.*",
+    # Utilities
+    "pydantic_settings", "pydantic_settings.*",
+    "click", "click.*",
+    "intervaltree", "intervaltree.*",
+    "limits", "limits.*",
+    "setproctitle", "setproctitle.*",
+    "uuid_utils", "uuid_utils.*",
 ]
 ignore_missing_imports = true
 

@@ -20,7 +20,7 @@ from .constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_EXTRACTION_RATIO,
 )
-from .exceptions import ExtractionError
+from openlabels.exceptions import ExtractionError
 
 logger = logging.getLogger(__name__)
 
