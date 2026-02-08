@@ -56,6 +56,23 @@ FILE_INVENTORY_SCHEMA = pa.schema([
     pa.field("content_changed_count", pa.int32()),
 ])
 
+FOLDER_INVENTORY_SCHEMA = pa.schema([
+    pa.field("id", pa.binary(16)),
+    pa.field("tenant_id", pa.binary(16)),
+    pa.field("target_id", pa.binary(16)),
+    pa.field("folder_path", pa.utf8()),
+    pa.field("adapter", _dict_str),
+    pa.field("file_count", pa.int32()),
+    pa.field("total_size_bytes", pa.int64()),
+    pa.field("folder_modified", pa.timestamp("ms", tz="UTC")),
+    pa.field("last_scanned_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("has_sensitive_files", pa.bool_()),
+    pa.field("highest_risk_tier", _dict_str),
+    pa.field("total_entities_found", pa.int32()),
+    pa.field("discovered_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("updated_at", pa.timestamp("ms", tz="UTC")),
+])
+
 ACCESS_EVENTS_SCHEMA = pa.schema([
     pa.field("id", pa.binary(16)),
     pa.field("tenant_id", pa.binary(16)),

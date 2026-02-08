@@ -107,9 +107,9 @@ catalog_flush_lag_seconds = Gauge(
     registry=registry,
 )
 
-catalog_partition_count = Gauge(
-    "openlabels_catalog_partition_count",
-    "Number of Parquet partitions in the catalog",
+catalog_file_count = Gauge(
+    "openlabels_catalog_file_count",
+    "Number of Parquet files in the catalog",
     labelnames=["table"],
     registry=registry,
 )
@@ -233,11 +233,14 @@ def update_catalog_health(storage) -> None:
             lag = (datetime.now(timezone.utc) - last_dt).total_seconds()
             catalog_flush_lag_seconds.set(max(0, lag))
 
-        # Partition counts per table
-        tables = ["scan_results", "access_events", "audit_log", "remediation_actions"]
+        # File counts per table
+        tables = [
+            "scan_results", "file_inventory", "access_events",
+            "audit_log", "remediation_actions",
+        ]
         for table in tables:
             files = storage.list_files(table)
-            catalog_partition_count.labels(table=table).set(len(files))
+            catalog_file_count.labels(table=table).set(len(files))
 
         # Total storage size (local only — remote would need HEAD calls)
         total_bytes = 0

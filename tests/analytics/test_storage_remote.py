@@ -112,6 +112,25 @@ class TestS3Storage:
         assert "scan_results/part-001.parquet" in result
         assert "scan_results/part-002.parquet" in result
 
+    def test_s3_write_bytes(self):
+        s, mock_client = self._make_storage()
+        s.write_bytes("_metadata/flush_state.json", b'{"version": 1}')
+
+        mock_client.put_object.assert_called_once()
+        call_kwargs = mock_client.put_object.call_args
+        assert call_kwargs.kwargs["Key"] == "catalog/_metadata/flush_state.json"
+        assert call_kwargs.kwargs["Body"] == b'{"version": 1}'
+
+    def test_s3_read_bytes(self):
+        s, mock_client = self._make_storage()
+
+        mock_body = MagicMock()
+        mock_body.read.return_value = b'{"version": 1}'
+        mock_client.get_object.return_value = {"Body": mock_body}
+
+        result = s.read_bytes("_metadata/flush_state.json")
+        assert result == b'{"version": 1}'
+
 
 # ── Config + factory tests ───────────────────────────────────────────
 
@@ -152,3 +171,97 @@ class TestConfigAndFactory:
         cat = CatalogSettings(enabled=True, backend="azure")
         with pytest.raises(ValueError, match="catalog.azure.container"):
             create_storage(cat)
+
+
+# ── AzureBlobStorage tests ──────────────────────────────────────────
+
+class TestAzureBlobStorage:
+    """Tests for the Azure Blob Storage backend with mocked azure SDK."""
+
+    def _make_storage(self):
+        """Helper to create an AzureBlobStorage with a mocked SDK."""
+        mock_service = MagicMock()
+        mock_container = MagicMock()
+        mock_service.get_container_client.return_value = mock_container
+
+        with patch.dict("sys.modules", {"azure": MagicMock(), "azure.storage": MagicMock(), "azure.storage.blob": MagicMock()}):
+            import sys
+            blob_mod = sys.modules["azure.storage.blob"]
+            blob_mod.BlobServiceClient = MagicMock()
+            blob_mod.BlobServiceClient.from_connection_string.return_value = mock_service
+
+            s = AzureBlobStorage(
+                container="test-container",
+                prefix="catalog",
+                connection_string="DefaultEndpointsProtocol=https;AccountName=test",
+            )
+        return s, mock_container
+
+    def test_azure_root_uri(self):
+        s, _ = self._make_storage()
+        assert s.root == "az://test-container/catalog"
+
+    def test_azure_write_parquet(self):
+        s, mock_container = self._make_storage()
+        mock_blob_client = MagicMock()
+        mock_container.get_blob_client.return_value = mock_blob_client
+
+        table = pa.table({"x": [1, 2, 3]})
+        s.write_parquet("data/part.parquet", table)
+
+        mock_container.get_blob_client.assert_called_with("catalog/data/part.parquet")
+        mock_blob_client.upload_blob.assert_called_once()
+
+    def test_azure_read_parquet(self):
+        s, mock_container = self._make_storage()
+
+        # Create a real Parquet buffer to return
+        table = pa.table({"x": [1, 2, 3]})
+        buf = io.BytesIO()
+        pq.write_table(table, buf)
+        buf.seek(0)
+
+        mock_blob_client = MagicMock()
+        mock_download = MagicMock()
+        mock_download.readall.return_value = buf.getvalue()
+        mock_blob_client.download_blob.return_value = mock_download
+        mock_container.get_blob_client.return_value = mock_blob_client
+
+        result = s.read_parquet("data/part.parquet")
+        assert result.num_rows == 3
+        assert result.column("x").to_pylist() == [1, 2, 3]
+
+    def test_azure_list_files(self):
+        s, mock_container = self._make_storage()
+
+        mock_blob1 = MagicMock()
+        mock_blob1.name = "catalog/scan_results/part-001.parquet"
+        mock_blob2 = MagicMock()
+        mock_blob2.name = "catalog/scan_results/part-002.parquet"
+        mock_blob3 = MagicMock()
+        mock_blob3.name = "catalog/scan_results/README.md"
+        mock_container.list_blobs.return_value = [mock_blob1, mock_blob2, mock_blob3]
+
+        result = s.list_files("scan_results")
+        assert len(result) == 2
+        assert "scan_results/part-001.parquet" in result
+        assert "scan_results/part-002.parquet" in result
+
+    def test_azure_write_bytes(self):
+        s, mock_container = self._make_storage()
+        mock_blob_client = MagicMock()
+        mock_container.get_blob_client.return_value = mock_blob_client
+
+        s.write_bytes("_metadata/flush_state.json", b'{"version": 1}')
+        mock_blob_client.upload_blob.assert_called_once_with(b'{"version": 1}', overwrite=True)
+
+    def test_azure_read_bytes(self):
+        s, mock_container = self._make_storage()
+        mock_blob_client = MagicMock()
+        mock_download = MagicMock()
+        mock_download.readall.return_value = b'{"version": 1}'
+        mock_blob_client.download_blob.return_value = mock_download
+        mock_container.get_blob_client.return_value = mock_blob_client
+
+        result = s.read_bytes("_metadata/flush_state.json")
+        assert result == b'{"version": 1}'

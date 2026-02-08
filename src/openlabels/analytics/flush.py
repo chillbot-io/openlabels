@@ -68,23 +68,15 @@ def load_flush_state(storage: CatalogStorage) -> dict:
             "last_remediation_action_flush": None,
             "schema_version": 1,
         }
-    import pyarrow  # noqa: F401 — only needed for the read path
-
-    # Read JSON directly from the storage backend
-    from pathlib import Path as _P
-
-    resolved = _P(storage.root) / path
-    with open(resolved) as f:
-        return json.load(f)
+    data = storage.read_bytes(path)
+    return json.loads(data)
 
 
 def save_flush_state(storage: CatalogStorage, state: dict) -> None:
     """Persist flush cursor state."""
-    resolved = Path(storage.root) / _METADATA_DIR
-    resolved.mkdir(parents=True, exist_ok=True)
-    dest = resolved / _FLUSH_STATE_FILE
-    with open(dest, "w") as f:
-        json.dump(state, f, indent=2, default=str)
+    path = _flush_state_path(storage)
+    data = json.dumps(state, indent=2, default=str).encode()
+    storage.write_bytes(path, data)
 
 
 # ── 1. Scan completion flush ─────────────────────────────────────────

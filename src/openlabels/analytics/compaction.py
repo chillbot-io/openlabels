@@ -11,10 +11,8 @@ Schedule: weekly or on-demand via ``openlabels catalog compact``.
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
 
-import duckdb
 import pyarrow.parquet as pq
 
 from openlabels.analytics.storage import CatalogStorage
@@ -108,49 +106,42 @@ def _compact_partition(
     2. Write merged result to a new file
     3. Delete old files
     """
-    # Use a temporary DuckDB connection to merge
-    db = duckdb.connect(":memory:")
-    try:
-        # Read all files — for local storage we can use paths directly,
-        # for remote storage we read each file and union them
-        tables = []
-        for f in files:
-            try:
-                t = storage.read_parquet(f)
-                tables.append(t)
-            except Exception:
-                logger.warning("Could not read %s during compaction, skipping", f)
+    # Read all files and merge via PyArrow
+    tables = []
+    for f in files:
+        try:
+            t = storage.read_parquet(f)
+            tables.append(t)
+        except Exception:
+            logger.warning("Could not read %s during compaction, skipping", f)
 
-        if not tables:
-            return
+    if not tables:
+        return
 
-        import pyarrow as pa
-        merged = pa.concat_tables(tables, promote_options="default")
+    import pyarrow as pa
+    merged = pa.concat_tables(tables, promote_options="default")
 
-        # Sort by common time columns if present
-        col_names = set(merged.column_names)
-        sort_col = None
-        for candidate in ("scanned_at", "event_time", "created_at"):
-            if candidate in col_names:
-                sort_col = candidate
-                break
+    # Sort by common time columns if present
+    col_names = set(merged.column_names)
+    sort_col = None
+    for candidate in ("scanned_at", "event_time", "created_at"):
+        if candidate in col_names:
+            sort_col = candidate
+            break
 
-        if sort_col:
-            indices = merged.column(sort_col).to_pylist()
-            sorted_indices = sorted(range(len(indices)), key=lambda i: indices[i] or "")
-            merged = merged.take(sorted_indices)
+    if sort_col:
+        indices = merged.column(sort_col).to_pylist()
+        sorted_indices = sorted(range(len(indices)), key=lambda i: indices[i] or "")
+        merged = merged.take(sorted_indices)
 
-        # Write the compacted file
-        from openlabels.analytics.partition import timestamped_part_filename
-        dest = f"{partition_dir}/{timestamped_part_filename()}"
-        storage.write_parquet(dest, merged)
+    # Write the compacted file
+    from openlabels.analytics.partition import timestamped_part_filename
+    dest = f"{partition_dir}/{timestamped_part_filename()}"
+    storage.write_parquet(dest, merged)
 
-        # Delete old files
-        for f in files:
-            try:
-                storage.delete(f)
-            except Exception:
-                logger.warning("Could not delete %s after compaction", f)
-
-    finally:
-        db.close()
+    # Delete old files
+    for f in files:
+        try:
+            storage.delete(f)
+        except Exception:
+            logger.warning("Could not delete %s after compaction", f)

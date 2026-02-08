@@ -52,6 +52,7 @@ async def _run_rebuild(batch_size: int) -> None:
         access_events_to_arrow,
         audit_log_to_arrow,
         file_inventory_to_arrow,
+        folder_inventory_to_arrow,
         remediation_actions_to_arrow,
         scan_results_to_arrow,
     )
@@ -60,6 +61,7 @@ async def _run_rebuild(batch_size: int) -> None:
         access_event_partition,
         audit_log_partition,
         file_inventory_path,
+        folder_inventory_path,
         remediation_action_partition,
         scan_result_partition,
         timestamped_part_filename,
@@ -71,6 +73,7 @@ async def _run_rebuild(batch_size: int) -> None:
         AuditLog,
         FileAccessEvent,
         FileInventory,
+        FolderInventory,
         RemediationAction,
         ScanResult,
     )
@@ -150,6 +153,38 @@ async def _run_rebuild(batch_size: int) -> None:
                 for (tid, tgt), indices in groups.items():
                     from uuid import UUID
                     part = file_inventory_path(UUID(tid), UUID(tgt))
+                    subset = table.take(indices)
+                    storage.write_parquet(part, subset)
+
+                offset += len(rows)
+                click.echo(f"    Flushed {offset}/{total}")
+
+            # ── Folder Inventory ──────────────────────────────────────
+            total = (await session.execute(select(func.count()).select_from(FolderInventory))).scalar() or 0
+            click.echo(f"  Folder inventory: {total} rows")
+            offset = 0
+            while offset < total:
+                q = (
+                    select(FolderInventory)
+                    .order_by(FolderInventory.id)
+                    .offset(offset)
+                    .limit(batch_size)
+                )
+                result = await session.execute(q)
+                rows = list(result.scalars())
+                if not rows:
+                    break
+
+                table = folder_inventory_to_arrow(rows)
+
+                groups = {}
+                for idx, r in enumerate(rows):
+                    key = (str(r.tenant_id), str(r.target_id))
+                    groups.setdefault(key, []).append(idx)
+
+                for (tid, tgt), indices in groups.items():
+                    from uuid import UUID
+                    part = folder_inventory_path(UUID(tid), UUID(tgt))
                     subset = table.take(indices)
                     storage.write_parquet(part, subset)
 
@@ -315,8 +350,8 @@ def compact(table: str | None, threshold: int, yes: bool) -> None:
 
     storage = create_storage(settings.catalog)
     tables = [table] if table else [
-        "scan_results", "file_inventory", "access_events",
-        "audit_log", "remediation_actions",
+        "scan_results", "file_inventory", "folder_inventory",
+        "access_events", "audit_log", "remediation_actions",
     ]
 
     total_compacted = compact_catalog(storage, tables, threshold=threshold)

@@ -50,6 +50,14 @@ class CatalogStorage(Protocol):
         """Delete the file or directory at *path*."""
         ...
 
+    def read_bytes(self, path: str) -> bytes:
+        """Read raw bytes from *path* (for JSON metadata, etc.)."""
+        ...
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        """Write raw bytes to *path*."""
+        ...
+
     @property
     def root(self) -> str:
         """Return the absolute root URI/path of the catalog."""
@@ -113,6 +121,14 @@ class LocalStorage:
     def exists(self, path: str) -> bool:
         return self._resolve(path).exists()
 
+    def read_bytes(self, path: str) -> bytes:
+        return self._resolve(path).read_bytes()
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        dest = self._resolve(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
     def delete(self, path: str) -> None:
         target = self._resolve(path)
         if target.is_file():
@@ -160,12 +176,7 @@ class S3Storage:
 
         self._s3 = boto3.client("s3", **kwargs)
         self._endpoint_url = endpoint_url
-
-        # Build the root URI that DuckDB will use
-        if endpoint_url:
-            self._root = f"s3://{bucket}/{self._prefix}"
-        else:
-            self._root = f"s3://{bucket}/{self._prefix}"
+        self._root = f"s3://{bucket}/{self._prefix}"
 
         logger.info("S3Storage catalog root: %s", self._root)
 
@@ -242,6 +253,15 @@ class S3Storage:
             if e.response["Error"]["Code"] == "404":
                 return False
             raise
+
+    def read_bytes(self, path: str) -> bytes:
+        key = self._key(path)
+        response = self._s3.get_object(Bucket=self._bucket, Key=key)
+        return response["Body"].read()
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        key = self._key(path)
+        self._s3.put_object(Bucket=self._bucket, Key=key, Body=data)
 
     def delete(self, path: str) -> None:
         key = self._key(path)
@@ -398,6 +418,16 @@ class AzureBlobStorage:
             return True
         except Exception:
             return False
+
+    def read_bytes(self, path: str) -> bytes:
+        blob_name = self._blob_name(path)
+        blob_client = self._container.get_blob_client(blob_name)
+        return blob_client.download_blob().readall()
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        blob_name = self._blob_name(path)
+        blob_client = self._container.get_blob_client(blob_name)
+        blob_client.upload_blob(data, overwrite=True)
 
     def delete(self, path: str) -> None:
         blob_name = self._blob_name(path)
