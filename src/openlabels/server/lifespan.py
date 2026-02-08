@@ -137,10 +137,95 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # Monitoring: populate registry cache from DB on startup
+    if settings.monitoring.enabled and settings.monitoring.sync_cache_on_startup:
+        try:
+            from openlabels.monitoring.registry import populate_cache_from_db
+            from openlabels.server.db import get_session_context
+
+            if settings.auth.tenant_id:
+                from uuid import UUID as _UUID
+                _tenant = _UUID(settings.auth.tenant_id)
+                async with get_session_context() as session:
+                    added = await populate_cache_from_db(session, _tenant)
+                    logger.info(
+                        "Monitoring registry cache populated (%d entries from DB)", added,
+                    )
+            else:
+                logger.warning(
+                    "Monitoring enabled but auth.tenant_id not configured — "
+                    "skipping registry cache population from DB"
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to populate monitoring cache from DB: %s: %s",
+                type(e).__name__, e,
+            )
+
+    # Event harvester background task (monitoring)
+    harvester_shutdown = asyncio.Event()
+    harvester_task: asyncio.Task | None = None
+    if settings.monitoring.enabled:
+        try:
+            from openlabels.monitoring.harvester import periodic_event_harvest
+
+            harvester_task = asyncio.create_task(
+                periodic_event_harvest(
+                    interval_seconds=settings.monitoring.harvest_interval_seconds,
+                    max_events_per_cycle=settings.monitoring.max_events_per_cycle,
+                    store_raw_events=settings.monitoring.store_raw_events,
+                    enabled_providers=settings.monitoring.providers,
+                    shutdown_event=harvester_shutdown,
+                )
+            )
+            logger.info(
+                "Event harvester started (interval=%ds, providers=%s)",
+                settings.monitoring.harvest_interval_seconds,
+                settings.monitoring.providers,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start event harvester: %s: %s",
+                type(e).__name__, e,
+            )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
     # Shutdown
+
+    # Stop event harvester
+    if harvester_task and not harvester_task.done():
+        harvester_shutdown.set()
+        try:
+            await asyncio.wait_for(harvester_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            harvester_task.cancel()
+            try:
+                await harvester_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Event harvester stopped")
+
+    # Monitoring: sync registry cache to DB on shutdown
+    if settings.monitoring.enabled and settings.monitoring.sync_cache_on_shutdown:
+        try:
+            from openlabels.monitoring.registry import sync_cache_to_db
+            from openlabels.server.db import get_session_context
+
+            if settings.auth.tenant_id:
+                from uuid import UUID as _UUID
+                _tenant = _UUID(settings.auth.tenant_id)
+                async with get_session_context() as session:
+                    synced = await sync_cache_to_db(session, _tenant)
+                    logger.info(
+                        "Monitoring registry cache synced to DB (%d entries)", synced,
+                    )
+        except Exception as e:
+            logger.warning(
+                "Failed to sync monitoring cache to DB: %s: %s",
+                type(e).__name__, e,
+            )
     if scheduler and scheduler.is_running:
         try:
             await scheduler.stop()

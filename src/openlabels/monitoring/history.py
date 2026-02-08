@@ -123,8 +123,16 @@ def _get_history_windows(
         logger.warning(f"Path contains invalid characters, refusing to query: {path}")
         return []
 
-    # Escape the filename for use in -like pattern
-    escaped_name = path.name.replace('[', '`[').replace(']', '`]')
+    # Escape the filename for use in PowerShell -like pattern.
+    # Must escape all wildcard characters: *, ?, [, ]
+    escaped_name = (
+        path.name
+        .replace('`', '``')   # escape backtick first (it's the escape char)
+        .replace('[', '`[')
+        .replace(']', '`]')
+        .replace('*', '`*')
+        .replace('?', '`?')
+    )
 
     ps_script = f'''
 $events = Get-WinEvent -FilterHashtable @{{

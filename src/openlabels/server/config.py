@@ -481,6 +481,36 @@ class AzureCatalogSettings(BaseSettings):
     account_key: str | None = None
 
 
+class MonitoringSettings(BaseSettings):
+    """
+    File access monitoring and event harvesting configuration.
+
+    Controls the EventHarvester background task that periodically collects
+    access events from OS audit subsystems (Windows SACL, Linux auditd)
+    and persists them to the ``file_access_events`` table.
+
+    Environment variables::
+
+        OPENLABELS_MONITORING__ENABLED=true
+        OPENLABELS_MONITORING__HARVEST_INTERVAL_SECONDS=60
+        OPENLABELS_MONITORING__PROVIDERS=windows_sacl,auditd
+        OPENLABELS_MONITORING__STORE_RAW_EVENTS=false
+    """
+
+    enabled: bool = False
+    # How often the EventHarvester polls providers for new events
+    harvest_interval_seconds: int = 60
+    # Which event providers to activate (comma-separated in env vars)
+    providers: list[str] = Field(default_factory=lambda: ["windows_sacl", "auditd"])
+    # Store the raw OS event in FileAccessEvent.raw_event (useful for debugging)
+    store_raw_events: bool = False
+    # Maximum events to process per harvest cycle (back-pressure)
+    max_events_per_cycle: int = 10_000
+    # Sync registry cache to DB on startup and shutdown
+    sync_cache_on_startup: bool = True
+    sync_cache_on_shutdown: bool = True
+
+
 class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
@@ -545,6 +575,7 @@ class Settings(BaseSettings):
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

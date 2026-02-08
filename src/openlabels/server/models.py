@@ -699,7 +699,7 @@ class FileAccessEvent(Base):
 
     # Event source info
     event_id: Mapped[Optional[int]] = mapped_column(Integer)  # Windows Event ID or audit serial
-    event_source: Mapped[Optional[str]] = mapped_column(String(50))  # 'windows_security', 'auditd'
+    event_source: Mapped[Optional[str]] = mapped_column(String(50))  # 'windows_sacl', 'auditd'
 
     # Timing
     event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

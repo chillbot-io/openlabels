@@ -45,6 +45,8 @@ from .history import (
     get_access_history,
 )
 from . import db  # noqa: F401 – async DB persistence helpers
+from .providers.base import EventProvider, RawAccessEvent
+from .harvester import EventHarvester
 
 __all__ = [
     # Types
@@ -70,4 +72,9 @@ __all__ = [
     "EventCollector",
     # History
     "get_access_history",
+    # Providers (Phase G)
+    "EventProvider",
+    "RawAccessEvent",
+    # Harvester (Phase G)
+    "EventHarvester",
 ]
