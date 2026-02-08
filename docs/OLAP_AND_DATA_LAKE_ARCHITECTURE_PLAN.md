@@ -23,9 +23,10 @@
 13. [Unified Scan Pipeline](#13-unified-scan-pipeline)
 14. [Policy Engine Integration](#14-policy-engine-integration)
 15. [SIEM Export Integration](#15-siem-export-integration)
-16. [Reporting and Distribution](#16-reporting-and-distribution)
-17. [Operational Readiness](#17-operational-readiness)
-18. [Implementation Phases](#18-implementation-phases)
+16. [Cloud Object Store Adapters (S3 + GCS)](#16-cloud-object-store-adapters-s3--gcs)
+17. [Reporting and Distribution](#17-reporting-and-distribution)
+18. [Operational Readiness](#18-operational-readiness)
+19. [Implementation Phases](#19-implementation-phases)
 
 ---
 
@@ -726,6 +727,13 @@ src/openlabels/monitoring/
     ├── m365_audit.py        # M365 Management Activity API harvester
     └── graph_webhook.py     # Graph API webhook change notifications
 
+src/openlabels/adapters/                 # Existing adapter package
+├── filesystem.py            # Existing — local/UNC filesystem adapter
+├── sharepoint.py            # Existing — SharePoint Online adapter
+├── onedrive.py              # Existing — OneDrive for Business adapter
+├── s3.py                    # NEW — S3/S3-compatible adapter with label sync-back
+└── gcs.py                   # NEW — Google Cloud Storage adapter with label sync-back
+
 src/openlabels/export/
 ├── __init__.py              # Public API: ExportEngine, SIEMAdapter
 ├── engine.py                # Export orchestration, cursor tracking, scheduling
@@ -753,6 +761,9 @@ jobs/tasks/scan.py ──► analytics/flush.py ──► analytics/storage.py �
                    │
                    └──► export/engine.py ──► export/adapters/* ──► Splunk/Sentinel/QRadar/Elastic
 
+adapters/s3.py ──► scan pipeline ──► labeling/engine.py ──► s3.apply_label_and_sync()
+adapters/gcs.py ─┘                                      └──► gcs.apply_label_and_sync()
+
 monitoring/harvester.py ──► monitoring/providers/* ──► FileAccessEvent (PostgreSQL)
 monitoring/stream.py ───────┘                                  │
                                                                ▼
@@ -772,8 +783,9 @@ Both are pure-Python wheels with native extensions — no external services to d
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `boto3` | `>=1.34` | S3 write path (DuckDB reads S3 natively via httpfs) |
+| `boto3` | `>=1.34` | S3 write path + S3 scan adapter (DuckDB reads S3 natively via httpfs) |
 | `azure-storage-blob` | `>=12.19` | Azure Blob write path |
+| `google-cloud-storage` | `>=2.14` | GCS scan adapter (optional — `pip install openlabels[gcs]`) |
 
 ---
 
@@ -2502,7 +2514,383 @@ Each adapter maps `ExportRecord` fields to the SIEM's native schema:
 
 ---
 
-## 16. Reporting and Distribution
+## 16. Cloud Object Store Adapters (S3 + GCS)
+
+### Purpose
+
+Extend OpenLabels to scan files stored in cloud object stores — Amazon S3 (and
+S3-compatible like MinIO, Wasabi) and Google Cloud Storage. The workflow:
+
+1. **Download** object from cloud storage
+2. **Scan + classify** through the standard pipeline (NER, regex, scoring)
+3. **Apply MIP label** to the file content (Office docs, PDFs)
+4. **Conditionally re-upload** with the label embedded, preserving all original metadata
+
+This makes OpenLabels a **multi-cloud data classification tool** — not just on-prem
+and M365, but S3 and GCS as first-class scan targets with label-back capability.
+
+### Download → Label → Re-Upload Workflow
+
+```
+┌─────────────────────┐
+│  S3 Bucket / GCS    │
+│  Bucket             │
+│                     │
+│  quarterly-report.  │
+│  docx               │◄────── 5. PUT (conditional: If-Match original ETag)
+│                     │           File content: labeled version
+└─────────┬───────────┘           Metadata: preserved exactly
+          │
+          │ 1. GET Object + HEAD (capture all metadata)
+          ▼
+┌─────────────────────┐
+│  Temp Local Copy    │
+│                     │
+│  quarterly-report.  │
+│  docx (original)    │
+└─────────┬───────────┘
+          │
+          │ 2. Extract text, classify (standard pipeline)
+          ▼
+┌─────────────────────┐
+│  Classification     │
+│                     │
+│  3 SSNs found       │
+│  risk_tier=CRITICAL │
+│  policy: HIPAA §164 │
+└─────────┬───────────┘
+          │
+          │ 3. Apply MIP label to file bytes
+          ▼
+┌─────────────────────┐
+│  Labeled Copy       │
+│                     │
+│  quarterly-report.  │
+│  docx (labeled)     │──────► 4. Verify: only label changed, content intact
+└─────────────────────┘
+```
+
+### Metadata Preservation
+
+When re-uploading a labeled file, **all cloud metadata must be round-tripped exactly**.
+Only the file content (with embedded MIP label) changes.
+
+#### S3 Metadata Round-Trip
+
+```python
+# src/openlabels/adapters/s3.py
+
+class S3Adapter:
+    """S3-compatible object store adapter with label-back capability."""
+
+    async def _capture_metadata(self, bucket: str, key: str) -> dict:
+        """Capture all object metadata for round-trip preservation."""
+        head = await self._client.head_object(Bucket=bucket, Key=key)
+        return {
+            "ContentType": head.get("ContentType", "application/octet-stream"),
+            "ContentEncoding": head.get("ContentEncoding"),
+            "ContentDisposition": head.get("ContentDisposition"),
+            "ContentLanguage": head.get("ContentLanguage"),
+            "CacheControl": head.get("CacheControl"),
+            "Metadata": head.get("Metadata", {}),      # x-amz-meta-* user metadata
+            "StorageClass": head.get("StorageClass", "STANDARD"),
+            "ServerSideEncryption": head.get("ServerSideEncryption"),
+            "SSEKMSKeyId": head.get("SSEKMSKeyId"),     # KMS key for re-encryption
+            "ETag": head["ETag"],                        # For conditional re-upload
+        }
+
+    async def _get_tags(self, bucket: str, key: str) -> dict:
+        """Capture object tags for preservation."""
+        resp = await self._client.get_object_tagging(Bucket=bucket, Key=key)
+        return {t["Key"]: t["Value"] for t in resp.get("TagSet", [])}
+
+    async def apply_label_and_sync(
+        self, bucket: str, key: str, labeled_content: bytes, original_meta: dict
+    ) -> bool:
+        """
+        Re-upload labeled file with preserved metadata.
+
+        Uses conditional PUT (If-Match) to prevent overwriting concurrent changes.
+        If the object was modified between download and re-upload, the PUT fails
+        and we return False (caller should re-scan the new version).
+        """
+        put_args = {
+            "Bucket": bucket,
+            "Key": key,
+            "Body": labeled_content,
+            "ContentType": original_meta["ContentType"],
+            "Metadata": original_meta["Metadata"],
+            "StorageClass": original_meta["StorageClass"],
+        }
+
+        # Conditional write — fail if object changed since we downloaded it
+        # S3: If-Match is not natively supported on PutObject, so we use
+        # a two-step approach: check ETag, then put. For versioned buckets,
+        # the old version is preserved automatically.
+        current = await self._client.head_object(Bucket=bucket, Key=key)
+        if current["ETag"] != original_meta["ETag"]:
+            return False  # Object changed — re-scan needed
+
+        # Preserve encryption settings
+        if original_meta.get("ServerSideEncryption"):
+            put_args["ServerSideEncryption"] = original_meta["ServerSideEncryption"]
+        if original_meta.get("SSEKMSKeyId"):
+            put_args["SSEKMSKeyId"] = original_meta["SSEKMSKeyId"]
+
+        # Preserve optional headers
+        for header in ("ContentEncoding", "ContentDisposition",
+                       "ContentLanguage", "CacheControl"):
+            if original_meta.get(header):
+                put_args[header] = original_meta[header]
+
+        await self._client.put_object(**put_args)
+
+        # Restore tags (PutObject doesn't carry tags forward)
+        tags = await self._get_tags(bucket, key)
+        if tags:
+            await self._client.put_object_tagging(
+                Bucket=bucket, Key=key,
+                Tagging={"TagSet": [{"Key": k, "Value": v} for k, v in tags.items()]}
+            )
+
+        return True
+```
+
+#### GCS Metadata Round-Trip
+
+```python
+# src/openlabels/adapters/gcs.py
+
+class GCSAdapter:
+    """Google Cloud Storage adapter with label-back capability."""
+
+    async def _capture_metadata(self, bucket: str, blob_name: str) -> dict:
+        """Capture all blob metadata for round-trip preservation."""
+        blob = self._bucket.blob(blob_name)
+        blob.reload()
+        return {
+            "content_type": blob.content_type,
+            "content_encoding": blob.content_encoding,
+            "content_disposition": blob.content_disposition,
+            "content_language": blob.content_language,
+            "cache_control": blob.cache_control,
+            "metadata": blob.metadata or {},              # Custom metadata
+            "storage_class": blob.storage_class,
+            "kms_key_name": blob.kms_key_name,
+            "generation": blob.generation,                # For conditional re-upload
+        }
+
+    async def apply_label_and_sync(
+        self, bucket: str, blob_name: str, labeled_content: bytes, original_meta: dict
+    ) -> bool:
+        """
+        Re-upload labeled file with preserved metadata.
+
+        Uses generation-based precondition (if_generation_match) to prevent
+        overwriting concurrent changes. If the blob was modified, upload fails
+        and we return False.
+        """
+        blob = self._bucket.blob(blob_name)
+
+        # Set preserved metadata
+        blob.content_type = original_meta["content_type"]
+        blob.metadata = original_meta["metadata"]
+        if original_meta.get("content_encoding"):
+            blob.content_encoding = original_meta["content_encoding"]
+        if original_meta.get("content_disposition"):
+            blob.content_disposition = original_meta["content_disposition"]
+        if original_meta.get("cache_control"):
+            blob.cache_control = original_meta["cache_control"]
+
+        try:
+            # Conditional write — fail if blob generation changed
+            blob.upload_from_string(
+                labeled_content,
+                content_type=original_meta["content_type"],
+                if_generation_match=original_meta["generation"],
+            )
+            return True
+        except google.api_core.exceptions.PreconditionFailed:
+            return False  # Blob changed — re-scan needed
+```
+
+### Change Detection for Cloud Objects
+
+Delta detection is critical — scanning every object in a bucket on every run is
+wasteful. Each cloud platform has native change detection mechanisms:
+
+| Mechanism | Platform | Latency | Use Case |
+|-----------|----------|---------|----------|
+| **S3 Event Notifications → SQS** | AWS | Seconds | Near-real-time: queue `s]ObjectCreated`, `s3:ObjectModified` events |
+| **S3 Inventory** | AWS | 24h | Batch: daily CSV/Parquet manifest of all objects with ETags |
+| **S3 ListObjectsV2 + ETag diff** | AWS/S3-compat | On-demand | Fallback for S3-compatible stores without event support |
+| **GCS Pub/Sub Notifications** | GCP | Seconds | Near-real-time: `OBJECT_FINALIZE`, `OBJECT_DELETE` events |
+| **GCS List + generation numbers** | GCP | On-demand | Fallback: compare generation numbers to detect changes |
+
+**Recommended setup:**
+- **AWS**: S3 Event Notifications → SQS queue → OpenLabels polls SQS for changed objects
+- **S3-compatible (MinIO)**: ListObjectsV2 with ETag comparison against inventory
+- **GCS**: Pub/Sub subscription → OpenLabels pulls notifications for changed objects
+
+```python
+# src/openlabels/adapters/s3.py (change detection)
+
+class S3ChangeProvider:
+    """
+    Detect changed objects in S3 via SQS event notifications or ETag diff.
+
+    For SQS mode:
+    - Pre-requisite: S3 bucket configured to send events to SQS queue
+    - Polls SQS for s3:ObjectCreated:* and s3:ObjectRemoved:* events
+    - Returns only changed object keys for scanning
+
+    For inventory mode:
+    - Compares current ETag/LastModified against stored inventory
+    - Used for S3-compatible stores without event notification support
+    """
+
+    async def get_changed_keys(self, since: datetime | None = None) -> list[str]:
+        """Return object keys that changed since last check."""
+        if self._sqs_queue_url:
+            return await self._poll_sqs()
+        else:
+            return await self._diff_inventory()
+```
+
+### Label-Compatible File Types
+
+MIP labels are embedded in file content. Not all file types support this:
+
+| File Type | MIP Label Support | Mechanism |
+|-----------|------------------|-----------|
+| **Office docs** (docx, xlsx, pptx) | Full | Custom XML properties in OPC package |
+| **PDF** | Full | Document properties / XMP metadata |
+| **Office 97-2003** (doc, xls, ppt) | Partial | Custom document properties |
+| **Email** (msg, eml) | Full | MIME headers / message properties |
+| **Images** (jpg, png, tiff) | No | N/A — classify but don't label |
+| **Plain text** (txt, csv, json, xml) | No | N/A — classify but don't label |
+| **Archives** (zip, tar, gz) | No | N/A — extract and classify contents |
+
+**Strategy:** Scan and classify ALL file types. Only re-upload files where a MIP label
+was actually embedded. Files that can't hold labels are still classified, scored, and
+reported — the scan results and SIEM export capture the findings regardless of whether
+a label was applied.
+
+### Configuration
+
+```python
+class S3AdapterSettings(BaseSettings):
+    """S3 scan target configuration."""
+
+    enabled: bool = False
+    bucket: str = ""
+    prefix: str = ""                       # Scan only objects under this prefix
+    region: str = "us-east-1"
+    access_key: str = ""
+    secret_key: str = ""
+    endpoint_url: str | None = None        # For S3-compatible (MinIO, Wasabi)
+    role_arn: str | None = None            # For IAM role assumption
+
+    # Label-back settings
+    apply_labels: bool = True              # Re-upload with MIP label
+    label_file_types: list[str] = [        # Only re-upload these types
+        ".docx", ".xlsx", ".pptx", ".pdf",
+        ".doc", ".xls", ".ppt", ".msg",
+    ]
+
+    # Change detection
+    change_detection: Literal["sqs", "inventory", "list"] = "list"
+    sqs_queue_url: str = ""                # For SQS-based change detection
+    inventory_bucket: str = ""             # For S3 Inventory manifests
+
+
+class GCSAdapterSettings(BaseSettings):
+    """Google Cloud Storage scan target configuration."""
+
+    enabled: bool = False
+    bucket: str = ""
+    prefix: str = ""
+    project_id: str = ""
+    credentials_json: str = ""             # Path to service account key JSON
+    # or use Application Default Credentials (ADC) in GCP environments
+
+    # Label-back settings
+    apply_labels: bool = True
+    label_file_types: list[str] = [
+        ".docx", ".xlsx", ".pptx", ".pdf",
+        ".doc", ".xls", ".ppt", ".msg",
+    ]
+
+    # Change detection
+    change_detection: Literal["pubsub", "list"] = "list"
+    pubsub_subscription: str = ""          # For Pub/Sub-based change detection
+
+
+# Added to main Settings class:
+class Settings(BaseSettings):
+    ...
+    s3_targets: list[S3AdapterSettings] = []     # Multiple buckets supported
+    gcs_targets: list[GCSAdapterSettings] = []
+```
+
+```bash
+# Environment variables — S3 target
+OPENLABELS_S3_TARGETS__0__ENABLED=true
+OPENLABELS_S3_TARGETS__0__BUCKET=company-documents
+OPENLABELS_S3_TARGETS__0__REGION=us-west-2
+OPENLABELS_S3_TARGETS__0__ACCESS_KEY=AKIA...
+OPENLABELS_S3_TARGETS__0__SECRET_KEY=...
+OPENLABELS_S3_TARGETS__0__APPLY_LABELS=true
+OPENLABELS_S3_TARGETS__0__CHANGE_DETECTION=sqs
+OPENLABELS_S3_TARGETS__0__SQS_QUEUE_URL=https://sqs.us-west-2.amazonaws.com/123456789/openlabels-events
+
+# GCS target
+OPENLABELS_GCS_TARGETS__0__ENABLED=true
+OPENLABELS_GCS_TARGETS__0__BUCKET=company-docs-gcs
+OPENLABELS_GCS_TARGETS__0__PROJECT_ID=my-project-123
+OPENLABELS_GCS_TARGETS__0__CREDENTIALS_JSON=/etc/openlabels/gcs-sa-key.json
+OPENLABELS_GCS_TARGETS__0__CHANGE_DETECTION=pubsub
+OPENLABELS_GCS_TARGETS__0__PUBSUB_SUBSCRIPTION=projects/my-project/subscriptions/openlabels-changes
+```
+
+### Integration with Scan Pipeline
+
+Cloud object store adapters implement the same adapter protocol as filesystem,
+SharePoint, and OneDrive. They plug directly into the unified scan pipeline
+(Section 13) with no changes to the classification or post-processing stages:
+
+```
+┌────────────────────────┐
+│   Adapter Selection    │   filesystem / sharepoint / onedrive / s3 / gcs
+│   (target.adapter)     │
+└──────────┬─────────────┘
+           ▼
+┌────────────────────────┐
+│   Change Provider      │   USN / fanotify / Graph delta / SQS / Pub/Sub / full walk
+│   (Section 12)         │
+└──────────┬─────────────┘
+           ▼
+┌────────────────────────┐
+│   Download + Delta     │   adapter.read_file() → temp copy → content_hash →
+│   Filter               │   inventory.should_scan_file() → skip unchanged
+└──────────┬─────────────┘
+           ▼
+   ... (standard pipeline: extract → classify → score → label → persist) ...
+           │
+           ▼
+┌────────────────────────┐
+│   Label Sync-Back      │   For S3/GCS: apply_label_and_sync()
+│   (cloud targets only) │   Conditional re-upload with preserved metadata
+└────────────────────────┘
+```
+
+The key addition is the **label sync-back step** at the end of the pipeline,
+which only runs for cloud object store targets and only for label-compatible
+file types where a label was actually applied.
+
+---
+
+## 17. Reporting and Distribution
 
 ### Current State
 
@@ -2584,7 +2972,7 @@ in the job system). Delivery via email (SMTP), local file, or S3/Azure upload.
 
 ---
 
-## 17. Operational Readiness
+## 18. Operational Readiness
 
 ### Current Gaps
 
@@ -2659,7 +3047,7 @@ Models needed:
 
 ---
 
-## 18. Implementation Phases
+## 19. Implementation Phases
 
 ### Phase A: Foundation (Storage + Arrow Converters)
 
@@ -2846,6 +3234,24 @@ Production deployment pipeline and model distribution strategy.
 9. Add OCR model download/bundling (`pip install openlabels[ocr]`)
 10. Wire ML detectors (PHI-BERT, PII-BERT) into detection pipeline when models present
 11. Tests: Model download mocking, Docker build verification, CI pipeline
+
+### Phase O: Cloud Object Store Adapters (S3 + GCS)
+
+Extend scanning to cloud object stores with download → classify → label → re-upload.
+
+1. Implement `S3Adapter` — `list_files()`, `read_file()`, `get_metadata()` using `boto3`
+2. Implement `S3Adapter.apply_label_and_sync()` — conditional re-upload with metadata preservation
+3. Implement S3 change detection: SQS event polling mode + ListObjectsV2 ETag diff fallback
+4. Implement `GCSAdapter` — same protocol using `google-cloud-storage`
+5. Implement `GCSAdapter.apply_label_and_sync()` — generation-based conditional re-upload
+6. Implement GCS change detection: Pub/Sub notification polling + list diff fallback
+7. Add `S3AdapterSettings` and `GCSAdapterSettings` to config (multi-target support)
+8. Add `google-cloud-storage` as optional dependency (`pip install openlabels[gcs]`)
+9. Register S3/GCS as adapter types in scan target configuration
+10. Add label sync-back step to unified scan pipeline result handler (Section 13)
+11. Handle label-incompatible file types: classify but skip re-upload
+12. Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle
+13. Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection
 
 ---
 
