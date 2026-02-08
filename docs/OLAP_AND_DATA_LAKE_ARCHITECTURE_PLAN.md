@@ -3095,7 +3095,24 @@ Models needed:
 5. Add catalog health metrics (flush lag, partition count, storage size)
 6. Tests: S3/Azure integration tests (mocked), compaction correctness
 
-### Phase F: On-Prem Event Collection (Windows + Linux)
+### Phase F: Unified Scan Pipeline
+
+Merge the two scan code paths into one pipeline with parallel classification agents.
+**This must land before new features are added to the scan pipeline** — otherwise
+every integration (event collection, policy engine, SIEM export, cloud adapters)
+would need to be wired into two separate code paths.
+
+1. Define `ChangeProvider` protocol with default `FullWalkProvider` implementation
+2. Refactor `ScanOrchestrator._walk_files()` to accept adapter + change provider
+3. Refactor `ScanOrchestrator._extract_and_submit()` to run `inventory.should_scan_file()` delta check
+4. Refactor `ScanOrchestrator._collect_and_store()` to run full result pipeline (scoring, exposure, labeling)
+5. Remove `execute_parallel_scan_task()` — replaced by unified pipeline
+6. Add adapter metadata (exposure level, permissions) to `WorkItem.metadata` for post-classification scoring
+7. Add MIP label application to result pipeline
+8. Add Parquet flush hook to result pipeline (Section 5.1)
+9. Tests: End-to-end pipeline with mock adapter, agent pool, and DB verification
+
+### Phase G: On-Prem Event Collection (Windows + Linux)
 
 Wire up the existing but disconnected event collection code, and add the background
 harvester that persists events to `FileAccessEvent`.
@@ -3111,7 +3128,7 @@ harvester that persists events to `FileAccessEvent`.
 9. Fix security issue: unused `escaped_path` in `_get_history_windows` (`history.py:121-131`)
 10. Tests: Harvester cycle with mock providers, checkpoint persistence, DB insertion
 
-### Phase G: Cloud Event Collection (M365 Audit)
+### Phase H: Cloud Event Collection (M365 Audit)
 
 Add SharePoint and OneDrive audit log collection via the Office 365 Management Activity API.
 
@@ -3125,9 +3142,10 @@ Add SharePoint and OneDrive audit log collection via the Office 365 Management A
 8. Add M365 provider to `EventHarvester` with separate harvest interval (5 min default)
 9. Tests: M365 audit response parsing, webhook validation, subscription lifecycle
 
-### Phase H: Real-Time Event Streams (USN + fanotify)
+### Phase I: Real-Time Event Streams (USN + fanotify)
 
 Add real-time, low-latency event sources that complement the periodic harvesters.
+These also serve as change providers for the unified scan pipeline (Phase F).
 
 1. Implement `USNJournalProvider` — NTFS USN journal via `ctypes`/`DeviceIoControl`
    - `FSCTL_READ_USN_JOURNAL` for change stream
@@ -3138,22 +3156,9 @@ Add real-time, low-latency event sources that complement the periodic harvesters
    - PID → username resolution via `/proc/{pid}/status`
 3. Implement `EventStreamManager` — long-lived async tasks, batched DB writes
 4. Add real-time scan triggers — detect high-risk file modification and queue immediate scan
-5. Integrate USN journal with scan pipeline as change provider (Section 13)
-6. Integrate fanotify with scan pipeline as change provider (Section 13)
+5. Implement `USNChangeProvider` — adapts USN journal as a `ChangeProvider` for Phase F pipeline
+6. Implement `FanotifyChangeProvider` — adapts fanotify as a `ChangeProvider` for Phase F pipeline
 7. Tests: USN journal parsing (mock DeviceIoControl), fanotify event parsing, buffer flush
-
-### Phase I: Unified Scan Pipeline
-
-Merge the two scan code paths into one pipeline with parallel classification agents.
-
-1. Refactor `ScanOrchestrator._walk_files()` to accept adapter + change provider
-2. Refactor `ScanOrchestrator._extract_and_submit()` to run `inventory.should_scan_file()` delta check
-3. Refactor `ScanOrchestrator._collect_and_store()` to run full result pipeline (scoring, exposure, labeling)
-4. Remove `execute_parallel_scan_task()` — replaced by unified pipeline
-5. Add adapter metadata (exposure level, permissions) to `WorkItem.metadata` for post-classification scoring
-6. Add MIP label application to result pipeline
-7. Add Parquet flush hook to result pipeline (Section 5.1)
-8. Tests: End-to-end pipeline with mock adapter, agent pool, and DB verification
 
 ### Phase J: Policy Engine Integration
 
@@ -3184,13 +3189,34 @@ the customer's security operations tooling.
 6. Implement `SyslogCEFAdapter` — generic CEF over syslog (fallback for other SIEMs)
 7. Implement `ExportEngine` — adapter lifecycle, cursor tracking, batch scheduling
 8. Add `SIEMExportSettings` to config (per-adapter credentials and options)
-9. Add post-scan export hook to `execute_scan_task()` — push findings after each scan
+9. Add post-scan export hook to unified scan pipeline — push findings after each scan
 10. Add periodic export mode — background task exports new records on interval
 11. Add `/api/v1/export/siem` endpoint: trigger export, test connection, view status
 12. Add `openlabels export siem --adapter splunk --since 2026-02-01` CLI command
 13. Tests: Adapter serialization (CEF/LEEF/JSON), connection testing (mocked), cursor tracking
 
-### Phase L: Reporting and Distribution
+### Phase L: Cloud Object Store Adapters (S3 + GCS)
+
+Extend scanning to cloud object stores with download → classify → label → re-upload.
+Requires unified scan pipeline (Phase F) for single integration point.
+
+1. Implement `S3Adapter` — `list_files()`, `read_file()`, `get_metadata()` using `boto3`
+2. Implement `S3Adapter.apply_label_and_sync()` — conditional re-upload with metadata preservation
+3. Implement S3 change detection: SQS event polling mode + ListObjectsV2 ETag diff fallback
+4. Implement `SQSChangeProvider` — adapts S3 event notifications as a `ChangeProvider`
+5. Implement `GCSAdapter` — same protocol using `google-cloud-storage`
+6. Implement `GCSAdapter.apply_label_and_sync()` — generation-based conditional re-upload
+7. Implement GCS change detection: Pub/Sub notification polling + list diff fallback
+8. Implement `PubSubChangeProvider` — adapts GCS notifications as a `ChangeProvider`
+9. Add `S3AdapterSettings` and `GCSAdapterSettings` to config (multi-target support)
+10. Add `google-cloud-storage` as optional dependency (`pip install openlabels[gcs]`)
+11. Register S3/GCS as adapter types in scan target configuration
+12. Add label sync-back step to unified scan pipeline result handler
+13. Handle label-incompatible file types: classify but skip re-upload
+14. Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle
+15. Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection
+
+### Phase M: Reporting and Distribution
 
 Scheduled and on-demand report generation with distribution.
 
@@ -3204,7 +3230,7 @@ Scheduled and on-demand report generation with distribution.
 8. Add `openlabels report generate --template executive_summary --format pdf` CLI command
 9. Tests: Template rendering, PDF generation, scheduled report execution
 
-### Phase M: Operational Hardening
+### Phase N: Operational Hardening
 
 Fix the known wiring issues, security gaps, and deployment infrastructure.
 
@@ -3219,7 +3245,7 @@ Fix the known wiring issues, security gaps, and deployment infrastructure.
 9. Implement `openlabels system restore` — `pg_restore` + catalog rebuild
 10. Tests: Settings persistence round-trip, permission restore, backup/restore cycle
 
-### Phase N: Model Bundling and CI/CD
+### Phase O: Model Bundling and CI/CD
 
 Production deployment pipeline and model distribution strategy.
 
@@ -3234,24 +3260,6 @@ Production deployment pipeline and model distribution strategy.
 9. Add OCR model download/bundling (`pip install openlabels[ocr]`)
 10. Wire ML detectors (PHI-BERT, PII-BERT) into detection pipeline when models present
 11. Tests: Model download mocking, Docker build verification, CI pipeline
-
-### Phase O: Cloud Object Store Adapters (S3 + GCS)
-
-Extend scanning to cloud object stores with download → classify → label → re-upload.
-
-1. Implement `S3Adapter` — `list_files()`, `read_file()`, `get_metadata()` using `boto3`
-2. Implement `S3Adapter.apply_label_and_sync()` — conditional re-upload with metadata preservation
-3. Implement S3 change detection: SQS event polling mode + ListObjectsV2 ETag diff fallback
-4. Implement `GCSAdapter` — same protocol using `google-cloud-storage`
-5. Implement `GCSAdapter.apply_label_and_sync()` — generation-based conditional re-upload
-6. Implement GCS change detection: Pub/Sub notification polling + list diff fallback
-7. Add `S3AdapterSettings` and `GCSAdapterSettings` to config (multi-target support)
-8. Add `google-cloud-storage` as optional dependency (`pip install openlabels[gcs]`)
-9. Register S3/GCS as adapter types in scan target configuration
-10. Add label sync-back step to unified scan pipeline result handler (Section 13)
-11. Handle label-incompatible file types: classify but skip re-upload
-12. Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle
-13. Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection
 
 ---
 
