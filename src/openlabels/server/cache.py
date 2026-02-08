@@ -35,6 +35,14 @@ from collections import OrderedDict
 from functools import wraps
 from typing import Any, Callable, Optional, TypeVar, ParamSpec
 
+try:
+    from redis.exceptions import RedisError
+except ImportError:
+    # redis not installed - define a placeholder that will never match at runtime
+    class RedisError(Exception):  # type: ignore[no-redef]
+        """Placeholder when redis is not installed."""
+        pass
+
 logger = logging.getLogger(__name__)
 
 # Type variables for generic decorators
@@ -191,7 +199,7 @@ class RedisCache:
         except ImportError:
             logger.warning("redis package not installed - falling back to memory cache")
             return False
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Connection failures are expected if Redis is not available
             logger.warning(f"Redis connection failed: {type(e).__name__}: {e} - falling back to memory cache")
             return False
@@ -223,7 +231,7 @@ class RedisCache:
             except (json.JSONDecodeError, TypeError):
                 return value
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Redis errors should be logged for monitoring
             logger.warning(f"Redis get error for {key}: {type(e).__name__}: {e}")
             self._misses += 1
@@ -248,7 +256,7 @@ class RedisCache:
 
             return True
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Redis errors should be logged for monitoring
             logger.warning(f"Redis set error for {key}: {type(e).__name__}: {e}")
             return False
@@ -263,7 +271,7 @@ class RedisCache:
             result = await self._client.delete(full_key)
             return result > 0
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Redis errors should be logged for monitoring
             logger.warning(f"Redis delete error for {key}: {type(e).__name__}: {e}")
             return False
@@ -294,7 +302,7 @@ class RedisCache:
 
             return deleted
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Redis errors should be logged for monitoring
             logger.warning(f"Redis delete_pattern error for {pattern}: {type(e).__name__}: {e}")
             return 0
@@ -311,7 +319,7 @@ class RedisCache:
         try:
             full_key = self._make_key(key)
             return await self._client.exists(full_key) > 0
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             # Redis errors should be logged for monitoring
             logger.warning(f"Redis exists error for {key}: {type(e).__name__}: {e}")
             return False
@@ -594,7 +602,7 @@ def cache(
             # Get cache manager
             try:
                 cache_manager = await get_cache_manager()
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, RuntimeError) as e:
                 # Cache unavailability is non-critical - proceed without cache
                 logger.debug(f"Cache unavailable: {type(e).__name__}: {e}")
                 return await func(*args, **kwargs)
@@ -646,7 +654,7 @@ async def _invalidate_func_cache(
         cache_manager = await get_cache_manager()
         cache_key = _make_cache_key(prefix, func_name, args, kwargs, key_builder)
         return await cache_manager.delete(cache_key)
-    except Exception as e:
+    except (RedisError, ConnectionError, OSError, RuntimeError) as e:
         # Cache invalidation failures should be logged for debugging
         logger.warning(f"Cache invalidation failed: {type(e).__name__}: {e}")
         return False
@@ -665,7 +673,7 @@ async def invalidate_cache(pattern: str) -> int:
     try:
         cache_manager = await get_cache_manager()
         return await cache_manager.delete_pattern(pattern)
-    except Exception as e:
+    except (RedisError, ConnectionError, OSError, RuntimeError) as e:
         # Cache invalidation failures should be logged for debugging
         logger.warning(f"Cache invalidation failed for pattern {pattern}: {type(e).__name__}: {e}")
         return 0
@@ -676,7 +684,7 @@ async def get_cache_stats() -> dict:
     try:
         cache_manager = await get_cache_manager()
         return cache_manager.stats
-    except Exception as e:
+    except (RedisError, ConnectionError, OSError, RuntimeError) as e:
         # Stats retrieval failures are non-critical
         logger.warning(f"Failed to get cache stats: {type(e).__name__}: {e}")
         return {"error": str(e)}

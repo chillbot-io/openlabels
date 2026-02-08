@@ -251,7 +251,7 @@ class OCREngine:
             self._ensure_initialized()
             # Also warm up to reduce first-call latency
             self.warm_up()
-        except Exception as e:
+        except (ImportError, OSError, RuntimeError, ValueError) as e:
             self._load_error = e
             # Log OCR loading failures with full context for debugging
             logger.error(f"Background OCR loading failed: {type(e).__name__}: {e}")
@@ -319,7 +319,7 @@ class OCREngine:
                 "rapidocr-onnxruntime not installed. "
                 "Run: pip install rapidocr-onnxruntime"
             )
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             # Log initialization failures with full context
             logger.error(f"Failed to initialize RapidOCR: {type(e).__name__}: {e}")
             raise
@@ -348,7 +348,7 @@ class OCREngine:
             logger.info("RapidOCR warm-up complete")
             return True
 
-        except Exception as e:
+        except (ImportError, OSError, RuntimeError, ValueError) as e:
             # Warm-up failure is non-critical but worth logging with type
             logger.warning(f"RapidOCR warm-up failed: {type(e).__name__}: {e}")
             return False

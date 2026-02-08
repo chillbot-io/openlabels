@@ -183,8 +183,8 @@ class GraphClient:
             self._timeout = timeout or 30.0
             self._connect_timeout = connect_timeout or 10.0
             cb_config = CircuitBreakerConfig()
-        except Exception as settings_err:
-            # Catch-all for unexpected errors during settings loading
+        except (ValueError, RuntimeError, OSError) as settings_err:
+            # Catch remaining settings loading errors (config parsing, file issues)
             logger.warning(
                 f"Using default Graph client config (unexpected error loading settings: "
                 f"{type(settings_err).__name__}): {settings_err}",

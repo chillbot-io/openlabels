@@ -12,6 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import delete as sa_delete, select, func, and_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -203,7 +204,7 @@ class LabelService(BaseService):
                 **result.to_dict(),
             }
 
-        except Exception as e:
+        except (ConnectionError, OSError, RuntimeError, ValueError) as e:
             self._log_error(f"Label sync failed: {e}")
             raise InternalError(
                 message=f"Label sync failed: {str(e)}",
@@ -215,7 +216,7 @@ class LabelService(BaseService):
         try:
             from openlabels.labeling.engine import get_label_cache
             get_label_cache().invalidate()
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError) as e:
             self._log_info(f"Failed to invalidate label cache: {type(e).__name__}: {e}")
 
         # Note: Redis cache invalidation is handled by the route layer
@@ -499,7 +500,7 @@ class LabelService(BaseService):
                     )
                     success_count += 1
 
-                except Exception as e:
+                except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
                     failed_count += 1
                     self._log_error(f"Failed to queue label job for result {result_id}: {e}")
 

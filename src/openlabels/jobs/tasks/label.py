@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple
 from uuid import UUID
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanResult, SensitivityLabel
@@ -139,7 +140,7 @@ async def execute_label_task(
                 "method": labeling_result.get("method", "unknown"),
             }
 
-    except Exception as e:
+    except (SQLAlchemyError, OSError, RuntimeError, ConnectionError) as e:
         logger.error(f"Failed to apply label: {e}")
         result.label_error = str(e)
         raise
@@ -220,7 +221,7 @@ async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
             from openlabels.server.config import get_settings
             settings = get_settings()
             mip_config = getattr(settings, "mip", None)
-        except Exception as e:
+        except (ImportError, RuntimeError, AttributeError) as e:
             logger.debug(f"Failed to get MIP config: {e}")
             mip_config = None
 
@@ -268,7 +269,7 @@ async def _apply_label_mip(file_path: str, label: SensitivityLabel) -> dict:
             "method": "mip",
             "error": "MIP SDK not available (module not found)",
         }
-    except Exception as e:
+    except (RuntimeError, OSError, ValueError) as e:
         logger.error(f"MIP SDK error: {e}")
         return {
             "success": False,
@@ -341,13 +342,13 @@ async def _apply_label_office_metadata(file_path: str, label: SensitivityLabel) 
             "method": "office_metadata",
         }
 
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as e:
         logger.error(f"Office metadata labeling failed: {e}")
         # Clean up temp file if it exists
         try:
             if temp_path.exists():
                 temp_path.unlink()
-        except Exception as cleanup_err:
+        except OSError as cleanup_err:
             logger.debug(f"Failed to clean up temp file: {cleanup_err}")
         return {
             "success": False,
@@ -423,7 +424,7 @@ def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
 
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-    except Exception as e:
+    except (ValueError, OSError, KeyError) as e:
         logger.debug(f"Failed to update custom props XML, creating new: {e}")
         return _create_custom_props_xml(label)
 
@@ -450,7 +451,7 @@ def _update_content_types(content: bytes) -> bytes:
 
         return _stdlib_ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-    except Exception as e:
+    except (ValueError, OSError, KeyError) as e:
         logger.debug(f"Failed to update content types: {e}")
         return content
 
@@ -494,7 +495,7 @@ async def _apply_label_pdf_metadata(file_path: str, label: SensitivityLabel) -> 
     except ImportError:
         logger.debug("No PDF library available, using sidecar")
         return await _apply_label_sidecar(file_path, label)
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.error(f"PDF metadata labeling failed: {e}")
         return {
             "success": False,
@@ -525,7 +526,7 @@ async def _apply_label_sidecar(file_path: str, label: SensitivityLabel) -> dict:
             "method": "sidecar",
         }
 
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.error(f"Sidecar labeling failed: {e}")
         return {
             "success": False,
@@ -616,7 +617,7 @@ async def _apply_label_graph(result: ScanResult, label: SensitivityLabel) -> dic
                     "error": f"Graph API returned {response.status_code}",
                 }
 
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
         logger.error(f"Graph API labeling failed: {e}")
         return {
             "success": False,
@@ -649,7 +650,7 @@ async def _get_graph_token(tenant_id: str, client_id: str, client_secret: str) -
                 logger.error(f"Failed to get Graph token: {response.status_code} - {response.text[:200]}")
                 return None
 
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
         logger.error(f"Graph token error: {e}")
         return None
 
@@ -683,7 +684,7 @@ async def _parse_sharepoint_url(url: str, token: str) -> Tuple[Optional[str], Op
             else:
                 logger.debug(f"Could not resolve URL via shares endpoint: {response.status_code}")
 
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
         logger.error(f"Failed to parse SharePoint URL: {e}")
 
     return None, None

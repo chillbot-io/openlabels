@@ -338,8 +338,8 @@ class FilesystemAdapter:
                             exc_info=True
                         )
                         trustee = str(sid)
-                    except Exception as e:
-                        # Catch-all for unexpected win32security errors
+                    except (RuntimeError, ValueError) as e:
+                        # win32security may raise RuntimeError or ValueError for invalid SIDs
                         logger.debug(
                             f"Failed to lookup SID {sid} - unexpected error ({type(e).__name__}): {e}",
                             exc_info=True

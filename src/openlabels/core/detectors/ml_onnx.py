@@ -234,7 +234,7 @@ class ONNXDetector(BaseDetector):
             self._loaded = True
             return True
 
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error(f"{self.name}: Failed to load ONNX model: {e}")
             return False
 
@@ -484,7 +484,7 @@ class ONNXDetector(BaseDetector):
                         try:
                             chunk_spans = future.result()
                             all_spans.extend(chunk_spans)
-                        except Exception as e:
+                        except (RuntimeError, ValueError, OSError) as e:
                             chunk_start = futures[future]
                             logger.warning(f"{self.name}: Chunk at {chunk_start} failed: {e}")
             else:
@@ -496,7 +496,7 @@ class ONNXDetector(BaseDetector):
 
             return self._dedupe_spans(all_spans, full_text=text)
 
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError, MemoryError) as e:
             logger.error(f"{self.name}: Inference failed: {e}")
             return []
 

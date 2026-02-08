@@ -1346,8 +1346,6 @@ GET /api/results?job_id=uuid&risk_tier=CRITICAL&limit=100
 
 ```
 openlabels/
-├── openrisk/                    # Source package (detection engine)
-├── scrubiq/                     # Source package (redaction)
 │
 ├── src/openlabels/              # THE SERVER PRODUCT
 │   ├── __init__.py

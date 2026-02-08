@@ -20,7 +20,15 @@ from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import select, and_, delete
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+try:
+    from redis.exceptions import RedisError
+except ImportError:
+    class RedisError(Exception):  # type: ignore[no-redef]
+        """Placeholder when redis is not installed."""
+        pass
 
 from openlabels.server.models import (
     FolderInventory,
@@ -132,7 +140,7 @@ class DistributedScanInventory:
                     f"tenant={self.tenant_id}, target={self.target_id}"
                 )
 
-        except Exception as e:
+        except (RedisError, ConnectionError, OSError, TimeoutError) as e:
             logger.warning(
                 f"Failed to initialize Redis for distributed inventory: "
                 f"{type(e).__name__}: {e}. Using in-memory fallback."
@@ -186,7 +194,7 @@ class DistributedScanInventory:
                     self._misses += 1
                     logger.debug(f"Cache miss: folder {path}")
                     return None
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_folder error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -225,7 +233,7 @@ class DistributedScanInventory:
                     await self._redis_client.expire(key, self.ttl)
                 logger.debug(f"Set folder in Redis: {path}")
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis set_folder error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -255,7 +263,7 @@ class DistributedScanInventory:
                         result[path] = folder_data
                 logger.debug(f"Retrieved {len(result)} folders from Redis")
                 return result
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_all_folders error: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -280,7 +288,7 @@ class DistributedScanInventory:
                 key = self._make_redis_key(self._folders_key)
                 result = await self._redis_client.hdel(key, path)
                 return result > 0
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis delete_folder error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -319,7 +327,7 @@ class DistributedScanInventory:
                     self._misses += 1
                     logger.debug(f"Cache miss: file {path}")
                     return None
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_file error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -358,7 +366,7 @@ class DistributedScanInventory:
                     await self._redis_client.expire(key, self.ttl)
                 logger.debug(f"Set file in Redis: {path}")
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis set_file error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -388,7 +396,7 @@ class DistributedScanInventory:
                         result[path] = file_data
                 logger.debug(f"Retrieved {len(result)} files from Redis")
                 return result
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_all_files error: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -413,7 +421,7 @@ class DistributedScanInventory:
                 key = self._make_redis_key(self._files_key)
                 result = await self._redis_client.hdel(key, path)
                 return result > 0
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis delete_file error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -459,7 +467,7 @@ class DistributedScanInventory:
                 else:
                     logger.debug(f"File already marked as scanned (Redis): {path}")
                     return False
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis mark_file_scanned error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -488,7 +496,7 @@ class DistributedScanInventory:
             try:
                 key = self._make_redis_key(self._scanned_key)
                 return await self._redis_client.sismember(key, path)
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis is_file_scanned error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -510,7 +518,7 @@ class DistributedScanInventory:
                 key = self._make_redis_key(self._scanned_key)
                 members = await self._redis_client.smembers(key)
                 return set(members)
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_scanned_files error: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -531,7 +539,7 @@ class DistributedScanInventory:
             try:
                 key = self._make_redis_key(self._scanned_key)
                 return await self._redis_client.scard(key)
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_scanned_count error: {type(e).__name__}: {e}")
                 # Fall through to local cache
 
@@ -565,7 +573,7 @@ class DistributedScanInventory:
 
                 total_files = await self._redis_client.hlen(files_key)
                 total_folders = await self._redis_client.hlen(folders_key)
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_scan_progress error: {type(e).__name__}: {e}")
                 # Fall through to local cache
                 async with self._local_lock:
@@ -607,7 +615,7 @@ class DistributedScanInventory:
                 if ttl < 0:
                     await self._redis_client.expire(redis_key, self.ttl)
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis set_metadata error for {key}: {type(e).__name__}: {e}")
 
         return False
@@ -631,7 +639,7 @@ class DistributedScanInventory:
                 if data:
                     deserialized = self._deserialize(data)
                     return deserialized.get("value") if deserialized else None
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis get_metadata error for {key}: {type(e).__name__}: {e}")
 
         return None
@@ -665,7 +673,7 @@ class DistributedScanInventory:
                     f"Cleared inventory cache for tenant={self.tenant_id}, "
                     f"target={self.target_id}"
                 )
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis clear_inventory error: {type(e).__name__}: {e}")
                 # Continue to clear local cache anyway
 
@@ -700,7 +708,7 @@ class DistributedScanInventory:
                     await self._redis_client.expire(key, self.ttl)
                 logger.debug(f"Refreshed TTL for inventory cache")
                 return True
-            except Exception as e:
+            except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis refresh_ttl error: {type(e).__name__}: {e}")
                 return False
 

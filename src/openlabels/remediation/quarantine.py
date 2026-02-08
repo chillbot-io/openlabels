@@ -213,7 +213,7 @@ def _quarantine_windows(
             source=source,
             error=error_msg,
         )
-    except Exception as e:
+    except (OSError, PermissionError, RuntimeError) as e:
         # Log unexpected errors with full exception type for debugging
         logger.error(f"Unexpected error quarantining {source}: {type(e).__name__}: {e}")
         return RemediationResult.failure(
@@ -271,7 +271,7 @@ def _quarantine_unix(
                 # rsync failed, fall through to shutil
                 logger.warning(f"rsync failed, falling back to shutil: {result.stderr}")
 
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             # Log rsync failures with exception type - non-critical as we have fallback
             logger.info(f"rsync failed, falling back to shutil: {type(e).__name__}: {e}")
 

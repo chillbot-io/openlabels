@@ -328,7 +328,7 @@ class FileProcessor:
             # Missing library - try fallback
             logger.warning(f"Missing library for {file_path}: {e}")
             return await self._decode_text(content)
-        except Exception as e:
+        except (OSError, RuntimeError, MemoryError) as e:
             # Log extraction failures - may indicate unsupported format or corrupt file
             logger.warning(f"Extraction failed for {file_path}: {type(e).__name__}: {e}")
             # Fall back to trying as text
@@ -368,7 +368,7 @@ class FileProcessor:
         except ImportError as e:
             logger.warning(f"Image processing library not installed: {e}")
             return ""
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError, MemoryError) as e:
             # Log image OCR failures with context
             logger.warning(f"Error extracting text from image: {type(e).__name__}: {e}")
             return ""
@@ -423,7 +423,7 @@ class FileProcessor:
                 # OCR engines may have cleanup methods
                 if hasattr(self._ocr_engine, 'cleanup'):
                     self._ocr_engine.cleanup()
-            except Exception as e:
+            except (RuntimeError, OSError, AttributeError) as e:
                 logger.debug(f"Error cleaning up OCR engine: {e}")
             self._ocr_engine = None
 
@@ -435,7 +435,7 @@ class FileProcessor:
                 # Clear pipeline components
                 self._orchestrator._coref_resolver = None
                 self._orchestrator._context_enhancer = None
-            except Exception as e:
+            except (RuntimeError, AttributeError) as e:
                 logger.debug(f"Error cleaning up orchestrator: {e}")
             self._orchestrator = None
 

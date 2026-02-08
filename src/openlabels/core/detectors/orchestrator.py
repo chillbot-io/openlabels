@@ -129,7 +129,7 @@ class DetectorOrchestrator:
                 f"Hyperscan detector initialized with {hyperscan_detector.pattern_count} patterns"
                 f" ({'SIMD-accelerated' if self._using_hyperscan else 'Python fallback'})"
             )
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError, ValueError) as e:
             logger.warning(f"Failed to initialize Hyperscan detector: {e}")
 
     def _init_ml_detectors(
@@ -263,7 +263,7 @@ class DetectorOrchestrator:
                     all_spans.extend(spans)
                     if spans:
                         detectors_used.append(detector.name)
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError) as e:
                     logger.error(f"Detector {detector.name} failed: {e}")
 
         # Post-process: deduplicate, filter, sort
@@ -273,14 +273,14 @@ class DetectorOrchestrator:
         if self._coref_resolver and processed_spans:
             try:
                 processed_spans = self._coref_resolver(text, processed_spans)
-            except Exception as e:
+            except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Coreference resolution failed: {e}")
 
         # Run context enhancement if enabled
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
-            except Exception as e:
+            except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Context enhancement failed: {e}")
 
         # Policy evaluation
@@ -299,7 +299,7 @@ class DetectorOrchestrator:
                     for span in processed_spans
                 ]
                 policy_result = get_policy_engine().evaluate(entity_matches)
-            except Exception as e:
+            except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed: {e}")
 
         # Calculate entity counts
@@ -326,7 +326,7 @@ class DetectorOrchestrator:
                 logger.warning(f"Detector {detector.name} not available")
                 return []
             return detector.detect(text)
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Error in detector {detector.name}: {e}")
             return []
 

@@ -261,7 +261,7 @@ class BaseService(ABC):
         try:
             yield
             await self.commit()
-        except Exception:
+        except Exception:  # Intentionally broad: must rollback on any error before re-raising
             await self.rollback()
             raise
 

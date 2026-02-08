@@ -90,7 +90,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
             logger.debug(f"Session error, rolling back: {e}")
             await session.rollback()
             raise
@@ -106,7 +106,7 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
             logger.debug(f"Session error, rolling back: {e}")
             await session.rollback()
             raise

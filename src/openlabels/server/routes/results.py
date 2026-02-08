@@ -101,10 +101,10 @@ async def list_results(
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
-    # Note: has_pii filter is handled at query level in service
     results, total = await result_service.list_results(
         job_id=job_id,
         risk_tier=risk_tier,
+        has_pii=has_pii,
         limit=pagination.limit,
         offset=pagination.offset,
     )

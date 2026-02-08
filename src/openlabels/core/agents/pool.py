@@ -105,7 +105,7 @@ class AgentPoolConfig:
         # Get CPU count (physical cores, not hyperthreads for CPU-bound work)
         try:
             cpu_count = psutil.cpu_count(logical=False) or os.cpu_count() or 4
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError) as e:
             logger.debug(f"Failed to get physical CPU count: {e}")
             cpu_count = os.cpu_count() or 4
 
@@ -115,7 +115,7 @@ class AgentPoolConfig:
             available_mb = mem.available // (1024 * 1024)
             usable_mb = available_mb - MIN_SYSTEM_MEMORY_MB
             memory_agents = max(1, usable_mb // AGENT_MEMORY_MB)
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError) as e:
             logger.debug(f"Failed to get available memory: {e}")
             memory_agents = cpu_count
 
@@ -337,7 +337,7 @@ class AgentPool:
                 # Forward to async queue
                 await self._result_queue.put(result)
 
-            except Exception as e:
+            except (RuntimeError, OSError, EOFError) as e:
                 # Queue.get timeout or other error, continue
                 logger.debug(f"Result collection interrupted: {e}")
 
@@ -574,7 +574,7 @@ class ScanOrchestrator:
                     )
                     await pool.submit(item)
 
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError, MemoryError) as e:
                 logger.warning(f"Failed to process {file_path}: {e}")
 
         logger.debug("Extractor completed")
@@ -617,7 +617,7 @@ class ScanOrchestrator:
                 try:
                     await self.result_handler(completed_files)
                     logger.debug(f"Persisted {len(completed_files)} file results")
-                except Exception as e:
+                except (OSError, RuntimeError, ConnectionError) as e:
                     logger.error(f"Failed to persist results: {e}")
 
                 completed_files = []
@@ -628,7 +628,7 @@ class ScanOrchestrator:
         if completed_files and self.result_handler:
             try:
                 await self.result_handler(completed_files)
-            except Exception as e:
+            except (OSError, RuntimeError, ConnectionError) as e:
                 logger.error(f"Failed to persist final results: {e}")
 
         logger.debug("Collector completed")

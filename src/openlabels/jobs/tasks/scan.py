@@ -100,7 +100,7 @@ def cleanup_processor() -> None:
         try:
             _processor.cleanup()
             logger.info("Global file processor cleaned up")
-        except Exception as e:
+        except (RuntimeError, OSError, AttributeError) as e:
             logger.warning(f"Error during processor cleanup: {e}")
         finally:
             _processor = None
@@ -119,7 +119,7 @@ def run_shutdown_callbacks() -> None:
     for callback in _shutdown_callbacks:
         try:
             callback()
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"Error in shutdown callback: {e}")
 
     _shutdown_callbacks.clear()
@@ -803,7 +803,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
                 policy_result = get_policy_engine().evaluate(entity_matches)
                 if policy_result.is_sensitive:
                     policy_data = policy_result.to_dict()
-            except Exception as e:
+            except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed for {file_info.path}: {e}")
 
         # Merge policy data into findings dict

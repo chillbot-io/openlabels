@@ -67,7 +67,7 @@ def get_device(device_config: str = "auto", cuda_device_id: int = 0) -> int:
     except ImportError:
         logger.warning("Device: onnxruntime not installed - using CPU")
         return -1
-    except Exception as e:
+    except (RuntimeError, OSError, ValueError) as e:
         logger.warning(f"Device: Error detecting GPU ({e}) - using CPU")
         return -1
 
@@ -96,7 +96,7 @@ def get_device_info() -> Dict[str, Any]:
             info["device"] = "cuda"
     except ImportError:
         logger.debug("onnxruntime not installed, device info unavailable")
-    except Exception as e:
+    except (RuntimeError, OSError) as e:
         logger.debug(f"Failed to get device info: {e}")
         info["error"] = str(e)
 

@@ -1,8 +1,6 @@
 """Additional pattern detectors for missing entity types.
 
-Place this file in: scrubiq/detectors/additional_patterns.py
-
-Then register in orchestrator.py (see bottom of file for instructions).
+Additional pattern detectors registered via the detector orchestrator.
 
 Covers entity types not handled by existing detectors:
 - EMPLOYER: Company/organization names (773 missed in corpus)

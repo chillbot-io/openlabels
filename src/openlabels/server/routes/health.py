@@ -13,6 +13,7 @@ from typing import Optional, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, text, Integer
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.db import get_session
@@ -131,7 +132,7 @@ async def get_health_status(
         result.scalar()
         status["db"] = "healthy"
         status["db_text"] = "Connected"
-    except Exception as e:
+    except (SQLAlchemyError, ConnectionError, OSError) as e:
         logger.warning(f"Database health check failed: {e}")
         status["db"] = "error"
         status["db_text"] = "Disconnected"
@@ -167,7 +168,7 @@ async def get_health_status(
         else:
             status["queue"] = "healthy"
             status["queue_text"] = f"{pending_count} pending"
-    except Exception as e:
+    except (SQLAlchemyError, ConnectionError, OSError) as e:
         logger.warning(f"Queue health check failed: {e}")
         status["queue"] = "warning"
         status["queue_text"] = "Unknown"
@@ -181,7 +182,7 @@ async def get_health_status(
             detector = PIIBertONNXDetector()
             if detector._session is not None:
                 models_available.append("PII-BERT")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             # Model loading failures are expected if models aren't installed
             logger.info(f"PII-BERT model not available: {type(e).__name__}: {e}")
 
@@ -189,7 +190,7 @@ async def get_health_status(
             detector = PHIBertONNXDetector()
             if detector._session is not None:
                 models_available.append("PHI-BERT")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             # Model loading failures are expected if models aren't installed
             logger.info(f"PHI-BERT model not available: {type(e).__name__}: {e}")
 
@@ -202,7 +203,7 @@ async def get_health_status(
     except ImportError:
         status["ml"] = "warning"
         status["ml_text"] = "Not installed"
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         # Log ML check failures - may indicate configuration issues
         logger.warning(f"ML health check failed: {type(e).__name__}: {e}")
         status["ml"] = "warning"
@@ -220,7 +221,7 @@ async def get_health_status(
     except ImportError:
         status["mip"] = "warning"
         status["mip_text"] = "Not installed"
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         # Log MIP SDK failures - labeling features will be unavailable
         logger.info(f"MIP SDK check failed (labeling unavailable): {type(e).__name__}: {e}")
         status["mip"] = "warning"
@@ -235,7 +236,7 @@ async def get_health_status(
     except ImportError:
         status["ocr"] = "warning"
         status["ocr_text"] = "Not installed"
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         # Log OCR failures - image processing will be degraded
         logger.info(f"OCR check failed (image text extraction unavailable): {type(e).__name__}: {e}")
         status["ocr"] = "warning"
@@ -276,7 +277,7 @@ async def get_health_status(
         completed = row.completed or 0
         status["success_rate"] = (completed / total * 100) if total > 0 else 100.0
 
-    except Exception as e:
+    except (SQLAlchemyError, ConnectionError, OSError) as e:
         logger.warning(f"Stats query failed: {e}")
 
     # Add circuit breaker status
@@ -293,7 +294,7 @@ async def get_health_status(
                 stats=cb_status["stats"],
             ))
         status["circuit_breakers"] = cb_statuses
-    except Exception as e:
+    except (RuntimeError, KeyError, AttributeError) as e:
         # Circuit breaker status is informational - log at debug level
         logger.debug(f"Could not retrieve circuit breaker status: {type(e).__name__}: {e}")
 
@@ -313,7 +314,7 @@ async def get_health_status(
             oldest_pending_hours=age_stats.get("oldest_pending_hours"),
             oldest_running_hours=age_stats.get("oldest_running_hours"),
         )
-    except Exception as e:
+    except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
         # Job metrics failure may indicate queue issues
         logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
@@ -351,7 +352,7 @@ async def get_cache_health(
     try:
         stats = await get_cache_stats()
         return CacheStats(**stats)
-    except Exception as e:
+    except (ConnectionError, OSError, RuntimeError) as e:
         logger.warning(f"Failed to get cache stats: {e}")
         return CacheStats(
             enabled=False,

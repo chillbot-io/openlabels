@@ -64,7 +64,7 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
     try:
         parsed = urlparse(origin)
         origin_host = f"{parsed.scheme}://{parsed.netloc}"
-    except Exception as parse_err:
+    except (ValueError, TypeError) as parse_err:
         # SECURITY: Log origin parsing failures - could indicate malformed attack attempts
         logger.warning(f"Failed to parse WebSocket origin '{origin}': {type(parse_err).__name__}: {parse_err}")
         return False
@@ -141,7 +141,7 @@ class ConnectionManager:
             for conn in self.active_connections[scan_id]:
                 try:
                     await conn.websocket.send_json(message)
-                except Exception as e:
+                except (WebSocketDisconnect, ConnectionError, OSError, RuntimeError) as e:
                     # Connection may have been closed - log at info level for visibility
                     logger.info(f"Failed to send WebSocket message to connection: {type(e).__name__}: {e}")
 

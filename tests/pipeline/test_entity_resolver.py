@@ -3,7 +3,7 @@
 Tests multi-sieve entity resolution: exact match, partial name,
 coreference, and cross-message matching.
 
-Adapted from scrubiq/tests/pipeline/test_entity_resolver.py
+Tests multi-sieve entity resolution pipeline.
 """
 
 import pytest
