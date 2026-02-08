@@ -251,10 +251,107 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # Real-time event stream manager (Phase I: USN + fanotify)
+    stream_shutdown = asyncio.Event()
+    stream_task: asyncio.Task | None = None
+    _fanotify_provider = None
+    if settings.monitoring.enabled and settings.monitoring.stream_enabled:
+        try:
+            from openlabels.monitoring.stream_manager import EventStreamManager
+            from openlabels.monitoring.scan_trigger import ScanTriggerBuffer
+            from openlabels.monitoring.registry import get_watched_file, get_watched_files
+
+            stream_providers = []
+            active_paths = [str(wf.path) for wf in get_watched_files()]
+
+            # USN Journal (Windows)
+            if "usn_journal" in settings.monitoring.stream_providers:
+                from openlabels.monitoring.providers.usn_journal import USNJournalProvider
+                if USNJournalProvider.is_available():
+                    usn = USNJournalProvider(
+                        drive_letter=settings.monitoring.usn_drive_letter,
+                        watched_paths=active_paths or None,
+                    )
+                    stream_providers.append(usn)
+                    logger.info("USN journal provider activated (drive %s:)", settings.monitoring.usn_drive_letter)
+
+            # fanotify (Linux)
+            if "fanotify" in settings.monitoring.stream_providers:
+                from openlabels.monitoring.providers.fanotify import FanotifyProvider
+                if FanotifyProvider.is_available():
+                    _fanotify_provider = FanotifyProvider(
+                        watched_paths=active_paths or None,
+                    )
+                    stream_providers.append(_fanotify_provider)
+                    logger.info("fanotify provider activated (%d paths)", len(active_paths))
+
+            if stream_providers:
+                # Build scan trigger (optional)
+                scan_trigger = None
+                if settings.monitoring.scan_trigger_enabled:
+                    scan_trigger = ScanTriggerBuffer(
+                        registry_lookup=get_watched_file,
+                        rate_limit=settings.monitoring.scan_trigger_rate_limit,
+                        cooldown_seconds=settings.monitoring.scan_trigger_cooldown_seconds,
+                        min_risk_tier=settings.monitoring.scan_trigger_min_risk_tier,
+                    )
+
+                manager = EventStreamManager(
+                    providers=stream_providers,
+                    batch_size=settings.monitoring.stream_batch_size,
+                    flush_interval=settings.monitoring.stream_flush_interval,
+                    scan_trigger=scan_trigger,
+                )
+                app.state.stream_manager = manager
+
+                stream_task = asyncio.create_task(
+                    manager.run(stream_shutdown),
+                    name="event-stream-manager",
+                )
+
+                # Start scan trigger loop if enabled
+                if scan_trigger is not None:
+                    trigger_task = asyncio.create_task(
+                        scan_trigger.run(stream_shutdown),
+                        name="scan-trigger-buffer",
+                    )
+                    app.state.scan_trigger = scan_trigger
+
+                logger.info(
+                    "EventStreamManager started (%d providers)",
+                    len(stream_providers),
+                )
+            else:
+                logger.info(
+                    "No real-time stream providers available on this platform"
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to start EventStreamManager: %s: %s",
+                type(e).__name__, e,
+            )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
     # Shutdown
+
+    # Stop real-time event streams
+    if stream_task and not stream_task.done():
+        stream_shutdown.set()
+        try:
+            await asyncio.wait_for(stream_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            stream_task.cancel()
+            try:
+                await stream_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("EventStreamManager stopped")
+
+    # Close fanotify fd
+    if _fanotify_provider is not None:
+        _fanotify_provider.close()
 
     # Stop event harvester (OS providers)
     if harvester_task and not harvester_task.done():

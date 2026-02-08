@@ -9,17 +9,19 @@ agents for entity detection.
 Implementations
 ---------------
 - ``FullWalkProvider`` — lists every file via the adapter (default)
+- ``USNChangeProvider`` — Windows NTFS USN journal (Phase I)
+- ``FanotifyChangeProvider`` — Linux fanotify (Phase I)
 
-Future providers (Phases G, I, K) plug in here:
-- USNChangeProvider — Windows NTFS USN journal
-- FanotifyChangeProvider — Linux fanotify
+Future providers (Phases K, L) plug in here:
 - SQSChangeProvider — S3 event notifications
 - PubSubChangeProvider — GCS notifications
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
 from openlabels.adapters.base import FileInfo, FilterConfig, ReadAdapter
@@ -80,3 +82,66 @@ class FullWalkProvider:
             filter_config=self._filter_config,
         ):
             yield file_info
+
+
+# ── Real-time change providers (Phase I) ─────────────────────────────
+
+
+class _StreamChangeProvider:
+    """Base for change providers backed by a streaming event source.
+
+    Buffers file-change events and yields them as ``FileInfo`` objects
+    when ``changed_files()`` is called by the scan orchestrator.
+    """
+
+    def __init__(self) -> None:
+        self._changed: dict[str, datetime] = {}
+        self._lock = asyncio.Lock()
+
+    def notify(self, file_path: str, change_type: str = "modified") -> None:
+        """Record a file change (called from EventStreamManager)."""
+        self._changed[file_path] = datetime.now(timezone.utc)
+
+    async def changed_files(self) -> AsyncIterator[FileInfo]:
+        """Yield files that changed since the last call, then clear."""
+        async with self._lock:
+            snapshot = dict(self._changed)
+            self._changed.clear()
+
+        for path, modified in snapshot.items():
+            from pathlib import Path as _Path
+
+            p = _Path(path)
+            try:
+                stat = p.stat()
+                size = stat.st_size
+            except OSError:
+                size = 0
+
+            yield FileInfo(
+                path=path,
+                name=p.name,
+                size=size,
+                modified=modified,
+                change_type="modified",
+            )
+
+
+class USNChangeProvider(_StreamChangeProvider):
+    """Adapts USN journal events as a ``ChangeProvider`` for the scan pipeline.
+
+    Wire to an ``EventStreamManager`` or ``USNJournalProvider`` that
+    calls ``notify(file_path)`` on each relevant event.
+    """
+
+    pass
+
+
+class FanotifyChangeProvider(_StreamChangeProvider):
+    """Adapts fanotify events as a ``ChangeProvider`` for the scan pipeline.
+
+    Wire to an ``EventStreamManager`` or ``FanotifyProvider`` that
+    calls ``notify(file_path)`` on each relevant event.
+    """
+
+    pass
