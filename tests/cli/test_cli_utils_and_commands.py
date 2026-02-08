@@ -5,7 +5,8 @@ Covers:
 - handle_http_error(): error message correctness for all HTTP error types
 - collect_files(): file/directory collection with recursive/flat modes
 - scan_files(): integration with FileProcessor, per-file error handling
-- get_httpx_client() / get_server_url(): client construction and env-based config
+- get_httpx_client() / get_server_url(): legacy client construction (still in utils)
+- get_api_client(): shared client factory with base_url and auth token
 - scan command group: start, status, cancel with mocked httpx
 - export command: results export with mocked server responses
 - target command group: list, add

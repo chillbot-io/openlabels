@@ -31,7 +31,7 @@ def export_results(job: str, fmt: str, output: str, server: str, token: str | No
 
     try:
         response = client.get(
-            f"{server}/api/results/export",
+            "/api/results/export",
             params={"job_id": job, "format": fmt}
         )
 

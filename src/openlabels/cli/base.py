@@ -71,8 +71,12 @@ def format_option(
 
 
 def get_api_client(server: str, token: str | None = None) -> httpx.Client:
-    """Create an httpx client configured with an optional auth token."""
+    """Create an httpx client configured with base URL and optional auth token.
+
+    Commands should use relative paths (e.g., ``/api/targets``) instead of
+    building full URLs.
+    """
     headers: dict[str, str] = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    return httpx.Client(timeout=30.0, headers=headers)
+    return httpx.Client(base_url=server, timeout=30.0, headers=headers)

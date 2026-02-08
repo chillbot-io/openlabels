@@ -23,7 +23,7 @@ def user_list(server: str, token: str | None, output_format: str) -> None:
     client = get_api_client(server, token)
 
     try:
-        response = client.get(f"{server}/api/users")
+        response = client.get("/api/users")
         if response.status_code == 200:
             users = response.json()
             display = []
@@ -54,7 +54,7 @@ def user_create(email: str, role: str, server: str, token: str | None) -> None:
 
     try:
         response = client.post(
-            f"{server}/api/users",
+            "/api/users",
             json={"email": email, "role": role}
         )
         if response.status_code == 201:

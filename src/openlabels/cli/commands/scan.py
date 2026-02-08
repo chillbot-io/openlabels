@@ -22,7 +22,7 @@ def scan_start(target_name: str, server: str, token: str | None) -> None:
 
     try:
         # First, find the target by name
-        response = client.get(f"{server}/api/targets")
+        response = client.get("/api/targets")
         if response.status_code != 200:
             click.echo(f"Error fetching targets: {response.status_code}", err=True)
             return
@@ -36,7 +36,7 @@ def scan_start(target_name: str, server: str, token: str | None) -> None:
 
         # Start the scan
         response = client.post(
-            f"{server}/api/scans",
+            "/api/scans",
             json={"target_id": target["id"]}
         )
 
@@ -61,7 +61,7 @@ def scan_status(job_id: str, server: str, token: str | None) -> None:
     client = get_api_client(server, token)
 
     try:
-        response = client.get(f"{server}/api/scans/{job_id}")
+        response = client.get(f"/api/scans/{job_id}")
         if response.status_code == 200:
             scan_data = response.json()
             click.echo(f"Job ID:     {scan_data.get('id')}")
@@ -89,7 +89,7 @@ def scan_cancel(job_id: str, server: str, token: str | None) -> None:
     client = get_api_client(server, token)
 
     try:
-        response = client.delete(f"{server}/api/scans/{job_id}")
+        response = client.delete(f"/api/scans/{job_id}")
         if response.status_code in (200, 204):
             click.echo(f"Cancelled scan: {job_id}")
         else:

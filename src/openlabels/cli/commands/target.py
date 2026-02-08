@@ -23,7 +23,7 @@ def target_list(server: str, token: str | None, output_format: str) -> None:
     client = get_api_client(server, token)
 
     try:
-        response = client.get(f"{server}/api/targets")
+        response = client.get("/api/targets")
         if response.status_code == 200:
             targets = response.json()
             display = []
@@ -53,7 +53,7 @@ def target_add(name: str, adapter: str, path: str, server: str, token: str | Non
 
     try:
         response = client.post(
-            f"{server}/api/targets",
+            "/api/targets",
             json={
                 "name": name,
                 "adapter_type": adapter,

@@ -1,9 +1,10 @@
 """Label management commands."""
 
+from __future__ import annotations
+
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 import httpx
@@ -28,7 +29,7 @@ def labels_list(server: str, token: str | None, output_format: str) -> None:
     client = get_api_client(server, token)
 
     try:
-        response = client.get(f"{server}/api/labels")
+        response = client.get("/api/labels")
         if response.status_code == 200:
             labels_data = response.json()
             display = []
@@ -56,7 +57,7 @@ def labels_sync(server: str, token: str | None) -> None:
 
     try:
         click.echo("Syncing labels from M365...")
-        response = client.post(f"{server}/api/labels/sync")
+        response = client.post("/api/labels/sync")
         if response.status_code == 202:
             result = response.json()
             click.echo(f"Synced {result.get('labels_synced', 0)} labels")
@@ -77,7 +78,7 @@ def labels_sync(server: str, token: str | None) -> None:
 @click.option("--label", required=True, help="Label name or ID to apply")
 @click.option("--justification", help="Justification for downgrade (if applicable)")
 @click.option("--dry-run", is_flag=True, help="Preview without applying")
-def labels_apply(file_path: str, label: str, justification: Optional[str], dry_run: bool) -> None:
+def labels_apply(file_path: str, label: str, justification: str | None, dry_run: bool) -> None:
     """Apply a sensitivity label to a file.
 
     Uses the MIP SDK on Windows, or records the label in the database on other platforms.
@@ -137,7 +138,7 @@ def labels_apply(file_path: str, label: str, justification: Optional[str], dry_r
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--justification", help="Justification for label removal")
 @click.option("--dry-run", is_flag=True, help="Preview without removing")
-def labels_remove(file_path: str, justification: Optional[str], dry_run: bool) -> None:
+def labels_remove(file_path: str, justification: str | None, dry_run: bool) -> None:
     """Remove a sensitivity label from a file.
 
     Examples:

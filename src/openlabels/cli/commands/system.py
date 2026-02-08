@@ -29,7 +29,7 @@ def status(server: str, token: str | None) -> None:
 
     # Check server health
     try:
-        response = client.get(f"{server}/health", timeout=5.0)
+        response = client.get("/health", timeout=5.0)
         if response.status_code == 200:
             health = response.json()
             click.echo(f"Server:      \u2713 Online ({server})")
@@ -50,7 +50,7 @@ def status(server: str, token: str | None) -> None:
 
     # Get job queue status
     try:
-        response = client.get(f"{server}/api/jobs/stats")
+        response = client.get("/api/jobs/stats")
         if response.status_code == 200:
             stats = response.json()
             click.echo("\nJob Queue:")
@@ -63,7 +63,7 @@ def status(server: str, token: str | None) -> None:
 
     # Get scan statistics
     try:
-        response = client.get(f"{server}/api/dashboard/summary")
+        response = client.get("/api/dashboard/summary")
         if response.status_code == 200:
             summary = response.json()
             click.echo("\nScan Summary:")
@@ -121,12 +121,12 @@ def status(server: str, token: str | None) -> None:
 @server_options
 def backup(output: str, server: str, token: str | None) -> None:
     """Backup OpenLabels data."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     output_path = Path(output)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_name = f"openlabels_backup_{timestamp}"
 
     click.echo(f"Creating backup: {backup_name}")
@@ -139,7 +139,7 @@ def backup(output: str, server: str, token: str | None) -> None:
     try:
         for endpoint in ["targets", "labels", "labels/rules", "schedules"]:
             try:
-                response = client.get(f"{server}/api/{endpoint}")
+                response = client.get(f"/api/{endpoint}")
                 if response.status_code == 200:
                     with open(backup_dir / f"{endpoint.replace('/', '_')}.json", "w") as f:
                         json.dump(response.json(), f, indent=2)
@@ -183,7 +183,7 @@ def restore(from_path: str, server: str, token: str | None) -> None:
 
                 if isinstance(data, list):
                     for item in data:
-                        response = client.post(f"{server}/api/{endpoint}", json=item)
+                        response = client.post(f"/api/{endpoint}", json=item)
                         if response.status_code not in (200, 201):
                             click.echo(f"  Warning: Failed to restore item in {endpoint}", err=True)
                     click.echo(f"  Restored: {endpoint} ({len(data)} items)")
