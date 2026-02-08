@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..types import Span, DetectionResult, normalize_entity_type
+from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
@@ -330,9 +331,10 @@ class DetectorOrchestrator:
             return []
 
     def _post_process(self, spans: List[Span]) -> List[Span]:
-        """Post-process: filter by confidence, deduplicate, sort."""
+        """Post-process: calibrate confidence, filter, deduplicate, sort."""
+        calibrated = calibrate_spans(spans)
         return resolve_spans(
-            spans,
+            calibrated,
             confidence_threshold=self.confidence_threshold,
         )
 
