@@ -18,6 +18,7 @@ class RemediationAction(str, Enum):
     """Types of remediation actions."""
 
     QUARANTINE = "quarantine"
+    RESTORE = "restore"
     LOCKDOWN = "lockdown"
     NONE = "none"
 
@@ -47,6 +48,9 @@ class RemediationResult:
     error: Optional[str] = None
     error_code: Optional[int] = None
 
+    # Integrity
+    file_hash: Optional[str] = None  # SHA-256 at time of operation
+
     # Audit
     performed_by: Optional[str] = None
 
@@ -61,6 +65,7 @@ class RemediationResult:
             "timestamp": self.timestamp.isoformat(),
             "error": self.error,
             "error_code": self.error_code,
+            "file_hash": self.file_hash,
             "performed_by": self.performed_by,
         }
 

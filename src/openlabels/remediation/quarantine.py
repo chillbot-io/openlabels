@@ -11,6 +11,7 @@ Windows implementation uses robocopy for reliable transfers with
 ACL preservation and retry logic.
 """
 
+import hashlib
 import logging
 import os
 import platform
@@ -39,6 +40,15 @@ logger = logging.getLogger(__name__)
 ROBOCOPY_SUCCESS_CODES = {0, 1, 2, 3}  # 3 = 1+2 (copied + extra)
 ROBOCOPY_PARTIAL_CODES = {4, 5, 6, 7}  # Some issues but mostly worked
 ROBOCOPY_ERROR_CODES = {8, 16}  # Real failures
+
+
+def _compute_file_hash(path: Path) -> str:
+    """Compute SHA-256 hash of a file."""
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
 
 
 def quarantine(
@@ -90,9 +100,17 @@ def quarantine(
     if not destination.is_dir() and not dry_run:
         raise NotADirectoryError(f"Destination must be a directory: {destination}")
 
+    # Compute file hash before move for integrity verification
+    pre_hash: str | None = None
+    if not dry_run:
+        try:
+            pre_hash = _compute_file_hash(source)
+        except OSError as e:
+            logger.warning(f"Could not compute pre-move hash for {source}: {e}")
+
     # Dispatch to platform-specific implementation
     if platform.system() == "Windows":
-        return _quarantine_windows(
+        result = _quarantine_windows(
             source=source,
             destination=destination,
             preserve_acls=preserve_acls,
@@ -101,12 +119,31 @@ def quarantine(
             retry_wait=retry_wait,
         )
     else:
-        return _quarantine_unix(
+        result = _quarantine_unix(
             source=source,
             destination=destination,
             preserve_acls=preserve_acls,
             dry_run=dry_run,
         )
+
+    # Verify integrity after move
+    if result.success and not dry_run and pre_hash and result.dest_path:
+        try:
+            post_hash = _compute_file_hash(result.dest_path)
+            if pre_hash != post_hash:
+                logger.error(
+                    f"Hash mismatch after quarantine! "
+                    f"pre={pre_hash} post={post_hash} file={result.dest_path}"
+                )
+                result.error = f"Integrity warning: hash mismatch ({pre_hash} != {post_hash})"
+        except OSError as e:
+            logger.warning(f"Could not compute post-move hash for {result.dest_path}: {e}")
+
+    # Attach the pre-move hash to the result for manifest storage
+    if pre_hash:
+        result.file_hash = pre_hash
+
+    return result
 
 
 def _quarantine_windows(
@@ -292,3 +329,84 @@ def _quarantine_unix(
             source=source,
             error=f"{type(e).__name__}: {e}",
         )
+
+
+def restore_from_quarantine(
+    entry_id: str,
+    manifest: "QuarantineManifest",
+    verify_hash: bool = True,
+    dry_run: bool = False,
+) -> RemediationResult:
+    """Restore a quarantined file to its original location.
+
+    Args:
+        entry_id: ID of the quarantine manifest entry.
+        manifest: The :class:`QuarantineManifest` that tracks the entry.
+        verify_hash: If ``True`` (default), verify the SHA-256 hash of the
+            quarantined file matches the hash recorded at quarantine time.
+        dry_run: If ``True``, report what would happen without moving.
+
+    Returns:
+        RemediationResult with success/failure status.
+    """
+    from .manifest import QuarantineManifest  # noqa: F811 — runtime import
+
+    entry = manifest.get(entry_id)
+    if not entry:
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=Path(entry_id),
+            error="Quarantine entry not found",
+        )
+
+    quarantine_path = Path(entry.quarantine_path)
+    original_path = Path(entry.original_path)
+
+    if not quarantine_path.exists():
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=quarantine_path,
+            error="Quarantined file no longer exists",
+        )
+
+    # Verify integrity before restoring
+    if verify_hash and entry.file_hash:
+        actual_hash = _compute_file_hash(quarantine_path)
+        if actual_hash != entry.file_hash:
+            return RemediationResult.failure(
+                action=RemediationAction.RESTORE,
+                source=quarantine_path,
+                error=f"Hash mismatch: expected {entry.file_hash}, got {actual_hash}",
+            )
+
+    if dry_run:
+        return RemediationResult(
+            success=True,
+            action=RemediationAction.RESTORE,
+            source_path=quarantine_path,
+            dest_path=original_path,
+            performed_by=get_current_user(),
+        )
+
+    # Move file back to original location
+    original_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.move(str(quarantine_path), str(original_path))
+    except (OSError, PermissionError) as e:
+        logger.error(f"Failed to restore {quarantine_path} to {original_path}: {e}")
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=quarantine_path,
+            error=str(e),
+        )
+
+    manifest.mark_restored(entry_id)
+    logger.info(f"Restored {quarantine_path} to {original_path}")
+
+    return RemediationResult(
+        success=True,
+        action=RemediationAction.RESTORE,
+        source_path=quarantine_path,
+        dest_path=original_path,
+        performed_by=get_current_user(),
+    )
