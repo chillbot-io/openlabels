@@ -757,7 +757,7 @@ class TieredPipeline:
             # Future: could use text detection model only (faster than full OCR)
             return True
 
-        except (OSError, ValueError, RuntimeError) as e:
+        except Exception as e:
             logger.debug(f"Quick text check failed: {e}")
             return True  # Assume text exists on error
 

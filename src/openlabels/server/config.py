@@ -525,6 +525,23 @@ class MonitoringSettings(BaseSettings):
     # SharePoint site URLs to filter events (None = all sites)
     m365_site_urls: list[str] = Field(default_factory=list)
 
+    # --- Real-time event streams (Phase I) ---
+    # Enable EventStreamManager for continuous kernel-level monitoring
+    stream_enabled: bool = False
+    # Stream providers to activate (usn_journal on Windows, fanotify on Linux)
+    stream_providers: list[str] = Field(default_factory=lambda: ["usn_journal", "fanotify"])
+    # Batch size for stream flush to DB
+    stream_batch_size: int = 500
+    # Flush interval (seconds) for stream buffer
+    stream_flush_interval: float = 5.0
+    # USN journal drive letter (Windows only)
+    usn_drive_letter: str = "C"
+    # Scan trigger settings
+    scan_trigger_enabled: bool = False
+    scan_trigger_rate_limit: int = 10
+    scan_trigger_cooldown_seconds: float = 60.0
+    scan_trigger_min_risk_tier: str = "MEDIUM"
+
     # --- Graph webhooks ---
     webhook_enabled: bool = False
     # Public HTTPS URL for Graph change notification subscriptions.

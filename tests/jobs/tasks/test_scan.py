@@ -110,7 +110,7 @@ class TestGetProcessor:
                     get_processor(enable_ml=True)
 
                     call_kwargs = MockProcessor.call_args.kwargs
-                    assert call_kwargs["enable_ml"] is True
+                    assert call_kwargs["config"].enable_ml is True
         finally:
             scan_module._processor = original
 
@@ -375,7 +375,7 @@ class TestDetectAndScore:
         try:
             result = await _detect_and_score(b"test", mock_file_info)
 
-            assert len(result["findings"]) == 50
+            assert len(result["findings"]["entities"]) == 50
         finally:
             scan_module._processor = original
 
