@@ -182,17 +182,19 @@ class GraphWebhookProvider:
                 )
         return count
 
-    async def renew_subscription(self, subscription_id: str) -> None:
-        """Renew an existing subscription before it expires.
+    async def renew_subscription(self, subscription_id: str) -> str:
+        """Renew a subscription by re-subscribing to the same drive.
 
-        Note: Requires GraphClient to expose a ``patch()`` method.
-        Currently raises ``NotImplementedError`` — renewal must be
-        done manually or via a future GraphClient update.
+        Since ``GraphClient.patch()`` is not yet available, this deletes
+        the local tracking for the old subscription and creates a new one.
+        The old Graph subscription will expire on its own.
+
+        Returns the new subscription ID.
         """
-        raise NotImplementedError(
-            "Subscription renewal requires GraphClient.patch() "
-            "which is not yet implemented. Re-subscribe instead."
-        )
+        drive_id = self._subscriptions.pop(subscription_id, None)
+        if drive_id is None:
+            raise ValueError(f"Unknown subscription: {subscription_id}")
+        return await self.subscribe(drive_id)
 
     # ------------------------------------------------------------------
     # Delta query

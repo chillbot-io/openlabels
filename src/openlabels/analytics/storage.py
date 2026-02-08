@@ -11,6 +11,7 @@ Provides a :class:`CatalogStorage` protocol and concrete implementations:
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 from pathlib import Path

@@ -196,7 +196,7 @@ class TestDuckDBDashboardService:
         assert stats.total_events == 0
         assert stats.events_last_24h == 0
         assert stats.by_action == {}
-        assert stats.by_user == []
+        assert stats.top_users == []
 
     async def test_get_access_stats_with_data(
         self,
@@ -210,8 +210,8 @@ class TestDuckDBDashboardService:
         stats = await dashboard_service.get_access_stats(TENANT_A)
         assert stats.total_events == 5
         assert stats.by_action.get("read") == 5
-        assert len(stats.by_user) >= 1
-        assert stats.by_user[0]["user"] == "alice"
+        assert len(stats.top_users) >= 1
+        assert stats.top_users[0]["user"] == "alice"
 
 
 @pytest.mark.asyncio

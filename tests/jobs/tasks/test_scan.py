@@ -47,7 +47,6 @@ from openlabels.jobs.tasks.scan import (
     _get_adapter,
     _detect_and_score,
     execute_scan_task,
-    execute_parallel_scan_task,
     CANCELLATION_CHECK_INTERVAL,
 )
 from openlabels.exceptions import AdapterError, JobError
@@ -690,65 +689,6 @@ class TestScanTaskErrorHandling:
                     assert mock_job.status == "failed"
                     assert "OS error" in mock_job.error
 
-
-
-class TestParallelScanTask:
-    """Tests for execute_parallel_scan_task function."""
-
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock database session."""
-        session = AsyncMock()
-        session.flush = AsyncMock()
-        session.commit = AsyncMock()
-        session.add = MagicMock()
-        return session
-
-    async def test_raises_when_job_not_found(self, mock_session):
-        """Should raise JobError when job doesn't exist."""
-        from openlabels.jobs.tasks.scan import execute_parallel_scan_task
-
-        mock_session.get = AsyncMock(return_value=None)
-
-        with pytest.raises(JobError) as exc_info:
-            await execute_parallel_scan_task(mock_session, {"job_id": str(uuid4())})
-
-        assert "not found" in str(exc_info.value).lower()
-
-    async def test_returns_cancelled_when_already_cancelled(self, mock_session):
-        """Should return cancelled if job was cancelled before start."""
-        from openlabels.jobs.tasks.scan import execute_parallel_scan_task
-
-        mock_job = MagicMock()
-        mock_job.id = uuid4()
-        mock_job.status = "cancelled"
-        mock_session.get = AsyncMock(return_value=mock_job)
-
-        result = await execute_parallel_scan_task(
-            mock_session,
-            {"job_id": str(mock_job.id)}
-        )
-
-        assert result["status"] == "cancelled"
-        assert result["files_scanned"] == 0
-
-    async def test_raises_when_target_not_found(self, mock_session):
-        """Should raise JobError when target doesn't exist."""
-        from openlabels.jobs.tasks.scan import execute_parallel_scan_task
-
-        mock_job = MagicMock()
-        mock_job.id = uuid4()
-        mock_job.status = "pending"
-        mock_job.target_id = uuid4()
-        mock_session.get = AsyncMock(side_effect=[mock_job, None])
-
-        with pytest.raises(JobError) as exc_info:
-            await execute_parallel_scan_task(
-                mock_session,
-                {"job_id": str(mock_job.id)}
-            )
-
-        assert "target" in str(exc_info.value).lower() and "not found" in str(exc_info.value).lower()
 
 
 class TestTaskCancellationMidScan:
