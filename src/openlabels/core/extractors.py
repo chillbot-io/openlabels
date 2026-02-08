@@ -882,7 +882,7 @@ class EmailExtractor(BaseExtractor):
                 pages=1,
             )
 
-        except (OSError, ValueError, KeyError, AttributeError, RuntimeError) as e:
+        except Exception as e:
             # Log MSG file extraction failures
             logger.info(f"MSG extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(

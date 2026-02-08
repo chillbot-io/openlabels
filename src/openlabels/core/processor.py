@@ -333,6 +333,10 @@ class FileProcessor:
             logger.warning(f"Extraction failed for {file_path}: {type(e).__name__}: {e}")
             # Fall back to trying as text
             return await self._decode_text(content)
+        except Exception as e:
+            # Catch-all for unexpected extraction errors
+            logger.warning(f"Unexpected extraction error for {file_path}: {type(e).__name__}: {e}")
+            return await self._decode_text(content)
 
     async def _extract_image(self, content: bytes) -> str:
         """

@@ -273,7 +273,7 @@ class TestProcessFile:
             entity_counts={"SSN": 1},
         )
         mock_orchestrator = MagicMock()
-        mock_orchestrator.detect.return_value = detection
+        mock_orchestrator.detect = AsyncMock(return_value=detection)
         mock_orch_cls.return_value = mock_orchestrator
 
         scoring_result = _make_scoring_result(score_val=40, tier=RiskTier.MEDIUM)
@@ -318,7 +318,7 @@ class TestProcessFile:
             spans=[_make_span("test@example.com", start=0, entity_type="EMAIL")],
         )
         mock_orchestrator = MagicMock()
-        mock_orchestrator.detect.return_value = detection
+        mock_orchestrator.detect = AsyncMock(return_value=detection)
         mock_orch_cls.return_value = mock_orchestrator
 
         processor = FileProcessor(enable_ocr=False)
@@ -338,7 +338,7 @@ class TestProcessFile:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_file_size_from_content_length(self, mock_ocr, mock_orch_cls):
         """File size is calculated from content length when not provided."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -353,7 +353,7 @@ class TestProcessFile:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_explicit_file_size_used(self, mock_ocr, mock_orch_cls):
         """Explicit file_size parameter is used for reporting."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -370,7 +370,7 @@ class TestProcessFile:
     async def test_no_entities_skips_scoring(self, mock_ocr, mock_orch_cls):
         """When no entities are detected, scoring is skipped."""
         detection = _make_detection_result(spans=[], entity_counts={})
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -393,7 +393,7 @@ class TestProcessFile:
         detection = _make_detection_result(entity_counts={"SSN": 1}, spans=[
             _make_span("123-45-6789"),
         ])
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -413,7 +413,7 @@ class TestProcessFile:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_mime_type_detection(self, mock_ocr, mock_orch_cls):
         """MIME type is correctly guessed from file extension."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -439,7 +439,7 @@ class TestProcessFile:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_processing_time_recorded(self, mock_ocr, mock_orch_cls):
         """Processing time is recorded in milliseconds."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -455,7 +455,7 @@ class TestProcessFile:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_processed_at_is_set(self, mock_ocr, mock_orch_cls):
         """processed_at timestamp is set on result."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -513,7 +513,7 @@ class TestOversizedFiles:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_file_exactly_at_limit(self, mock_ocr, mock_orch_cls):
         """Files exactly at the size limit are processed normally."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False, max_file_size=10)
 
@@ -628,10 +628,10 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_detection_error_captured(self, mock_ocr, mock_orch_cls):
         """DetectionError is captured and stored in result.error."""
-        mock_orch_cls.return_value.detect.side_effect = DetectionError(
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=DetectionError(
             "Pattern engine failure",
             detector_name="checksum",
-        )
+        ))
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -706,7 +706,7 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_memory_error_captured(self, mock_ocr, mock_orch_cls):
         """MemoryError is captured in result.error."""
-        mock_orch_cls.return_value.detect.side_effect = MemoryError()
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=MemoryError())
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -722,7 +722,7 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_os_error_captured(self, mock_ocr, mock_orch_cls):
         """OSError is captured in result.error."""
-        mock_orch_cls.return_value.detect.side_effect = OSError("Disk full")
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=OSError("Disk full"))
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -738,9 +738,9 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_value_error_captured(self, mock_ocr, mock_orch_cls):
         """ValueError (e.g., decompression bomb in score) is captured."""
-        mock_orch_cls.return_value.detect.side_effect = ValueError(
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=ValueError(
             "Decompression ratio exceeds limit"
-        )
+        ))
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -756,7 +756,7 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_runtime_error_captured(self, mock_ocr, mock_orch_cls):
         """RuntimeError is captured in result.error."""
-        mock_orch_cls.return_value.detect.side_effect = RuntimeError("unexpected")
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=RuntimeError("unexpected"))
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -772,7 +772,7 @@ class TestProcessFileErrors:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_error_still_records_processing_time(self, mock_ocr, mock_orch_cls):
         """Processing time is recorded even when an error occurs."""
-        mock_orch_cls.return_value.detect.side_effect = DetectionError("fail")
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=DetectionError("fail"))
 
         processor = FileProcessor(enable_ocr=False)
         result = await processor.process_file(
@@ -1029,7 +1029,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_processes_all_files(self, mock_ocr, mock_orch_cls):
         """Batch processing yields a result for every input file."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1048,7 +1048,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_returns_correct_file_paths(self, mock_ocr, mock_orch_cls):
         """Batch results contain the correct file paths."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1068,7 +1068,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_respects_exposure_levels(self, mock_ocr, mock_orch_cls):
         """Batch processing respects per-file exposure levels."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1089,7 +1089,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_default_exposure(self, mock_ocr, mock_orch_cls):
         """Batch processing defaults exposure to PRIVATE when not specified."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1107,7 +1107,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_with_file_size(self, mock_ocr, mock_orch_cls):
         """Batch processing passes file size when provided."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1137,7 +1137,7 @@ class TestProcessBatch:
                 spans=[_make_span("test@test.com", entity_type="EMAIL")],
             )
 
-        mock_orch_cls.return_value.detect.side_effect = detect_side_effect
+        mock_orch_cls.return_value.detect = AsyncMock(side_effect=detect_side_effect)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1179,7 +1179,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_concurrency_parameter(self, mock_ocr, mock_orch_cls):
         """Batch processing respects the concurrency parameter."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1198,7 +1198,7 @@ class TestProcessBatch:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_batch_single_file(self, mock_ocr, mock_orch_cls):
         """Batch with a single file works correctly."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1230,7 +1230,7 @@ class TestRiskScoringIntegration:
                 _make_span("Type 2 Diabetes", start=20, entity_type="DIAGNOSIS"),
             ],
         )
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         scoring = _make_scoring_result(score_val=85, tier=RiskTier.CRITICAL)
 
@@ -1254,7 +1254,7 @@ class TestRiskScoringIntegration:
             entity_counts={"DATE": 1},
             spans=[_make_span("2024-01-15", start=0, entity_type="DATE")],
         )
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         scoring = _make_scoring_result(score_val=8, tier=RiskTier.MINIMAL)
 
@@ -1281,7 +1281,7 @@ class TestRiskScoringIntegration:
                 _make_span("987-65-4321", start=20, entity_type="SSN"),
             ],
         )
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1305,7 +1305,7 @@ class TestRiskScoringIntegration:
         detection = _make_detection_result(entity_counts=entity_counts, spans=[
             _make_span("4111111111111111", entity_type="CREDIT_CARD"),
         ])
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1330,7 +1330,7 @@ class TestRiskScoringIntegration:
             entity_counts={"SSN": 1, "EMAIL": 1},
             spans=spans,
         )
-        mock_orch_cls.return_value.detect.return_value = detection
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=detection)
 
         processor = FileProcessor(enable_ocr=False)
 
@@ -1641,13 +1641,12 @@ class TestConvenienceFunction:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_convenience_function_returns_result(self, mock_ocr, mock_orch_cls):
         """Convenience function returns a FileClassification."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         result = await process_file_convenience(
             file_path="test.txt",
             content="hello",
             exposure_level="PRIVATE",
-            enable_ocr=False,
         )
 
         assert isinstance(result, FileClassification)
@@ -1657,7 +1656,7 @@ class TestConvenienceFunction:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_convenience_function_passes_kwargs(self, mock_ocr, mock_orch_cls):
         """Convenience function passes kwargs to FileProcessor."""
-        mock_orch_cls.return_value.detect.return_value = _make_detection_result()
+        mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         result = await process_file_convenience(
             file_path="test.txt",
@@ -1685,7 +1684,7 @@ class TestPipelineOrchestration:
             entity_counts={"SSN": 1},
         )
         mock_orchestrator = MagicMock()
-        mock_orchestrator.detect.return_value = detection
+        mock_orchestrator.detect = AsyncMock(return_value=detection)
         mock_orch_cls.return_value = mock_orchestrator
 
         scoring = _make_scoring_result(score_val=40, tier=RiskTier.MEDIUM)
@@ -1730,7 +1729,7 @@ class TestPipelineOrchestration:
             entity_counts={"EMAIL": 1},
         )
         mock_orchestrator = MagicMock()
-        mock_orchestrator.detect.return_value = detection
+        mock_orchestrator.detect = AsyncMock(return_value=detection)
         mock_orch_cls.return_value = mock_orchestrator
 
         scoring = _make_scoring_result(score_val=20, tier=RiskTier.LOW)
@@ -1788,7 +1787,7 @@ class TestPipelineOrchestration:
     async def test_pipeline_stops_on_detection_failure(self, mock_ocr, mock_orch_cls):
         """Pipeline stops and captures error when detection fails."""
         mock_orchestrator = MagicMock()
-        mock_orchestrator.detect.side_effect = DetectionError("Engine crash")
+        mock_orchestrator.detect = AsyncMock(side_effect=DetectionError("Engine crash"))
         mock_orch_cls.return_value = mock_orchestrator
 
         processor = FileProcessor(enable_ocr=False)
