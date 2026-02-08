@@ -105,7 +105,6 @@ REMEDIATION_ACTIONS_SCHEMA = pa.schema([
     pa.field("performed_by", pa.utf8()),
     pa.field("dry_run", pa.bool_()),
     pa.field("error", pa.utf8()),
-    pa.field("rollback_of_id", pa.binary(16)),
     pa.field("created_at", pa.timestamp("ms", tz="UTC")),
     pa.field("completed_at", pa.timestamp("ms", tz="UTC")),
 ])

@@ -130,6 +130,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.catalog_storage = None
         app.state.dashboard_service = None
 
+    # Periodic event flush background task (Parquet data lake)
+    flush_shutdown = asyncio.Event()
+    flush_task: asyncio.Task | None = None
+    if settings.catalog.enabled:
+        try:
+            from openlabels.jobs.tasks.flush import periodic_event_flush
+
+            flush_task = asyncio.create_task(
+                periodic_event_flush(
+                    interval_seconds=settings.catalog.event_flush_interval_seconds,
+                    shutdown_event=flush_shutdown,
+                )
+            )
+            logger.info(
+                "Periodic event flush task started (interval=%ds)",
+                settings.catalog.event_flush_interval_seconds,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start periodic event flush: %s: %s",
+                type(e).__name__, e,
+            )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
@@ -148,6 +171,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
+
+    # Stop periodic event flush
+    if flush_task and not flush_task.done():
+        flush_shutdown.set()
+        try:
+            await asyncio.wait_for(flush_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            flush_task.cancel()
+            try:
+                await flush_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Periodic event flush stopped")
 
     # Close analytics engine
     if getattr(app.state, "analytics", None):

@@ -212,9 +212,7 @@ def remediation_actions_to_arrow(rows: Iterable[RemediationAction]) -> pa.Table:
     for r in rows:
         records["id"].append(_uuid_bytes(r.id))
         records["tenant_id"].append(_uuid_bytes(r.tenant_id))
-        records["file_inventory_id"].append(
-            _uuid_bytes(r.file_inventory_id) if r.file_inventory_id else None
-        )
+        records["file_inventory_id"].append(_uuid_bytes(r.file_inventory_id))
         records["action_type"].append(str(r.action_type) if r.action_type else None)
         records["status"].append(str(r.status) if r.status else None)
         records["source_path"].append(r.source_path)
@@ -222,9 +220,6 @@ def remediation_actions_to_arrow(rows: Iterable[RemediationAction]) -> pa.Table:
         records["performed_by"].append(r.performed_by)
         records["dry_run"].append(r.dry_run)
         records["error"].append(r.error)
-        records["rollback_of_id"].append(
-            _uuid_bytes(r.rollback_of_id) if r.rollback_of_id else None
-        )
         records["created_at"].append(_ts(r.created_at))
         records["completed_at"].append(_ts(r.completed_at))
 

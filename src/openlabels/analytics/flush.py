@@ -140,16 +140,12 @@ async def flush_events_to_catalog(
     Export new access events, audit logs, and remediation actions
     since the last flush.
 
-    Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": P}``.
+    Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": K}``.
     """
     from openlabels.server.models import AuditLog, FileAccessEvent, RemediationAction
 
     state = load_flush_state(storage)
-    counts: dict[str, int] = {
-        "access_events": 0,
-        "audit_logs": 0,
-        "remediation_actions": 0,
-    }
+    counts: dict[str, int] = {"access_events": 0, "audit_logs": 0, "remediation_actions": 0}
 
     # ── Access events ────────────────────────────────────────────────
     last_ae = state.get("last_access_event_flush")
@@ -186,7 +182,7 @@ async def flush_events_to_catalog(
         state["last_audit_log_flush"] = al_rows[-1].created_at.isoformat()
         counts["audit_logs"] = len(al_rows)
 
-    # ── Remediation actions ──────────────────────────────────────────
+    # ── Remediation actions ───────────────────────────────────────────
     last_ra = state.get("last_remediation_action_flush")
     ra_query = select(RemediationAction).order_by(RemediationAction.created_at)
     if last_ra:
@@ -257,6 +253,26 @@ def _write_partitioned_remediation_actions(
 
     for (tenant_str, action_date), indices in groups.items():
         partition = remediation_action_partition(UUID(tenant_str), action_date)
+        subset = table.take(indices)
+        dest = f"{partition}/{timestamped_part_filename()}"
+        storage.write_parquet(dest, subset)
+
+
+def _write_partitioned_remediation_actions(
+    storage: CatalogStorage,
+    rows,
+    table,
+) -> None:
+    """Group remediation actions by (tenant_id, action_date) and write partitioned Parquet."""
+    groups: dict[tuple, list[int]] = {}
+    for idx, r in enumerate(rows):
+        key = (str(r.tenant_id), r.created_at.date())
+        groups.setdefault(key, []).append(idx)
+
+    for (tenant_str, action_date), indices in groups.items():
+        from uuid import UUID as _UUID
+
+        partition = remediation_action_partition(_UUID(tenant_str), action_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)

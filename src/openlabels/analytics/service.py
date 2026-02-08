@@ -18,7 +18,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -68,7 +68,7 @@ class AccessStats:
     events_last_24h: int = 0
     events_last_7d: int = 0
     by_action: dict[str, int] = field(default_factory=dict)
-    by_user: list[dict] = field(default_factory=list)
+    top_users: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -104,9 +104,13 @@ class DashboardQueryService(Protocol):
         self, tenant_id: UUID, *, job_id: UUID | None = None, limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]: ...
 
-    async def get_access_stats(self, tenant_id: UUID) -> AccessStats: ...
+    async def get_access_stats(
+        self, tenant_id: UUID,
+    ) -> AccessStats: ...
 
-    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats: ...
+    async def get_remediation_stats(
+        self, tenant_id: UUID,
+    ) -> RemediationStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -419,29 +423,22 @@ class DuckDBDashboardService:
         return result, total
 
     async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
-        from datetime import timedelta, timezone as tz
-
-        now = datetime.now(tz.utc)
-        last_24h = now - timedelta(hours=24)
-        last_7d = now - timedelta(days=7)
-
-        # Total + time-bucketed counts in one query
-        count_rows = await self._safe_query(
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+        rows = await self._safe_query(
             """
             SELECT
-                count(*)                                            AS total,
-                count(*) FILTER (WHERE event_time >= ?)             AS last_24h,
-                count(*) FILTER (WHERE event_time >= ?)             AS last_7d
+                count(*)                                                       AS total_events,
+                count(*) FILTER (WHERE event_time >= ? ::TIMESTAMP - INTERVAL 1 DAY)  AS events_last_24h,
+                count(*) FILTER (WHERE event_time >= ? ::TIMESTAMP - INTERVAL 7 DAY)  AS events_last_7d
             FROM access_events
             WHERE tenant = ?
             """,
-            [last_24h.isoformat(), last_7d.isoformat(), str(tenant_id)],
+            [now_iso, now_iso, str(tenant_id)],
         )
-        total = count_rows[0]["total"] if count_rows else 0
-        l24 = count_rows[0]["last_24h"] if count_rows else 0
-        l7d = count_rows[0]["last_7d"] if count_rows else 0
+        total_events = rows[0]["total_events"] if rows else 0
+        events_24h = rows[0]["events_last_24h"] if rows else 0
+        events_7d = rows[0]["events_last_7d"] if rows else 0
 
-        # Events by action type
         action_rows = await self._safe_query(
             """
             SELECT action, count(*) AS cnt
@@ -453,7 +450,6 @@ class DuckDBDashboardService:
         )
         by_action = {r["action"]: r["cnt"] for r in action_rows}
 
-        # Top 10 users
         user_rows = await self._safe_query(
             """
             SELECT user_name, count(*) AS cnt
@@ -465,44 +461,45 @@ class DuckDBDashboardService:
             """,
             [str(tenant_id)],
         )
-        by_user = [{"user": r["user_name"], "count": r["cnt"]} for r in user_rows]
+        top_users = [{"user": r["user_name"], "count": r["cnt"]} for r in user_rows]
 
         return AccessStats(
-            total_events=total,
-            events_last_24h=l24,
-            events_last_7d=l7d,
+            total_events=total_events,
+            events_last_24h=events_24h,
+            events_last_7d=events_7d,
             by_action=by_action,
-            by_user=by_user,
+            top_users=top_users,
         )
 
     async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
-        # Total + breakdown by action_type
-        type_rows = await self._safe_query(
+        rows = await self._safe_query(
             """
-            SELECT action_type, count(*) AS cnt
+            SELECT
+                count(*)                                              AS total,
+                count(*) FILTER (WHERE action_type = 'quarantine')    AS quarantine_count,
+                count(*) FILTER (WHERE action_type = 'lockdown')      AS lockdown_count,
+                count(*) FILTER (WHERE action_type = 'rollback')      AS rollback_count,
+                count(*) FILTER (WHERE status = 'completed')          AS completed,
+                count(*) FILTER (WHERE status = 'failed')             AS failed,
+                count(*) FILTER (WHERE status = 'pending')            AS pending_count
             FROM remediation_actions
             WHERE tenant = ?
-            GROUP BY action_type
             """,
             [str(tenant_id)],
         )
-        by_type = {r["action_type"]: r["cnt"] for r in type_rows}
-        total = sum(by_type.values())
-
-        # Breakdown by status
-        status_rows = await self._safe_query(
-            """
-            SELECT status, count(*) AS cnt
-            FROM remediation_actions
-            WHERE tenant = ?
-            GROUP BY status
-            """,
-            [str(tenant_id)],
-        )
-        by_status = {r["status"]: r["cnt"] for r in status_rows}
-
+        if not rows:
+            return RemediationStats()
+        r = rows[0]
         return RemediationStats(
-            total_actions=total,
-            by_type=by_type,
-            by_status=by_status,
+            total_actions=r["total"],
+            by_type={
+                "quarantine": r["quarantine_count"],
+                "lockdown": r["lockdown_count"],
+                "rollback": r["rollback_count"],
+            },
+            by_status={
+                "completed": r["completed"],
+                "failed": r["failed"],
+                "pending": r["pending_count"],
+            },
         )

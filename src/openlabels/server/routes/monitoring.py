@@ -393,21 +393,18 @@ async def get_access_stats(
     Get access monitoring statistics.
 
     Returns summary statistics about file access events.
-    Event aggregations use DuckDB when ``catalog.enabled`` is True,
-    otherwise fall back to PostgreSQL.  The monitored-file count is
-    always served from PostgreSQL (OLTP real-time state).
+    When backed by DuckDB, event aggregations run on Parquet;
+    monitored file count always comes from PostgreSQL (OLTP).
     """
     from openlabels.analytics.dashboard_pg import PostgresDashboardService
-    from openlabels.analytics.service import DashboardQueryService
 
-    # Resolve the active dashboard service (DuckDB or PG)
-    svc: DashboardQueryService = getattr(request.app.state, "dashboard_service", None)
+    svc = getattr(request.app.state, "dashboard_service", None)
     if svc is None:
         svc = PostgresDashboardService(session)
 
-    stats = await svc.get_access_stats(user.tenant_id)
+    access_stats = await svc.get_access_stats(user.tenant_id)
 
-    # Monitored files count — always from PostgreSQL (OLTP concern)
+    # Monitored files count — always from PostgreSQL (OLTP state)
     monitored_query = select(func.count()).select_from(MonitoredFile).where(
         MonitoredFile.tenant_id == user.tenant_id
     )
@@ -415,11 +412,11 @@ async def get_access_stats(
     monitored_count = monitored_result.scalar() or 0
 
     return AccessStatsResponse(
-        total_events=stats.total_events,
-        events_last_24h=stats.events_last_24h,
-        events_last_7d=stats.events_last_7d,
-        by_action=stats.by_action,
-        by_user=stats.by_user,
+        total_events=access_stats.total_events,
+        events_last_24h=access_stats.events_last_24h,
+        events_last_7d=access_stats.events_last_7d,
+        by_action=access_stats.by_action,
+        by_user=access_stats.top_users,
         monitored_files_count=monitored_count,
     )
 

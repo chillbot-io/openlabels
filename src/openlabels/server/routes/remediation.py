@@ -606,12 +606,12 @@ async def get_remediation_stats(
 ):
     """Get summary statistics for remediation actions.
 
-    Uses DuckDB when ``catalog.enabled`` is True, otherwise PostgreSQL.
+    When backed by DuckDB, aggregations run on Parquet for faster
+    full-table scans.  Otherwise falls back to PostgreSQL.
     """
     from openlabels.analytics.dashboard_pg import PostgresDashboardService
-    from openlabels.analytics.service import DashboardQueryService
 
-    svc: DashboardQueryService = getattr(request.app.state, "dashboard_service", None)
+    svc = getattr(request.app.state, "dashboard_service", None)
     if svc is None:
         svc = PostgresDashboardService(session)
 
