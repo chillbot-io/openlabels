@@ -71,6 +71,14 @@ class AccessStats:
     by_user: list[dict] = field(default_factory=list)
 
 
+@dataclass
+class RemediationStats:
+    """Aggregated remediation action statistics."""
+    total_actions: int = 0
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_status: dict[str, int] = field(default_factory=dict)
+
+
 # ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
@@ -97,6 +105,8 @@ class DashboardQueryService(Protocol):
     ) -> tuple[list[HeatmapFileRow], int]: ...
 
     async def get_access_stats(self, tenant_id: UUID) -> AccessStats: ...
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -463,4 +473,36 @@ class DuckDBDashboardService:
             events_last_7d=l7d,
             by_action=by_action,
             by_user=by_user,
+        )
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
+        # Total + breakdown by action_type
+        type_rows = await self._safe_query(
+            """
+            SELECT action_type, count(*) AS cnt
+            FROM remediation_actions
+            WHERE tenant = ?
+            GROUP BY action_type
+            """,
+            [str(tenant_id)],
+        )
+        by_type = {r["action_type"]: r["cnt"] for r in type_rows}
+        total = sum(by_type.values())
+
+        # Breakdown by status
+        status_rows = await self._safe_query(
+            """
+            SELECT status, count(*) AS cnt
+            FROM remediation_actions
+            WHERE tenant = ?
+            GROUP BY status
+            """,
+            [str(tenant_id)],
+        )
+        by_status = {r["status"]: r["cnt"] for r in status_rows}
+
+        return RemediationStats(
+            total_actions=total,
+            by_type=by_type,
+            by_status=by_status,
         )

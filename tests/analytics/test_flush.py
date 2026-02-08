@@ -8,10 +8,15 @@ import pytest
 from openlabels.analytics.flush import (
     _write_partitioned_access_events,
     _write_partitioned_audit_logs,
+    _write_partitioned_remediation_actions,
     load_flush_state,
     save_flush_state,
 )
-from openlabels.analytics.schemas import ACCESS_EVENTS_SCHEMA, AUDIT_LOG_SCHEMA
+from openlabels.analytics.schemas import (
+    ACCESS_EVENTS_SCHEMA,
+    AUDIT_LOG_SCHEMA,
+    REMEDIATION_ACTIONS_SCHEMA,
+)
 from openlabels.analytics.storage import LocalStorage
 
 from tests.analytics.conftest import TENANT_A, write_access_events
@@ -23,6 +28,7 @@ class TestFlushState:
         assert state["schema_version"] == 1
         assert state["last_access_event_flush"] is None
         assert state["last_audit_log_flush"] is None
+        assert state["last_remediation_action_flush"] is None
 
     def test_save_and_load_roundtrip(self, storage: LocalStorage):
         state = {
@@ -133,3 +139,31 @@ class TestPartitionedWrites:
 
         parts = storage.list_partitions("access_events")
         assert len(parts) == 2
+
+    def test_write_partitioned_remediation_actions_creates_files(self, storage: LocalStorage):
+        """Partitioned write for remediation actions should create hive-style directories."""
+        from dataclasses import dataclass
+        from datetime import datetime, timezone
+
+        @dataclass
+        class FakeRemediationAction:
+            tenant_id: object
+            created_at: datetime
+
+        now = datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+        rows = [
+            FakeRemediationAction(tenant_id=TENANT_A, created_at=now),
+            FakeRemediationAction(tenant_id=TENANT_A, created_at=now),
+        ]
+
+        cols = {f.name: [] for f in REMEDIATION_ACTIONS_SCHEMA}
+        for _ in rows:
+            for k in cols:
+                cols[k].append(None)
+        table = pa.table(cols, schema=REMEDIATION_ACTIONS_SCHEMA)
+
+        _write_partitioned_remediation_actions(storage, rows, table)
+
+        parts = storage.list_partitions("remediation_actions")
+        assert len(parts) == 1
+        assert str(TENANT_A) in parts[0]

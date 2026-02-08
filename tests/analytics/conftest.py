@@ -22,6 +22,7 @@ from openlabels.analytics.engine import DuckDBEngine
 from openlabels.analytics.schemas import (
     ACCESS_EVENTS_SCHEMA,
     AUDIT_LOG_SCHEMA,
+    REMEDIATION_ACTIONS_SCHEMA,
     SCAN_RESULTS_SCHEMA,
 )
 from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
@@ -217,3 +218,94 @@ def _default_access_event_rows(tenant_id: UUID) -> list[dict]:
             "collected_at": base + timedelta(hours=i * 3, minutes=1),
         })
     return events
+
+
+def write_remediation_actions(
+    storage: LocalStorage,
+    *,
+    tenant_id: UUID = TENANT_A,
+    rows: list[dict] | None = None,
+    action_date: str = "2026-02-01",
+):
+    """Write synthetic remediation actions."""
+    if rows is None:
+        rows = _default_remediation_action_rows(tenant_id)
+
+    cols: dict[str, list] = {f.name: [] for f in REMEDIATION_ACTIONS_SCHEMA}
+    for r in rows:
+        for k in cols:
+            cols[k].append(r.get(k))
+
+    table = pa.table(cols, schema=REMEDIATION_ACTIONS_SCHEMA)
+    path = (
+        f"remediation_actions/tenant={tenant_id}"
+        f"/action_date={action_date}/part-00000.parquet"
+    )
+    storage.write_parquet(path, table)
+
+
+def _default_remediation_action_rows(tenant_id: UUID) -> list[dict]:
+    """4 remediation actions: 2 quarantine, 1 lockdown, 1 rollback."""
+    now = datetime(2026, 2, 1, 14, 0, 0, tzinfo=timezone.utc)
+    return [
+        {
+            "id": uuid4().bytes,
+            "tenant_id": tenant_id.bytes,
+            "file_inventory_id": None,
+            "action_type": "quarantine",
+            "status": "completed",
+            "source_path": "/data/secrets.txt",
+            "dest_path": "/quarantine/secrets.txt",
+            "performed_by": "admin@test.com",
+            "dry_run": False,
+            "error": None,
+            "rollback_of_id": None,
+            "created_at": now,
+            "completed_at": now,
+        },
+        {
+            "id": uuid4().bytes,
+            "tenant_id": tenant_id.bytes,
+            "file_inventory_id": None,
+            "action_type": "quarantine",
+            "status": "failed",
+            "source_path": "/data/locked.txt",
+            "dest_path": "/quarantine/locked.txt",
+            "performed_by": "admin@test.com",
+            "dry_run": False,
+            "error": "Permission denied",
+            "rollback_of_id": None,
+            "created_at": now,
+            "completed_at": now,
+        },
+        {
+            "id": uuid4().bytes,
+            "tenant_id": tenant_id.bytes,
+            "file_inventory_id": None,
+            "action_type": "lockdown",
+            "status": "completed",
+            "source_path": "/data/payroll.xlsx",
+            "dest_path": None,
+            "performed_by": "admin@test.com",
+            "dry_run": False,
+            "error": None,
+            "rollback_of_id": None,
+            "created_at": now,
+            "completed_at": now,
+        },
+        {
+            "id": uuid4().bytes,
+            "tenant_id": tenant_id.bytes,
+            "file_inventory_id": None,
+            "action_type": "rollback",
+            "status": "pending",
+            "source_path": "/data/secrets.txt",
+            "dest_path": None,
+            "performed_by": "admin@test.com",
+            "dry_run": False,
+            "error": None,
+            "rollback_of_id": None,
+            "created_at": now,
+            "completed_at": None,
+        },
+    ]

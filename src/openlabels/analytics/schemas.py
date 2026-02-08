@@ -93,3 +93,19 @@ AUDIT_LOG_SCHEMA = pa.schema([
     pa.field("details", pa.utf8()),  # JSON string
     pa.field("created_at", pa.timestamp("ms", tz="UTC")),
 ])
+
+REMEDIATION_ACTIONS_SCHEMA = pa.schema([
+    pa.field("id", pa.binary(16)),
+    pa.field("tenant_id", pa.binary(16)),
+    pa.field("file_inventory_id", pa.binary(16)),
+    pa.field("action_type", _dict_str),
+    pa.field("status", _dict_str),
+    pa.field("source_path", pa.utf8()),
+    pa.field("dest_path", pa.utf8()),
+    pa.field("performed_by", pa.utf8()),
+    pa.field("dry_run", pa.bool_()),
+    pa.field("error", pa.utf8()),
+    pa.field("rollback_of_id", pa.binary(16)),
+    pa.field("created_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("completed_at", pa.timestamp("ms", tz="UTC")),
+])

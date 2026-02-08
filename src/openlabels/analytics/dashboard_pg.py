@@ -21,6 +21,7 @@ from openlabels.analytics.service import (
     EntityTrendsData,
     FileStats,
     HeatmapFileRow,
+    RemediationStats,
     TrendPoint,
 )
 
@@ -317,4 +318,34 @@ class PostgresDashboardService:
             events_last_7d=row.last_7d or 0,
             by_action=by_action,
             by_user=by_user,
+        )
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
+        from openlabels.server.models import RemediationAction
+
+        session = await self._get_session()
+        q = select(
+            func.count().label("total"),
+            func.sum(case((RemediationAction.action_type == "quarantine", 1), else_=0)).label("quarantine"),
+            func.sum(case((RemediationAction.action_type == "lockdown", 1), else_=0)).label("lockdown"),
+            func.sum(case((RemediationAction.action_type == "rollback", 1), else_=0)).label("rollback"),
+            func.sum(case((RemediationAction.status == "completed", 1), else_=0)).label("completed"),
+            func.sum(case((RemediationAction.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((RemediationAction.status == "pending", 1), else_=0)).label("pending"),
+        ).where(RemediationAction.tenant_id == tenant_id)
+
+        result = await session.execute(q)
+        row = result.one()
+        return RemediationStats(
+            total_actions=row.total or 0,
+            by_type={
+                "quarantine": row.quarantine or 0,
+                "lockdown": row.lockdown or 0,
+                "rollback": row.rollback or 0,
+            },
+            by_status={
+                "completed": row.completed or 0,
+                "failed": row.failed or 0,
+                "pending": row.pending or 0,
+            },
         )

@@ -11,6 +11,7 @@ from openlabels.analytics.service import (
     EntityTrendsData,
     FileStats,
     HeatmapFileRow,
+    RemediationStats,
     TrendPoint,
 )
 from openlabels.analytics.storage import LocalStorage
@@ -20,6 +21,7 @@ from tests.analytics.conftest import (
     TARGET_1,
     JOB_1,
     write_access_events,
+    write_remediation_actions,
     write_scan_results,
 )
 
@@ -273,3 +275,50 @@ class TestExportScanResults:
         rows_b = await analytics.export_scan_results(TENANT_B)
         assert len(rows_a) == 3
         assert len(rows_b) == 3
+
+
+@pytest.mark.asyncio
+class TestRemediationStats:
+    async def test_remediation_stats_empty(
+        self, dashboard_service: DuckDBDashboardService,
+    ):
+        stats = await dashboard_service.get_remediation_stats(TENANT_A)
+        assert isinstance(stats, RemediationStats)
+        assert stats.total_actions == 0
+        assert stats.by_type == {}
+        assert stats.by_status == {}
+
+    async def test_remediation_stats_with_data(
+        self,
+        storage: LocalStorage,
+        analytics: AnalyticsService,
+        dashboard_service: DuckDBDashboardService,
+    ):
+        write_remediation_actions(storage)
+        analytics.refresh_views()
+
+        stats = await dashboard_service.get_remediation_stats(TENANT_A)
+        assert stats.total_actions == 4
+        assert stats.by_type.get("quarantine") == 2
+        assert stats.by_type.get("lockdown") == 1
+        assert stats.by_type.get("rollback") == 1
+        assert stats.by_status.get("completed") == 2
+        assert stats.by_status.get("failed") == 1
+        assert stats.by_status.get("pending") == 1
+
+    async def test_remediation_stats_tenant_isolation(
+        self,
+        storage: LocalStorage,
+        analytics: AnalyticsService,
+        dashboard_service: DuckDBDashboardService,
+    ):
+        from tests.analytics.conftest import TENANT_B
+
+        write_remediation_actions(storage, tenant_id=TENANT_A)
+        write_remediation_actions(storage, tenant_id=TENANT_B, action_date="2026-02-02")
+        analytics.refresh_views()
+
+        stats_a = await dashboard_service.get_remediation_stats(TENANT_A)
+        stats_b = await dashboard_service.get_remediation_stats(TENANT_B)
+        assert stats_a.total_actions == 4
+        assert stats_b.total_actions == 4
