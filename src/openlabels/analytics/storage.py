@@ -14,7 +14,7 @@ import io
 import logging
 import os
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -136,6 +136,16 @@ class LocalStorage:
         elif target.is_dir():
             import shutil
             shutil.rmtree(target)
+
+    def read_json(self, path: str) -> dict[str, Any]:
+        with open(self._resolve(path)) as f:
+            return json.load(f)
+
+    def write_json(self, path: str, data: dict[str, Any]) -> None:
+        dest = self._resolve(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w") as f:
+            json.dump(data, f, indent=2, default=str)
 
 
 # ── S3 / S3-compatible ───────────────────────────────────────────────

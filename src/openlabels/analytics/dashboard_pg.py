@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 class PostgresDashboardService:
     """Implements :class:`DashboardQueryService` using the existing PostgreSQL queries."""
 
-    def __init__(self, session_factory) -> None:
-        self._session_factory = session_factory
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
 
     # -- helpers -----------------------------------------------------------
 
     async def _get_session(self) -> AsyncSession:
-        """Get a session from the factory (works as context-manager or DI generator)."""
-        return self._session_factory
+        """Return the request-scoped SQLAlchemy session."""
+        return self._session
 
     # -- protocol methods --------------------------------------------------
 

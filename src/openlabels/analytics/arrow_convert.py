@@ -89,6 +89,18 @@ def scan_results_to_arrow(rows: Iterable[ScanResult]) -> pa.Table:
         records["total_entities"].append(r.total_entities)
         records["label_applied"].append(r.label_applied)
         records["current_label_name"].append(r.current_label_name)
+        records["current_label_id"].append(
+            r.current_label_id if hasattr(r, "current_label_id") else None
+        )
+        records["recommended_label_name"].append(
+            r.recommended_label_name if hasattr(r, "recommended_label_name") else None
+        )
+        records["label_applied_at"].append(
+            _ts(r.label_applied_at) if hasattr(r, "label_applied_at") and r.label_applied_at else None
+        )
+        records["label_error"].append(
+            r.label_error if hasattr(r, "label_error") else None
+        )
         records["scanned_at"].append(_ts(r.scanned_at))
 
     return pa.table(records, schema=SCAN_RESULTS_SCHEMA)
@@ -120,7 +132,25 @@ def file_inventory_to_arrow(rows: Iterable[FileInventory]) -> pa.Table:
         )
         records["owner"].append(r.owner)
         records["current_label_name"].append(r.current_label_name)
+        records["current_label_id"].append(
+            r.current_label_id if hasattr(r, "current_label_id") else None
+        )
+        records["label_applied_at"].append(
+            _ts(r.label_applied_at) if hasattr(r, "label_applied_at") and r.label_applied_at else None
+        )
+        records["is_monitored"].append(
+            r.is_monitored if hasattr(r, "is_monitored") else None
+        )
+        records["needs_rescan"].append(
+            r.needs_rescan if hasattr(r, "needs_rescan") else None
+        )
         records["last_scanned_at"].append(_ts(r.last_scanned_at))
+        records["discovered_at"].append(
+            _ts(r.discovered_at) if hasattr(r, "discovered_at") and r.discovered_at else None
+        )
+        records["updated_at"].append(
+            _ts(r.updated_at) if hasattr(r, "updated_at") and r.updated_at else None
+        )
         records["scan_count"].append(r.scan_count)
         records["content_changed_count"].append(r.content_changed_count)
 
@@ -169,7 +199,12 @@ def access_events_to_arrow(rows: Iterable[FileAccessEvent]) -> pa.Table:
         records["success"].append(r.success)
         records["user_name"].append(r.user_name)
         records["user_domain"].append(r.user_domain)
+        records["user_sid"].append(r.user_sid if hasattr(r, "user_sid") else None)
         records["process_name"].append(r.process_name)
+        records["process_id"].append(r.process_id if hasattr(r, "process_id") else None)
+        records["event_source"].append(
+            str(r.event_source) if hasattr(r, "event_source") and r.event_source else None
+        )
         records["event_time"].append(_ts(r.event_time))
         records["collected_at"].append(_ts(r.collected_at))
 

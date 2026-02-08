@@ -226,6 +226,23 @@ async def export_results(
         filename_parts.append(risk_tier.lower())
     filename = "_".join(filename_parts)
 
+    # Resolve data source — DuckDB (all filters pushed down) or PG (post-filter)
+    analytics = getattr(request.app.state, "analytics", None)
+    if analytics is not None:
+        has_label_bool = None
+        if has_label == "true":
+            has_label_bool = True
+        elif has_label == "false":
+            has_label_bool = False
+        rows = await analytics.export_scan_results(
+            _tenant.tenant_id,
+            job_id=job_id,
+            risk_tier=risk_tier,
+            has_label=has_label_bool,
+        )
+        return _build_export_response(rows, format, filename)
+
+    # PostgreSQL fallback — stream with post-filtering
     def _matches_filters(row_dict: dict) -> bool:
         if risk_tier and row_dict.get("risk_tier") != risk_tier:
             return False
@@ -310,7 +327,6 @@ async def export_results(
             headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
         )
     else:
-        # JSON export — stream as JSON array, one object per yield
         async def _json_generator():
             yield "[\n"
             first = True
@@ -325,6 +341,52 @@ async def export_results(
 
         return StreamingResponse(
             _json_generator(),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
+        )
+
+
+def _build_export_response(
+    rows: list[dict], format: str, filename: str,
+) -> StreamingResponse:
+    """Build a CSV or JSON streaming response from pre-fetched DuckDB rows."""
+    import csv
+    import io
+    import json
+
+    _EXPORT_COLS = [
+        "file_path", "file_name", "risk_score", "risk_tier",
+        "total_entities", "exposure_level", "owner",
+        "current_label_name", "label_applied",
+    ]
+
+    if format == "csv":
+        def _csv_gen():
+            header_buf = io.StringIO()
+            writer = csv.writer(header_buf)
+            writer.writerow(_EXPORT_COLS)
+            yield header_buf.getvalue()
+            for r in rows:
+                buf = io.StringIO()
+                csv.writer(buf).writerow([r.get(c, "") for c in _EXPORT_COLS])
+                yield buf.getvalue()
+
+        return StreamingResponse(
+            _csv_gen(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
+        )
+    else:
+        def _json_gen():
+            yield "[\n"
+            for i, r in enumerate(rows):
+                if i:
+                    yield ",\n"
+                yield json.dumps({c: r.get(c) for c in _EXPORT_COLS}, indent=2)
+            yield "\n]\n"
+
+        return StreamingResponse(
+            _json_gen(),
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename={filename}.json"},
         )
