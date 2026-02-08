@@ -498,6 +498,9 @@ class MonitoringSettings(BaseSettings):
     """
 
     enabled: bool = False
+    # DB tenant UUID for registry cache sync (populate on startup, sync on shutdown).
+    # If not set, cache sync is skipped (the harvester still works via DB queries).
+    tenant_id: str | None = None
     # How often the EventHarvester polls providers for new events
     harvest_interval_seconds: int = 60
     # Which event providers to activate (comma-separated in env vars)

@@ -115,16 +115,19 @@ class EventHarvester:
             try:
                 async with get_session_context() as session:
                     total = await self._harvest_cycle(session)
-                    # If we get here without exception, the session will
-                    # commit.  Checkpoint updates were deferred to
-                    # _pending_checkpoints and are applied now.
-                    self._apply_pending_checkpoints()
-                    if total > 0:
-                        logger.info("Harvest cycle: persisted %d events", total)
-                    else:
-                        logger.debug("Harvest cycle: no new events")
+                # If we reach here, session.commit() succeeded in __aexit__.
+                # NOW it is safe to apply pending checkpoints and update stats.
+                self._apply_pending_checkpoints()
+                self.total_events_persisted += total
+                self.total_cycles += 1
+                self.last_cycle_at = datetime.now(timezone.utc)
+                if total > 0:
+                    logger.info("Harvest cycle: persisted %d events", total)
+                else:
+                    logger.debug("Harvest cycle: no new events")
             except Exception:
-                # Transaction rolled back — discard pending checkpoints
+                # Transaction rolled back — discard pending checkpoints.
+                # Stats are NOT updated because the commit failed.
                 self._pending_checkpoints.clear()
                 logger.warning(
                     "Harvest cycle failed; will retry next cycle",
@@ -148,10 +151,13 @@ class EventHarvester:
         """Run a single harvest cycle (useful for testing).
 
         Callers are responsible for committing the session.
-        Checkpoints are applied immediately after the cycle.
+        Checkpoints and stats are applied immediately (test helper).
         """
         count = await self._harvest_cycle(session)
         self._apply_pending_checkpoints()
+        self.total_events_persisted += count
+        self.total_cycles += 1
+        self.last_cycle_at = datetime.now(timezone.utc)
         return count
 
     # ------------------------------------------------------------------
@@ -218,14 +224,11 @@ class EventHarvester:
             persisted = await self._persist_events(session, raw_events)
             total_persisted += persisted
 
-            # Stage checkpoint update (applied after commit)
+            # Stage checkpoint update (applied after commit in run())
             if raw_events:
                 latest = raw_events[-1].event_time  # already sorted
                 self._pending_checkpoints[provider.name] = latest
 
-        self.total_events_persisted += total_persisted
-        self.total_cycles += 1
-        self.last_cycle_at = datetime.now(timezone.utc)
         return total_persisted
 
     async def _persist_events(

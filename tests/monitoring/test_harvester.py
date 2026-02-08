@@ -809,6 +809,7 @@ class TestMonitoringSettings:
 
         s = MonitoringSettings()
         assert s.enabled is False
+        assert s.tenant_id is None
         assert s.harvest_interval_seconds == 60
         assert "windows_sacl" in s.providers
         assert "auditd" in s.providers

@@ -140,21 +140,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Monitoring: populate registry cache from DB on startup
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_startup:
         try:
-            from openlabels.monitoring.registry import populate_cache_from_db
-            from openlabels.server.db import get_session_context
-
-            if settings.auth.tenant_id:
+            if settings.monitoring.tenant_id:
                 from uuid import UUID as _UUID
-                _tenant = _UUID(settings.auth.tenant_id)
+                from openlabels.monitoring.registry import populate_cache_from_db
+                from openlabels.server.db import get_session_context
+
+                _tenant = _UUID(settings.monitoring.tenant_id)
                 async with get_session_context() as session:
                     added = await populate_cache_from_db(session, _tenant)
                     logger.info(
                         "Monitoring registry cache populated (%d entries from DB)", added,
                     )
             else:
-                logger.warning(
-                    "Monitoring enabled but auth.tenant_id not configured — "
-                    "skipping registry cache population from DB"
+                logger.info(
+                    "Monitoring: tenant_id not configured — "
+                    "skipping registry cache population from DB "
+                    "(harvester will resolve files via DB queries)"
                 )
         except Exception as e:
             logger.warning(
@@ -210,12 +211,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Monitoring: sync registry cache to DB on shutdown
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_shutdown:
         try:
-            from openlabels.monitoring.registry import sync_cache_to_db
-            from openlabels.server.db import get_session_context
-
-            if settings.auth.tenant_id:
+            if settings.monitoring.tenant_id:
                 from uuid import UUID as _UUID
-                _tenant = _UUID(settings.auth.tenant_id)
+                from openlabels.monitoring.registry import sync_cache_to_db
+                from openlabels.server.db import get_session_context
+
+                _tenant = _UUID(settings.monitoring.tenant_id)
                 async with get_session_context() as session:
                     synced = await sync_cache_to_db(session, _tenant)
                     logger.info(
