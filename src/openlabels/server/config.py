@@ -485,23 +485,28 @@ class MonitoringSettings(BaseSettings):
     """
     File access monitoring and event harvesting configuration.
 
-    Controls the EventHarvester background task that periodically collects
+    Controls the EventHarvester background tasks that periodically collect
     access events from OS audit subsystems (Windows SACL, Linux auditd)
-    and persists them to the ``file_access_events`` table.
+    and cloud APIs (M365 Management Activity API) and persist them to the
+    ``file_access_events`` table.
 
     Environment variables::
 
         OPENLABELS_MONITORING__ENABLED=true
         OPENLABELS_MONITORING__HARVEST_INTERVAL_SECONDS=60
-        OPENLABELS_MONITORING__PROVIDERS=windows_sacl,auditd
+        OPENLABELS_MONITORING__PROVIDERS=windows_sacl,auditd,m365_audit
         OPENLABELS_MONITORING__STORE_RAW_EVENTS=false
+        OPENLABELS_MONITORING__M365_HARVEST_INTERVAL_SECONDS=300
+        OPENLABELS_MONITORING__M365_SITE_URLS=https://contoso.sharepoint.com/sites/finance
+        OPENLABELS_MONITORING__WEBHOOK_ENABLED=false
+        OPENLABELS_MONITORING__WEBHOOK_CLIENT_STATE=<random-secret>
     """
 
     enabled: bool = False
     # DB tenant UUID for registry cache sync (populate on startup, sync on shutdown).
     # If not set, cache sync is skipped (the harvester still works via DB queries).
     tenant_id: str | None = None
-    # How often the EventHarvester polls providers for new events
+    # How often the EventHarvester polls OS providers for new events
     harvest_interval_seconds: int = 60
     # Which event providers to activate (comma-separated in env vars)
     providers: list[str] = Field(default_factory=lambda: ["windows_sacl", "auditd"])
@@ -512,6 +517,22 @@ class MonitoringSettings(BaseSettings):
     # Sync registry cache to DB on startup and shutdown
     sync_cache_on_startup: bool = True
     sync_cache_on_shutdown: bool = True
+
+    # --- M365 audit (Management Activity API) ---
+    # Separate harvest interval for M365 (API batches events; 5 min is typical)
+    m365_harvest_interval_seconds: int = 300
+    # SharePoint site URLs to filter events (None = all sites)
+    m365_site_urls: list[str] = Field(default_factory=list)
+
+    # --- Graph webhooks ---
+    webhook_enabled: bool = False
+    # Public HTTPS URL for Graph change notification subscriptions.
+    # Graph sends POST notifications to this URL when drive items change.
+    # Example: https://your-domain.com/api/v1/webhooks/graph
+    webhook_url: str = ""
+    # Shared secret for validating inbound webhook notifications
+    # (matched against ``clientState`` in the subscription).
+    webhook_client_state: str = ""
 
 
 class CatalogSettings(BaseSettings):

@@ -1252,36 +1252,40 @@ class RawAccessEvent:
     raw_event: dict | None = None  # Original event for forensics
 
 
+@runtime_checkable
 class EventProvider(Protocol):
-    """Protocol for platform-specific event collection."""
+    """Async protocol for platform-specific event collection.
 
-    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
-        """
-        Collect events since the last checkpoint.
+    All providers — whether they use synchronous subprocesses (SACL,
+    auditd) or async HTTP APIs (M365 audit, Graph webhooks) — present
+    the same async interface.  Sync providers wrap their blocking I/O
+    in ``asyncio.get_running_loop().run_in_executor()`` internally.
 
-        Args:
-            checkpoint: Opaque checkpoint string from previous call (None for first run).
+    Checkpoints are managed by the EventHarvester, not the providers.
+    The harvester tracks a per-provider ``datetime`` checkpoint
+    (the latest ``event_time`` from the previous cycle) and passes
+    it as the ``since`` parameter.  Checkpoints are only advanced
+    after the DB transaction commits successfully.
+    """
 
-        Returns:
-            Tuple of (events, new_checkpoint).
-            The checkpoint is provider-specific:
-              - Windows SACL: last event record ID
-              - Linux auditd: last ausearch timestamp
-              - M365 audit: continuation URI
-              - USN journal: last USN number
-              - fanotify: not applicable (real-time only)
-        """
+    @property
+    def name(self) -> str:
+        """Short identifier (e.g. 'windows_sacl', 'm365_audit')."""
         ...
 
-    async def start_stream(self) -> AsyncIterator[RawAccessEvent]:
+    async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """
-        Start a real-time event stream (for providers that support it).
+        Return events that occurred after *since*.
 
-        Not all providers support streaming — SACL and auditd are poll-only.
-        USN journal, fanotify, and Graph webhooks support streaming.
+        Args:
+            since: Exclusive lower-bound timestamp.  ``None`` = first run.
 
-        Raises NotImplementedError for poll-only providers.
+        Returns:
+            List of RawAccessEvent instances.  The harvester handles
+            filtering, back-pressure, persistence, and checkpoint
+            advancement.
         """
+        ...
         ...
 
     def platform(self) -> str:
@@ -3132,14 +3136,17 @@ harvester that persists events to `FileAccessEvent`.
 
 Add SharePoint and OneDrive audit log collection via the Office 365 Management Activity API.
 
+0. Refactor `EventProvider` protocol to async — all providers now implement `async def collect()`.
+   Sync OS providers (SACL, auditd) wrap their blocking subprocess calls in `run_in_executor()` internally.
+   This keeps the harvester simple: `await provider.collect(since=...)` for all providers.
 1. Implement `M365AuditProvider` — subscribe to `Audit.SharePoint` content type
 2. Add M365 operation → action mapping (FileAccessed→read, FileModified→write, etc.)
-3. Add `ActivityFeed.Read` permission to Graph OAuth2 scope configuration
+3. Add M365 monitoring config to `MonitoringSettings` (harvest interval, scope note)
 4. Implement content blob pagination (7-day sliding window, continuation URIs)
 5. Add webhook endpoint for near-real-time M365 audit notifications (`POST /api/v1/webhooks/m365`)
 6. Implement `GraphWebhookProvider` — subscription management + delta query on notification
 7. Add webhook validation (clientState matching, validation token handling)
-8. Add M365 provider to `EventHarvester` with separate harvest interval (5 min default)
+8. Wire M365 providers into lifespan with separate harvester instance (5 min default interval)
 9. Tests: M365 audit response parsing, webhook validation, subscription lifecycle
 
 ### Phase I: Real-Time Event Streams (USN + fanotify)

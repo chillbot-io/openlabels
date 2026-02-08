@@ -3,18 +3,25 @@ EventProvider protocol and RawAccessEvent dataclass.
 
 These are the foundational types for the event harvesting pipeline:
 
-    OS audit log  →  EventProvider.collect()  →  RawAccessEvent  →  EventHarvester  →  FileAccessEvent (DB)
+    audit source  →  EventProvider.collect()  →  RawAccessEvent  →  EventHarvester  →  FileAccessEvent (DB)
 
 ``RawAccessEvent`` is an intermediate representation that decouples the
 provider from the database model.  The harvester maps it to a
 ``FileAccessEvent`` ORM instance for persistence.
+
+The ``EventProvider`` protocol is **async**.  All providers — whether
+they call synchronous subprocesses (Windows SACL, Linux auditd) or
+async HTTP APIs (M365 audit, Graph webhooks) — present the same
+``async def collect()`` interface.  Sync providers wrap their blocking
+I/O in ``asyncio.get_running_loop().run_in_executor()`` internally,
+keeping the harvester simple and uniform.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterator, Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -74,14 +81,16 @@ class RawAccessEvent:
 
 @runtime_checkable
 class EventProvider(Protocol):
-    """Yields raw access events from an OS audit subsystem.
+    """Collects raw access events from an audit subsystem.
 
-    Implementations must be synchronous iterators because the
-    underlying OS tools (``wevtutil``, ``ausearch``) are synchronous
-    subprocess calls.  The harvester runs them in a thread executor.
+    The protocol is async so that all providers — sync OS tools and
+    async HTTP APIs alike — present a uniform interface.  Providers
+    that wrap synchronous I/O (subprocess calls to ``wevtutil`` or
+    ``ausearch``) should run the blocking work inside
+    ``asyncio.get_running_loop().run_in_executor()``.
 
     The ``since`` parameter is the exclusive lower bound: only events
-    *after* this timestamp should be yielded.  The provider may use
+    *after* this timestamp should be returned.  The provider may use
     it to build more efficient queries.  Passing ``None`` means
     "return all available events".
     """
@@ -91,6 +100,6 @@ class EventProvider(Protocol):
         """Short identifier for this provider (e.g. ``"windows_sacl"``)."""
         ...
 
-    def collect(self, since: Optional[datetime] = None) -> Iterator[RawAccessEvent]:
-        """Yield events that occurred after *since*."""
+    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+        """Return events that occurred after *since*."""
         ...

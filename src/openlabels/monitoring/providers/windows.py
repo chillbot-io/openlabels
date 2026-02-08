@@ -4,13 +4,17 @@ Windows SACL event provider.
 Wraps :class:`~openlabels.monitoring.collector.EventCollector` (Windows
 path) behind the :class:`EventProvider` protocol, converting each
 ``AccessEvent`` into a ``RawAccessEvent``.
+
+The synchronous subprocess call (``wevtutil``) is run in a thread
+executor so that the async ``collect()`` interface is non-blocking.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
-from typing import Iterator, Optional
+from typing import Optional
 
 from openlabels.monitoring.collector import EventCollector
 from openlabels.monitoring.base import AccessEvent
@@ -45,16 +49,30 @@ class WindowsSACLProvider:
     def name(self) -> str:
         return EVENT_SOURCE
 
-    def collect(self, since: Optional[datetime] = None) -> Iterator[RawAccessEvent]:
-        """Yield events from the Windows Security Event Log."""
+    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+        """Collect events from the Windows Security Event Log.
+
+        The underlying ``wevtutil`` subprocess is blocking, so the
+        work is dispatched to a thread executor.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self._collect_sync(since),
+        )
+
+    def _collect_sync(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+        """Synchronous collection — runs in a thread executor."""
         try:
-            for event in self._collector.collect_events(
-                since=since,
-                paths=self._watched_paths,
-            ):
-                yield _access_event_to_raw(event)
+            return [
+                _access_event_to_raw(event)
+                for event in self._collector.collect_events(
+                    since=since,
+                    paths=self._watched_paths,
+                )
+            ]
         except Exception:
             logger.exception("WindowsSACLProvider.collect() failed")
+            return []
 
     def update_watched_paths(self, paths: list[str]) -> None:
         """Update the set of watched paths (called by harvester on refresh)."""

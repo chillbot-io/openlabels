@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -90,9 +90,9 @@ class FakeProvider:
     def name(self) -> str:
         return self._name
 
-    def collect(self, since: Optional[datetime] = None) -> Iterator[RawAccessEvent]:
+    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
         self.collect_calls.append(since)
-        yield from self._events
+        return list(self._events)
 
 
 class FailingProvider:
@@ -102,7 +102,7 @@ class FailingProvider:
     def name(self) -> str:
         return "failing"
 
-    def collect(self, since: Optional[datetime] = None) -> Iterator[RawAccessEvent]:
+    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
         raise RuntimeError("Provider failed")
 
 
@@ -262,9 +262,10 @@ class TestAccessEventConversion:
 class TestWindowsSACLProviderCollect:
     """Test WindowsSACLProvider.collect() with mocked EventCollector."""
 
+    @pytest.mark.asyncio
     @patch("openlabels.monitoring.providers.windows.EventCollector")
-    def test_collect_yields_raw_events(self, MockCollector):
-        """collect() yields RawAccessEvents from the underlying collector."""
+    async def test_collect_returns_raw_events(self, MockCollector):
+        """collect() returns RawAccessEvents from the underlying collector."""
         mock_collector = MockCollector.return_value
         mock_collector.collect_events.return_value = iter([
             _make_access_event(path="/a.txt", action=AccessAction.READ),
@@ -272,36 +273,38 @@ class TestWindowsSACLProviderCollect:
         ])
 
         provider = WindowsSACLProvider()
-        events = list(provider.collect())
+        events = await provider.collect()
 
         assert len(events) == 2
         assert events[0].file_path == "/a.txt"
         assert events[0].event_source == "windows_sacl"
         assert events[1].file_path == "/b.txt"
 
+    @pytest.mark.asyncio
     @patch("openlabels.monitoring.providers.windows.EventCollector")
-    def test_collect_passes_since(self, MockCollector):
+    async def test_collect_passes_since(self, MockCollector):
         """collect() passes the since parameter to the collector."""
         mock_collector = MockCollector.return_value
         mock_collector.collect_events.return_value = iter([])
         since = datetime(2026, 2, 1, tzinfo=timezone.utc)
 
         provider = WindowsSACLProvider(watched_paths=["/a.txt"])
-        list(provider.collect(since=since))
+        await provider.collect(since=since)
 
         mock_collector.collect_events.assert_called_once_with(
             since=since,
             paths=["/a.txt"],
         )
 
+    @pytest.mark.asyncio
     @patch("openlabels.monitoring.providers.windows.EventCollector")
-    def test_collect_handles_exception(self, MockCollector):
-        """collect() catches exceptions and yields nothing."""
+    async def test_collect_handles_exception(self, MockCollector):
+        """collect() catches exceptions and returns empty list."""
         mock_collector = MockCollector.return_value
         mock_collector.collect_events.side_effect = RuntimeError("wevtutil failed")
 
         provider = WindowsSACLProvider()
-        events = list(provider.collect())
+        events = await provider.collect()
         assert events == []
 
     def test_update_watched_paths(self):
@@ -314,16 +317,17 @@ class TestWindowsSACLProviderCollect:
 class TestAuditdProviderCollect:
     """Test AuditdProvider.collect() with mocked EventCollector."""
 
+    @pytest.mark.asyncio
     @patch("openlabels.monitoring.providers.linux.EventCollector")
-    def test_collect_yields_raw_events(self, MockCollector):
-        """collect() yields RawAccessEvents from the underlying collector."""
+    async def test_collect_returns_raw_events(self, MockCollector):
+        """collect() returns RawAccessEvents from the underlying collector."""
         mock_collector = MockCollector.return_value
         mock_collector.collect_events.return_value = iter([
             _make_access_event(path="/data/file.csv"),
         ])
 
         provider = AuditdProvider()
-        events = list(provider.collect())
+        events = await provider.collect()
 
         assert len(events) == 1
         assert events[0].file_path == "/data/file.csv"

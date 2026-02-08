@@ -23,6 +23,7 @@ from openlabels.server.routes import (
     monitoring,
     health,
     settings,
+    webhooks,
 )
 
 # Create the v1 API router
@@ -45,6 +46,9 @@ router.include_router(remediation.router, prefix="/remediation", tags=["Remediat
 router.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
 router.include_router(health.router, prefix="/health", tags=["Health"])
 router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+
+# Webhook routes - /api/v1/webhooks/*
+router.include_router(webhooks.router, tags=["Webhooks"])
 
 # WebSocket routes - /api/v1/ws/*
 router.include_router(ws.router, tags=["WebSocket"])

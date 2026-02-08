@@ -171,17 +171,13 @@ class EventHarvester:
 
     async def _harvest_cycle(self, session: AsyncSession) -> int:
         """Execute one full harvest cycle across all providers."""
-        loop = asyncio.get_running_loop()
         total_persisted = 0
         self._pending_checkpoints = {}
 
         for provider in self._providers:
             since = self._checkpoints.get(provider.name)
             try:
-                raw_events = await loop.run_in_executor(
-                    None,
-                    lambda p=provider, s=since: list(p.collect(since=s)),
-                )
+                raw_events = await provider.collect(since=since)
             except Exception:
                 logger.warning(
                     "Provider %s failed to collect events",
@@ -365,6 +361,77 @@ async def periodic_event_harvest(
 
     if not providers:
         logger.warning("No event providers available — harvester not started")
+        return
+
+    harvester = EventHarvester(
+        providers,
+        interval_seconds=interval_seconds,
+        max_events_per_cycle=max_events_per_cycle,
+        store_raw_events=store_raw_events,
+    )
+    await harvester.run(shutdown_event=shutdown_event)
+
+
+async def periodic_m365_harvest(
+    *,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    interval_seconds: int = 300,
+    max_events_per_cycle: int = 10_000,
+    store_raw_events: bool = False,
+    monitored_site_urls: list[str] | None = None,
+    graph_client: object | None = None,
+    webhook_url: str = "",
+    webhook_client_state: str = "",
+    enabled_providers: list[str] | None = None,
+    shutdown_event: asyncio.Event | None = None,
+) -> None:
+    """Top-level coroutine for M365 cloud providers.
+
+    Runs a **separate** ``EventHarvester`` instance with a longer
+    interval (default 5 min) for cloud API providers:
+
+    - ``M365AuditProvider`` — Management Activity API audit events
+    - ``GraphWebhookProvider`` — Graph change notifications + delta queries
+
+    Parameters
+    ----------
+    tenant_id, client_id, client_secret:
+        Azure AD app registration credentials (same as Graph API).
+    graph_client:
+        Optional shared :class:`GraphClient` for the webhook provider.
+        If ``None``, the webhook provider is not started.
+    """
+    providers: list[EventProvider] = []
+
+    if enabled_providers is None or "m365_audit" in enabled_providers:
+        from openlabels.monitoring.providers.m365_audit import M365AuditProvider
+
+        providers.append(
+            M365AuditProvider(
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                monitored_site_urls=monitored_site_urls or None,
+            )
+        )
+
+    if graph_client is not None and (
+        enabled_providers is None or "graph_webhook" in enabled_providers
+    ):
+        from openlabels.monitoring.providers.graph_webhook import GraphWebhookProvider
+
+        providers.append(
+            GraphWebhookProvider(
+                graph_client,
+                webhook_url=webhook_url,
+                client_state=webhook_client_state,
+            )
+        )
+
+    if not providers:
+        logger.warning("No M365 providers available — M365 harvester not started")
         return
 
     harvester = EventHarvester(

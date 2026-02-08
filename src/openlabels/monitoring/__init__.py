@@ -48,6 +48,11 @@ from . import db  # noqa: F401 – async DB persistence helpers
 from .providers.base import EventProvider, RawAccessEvent
 from .harvester import EventHarvester
 
+# M365AuditProvider and GraphWebhookProvider are imported lazily
+# (they pull in httpx and GraphClient at import time).  Use:
+#   from openlabels.monitoring.providers.m365_audit import M365AuditProvider
+#   from openlabels.monitoring.providers.graph_webhook import GraphWebhookProvider
+
 __all__ = [
     # Types
     "AccessEvent",

@@ -190,12 +190,72 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # M365 cloud event harvester (separate interval, separate task)
+    m365_shutdown = asyncio.Event()
+    m365_task: asyncio.Task | None = None
+    _graph_client = None  # Shared GraphClient for webhook provider (closed on shutdown)
+    if (
+        settings.monitoring.enabled
+        and settings.auth.tenant_id
+        and settings.auth.client_id
+        and settings.auth.client_secret
+        and any(
+            p in settings.monitoring.providers
+            for p in ("m365_audit", "graph_webhook")
+        )
+    ):
+        try:
+            from openlabels.monitoring.harvester import periodic_m365_harvest
+
+            # Build graph_client for GraphWebhookProvider if credentials are available
+            _graph_client = None
+            if "graph_webhook" in settings.monitoring.providers:
+                try:
+                    from openlabels.adapters.graph_client import GraphClient
+
+                    _graph_client = GraphClient(
+                        tenant_id=settings.auth.tenant_id,
+                        client_id=settings.auth.client_id,
+                        client_secret=settings.auth.client_secret,
+                    )
+                except Exception as _gc_err:
+                    logger.warning(
+                        "Failed to create GraphClient for webhook provider: %s",
+                        _gc_err,
+                    )
+
+            m365_task = asyncio.create_task(
+                periodic_m365_harvest(
+                    tenant_id=settings.auth.tenant_id,
+                    client_id=settings.auth.client_id,
+                    client_secret=settings.auth.client_secret,
+                    interval_seconds=settings.monitoring.m365_harvest_interval_seconds,
+                    max_events_per_cycle=settings.monitoring.max_events_per_cycle,
+                    store_raw_events=settings.monitoring.store_raw_events,
+                    monitored_site_urls=settings.monitoring.m365_site_urls or None,
+                    graph_client=_graph_client,
+                    webhook_url=settings.monitoring.webhook_url,
+                    webhook_client_state=settings.monitoring.webhook_client_state,
+                    enabled_providers=settings.monitoring.providers,
+                    shutdown_event=m365_shutdown,
+                )
+            )
+            logger.info(
+                "M365 event harvester started (interval=%ds)",
+                settings.monitoring.m365_harvest_interval_seconds,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start M365 event harvester: %s: %s",
+                type(e).__name__, e,
+            )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
     # Shutdown
 
-    # Stop event harvester
+    # Stop event harvester (OS providers)
     if harvester_task and not harvester_task.done():
         harvester_shutdown.set()
         try:
@@ -207,6 +267,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except asyncio.CancelledError:
                 pass
         logger.info("Event harvester stopped")
+
+    # Stop M365 event harvester and clean up providers
+    if m365_task and not m365_task.done():
+        m365_shutdown.set()
+        try:
+            await asyncio.wait_for(m365_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            m365_task.cancel()
+            try:
+                await m365_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("M365 event harvester stopped")
+
+    # Close GraphClient used by webhook provider (if created)
+    if _graph_client is not None:
+        try:
+            await _graph_client.close()
+        except Exception:
+            pass
 
     # Monitoring: sync registry cache to DB on shutdown
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_shutdown:
