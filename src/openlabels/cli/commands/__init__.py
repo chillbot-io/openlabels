@@ -49,6 +49,9 @@ from openlabels.cli.commands.monitor import monitor
 # System commands
 from openlabels.cli.commands.system import status, backup, restore
 
+# Diagnostic command
+from openlabels.cli.commands.doctor import doctor
+
 
 __all__ = [
     # Server commands
@@ -74,4 +77,5 @@ __all__ = [
     "status",
     "backup",
     "restore",
+    "doctor",
 ]

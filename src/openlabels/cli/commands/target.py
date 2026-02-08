@@ -1,36 +1,39 @@
-"""
-Scan target management commands.
-"""
+"""Scan target management commands."""
 
 import click
 import httpx
 
-from openlabels.cli.utils import get_httpx_client, get_server_url, handle_http_error
+from openlabels.cli.base import format_option, get_api_client, server_options
+from openlabels.cli.output import OutputFormatter
+from openlabels.cli.utils import handle_http_error
 
 
 @click.group()
-def target():
+def target() -> None:
     """Scan target management."""
     pass
 
 
 @target.command("list")
-def target_list():
+@server_options
+@format_option()
+def target_list(server: str, token: str | None, output_format: str) -> None:
     """List configured scan targets."""
-    client = get_httpx_client()
-    server = get_server_url()
+    fmt = OutputFormatter(output_format)
+    client = get_api_client(server, token)
 
     try:
         response = client.get(f"{server}/api/targets")
         if response.status_code == 200:
             targets = response.json()
-            click.echo(f"{'Name':<25} {'Adapter':<12} {'Path':<40}")
-            click.echo("-" * 80)
-            for target in targets:
-                name = target.get('name', '')[:24]
-                adapter = target.get('adapter_type', '')
-                path = target.get('path', target.get('config', {}).get('path', ''))[:39]
-                click.echo(f"{name:<25} {adapter:<12} {path:<40}")
+            display = []
+            for t in targets:
+                display.append({
+                    "name": t.get("name", ""),
+                    "adapter": t.get("adapter_type", ""),
+                    "path": t.get("path", t.get("config", {}).get("path", "")),
+                })
+            fmt.print_table(display, columns=["name", "adapter", "path"])
         else:
             click.echo(f"Error: {response.status_code}", err=True)
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
@@ -43,10 +46,10 @@ def target_list():
 @click.argument("name")
 @click.option("--adapter", required=True, type=click.Choice(["filesystem", "sharepoint", "onedrive"]))
 @click.option("--path", required=True, help="Path or site URL to scan")
-def target_add(name: str, adapter: str, path: str):
+@server_options
+def target_add(name: str, adapter: str, path: str, server: str, token: str | None) -> None:
     """Add a new scan target."""
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     try:
         response = client.post(
@@ -58,8 +61,8 @@ def target_add(name: str, adapter: str, path: str):
             }
         )
         if response.status_code == 201:
-            target = response.json()
-            click.echo(f"Created target: {target.get('name')} (ID: {target.get('id')})")
+            target_data = response.json()
+            click.echo(f"Created target: {target_data.get('name')} (ID: {target_data.get('id')})")
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:

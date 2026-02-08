@@ -1,6 +1,4 @@
-"""
-System commands (status, backup, restore).
-"""
+"""System commands (status, backup, restore)."""
 
 import json
 import logging
@@ -9,13 +7,14 @@ from pathlib import Path
 import click
 import httpx
 
-from openlabels.cli.utils import get_httpx_client, get_server_url
+from openlabels.cli.base import get_api_client, server_options
 
 logger = logging.getLogger(__name__)
 
 
 @click.command()
-def status():
+@server_options
+def status(server: str, token: str | None) -> None:
     """Show OpenLabels system status.
 
     Displays server connectivity, database status, job queue, and monitoring info.
@@ -23,8 +22,7 @@ def status():
     Examples:
         openlabels status
     """
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     click.echo("OpenLabels Status")
     click.echo("=" * 50)
@@ -34,18 +32,18 @@ def status():
         response = client.get(f"{server}/health", timeout=5.0)
         if response.status_code == 200:
             health = response.json()
-            click.echo(f"Server:      ✓ Online ({server})")
+            click.echo(f"Server:      \u2713 Online ({server})")
             click.echo(f"  Version:   {health.get('version', 'unknown')}")
             click.echo(f"  Database:  {health.get('database', 'unknown')}")
         else:
-            click.echo(f"Server:      ✗ Unhealthy (status {response.status_code})")
+            click.echo(f"Server:      \u2717 Unhealthy (status {response.status_code})")
     except httpx.TimeoutException:
-        click.echo(f"Server:      ✗ Offline (connection timed out)")
+        click.echo("Server:      \u2717 Offline (connection timed out)")
         click.echo("\nCannot retrieve additional status without server connection.")
         client.close()
         return
     except httpx.ConnectError as e:
-        click.echo(f"Server:      ✗ Offline (cannot connect: {e})")
+        click.echo(f"Server:      \u2717 Offline (cannot connect: {e})")
         click.echo("\nCannot retrieve additional status without server connection.")
         client.close()
         return
@@ -55,7 +53,7 @@ def status():
         response = client.get(f"{server}/api/jobs/stats")
         if response.status_code == 200:
             stats = response.json()
-            click.echo(f"\nJob Queue:")
+            click.echo("\nJob Queue:")
             click.echo(f"  Pending:   {stats.get('pending', 0)}")
             click.echo(f"  Running:   {stats.get('running', 0)}")
             click.echo(f"  Completed: {stats.get('completed', 0)}")
@@ -68,7 +66,7 @@ def status():
         response = client.get(f"{server}/api/dashboard/summary")
         if response.status_code == 200:
             summary = response.json()
-            click.echo(f"\nScan Summary:")
+            click.echo("\nScan Summary:")
             click.echo(f"  Total files scanned:  {summary.get('total_files', 0):,}")
             click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
             click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
@@ -80,7 +78,7 @@ def status():
     try:
         from openlabels.monitoring import get_watched_files
         watched = get_watched_files()
-        click.echo(f"\nMonitoring:")
+        click.echo("\nMonitoring:")
         click.echo(f"  Files monitored:      {len(watched)}")
     except ImportError:
         logger.debug("Monitoring module not installed")
@@ -92,34 +90,36 @@ def status():
         from openlabels.labeling.mip import MIPClient
         mip = MIPClient()
         if mip.is_available():
-            click.echo(f"\nMIP SDK:     ✓ Available")
+            click.echo("\nMIP SDK:     \u2713 Available")
         else:
-            click.echo(f"\nMIP SDK:     ✗ Not available (Windows only)")
+            click.echo("\nMIP SDK:     \u2717 Not available (Windows only)")
     except ImportError:
-        click.echo(f"\nMIP SDK:     ✗ Not installed")
+        click.echo("\nMIP SDK:     \u2717 Not installed")
     except RuntimeError as e:
         logger.debug(f"Failed to check MIP availability: {e}")
 
     # Check ML models
     from openlabels.core.constants import DEFAULT_MODELS_DIR
-    # PHI/PII-BERT: prefer INT8 quantized, fall back to original
     phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
                (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
     pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
                (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
     rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
 
-    click.echo(f"\nML Models:")
-    click.echo(f"  PHI-BERT:  {'✓' if phi_bert else '✗'}")
-    click.echo(f"  PII-BERT:  {'✓' if pii_bert else '✗'}")
-    click.echo(f"  RapidOCR:  {'✓' if rapidocr else '✗'}")
+    check = "\u2713"
+    cross = "\u2717"
+    click.echo("\nML Models:")
+    click.echo(f"  PHI-BERT:  {check if phi_bert else cross}")
+    click.echo(f"  PII-BERT:  {check if pii_bert else cross}")
+    click.echo(f"  RapidOCR:  {check if rapidocr else cross}")
 
     client.close()
 
 
 @click.command()
 @click.option("--output", default="./backup", help="Output directory")
-def backup(output: str):
+@server_options
+def backup(output: str, server: str, token: str | None) -> None:
     """Backup OpenLabels data."""
     from datetime import datetime
 
@@ -131,15 +131,12 @@ def backup(output: str):
 
     click.echo(f"Creating backup: {backup_name}")
 
-    # Export data via API
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     backup_dir = output_path / backup_name
     backup_dir.mkdir(exist_ok=True)
 
     try:
-        # Export configurations
         for endpoint in ["targets", "labels", "labels/rules", "schedules"]:
             try:
                 response = client.get(f"{server}/api/{endpoint}")
@@ -164,7 +161,8 @@ def backup(output: str):
 
 @click.command()
 @click.option("--from", "from_path", required=True, help="Backup directory to restore from")
-def restore(from_path: str):
+@server_options
+def restore(from_path: str, server: str, token: str | None) -> None:
     """Restore OpenLabels data from backup."""
     backup_path = Path(from_path)
 
@@ -174,11 +172,9 @@ def restore(from_path: str):
 
     click.echo(f"Restoring from: {backup_path}")
 
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     try:
-        # Restore configurations
         for file in backup_path.glob("*.json"):
             endpoint = file.stem.replace("_", "/")
             try:

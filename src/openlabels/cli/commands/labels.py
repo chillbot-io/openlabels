@@ -1,6 +1,4 @@
-"""
-Label management commands.
-"""
+"""Label management commands."""
 
 import asyncio
 import sys
@@ -10,29 +8,37 @@ from typing import Optional
 import click
 import httpx
 
-from openlabels.cli.utils import get_httpx_client, get_server_url, handle_http_error
+from openlabels.cli.base import format_option, get_api_client, server_options
+from openlabels.cli.output import OutputFormatter
+from openlabels.cli.utils import handle_http_error
 
 
 @click.group()
-def labels():
+def labels() -> None:
     """Label management commands."""
     pass
 
 
 @labels.command("list")
-def labels_list():
+@server_options
+@format_option()
+def labels_list(server: str, token: str | None, output_format: str) -> None:
     """List configured sensitivity labels."""
-    client = get_httpx_client()
-    server = get_server_url()
+    fmt = OutputFormatter(output_format)
+    client = get_api_client(server, token)
 
     try:
         response = client.get(f"{server}/api/labels")
         if response.status_code == 200:
-            labels = response.json()
-            click.echo(f"{'Name':<30} {'Priority':<10} {'ID'}")
-            click.echo("-" * 80)
-            for label in labels:
-                click.echo(f"{label.get('name', ''):<30} {label.get('priority', 0):<10} {label.get('id', '')}")
+            labels_data = response.json()
+            display = []
+            for label in labels_data:
+                display.append({
+                    "name": label.get("name", ""),
+                    "priority": label.get("priority", 0),
+                    "id": label.get("id", ""),
+                })
+            fmt.print_table(display, columns=["name", "priority", "id"])
         else:
             click.echo(f"Error: {response.status_code}", err=True)
 
@@ -43,10 +49,10 @@ def labels_list():
 
 
 @labels.command("sync")
-def labels_sync():
+@server_options
+def labels_sync(server: str, token: str | None) -> None:
     """Sync sensitivity labels from Microsoft 365."""
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     try:
         click.echo("Syncing labels from M365...")
@@ -63,12 +69,15 @@ def labels_sync():
         client.close()
 
 
+# --- Local commands (no server needed) ---
+
+
 @labels.command("apply")
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--label", required=True, help="Label name or ID to apply")
 @click.option("--justification", help="Justification for downgrade (if applicable)")
 @click.option("--dry-run", is_flag=True, help="Preview without applying")
-def labels_apply(file_path: str, label: str, justification: Optional[str], dry_run: bool):
+def labels_apply(file_path: str, label: str, justification: Optional[str], dry_run: bool) -> None:
     """Apply a sensitivity label to a file.
 
     Uses the MIP SDK on Windows, or records the label in the database on other platforms.
@@ -86,7 +95,6 @@ def labels_apply(file_path: str, label: str, justification: Optional[str], dry_r
     try:
         from openlabels.labeling import LabelingEngine, get_label_cache
 
-        # Try to get label from cache first
         cache = get_label_cache()
         cached_label = cache.get_by_name(label)
 
@@ -94,7 +102,6 @@ def labels_apply(file_path: str, label: str, justification: Optional[str], dry_r
             label_id = cached_label.label_id
             label_name = cached_label.name
         else:
-            # Assume it's a label ID
             label_id = label
             label_name = label
 
@@ -130,7 +137,7 @@ def labels_apply(file_path: str, label: str, justification: Optional[str], dry_r
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--justification", help="Justification for label removal")
 @click.option("--dry-run", is_flag=True, help="Preview without removing")
-def labels_remove(file_path: str, justification: Optional[str], dry_run: bool):
+def labels_remove(file_path: str, justification: Optional[str], dry_run: bool) -> None:
     """Remove a sensitivity label from a file.
 
     Examples:
@@ -173,7 +180,7 @@ def labels_remove(file_path: str, justification: Optional[str], dry_run: bool):
 
 @labels.command("info")
 @click.argument("file_path", type=click.Path(exists=True))
-def labels_info(file_path: str):
+def labels_info(file_path: str) -> None:
     """Show label information for a file.
 
     Examples:

@@ -1,0 +1,78 @@
+"""Shared CLI decorators and utilities."""
+
+from __future__ import annotations
+
+import functools
+from typing import Any, Callable
+
+import click
+import httpx
+
+
+def common_options(f: Callable[..., Any]) -> Callable[..., Any]:
+    """Add ``--quiet`` flag to any command."""
+    @click.option("--quiet", "-q", is_flag=True, help="Suppress non-essential output")
+    @functools.wraps(f)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def server_options(f: Callable[..., Any]) -> Callable[..., Any]:
+    """Add ``--server`` and ``--token`` options for API-calling commands.
+
+    Replaces the old ``get_server_url()`` / ``get_httpx_client()`` pattern.
+    Commands receive ``server`` and ``token`` keyword arguments.
+    """
+    @click.option(
+        "--server", "-s",
+        envvar="OPENLABELS_SERVER_URL",
+        default="http://localhost:8000",
+        help="Server URL",
+    )
+    @click.option(
+        "--token",
+        envvar="OPENLABELS_TOKEN",
+        default=None,
+        help="Authentication token",
+    )
+    @functools.wraps(f)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def format_option(
+    choices: list[str] | None = None,
+    default: str | None = None,
+) -> Callable[..., Any]:
+    """Add ``--format`` / ``-f`` option with configurable choices.
+
+    The Python parameter is named ``output_format`` to avoid shadowing the
+    built-in ``format``.
+    """
+    if choices is None:
+        choices = ["table", "json", "csv"]
+    if default is None:
+        default = choices[0]
+
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        @click.option(
+            "--format", "-f", "output_format",
+            type=click.Choice(choices),
+            default=default,
+            help="Output format",
+        )
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def get_api_client(server: str, token: str | None = None) -> httpx.Client:
+    """Create an httpx client configured with an optional auth token."""
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return httpx.Client(timeout=30.0, headers=headers)

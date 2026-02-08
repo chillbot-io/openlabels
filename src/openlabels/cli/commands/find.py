@@ -2,13 +2,18 @@
 Find command for searching sensitive files with filtering.
 """
 
+import asyncio
 import json
+import logging
 import sys
+from pathlib import Path
 from typing import Optional
 
 import click
 
-from openlabels.cli.utils import collect_files, scan_files, validate_where_filter
+from openlabels.cli.utils import validate_where_filter
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
