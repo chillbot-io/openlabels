@@ -307,7 +307,7 @@ class AgentPool:
             raise RuntimeError(f"Cannot submit work in state {self._state}")
 
         # Run blocking put in thread pool to avoid blocking event loop
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._input_queue.put, item)
         self._stats.items_submitted += 1
 
@@ -318,7 +318,7 @@ class AgentPool:
 
     async def _collect_results(self) -> None:
         """Background task to move results from MP queue to async queue."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         while self._state in (PoolState.RUNNING, PoolState.DRAINING):
             try:

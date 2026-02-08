@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.services.base import BaseService, TenantContext
 from openlabels.server.config import Settings
 from openlabels.server.models import JobQueue as JobQueueModel
-from openlabels.server.exceptions import (
+from openlabels.exceptions import (
     NotFoundError,
     BadRequestError,
 )

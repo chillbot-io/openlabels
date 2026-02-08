@@ -18,9 +18,9 @@ from typing import List, Optional
 from .base import (
     RemediationResult,
     RemediationAction,
-    PermissionError,
     get_current_user,
 )
+from openlabels.exceptions import RemediationPermissionError
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def lock_down(
 
     Raises:
         FileNotFoundError: If file doesn't exist
-        PermissionError: If unable to modify permissions
+        RemediationPermissionError: If unable to modify permissions
     """
     path = Path(path).resolve()
 
@@ -172,7 +172,7 @@ def _lock_down_windows(
             timeout=30,
         )
         if result.returncode != 0:
-            raise PermissionError(f"Failed to reset permissions: {result.stderr}", path)
+            raise RemediationPermissionError(f"Failed to reset permissions: {result.stderr}", path)
 
         # Step 3: Grant full control to each allowed principal
         for principal in allowed_principals:
@@ -185,7 +185,7 @@ def _lock_down_windows(
                 timeout=30,
             )
             if result.returncode != 0:
-                raise PermissionError(
+                raise RemediationPermissionError(
                     f"Failed to grant access to {principal}: {result.stderr}",
                     path,
                 )
@@ -216,7 +216,7 @@ def _lock_down_windows(
             performed_by=get_current_user(),
         )
 
-    except PermissionError:
+    except RemediationPermissionError:
         raise
     except subprocess.TimeoutExpired:
         error_msg = "Permission lockdown operation timed out"

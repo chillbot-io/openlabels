@@ -25,7 +25,7 @@ from openlabels.core.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitOpenError,
 )
-from openlabels.core.exceptions import GraphAPIError
+from openlabels.exceptions import GraphAPIError
 
 logger = logging.getLogger(__name__)
 

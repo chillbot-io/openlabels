@@ -21,7 +21,7 @@ from openlabels.server.dependencies import (
     TenantContextDep,
     AdminContextDep,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError
+from openlabels.exceptions import NotFoundError, BadRequestError
 
 router = APIRouter()
 

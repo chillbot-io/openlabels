@@ -22,6 +22,7 @@ import logging
 
 from .base import BaseDetector
 from .checksum import ChecksumDetector
+from .config import DetectionConfig
 from .secrets import SecretsDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
@@ -31,6 +32,8 @@ from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 __all__ = [
     # Base
     "BaseDetector",
+    # Configuration
+    "DetectionConfig",
     # Pattern detectors
     "ChecksumDetector",
     "SecretsDetector",

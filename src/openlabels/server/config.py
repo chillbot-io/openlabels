@@ -32,9 +32,9 @@ class DatabaseSettings(BaseSettings):
     """Database configuration."""
 
     url: str = "postgresql+asyncpg://localhost/openlabels"
-    pool_size: int = 5
+    pool_size: int = 20
     max_overflow: int = 10
-    pool_recycle: int = 3600  # Recycle connections after 1 hour to prevent stale connections
+    pool_recycle: int = 1800  # Recycle connections every 30 min to prevent stale connections
     pool_pre_ping: bool = True  # Enable connection health checks before use
 
 

@@ -1,16 +1,15 @@
-"""
-Export commands.
-"""
+"""Export commands."""
 
 import click
 import httpx
 
-from openlabels.cli.utils import get_httpx_client, get_server_url, handle_http_error
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.cli.base import get_api_client, server_options
+from openlabels.cli.utils import handle_http_error
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
 @click.group()
-def export():
+def export() -> None:
     """Export commands."""
     pass
 
@@ -19,21 +18,20 @@ def export():
 @click.option("--job", required=True, help="Job ID to export")
 @click.option("--format", "fmt", default="csv", type=click.Choice(["csv", "json"]))
 @click.option("--output", required=True, help="Output file path")
-def export_results(job: str, fmt: str, output: str):
+@server_options
+def export_results(job: str, fmt: str, output: str, server: str, token: str | None) -> None:
     """Export scan results."""
-    # Security: Validate output path to prevent path traversal
     try:
         validated_output = validate_output_path(output, create_parent=True)
     except PathValidationError as e:
         click.echo(f"Error: Invalid output path: {e}", err=True)
         return
 
-    client = get_httpx_client()
-    server = get_server_url()
+    client = get_api_client(server, token)
 
     try:
         response = client.get(
-            f"{server}/api/results/export",
+            "/api/results/export",
             params={"job_id": job, "format": fmt}
         )
 

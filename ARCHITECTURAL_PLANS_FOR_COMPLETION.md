@@ -3,7 +3,7 @@
 **Goal:** Get every module to **Best (3/3)** quality rating.
 **Reference:** See `MODULE_QUALITY_REVIEW.md` for current ratings and findings.
 
-Each section below is a self-contained implementation plan with exact files, code examples, migration strategies, and complexity estimates. These are designed to be picked up by a Claude agent and executed module-by-module.
+Each section below is a self-contained implementation plan with exact files, code examples, and complexity estimates. These are designed to be picked up by a Claude agent and executed module-by-module. **All changes should be clean refactors — no backwards-compatibility shims, no deprecated fallbacks, no "keep old imports working" hacks. Do it the right way.**
 
 ---
 
@@ -19,7 +19,7 @@ Each section below is a self-contained implementation plan with exact files, cod
 8. [Labeling](#8-labeling) (2→3)
 9. [Remediation](#9-remediation) (2→3)
 10. [Monitoring](#10-monitoring) (2→3)
-11. [Web](#11-web) (0→3)
+11. [Web](#11-web) (0→3, deferred)
 12. [Windows](#12-windows) (1→3)
 13. [Client](#13-client) (1→3)
 14. [Cross-Cutting Concerns](#14-cross-cutting-concerns)
@@ -31,186 +31,153 @@ Each section below is a self-contained implementation plan with exact files, cod
 **Current Rating:** 2 (Better) → **Target:** 3 (Best)
 **Module Path:** `src/openlabels/core/`
 
-### 1.1 Detector Plugin Registry
+### 1.1 Configuration-Driven Detector Setup
 
 **Complexity:** M
-**Files to modify:** `core/detectors/orchestrator.py`, `core/detectors/base.py`, `core/detectors/__init__.py`
-**Files to create:** `core/detectors/registry.py`
+**Files to create:** `core/detectors/config.py`
+**Files to modify:** `core/detectors/orchestrator.py`
 
-**Current state:** The orchestrator imports each detector class explicitly and instantiates them in a hardcoded list. Adding a new detector requires modifying the orchestrator.
+**Current state:** The orchestrator already uses boolean flags (`enable_checksum`, `enable_secrets`, `enable_hyperscan`, `enable_ml`, etc.) to conditionally construct detectors. This is explicit and functional, but the flags are spread across 15+ constructor parameters which is unwieldy.
 
 **Plan:**
 
-Create `core/detectors/registry.py`:
+Replace the long parameter list with a single typed `DetectionConfig` dataclass. Keep the selective enable/disable capability — it's valuable for CLI vs. server vs. test scenarios — but consolidate the knobs into one config object:
+
 ```python
-"""Detector plugin registry with decorator-based registration."""
+# core/detectors/config.py
+"""Detection configuration."""
 
-from typing import Dict, Type, List
-from .base import BaseDetector
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
-_REGISTRY: Dict[str, Type[BaseDetector]] = {}
 
+@dataclass(frozen=True)
+class DetectionConfig:
+    """Configuration for the detection pipeline.
 
-def register_detector(cls: Type[BaseDetector]) -> Type[BaseDetector]:
+    Use class methods for common presets:
+        config = DetectionConfig.full()       # Everything enabled
+        config = DetectionConfig.patterns()   # Patterns only, no ML
+        config = DetectionConfig.quick()      # Fast detectors only
     """
-    Class decorator to register a detector.
+    # Pattern detectors
+    enable_checksum: bool = True
+    enable_secrets: bool = True
+    enable_financial: bool = True
+    enable_government: bool = True
+    enable_patterns: bool = True
 
-    Usage:
-        @register_detector
-        class MyDetector(BaseDetector):
-            name = "my_detector"
-            ...
-    """
-    if not hasattr(cls, 'name') or cls.name == "base":
-        raise ValueError(f"Detector {cls.__name__} must define a unique 'name' attribute")
-    if cls.name in _REGISTRY:
-        raise ValueError(f"Detector name '{cls.name}' already registered by {_REGISTRY[cls.name].__name__}")
-    _REGISTRY[cls.name] = cls
-    return cls
+    # Accelerated detection
+    enable_hyperscan: bool = False
 
+    # ML detectors
+    enable_ml: bool = False
+    ml_model_dir: Optional[Path] = None
+    use_onnx: bool = True
 
-def get_registered_detectors() -> Dict[str, Type[BaseDetector]]:
-    """Get all registered detector classes."""
-    return dict(_REGISTRY)
+    # Post-processing
+    enable_coref: bool = False
+    enable_context_enhancement: bool = False
+    enable_policy: bool = False
 
+    # Tuning
+    confidence_threshold: float = 0.70
+    max_workers: int = 4
 
-def get_detector_names() -> List[str]:
-    """Get names of all registered detectors."""
-    return list(_REGISTRY.keys())
+    @classmethod
+    def full(cls) -> "DetectionConfig":
+        return cls(enable_hyperscan=True, enable_ml=True,
+                   enable_coref=True, enable_context_enhancement=True)
 
+    @classmethod
+    def patterns_only(cls) -> "DetectionConfig":
+        return cls()
 
-def create_detector(name: str, **kwargs) -> BaseDetector:
-    """Instantiate a registered detector by name."""
-    if name not in _REGISTRY:
-        raise KeyError(f"Unknown detector: {name}. Available: {list(_REGISTRY.keys())}")
-    return _REGISTRY[name](**kwargs)
-
-
-def create_all_detectors(**kwargs) -> List[BaseDetector]:
-    """Instantiate all registered detectors."""
-    detectors = []
-    for name, cls in _REGISTRY.items():
-        try:
-            detector = cls(**kwargs)
-            if detector.is_available():
-                detectors.append(detector)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Failed to create detector {name}: {e}")
-    return detectors
+    @classmethod
+    def quick(cls) -> "DetectionConfig":
+        return cls(enable_ml=False, enable_coref=False,
+                   enable_context_enhancement=False)
 ```
 
-Modify each detector file to use the decorator:
+Update orchestrator:
 ```python
-# core/detectors/government.py
-from .registry import register_detector
-
-@register_detector
-class GovernmentDetector(BaseDetector):
-    name = "government"
-    ...
-```
-
-Modify orchestrator to use registry instead of hardcoded imports:
-```python
-# core/detectors/orchestrator.py
-from .registry import create_all_detectors
-
 class DetectorOrchestrator:
-    def __init__(self, detector_names: list[str] | None = None):
-        if detector_names:
-            self.detectors = [create_detector(n) for n in detector_names]
-        else:
-            self.detectors = create_all_detectors()
+    def __init__(self, config: DetectionConfig | None = None):
+        self.config = config or DetectionConfig()
+        self.detectors: list[BaseDetector] = []
+        # ... same conditional init logic, reading from self.config
 ```
 
-**Migration:** Backwards compatible. Keep existing imports working via `__init__.py`. The `@register_detector` decorator is additive — old code continues to work, new code gets the registry.
+**Refactor scope:** Extract the 15+ constructor params into `DetectionConfig`. Update all callers (server startup, CLI, tests) to pass a config object. The orchestrator constructor becomes a single parameter.
 
-### 1.2 Declarative Pattern Definitions
+### 1.2 Immutable Pattern Definitions
 
 **Complexity:** M
 **Files to modify:** `core/detectors/government.py`, `core/detectors/secrets.py`, `core/detectors/additional_patterns.py`
-**Files to create:** `core/detectors/patterns/government.yaml`, `core/detectors/pattern_loader.py`
+**Files to create:** `core/detectors/pattern_registry.py`
 
-**Current state:** Patterns are defined via module-level `_add()` calls that mutate a global list at import time. This is fragile and hard to test/configure.
+**Current state:** Patterns are defined via module-level `_add()` calls that mutate a global list at import time. This is fragile — creating two instances doubles entries, test isolation is impossible, and the mutation order is implicit.
 
 **Plan:**
 
-Create `core/detectors/pattern_loader.py`:
+Replace mutable global lists with frozen dataclasses. No YAML files, no runtime file I/O, no new dependencies. Patterns stay in Python where they're testable, debuggable, and have zero overhead.
+
+Create `core/detectors/pattern_registry.py`:
 ```python
-"""Load detection patterns from YAML/JSON configuration files."""
+"""Immutable pattern definitions for all detectors."""
 
 import re
-import yaml
-from pathlib import Path
-from typing import List, Tuple
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class PatternDefinition:
-    """Immutable pattern definition."""
+    """Immutable, hashable pattern definition."""
     pattern: re.Pattern
     entity_type: str
     confidence: float
     group: int = 0
 
 
-def load_patterns(pattern_file: str | Path) -> List[PatternDefinition]:
-    """Load patterns from a YAML file.
+def _p(regex: str, entity_type: str, confidence: float,
+       group: int = 0, flags: int = re.IGNORECASE) -> PatternDefinition:
+    """Shorthand for defining a pattern."""
+    return PatternDefinition(
+        pattern=re.compile(regex, flags),
+        entity_type=entity_type,
+        confidence=confidence,
+        group=group,
+    )
 
-    YAML format:
-        patterns:
-          - pattern: '\\b(TOP\\s*SECRET)\\b'
-            entity_type: CLASSIFICATION_LEVEL
-            confidence: 0.98
-            group: 1
-            flags: [IGNORECASE]
-    """
-    path = Path(__file__).parent / "patterns" / pattern_file
-    with open(path) as f:
-        data = yaml.safe_load(f)
 
-    results = []
-    for entry in data.get("patterns", []):
-        flags = 0
-        for flag_name in entry.get("flags", []):
-            flags |= getattr(re, flag_name, 0)
+# --- Government patterns ---
+GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
+    _p(r'\b(TOP\s*SECRET)\b', 'CLASSIFICATION_LEVEL', 0.98, group=1),
+    _p(r'\b(SECRET)\b(?!\s*(?:santa|garden|service|recipe|ingredient|weapon|sauce))',
+       'CLASSIFICATION_LEVEL', 0.85, group=1),
+    # ... all government patterns
+)
 
-        results.append(PatternDefinition(
-            pattern=re.compile(entry["pattern"], flags),
-            entity_type=entry["entity_type"],
-            confidence=entry["confidence"],
-            group=entry.get("group", 0),
-        ))
-    return results
+# --- Secrets patterns ---
+SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
+    # ... all secrets patterns
+)
+
+# --- Financial patterns ---
+FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
+    # ... all financial patterns
+)
 ```
 
-Create YAML pattern files (e.g., `core/detectors/patterns/government.yaml`):
-```yaml
-patterns:
-  - pattern: '\b(TOP\s*SECRET)\b'
-    entity_type: CLASSIFICATION_LEVEL
-    confidence: 0.98
-    group: 1
-    flags: [IGNORECASE]
-
-  - pattern: '\b(SECRET)\b(?!\s*(?:santa|garden|service|recipe|ingredient|weapon|sauce))'
-    entity_type: CLASSIFICATION_LEVEL
-    confidence: 0.85
-    group: 1
-    flags: [IGNORECASE]
-    # ... etc
-```
-
-Modify detectors to use loaded patterns:
+Modify detectors to use the registry:
 ```python
 class GovernmentDetector(BaseDetector):
     name = "government"
     tier = Tier.PATTERN
 
     def __init__(self):
-        self._patterns = load_patterns("government.yaml")
+        self._patterns = GOVERNMENT_PATTERNS  # Immutable tuple, shared across instances
 
     def detect(self, text: str) -> List[Span]:
         spans = []
@@ -219,79 +186,84 @@ class GovernmentDetector(BaseDetector):
                 # ... same logic but using pdef.entity_type, pdef.confidence, etc.
 ```
 
-**Migration:** Phase in per-detector. Keep Python patterns working alongside YAML. Mark Python-defined patterns as deprecated.
+**Why not YAML:** Patterns rarely change independently of code. When you modify a regex, you need to test it, which means a code change anyway. YAML adds runtime file I/O, a PyYAML dependency, a new failure mode (missing/malformed files), and makes patterns harder to debug (no breakpoints in YAML). Frozen dataclasses in Python give you immutability, zero I/O overhead, and full IDE support.
+
+**Refactor scope:** Extract all `_add()` calls and mutable global lists into `pattern_registry.py` as frozen tuples. Delete the module-level mutation helpers. Each detector reads from a shared immutable tuple.
 
 ### 1.3 Async Detection Support
 
 **Complexity:** M
-**Files to modify:** `core/detectors/base.py`, `core/detectors/orchestrator.py`, `core/detectors/ml_onnx.py`
+**Files to modify:** `core/detectors/base.py`, `core/detectors/orchestrator.py`
 
 **Current state:** `BaseDetector.detect()` is synchronous. ML/ONNX detectors block the event loop when called from async server code.
 
 **Plan:**
 
-Extend `BaseDetector`:
+All detectors implement `detect()` synchronously — that's fine, the detection logic itself is CPU-bound. The orchestrator's job is to run them without blocking the event loop. Simple approach: orchestrator runs all detectors in a thread pool executor.
+
 ```python
 # core/detectors/base.py
-import asyncio
 from abc import ABC, abstractmethod
 from typing import List
 
 class BaseDetector(ABC):
     name: str = "base"
     tier: Tier = Tier.PATTERN
-    is_async: bool = False  # Override in async detectors
 
     @abstractmethod
     def detect(self, text: str) -> List[Span]:
-        """Synchronous detection. All detectors must implement this."""
+        """Detect entities in text. Always synchronous."""
         pass
 
-    async def adetect(self, text: str) -> List[Span]:
-        """
-        Async detection. Override for truly async detectors (ML inference, API calls).
-        Default: runs sync detect() in executor to avoid blocking.
-        """
-        if self.is_async:
-            # Subclasses that set is_async=True must override this
-            raise NotImplementedError("Async detectors must override adetect()")
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.detect, text)
+    def is_available(self) -> bool:
+        return True
 ```
 
-Modify ONNX detector:
-```python
-# core/detectors/ml_onnx.py
-class ONNXDetector(BaseDetector):
-    name = "ml_onnx"
-    is_async = True
+No `adetect()`, no `is_async` flag. Detectors stay simple. The orchestrator handles async:
 
-    async def adetect(self, text: str) -> List[Span]:
-        """Run ONNX inference without blocking the event loop."""
-        loop = asyncio.get_running_loop()
-        # ONNX inference is CPU-bound, run in thread pool
-        return await loop.run_in_executor(self._executor, self.detect, text)
-```
-
-Modify orchestrator to use async path:
 ```python
 # core/detectors/orchestrator.py
-async def adetect(self, text: str) -> DetectionResult:
-    """Async detection across all detectors."""
-    tasks = [detector.adetect(text) for detector in self.detectors]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
-    all_spans = []
-    for detector, result in zip(self.detectors, results):
-        if isinstance(result, Exception):
-            logger.warning(f"Detector {detector.name} failed: {result}")
-            continue
-        all_spans.extend(result)
+class DetectorOrchestrator:
+    def __init__(self, config: DetectionConfig | None = None):
+        self.config = config or DetectionConfig()
+        self._executor = ThreadPoolExecutor(
+            max_workers=self.config.max_workers, thread_name_prefix="detector"
+        )
 
-    return DetectionResult(spans=all_spans)
+    async def detect(self, text: str) -> DetectionResult:
+        """Run all detectors concurrently in thread pool."""
+        loop = asyncio.get_running_loop()
+
+        tasks = [
+            loop.run_in_executor(self._executor, detector.detect, text)
+            for detector in self.detectors
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_spans = []
+        for detector, result in zip(self.detectors, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Detector {detector.name} failed: {result}")
+                continue
+            all_spans.extend(result)
+
+        return DetectionResult(spans=all_spans)
+
+    def detect_sync(self, text: str) -> DetectionResult:
+        """Synchronous detection for CLI/non-async contexts."""
+        all_spans = []
+        for detector in self.detectors:
+            try:
+                all_spans.extend(detector.detect(text))
+            except Exception as e:
+                logger.warning(f"Detector {detector.name} failed: {e}")
+        return DetectionResult(spans=all_spans)
 ```
 
-**Migration:** Fully backwards compatible. `detect()` remains the primary interface. `adetect()` is additive. The orchestrator's existing `detect()` method continues working synchronously.
+**Refactor scope:** The orchestrator gets two methods: `detect()` (async, for server/jobs) and `detect_sync()` (for CLI). All server and job code uses `detect()`. All CLI code uses `detect_sync()`. Remove the module-level `detect()` convenience function if it bypasses the orchestrator — everything should go through the orchestrator.
 
 ### 1.4 Confidence Calibration
 
@@ -374,6 +346,7 @@ def calibrate_confidence(
             confidence=round(confidence, 4),
             detector=span.detector,
             tier=span.tier,
+            context=span.context,  # Preserve SpanContext from Section 1.6
         ))
 
     return calibrated
@@ -505,6 +478,7 @@ def _merge_overlaps(spans: List[Span]) -> List[Span]:
                 confidence=max(prev.confidence, span.confidence),
                 detector=best.detector,
                 tier=best.tier,
+                context=best.context,  # Preserve SpanContext from Section 1.6
             )
         else:
             merged.append(span)
@@ -547,7 +521,7 @@ class Span:
     context: SpanContext | None = None  # NEW: extraction context
 ```
 
-**Migration:** `context` defaults to `None` so all existing code continues to work. Extractors populate it when available.
+**Refactor scope:** Add `context: SpanContext | None = None` to `Span`. Update all extractors to populate `SpanContext` with whatever context they have available (page number, sheet name, etc.). Detectors that don't have context info can leave it as `None` — but extractors should always fill it in.
 
 ---
 
@@ -677,11 +651,10 @@ class ScanJobResponse(BaseModel):
 
 
 class ScanJobListResponse(BaseModel):
+    """Cursor-paginated list of scans. Consistent with Section 2.4."""
     items: list[ScanJobResponse]
-    total: int
-    page: int
-    limit: int
-    pages: int
+    next_cursor: Optional[str] = None
+    has_more: bool = False
 
 
 class CreateScanRequest(BaseModel):
@@ -704,7 +677,7 @@ async def get_scan(...): ...
 ### 2.3 Split app.py
 
 **Complexity:** M
-**Files to create:** `server/factory.py`, `server/error_handlers.py`, `server/lifespan.py`
+**Files to create:** `server/error_handlers.py`, `server/lifespan.py`
 **Files to modify:** `server/app.py`, `server/middleware/__init__.py`
 
 **Plan:**
@@ -735,7 +708,7 @@ async def lifespan(app: FastAPI):
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from .schemas.error import ErrorResponse
-from .exceptions import NotFoundError, ConflictError, ForbiddenError
+from openlabels.exceptions import NotFoundError, ConflictError, AuthError
 
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(NotFoundError)
@@ -786,63 +759,66 @@ app = create_app()
 ### 2.4 Cursor-Based Pagination
 
 **Complexity:** M
-**Files to modify:** `server/schemas/pagination.py`, `server/pagination.py`
-**Files to modify:** Route files that use pagination
+**Files to modify:** `server/schemas/pagination.py`, `server/pagination.py`, route files that use pagination
 
-**Plan:**
+**Plan:** Replace offset-based pagination with cursor-based. Offset pagination breaks on large datasets with concurrent writes and gets slower as offset increases. Remove the old offset approach entirely.
+
+**Existing code:** `server/pagination.py` already has `CursorPaginationParams`, `CursorData`, `PaginatedResponse`, `CursorPaginatedResponse`, `encode_cursor()`, and `decode_cursor()`. The existing implementation uses composite `(id, timestamp)` cursors encoded as base64 JSON. Build on this — do not introduce a second cursor format.
+
+What's missing from the existing module: a reusable query helper. Add `apply_cursor_pagination`:
 
 ```python
-# server/schemas/pagination.py - add cursor pagination
-from typing import Optional, Generic, TypeVar
-from uuid import UUID
-from pydantic import BaseModel, Field
+# server/pagination.py — add this function to the existing module
+from sqlalchemy.ext.asyncio import AsyncSession
 
-T = TypeVar("T")
-
-class CursorParams(BaseModel):
-    """Cursor-based pagination parameters."""
-    after: Optional[UUID] = Field(None, description="Return items after this ID")
-    before: Optional[UUID] = Field(None, description="Return items before this ID")
-    limit: int = Field(50, ge=1, le=200, description="Items per page")
-
-
-class CursorPage(BaseModel, Generic[T]):
-    """Cursor-paginated response."""
-    items: list[T]
-    has_next: bool
-    has_previous: bool
-    next_cursor: Optional[str] = None  # Encoded cursor for next page
-    previous_cursor: Optional[str] = None
-
-
-# server/pagination.py - add cursor query helper
 async def apply_cursor_pagination(
+    session: AsyncSession,
     query,
     model_class,
-    params: CursorParams,
-    order_column=None,
-) -> tuple:
+    params: CursorPaginationParams,
+    timestamp_column=None,
+) -> CursorPaginatedResponse:
     """Apply cursor-based pagination to a SQLAlchemy query.
 
-    Uses keyset pagination: WHERE id > :after ORDER BY id LIMIT :limit+1
-    The +1 allows us to detect if there are more items.
+    Uses the existing (id, timestamp) composite cursor format.
+    Fetches limit+1 rows to detect has_more.
     """
-    order_col = order_column or model_class.id
+    ts_col = timestamp_column or model_class.created_at
+    id_col = model_class.id
 
-    if params.after:
-        query = query.where(order_col > params.after)
+    # Decode cursor and apply WHERE clause
+    cursor_data = params.decode()
+    if cursor_data:
+        # Keyset pagination: WHERE (ts, id) < (cursor_ts, cursor_id)
+        query = query.where(
+            (ts_col < cursor_data.timestamp) |
+            ((ts_col == cursor_data.timestamp) & (id_col < cursor_data.id))
+        )
 
-    query = query.order_by(order_col.asc()).limit(params.limit + 1)
+    # Order by timestamp desc, then id desc (most recent first)
+    query = query.order_by(ts_col.desc(), id_col.desc())
+    query = query.limit(params.limit + 1)
 
     result = await session.execute(query)
     items = list(result.scalars().all())
 
-    has_next = len(items) > params.limit
-    if has_next:
+    has_more = len(items) > params.limit
+    if has_more:
         items = items[:params.limit]
 
-    return items, has_next
+    next_cursor = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = encode_cursor(last.id, getattr(last, ts_col.key))
+
+    return CursorPaginatedResponse(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 ```
+
+**Refactor scope:** Add `apply_cursor_pagination` to the existing `server/pagination.py`. Migrate all API list endpoints from offset to cursor pagination in one pass. The web results list already uses cursor pagination — extend that pattern to all list endpoints (scans, targets, labels, schedules, audit logs). Remove offset pagination (`PaginationParams` with `page`/`limit`) entirely.
 
 ### 2.5 Per-Tenant Rate Limiting
 
@@ -857,7 +833,6 @@ async def apply_cursor_pagination(
 
 import time
 from collections import defaultdict
-from fastapi import Request, HTTPException
 
 
 class TenantRateLimiter:
@@ -873,8 +848,12 @@ class TenantRateLimiter:
         self._minute_counts: dict[str, list[float]] = defaultdict(list)
         self._hour_counts: dict[str, list[float]] = defaultdict(list)
 
-    def check_rate_limit(self, tenant_id: str) -> None:
-        """Check if tenant has exceeded rate limits."""
+    def check_rate_limit(self, tenant_id: str) -> bool:
+        """Check if tenant is under rate limits and record the request.
+
+        Returns True if under limit (request allowed), False if exceeded.
+        The middleware is responsible for raising HTTPException — not this class.
+        """
         now = time.monotonic()
 
         # Clean old entries and check per-minute
@@ -883,11 +862,7 @@ class TenantRateLimiter:
             t for t in self._minute_counts[tenant_id] if t > minute_ago
         ]
         if len(self._minute_counts[tenant_id]) >= self.rpm_limit:
-            raise HTTPException(
-                429,
-                detail=f"Rate limit exceeded: {self.rpm_limit} requests/minute",
-                headers={"Retry-After": "60"},
-            )
+            return False
 
         # Check per-hour
         hour_ago = now - 3600
@@ -895,22 +870,40 @@ class TenantRateLimiter:
             t for t in self._hour_counts[tenant_id] if t > hour_ago
         ]
         if len(self._hour_counts[tenant_id]) >= self.rph_limit:
-            raise HTTPException(
-                429,
-                detail=f"Rate limit exceeded: {self.rph_limit} requests/hour",
-                headers={"Retry-After": "3600"},
-            )
+            return False
 
         # Record this request
         self._minute_counts[tenant_id].append(now)
         self._hour_counts[tenant_id].append(now)
+        return True
 ```
 
-For production: replace in-memory dicts with Redis using sliding window counters:
+The app already has optional Redis support (`server/cache.py`). Use a backend interface:
+
 ```python
-# Redis key: rate_limit:{tenant_id}:minute:{window}
-# Use INCR + EXPIRE for atomic counting
+from abc import ABC, abstractmethod
+
+class RateLimitBackend(ABC):
+    @abstractmethod
+    async def check_and_increment(self, key: str, limit: int, window_seconds: int) -> bool:
+        """Return True if under limit (and increment counter), False if exceeded."""
+        ...
+
+class InMemoryRateLimitBackend(RateLimitBackend):
+    """For single-instance deployments. Uses the TenantRateLimiter above."""
+    ...
+
+class RedisRateLimitBackend(RateLimitBackend):
+    """For multi-instance deployments. Uses INCR + EXPIRE sliding window."""
+    async def check_and_increment(self, key: str, limit: int, window_seconds: int) -> bool:
+        pipe = self._redis.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, window_seconds)
+        count, _ = await pipe.execute()
+        return count <= limit
 ```
+
+The middleware instantiates the correct backend based on settings — never two code paths at runtime.
 
 ### 2.6 OpenTelemetry Tracing
 
@@ -925,6 +918,7 @@ For production: replace in-memory dicts with Redis using sliding window counters
 """OpenTelemetry distributed tracing setup."""
 
 from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -1028,11 +1022,11 @@ def __post_init__(self):
 
 **Plan:**
 
-Add async context manager to the Protocol and base:
+Add async context manager to the protocol. **Note:** Section 3.4 renames `Adapter` to `ReadAdapter` — implement these together or do 3.4 first. The lifecycle methods go on `ReadAdapter`:
 ```python
 # adapters/base.py
-class Adapter(Protocol):
-    async def __aenter__(self) -> "Adapter":
+class ReadAdapter(Protocol):
+    async def __aenter__(self) -> "ReadAdapter":
         """Initialize adapter resources (connections, sessions)."""
         ...
 
@@ -1040,7 +1034,7 @@ class Adapter(Protocol):
         """Clean up adapter resources."""
         ...
 
-    # ... existing methods ...
+    # ... existing methods (list_files, read_file, etc.) ...
 ```
 
 Implement in `graph_base.py`:
@@ -1139,15 +1133,9 @@ class RemediationAdapter(Protocol):
     async def set_acl(self, file_info: FileInfo, acl: dict) -> bool: ...
 
 
-# Type alias for adapters that support both
-FullAdapter = ReadAdapter  # All adapters are ReadAdapter
-
-
 def supports_remediation(adapter: ReadAdapter) -> bool:
     """Check if an adapter supports remediation operations."""
-    return isinstance(adapter, RemediationAdapter) or (
-        hasattr(adapter, 'supports_remediation') and adapter.supports_remediation()
-    )
+    return isinstance(adapter, RemediationAdapter)
 ```
 
 ### 3.5 Adapter Health Checks
@@ -1194,10 +1182,11 @@ class AdapterHealthChecker:
 
     async def check_all(self) -> Dict[str, AdapterHealth]:
         for name, adapter in self._adapters.items():
-            start = asyncio.get_event_loop().time()
+            loop = asyncio.get_running_loop()
+            start = loop.time()
             try:
                 healthy = await adapter.test_connection({})
-                latency = (asyncio.get_event_loop().time() - start) * 1000
+                latency = (loop.time() - start) * 1000
                 self._health[name] = AdapterHealth(
                     adapter_type=name, healthy=healthy,
                     last_check=datetime.now(timezone.utc), latency_ms=latency,
@@ -1248,7 +1237,8 @@ async def get_jwks(tenant_id: str) -> dict:
 
     # Acquire lock for cache update
     async with _jwks_lock:
-        # Double-check after acquiring lock (another coroutine may have updated)
+        # Re-check time after acquiring lock (may have waited)
+        now = time.monotonic()
         if tenant_id in _jwks_cache:
             cached_data, fetched_at = _jwks_cache[tenant_id]
             if now - fetched_at < _JWKS_CACHE_TTL_SECONDS:
@@ -1286,40 +1276,15 @@ async def _find_signing_key(kid: str, tenant_id: str) -> dict:
         if k.get("kid") == kid:
             return k
 
-    raise TokenError("Unable to find signing key after cache refresh")
+    raise TokenInvalidError("Unable to find signing key after cache refresh")
 ```
 
 ### 4.3 Granular Token Error Types
 
 **Complexity:** S
-**Files to create:** `auth/exceptions.py`
 **Files to modify:** `auth/oauth.py`
 
-```python
-# auth/exceptions.py
-class AuthError(Exception):
-    """Base authentication error."""
-    pass
-
-class TokenExpiredError(AuthError):
-    """Token has expired. Client should refresh."""
-    pass
-
-class TokenInvalidError(AuthError):
-    """Token is malformed or signature invalid. Client should re-authenticate."""
-    pass
-
-class TokenRevokedError(AuthError):
-    """Token has been revoked. Client should re-authenticate."""
-    pass
-
-class InsufficientPermissionsError(AuthError):
-    """User lacks required role/permission."""
-    def __init__(self, required: str, actual: list[str]):
-        self.required = required
-        self.actual = actual
-        super().__init__(f"Required role '{required}', user has: {actual}")
-```
+**Note:** The exception classes (`AuthError`, `TokenExpiredError`, `TokenInvalidError`) are defined in the unified hierarchy (Section 14.1, `openlabels/exceptions.py`). Do NOT create a separate `auth/exceptions.py` — import from `openlabels.exceptions` instead.
 
 Update `validate_token()`:
 ```python
@@ -1339,46 +1304,30 @@ except JWTError as e:
 **Files to modify:** `auth/dependencies.py`
 
 ```python
-# auth/dependencies.py - add role-based access control
+# auth/dependencies.py - add to existing file (get_current_user and CurrentUser are already defined here)
 
-from functools import wraps
-from fastapi import Depends, HTTPException
-from .exceptions import InsufficientPermissionsError
-
-
-def require_role(*roles: str):
+def require_role(*allowed_roles: str):
     """FastAPI dependency that enforces role-based access.
+
+    Note: CurrentUser.role is a single string (e.g., "admin", "operator", "viewer").
+    The existing `require_admin` dependency checks `user.role != "admin"`.
+    This generalizes it to accept multiple allowed roles.
 
     Usage:
         @router.delete("/{id}", dependencies=[Depends(require_role("admin"))])
         async def delete_item(id: UUID): ...
     """
     async def _check_role(user: CurrentUser = Depends(get_current_user)):
-        if not any(role in user.roles for role in roles):
+        if user.role not in allowed_roles:
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires one of roles: {roles}. User has: {user.roles}",
+                detail=f"Requires one of roles: {allowed_roles}. User has: {user.role}",
             )
         return user
     return _check_role
 
 
-def require_any_role(*roles: str):
-    """Require user to have at least one of the specified roles."""
-    return require_role(*roles)
-
-
-def require_all_roles(*roles: str):
-    """Require user to have ALL specified roles."""
-    async def _check_roles(user: CurrentUser = Depends(get_current_user)):
-        missing = [r for r in roles if r not in user.roles]
-        if missing:
-            raise HTTPException(403, detail=f"Missing roles: {missing}")
-        return user
-    return _check_roles
-
-
-# Pre-built dependencies for common roles
+# Pre-built dependencies for common roles (replaces existing require_admin)
 require_admin = require_role("admin")
 require_operator = require_role("admin", "operator")
 require_viewer = require_role("admin", "operator", "viewer")
@@ -1424,14 +1373,27 @@ def common_options(f):
 
 
 def api_client_options(f):
-    """Decorator that injects a configured API client."""
+    """Decorator that injects a configured API client.
+
+    Note: OpenLabelsClient is async (Section 13.1). CLI commands are sync (click).
+    This decorator bridges the gap with asyncio.run() and proper cleanup.
+    """
     @common_options
     @functools.wraps(f)
     def wrapper(*args, server, token, **kwargs):
+        import asyncio
         from openlabels.client import OpenLabelsClient
-        client = OpenLabelsClient(base_url=server, token=token)
-        kwargs["client"] = client
-        return f(*args, **kwargs)
+
+        async def _run():
+            async with OpenLabelsClient(base_url=server, token=token) as client:
+                kwargs["client"] = client
+                # If the wrapped function is async, await it
+                result = f(*args, **kwargs)
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+
+        return asyncio.run(_run())
     return wrapper
 ```
 
@@ -1709,25 +1671,28 @@ class APIWorkerThread(QThread):
         super().__init__()
         self._base_url = base_url
         self._token = token
-        self._queue: list[APIRequest] = []
+        # Thread-safe queue — accessed from GUI thread (enqueue) and worker thread (get)
+        from queue import Queue, Empty
+        self._queue: Queue[APIRequest] = Queue()
         self._running = True
 
     def enqueue(self, request: APIRequest):
-        self._queue.append(request)
+        self._queue.put(request)
 
     def run(self):
         """Process queued requests in background thread."""
+        from queue import Empty
         with httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._token}"} if self._token else {},
             timeout=10.0,
         ) as client:
             while self._running:
-                if not self._queue:
-                    self.msleep(50)
+                try:
+                    request = self._queue.get(timeout=0.1)
+                except Empty:
                     continue
 
-                request = self._queue.pop(0)
                 try:
                     response = client.request(
                         request.method,
@@ -1920,18 +1885,45 @@ async def dequeue(self, worker_id: str, max_concurrent: int | None = None) -> Jo
     # ... existing dequeue logic
 ```
 
-### 7.2 Job Completion Webhooks
+### 7.2 Job Completion Callbacks
 
-**Complexity:** M
-**Files to create:** `jobs/webhooks.py`
+**Complexity:** S
+**Files to modify:** `jobs/queue.py`
 
-Design only — implement when webhook subscription API is ready:
+**Plan:**
+
+Add a simple callback mechanism to the job queue. No webhook infrastructure needed — just let callers register post-completion hooks:
+
 ```python
-async def notify_job_completed(job: JobQueueModel):
-    """Send webhook notification for completed job."""
-    # Look up subscriptions for this tenant + task_type
-    # POST to callback URL with job result
+# jobs/queue.py
+from typing import Callable, Awaitable
+
+JobCallback = Callable[["JobQueueModel"], Awaitable[None]]
+
+class JobQueue:
+    def __init__(self, session, tenant_id, on_complete: JobCallback | None = None):
+        self._on_complete = on_complete
+        # ...
+
+    async def mark_completed(self, job_id, result=None):
+        # ... existing completion logic ...
+        if self._on_complete:
+            await self._on_complete(job)
 ```
+
+This keeps it simple and extensible. When a webhook API is needed later, the webhook sender just becomes one implementation of `JobCallback`.
+
+### 7.3 Horizontal Scaling Path (future)
+
+**Complexity:** N/A (informational — no code changes now)
+
+The current `SELECT FOR UPDATE SKIP LOCKED` job queue already supports multiple consumers by design. If the single-server deployment ever becomes a bottleneck, the scaling path is straightforward:
+
+1. **Run a second worker process** pointing at the same PostgreSQL database. The `SKIP LOCKED` pattern means both workers will dequeue different jobs without conflicts. No code changes needed.
+2. **Split API and worker processes.** Run the FastAPI server and the job worker as separate processes (or containers). They share the same database. The API enqueues jobs; workers dequeue and execute. This is a deployment change, not a code change.
+3. **Only if PostgreSQL becomes the bottleneck** (unlikely below millions of jobs/day): consider Celery or Dramatiq with Redis/RabbitMQ as the broker. This is a significant rewrite and should not be done preemptively.
+
+The key insight: the current architecture already supports step 1 and 2 with zero code changes. Don't add distributed task queue infrastructure until you've measured that PostgreSQL job throughput is the actual bottleneck.
 
 ---
 
@@ -2080,7 +2072,7 @@ async def apply_labels_batch(
 
 import json
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -2122,7 +2114,7 @@ class QuarantineManifest:
         with open(self._path, "w") as f:
             json.dump({
                 "entries": [asdict(e) for e in self._entries.values()],
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }, f, indent=2)
 
     def add(self, original_path: Path, quarantine_path: Path,
@@ -2132,7 +2124,7 @@ class QuarantineManifest:
             id=str(uuid4()),
             original_path=str(original_path),
             quarantine_path=str(quarantine_path),
-            quarantined_at=datetime.utcnow().isoformat(),
+            quarantined_at=datetime.now(timezone.utc).isoformat(),
             reason=reason,
             risk_tier=risk_tier,
             triggered_by=triggered_by,
@@ -2151,7 +2143,7 @@ class QuarantineManifest:
     def mark_restored(self, entry_id: str):
         if entry_id in self._entries:
             self._entries[entry_id].restored = True
-            self._entries[entry_id].restored_at = datetime.utcnow().isoformat()
+            self._entries[entry_id].restored_at = datetime.now(timezone.utc).isoformat()
             self._save()
 
     def list_active(self) -> list[QuarantineEntry]:
@@ -2336,8 +2328,19 @@ def enable_monitoring_batch(
 
 def _enable_batch_windows(paths: list[Path], risk_tier: str) -> list[MonitoringResult]:
     """Single PowerShell invocation for all files."""
-    # Build one script with a loop
-    path_list = "\n".join(f'    "{str(p.resolve())}"' for p in paths)
+    # Validate all paths before building script (same rules as _enable_monitoring_windows)
+    _INJECTION_CHARS = set('"\'`$\n\r;&|')
+    validated_paths = []
+    results = []
+    for p in paths:
+        resolved = str(p.resolve())
+        if any(c in resolved for c in _INJECTION_CHARS):
+            results.append(MonitoringResult(success=False, path=p, error="Path contains invalid characters"))
+        else:
+            validated_paths.append(resolved)
+
+    # Build one script with a loop (only validated paths)
+    path_list = "\n".join(f'    "{p}"' for p in validated_paths)
     ps_script = f'''
 $paths = @(
 {path_list}
@@ -2415,101 +2418,18 @@ class EventCollector:
 **Current Rating:** 0 (OK) → **Target:** 3 (Best)
 **Module Path:** `src/openlabels/web/`
 
-### 11.1 Template Architecture
+**Status:** Skip for now. The existing `web/routes.py` has significant code (1400+ lines with HTMX partials, form handlers, etc.) but the architecture needs a from-scratch rebuild to reach Best. The current implementation bypasses the service layer by querying the database directly, lacks proper auth flow and CSRF protection, and has duplicated business logic.
 
-**Complexity:** L
-**Files to create:**
-- `web/templates/base.html` — base layout with nav, scripts, styles
-- `web/templates/components/` — reusable HTMX components
-- `web/templates/pages/` — full page templates
-- `web/templates/partials/` — HTMX partial responses
-- `web/static/` — CSS/JS assets
-- `web/tailwind.config.js`, `web/package.json` — build tooling
+**When ready to implement:** Build from scratch with:
+- HTMX + Tailwind + Alpine.js stack
+- Proper base template architecture (`base.html`, `components/`, `pages/`, `partials/`)
+- Web routes that call through the service layer (Section 2.1), not raw DB queries
+- Session-based auth flow with login redirect
+- CSRF token validation on all form submissions
+- Structured error states for partials (not silent empty data)
+- Static asset pipeline with Tailwind build step
 
-```html
-<!-- web/templates/base.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}OpenLabels{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
-    <script src="https://unpkg.com/htmx.org@1.9"></script>
-    <script src="https://unpkg.com/alpinejs@3.x"></script>
-    <meta name="csrf-token" content="{{ csrf_token }}">
-</head>
-<body class="bg-gray-50">
-    {% include "components/nav.html" %}
-    <main class="container mx-auto px-4 py-6">
-        {% block content %}{% endblock %}
-    </main>
-    {% block scripts %}{% endblock %}
-</body>
-</html>
-```
-
-### 11.2 Core Pages
-
-Map each page to existing API endpoints:
-
-| Page | Template | API Endpoints |
-|------|----------|---------------|
-| Dashboard | `pages/dashboard.html` | `GET /api/v1/dashboard/stats`, `/entity-trends`, `/access-heatmap` |
-| Scans | `pages/scans.html` | `GET/POST /api/v1/scans` |
-| Results | `pages/results.html` | `GET /api/v1/results` |
-| Targets | `pages/targets.html` | `GET/POST /api/v1/targets` |
-| Labels | `pages/labels.html` | `GET /api/v1/labels`, `/labels/rules` |
-| Settings | `pages/settings.html` | `GET/PUT /api/v1/settings` |
-| Health | `pages/health.html` | `GET /api/v1/health/status` |
-
-### 11.3 HTMX Partials Pattern
-
-```python
-# web/routes.py
-@router.get("/scans")
-async def scans_page(request: Request):
-    """Full page load."""
-    return templates.TemplateResponse("pages/scans.html", {"request": request})
-
-@router.get("/partials/scan-table")
-async def scan_table_partial(request: Request, page: int = 1):
-    """HTMX partial — just the table rows."""
-    # Fetch from API
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{API_BASE}/scans", params={"page": page})
-        data = resp.json()
-    return templates.TemplateResponse("partials/scan-table.html", {
-        "request": request, "scans": data["items"], "pagination": data,
-    })
-```
-
-```html
-<!-- pages/scans.html -->
-{% extends "base.html" %}
-{% block content %}
-<div hx-get="/web/partials/scan-table" hx-trigger="load" hx-swap="innerHTML">
-    <div class="animate-pulse">Loading scans...</div>
-</div>
-{% endblock %}
-```
-
-### 11.4 Static Asset Pipeline
-
-**Files to create:** `web/package.json`, `web/tailwind.config.js`, `web/postcss.config.js`
-
-```json
-// web/package.json
-{
-  "scripts": {
-    "build:css": "npx tailwindcss -i ./static/css/input.css -o ./static/css/app.css --minify",
-    "watch:css": "npx tailwindcss -i ./static/css/input.css -o ./static/css/app.css --watch"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.4"
-  }
-}
-```
+This is a large standalone effort. Prioritize the core platform improvements (Phases 0-3) first.
 
 ---
 
@@ -2618,6 +2538,9 @@ class OpenLabelsClient:
 
 ### 13.2 Retry Logic
 
+**Complexity:** S
+**Files to modify:** `client/client.py`
+
 ```python
 # client/client.py
 import asyncio
@@ -2648,24 +2571,39 @@ async def _request(self, method: str, url: str, max_retries: int = 3, **kwargs):
     raise last_error
 ```
 
-### 13.3 Auto-Pagination
+### 13.3 Auto-Pagination (Cursor-Based)
+
+Must be consistent with Section 2.4 and the existing `server/pagination.py` cursor format (base64-encoded `(id, timestamp)` composite cursor).
 
 ```python
 from typing import AsyncIterator
 
 async def list_all_scans(self, **filters) -> AsyncIterator[dict]:
-    """Auto-paginating scan iterator."""
-    page = 1
+    """Auto-paginating scan iterator using cursor-based pagination.
+
+    The server returns:
+      {"items": [...], "next_cursor": "<base64>", "has_more": true/false}
+    """
+    cursor = None
     while True:
-        data = await self.list_scans(page=page, **filters)
-        for item in data.get("items", []):
+        params = {**filters, "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        data = await self._request("GET", "/scans", params=params)
+        body = data.json()
+        for item in body.get("items", []):
             yield item
-        if page >= data.get("pages", 1):
+        if not body.get("has_more", False):
             break
-        page += 1
+        cursor = body.get("next_cursor")
+        if not cursor:
+            break
 ```
 
 ### 13.4 Complete API Coverage
+
+**Complexity:** M
+**Files to modify:** `client/client.py`
 
 Add methods for all missing endpoints:
 ```python
@@ -2709,6 +2647,13 @@ These span all modules and should be implemented as a foundation before module-s
 **Complexity:** M
 **Files to create:** `src/openlabels/exceptions.py`
 **Files to modify:** Every module's exception classes
+**Existing files to consolidate:**
+- `core/exceptions.py` — already has `OpenLabelsError`, `DetectionError`, `ExtractionError`, `AdapterError`, `GraphAPIError`, `FilesystemError`, `ConfigurationError`, `ModelLoadError`, `JobError`, `SecurityError`
+- `server/exceptions.py` — has `APIError`, `NotFoundError`, `ValidationError`, `RateLimitError`, `ConflictError`, `BadRequestError`, `InternalError`
+- `remediation/base.py` — has `RemediationError`, `QuarantineError`, `PermissionError`
+- `monitoring/base.py` — has `MonitoringError`, `SACLError`, `AuditRuleError`
+
+**The task is to consolidate these into one file**, not create from scratch. Move the best definitions into `src/openlabels/exceptions.py`, merge overlaps, and update every import across the codebase.
 
 ```python
 # src/openlabels/exceptions.py
@@ -2791,50 +2736,123 @@ class ConflictError(OpenLabelsError):
 class ValidationError(OpenLabelsError):
     """Input validation error."""
     pass
+
+
+class ExtractionError(OpenLabelsError):
+    """Error during text/content extraction from files."""
+    pass
+
+
+class GraphAPIError(AdapterError):
+    """Microsoft Graph API error with response details."""
+    def __init__(self, message: str, status_code: int | None = None,
+                 error_code: str | None = None):
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
+
+class FilesystemError(AdapterError):
+    """Local filesystem adapter error."""
+    pass
+
+
+class ModelLoadError(OpenLabelsError):
+    """ML model loading failure."""
+    pass
+
+
+class JobError(OpenLabelsError):
+    """Background job processing failure."""
+    pass
+
+
+class SACLError(MonitoringError):
+    """Windows SACL audit rule error."""
+    pass
+
+
+class AuditRuleError(MonitoringError):
+    """Linux auditd rule error."""
+    pass
+
+
+# --- API-layer exceptions (used by server error handlers) ---
+
+class APIError(OpenLabelsError):
+    """Base for API-specific errors with HTTP status code."""
+    status_code: int = 500
+    def __init__(self, message: str, status_code: int = 500):
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class BadRequestError(APIError):
+    """400 Bad Request."""
+    def __init__(self, message: str = "Bad request"):
+        super().__init__(message, status_code=400)
+
+
+class ForbiddenError(AuthError):
+    """403 Forbidden — authenticated but insufficient permissions."""
+    pass
+
+
+class RateLimitError(APIError):
+    """429 Too Many Requests."""
+    def __init__(self, message: str = "Rate limit exceeded"):
+        super().__init__(message, status_code=429)
+
+
+class InternalError(APIError):
+    """500 Internal Server Error."""
+    def __init__(self, message: str = "Internal server error"):
+        super().__init__(message, status_code=500)
+
+
+class SecurityError(OpenLabelsError):
+    """Security check failure (path traversal, injection, etc.)."""
+    pass
+
+
+class ConfigurationError(ConfigError):
+    """Alias for ConfigError — matches existing core/exceptions.py naming."""
+    pass
 ```
 
-**Migration plan:**
-1. Create `exceptions.py` with full hierarchy
-2. Module by module, make existing exceptions inherit from the appropriate base
-3. Update catch blocks to use the new hierarchy
-4. Phase: core → server → adapters → auth → labeling → remediation → monitoring
+**Refactor scope:** Do this all at once, not phased:
+1. Create `exceptions.py` by consolidating from `core/exceptions.py`, `server/exceptions.py`, `remediation/base.py`, and `monitoring/base.py`
+2. Delete all per-module exception definitions after moving them
+3. Replace every import and catch block across the entire codebase to use the unified hierarchy
+4. No old exception classes should remain — the unified hierarchy is the single source of truth
 
 ### 14.2 Strict Type Safety (mypy)
 
-**Complexity:** L (phased rollout)
-**Files to modify:** `pyproject.toml`, then every module gradually
+**Complexity:** L
+**Files to modify:** `pyproject.toml`, every module
+
+Enable strict mypy across the entire project. Fix all type errors in one pass.
 
 Add to `pyproject.toml`:
 ```toml
 [tool.mypy]
 python_version = "3.10"
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+no_implicit_reexport = true
 
-# Start strict per-module
+# PySide6 stubs are incomplete, need explicit overrides
 [[tool.mypy.overrides]]
-module = "openlabels.core.*"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "openlabels.server.*"
-strict = true
-
-# Relax for GUI (PySide6 stubs are incomplete)
-[[tool.mypy.overrides]]
-module = "openlabels.gui.*"
-disallow_untyped_defs = false
+module = "PySide6.*"
+ignore_missing_imports = true
 ```
 
 Create `src/openlabels/py.typed` marker file (empty).
 
-**Phased rollout:**
-1. Phase 1: `core/types.py`, `core/detectors/base.py`, `server/schemas/` — already well-typed
-2. Phase 2: `server/services/`, `adapters/base.py`, `auth/` — moderate effort
-3. Phase 3: `jobs/`, `labeling/`, `remediation/`, `monitoring/` — medium effort
-4. Phase 4: `cli/`, `gui/`, `web/`, `windows/`, `client/` — most effort
+**Refactor scope:** Run `mypy --strict src/openlabels/` and fix every error. Replace all bare `dict`, `list`, `tuple` with proper generics. Add return types to every function. No `# type: ignore` unless there's a genuine stubs issue (e.g., PySide6). This is a single effort, not a phased rollout.
 
 ### 14.3 Structured Logging Convention
 
@@ -2859,6 +2877,14 @@ import json
 class StructuredFormatter(logging.Formatter):
     """JSON formatter for structured log output."""
 
+    # Standard LogRecord attributes to exclude from extra fields
+    _BUILTIN_ATTRS = frozenset({
+        "name", "msg", "args", "created", "relativeCreated", "exc_info",
+        "exc_text", "stack_info", "lineno", "funcName", "pathname", "filename",
+        "module", "thread", "threadName", "process", "processName", "getMessage",
+        "levelname", "levelno", "msecs", "taskName", "message",
+    })
+
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
             "timestamp": self.formatTime(record),
@@ -2867,17 +2893,15 @@ class StructuredFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Include extra fields
-        for key in ("tenant_id", "scan_id", "job_id", "user_id",
-                     "adapter", "detector", "file_path", "entity_type",
-                     "duration_ms", "error"):
-            if hasattr(record, key):
-                log_entry[key] = getattr(record, key)
+        # Automatically capture ALL extra fields (no hardcoded list)
+        for key, value in record.__dict__.items():
+            if key not in self._BUILTIN_ATTRS and not key.startswith("_"):
+                log_entry[key] = value
 
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
 
-        return json.dumps(log_entry)
+        return json.dumps(log_entry, default=str)
 ```
 
 ### 14.4 Testing Strategy
@@ -2910,56 +2934,180 @@ def test_ssn_pattern_always_matches(ssn):
     assert len(ssn_spans) >= 1
 ```
 
+### 14.5 Database Connection Pool Configuration
+
+**Complexity:** S
+**Files to modify:** `server/db.py`, `server/config.py`
+
+**Current state:** SQLAlchemy async engine is created with default pool settings. Under load (concurrent API requests + async detection threads + job workers), the defaults will cause "too many connections" errors or connection starvation.
+
+**Plan:**
+
+```python
+# server/db.py
+from sqlalchemy.ext.asyncio import create_async_engine
+
+def create_engine(settings):
+    return create_async_engine(
+        settings.database_url,
+        # Pool sizing — these numbers assume a single-server deployment.
+        # Rule of thumb: pool_size = expected_concurrent_requests
+        # max_overflow = burst headroom (temporary connections beyond pool_size)
+        pool_size=20,          # Persistent connections in the pool
+        max_overflow=10,       # Burst capacity (pool_size + max_overflow = 30 max)
+        pool_timeout=30,       # Seconds to wait for a connection before erroring
+        pool_recycle=1800,     # Recycle connections after 30min (prevents stale connections)
+        pool_pre_ping=True,    # Verify connection is alive before using it
+        echo=settings.debug,   # SQL logging in debug mode only
+    )
+```
+
+Add to `server/config.py`:
+```python
+class DatabaseSettings(BaseSettings):
+    url: str
+    pool_size: int = 20
+    max_overflow: int = 10
+    pool_recycle: int = 1800
+```
+
+**Sizing rationale:**
+- Detection thread pool uses 4 threads (Section 1.3), each may hold a connection
+- Job worker(s) hold 1-2 connections for dequeue + status updates
+- API request concurrency depends on uvicorn workers (default: 1 process, many async tasks)
+- 20 pool + 10 overflow = 30 max connections, well within PostgreSQL's default 100 limit
+- `pool_pre_ping=True` adds a tiny overhead per checkout but prevents "connection already closed" errors
+
+### 14.6 Alembic Migration Discipline
+
+**Complexity:** S
+**Files to modify:** `alembic/env.py` (if not already configured)
+
+Any schema changes (new columns for SpanContext, cursor pagination bookmarks, etc.) must go through Alembic migrations. Each section that modifies database models should include migration steps.
+
+**Convention:**
+```bash
+# Generate migration after model changes
+alembic revision --autogenerate -m "add span_context to scan_results"
+
+# Review the generated migration before applying
+alembic upgrade head
+```
+
+No raw `CREATE TABLE` or `ALTER TABLE` statements. Alembic is the single source of truth for schema evolution.
+
 ---
 
 ## Implementation Priority Order
 
 Recommended order for maximum impact with minimum risk:
 
-### Phase 0: Foundation (do first)
-1. **14.1** Unified Exception Hierarchy — S/M effort, unblocks clean error handling everywhere
-2. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
+### Phase 0: Foundation (do first — blocks everything else)
+1. **14.1** Unified Exception Hierarchy — M effort, consolidate 4 exception files into one
+2. **14.2** mypy strict — L effort, catches bugs before they're written
+3. **14.5** Database Connection Pool Configuration — S effort, prevents production issues
+4. **3.1** Fix FilterConfig Mutation Bug — S effort, critical correctness fix
+5. **8.2** Fix deprecated `asyncio.get_event_loop()` in labeling — S effort
 
 ### Phase 1: Critical Fixes
-3. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
-4. **13.1** Client Persistent Connection — M effort, major perf improvement
-5. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
+6. **6.1** Fix GUI Blocking HTTP Calls — L effort, highest user-visible impact
+7. **6.2** Fix Hardcoded Tab Indices — S effort, do with 6.1
+8. **6.3** Loading States — M effort, do with 6.1
+9. **13.1** Client Persistent Connection — M effort, major perf improvement
+10. **4.1** Thread-Safe JWKS Cache — S effort, concurrency fix
+11. **4.2** JWKS Refresh on Key-Not-Found — S effort, do with 4.1
+12. **10.1** Thread-Safe _watched_files — S effort, concurrency fix
 
 ### Phase 2: Architecture Upgrades
-6. **2.3** Split app.py — M effort, improves maintainability
-7. **2.1** Service Dependency Injection — M effort, cleaner route handlers
-8. **1.1** Detector Plugin Registry — M effort, extensibility
-9. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
+13. **2.3** Split app.py — M effort, improves maintainability
+14. **2.1** Service Dependency Injection — M effort, cleaner route handlers
+15. **1.1** Configuration-Driven Detector Setup — M effort, clean config
+16. **1.2** Immutable Pattern Definitions — M effort, can parallel with 1.1
+17. **3.4** Split Fat Protocol Interface — M effort, cleaner adapter contracts
+18. **3.2** Adapter Lifecycle Management — M effort, do with 3.4
+19. **2.4** Cursor Pagination — M effort, extend existing implementation
+20. **2.5** Per-Tenant Rate Limiting — S effort, do with 2.4
+21. **14.3** Structured Logging Convention — M effort
 
 ### Phase 3: Feature Additions
-10. **5.3** `openlabels doctor` — M effort, huge DX improvement
-11. **1.3** Async Detection — M effort, server performance
-12. **8.1** Labeling Code Deduplication — M effort, maintainability
-13. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
+22. **5.3** `openlabels doctor` — M effort, huge DX improvement
+23. **1.3** Async Detection — M effort, biggest server performance unlock
+24. **8.1** Labeling Code Deduplication — M effort, maintainability
+25. **8.3** Batch Labeling — M effort, do with 8.1
+26. **9.1-9.3** Quarantine Manifest + Restore + Integrity — M effort combined
+27. **4.3-4.4** Granular Token Errors + RBAC — S+M effort, security
+28. **3.3** Adapter-Level Circuit Breaker — M effort
+29. **3.5** Adapter Health Checks — S effort, do with 3.3
+30. **7.1-7.2** Job max concurrency + callbacks — S effort combined
+31. **13.2** Client Retry Logic — S effort
 
 ### Phase 4: Polish
-14. **2.2** Response Schema Declarations — M effort, API documentation
-15. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
-16. **4.4** RBAC Dependencies — M effort, security
-17. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
-18. **10.1-10.4** Monitoring improvements — M effort combined
+32. **2.2** Response Schema Declarations — M effort, API documentation (requires 2.1)
+33. **5.1-5.2** CLI Base + Output Formatter — M effort, CLI DX
+34. **5.4** Progress Indicators — S effort, do with 5.1-5.2
+35. **1.4-1.5** Confidence Calibration + Span Resolution — M effort, detection quality
+36. **1.6** Structured Result Metadata — S effort, do with 1.4-1.5
+37. **10.2-10.4** Monitoring improvements — M+L effort combined
+38. **12.1-12.6** Windows tray improvements — M effort combined
+39. **13.3-13.4** Client auto-pagination + API coverage — M effort
+40. **2.6** OpenTelemetry Tracing — L effort, observability
+41. **14.4** Testing Strategy (property-based tests) — L effort
+42. **14.6** Alembic Migration Discipline — S effort (conventions, not code)
 
 ### Phase 5: New Capabilities
-19. **11.x** Web UI buildout — L effort, new feature
-20. **2.6** OpenTelemetry Tracing — L effort, observability
-21. **2.4** Cursor Pagination — M effort, scalability
-22. **14.2** mypy strict rollout — L effort, phased
+43. **11.x** Web UI rebuild — L effort, deferred (skip for now per project decision)
 
 ---
 
-## Estimated Total Effort
+## Estimated Total Effort (excluding Web rebuild)
 
 | Size | Count | Typical Effort |
 |------|-------|----------------|
-| S (Small) | 12 | 1-2 hours each |
-| M (Medium) | 28 | 3-6 hours each |
-| L (Large) | 5 | 8-16 hours each |
+| S (Small) | 11 | 1-2 hours each |
+| M (Medium) | 24 | 3-6 hours each |
+| L (Large) | 4 | 8-16 hours each |
 
-**Total estimated: ~180-280 hours of implementation work**
+**Total estimated: ~140-220 hours of implementation work** (not counting Web rebuild)
 
 This document is designed so each section can be handed to a Claude agent as a self-contained task. The priority order minimizes dependency conflicts and maximizes value delivered at each phase.
+
+---
+
+## Execution Guidelines
+
+Rules for implementing this plan, whether by hand or by agent.
+
+### Agent Execution Model
+
+Each numbered section (e.g., "1.1 Configuration-Driven Detector Setup") is a self-contained task. When handing a section to a Claude agent:
+
+1. **Give it the section text** plus the relevant source files it references
+2. **One section per agent** — don't combine sections into a single prompt
+3. **Agent must read actual source files before writing code** — the plans contain code *examples*, not copy-paste solutions. The agent must adapt to the real codebase
+4. **Run tests after each section completes** — `pytest` should pass before moving to the next section
+
+### Ordering Constraints
+
+- **Phase 0 must complete before anything else starts.** The unified exception hierarchy (14.1) changes imports across every module. mypy strict (14.2) changes type annotations everywhere. These are global changes.
+- **Within Phases 1-4, sections are independent** and can run in parallel — with one exception: Section 2.1 (Service DI) should complete before 2.2 (Response Schemas), since the schemas depend on the service layer structure.
+- **Section 1.2 (Pattern Registry) and 1.3 (Async Detection) can run in parallel** — one changes pattern storage, the other changes the orchestrator's execution model. They touch different parts of the orchestrator.
+- **Section 3.2 (Adapter Lifecycle) and 3.4 (Split Protocol) must be done together** — both modify `adapters/base.py` and the Protocol definition. 3.4 renames `Adapter` to `ReadAdapter`, and 3.2 adds lifecycle methods to it.
+- **Sections 1.4/1.5 (Calibration/Spans) should be done after 1.6 (SpanContext)** — 1.4 and 1.5 construct new Span objects and must include the `context` field added by 1.6.
+- **Section 5.1 (CLI Base) depends on 13.1 (Client Persistent Connection)** — the CLI decorator uses `async with OpenLabelsClient(...)` which requires the context manager from 13.1.
+
+### Quality Standards
+
+Every implementation must:
+- Pass `mypy --strict` (after Phase 0 enables it)
+- Have unit tests for new code (not necessarily 100% coverage, but all happy paths and key error paths)
+- Use `datetime.now(timezone.utc)` not `datetime.utcnow()`
+- Use `asyncio.get_running_loop()` not `asyncio.get_event_loop()`
+- Import exceptions from `openlabels.exceptions` (after Phase 0)
+- Not introduce any `# type: ignore` unless there's a genuine stubs issue (e.g., PySide6)
+
+### What Not to Do
+
+- **Don't add features not in this document.** If you think something is missing, flag it — don't implement it.
+- **Don't introduce new dependencies without discussion.** The PyYAML decision (Section 1.2) was specifically rejected in favor of keeping patterns in Python.
+- **Don't create backwards-compatibility shims.** Old code paths get deleted, not wrapped.
+- **Don't phase rollouts.** Each section is a complete refactor — no "migrate gradually" or "support both old and new for now."

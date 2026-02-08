@@ -32,7 +32,7 @@ from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
 )
-from openlabels.server.exceptions import NotFoundError, BadRequestError, InternalError
+from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
 from sqlalchemy.exc import SQLAlchemyError

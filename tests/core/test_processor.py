@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from openlabels.core.exceptions import (
+from openlabels.exceptions import (
     DetectionError,
     ExtractionError,
     SecurityError,
@@ -131,23 +131,17 @@ class TestFileProcessorInit:
         assert processor.enable_ocr is True
         assert processor._ocr_engine is None
         mock_ocr_init.assert_called_once()
-        mock_orch_cls.assert_called_once_with(
-            enable_ml=False,
-            ml_model_dir=None,
-            confidence_threshold=0.70,
-        )
+        from openlabels.core.detectors.config import DetectionConfig
+        mock_orch_cls.assert_called_once_with(config=DetectionConfig())
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     def test_ml_enabled(self, mock_ocr_init, mock_orch_cls):
         """ML-enabled processor passes enable_ml=True to orchestrator."""
-        processor = FileProcessor(enable_ml=True)
+        from openlabels.core.detectors.config import DetectionConfig
+        processor = FileProcessor(config=DetectionConfig(enable_ml=True))
 
-        mock_orch_cls.assert_called_once_with(
-            enable_ml=True,
-            ml_model_dir=None,
-            confidence_threshold=0.70,
-        )
+        mock_orch_cls.assert_called_once_with(config=DetectionConfig(enable_ml=True))
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
@@ -170,38 +164,36 @@ class TestFileProcessorInit:
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     def test_custom_confidence_threshold(self, mock_ocr_init, mock_orch_cls):
         """Custom confidence threshold is passed to orchestrator."""
-        processor = FileProcessor(confidence_threshold=0.95)
+        from openlabels.core.detectors.config import DetectionConfig
+        processor = FileProcessor(config=DetectionConfig(confidence_threshold=0.95))
 
-        mock_orch_cls.assert_called_once_with(
-            enable_ml=False,
-            ml_model_dir=None,
-            confidence_threshold=0.95,
-        )
+        mock_orch_cls.assert_called_once_with(config=DetectionConfig(confidence_threshold=0.95))
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     def test_custom_ml_model_dir(self, mock_ocr_init, mock_orch_cls):
         """Custom model directory is stored and passed to orchestrator."""
+        from openlabels.core.detectors.config import DetectionConfig
         custom_dir = Path("/custom/models")
-        processor = FileProcessor(ml_model_dir=custom_dir)
+        processor = FileProcessor(config=DetectionConfig(ml_model_dir=custom_dir))
 
         assert processor._ml_model_dir == custom_dir
-        mock_orch_cls.assert_called_once_with(
-            enable_ml=False,
-            ml_model_dir=custom_dir,
-            confidence_threshold=0.70,
-        )
+        mock_orch_cls.assert_called_once_with(config=DetectionConfig(ml_model_dir=custom_dir))
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     def test_all_options_combined(self, mock_ocr_init, mock_orch_cls):
         """All options can be set simultaneously."""
+        from openlabels.core.detectors.config import DetectionConfig
         custom_dir = Path("/models")
-        processor = FileProcessor(
+        config = DetectionConfig(
             enable_ml=True,
-            enable_ocr=True,
             ml_model_dir=custom_dir,
             confidence_threshold=0.85,
+        )
+        processor = FileProcessor(
+            config=config,
+            enable_ocr=True,
             max_file_size=1024 * 1024,
         )
 
@@ -1670,9 +1662,6 @@ class TestConvenienceFunction:
         result = await process_file_convenience(
             file_path="test.txt",
             content="hello",
-            enable_ml=False,
-            enable_ocr=False,
-            max_file_size=999,
         )
 
         assert isinstance(result, FileClassification)

@@ -22,6 +22,7 @@ from openlabels.auth.oauth import (
     clear_jwks_cache,
     _jwks_cache,
 )
+from openlabels.exceptions import TokenExpiredError, TokenInvalidError
 
 
 class TestTokenClaims:
@@ -220,7 +221,7 @@ class TestValidateToken:
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {}  # No kid
 
-                    with pytest.raises(ValueError, match="Unable to find signing key"):
+                    with pytest.raises(TokenInvalidError, match="Unable to find signing key"):
                         await validate_token("token-without-kid")
 
     async def test_unknown_kid_raises_error(self):
@@ -236,11 +237,11 @@ class TestValidateToken:
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "unknown-key"}
 
-                    with pytest.raises(ValueError, match="Unable to find signing key"):
+                    with pytest.raises(TokenInvalidError, match="Unable to find signing key"):
                         await validate_token("token-with-unknown-kid")
 
-    async def test_jwt_decode_error_wrapped(self):
-        """JWTError should be wrapped in ValueError."""
+    async def test_jwt_expired_error_raised(self):
+        """JWTError with 'expired' should raise TokenExpiredError."""
         from jose import JWTError
 
         mock_settings = MagicMock()
@@ -257,8 +258,29 @@ class TestValidateToken:
                     with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
                         mock_decode.side_effect = JWTError("Token expired")
 
-                        with pytest.raises(ValueError, match="Invalid token"):
+                        with pytest.raises(TokenExpiredError, match="Token expired"):
                             await validate_token("expired-token")
+
+    async def test_jwt_invalid_error_raised(self):
+        """JWTError without 'expired' should raise TokenInvalidError."""
+        from jose import JWTError
+
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "azure_ad"
+        mock_settings.auth.tenant_id = "test-tenant"
+        mock_settings.auth.client_id = "test-client"
+
+        mock_jwks = {"keys": [{"kid": "key1", "kty": "RSA", "n": "abc", "e": "AQAB"}]}
+
+        with patch("openlabels.auth.oauth.get_settings", return_value=mock_settings):
+            with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
+                with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
+                    mock_header.return_value = {"kid": "key1"}
+                    with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
+                        mock_decode.side_effect = JWTError("Malformed token")
+
+                        with pytest.raises(TokenInvalidError, match="Invalid token"):
+                            await validate_token("malformed-token")
 
     async def test_valid_token_extracts_claims(self):
         """Valid token should have claims extracted correctly."""
@@ -325,10 +347,10 @@ class TestClearJWKSCache:
 
     def test_clears_cache(self):
         """clear_jwks_cache should empty the cache."""
-        # Manually populate cache
+        # Manually populate cache with correct format: (jwks_data, fetched_at)
         from openlabels.auth import oauth
-        oauth._jwks_cache["tenant1"] = {"keys": []}
-        oauth._jwks_cache["tenant2"] = {"keys": []}
+        oauth._jwks_cache["tenant1"] = ({"keys": []}, 0.0)
+        oauth._jwks_cache["tenant2"] = ({"keys": []}, 0.0)
 
         assert len(oauth._jwks_cache) == 2
 

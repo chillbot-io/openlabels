@@ -2,7 +2,7 @@
 Base class for Microsoft Graph API adapters.
 
 Extracts shared logic between SharePointAdapter and OneDriveAdapter:
-- Client lifecycle (init, lazy creation, close)
+- Client lifecycle (init, lazy creation, close, async context manager)
 - Item-to-FileInfo conversion (datetime parsing, owner extraction)
 - Exposure level detection from sharing permissions
 - Connection testing with error handling
@@ -11,6 +11,7 @@ Extracts shared logic between SharePointAdapter and OneDriveAdapter:
 
 import logging
 from datetime import datetime, timezone
+from types import TracebackType
 from typing import Optional
 
 import httpx
@@ -68,6 +69,20 @@ class BaseGraphAdapter:
             await self._client.__aenter__()
             self._owns_client = True
         return self._client
+
+    async def __aenter__(self) -> "BaseGraphAdapter":
+        """Initialize the GraphClient connection."""
+        await self._get_client()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Close the GraphClient if we own it."""
+        await self.close()
 
     async def close(self) -> None:
         """Close the GraphClient if we own it."""

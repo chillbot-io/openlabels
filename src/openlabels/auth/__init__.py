@@ -22,6 +22,15 @@ def __getattr__(name: str):
     elif name == "require_admin":
         from openlabels.auth.dependencies import require_admin
         return require_admin
+    elif name == "require_role":
+        from openlabels.auth.dependencies import require_role
+        return require_role
+    elif name == "require_operator":
+        from openlabels.auth.dependencies import require_operator
+        return require_operator
+    elif name == "require_viewer":
+        from openlabels.auth.dependencies import require_viewer
+        return require_viewer
     elif name == "resolve_sid":
         from openlabels.auth.sid_resolver import resolve_sid
         return resolve_sid
@@ -52,6 +61,9 @@ __all__ = [
     "validate_token",
     "get_current_user",
     "require_admin",
+    "require_role",
+    "require_operator",
+    "require_viewer",
     # SID Resolution
     "resolve_sid",
     "resolve_sid_sync",

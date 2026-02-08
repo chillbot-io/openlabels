@@ -19,10 +19,11 @@ Entity Types:
 
 import re
 import hashlib
-from typing import List, Tuple
+from typing import List
 
 from ..types import Span, Tier
 from .base import BaseDetector
+from .pattern_registry import PatternDefinition, _p
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip,
     validate_isin as _validate_isin,
@@ -169,10 +170,10 @@ def _validate_ethereum(address: str) -> bool:
 
 
 # BIP-39 English word list (2048 words) — loaded lazily.
-_bip39_words: set | None = None
+_bip39_words: set[str] | None = None
 
 
-def _get_bip39_words() -> set:
+def _get_bip39_words() -> set[str]:
     """Load BIP-39 word list from bundled file or use embedded fallback."""
     global _bip39_words
     if _bip39_words is not None:
@@ -309,68 +310,55 @@ def _validate_seed_phrase(text: str) -> bool:
 # PATTERNS
 # =============================================================================
 
-FINANCIAL_PATTERNS: List[Tuple[re.Pattern, str, float, int, callable]] = []
+FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
+    # --- SECURITY IDENTIFIERS ---
+    _p(r'(?:CUSIP)[:\s#]+([A-Z0-9]{9})\b', 'CUSIP', 0.98, 1, _validate_cusip, flags=re.I),
+    _p(r'\b([0-9]{3}[A-Z0-9]{5}[0-9])\b', 'CUSIP', 0.85, 1, _validate_cusip),
 
+    _p(r'(?:ISIN)[:\s#]+([A-Z]{2}[A-Z0-9]{10})\b', 'ISIN', 0.98, 1, _validate_isin, flags=re.I),
+    _p(r'\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b', 'ISIN', 0.85, 1, _validate_isin),
 
-def _add(pattern: str, entity_type: str, confidence: float, group: int = 0,
-         validator: callable = None, flags: int = 0):
-    """Helper to add patterns with optional validator."""
-    FINANCIAL_PATTERNS.append((
-        re.compile(pattern, flags),
-        entity_type,
-        confidence,
-        group,
-        validator
-    ))
+    _p(r'(?:SEDOL)[:\s#]+([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.98, 1, _validate_sedol, flags=re.I),
+    _p(r'\b([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.70, 1, _validate_sedol),
 
+    _p(r'(?:SWIFT|BIC)[:\s#]+([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.98, 1, _validate_swift, flags=re.I),
 
-# --- SECURITY IDENTIFIERS ---
-_add(r'(?:CUSIP)[:\s#]+([A-Z0-9]{9})\b', 'CUSIP', 0.98, 1, _validate_cusip, re.I)
-_add(r'\b([0-9]{3}[A-Z0-9]{5}[0-9])\b', 'CUSIP', 0.85, 1, _validate_cusip)
+    _p(r'(?:LEI)[:\s#]+([A-Z0-9]{20})\b', 'LEI', 0.98, 1, _validate_lei, flags=re.I),
+    _p(r'\b([A-Z0-9]{18}[0-9]{2})\b', 'LEI', 0.80, 1, _validate_lei),
 
-_add(r'(?:ISIN)[:\s#]+([A-Z]{2}[A-Z0-9]{10})\b', 'ISIN', 0.98, 1, _validate_isin, re.I)
-_add(r'\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b', 'ISIN', 0.85, 1, _validate_isin)
+    _p(r'(?:FIGI)[:\s#]+([A-Z0-9]{12})\b', 'FIGI', 0.98, 1, flags=re.I),
+    _p(r'\b(BBG[A-Z0-9]{9})\b', 'FIGI', 0.95, 1),
 
-_add(r'(?:SEDOL)[:\s#]+([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.98, 1, _validate_sedol, re.I)
-_add(r'\b([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.70, 1, _validate_sedol)
+    # --- CRYPTOCURRENCY ---
+    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
+       'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
+    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
+       'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
+    _p(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
+       'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
+    _p(r'\b(bc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58,})\b',
+       'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
 
-_add(r'(?:SWIFT|BIC)[:\s#]+([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.98, 1, _validate_swift, re.I)
+    _p(r'\b(0x[a-fA-F0-9]{40})\b', 'ETHEREUM_ADDRESS', 0.98, 1, _validate_ethereum),
 
-_add(r'(?:LEI)[:\s#]+([A-Z0-9]{20})\b', 'LEI', 0.98, 1, _validate_lei, re.I)
-_add(r'\b([A-Z0-9]{18}[0-9]{2})\b', 'LEI', 0.80, 1, _validate_lei)
+    _p(r'\b(addr1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{50,})\b', 'CARDANO_ADDRESS', 0.95, 1, flags=re.I),
 
-_add(r'(?:FIGI)[:\s#]+([A-Z0-9]{12})\b', 'FIGI', 0.98, 1, None, re.I)
-_add(r'\b(BBG[A-Z0-9]{9})\b', 'FIGI', 0.95, 1, None)
+    _p(r'\b([LM][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
+       'LITECOIN_ADDRESS', 0.85, 1),
+    _p(r'\b(ltc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b', 'LITECOIN_ADDRESS', 0.95, 1, flags=re.I),
 
-# --- CRYPTOCURRENCY ---
-_add(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
-     'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58)
-_add(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
-     'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58)
-_add(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
-     'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, re.I)
-_add(r'\b(bc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58,})\b',
-     'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, re.I)
+    _p(r'\b(D[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
+       'DOGECOIN_ADDRESS', 0.80, 1),
 
-_add(r'\b(0x[a-fA-F0-9]{40})\b', 'ETHEREUM_ADDRESS', 0.98, 1, _validate_ethereum)
+    _p(r'\b(r[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,34})\b',
+       'XRP_ADDRESS', 0.80, 1),
 
-_add(r'\b(addr1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{50,})\b', 'CARDANO_ADDRESS', 0.95, 1, None, re.I)
-
-_add(r'\b([LM][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
-     'LITECOIN_ADDRESS', 0.85, 1, None)
-_add(r'\b(ltc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b', 'LITECOIN_ADDRESS', 0.95, 1, None, re.I)
-
-_add(r'\b(D[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
-     'DOGECOIN_ADDRESS', 0.80, 1, None)
-
-_add(r'\b(r[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,34})\b',
-     'XRP_ADDRESS', 0.80, 1, None)
-
-# --- SEED PHRASES ---
-_add(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){11})\b',
-     'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, re.I)
-_add(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){23})\b',
-     'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, re.I)
+    # --- SEED PHRASES ---
+    _p(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){11})\b',
+       'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, flags=re.I),
+    _p(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){23})\b',
+       'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, flags=re.I),
+)
 
 
 class FinancialDetector(BaseDetector):
@@ -384,15 +372,15 @@ class FinancialDetector(BaseDetector):
     tier = Tier.CHECKSUM
 
     def detect(self, text: str) -> List[Span]:
-        spans = []
-        seen = set()
+        spans: list[Span] = []
+        seen: set[tuple[int, int]] = set()
 
-        for pattern, entity_type, confidence, group_idx, validator in FINANCIAL_PATTERNS:
-            for match in pattern.finditer(text):
-                if group_idx > 0 and match.lastindex and group_idx <= match.lastindex:
-                    value = match.group(group_idx)
-                    start = match.start(group_idx)
-                    end = match.end(group_idx)
+        for pdef in FINANCIAL_PATTERNS:
+            for match in pdef.pattern.finditer(text):
+                if pdef.group > 0 and match.lastindex and pdef.group <= match.lastindex:
+                    value = match.group(pdef.group)
+                    start = match.start(pdef.group)
+                    end = match.end(pdef.group)
                 else:
                     value = match.group(0)
                     start = match.start()
@@ -405,24 +393,23 @@ class FinancialDetector(BaseDetector):
                 if key in seen:
                     continue
 
-                if validator and not validator(value):
+                if pdef.validator and not pdef.validator(value):
                     continue
 
                 seen.add(key)
 
-                final_confidence = confidence
-                if validator:
-                    final_confidence = min(0.99, confidence + 0.02)
+                final_confidence = pdef.confidence
+                if pdef.validator:
+                    final_confidence = min(0.99, pdef.confidence + 0.02)
 
-                span = Span(
+                spans.append(Span(
                     start=start,
                     end=end,
                     text=value,
-                    entity_type=entity_type,
+                    entity_type=pdef.entity_type,
                     confidence=final_confidence,
                     detector=self.name,
                     tier=self.tier,
-                )
-                spans.append(span)
+                ))
 
         return spans

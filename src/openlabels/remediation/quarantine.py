@@ -23,9 +23,9 @@ from typing import Optional
 from .base import (
     RemediationResult,
     RemediationAction,
-    QuarantineError,
     get_current_user,
 )
+from openlabels.exceptions import QuarantineError
 
 logger = logging.getLogger(__name__)
 

@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from openlabels.server.services.base import BaseService, TenantContext
 from openlabels.server.config import Settings
 from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
-from openlabels.server.exceptions import (
+from openlabels.exceptions import (
     NotFoundError,
     ValidationError,
     BadRequestError,

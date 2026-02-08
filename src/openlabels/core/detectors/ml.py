@@ -11,7 +11,7 @@ import os
 
 from ..types import Span, Tier
 from ..constants import PRODUCT_CODE_PREFIXES
-from ..exceptions import ModelLoadError
+from openlabels.exceptions import ModelLoadError
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 

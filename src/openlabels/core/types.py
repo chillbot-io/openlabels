@@ -27,6 +27,7 @@ __all__ = [
     "is_clinical_context_type",
     "normalize_entity_type",
     # Data classes
+    "SpanContext",
     "Span",
     "DetectionResult",
     "ScoringResult",
@@ -304,8 +305,28 @@ def normalize_entity_type(entity_type: str) -> str:
 
 
 # =============================================================================
-# SPAN DATA CLASS
+# SPAN DATA CLASSES
 # =============================================================================
+
+@dataclass(frozen=True)
+class SpanContext:
+    """Contextual metadata about where a span was detected.
+
+    Attributes:
+        source_page: PDF/DOCX page number (1-indexed)
+        source_sheet: Excel sheet name
+        source_section: Document section heading
+        source_cell: Excel cell reference (e.g., "B12")
+        surrounding_text: ~50 chars before/after for context
+        extraction_method: How text was obtained ("text", "ocr", "metadata", "embedded")
+    """
+    source_page: int | None = None
+    source_sheet: str | None = None
+    source_section: str | None = None
+    source_cell: str | None = None
+    surrounding_text: str | None = None
+    extraction_method: str | None = None
+
 
 @dataclass
 class Span:
@@ -329,12 +350,13 @@ class Span:
     detector: str
     tier: Tier
 
-    # Optional metadata for classification
+    # Optional metadata
+    context: SpanContext | None = None  # Extraction context (page, sheet, cell, etc.)
     needs_review: bool = False
     review_reason: Optional[str] = None
     coref_anchor_value: Optional[str] = None  # Link to coreference anchor for entity grouping
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate span attributes."""
         if self.start < 0:
             raise ValueError(f"Invalid span: start={self.start} cannot be negative")
@@ -380,9 +402,9 @@ class Span:
             f"detector={self.detector!r}, tier={self.tier.name})"
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for serialization."""
-        return {
+        d: dict[str, object] = {
             "start": self.start,
             "end": self.end,
             "text": self.text,
@@ -391,6 +413,10 @@ class Span:
             "detector": self.detector,
             "tier": self.tier.value,
         }
+        if self.context is not None:
+            from dataclasses import asdict
+            d["context"] = asdict(self.context)
+        return d
 
 
 # =============================================================================
@@ -427,7 +453,7 @@ class ScoringResult:
     categories: Set[str]              # Entity categories present
     exposure: str                     # Exposure level used
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for serialization."""
         return {
             'score': self.score,

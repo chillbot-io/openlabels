@@ -23,7 +23,7 @@ from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAd
 from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
-from openlabels.core.exceptions import AdapterError, JobError
+from openlabels.exceptions import AdapterError, JobError
 from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.labeling.engine import LabelingEngine
@@ -75,10 +75,13 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
     global _processor
     if _processor is None:
         settings = get_settings()
+        from openlabels.core.detectors.config import DetectionConfig
         _processor = FileProcessor(
-            enable_ml=enable_ml,
-            ml_model_dir=getattr(settings, 'ml_model_dir', None),
-            confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+            config=DetectionConfig(
+                enable_ml=enable_ml,
+                ml_model_dir=getattr(settings, 'ml_model_dir', None),
+                confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+            ),
         )
         logger.debug("Created ML processor instance")
     return _processor

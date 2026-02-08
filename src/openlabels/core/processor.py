@@ -21,11 +21,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, AsyncIterator, Union
 
 from .types import Span, RiskTier
+from .detectors.config import DetectionConfig
 from .detectors.orchestrator import DetectorOrchestrator
 from .scoring.scorer import score
 from .constants import DEFAULT_MODELS_DIR
 from .extractors import extract_text as _extract_text_from_file
-from .exceptions import DetectionError, ExtractionError, SecurityError
+from openlabels.exceptions import DetectionError, ExtractionError, SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class FileClassification:
     processing_time_ms: float = 0.0
     error: Optional[str] = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "file_path": self.file_path,
             "file_name": self.file_name,
@@ -109,31 +110,24 @@ class FileProcessor:
 
     def __init__(
         self,
-        enable_ml: bool = False,
+        config: DetectionConfig | None = None,
         enable_ocr: bool = True,
-        ml_model_dir: Optional[Path] = None,
-        confidence_threshold: float = 0.70,
         max_file_size: int = 50 * 1024 * 1024,  # 50 MB
     ):
         """
         Initialize the processor.
 
         Args:
-            enable_ml: Enable ML-based detectors
+            config: Detection configuration (defaults to patterns-only)
             enable_ocr: Enable OCR for images and scanned PDFs
-            ml_model_dir: Path to ML model files (defaults to ~/.openlabels/models/)
-            confidence_threshold: Minimum detection confidence
             max_file_size: Maximum file size to process (bytes)
         """
+        self.config = config or DetectionConfig()
         self.max_file_size = max_file_size
         self.enable_ocr = enable_ocr
         self._ocr_engine = None
-        self._ml_model_dir = ml_model_dir or DEFAULT_MODELS_DIR
-        self._orchestrator = DetectorOrchestrator(
-            enable_ml=enable_ml,
-            ml_model_dir=ml_model_dir,
-            confidence_threshold=confidence_threshold,
-        )
+        self._ml_model_dir = self.config.ml_model_dir or DEFAULT_MODELS_DIR
+        self._orchestrator = DetectorOrchestrator(config=self.config)
 
         # Lazily initialize OCR engine when needed
         if enable_ocr:
@@ -212,8 +206,8 @@ class FileProcessor:
                 result.processing_time_ms = (time.time() - start_time) * 1000
                 return result
 
-            # Run detection
-            detection_result = self._orchestrator.detect(text)
+            # Run detection (async — delegates to thread pool)
+            detection_result = await self._orchestrator.detect(text)
             result.spans = detection_result.spans
             result.entity_counts = detection_result.entity_counts
 
@@ -452,7 +446,7 @@ async def process_file(
     file_path: str,
     content: Union[str, bytes],
     exposure_level: str = "PRIVATE",
-    **kwargs,
+    config: DetectionConfig | None = None,
 ) -> FileClassification:
     """
     Convenience function to process a single file.
@@ -461,10 +455,10 @@ async def process_file(
         file_path: Path to the file
         content: File content
         exposure_level: File exposure level
-        **kwargs: Passed to FileProcessor
+        config: Detection configuration
 
     Returns:
         FileClassification result
     """
-    processor = FileProcessor(**kwargs)
+    processor = FileProcessor(config=config)
     return await processor.process_file(file_path, content, exposure_level)

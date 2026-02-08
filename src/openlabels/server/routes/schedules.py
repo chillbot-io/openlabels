@@ -23,7 +23,7 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     paginate_query,
 )
-from openlabels.server.exceptions import NotFoundError
+from openlabels.exceptions import NotFoundError
 from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
 from openlabels.server.routes import htmx_notify
 from openlabels.jobs import JobQueue, parse_cron_expression

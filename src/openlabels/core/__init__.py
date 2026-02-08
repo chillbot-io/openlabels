@@ -23,6 +23,7 @@ Usage:
 
 from .types import (
     Span,
+    SpanContext,
     Tier,
     RiskTier,
     ExposureLevel,
@@ -34,6 +35,8 @@ from .types import (
     is_clinical_context_type,
     normalize_entity_type,
 )
+
+from .detectors.config import DetectionConfig
 
 from .detectors.orchestrator import (
     DetectorOrchestrator,
@@ -89,6 +92,7 @@ from .ocr import (
 __all__ = [
     # Types
     "Span",
+    "SpanContext",
     "Tier",
     "RiskTier",
     "ExposureLevel",
@@ -102,6 +106,7 @@ __all__ = [
     "is_clinical_context_type",
     "normalize_entity_type",
     # Detection
+    "DetectionConfig",
     "DetectorOrchestrator",
     "detect",
     "BaseDetector",

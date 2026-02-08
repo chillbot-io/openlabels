@@ -59,7 +59,7 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
     try:
         from openlabels.core.processor import FileProcessor
 
-        processor = FileProcessor(enable_ml=False)
+        processor = FileProcessor()
 
         async def process_all():
             all_results = []

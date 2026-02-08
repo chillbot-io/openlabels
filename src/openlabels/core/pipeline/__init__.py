@@ -8,6 +8,14 @@ Main components:
 - Span validation
 """
 
+from .confidence import (
+    calibrate_confidence,
+    calibrate_spans,
+)
+from .span_resolver import (
+    resolve_spans,
+    OverlapStrategy,
+)
 from .context_enhancer import (
     ContextEnhancer,
     create_enhancer,
@@ -37,6 +45,12 @@ from .tiered import (
 )
 
 __all__ = [
+    # Confidence calibration
+    "calibrate_confidence",
+    "calibrate_spans",
+    # Span resolution
+    "resolve_spans",
+    "OverlapStrategy",
     # Tiered pipeline
     "TieredPipeline",
     "PipelineConfig",

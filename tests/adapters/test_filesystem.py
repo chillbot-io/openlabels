@@ -112,7 +112,7 @@ class TestFilesystemAdapterListFiles:
 
     async def test_list_files_raises_on_nonexistent_path(self):
         """Should raise FilesystemError for non-existent path."""
-        from openlabels.core.exceptions import FilesystemError
+        from openlabels.exceptions import FilesystemError
         adapter = FilesystemAdapter()
 
         with pytest.raises(FilesystemError, match="does not exist"):
@@ -121,7 +121,7 @@ class TestFilesystemAdapterListFiles:
 
     async def test_list_files_raises_on_file_not_directory(self):
         """Should raise FilesystemError when target is a file, not directory."""
-        from openlabels.core.exceptions import FilesystemError
+        from openlabels.exceptions import FilesystemError
         adapter = FilesystemAdapter()
 
         with tempfile.NamedTemporaryFile() as f:
@@ -408,8 +408,10 @@ class TestFilesystemAdapterProperties:
 
     def test_supports_remediation_returns_true(self):
         """Filesystem adapter supports remediation."""
+        from openlabels.adapters.base import supports_remediation
+
         adapter = FilesystemAdapter()
-        assert adapter.supports_remediation() is True
+        assert supports_remediation(adapter) is True
 
     def test_service_account_stored(self):
         """Service account should be stored for Windows impersonation."""

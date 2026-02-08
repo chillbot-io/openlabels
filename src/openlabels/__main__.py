@@ -35,6 +35,7 @@ from openlabels.cli.commands import (
     status,
     backup,
     restore,
+    doctor,
 )
 
 
@@ -70,6 +71,7 @@ cli.add_command(lock_down_cmd)
 cli.add_command(status)
 cli.add_command(backup)
 cli.add_command(restore)
+cli.add_command(doctor)
 
 
 def main():

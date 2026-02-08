@@ -50,7 +50,7 @@ from openlabels.jobs.tasks.scan import (
     execute_parallel_scan_task,
     CANCELLATION_CHECK_INTERVAL,
 )
-from openlabels.core.exceptions import AdapterError, JobError
+from openlabels.exceptions import AdapterError, JobError
 
 
 class TestGetProcessor:

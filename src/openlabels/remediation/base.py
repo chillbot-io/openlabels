@@ -1,8 +1,10 @@
 """
-Base types and errors for remediation actions.
+Base types for remediation actions.
 
 This module defines the common types used across all remediation
 operations (quarantine, permission lockdown, etc.).
+
+Exception classes live in openlabels.exceptions.
 """
 
 from dataclasses import dataclass, field
@@ -113,26 +115,6 @@ class RemediationResult:
             error_code=error_code,
         )
 
-
-class RemediationError(Exception):
-    """Base exception for remediation failures."""
-
-    def __init__(self, message: str, path: Optional[Path] = None, code: Optional[int] = None):
-        super().__init__(message)
-        self.path = path
-        self.code = code
-
-
-class QuarantineError(RemediationError):
-    """Exception raised when quarantine operation fails."""
-
-    pass
-
-
-class PermissionError(RemediationError):
-    """Exception raised when permission modification fails."""
-
-    pass
 
 
 def get_current_user() -> str:
