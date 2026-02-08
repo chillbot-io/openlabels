@@ -59,11 +59,25 @@ async def periodic_event_flush(
                     )
                 else:
                     logger.debug("Periodic flush: nothing new to flush")
+
+                # Update catalog health metrics (best-effort)
+                try:
+                    from openlabels.server.metrics import record_catalog_flush, update_catalog_health
+                    record_catalog_flush(success=True)
+                    update_catalog_health(storage)
+                except Exception:
+                    pass
+
         except Exception:
             logger.warning(
                 "Periodic event flush failed; will retry next cycle",
                 exc_info=True,
             )
+            try:
+                from openlabels.server.metrics import record_catalog_flush
+                record_catalog_flush(success=False)
+            except Exception:
+                pass
 
         # Wait for the next cycle or shutdown
         try:

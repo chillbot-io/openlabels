@@ -88,12 +88,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             from openlabels.analytics.engine import DuckDBEngine
             from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
+            from openlabels.analytics.storage import create_storage
 
-            catalog_root = settings.catalog.local_path  # Phase E adds S3/Azure
+            _storage = create_storage(settings.catalog)
+            catalog_root = _storage.root
             engine = DuckDBEngine(
                 catalog_root,
                 memory_limit=settings.catalog.duckdb_memory_limit,
                 threads=settings.catalog.duckdb_threads,
+                storage_config=settings.catalog,
             )
             analytics_svc = AnalyticsService(engine)
             app.state.analytics = analytics_svc

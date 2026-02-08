@@ -460,6 +460,27 @@ class RedisSettings(BaseSettings):
     memory_cache_max_size: int = 1000  # Max items in memory cache
 
 
+class S3CatalogSettings(BaseSettings):
+    """S3 storage configuration for the data catalog."""
+
+    bucket: str = ""
+    prefix: str = "openlabels/catalog"
+    region: str = "us-east-1"
+    access_key: str = ""
+    secret_key: str = ""
+    endpoint_url: str | None = None  # For S3-compatible (MinIO)
+
+
+class AzureCatalogSettings(BaseSettings):
+    """Azure Blob storage configuration for the data catalog."""
+
+    container: str = ""
+    prefix: str = "openlabels/catalog"
+    connection_string: str | None = None
+    account_name: str | None = None
+    account_key: str | None = None
+
+
 class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
@@ -474,11 +495,18 @@ class CatalogSettings(BaseSettings):
         OPENLABELS_CATALOG__ENABLED=true
         OPENLABELS_CATALOG__BACKEND=local
         OPENLABELS_CATALOG__LOCAL_PATH=/data/openlabels/catalog
+        OPENLABELS_CATALOG__S3__BUCKET=my-bucket
+        OPENLABELS_CATALOG__S3__REGION=us-east-1
+        OPENLABELS_CATALOG__AZURE__CONTAINER=my-container
     """
 
     enabled: bool = False
     backend: Literal["local", "s3", "azure"] = "local"
     local_path: str = ""
+
+    # Remote storage sub-configs
+    s3: S3CatalogSettings = Field(default_factory=S3CatalogSettings)
+    azure: AzureCatalogSettings = Field(default_factory=AzureCatalogSettings)
 
     # Flush tuning
     event_flush_interval_seconds: int = 300  # 5 minutes
