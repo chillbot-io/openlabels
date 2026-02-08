@@ -69,6 +69,30 @@ class TestLocalStorage:
         assert isinstance(storage, CatalogStorage)
 
 
+    def test_read_json_write_json_roundtrip(self, storage: LocalStorage):
+        data = {"schema_version": 1, "last_flush": "2026-02-01T12:00:00+00:00"}
+        storage.write_json("meta/state.json", data)
+
+        loaded = storage.read_json("meta/state.json")
+        assert loaded["schema_version"] == 1
+        assert loaded["last_flush"] == "2026-02-01T12:00:00+00:00"
+
+    def test_read_json_nonexistent_raises(self, storage: LocalStorage):
+        with pytest.raises(FileNotFoundError):
+            storage.read_json("does_not_exist.json")
+
+    def test_write_json_creates_parent_dirs(self, storage: LocalStorage):
+        storage.write_json("a/b/c/deep.json", {"key": "val"})
+        assert storage.exists("a/b/c/deep.json")
+        loaded = storage.read_json("a/b/c/deep.json")
+        assert loaded["key"] == "val"
+
+    def test_write_json_overwrite(self, storage: LocalStorage):
+        storage.write_json("s.json", {"v": 1})
+        storage.write_json("s.json", {"v": 2})
+        assert storage.read_json("s.json")["v"] == 2
+
+
 class TestCreateStorage:
     def test_local_backend(self, catalog_dir):
         class FakeSettings:

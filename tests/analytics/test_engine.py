@@ -104,3 +104,11 @@ class TestDuckDBEngine:
         assert tiers["CRITICAL"] == 1
         assert tiers["HIGH"] == 1
         assert tiers["MINIMAL"] == 1
+
+    def test_invalid_memory_limit_raises(self, catalog_dir):
+        with pytest.raises(ValueError, match="Invalid duckdb_memory_limit"):
+            DuckDBEngine(str(catalog_dir), memory_limit="DROP TABLE x;--")
+
+    def test_invalid_threads_raises(self, catalog_dir):
+        with pytest.raises(ValueError, match="duckdb_threads must be"):
+            DuckDBEngine(str(catalog_dir), threads=-1)

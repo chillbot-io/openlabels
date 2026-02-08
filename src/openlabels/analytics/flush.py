@@ -13,14 +13,12 @@ Three flush operations:
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import pyarrow as pa
 from sqlalchemy import select
 
 from openlabels.analytics.arrow_convert import (
@@ -68,23 +66,12 @@ def load_flush_state(storage: CatalogStorage) -> dict:
             "last_remediation_action_flush": None,
             "schema_version": 1,
         }
-    import pyarrow  # noqa: F401 — only needed for the read path
-
-    # Read JSON directly from the storage backend
-    from pathlib import Path as _P
-
-    resolved = _P(storage.root) / path
-    with open(resolved) as f:
-        return json.load(f)
+    return storage.read_json(path)
 
 
 def save_flush_state(storage: CatalogStorage, state: dict) -> None:
     """Persist flush cursor state."""
-    resolved = Path(storage.root) / _METADATA_DIR
-    resolved.mkdir(parents=True, exist_ok=True)
-    dest = resolved / _FLUSH_STATE_FILE
-    with open(dest, "w") as f:
-        json.dump(state, f, indent=2, default=str)
+    storage.write_json(_flush_state_path(storage), state)
 
 
 # ── 1. Scan completion flush ─────────────────────────────────────────
@@ -150,7 +137,8 @@ async def flush_events_to_catalog(
     storage: CatalogStorage,
 ) -> dict[str, int]:
     """
-    Export new access events and audit logs since the last flush.
+    Export new access events, audit logs, and remediation actions
+    since the last flush.
 
     Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": K}``.
     """
@@ -219,21 +207,16 @@ async def flush_events_to_catalog(
 def _write_partitioned_access_events(
     storage: CatalogStorage,
     rows,
-    table,
+    table: pa.Table,
 ) -> None:
     """Group access events by (tenant_id, event_date) and write partitioned Parquet."""
-    import pyarrow as pa
-
-    # Build partition groups from the ORM rows (cheap — iterate once)
     groups: dict[tuple, list[int]] = {}
     for idx, r in enumerate(rows):
         key = (str(r.tenant_id), r.event_time.date())
         groups.setdefault(key, []).append(idx)
 
     for (tenant_str, event_date), indices in groups.items():
-        from uuid import UUID as _UUID
-
-        partition = access_event_partition(_UUID(tenant_str), event_date)
+        partition = access_event_partition(UUID(tenant_str), event_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)
@@ -242,7 +225,7 @@ def _write_partitioned_access_events(
 def _write_partitioned_audit_logs(
     storage: CatalogStorage,
     rows,
-    table,
+    table: pa.Table,
 ) -> None:
     """Group audit logs by (tenant_id, log_date) and write partitioned Parquet."""
     groups: dict[tuple, list[int]] = {}
@@ -251,9 +234,25 @@ def _write_partitioned_audit_logs(
         groups.setdefault(key, []).append(idx)
 
     for (tenant_str, log_date), indices in groups.items():
-        from uuid import UUID as _UUID
+        partition = audit_log_partition(UUID(tenant_str), log_date)
+        subset = table.take(indices)
+        dest = f"{partition}/{timestamped_part_filename()}"
+        storage.write_parquet(dest, subset)
 
-        partition = audit_log_partition(_UUID(tenant_str), log_date)
+
+def _write_partitioned_remediation_actions(
+    storage: CatalogStorage,
+    rows,
+    table: pa.Table,
+) -> None:
+    """Group remediation actions by (tenant_id, action_date) and write partitioned Parquet."""
+    groups: dict[tuple, list[int]] = {}
+    for idx, r in enumerate(rows):
+        key = (str(r.tenant_id), r.created_at.date())
+        groups.setdefault(key, []).append(idx)
+
+    for (tenant_str, action_date), indices in groups.items():
+        partition = remediation_action_partition(UUID(tenant_str), action_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)
