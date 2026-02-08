@@ -42,6 +42,7 @@ from openlabels.server.config import Settings, get_settings as _get_settings, lo
 from openlabels.server.db import get_session as _get_session
 from openlabels.auth.dependencies import CurrentUser, get_current_user, get_optional_user, require_admin
 from openlabels.server.cache import CacheManager, get_cache_manager as _get_cache_manager
+from openlabels.server.middleware.rate_limit import TenantRateLimiter, get_tenant_rate_limiter
 
 
 # Import service classes
@@ -486,6 +487,40 @@ ResultServiceDep = Annotated[ResultService, Depends(get_result_service)]
 
 
 # =============================================================================
+# PER-TENANT RATE LIMITING
+# =============================================================================
+
+
+async def check_tenant_rate_limit(
+    request: Request,
+    tenant: TenantContextDep,
+) -> None:
+    """Enforce per-tenant rate limits on authenticated API endpoints.
+
+    Returns ``None`` on success. Raises ``HTTPException(429)`` when the
+    tenant has exceeded its quota.
+
+    Rate-limit headers (``X-RateLimit-*``) are attached to the response
+    via ``request.state`` so downstream middleware can include them.
+    """
+    limiter = get_tenant_rate_limiter()
+    allowed, headers = limiter.check_rate_limit(str(tenant.tenant_id))
+
+    # Stash headers so middleware/response hooks can forward them.
+    request.state.rate_limit_headers = headers
+
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded for this tenant",
+            headers={k: str(v) for k, v in headers.items()},
+        )
+
+
+TenantRateLimitDep = Annotated[None, Depends(check_tenant_rate_limit)]
+
+
+# =============================================================================
 # UTILITY DEPENDENCIES
 # =============================================================================
 
@@ -580,6 +615,9 @@ __all__ = [
     "LabelServiceDep",
     "JobServiceDep",
     "ResultServiceDep",
+    # Per-tenant rate limiting
+    "check_tenant_rate_limit",
+    "TenantRateLimitDep",
     # Utilities
     "get_request_id",
     "RequestIdDep",

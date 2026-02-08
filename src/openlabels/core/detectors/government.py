@@ -25,6 +25,7 @@ from typing import List
 from ..types import Span, Tier
 from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 _DOD_PREFIX = (
     r'(?:FA|W|N|HQ|DAAB|DAHC|DACA|DACW|DAHA|DAJA|DAKF|DAMX|DASA|DASW'
@@ -127,6 +128,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
 )
 
 
+@register_detector
 class GovernmentDetector(BaseDetector):
     """
     Detects government classification markings and identifiers.

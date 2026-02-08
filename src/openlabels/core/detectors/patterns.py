@@ -6,6 +6,7 @@ import re
 from ..types import Span, Tier
 from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
@@ -1449,6 +1450,7 @@ def _validate_ssn_context(text: str, start: int, confidence: float) -> bool:
 
 # DETECTOR
 
+@register_detector
 class PatternDetector(BaseDetector):
     """
     Tier 2 detector: Regex patterns with format validation.

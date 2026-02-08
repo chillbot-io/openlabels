@@ -23,6 +23,7 @@ from ..types import Span, Tier
 from ..constants import NON_NAME_WORDS, NAME_CONNECTORS, BERT_MAX_LENGTH, PRODUCT_CODE_PREFIXES
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
+from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
@@ -755,6 +756,7 @@ class ONNXDetector(BaseDetector):
         )
 
 
+@register_detector
 class PHIBertONNXDetector(ONNXDetector):
     """Stanford Clinical PHI-BERT detector (ONNX-optimized)."""
 
@@ -767,6 +769,7 @@ class PHIBertONNXDetector(ONNXDetector):
             self.load()
 
 
+@register_detector
 class PIIBertONNXDetector(ONNXDetector):
     """Custom PII-BERT detector (ONNX-optimized)."""
 

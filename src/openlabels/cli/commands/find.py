@@ -69,44 +69,46 @@ def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
         click.echo("No files found")
         return
 
-    click.echo(f"Scanning {len(files)} files...", err=True)
-
     try:
+        from openlabels.cli.base import file_progress
         from openlabels.core.processor import FileProcessor
 
         processor = FileProcessor()
 
         async def process_all():
             all_results = []
-            for file_path in files:
-                try:
-                    with open(file_path, "rb") as f:
-                        content = f.read()
+            with file_progress(len(files), "Scanning") as progress:
+                task = progress.add_task("Scanning files", total=len(files))
+                for file_path in files:
+                    try:
+                        with open(file_path, "rb") as f:
+                            content = f.read()
 
-                    result = await processor.process_file(
-                        file_path=str(file_path),
-                        content=content,
-                        exposure_level="PRIVATE",
-                    )
-                    # Convert to dict for filtering
-                    all_results.append({
-                        "file_path": str(file_path),
-                        "file_name": result.file_name,
-                        "risk_score": result.risk_score,
-                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
-                        "entity_counts": result.entity_counts,
-                        "total_entities": sum(result.entity_counts.values()),
-                        "exposure_level": "PRIVATE",
-                        "owner": None,
-                    })
-                except PermissionError:
-                    logger.debug(f"Permission denied: {file_path}")
-                except OSError as e:
-                    logger.debug(f"OS error processing {file_path}: {e}")
-                except UnicodeDecodeError as e:
-                    logger.debug(f"Encoding error processing {file_path}: {e}")
-                except ValueError as e:
-                    logger.debug(f"Value error processing {file_path}: {e}")
+                        result = await processor.process_file(
+                            file_path=str(file_path),
+                            content=content,
+                            exposure_level="PRIVATE",
+                        )
+                        all_results.append({
+                            "file_path": str(file_path),
+                            "file_name": result.file_name,
+                            "risk_score": result.risk_score,
+                            "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                            "entity_counts": result.entity_counts,
+                            "total_entities": sum(result.entity_counts.values()),
+                            "exposure_level": "PRIVATE",
+                            "owner": None,
+                        })
+                    except PermissionError:
+                        logger.debug(f"Permission denied: {file_path}")
+                    except OSError as e:
+                        logger.debug(f"OS error processing {file_path}: {e}")
+                    except UnicodeDecodeError as e:
+                        logger.debug(f"Encoding error processing {file_path}: {e}")
+                    except ValueError as e:
+                        logger.debug(f"Value error processing {file_path}: {e}")
+                    finally:
+                        progress.advance(task)
             return all_results
 
         results = asyncio.run(process_all())

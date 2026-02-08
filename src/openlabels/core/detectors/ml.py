@@ -14,6 +14,7 @@ from ..constants import PRODUCT_CODE_PREFIXES
 from openlabels.exceptions import ModelLoadError
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
+from .registry import register_detector
 
 
 logger = logging.getLogger(__name__)
@@ -313,6 +314,7 @@ class MLDetector(BaseDetector):
         return spans
 
 
+@register_detector
 class PHIBertDetector(MLDetector):
     """Stanford Clinical PHI-BERT detector for healthcare NER."""
 
@@ -330,6 +332,7 @@ class PHIBertDetector(MLDetector):
             self.load()
 
 
+@register_detector
 class PIIBertDetector(MLDetector):
     """Custom PII-BERT detector (AI4Privacy trained) for general PII."""
 

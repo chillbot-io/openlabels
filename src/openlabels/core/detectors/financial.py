@@ -23,6 +23,7 @@ from typing import List
 
 from ..types import Span, Tier
 from .base import BaseDetector
+from .registry import register_detector
 from .pattern_registry import PatternDefinition, _p
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip,
@@ -361,6 +362,7 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
 )
 
 
+@register_detector
 class FinancialDetector(BaseDetector):
     """
     Detects financial security identifiers and cryptocurrency addresses.

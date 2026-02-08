@@ -19,6 +19,7 @@ from collections.abc import Sequence
 
 from ..types import Span, Tier
 from .base import BaseDetector
+from .registry import register_detector
 from ..agents.hyperscan_matcher import (
     HyperscanMatcher,
     HYPERSCAN_AVAILABLE,
@@ -30,6 +31,7 @@ from ..agents.hyperscan_matcher import (
 logger = logging.getLogger(__name__)
 
 
+@register_detector
 class HyperscanDetector(BaseDetector):
     """
     High-performance detector using Intel Hyperscan for SIMD-accelerated regex.

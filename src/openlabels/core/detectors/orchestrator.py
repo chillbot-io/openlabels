@@ -23,13 +23,8 @@ from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
 from .base import BaseDetector
-from .checksum import ChecksumDetector
 from .config import DetectionConfig
-from .secrets import SecretsDetector
-from .financial import FinancialDetector
-from .government import GovernmentDetector
-from .patterns import PatternDetector
-from .additional_patterns import AdditionalPatternDetector
+from .registry import create_detector
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +78,22 @@ class DetectorOrchestrator:
         if self.config.enable_hyperscan:
             self._init_hyperscan_detector()
 
-        # Initialize pattern-based detectors
-        if self.config.enable_checksum:
-            self.detectors.append(ChecksumDetector())
-        if self.config.enable_secrets:
-            self.detectors.append(SecretsDetector())
-        if self.config.enable_financial:
-            self.detectors.append(FinancialDetector())
-        if self.config.enable_government:
-            self.detectors.append(GovernmentDetector())
-        if self.config.enable_patterns:
-            self.detectors.append(PatternDetector())
-            self.detectors.append(AdditionalPatternDetector())
+        # Map config flags to registered detector names
+        _CONFIG_TO_DETECTORS: list[tuple[str, list[str]]] = [
+            ("enable_checksum", ["checksum"]),
+            ("enable_secrets", ["secrets"]),
+            ("enable_financial", ["financial"]),
+            ("enable_government", ["government"]),
+            ("enable_patterns", ["pattern", "additional_patterns"]),
+        ]
+
+        for flag, names in _CONFIG_TO_DETECTORS:
+            if getattr(self.config, flag):
+                for name in names:
+                    try:
+                        self.detectors.append(create_detector(name))
+                    except KeyError:
+                        logger.warning("Detector %r not registered — skipping", name)
 
         # Initialize ML detectors if enabled
         if self.config.enable_ml:

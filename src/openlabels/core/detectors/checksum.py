@@ -21,6 +21,7 @@ from typing import List, Tuple
 
 from ..types import Span, Tier
 from .base import BaseDetector
+from .registry import register_detector
 from .._rust.validators_py import (
     validate_luhn,
     validate_ssn as _validate_ssn_bool,
@@ -473,6 +474,7 @@ CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
 # DETECTOR
 # =============================================================================
 
+@register_detector
 class ChecksumDetector(BaseDetector):
     """
     Tier 4 detector: Algorithmic validation.
