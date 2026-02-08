@@ -28,6 +28,7 @@ from typing import List
 from ..types import Span, Tier
 from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 
 # Pattern definitions: immutable frozen dataclass tuples
@@ -147,6 +148,7 @@ SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
 )
 
 
+@register_detector
 class SecretsDetector(BaseDetector):
     """
     Detects API keys, tokens, and other secrets.

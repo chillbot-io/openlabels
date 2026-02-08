@@ -26,19 +26,36 @@ from .config import DetectionConfig
 from .secrets import SecretsDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
+from .patterns import PatternDetector
+from .additional_patterns import AdditionalPatternDetector
 from .orchestrator import DetectorOrchestrator, detect
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
+from .registry import (
+    register_detector,
+    get_registered_detectors,
+    get_detector_names,
+    create_detector,
+    create_all_detectors,
+)
 
 __all__ = [
     # Base
     "BaseDetector",
     # Configuration
     "DetectionConfig",
+    # Registry
+    "register_detector",
+    "get_registered_detectors",
+    "get_detector_names",
+    "create_detector",
+    "create_all_detectors",
     # Pattern detectors
     "ChecksumDetector",
     "SecretsDetector",
     "FinancialDetector",
     "GovernmentDetector",
+    "PatternDetector",
+    "AdditionalPatternDetector",
     # Orchestration
     "DetectorOrchestrator",
     "detect",

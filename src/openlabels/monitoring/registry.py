@@ -26,6 +26,7 @@ persisted state.
 import logging
 import platform
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Acts as a process-local cache; durable state lives in the database
 # (see openlabels.monitoring.db for async persistence helpers).
 _watched_files: Dict[str, WatchedFile] = {}
+_watched_lock = threading.Lock()
 
 
 def enable_monitoring(
@@ -69,49 +71,40 @@ def enable_monitoring(
         MonitoringResult with success/failure status
     """
     path = Path(path).resolve()
+    path_str = str(path)
 
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    # Check if already monitored
-    if str(path) in _watched_files:
-        logger.info(f"File already monitored: {path}")
-        return MonitoringResult(
-            success=True,
-            path=path,
-            message="Already monitored",
-            sacl_enabled=_watched_files[str(path)].sacl_enabled,
-            audit_rule_enabled=_watched_files[str(path)].audit_rule_enabled,
-        )
+    # Check if already monitored (lock protects the dict read)
+    with _watched_lock:
+        if path_str in _watched_files:
+            logger.info(f"File already monitored: {path}")
+            return MonitoringResult(
+                success=True,
+                path=path,
+                message="Already monitored",
+                sacl_enabled=_watched_files[path_str].sacl_enabled,
+                audit_rule_enabled=_watched_files[path_str].audit_rule_enabled,
+            )
 
-    # Dispatch to platform-specific implementation
+    # Platform-specific setup (outside lock — may be slow)
     if platform.system() == "Windows":
         result = _enable_monitoring_windows(path, audit_read, audit_write)
     else:
         result = _enable_monitoring_linux(path, audit_read, audit_write)
 
-    # Track in registry if successful
+    # Track in registry if successful (lock protects the dict write)
     if result.success:
-        _watched_files[str(path)] = WatchedFile(
-            path=path,
-            risk_tier=risk_tier,
-            added_at=datetime.now(),
-            sacl_enabled=result.sacl_enabled,
-            audit_rule_enabled=result.audit_rule_enabled,
-            label_id=label_id,
-        )
-        # NOTE: The in-memory cache has been updated.  Callers running in
-        # an async context should also persist to the database:
-        #
-        #   from openlabels.monitoring import db as monitoring_db
-        #   await monitoring_db.upsert_monitored_file(
-        #       session, tenant_id, str(path),
-        #       risk_tier=risk_tier,
-        #       sacl_enabled=result.sacl_enabled,
-        #       audit_rule_enabled=result.audit_rule_enabled,
-        #       audit_read=audit_read,
-        #       audit_write=audit_write,
-        #   )
+        with _watched_lock:
+            _watched_files[path_str] = WatchedFile(
+                path=path,
+                risk_tier=risk_tier,
+                added_at=datetime.now(),
+                sacl_enabled=result.sacl_enabled,
+                audit_rule_enabled=result.audit_rule_enabled,
+                label_id=label_id,
+            )
 
     return result
 
@@ -129,16 +122,18 @@ def disable_monitoring(path: Path) -> MonitoringResult:
         MonitoringResult with success/failure status
     """
     path = Path(path).resolve()
+    path_str = str(path)
 
     # Check if currently monitored
-    if str(path) not in _watched_files:
-        return MonitoringResult(
-            success=True,
-            path=path,
-            message="Not currently monitored",
-        )
+    with _watched_lock:
+        if path_str not in _watched_files:
+            return MonitoringResult(
+                success=True,
+                path=path,
+                message="Not currently monitored",
+            )
 
-    # Dispatch to platform-specific implementation
+    # Platform-specific removal (outside lock — may be slow)
     if platform.system() == "Windows":
         result = _disable_monitoring_windows(path)
     else:
@@ -146,31 +141,28 @@ def disable_monitoring(path: Path) -> MonitoringResult:
 
     # Remove from registry if successful
     if result.success:
-        del _watched_files[str(path)]
-        # NOTE: The in-memory cache has been updated.  Callers running in
-        # an async context should also remove from the database:
-        #
-        #   from openlabels.monitoring import db as monitoring_db
-        #   await monitoring_db.remove_monitored_file(
-        #       session, tenant_id, str(path),
-        #   )
+        with _watched_lock:
+            _watched_files.pop(path_str, None)
 
     return result
 
 
 def is_monitored(path: Path) -> bool:
     """Check if a file is currently being monitored."""
-    return str(Path(path).resolve()) in _watched_files
+    with _watched_lock:
+        return str(Path(path).resolve()) in _watched_files
 
 
 def get_watched_files() -> List[WatchedFile]:
     """Get list of all currently monitored files."""
-    return list(_watched_files.values())
+    with _watched_lock:
+        return list(_watched_files.values())
 
 
 def get_watched_file(path: Path) -> Optional[WatchedFile]:
     """Get monitoring info for a specific file."""
-    return _watched_files.get(str(Path(path).resolve()))
+    with _watched_lock:
+        return _watched_files.get(str(Path(path).resolve()))
 
 
 # =============================================================================
@@ -200,18 +192,19 @@ async def populate_cache_from_db(
 
     db_entries = await monitoring_db.load_from_db(session, tenant_id)
     added = 0
-    for file_path, fields in db_entries.items():
-        if file_path not in _watched_files:
-            _watched_files[file_path] = WatchedFile(
-                path=fields["path"],
-                risk_tier=fields["risk_tier"],
-                added_at=fields["added_at"],
-                sacl_enabled=fields["sacl_enabled"],
-                audit_rule_enabled=fields["audit_rule_enabled"],
-                last_event_at=fields.get("last_event_at"),
-                access_count=fields.get("access_count", 0),
-            )
-            added += 1
+    with _watched_lock:
+        for file_path, fields in db_entries.items():
+            if file_path not in _watched_files:
+                _watched_files[file_path] = WatchedFile(
+                    path=fields["path"],
+                    risk_tier=fields["risk_tier"],
+                    added_at=fields["added_at"],
+                    sacl_enabled=fields["sacl_enabled"],
+                    audit_rule_enabled=fields["audit_rule_enabled"],
+                    last_event_at=fields.get("last_event_at"),
+                    access_count=fields.get("access_count", 0),
+                )
+                added += 1
 
     logger.info(
         "Populated in-memory cache with %d entries from database "
@@ -243,7 +236,236 @@ async def sync_cache_to_db(
     """
     from openlabels.monitoring import db as monitoring_db
 
-    return await monitoring_db.sync_to_db(session, tenant_id, _watched_files)
+    with _watched_lock:
+        snapshot = dict(_watched_files)
+    return await monitoring_db.sync_to_db(session, tenant_id, snapshot)
+
+
+# =============================================================================
+# ASYNC WRAPPERS WITH DB PERSISTENCE
+# =============================================================================
+
+
+async def enable_monitoring_async(
+    path: Path,
+    session,  # AsyncSession
+    tenant_id: UUID,
+    risk_tier: str = "HIGH",
+    **kwargs,
+) -> MonitoringResult:
+    """Enable monitoring with automatic DB persistence.
+
+    Wraps :func:`enable_monitoring` and, on success, persists the
+    monitoring state to the database via :mod:`openlabels.monitoring.db`.
+    """
+    result = enable_monitoring(path, risk_tier=risk_tier, **kwargs)
+
+    if result.success:
+        from openlabels.monitoring import db as monitoring_db
+
+        await monitoring_db.upsert_monitored_file(
+            session,
+            tenant_id,
+            str(Path(path).resolve()),
+            risk_tier=risk_tier,
+            sacl_enabled=result.sacl_enabled,
+            audit_rule_enabled=result.audit_rule_enabled,
+        )
+
+    return result
+
+
+async def disable_monitoring_async(
+    path: Path,
+    session,  # AsyncSession
+    tenant_id: UUID,
+) -> MonitoringResult:
+    """Disable monitoring with automatic DB removal.
+
+    Wraps :func:`disable_monitoring` and, on success, removes the
+    monitoring record from the database.
+    """
+    result = disable_monitoring(path)
+
+    if result.success:
+        from openlabels.monitoring import db as monitoring_db
+
+        await monitoring_db.remove_monitored_file(
+            session,
+            tenant_id,
+            str(Path(path).resolve()),
+        )
+
+    return result
+
+
+# =============================================================================
+# BULK OPERATIONS
+# =============================================================================
+
+
+def enable_monitoring_batch(
+    paths: List[Path],
+    risk_tier: str = "HIGH",
+) -> List[MonitoringResult]:
+    """Enable monitoring on multiple files efficiently.
+
+    On Windows: generates a single PowerShell script for all files.
+    On Linux: generates a single auditctl script for all files.
+    Falls back to per-file enable_monitoring for individual error handling.
+    """
+    if not paths:
+        return []
+
+    if platform.system() == "Windows":
+        return _enable_batch_windows(paths, risk_tier)
+    else:
+        return _enable_batch_linux(paths, risk_tier)
+
+
+def _enable_batch_windows(
+    paths: List[Path],
+    risk_tier: str,
+) -> List[MonitoringResult]:
+    """Single PowerShell invocation for all files."""
+    _INJECTION_CHARS = set('"\'`$\n\r;&|')
+    results: List[MonitoringResult] = []
+    validated: List[tuple] = []  # (resolved_str, original_path)
+
+    for p in paths:
+        resolved = str(Path(p).resolve())
+        if any(c in resolved for c in _INJECTION_CHARS):
+            results.append(MonitoringResult(
+                success=False, path=p, error="Path contains invalid characters",
+            ))
+        elif not Path(p).exists():
+            results.append(MonitoringResult(
+                success=False, path=p, error=f"File not found: {p}",
+            ))
+        else:
+            validated.append((resolved, Path(p).resolve()))
+
+    if not validated:
+        return results
+
+    path_list = "\n".join(f'    "{v[0]}"' for v in validated)
+    ps_script = f'''
+$paths = @(
+{path_list}
+)
+foreach ($p in $paths) {{
+    try {{
+        $acl = Get-Acl -Path $p -Audit
+        $rule = New-Object System.Security.AccessControl.FileSystemAuditRule(
+            "Everyone", "Read, Write", "None", "None", "Success, Failure"
+        )
+        $acl.AddAuditRule($rule)
+        Set-Acl -Path $p -AclObject $acl
+        Write-Output "OK:$p"
+    }} catch {{
+        Write-Output "FAIL:$p:$($_.Exception.Message)"
+    }}
+}}
+'''
+
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, text=True, timeout=120,
+        )
+        ok_paths = set()
+        for line in proc.stdout.strip().splitlines():
+            if line.startswith("OK:"):
+                ok_paths.add(line[3:])
+
+        for resolved_str, resolved_path in validated:
+            success = resolved_str in ok_paths
+            r = MonitoringResult(
+                success=success, path=resolved_path,
+                sacl_enabled=success,
+                error=None if success else "Failed in batch script",
+            )
+            if success:
+                with _watched_lock:
+                    _watched_files[resolved_str] = WatchedFile(
+                        path=resolved_path, risk_tier=risk_tier,
+                        added_at=datetime.now(), sacl_enabled=True,
+                    )
+            results.append(r)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        for _, resolved_path in validated:
+            results.append(MonitoringResult(
+                success=False, path=resolved_path, error=str(e),
+            ))
+
+    return results
+
+
+def _enable_batch_linux(
+    paths: List[Path],
+    risk_tier: str,
+) -> List[MonitoringResult]:
+    """Single auditctl invocation for all files."""
+    import shutil
+
+    results: List[MonitoringResult] = []
+    validated: List[Path] = []
+
+    if not shutil.which("auditctl"):
+        return [
+            MonitoringResult(success=False, path=p, error="auditctl not found")
+            for p in paths
+        ]
+
+    for p in paths:
+        resolved = Path(p).resolve()
+        if not resolved.exists():
+            results.append(MonitoringResult(
+                success=False, path=resolved, error=f"File not found: {p}",
+            ))
+        else:
+            validated.append(resolved)
+
+    if not validated:
+        return results
+
+    # Build a single shell script with one auditctl call per file
+    commands = "\n".join(
+        f'auditctl -w "{p}" -p rwa -k openlabels && echo "OK:{p}" || echo "FAIL:{p}"'
+        for p in validated
+    )
+
+    try:
+        proc = subprocess.run(
+            ["sh", "-c", commands],
+            capture_output=True, text=True, timeout=120,
+        )
+        ok_paths = set()
+        for line in proc.stdout.strip().splitlines():
+            if line.startswith("OK:"):
+                ok_paths.add(line[3:])
+
+        for p in validated:
+            success = str(p) in ok_paths
+            r = MonitoringResult(
+                success=success, path=p,
+                audit_rule_enabled=success,
+                error=None if success else "Failed in batch script",
+            )
+            if success:
+                with _watched_lock:
+                    _watched_files[str(p)] = WatchedFile(
+                        path=p, risk_tier=risk_tier,
+                        added_at=datetime.now(), audit_rule_enabled=True,
+                    )
+            results.append(r)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        for p in validated:
+            results.append(MonitoringResult(
+                success=False, path=p, error=str(e),
+            ))
+
+    return results
 
 
 # =============================================================================

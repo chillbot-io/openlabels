@@ -16,6 +16,7 @@ import re
 from ..types import Span, Tier
 from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 
 # Pattern definitions: frozen tuple of PatternDefinition objects
@@ -144,6 +145,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
 
 
 # --- Detector Class ---
+@register_detector
 class AdditionalPatternDetector(BaseDetector):
     """
     Pattern detector for additional entity types.

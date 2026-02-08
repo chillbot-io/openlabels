@@ -8,8 +8,9 @@ Features:
 - Concurrent worker support via SELECT FOR UPDATE SKIP LOCKED
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update, func, and_
@@ -30,6 +31,11 @@ MAX_RETRY_DELAY_SECONDS = 3600  # Cap at 1 hour
 # Job timeout - jobs running longer than this are considered stuck
 DEFAULT_JOB_TIMEOUT_SECONDS = 3600  # 1 hour
 
+logger = logging.getLogger(__name__)
+
+# Callback invoked when a job completes or fails permanently.
+JobCallback = Callable[["JobQueueModel"], Awaitable[None]]
+
 
 def calculate_retry_delay(retry_count: int) -> timedelta:
     """
@@ -49,16 +55,26 @@ def calculate_retry_delay(retry_count: int) -> timedelta:
 class JobQueue:
     """PostgreSQL-backed job queue with priority support and retry logic."""
 
-    def __init__(self, session: AsyncSession, tenant_id: UUID):
+    def __init__(
+        self,
+        session: AsyncSession,
+        tenant_id: UUID,
+        on_complete: JobCallback | None = None,
+        on_failed: JobCallback | None = None,
+    ):
         """
         Initialize the job queue.
 
         Args:
             session: Database session
             tenant_id: Tenant ID for job isolation
+            on_complete: Async callback invoked after a job completes
+            on_failed: Async callback invoked after a job permanently fails
         """
         self.session = session
         self.tenant_id = tenant_id
+        self._on_complete = on_complete
+        self._on_failed = on_failed
 
     async def enqueue(
         self,
@@ -96,7 +112,11 @@ class JobQueue:
 
         return job.id
 
-    async def dequeue(self, worker_id: str) -> Optional[JobQueueModel]:
+    async def dequeue(
+        self,
+        worker_id: str,
+        max_concurrent: int | None = None,
+    ) -> Optional[JobQueueModel]:
         """
         Get the next job for processing.
 
@@ -104,10 +124,18 @@ class JobQueue:
 
         Args:
             worker_id: Identifier of the worker claiming the job
+            max_concurrent: Maximum running jobs allowed for this tenant.
+                If the tenant already has this many running jobs, returns
+                ``None`` immediately to prevent starvation.
 
         Returns:
             Job model or None if no jobs available
         """
+        if max_concurrent is not None:
+            running = await self.get_running_count()
+            if running >= max_concurrent:
+                return None
+
         now = datetime.now(timezone.utc)
 
         # Find next available job
@@ -162,6 +190,13 @@ class JobQueue:
         # Record metrics
         record_job_completed(task_type)
 
+        # Fire completion callback
+        if self._on_complete and job:
+            try:
+                await self._on_complete(job)
+            except Exception as exc:
+                logger.error("on_complete callback failed for job %s: %s", job_id, exc)
+
     async def fail(
         self,
         job_id: UUID,
@@ -204,6 +239,13 @@ class JobQueue:
             record_job_failed(job.task_type)
 
         await self.session.flush()
+
+        # Fire failure callback when permanently failed
+        if job.status == "failed" and self._on_failed:
+            try:
+                await self._on_failed(job)
+            except Exception as exc:
+                logger.error("on_failed callback failed for job %s: %s", job_id, exc)
 
     async def get_job(self, job_id: UUID) -> Optional[JobQueueModel]:
         """Get a job by ID."""

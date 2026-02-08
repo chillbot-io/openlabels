@@ -12,6 +12,7 @@ Requires: PySide6
 """
 
 import logging
+import os
 import subprocess
 import sys
 import webbrowser
@@ -25,7 +26,7 @@ try:
         QApplication, QSystemTrayIcon, QMenu, QMessageBox
     )
     from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
-    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtCore import QTimer, QThread, Signal, QObject, Qt
     PYSIDE6_AVAILABLE = True
 except ImportError:
     PYSIDE6_AVAILABLE = False
@@ -61,6 +62,29 @@ class StatusChecker:
             # Docker check failures are expected if Docker is not installed
             logger.debug(f"Docker check failed: {type(e).__name__}: {e}")
             return False
+
+
+if PYSIDE6_AVAILABLE:
+    class ServiceWorker(QObject):
+        """Background worker for service operations (start/stop/restart)."""
+
+        finished = Signal(bool, str)  # (success, message)
+
+        def __init__(self, command: list):
+            super().__init__()
+            self._command = command
+
+        def run(self):
+            try:
+                subprocess.run(self._command, check=True, capture_output=True, timeout=120)
+                self.finished.emit(True, "Operation completed successfully")
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode(errors="replace") if e.stderr else str(e)
+                self.finished.emit(False, f"Command failed: {stderr}")
+            except subprocess.TimeoutExpired:
+                self.finished.emit(False, "Operation timed out")
+            except OSError as e:
+                self.finished.emit(False, str(e))
 
 
 class SystemTrayApp:
@@ -167,6 +191,15 @@ class SystemTrayApp:
 
         menu.addSeparator()
 
+        # Auto-start toggle
+        self.auto_start_action = QAction("Start with Windows")
+        self.auto_start_action.setCheckable(True)
+        self.auto_start_action.setChecked(self._is_auto_start_enabled())
+        self.auto_start_action.toggled.connect(self._toggle_auto_start)
+        menu.addAction(self.auto_start_action)
+
+        menu.addSeparator()
+
         # Quit
         quit_action = QAction("Quit")
         quit_action.triggered.connect(self._quit)
@@ -202,7 +235,7 @@ class SystemTrayApp:
         webbrowser.open(self.api_url)
 
     def _open_config(self):
-        """Open configuration file in default editor."""
+        """Open configuration file in the OS default editor."""
         from openlabels.core.constants import DATA_DIR
         config_paths = [
             Path("C:/ProgramData/OpenLabels/config.yaml"),
@@ -210,7 +243,7 @@ class SystemTrayApp:
         ]
         for path in config_paths:
             if path.exists():
-                subprocess.run(["notepad.exe", str(path)])
+                os.startfile(str(path))
                 return
 
         QMessageBox.warning(
@@ -220,44 +253,142 @@ class SystemTrayApp:
             "C:\\ProgramData\\OpenLabels\\config.yaml"
         )
 
+    # ------------------------------------------------------------------
+    # Service controls (12.6: run in background thread)
+    # ------------------------------------------------------------------
+
+    def _run_service_command(self, command: list, status_text: str):
+        """Run a service command in a background thread."""
+        self.status_action.setText(f"Status: {status_text}")
+        worker = ServiceWorker(command)
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda ok, msg: self._on_service_command_done(ok, msg))
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        # Keep references so they aren't garbage-collected
+        self._active_thread = thread
+        self._active_worker = worker
+        thread.start()
+
+    def _on_service_command_done(self, success: bool, message: str):
+        """Handle completion of a background service command."""
+        self._update_status()
+        if not success:
+            self.notify("Service Error", message, error=True)
+
     def _start_service(self):
-        """Start the OpenLabels service."""
-        try:
-            subprocess.run(
-                ["docker", "compose", "-p", "openlabels", "up", "-d"],
-                check=True
-            )
-            self._update_status()
-        except subprocess.CalledProcessError as e:
-            QMessageBox.critical(None, "Error", f"Failed to start service: {e}")
+        """Start the OpenLabels service in the background."""
+        self._run_service_command(
+            ["docker", "compose", "-p", "openlabels", "up", "-d"],
+            "Starting...",
+        )
 
     def _stop_service(self):
-        """Stop the OpenLabels service."""
-        try:
-            subprocess.run(
-                ["docker", "compose", "-p", "openlabels", "down"],
-                check=True
-            )
-            self._update_status()
-        except subprocess.CalledProcessError as e:
-            QMessageBox.critical(None, "Error", f"Failed to stop service: {e}")
+        """Stop the OpenLabels service in the background."""
+        self._run_service_command(
+            ["docker", "compose", "-p", "openlabels", "down"],
+            "Stopping...",
+        )
 
     def _restart_service(self):
-        """Restart the OpenLabels service."""
-        self._stop_service()
-        self._start_service()
+        """Restart the OpenLabels service in the background."""
+        self._run_service_command(
+            ["docker", "compose", "-p", "openlabels", "restart"],
+            "Restarting...",
+        )
 
     def _view_logs(self):
-        """View Docker logs."""
+        """Open the log viewer window."""
+        from openlabels.windows.log_viewer import LogViewer
+        if not hasattr(self, "_log_viewer") or self._log_viewer is None:
+            self._log_viewer = LogViewer()
+        self._log_viewer.show()
+        self._log_viewer.raise_()
+        self._log_viewer.activateWindow()
+
+    # ------------------------------------------------------------------
+    # Tray notifications (12.4)
+    # ------------------------------------------------------------------
+
+    def notify(self, title: str, message: str, *, error: bool = False, duration_ms: int = 5000):
+        """Show a system tray balloon notification."""
+        icon = QSystemTrayIcon.Critical if error else QSystemTrayIcon.Information
+        self.tray_icon.showMessage(title, message, icon, duration_ms)
+
+    def on_scan_completed(self, job_name: str, files_found: int):
+        """Notify the user when a scan completes."""
+        self.notify(
+            "Scan Complete",
+            f"{job_name}: {files_found} sensitive file{'s' if files_found != 1 else ''} found",
+        )
+
+    def on_label_applied(self, file_count: int, label_name: str):
+        """Notify the user when labels have been applied."""
+        self.notify(
+            "Labels Applied",
+            f"Applied '{label_name}' to {file_count} file{'s' if file_count != 1 else ''}",
+        )
+
+    # ------------------------------------------------------------------
+    # Auto-start (12.5)
+    # ------------------------------------------------------------------
+
+    _REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    _REGISTRY_APP_NAME = "OpenLabels"
+
+    def _is_auto_start_enabled(self) -> bool:
+        """Check if OpenLabels is set to start with Windows."""
         try:
-            subprocess.Popen(
-                ["cmd", "/c", "docker compose -p openlabels logs -f & pause"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, self._REGISTRY_KEY, 0, winreg.KEY_READ,
             )
+            try:
+                winreg.QueryValueEx(key, self._REGISTRY_APP_NAME)
+                return True
+            except FileNotFoundError:
+                return False
+            finally:
+                winreg.CloseKey(key)
+        except Exception:
+            return False
+
+    def _toggle_auto_start(self, enabled: bool):
+        """Enable or disable auto-start on Windows login."""
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, self._REGISTRY_KEY,
+                0, winreg.KEY_SET_VALUE,
+            )
+            try:
+                if enabled:
+                    winreg.SetValueEx(
+                        key, self._REGISTRY_APP_NAME, 0,
+                        winreg.REG_SZ, sys.executable,
+                    )
+                else:
+                    try:
+                        winreg.DeleteValue(key, self._REGISTRY_APP_NAME)
+                    except FileNotFoundError:
+                        pass
+            finally:
+                winreg.CloseKey(key)
         except Exception as e:
-            # Log viewing failures should be reported to user
-            logger.warning(f"Failed to open logs: {type(e).__name__}: {e}")
-            QMessageBox.critical(None, "Error", f"Failed to open logs: {e}")
+            logger.error(f"Failed to toggle auto-start: {e}")
+            QMessageBox.warning(
+                None, "Auto-Start Error",
+                f"Could not {'enable' if enabled else 'disable'} auto-start: {e}",
+            )
+            # Revert checkbox without re-triggering the signal
+            self.auto_start_action.blockSignals(True)
+            self.auto_start_action.setChecked(not enabled)
+            self.auto_start_action.blockSignals(False)
 
     def _quit(self):
         """Quit the application."""

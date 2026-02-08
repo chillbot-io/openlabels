@@ -55,25 +55,60 @@ def scan_start(target_name: str, server: str, token: str | None) -> None:
 
 @scan.command("status")
 @click.argument("job_id")
+@click.option("--watch", "-w", is_flag=True, help="Poll until scan completes")
 @server_options
-def scan_status(job_id: str, server: str, token: str | None) -> None:
+def scan_status(job_id: str, watch: bool, server: str, token: str | None) -> None:
     """Check status of a scan job."""
+    import time
+
     client = get_api_client(server, token)
 
     try:
-        response = client.get(f"/api/scans/{job_id}")
-        if response.status_code == 200:
-            scan_data = response.json()
-            click.echo(f"Job ID:     {scan_data.get('id')}")
-            click.echo(f"Status:     {scan_data.get('status')}")
-            click.echo(f"Started:    {scan_data.get('started_at', 'N/A')}")
-            click.echo(f"Completed:  {scan_data.get('completed_at', 'N/A')}")
+        if watch:
+            from openlabels.cli.base import file_progress
 
-            progress = scan_data.get("progress", {})
-            if progress:
-                click.echo(f"Progress:   {progress.get('files_scanned', 0)}/{progress.get('files_total', 0)} files")
+            with file_progress(0, "Scan") as progress:
+                task = progress.add_task("Waiting for scan...", total=None)
+                while True:
+                    response = client.get(f"/api/scans/{job_id}")
+                    if response.status_code != 200:
+                        click.echo(f"Error: {response.status_code}", err=True)
+                        return
+                    scan_data = response.json()
+                    scan_st = scan_data.get("status", "unknown")
+                    prog = scan_data.get("progress", {})
+                    scanned = prog.get("files_scanned", 0)
+                    total = prog.get("files_total", 0)
+
+                    if total > 0:
+                        progress.update(task, total=total, completed=scanned,
+                                        description=f"Scanning ({scan_st})")
+                    else:
+                        progress.update(task, description=f"Scan {scan_st}...")
+
+                    if scan_st in ("completed", "failed", "cancelled"):
+                        break
+                    time.sleep(2)
+
+            click.echo(f"Job ID:     {scan_data.get('id')}")
+            click.echo(f"Status:     {scan_st}")
+            click.echo(f"Completed:  {scan_data.get('completed_at', 'N/A')}")
+            if scan_data.get("error"):
+                click.echo(f"Error:      {scan_data['error']}")
         else:
-            click.echo(f"Error: {response.status_code}", err=True)
+            response = client.get(f"/api/scans/{job_id}")
+            if response.status_code == 200:
+                scan_data = response.json()
+                click.echo(f"Job ID:     {scan_data.get('id')}")
+                click.echo(f"Status:     {scan_data.get('status')}")
+                click.echo(f"Started:    {scan_data.get('started_at', 'N/A')}")
+                click.echo(f"Completed:  {scan_data.get('completed_at', 'N/A')}")
+
+                prog = scan_data.get("progress", {})
+                if prog:
+                    click.echo(f"Progress:   {prog.get('files_scanned', 0)}/{prog.get('files_total', 0)} files")
+            else:
+                click.echo(f"Error: {response.status_code}", err=True)
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)

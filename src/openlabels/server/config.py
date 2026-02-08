@@ -255,10 +255,13 @@ class RateLimitSettings(BaseSettings):
     # If not set, defaults to redis.url when Redis is enabled
     # Set to empty string "" to force in-memory storage even when Redis is available
     storage_uri: str | None = None
-    # Requests per minute by endpoint type
+    # Requests per minute by endpoint type (IP-based, slowapi)
     auth_limit: str = "10/minute"  # /auth/* endpoints
     api_limit: str = "100/minute"  # General API
     scan_create_limit: str = "20/minute"  # POST /api/scans
+    # Per-tenant rate limits (authenticated endpoints)
+    tenant_rpm: int = 300  # Requests per minute per tenant
+    tenant_rph: int = 10_000  # Requests per hour per tenant
 
 
 class SecuritySettings(BaseSettings):

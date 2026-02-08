@@ -7,6 +7,15 @@ from typing import Any, Callable
 
 import click
 import httpx
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 
 def common_options(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -68,6 +77,38 @@ def format_option(
             return f(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def file_progress(total: int, description: str = "Processing") -> Progress:
+    """Create a :class:`rich.progress.Progress` bar for file processing.
+
+    Usage::
+
+        with file_progress(len(files), "Scanning") as progress:
+            task = progress.add_task("scan", total=len(files))
+            for f in files:
+                process(f)
+                progress.advance(task)
+    """
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        transient=True,
+    )
+
+
+def spinner(description: str = "Working...") -> Progress:
+    """Create a spinner-style progress indicator for indeterminate operations."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        transient=True,
+    )
 
 
 def get_api_client(server: str, token: str | None = None) -> httpx.Client:

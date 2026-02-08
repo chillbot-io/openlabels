@@ -32,11 +32,15 @@ from openlabels.exceptions import MonitoringError
 from .registry import (
     enable_monitoring,
     disable_monitoring,
+    enable_monitoring_async,
+    disable_monitoring_async,
+    enable_monitoring_batch,
     is_monitored,
     get_watched_files,
     populate_cache_from_db,
     sync_cache_to_db,
 )
+from .collector import EventCollector
 from .history import (
     get_access_history,
 )
@@ -55,9 +59,15 @@ __all__ = [
     "is_monitored",
     "get_watched_files",
     # Registry – async DB integration
+    "enable_monitoring_async",
+    "disable_monitoring_async",
     "populate_cache_from_db",
     "sync_cache_to_db",
     "db",
+    # Bulk
+    "enable_monitoring_batch",
+    # Event collection
+    "EventCollector",
     # History
     "get_access_history",
 ]

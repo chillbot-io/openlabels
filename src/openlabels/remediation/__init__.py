@@ -30,19 +30,24 @@ from openlabels.exceptions import (
     QuarantineError,
     RemediationPermissionError,
 )
-from .quarantine import quarantine
+from .quarantine import quarantine, restore_from_quarantine
+from .manifest import QuarantineEntry, QuarantineManifest
 from .permissions import lock_down, get_current_acl
 
 __all__ = [
     # Types
     "RemediationResult",
     "RemediationAction",
+    # Manifest
+    "QuarantineEntry",
+    "QuarantineManifest",
     # Errors
     "RemediationError",
     "QuarantineError",
     "RemediationPermissionError",
     # Functions
     "quarantine",
+    "restore_from_quarantine",
     "lock_down",
     "get_current_acl",
     "get_current_user",

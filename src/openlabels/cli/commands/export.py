@@ -27,18 +27,23 @@ def export_results(job: str, fmt: str, output: str, server: str, token: str | No
         click.echo(f"Error: Invalid output path: {e}", err=True)
         return
 
+    from openlabels.cli.base import spinner
+
     client = get_api_client(server, token)
 
     try:
-        response = client.get(
-            "/api/results/export",
-            params={"job_id": job, "format": fmt}
-        )
+        with spinner("Exporting results...") as progress:
+            task = progress.add_task("Downloading export...", total=None)
+            response = client.get(
+                "/api/results/export",
+                params={"job_id": job, "format": fmt}
+            )
 
         if response.status_code == 200:
             with open(validated_output, "wb") as f:
                 f.write(response.content)
-            click.echo(f"Exported to: {validated_output}")
+            size_kb = len(response.content) / 1024
+            click.echo(f"Exported to: {validated_output} ({size_kb:.1f} KB)")
         else:
             click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 

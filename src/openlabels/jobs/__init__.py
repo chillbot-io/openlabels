@@ -5,7 +5,7 @@ Uses lazy imports for worker and scheduler to avoid pulling in heavy
 dependencies (adapters, ML libs, etc.) when only the queue is needed.
 """
 
-from .queue import JobQueue
+from .queue import JobCallback, JobQueue
 
 
 def __getattr__(name: str):
@@ -28,6 +28,7 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "JobCallback",
     "JobQueue",
     "run_worker",
     "DatabaseScheduler",
