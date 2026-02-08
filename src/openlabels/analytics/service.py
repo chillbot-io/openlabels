@@ -280,10 +280,12 @@ class DuckDBDashboardService:
     async def get_access_heatmap(
         self, tenant_id: UUID, since: datetime,
     ) -> list[list[int]]:
+        # Use isodow() for ISO weekday numbering (1=Mon ... 7=Sun) to
+        # match PostgreSQL's EXTRACT(isodow ...) used in the PG fallback.
         rows = await self._safe_query(
             """
             SELECT
-                dayofweek(event_time) AS day_of_week,
+                isodow(event_time)   AS day_of_week,
                 hour(event_time)     AS hour,
                 count(*)             AS access_count
             FROM access_events
@@ -295,9 +297,8 @@ class DuckDBDashboardService:
         )
         heatmap = [[0] * 24 for _ in range(7)]
         for r in rows:
-            # DuckDB dayofweek: 0=Sunday, 1=Monday ... 6=Saturday
-            # We want 0=Monday ... 6=Sunday
-            day = (r["day_of_week"] - 1) % 7
+            # isodow: 1=Monday ... 7=Sunday → index 0=Monday ... 6=Sunday
+            day = int(r["day_of_week"]) - 1
             hour = r["hour"]
             if 0 <= day < 7 and 0 <= hour < 24:
                 heatmap[day][hour] = r["access_count"]
@@ -310,12 +311,13 @@ class DuckDBDashboardService:
         job_id: UUID | None = None,
         limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]:
-        # Total count
+        # job_id is stored as binary(16) in Parquet; DuckDB can compare
+        # binary columns to hex-encoded blob literals via decode().
         count_params: list = [str(tenant_id)]
         count_sql = "SELECT count(*) AS cnt FROM scan_results WHERE tenant = ?"
         if job_id:
-            count_sql += " AND job_id = ?"
-            count_params.append(str(job_id).replace("-", ""))
+            job_hex = job_id.hex
+            count_sql += f" AND job_id = decode('{job_hex}', 'hex')"
 
         count_rows = await self._safe_query(count_sql, count_params)
         total = count_rows[0]["cnt"] if count_rows else 0
@@ -328,8 +330,7 @@ class DuckDBDashboardService:
             WHERE tenant = ?
         """
         if job_id:
-            sql += " AND job_id = ?"
-            params.append(str(job_id).replace("-", ""))
+            sql += f" AND job_id = decode('{job_id.hex}', 'hex')"
         sql += " ORDER BY risk_score DESC LIMIT ?"
         params.append(limit)
 

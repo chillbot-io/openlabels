@@ -33,7 +33,18 @@ class DuckDBEngine:
         self._catalog_root = catalog_root.rstrip("/")
         self._db = duckdb.connect(":memory:")
 
-        # Apply resource limits
+        # Validate config values before interpolating into SQL.
+        # memory_limit must be a DuckDB-recognised size string.
+        import re
+        if not re.fullmatch(r"\d+(\.\d+)?\s*(B|KB|MB|GB|TB)", memory_limit, re.IGNORECASE):
+            raise ValueError(
+                f"Invalid duckdb_memory_limit: {memory_limit!r} "
+                "(expected format like '2GB', '512MB')"
+            )
+        if not isinstance(threads, int) or threads < 1:
+            raise ValueError(f"duckdb_threads must be a positive integer, got {threads!r}")
+
+        # Apply resource limits (validated above)
         self._db.execute(f"SET memory_limit = '{memory_limit}';")
         self._db.execute(f"SET threads = {threads};")
 
@@ -65,7 +76,9 @@ class DuckDBEngine:
         created so that ``SELECT ... FROM <view>`` returns zero rows
         instead of raising an IO error.
         """
-        root = self._catalog_root
+        # Escape single quotes in path to prevent SQL injection via
+        # user-configured catalog_root (e.g. paths containing apostrophes).
+        root = self._catalog_root.replace("'", "''")
 
         for view_name, pattern in self._VIEW_DEFS:
             # Drop any previous object (table first, then view) to

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import pyarrow as pa
 from sqlalchemy import select
 
 from openlabels.analytics.arrow_convert import (
@@ -57,7 +58,12 @@ def _flush_state_path(storage: CatalogStorage) -> str:
 
 
 def load_flush_state(storage: CatalogStorage) -> dict:
-    """Load the last-flushed cursor state from ``_metadata/flush_state.json``."""
+    """Load the last-flushed cursor state from ``_metadata/flush_state.json``.
+
+    Uses ``storage.root`` to resolve the path.  When remote backends
+    (S3 / Azure) are added, this should be migrated to a ``read_json``
+    method on the :class:`CatalogStorage` protocol.
+    """
     path = _flush_state_path(storage)
     if not storage.exists(path):
         return {
@@ -65,18 +71,18 @@ def load_flush_state(storage: CatalogStorage) -> dict:
             "last_audit_log_flush": None,
             "schema_version": 1,
         }
-    import pyarrow  # noqa: F401 — only needed for the read path
 
-    # Read JSON directly from the storage backend
-    from pathlib import Path as _P
-
-    resolved = _P(storage.root) / path
+    resolved = Path(storage.root) / path
     with open(resolved) as f:
         return json.load(f)
 
 
 def save_flush_state(storage: CatalogStorage, state: dict) -> None:
-    """Persist flush cursor state."""
+    """Persist flush cursor state.
+
+    Uses ``storage.root`` directly.  When remote backends are added,
+    this should be migrated to a ``write_json`` method on the protocol.
+    """
     resolved = Path(storage.root) / _METADATA_DIR
     resolved.mkdir(parents=True, exist_ok=True)
     dest = resolved / _FLUSH_STATE_FILE
@@ -200,21 +206,16 @@ async def flush_events_to_catalog(
 def _write_partitioned_access_events(
     storage: CatalogStorage,
     rows,
-    table,
+    table: pa.Table,
 ) -> None:
     """Group access events by (tenant_id, event_date) and write partitioned Parquet."""
-    import pyarrow as pa
-
-    # Build partition groups from the ORM rows (cheap — iterate once)
     groups: dict[tuple, list[int]] = {}
     for idx, r in enumerate(rows):
         key = (str(r.tenant_id), r.event_time.date())
         groups.setdefault(key, []).append(idx)
 
     for (tenant_str, event_date), indices in groups.items():
-        from uuid import UUID as _UUID
-
-        partition = access_event_partition(_UUID(tenant_str), event_date)
+        partition = access_event_partition(UUID(tenant_str), event_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)
@@ -223,7 +224,7 @@ def _write_partitioned_access_events(
 def _write_partitioned_audit_logs(
     storage: CatalogStorage,
     rows,
-    table,
+    table: pa.Table,
 ) -> None:
     """Group audit logs by (tenant_id, log_date) and write partitioned Parquet."""
     groups: dict[tuple, list[int]] = {}
@@ -232,9 +233,7 @@ def _write_partitioned_audit_logs(
         groups.setdefault(key, []).append(idx)
 
     for (tenant_str, log_date), indices in groups.items():
-        from uuid import UUID as _UUID
-
-        partition = audit_log_partition(_UUID(tenant_str), log_date)
+        partition = audit_log_partition(UUID(tenant_str), log_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)
