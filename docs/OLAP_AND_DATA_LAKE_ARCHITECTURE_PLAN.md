@@ -1,6 +1,6 @@
 # OLAP and Data Lake Architecture Plan
 
-**Version:** 1.2
+**Version:** 2.0
 **Status:** Proposed
 **Last Updated:** February 2026
 
@@ -22,7 +22,7 @@
 12. [Unified Event Collection](#12-unified-event-collection)
 13. [Unified Scan Pipeline](#13-unified-scan-pipeline)
 14. [Policy Engine Integration](#14-policy-engine-integration)
-15. [Alerting and Notification System](#15-alerting-and-notification-system)
+15. [SIEM Export Integration](#15-siem-export-integration)
 16. [Reporting and Distribution](#16-reporting-and-distribution)
 17. [Operational Readiness](#17-operational-readiness)
 18. [Implementation Phases](#18-implementation-phases)
@@ -46,7 +46,7 @@ measurable problems as data grows:
 | 10,000-file heatmap cap | `dashboard.py:482` (`HEATMAP_MAX_FILES`) | Full treemap impossible at scale |
 | 60-second Redis cache on stats | `dashboard.py:34` (`DASHBOARD_STATS_TTL`) | Hides slow queries behind cache |
 | LIMIT 10 on top users | `monitoring.py:442` (`get_access_stats`) | Prevents full user aggregation |
-| HAVING > 100 threshold | `monitoring.py:484-496` (`detect_access_anomalies`) | Pre-filters to reduce result set |
+| HAVING > 100 threshold | `monitoring.py:484-496` | Pre-filters to reduce result set |
 
 **Root cause:** PostgreSQL is optimized for row-at-a-time OLTP access. Analytical queries
 (GROUP BY date, COUNT across millions of rows, full-table aggregations) fight against
@@ -99,7 +99,7 @@ library with no server to manage.
 │                      READ PATH — OLAP (DuckDB + Parquet)             │
 │                                                                      │
 │   Dashboard:    Trends, entity trends, heatmaps, overall stats       │
-│   Monitoring:   Access stats, anomaly detection, heatmap patterns    │
+│   Monitoring:   Access stats, access heatmap patterns                │
 │   Export:       Full CSV/JSON export (streaming from Parquet)         │
 │   Remediation:  Stats/summary aggregations                           │
 │   Catalog:      File inventory browsing, folder roll-ups             │
@@ -677,28 +677,6 @@ ORDER BY risk_score DESC;
 DuckDB streams results efficiently — the 10K cap becomes unnecessary. The tree construction
 still happens in Python but operates on the full dataset.
 
-#### Anomaly Detection (`monitoring.py:464` → `detect_access_anomalies`)
-
-**Before (PostgreSQL):** Two separate queries with HAVING thresholds.
-
-**After (DuckDB):** Combined query with window functions.
-
-```sql
-WITH user_activity AS (
-    SELECT
-        user_name,
-        file_path,
-        count(*) AS total_events,
-        count(*) FILTER (WHERE NOT success) AS failed_events
-    FROM access_events
-    WHERE tenant = ? AND event_time >= current_timestamp - INTERVAL ? HOUR
-    GROUP BY user_name, file_path
-)
-SELECT * FROM user_activity
-WHERE total_events > 100 OR failed_events > 5
-ORDER BY total_events DESC;
-```
-
 #### Export (`results.py:201` → `export_results`)
 
 **Before (PostgreSQL):** Async generator streaming from SQLAlchemy with Python-side filtering.
@@ -747,6 +725,19 @@ src/openlabels/monitoring/
     ├── linux_fanotify.py    # Linux fanotify real-time stream
     ├── m365_audit.py        # M365 Management Activity API harvester
     └── graph_webhook.py     # Graph API webhook change notifications
+
+src/openlabels/export/
+├── __init__.py              # Public API: ExportEngine, SIEMAdapter
+├── engine.py                # Export orchestration, cursor tracking, scheduling
+├── records.py               # ExportRecord dataclass, record builders
+└── adapters/
+    ├── __init__.py           # Adapter auto-discovery from config
+    ├── base.py              # SIEMAdapter protocol
+    ├── splunk.py            # Splunk HEC adapter
+    ├── sentinel.py          # Microsoft Sentinel Log Analytics adapter
+    ├── qradar.py            # IBM QRadar syslog/LEEF adapter
+    ├── elastic.py           # Elasticsearch Bulk API adapter
+    └── syslog_cef.py        # Generic syslog CEF adapter
 ```
 
 ### Dependency Map
@@ -757,8 +748,10 @@ server/routes/monitoring.py ─┘                                              
 server/routes/results.py ────┘                                                    ▼
                                                                              Parquet files
 jobs/tasks/scan.py ──► analytics/flush.py ──► analytics/storage.py ──► S3/Azure/Local
-                                            ▲
-jobs/tasks/flush.py ─────────────────────────┘  (periodic event flush)
+                   │                        ▲
+                   │   jobs/tasks/flush.py ──┘  (periodic event flush)
+                   │
+                   └──► export/engine.py ──► export/adapters/* ──► Splunk/Sentinel/QRadar/Elastic
 
 monitoring/harvester.py ──► monitoring/providers/* ──► FileAccessEvent (PostgreSQL)
 monitoring/stream.py ───────┘                                  │
@@ -963,7 +956,6 @@ monitoring:
 | `GET /dashboard/access-heatmap` | `dashboard.py` | `get_access_heatmap` | 415 | FileAccessEvent | 7x24 GROUP BY EXTRACT over 28 days |
 | `GET /dashboard/heatmap` | `dashboard.py` | `get_heatmap` | 488 | ScanResult | Full treemap with 10K cap |
 | `GET /monitoring/stats` | `monitoring.py` | `get_access_stats` | 386 | FileAccessEvent, MonitoredFile | Multi-aggregation with LIMIT workaround |
-| `GET /monitoring/stats/anomalies` | `monitoring.py` | `detect_access_anomalies` | 464 | FileAccessEvent | GROUP BY + HAVING over time window |
 | `GET /remediation/stats/summary` | `remediation.py` | `get_remediation_stats` | 601 | RemediationAction | 7 CASE aggregations |
 | `GET /results/export` | `results.py` | `export_results` | 201 | ScanResult | Full-table streaming export |
 
@@ -1535,7 +1527,7 @@ class FanotifyProvider:
 | **Scope** | Entire mount point | Per-file watch rules |
 | **User info** | PID only (resolve via /proc) | Full UID, username, syscall |
 | **Persistence** | In-memory only (events lost on restart) | Persisted to audit.log |
-| **Use for** | Real-time alerts, trigger immediate scans | Historical auditing, compliance |
+| **Use for** | Real-time change detection, trigger immediate scans | Historical auditing, compliance |
 
 #### 12.5 SharePoint — M365 Management Activity API
 
@@ -2063,7 +2055,7 @@ File scanned → 3 SSNs found, exposure=PUBLIC, risk_tier=CRITICAL
 3. **Automated actions**: Policy violations can trigger:
    - Quarantine (connect to `remediation/quarantine.py`)
    - Label application (connect to `labeling/engine.py`)
-   - Alert notification (connect to Section 15 alerting)
+   - SIEM export (findings pushed to configured SIEMs via Section 15)
    - Monitoring enrollment (add to `MonitoredFile`)
 
 4. **Dashboard integration**: Policy compliance stats as a DuckDB OLAP query —
@@ -2084,157 +2076,429 @@ class ScanResult(Base):
 
 ---
 
-## 15. Alerting and Notification System
+## 15. SIEM Export Integration
 
-### Current State
+### Purpose
 
-The only notification mechanism is Windows system tray balloon messages (`tray.py`).
-The web UI settings page has a notifications section that renders forms but **discards
-all input** — the POST handlers don't persist anything.
+OpenLabels detects and classifies sensitive data. The customer's SIEM (Splunk, Sentinel,
+QRadar, Elastic) handles correlation, alerting, dashboarding, and incident response.
+OpenLabels needs to be a **first-class data source** for these platforms — not just a
+CSV dump, but native adapters that speak each SIEM's ingestion protocol.
 
-For an enterprise data classification tool that detects CRITICAL risk files, this is
-a fundamental gap. Finding sensitive data is useless if nobody is told about it.
-
-### Alert Architecture
+### Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      ALERT TRIGGERS                               │
+│                    EXPORT SOURCES                                  │
 │                                                                    │
-│  Scan completion ──┐                                              │
-│  CRITICAL finding ─┤                                              │
-│  Policy violation ─┤──► AlertEngine.evaluate() ──► Alert Rules    │
-│  Anomaly detected ─┤                                              │
-│  Remediation event ┘                                              │
+│  scan_results (Parquet) ──┐                                       │
+│  file_inventory (Parquet) ┤                                       │
+│  access_events (Parquet) ─┤──► ExportEngine ──► SIEM Adapters     │
+│  audit_log (Parquet) ─────┤                                       │
+│  policy_violations ───────┘                                       │
 └──────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      ALERT RULES                                  │
-│                                                                    │
-│  Rule: "CRITICAL files found"                                     │
-│    Condition: scan.critical_files > 0                             │
-│    Severity: HIGH                                                 │
-│    Channels: [email, slack]                                       │
-│    Throttle: max 1 per hour per target                            │
-│                                                                    │
-│  Rule: "Anomalous access detected"                                │
-│    Condition: anomaly.type = "high_volume"                        │
-│    Severity: CRITICAL                                             │
-│    Channels: [email, slack, webhook]                              │
-│    Throttle: immediate                                            │
-└──────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   DELIVERY CHANNELS                               │
-│                                                                    │
-│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ │
-│  │  Email  │ │  Slack  │ │  Teams   │ │ Webhook │ │  Syslog  │ │
-│  │  (SMTP) │ │  (API)  │ │ (Connec.)│ │ (HTTP)  │ │ (RFC5424)│ │
-│  └─────────┘ └─────────┘ └──────────┘ └─────────┘ └──────────┘ │
-└──────────────────────────────────────────────────────────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│  Splunk          │ │ Microsoft        │ │  IBM QRadar      │
+│  (HEC API)       │ │ Sentinel         │ │  (Syslog/LEEF)   │
+│                  │ │ (Log Analytics)  │ │                  │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│  Elastic         │ │  Generic         │ │  File Export     │
+│  (Bulk API)      │ │  Syslog (CEF)    │ │  (CSV/JSON/CEF)  │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
-### Delivery Channels
-
-| Channel | Protocol | Use Case |
-|---------|----------|----------|
-| **Email** | SMTP/STARTTLS | Default — compliance reports, scan summaries, critical alerts |
-| **Slack** | Slack Web API (`chat.postMessage`) | Real-time team notifications |
-| **Microsoft Teams** | Incoming Webhook Connector | M365-centric organizations |
-| **Generic Webhook** | HTTP POST (JSON payload) | SIEM integration, custom automation |
-| **Syslog** | RFC 5424 (UDP/TCP/TLS) | Enterprise logging infrastructure |
-
-### Channel Protocol
+### SIEM Adapter Protocol
 
 ```python
-# src/openlabels/alerting/channels/base.py
+# src/openlabels/export/adapters/base.py
 
 @dataclass
-class AlertMessage:
-    """Normalized alert message for all channels."""
+class ExportRecord:
+    """Normalized record for SIEM export."""
 
-    title: str
-    body: str                     # Markdown formatted
-    severity: str                 # info, warning, high, critical
-    source: str                   # scan, monitoring, remediation, policy
-    tenant_id: UUID
-    metadata: dict                # Channel-specific data (scan_id, file_path, etc.)
+    record_type: str              # scan_result, access_event, policy_violation
     timestamp: datetime
+    tenant_id: UUID
+    file_path: str
+    risk_score: int | None
+    risk_tier: str | None
+    entity_types: list[str]       # ["SSN", "CREDIT_CARD", ...]
+    entity_counts: dict[str, int]
+    policy_violations: list[str]  # ["HIPAA §164.502", ...]
+    action_taken: str | None      # labeled, quarantined, etc.
+    user: str | None              # For access events
+    source_adapter: str           # filesystem, sharepoint, onedrive
+    metadata: dict                # Adapter-specific fields
 
 
-class AlertChannel(Protocol):
-    """Protocol for alert delivery channels."""
+class SIEMAdapter(Protocol):
+    """Protocol for SIEM-specific export adapters."""
 
-    async def send(self, message: AlertMessage) -> bool:
-        """Send an alert. Returns True if delivery succeeded."""
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        """
+        Export a batch of records to the SIEM.
+        Returns number of records successfully ingested.
+        """
         ...
 
-    async def test(self) -> bool:
-        """Test channel connectivity. Used by UI 'Send Test' button."""
+    async def test_connection(self) -> bool:
+        """Verify connectivity to the SIEM endpoint."""
+        ...
+
+    def format_name(self) -> str:
+        """Return adapter name: 'splunk', 'sentinel', 'qradar', etc."""
+        ...
+```
+
+### Platform Adapters
+
+#### 15.1 Splunk — HTTP Event Collector (HEC)
+
+```python
+# src/openlabels/export/adapters/splunk.py
+
+class SplunkAdapter:
+    """
+    Export to Splunk via HTTP Event Collector (HEC).
+
+    HEC endpoint: https://{host}:8088/services/collector/event
+    Authentication: Bearer token (HEC token)
+    Format: JSON events with sourcetype=openlabels
+
+    Splunk indexes events by sourcetype and source. OpenLabels findings
+    appear as structured events that Splunk dashboards, alerts, and
+    correlation searches can consume natively.
+    """
+
+    def __init__(self, hec_url: str, hec_token: str,
+                 index: str = "main", sourcetype: str = "openlabels",
+                 verify_ssl: bool = True):
+        self._url = hec_url
+        self._token = hec_token
+        self._index = index
+        self._sourcetype = sourcetype
+        self._verify_ssl = verify_ssl
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        # POST /services/collector/event
+        # Each record becomes a Splunk event:
+        # {"event": {...}, "sourcetype": "openlabels", "index": "main",
+        #  "time": epoch, "source": "openlabels:scan_result"}
+        # Batch POST with newline-delimited JSON
+        ...
+
+    def format_name(self) -> str:
+        return "splunk"
+```
+
+#### 15.2 Microsoft Sentinel — Log Analytics Data Collector API
+
+```python
+# src/openlabels/export/adapters/sentinel.py
+
+class SentinelAdapter:
+    """
+    Export to Microsoft Sentinel via Log Analytics Data Collector API.
+
+    Endpoint: https://{workspace_id}.ods.opinsights.azure.com/api/logs
+    Authentication: Shared key (workspace ID + primary key)
+    Format: JSON array with custom log type
+
+    Records appear in Sentinel as custom log table: OpenLabels_CL
+    Fields auto-mapped with _s (string), _d (double), _t (datetime) suffixes.
+    Can be queried via KQL in Sentinel workbooks and analytics rules.
+    """
+
+    def __init__(self, workspace_id: str, shared_key: str,
+                 log_type: str = "OpenLabels"):
+        self._workspace_id = workspace_id
+        self._shared_key = shared_key
+        self._log_type = log_type
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        # POST /api/logs?api-version=2016-04-01
+        # Header: Authorization: SharedKey {workspace_id}:{signature}
+        # Header: Log-Type: OpenLabels
+        # Body: JSON array of records
+        # HMAC-SHA256 signature over content-length + date + resource
+        ...
+
+    def format_name(self) -> str:
+        return "sentinel"
+```
+
+#### 15.3 IBM QRadar — Syslog / LEEF
+
+```python
+# src/openlabels/export/adapters/qradar.py
+
+class QRadarAdapter:
+    """
+    Export to IBM QRadar via syslog using LEEF format.
+
+    LEEF (Log Event Extended Format) is QRadar's preferred structured format.
+    Alternative: CEF (Common Event Format) also supported.
+
+    Transport: Syslog over UDP/TCP/TLS (RFC 5424)
+    Format: LEEF:2.0|OpenLabels|OpenLabels|1.0|ScanResult|...
+
+    QRadar auto-parses LEEF fields into event properties for correlation rules,
+    offenses, and dashboard widgets.
+    """
+
+    def __init__(self, syslog_host: str, syslog_port: int = 514,
+                 protocol: str = "tcp", use_tls: bool = False,
+                 format: str = "leef"):
+        self._host = syslog_host
+        self._port = syslog_port
+        self._protocol = protocol
+        self._use_tls = use_tls
+        self._format = format  # "leef" or "cef"
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        # Each record → LEEF syslog message:
+        # LEEF:2.0|OpenLabels|Scanner|2.0|ScanResult|
+        #   filePath={path}\triskScore={score}\triskTier={tier}\t
+        #   entityTypes={types}\tpolicyViolations={violations}
+        ...
+
+    def _to_leef(self, record: ExportRecord) -> str:
+        """Convert ExportRecord to LEEF 2.0 format string."""
+        ...
+
+    def _to_cef(self, record: ExportRecord) -> str:
+        """Convert ExportRecord to CEF format string."""
+        # CEF:0|OpenLabels|Scanner|2.0|ScanResult|Sensitive Data Found|{sev}|
+        #   filePath={path} riskScore={score} ...
+        ...
+
+    def format_name(self) -> str:
+        return "qradar"
+```
+
+#### 15.4 Elastic — Bulk API
+
+```python
+# src/openlabels/export/adapters/elastic.py
+
+class ElasticAdapter:
+    """
+    Export to Elasticsearch / Elastic SIEM via Bulk API.
+
+    Endpoint: https://{host}:9200/_bulk
+    Authentication: API key or basic auth
+    Format: NDJSON (action + document pairs)
+    Index pattern: openlabels-{record_type}-YYYY.MM.DD
+
+    Records are indexed as ECS-compatible documents. Elastic SIEM rules,
+    Kibana dashboards, and Lens visualizations can query them directly.
+    """
+
+    def __init__(self, hosts: list[str], api_key: str | None = None,
+                 username: str | None = None, password: str | None = None,
+                 index_prefix: str = "openlabels",
+                 verify_ssl: bool = True):
+        self._hosts = hosts
+        self._api_key = api_key
+        self._username = username
+        self._password = password
+        self._index_prefix = index_prefix
+        self._verify_ssl = verify_ssl
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        # POST /_bulk
+        # Each record → two NDJSON lines:
+        # {"index": {"_index": "openlabels-scan_result-2026.02.08"}}
+        # {"@timestamp": "...", "file.path": "...", "risk.score": ..., ...}
+        # Map to ECS fields where possible (file.*, user.*, event.*)
+        ...
+
+    def format_name(self) -> str:
+        return "elastic"
+```
+
+#### 15.5 Generic Syslog — CEF Format
+
+```python
+# src/openlabels/export/adapters/syslog_cef.py
+
+class SyslogCEFAdapter:
+    """
+    Generic syslog export using CEF (Common Event Format).
+
+    CEF is supported by most SIEMs and log management platforms.
+    Useful as a fallback when no native adapter exists for the target SIEM.
+
+    Transport: UDP, TCP, or TLS syslog (RFC 5424)
+    Format: CEF:0|OpenLabels|Scanner|2.0|{event_id}|{name}|{severity}|{ext}
+    """
+
+    def __init__(self, host: str, port: int = 514,
+                 protocol: str = "tcp", use_tls: bool = False):
+        ...
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        ...
+
+    def format_name(self) -> str:
+        return "syslog_cef"
+```
+
+### Export Engine
+
+The `ExportEngine` manages adapter lifecycle, scheduling, and delivery tracking.
+
+```python
+# src/openlabels/export/engine.py
+
+class ExportEngine:
+    """
+    Manages SIEM export across configured adapters.
+
+    Supports:
+    - Scheduled export (post-scan, periodic)
+    - On-demand export (API trigger, CLI)
+    - Continuous streaming (near-real-time to SIEM)
+    - Delivery tracking (last exported timestamp per adapter)
+    """
+
+    def __init__(self, adapters: list[SIEMAdapter], analytics: AnalyticsService):
+        self._adapters = adapters
+        self._analytics = analytics
+        self._cursors: dict[str, datetime] = {}  # adapter_name → last_exported_at
+
+    async def export_since_last(self, record_type: str = "all") -> dict[str, int]:
+        """
+        Export new records to all adapters since their last cursor.
+        Returns {adapter_name: records_exported}.
+        """
+        results = {}
+        for adapter in self._adapters:
+            cursor = self._cursors.get(adapter.format_name())
+            records = await self._fetch_new_records(record_type, since=cursor)
+            if records:
+                count = await adapter.export_batch(records)
+                self._cursors[adapter.format_name()] = records[-1].timestamp
+                results[adapter.format_name()] = count
+        return results
+
+    async def export_scan(self, job_id: UUID) -> dict[str, int]:
+        """Export all results from a specific scan job to all adapters."""
+        ...
+
+    async def export_full(self, tenant_id: UUID, since: datetime | None = None,
+                          record_types: list[str] | None = None) -> dict[str, int]:
+        """Full or filtered export to all adapters."""
         ...
 ```
 
 ### Configuration
 
 ```python
-class AlertSettings(BaseSettings):
-    """Alerting configuration."""
+class SIEMExportSettings(BaseSettings):
+    """SIEM export configuration."""
 
     enabled: bool = False
+    mode: Literal["post_scan", "periodic", "continuous"] = "post_scan"
+    periodic_interval_seconds: int = 300  # 5 minutes (for periodic mode)
 
-    # Email (SMTP)
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_use_tls: bool = True
-    smtp_from_address: str = "openlabels@example.com"
-    smtp_to_addresses: list[str] = []
+    # Splunk HEC
+    splunk_hec_url: str = ""
+    splunk_hec_token: str = ""
+    splunk_index: str = "main"
+    splunk_sourcetype: str = "openlabels"
+    splunk_verify_ssl: bool = True
 
-    # Slack
-    slack_webhook_url: str = ""
-    slack_channel: str = ""
+    # Microsoft Sentinel
+    sentinel_workspace_id: str = ""
+    sentinel_shared_key: str = ""
+    sentinel_log_type: str = "OpenLabels"
 
-    # Microsoft Teams
-    teams_webhook_url: str = ""
+    # IBM QRadar
+    qradar_syslog_host: str = ""
+    qradar_syslog_port: int = 514
+    qradar_protocol: str = "tcp"
+    qradar_use_tls: bool = False
+    qradar_format: str = "leef"  # "leef" or "cef"
 
-    # Generic webhook
-    webhook_url: str = ""
-    webhook_headers: dict[str, str] = {}
+    # Elastic
+    elastic_hosts: list[str] = []
+    elastic_api_key: str = ""
+    elastic_username: str = ""
+    elastic_password: str = ""
+    elastic_index_prefix: str = "openlabels"
+    elastic_verify_ssl: bool = True
 
-    # Syslog
+    # Generic syslog (CEF)
     syslog_host: str = ""
     syslog_port: int = 514
-    syslog_protocol: str = "udp"   # udp, tcp, tls
+    syslog_protocol: str = "tcp"
+    syslog_use_tls: bool = False
 
-    # Throttling
-    throttle_window_seconds: int = 3600  # 1 hour default
-    max_alerts_per_window: int = 10
+    # Record types to export
+    export_record_types: list[str] = ["scan_result", "policy_violation"]
+    # Options: scan_result, access_event, policy_violation, audit_log
+
+
+# Added to main Settings class:
+class Settings(BaseSettings):
+    ...
+    siem_export: SIEMExportSettings = Field(default_factory=SIEMExportSettings)
 ```
 
 ```bash
-# Environment variables
-OPENLABELS_ALERTING__ENABLED=true
-OPENLABELS_ALERTING__SMTP_HOST=smtp.company.com
-OPENLABELS_ALERTING__SMTP_TO_ADDRESSES=["security@company.com","compliance@company.com"]
-OPENLABELS_ALERTING__SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
-OPENLABELS_ALERTING__TEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/...
+# Environment variables — Splunk example
+OPENLABELS_SIEM_EXPORT__ENABLED=true
+OPENLABELS_SIEM_EXPORT__MODE=post_scan
+OPENLABELS_SIEM_EXPORT__SPLUNK_HEC_URL=https://splunk.company.com:8088/services/collector/event
+OPENLABELS_SIEM_EXPORT__SPLUNK_HEC_TOKEN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+OPENLABELS_SIEM_EXPORT__SPLUNK_INDEX=security
+
+# Sentinel example
+OPENLABELS_SIEM_EXPORT__ENABLED=true
+OPENLABELS_SIEM_EXPORT__SENTINEL_WORKSPACE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+OPENLABELS_SIEM_EXPORT__SENTINEL_SHARED_KEY=...base64...
+
+# QRadar example
+OPENLABELS_SIEM_EXPORT__ENABLED=true
+OPENLABELS_SIEM_EXPORT__QRADAR_SYSLOG_HOST=qradar.company.com
+OPENLABELS_SIEM_EXPORT__QRADAR_USE_TLS=true
+OPENLABELS_SIEM_EXPORT__QRADAR_FORMAT=leef
+
+# Elastic example
+OPENLABELS_SIEM_EXPORT__ENABLED=true
+OPENLABELS_SIEM_EXPORT__ELASTIC_HOSTS=["https://elastic.company.com:9200"]
+OPENLABELS_SIEM_EXPORT__ELASTIC_API_KEY=...
 ```
 
-### Alert Trigger Integration
+### Export Trigger Integration
 
-Alerts fire from existing code paths with minimal changes:
+| Trigger | Mode | Behavior |
+|---------|------|----------|
+| Scan completed | `post_scan` | Export all results from completed scan job to configured SIEMs |
+| Background timer | `periodic` | Export new records since last cursor every N seconds |
+| Continuous stream | `continuous` | Near-real-time: export as records are written (via flush hook) |
+| API call | On-demand | `POST /api/v1/export/siem` triggers immediate export |
+| CLI command | On-demand | `openlabels export siem --since 2026-02-01` |
 
-| Trigger Point | File | What Fires |
-|--------------|------|------------|
-| Scan completed | `scan.py:420-430` | Summary: X files scanned, Y critical, Z labeled |
-| CRITICAL file found | `scan.py:302-323` (per-file) | Immediate: "CRITICAL risk file detected at {path}" |
-| Policy violation | Policy engine (Section 14) | Per-policy: "HIPAA violation: SSN in public file" |
-| Anomaly detected | `monitoring.py:464-538` | "Unusual access: {user} accessed {N} files in {T}h" |
-| Remediation action | `remediation/quarantine.py` | "File quarantined: {path} (risk: {tier})" |
-| Label applied | `labeling/engine.py` | "Sensitivity label applied: {label} to {N} files" |
+### Data Mapping
+
+Each adapter maps `ExportRecord` fields to the SIEM's native schema:
+
+| ExportRecord Field | Splunk | Sentinel (KQL) | QRadar (LEEF) | Elastic (ECS) |
+|-------------------|--------|----------------|---------------|---------------|
+| `file_path` | `file_path` | `FilePath_s` | `filePath` | `file.path` |
+| `risk_score` | `risk_score` | `RiskScore_d` | `riskScore` | `event.risk_score` |
+| `risk_tier` | `risk_tier` | `RiskTier_s` | `riskTier` | `event.severity_name` |
+| `entity_types` | `entity_types` | `EntityTypes_s` | `entityTypes` | `labels.entity_types` |
+| `policy_violations` | `policy_violations` | `PolicyViolations_s` | `policyViolations` | `rule.name` |
+| `user` | `user` | `User_s` | `userName` | `user.name` |
+| `action_taken` | `action` | `ActionTaken_s` | `actionTaken` | `event.action` |
+| `timestamp` | `_time` | `TimeGenerated` | `devTime` | `@timestamp` |
 
 ---
 
@@ -2316,7 +2580,7 @@ class ReportSchedule(BaseSettings):
 ```
 
 Reports use the existing cron/schedule infrastructure (`croniter`-based scheduling
-in the job system) and the alerting email channel (Section 15) for delivery.
+in the job system). Delivery via email (SMTP), local file, or S3/Azure upload.
 
 ---
 
@@ -2428,7 +2692,7 @@ Models needed:
 1. Migrate `get_overall_stats` (simplest — good proof of concept)
 2. Migrate `get_trends` and `get_entity_trends` (remove sampling workarounds)
 3. Migrate `get_heatmap` and `get_access_heatmap` (remove caps)
-4. Migrate `get_access_stats` and `detect_access_anomalies`
+4. Migrate `get_access_stats`
 5. Migrate `get_remediation_stats`
 6. Migrate `export_results` to stream from Parquet
 7. Add graceful fallback for `catalog.enabled = false`
@@ -2485,7 +2749,7 @@ Add real-time, low-latency event sources that complement the periodic harvesters
    - `fanotify_mark()` with `FAN_MARK_FILESYSTEM` for whole-mount monitoring
    - PID → username resolution via `/proc/{pid}/status`
 3. Implement `EventStreamManager` — long-lived async tasks, batched DB writes
-4. Add real-time alert hooks — trigger immediate scan on high-risk file modification
+4. Add real-time scan triggers — detect high-risk file modification and queue immediate scan
 5. Integrate USN journal with scan pipeline as change provider (Section 13)
 6. Integrate fanotify with scan pipeline as change provider (Section 13)
 7. Tests: USN journal parsing (mock DeviceIoControl), fanotify event parsing, buffer flush
@@ -2514,39 +2778,40 @@ Wire the dead `core/policies/` package into the live scan pipeline and expose vi
 5. Add `/api/v1/policies/` CRUD endpoints (list, create, update, delete)
 6. Add `POST /api/v1/policies/evaluate` dry-run endpoint against existing results
 7. Connect policy violation actions to remediation (quarantine, label, monitor)
-8. Connect policy violations to alerting system (Section 15)
+8. Connect policy violations to SIEM export (Section 15)
 9. Add compliance dashboard stats to DuckDB OLAP queries
 10. Add default policy packs: HIPAA, GDPR, PCI-DSS, SOC2 (loadable templates)
 11. Tests: Policy evaluation against scan results, action triggering, API CRUD
 
-### Phase K: Alerting and Notification System
+### Phase K: SIEM Export Integration
 
-Build the alert delivery infrastructure that all other subsystems use.
+Build adapters for major SIEM platforms so OpenLabels findings flow natively into
+the customer's security operations tooling.
 
-1. Create `src/openlabels/alerting/` package
-2. Implement `AlertChannel` protocol and `AlertMessage` dataclass
-3. Implement `EmailChannel` — SMTP/STARTTLS with Jinja2 email templates
-4. Implement `SlackChannel` — Slack Web API `chat.postMessage`
-5. Implement `TeamsChannel` — Microsoft Teams Incoming Webhook Connector
-6. Implement `WebhookChannel` — generic HTTP POST with configurable headers
-7. Implement `SyslogChannel` — RFC 5424 over UDP/TCP/TLS
-8. Implement `AlertEngine` — rule evaluation, throttling, channel routing
-9. Add `AlertSettings` to config (SMTP, Slack, Teams, webhook, syslog credentials)
-10. Add alert trigger hooks to: scan completion, CRITICAL findings, anomaly detection, remediation
-11. Add `/api/v1/alerts/` endpoints: list rules, create rule, test channel
-12. Fix web UI settings persistence — POST handlers must write to config/DB
-13. Tests: Channel delivery (mocked), throttling, rule evaluation, template rendering
+1. Create `src/openlabels/export/` package with `SIEMAdapter` protocol and `ExportRecord` dataclass
+2. Implement `SplunkAdapter` — HTTP Event Collector (HEC) with batched JSON events
+3. Implement `SentinelAdapter` — Log Analytics Data Collector API with HMAC-SHA256 auth
+4. Implement `QRadarAdapter` — syslog transport with LEEF/CEF format encoding
+5. Implement `ElasticAdapter` — Elasticsearch Bulk API with ECS field mapping
+6. Implement `SyslogCEFAdapter` — generic CEF over syslog (fallback for other SIEMs)
+7. Implement `ExportEngine` — adapter lifecycle, cursor tracking, batch scheduling
+8. Add `SIEMExportSettings` to config (per-adapter credentials and options)
+9. Add post-scan export hook to `execute_scan_task()` — push findings after each scan
+10. Add periodic export mode — background task exports new records on interval
+11. Add `/api/v1/export/siem` endpoint: trigger export, test connection, view status
+12. Add `openlabels export siem --adapter splunk --since 2026-02-01` CLI command
+13. Tests: Adapter serialization (CEF/LEEF/JSON), connection testing (mocked), cursor tracking
 
 ### Phase L: Reporting and Distribution
 
-Scheduled and on-demand report generation with email delivery.
+Scheduled and on-demand report generation with distribution.
 
 1. Create `src/openlabels/reporting/` package
 2. Implement `ReportRenderer` — Jinja2 HTML templates → PDF (via `weasyprint`), HTML, CSV
 3. Create report templates: executive summary, compliance report, scan detail, access audit
 4. Add `weasyprint` as optional dependency (`pip install openlabels[reports]`)
 5. Implement report scheduling via existing cron/job infrastructure
-6. Add email delivery using alerting `EmailChannel` (Phase K)
+6. Add email delivery via SMTP (reuse `SIEMExportSettings` SMTP config or standalone)
 7. Add `/api/v1/reports/` endpoints: generate, schedule, list, download
 8. Add `openlabels report generate --template executive_summary --format pdf` CLI command
 9. Tests: Template rendering, PDF generation, scheduled report execution
