@@ -85,6 +85,10 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.0.0",  # Error tracking and performance monitoring
     "prometheus-client>=0.19.0",  # Prometheus metrics
 
+    # Analytics (OLAP data lake)
+    "duckdb>=1.0.0",  # Embedded columnar query engine
+    "pyarrow>=15.0.0",  # Arrow tables, Parquet read/write
+
     # ML Inference (core)
     "onnxruntime>=1.17.0",  # ONNX model inference
     "transformers>=4.36.0",  # NER models
@@ -202,6 +206,9 @@ module = [
     "sqlalchemy", "sqlalchemy.*",
     "alembic", "alembic.*",
     "redis", "redis.*",
+    # Analytics
+    "duckdb", "duckdb.*",
+    "pyarrow", "pyarrow.*",
     # HTTP / async
     "httpx", "httpx.*",
     "aiofiles", "aiofiles.*",
