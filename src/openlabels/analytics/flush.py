@@ -13,6 +13,7 @@ Three flush operations:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -256,26 +257,6 @@ def _write_partitioned_remediation_actions(
 
     for (tenant_str, action_date), indices in groups.items():
         partition = remediation_action_partition(UUID(tenant_str), action_date)
-        subset = table.take(indices)
-        dest = f"{partition}/{timestamped_part_filename()}"
-        storage.write_parquet(dest, subset)
-
-
-def _write_partitioned_remediation_actions(
-    storage: CatalogStorage,
-    rows,
-    table,
-) -> None:
-    """Group remediation actions by (tenant_id, action_date) and write partitioned Parquet."""
-    groups: dict[tuple, list[int]] = {}
-    for idx, r in enumerate(rows):
-        key = (str(r.tenant_id), r.created_at.date())
-        groups.setdefault(key, []).append(idx)
-
-    for (tenant_str, action_date), indices in groups.items():
-        from uuid import UUID as _UUID
-
-        partition = remediation_action_partition(_UUID(tenant_str), action_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)

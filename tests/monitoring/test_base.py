@@ -9,10 +9,12 @@ from openlabels.monitoring.base import (
     AccessAction,
     WatchedFile,
     MonitoringResult,
+    WINDOWS_EVENT_IDS,
+)
+from openlabels.exceptions import (
     MonitoringError,
     SACLError,
     AuditRuleError,
-    WINDOWS_EVENT_IDS,
 )
 
 

@@ -84,15 +84,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Scheduler disabled by configuration")
 
     # Analytics engine (DuckDB + Parquet data lake)
-    flush_task: asyncio.Task | None = None
     if settings.catalog.enabled:
         try:
             from openlabels.analytics.engine import DuckDBEngine
             from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
             from openlabels.analytics.storage import create_storage
 
-            _storage = create_storage(settings.catalog)
-            catalog_root = _storage.root
+            catalog_storage = create_storage(settings.catalog)
             engine = DuckDBEngine(
                 catalog_storage.root,
                 memory_limit=settings.catalog.duckdb_memory_limit,
@@ -104,20 +102,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.catalog_storage = catalog_storage
             app.state.dashboard_service = DuckDBDashboardService(analytics_svc)
             logger.info("Analytics engine initialized (DuckDB + Parquet)")
-
-            # Start periodic event flush background task
-            flush_task = asyncio.create_task(
-                _periodic_flush_loop(
-                    app,
-                    catalog_storage,
-                    analytics_svc,
-                    settings.catalog.event_flush_interval_seconds,
-                )
-            )
-            logger.info(
-                "Periodic event flush started (interval=%ds)",
-                settings.catalog.event_flush_interval_seconds,
-            )
         except Exception as e:
             logger.error(
                 "Analytics engine initialization failed (%s: %s) — "
@@ -355,32 +339,3 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_cache()
     await close_db()
     logger.info("OpenLabels shutting down")
-
-
-async def _periodic_flush_loop(
-    app: FastAPI,
-    catalog_storage,
-    analytics_svc,
-    interval_seconds: int,
-) -> None:
-    """Background task that periodically flushes access events and audit logs to Parquet."""
-    from openlabels.analytics.flush import flush_events_to_catalog
-    from openlabels.server.db import async_session_factory
-
-    while True:
-        await asyncio.sleep(interval_seconds)
-        try:
-            async with async_session_factory() as session:
-                counts = await flush_events_to_catalog(session, catalog_storage)
-
-            if counts["access_events"] or counts["audit_logs"]:
-                analytics_svc.refresh_views()
-                logger.info(
-                    "Periodic flush: %d access events, %d audit logs",
-                    counts["access_events"],
-                    counts["audit_logs"],
-                )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning("Periodic event flush failed", exc_info=True)
