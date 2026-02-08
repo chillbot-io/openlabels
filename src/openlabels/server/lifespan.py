@@ -208,7 +208,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from openlabels.monitoring.harvester import periodic_m365_harvest
 
             # Build graph_client for GraphWebhookProvider if credentials are available
-            _graph_client = None
             if "graph_webhook" in settings.monitoring.providers:
                 try:
                     from openlabels.adapters.graph_client import GraphClient

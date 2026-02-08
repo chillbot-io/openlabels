@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import Any
 
 # Maximum pending notifications per queue (back-pressure).
-# Excess notifications are silently dropped with a warning log.
+# Excess notifications are dropped — callers are responsible for logging.
 MAX_QUEUE_SIZE = 10_000
 
 _graph_notifications: list[dict[str, Any]] = []

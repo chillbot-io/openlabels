@@ -499,6 +499,7 @@ class MonitoringSettings(BaseSettings):
         OPENLABELS_MONITORING__M365_HARVEST_INTERVAL_SECONDS=300
         OPENLABELS_MONITORING__M365_SITE_URLS=https://contoso.sharepoint.com/sites/finance
         OPENLABELS_MONITORING__WEBHOOK_ENABLED=false
+        OPENLABELS_MONITORING__WEBHOOK_URL=https://your-domain.com/api/v1/webhooks/graph
         OPENLABELS_MONITORING__WEBHOOK_CLIENT_STATE=<random-secret>
     """
 

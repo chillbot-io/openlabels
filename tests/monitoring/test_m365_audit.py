@@ -814,3 +814,159 @@ class TestM365ProviderWithHarvester:
 
         assert count == 1
         assert harvester._checkpoints["m365_audit"] == t
+
+
+# =====================================================================
+# Additional edge case tests (deep-dive review)
+# =====================================================================
+
+
+class TestNotificationQueueBackPressure:
+    """Tests for notification queue MAX_QUEUE_SIZE enforcement."""
+
+    def test_graph_queue_rejects_when_full(self):
+        """push_graph_notification returns False when queue is full."""
+        from openlabels.monitoring.notification_queue import (
+            MAX_QUEUE_SIZE,
+            _graph_notifications,
+            push_graph_notification,
+        )
+
+        _graph_notifications.clear()
+        # Fill the queue
+        for i in range(MAX_QUEUE_SIZE):
+            assert push_graph_notification({"i": i}) is True
+
+        # Next push should be rejected
+        assert push_graph_notification({"overflow": True}) is False
+        assert len(_graph_notifications) == MAX_QUEUE_SIZE
+        _graph_notifications.clear()
+
+    def test_m365_queue_rejects_when_full(self):
+        """push_m365_notification returns False when queue is full."""
+        from openlabels.monitoring.notification_queue import (
+            MAX_QUEUE_SIZE,
+            _m365_notifications,
+            push_m365_notification,
+        )
+
+        _m365_notifications.clear()
+        for i in range(MAX_QUEUE_SIZE):
+            assert push_m365_notification({"i": i}) is True
+
+        assert push_m365_notification({"overflow": True}) is False
+        assert len(_m365_notifications) == MAX_QUEUE_SIZE
+        _m365_notifications.clear()
+
+
+class TestSubscriptionTTLExpiry:
+    """Tests for M365 subscription TTL re-verification."""
+
+    @pytest.mark.asyncio
+    async def test_ttl_expired_forces_reverification(self):
+        """When TTL has elapsed, _ensure_subscription re-checks the API."""
+        provider = M365AuditProvider("tenant-id", "client-id", "secret")
+        provider._subscription_active = True
+        # Set verified_at to 7 hours ago (TTL is 6 hours)
+        provider._subscription_verified_at = (
+            datetime.now(timezone.utc) - timedelta(hours=7)
+        )
+        # Pre-set token to avoid real HTTP call to login.microsoftonline.com
+        provider._access_token = "mock-token"
+        provider._token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+
+        # List subscriptions returns active one
+        list_resp = _make_mock_response(json_data=[
+            {"contentType": "Audit.SharePoint", "status": "enabled"},
+        ])
+        mock_client.request = AsyncMock(return_value=list_resp)
+
+        await provider._ensure_subscription(mock_client)
+
+        # Should have made an API call despite _subscription_active being True
+        assert mock_client.request.call_count == 1
+        # Verified_at should be refreshed
+        assert (
+            datetime.now(timezone.utc) - provider._subscription_verified_at
+        ).total_seconds() < 5
+
+
+class TestGraphWebhookDeletedItems:
+    """Tests for GraphWebhookProvider handling of deleted items."""
+
+    @pytest.mark.asyncio
+    async def test_collect_skips_deleted_items(self):
+        """Deleted items from delta are skipped."""
+        from openlabels.monitoring.providers.graph_webhook import GraphWebhookProvider
+
+        mock_client = AsyncMock()
+        mock_client.get_with_delta = AsyncMock(return_value=([
+            {
+                "name": "deleted-file.xlsx",
+                "deleted": {"state": "deleted"},
+                "parentReference": {"path": "/drive/root:/Documents"},
+                "lastModifiedDateTime": "2026-02-01T12:00:00Z",
+            },
+            {
+                "name": "real-file.docx",
+                "parentReference": {"path": "/drive/root:/Documents"},
+                "lastModifiedDateTime": "2026-02-01T12:00:00Z",
+            },
+        ], True))
+
+        provider = GraphWebhookProvider(mock_client)
+
+        with patch(
+            "openlabels.monitoring.notification_queue.drain_graph_notifications",
+            return_value=[{"resource": "/drives/drive-abc/root"}],
+        ):
+            events = await provider.collect()
+
+        # Only the non-deleted file should produce an event
+        assert len(events) == 1
+        assert events[0].file_path == "/Documents/real-file.docx"
+
+
+class TestWebhookUrlConfig:
+    """Tests for webhook_url configuration field."""
+
+    def test_webhook_url_default_is_empty(self):
+        """webhook_url defaults to empty string."""
+        from openlabels.server.config import MonitoringSettings
+
+        s = MonitoringSettings()
+        assert s.webhook_url == ""
+
+    def test_webhook_url_can_be_set(self):
+        """webhook_url can be configured."""
+        from openlabels.server.config import MonitoringSettings
+
+        s = MonitoringSettings(
+            webhook_url="https://example.com/api/v1/webhooks/graph",
+        )
+        assert s.webhook_url == "https://example.com/api/v1/webhooks/graph"
+
+
+class TestM365ProviderClose:
+    """Tests for M365AuditProvider cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_close_cleans_up_client(self):
+        """close() closes the httpx client and clears credentials."""
+        provider = M365AuditProvider("tenant", "client", "secret")
+
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
+        provider._client = mock_client
+        provider._access_token = "token"
+        provider._token_expires_at = datetime.now(timezone.utc)
+
+        await provider.close()
+
+        mock_client.aclose.assert_awaited_once()
+        assert provider._client is None
+        assert provider._access_token is None
+        assert provider._token_expires_at is None

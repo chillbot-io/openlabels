@@ -413,7 +413,7 @@ class M365AuditProvider:
             await self._client.aclose()
             self._client = None
         self._client_secret = ""
-        self._access_token = ""
+        self._access_token = None
         self._token_expires_at = None
 
 

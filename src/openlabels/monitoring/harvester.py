@@ -405,17 +405,17 @@ async def periodic_m365_harvest(
     """
     providers: list[EventProvider] = []
 
+    m365_provider = None
     if enabled_providers is None or "m365_audit" in enabled_providers:
         from openlabels.monitoring.providers.m365_audit import M365AuditProvider
 
-        providers.append(
-            M365AuditProvider(
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                monitored_site_urls=monitored_site_urls or None,
-            )
+        m365_provider = M365AuditProvider(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            monitored_site_urls=monitored_site_urls or None,
         )
+        providers.append(m365_provider)
 
     if graph_client is not None and (
         enabled_providers is None or "graph_webhook" in enabled_providers
@@ -440,4 +440,12 @@ async def periodic_m365_harvest(
         max_events_per_cycle=max_events_per_cycle,
         store_raw_events=store_raw_events,
     )
-    await harvester.run(shutdown_event=shutdown_event)
+    try:
+        await harvester.run(shutdown_event=shutdown_event)
+    finally:
+        # Close M365AuditProvider's httpx client on shutdown
+        if m365_provider is not None:
+            try:
+                await m365_provider.close()
+            except Exception:
+                pass
