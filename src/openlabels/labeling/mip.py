@@ -32,7 +32,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Dict, Any, Callable, Union
 from functools import partial
 
 logger = logging.getLogger(__name__)
@@ -500,6 +500,43 @@ class MIPClient:
                 return label
         return None
 
+    async def _run_file_operation(
+        self,
+        file_path: Union[str, Path],
+        sync_fn: Callable[..., Any],
+        operation_name: str,
+    ) -> Any:
+        """Common wrapper for all MIP file operations.
+
+        Handles: initialization check, file existence validation,
+        executor dispatch, and unified exception logging.
+
+        Raises:
+            RuntimeError: If client is not initialized or CLR error occurs.
+            FileNotFoundError: If the target file does not exist.
+            PermissionError: If file access is denied.
+            OSError: On other OS-level I/O errors.
+        """
+        if not self._initialized:
+            raise RuntimeError("MIP engine not initialized. Call initialize() first.")
+
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(None, sync_fn)
+        except PermissionError as e:
+            logger.error(f"{operation_name} permission denied: {path}: {e}")
+            raise
+        except OSError as e:
+            logger.error(f"{operation_name} OS error: {path}: {e}")
+            raise
+        except RuntimeError as e:
+            logger.error(f"{operation_name} runtime error: {path}: {e}")
+            raise
+
     async def apply_label(
         self,
         file_path: str,
@@ -519,57 +556,15 @@ class MIPClient:
         Returns:
             LabelingResult indicating success/failure
         """
-        if not self._initialized:
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error="MIP client not initialized",
-            )
-
-        if not Path(file_path).exists():
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error="File not found",
-            )
-
         try:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                partial(
-                    self._apply_label_sync,
-                    file_path,
-                    label_id,
-                    justification,
-                    extended_properties,
-                )
+            return await self._run_file_operation(
+                file_path,
+                partial(self._apply_label_sync, file_path, label_id, justification, extended_properties),
+                "apply_label",
             )
-            return result
-
-        except PermissionError as e:
-            logger.error(f"Permission denied applying label to {file_path}: {e}")
+        except (RuntimeError, FileNotFoundError, PermissionError, OSError) as e:
             return LabelingResult(
-                success=False,
-                file_path=file_path,
-                label_id=label_id,
-                error=f"Permission denied: {e}",
-            )
-        except OSError as e:
-            logger.error(f"OS error applying label to {file_path}: {e}")
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                label_id=label_id,
-                error=f"OS error: {e}",
-            )
-        except RuntimeError as e:
-            logger.error(f"CLR error applying label to {file_path}: {e}")
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                label_id=label_id,
-                error=f"CLR runtime error: {e}",
+                success=False, file_path=str(file_path), label_id=label_id, error=str(e),
             )
 
     def _apply_label_sync(
@@ -696,48 +691,15 @@ class MIPClient:
         Returns:
             LabelingResult indicating success/failure
         """
-        if not self._initialized:
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error="MIP client not initialized",
-            )
-
-        if not Path(file_path).exists():
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error="File not found",
-            )
-
         try:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                partial(self._remove_label_sync, file_path)
+            return await self._run_file_operation(
+                file_path,
+                partial(self._remove_label_sync, file_path),
+                "remove_label",
             )
-            return result
-
-        except PermissionError as e:
-            logger.error(f"Permission denied removing label from {file_path}: {e}")
+        except (RuntimeError, FileNotFoundError, PermissionError, OSError) as e:
             return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error=f"Permission denied: {e}",
-            )
-        except OSError as e:
-            logger.error(f"OS error removing label from {file_path}: {e}")
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error=f"OS error: {e}",
-            )
-        except RuntimeError as e:
-            logger.error(f"CLR error removing label from {file_path}: {e}")
-            return LabelingResult(
-                success=False,
-                file_path=file_path,
-                error=f"CLR runtime error: {e}",
+                success=False, file_path=str(file_path), error=str(e),
             )
 
     def _remove_label_sync(self, file_path: str) -> LabelingResult:
@@ -819,28 +781,13 @@ class MIPClient:
         Returns:
             Current label if any, None otherwise
         """
-        if not self._initialized:
-            return None
-
-        if not Path(file_path).exists():
-            return None
-
         try:
-            loop = asyncio.get_running_loop()
-            label = await loop.run_in_executor(
-                None,
-                partial(self._get_file_label_sync, file_path)
+            return await self._run_file_operation(
+                file_path,
+                partial(self._get_file_label_sync, file_path),
+                "get_file_label",
             )
-            return label
-
-        except PermissionError as e:
-            logger.error(f"Permission denied reading label from {file_path}: {e}")
-            return None
-        except OSError as e:
-            logger.error(f"OS error reading label from {file_path}: {e}")
-            return None
-        except RuntimeError as e:
-            logger.error(f"CLR error reading label from {file_path}: {e}")
+        except (RuntimeError, FileNotFoundError, PermissionError, OSError):
             return None
 
     def _get_file_label_sync(self, file_path: str) -> Optional[SensitivityLabel]:
@@ -897,25 +844,13 @@ class MIPClient:
         Returns:
             True if file is protected
         """
-        if not self._initialized or not Path(file_path).exists():
-            return False
-
         try:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                partial(self._is_file_protected_sync, file_path)
+            return await self._run_file_operation(
+                file_path,
+                partial(self._is_file_protected_sync, file_path),
+                "is_file_protected",
             )
-            return result
-
-        except PermissionError as e:
-            logger.debug(f"Permission denied checking file protection for {file_path}: {e}")
-            return False
-        except OSError as e:
-            logger.debug(f"OS error checking file protection for {file_path}: {e}")
-            return False
-        except RuntimeError as e:
-            logger.debug(f"CLR error checking file protection for {file_path}: {e}")
+        except (RuntimeError, FileNotFoundError, PermissionError, OSError):
             return False
 
     def _is_file_protected_sync(self, file_path: str) -> bool:
@@ -943,6 +878,48 @@ class MIPClient:
                     handler.Dispose()
                 except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
+
+
+    async def apply_labels_batch(
+        self,
+        items: List[tuple],
+        max_concurrent: int = 4,
+        on_progress: Optional[Callable[[int, int], None]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply labels to multiple files concurrently.
+
+        Uses an asyncio.Semaphore to limit parallelism and prevent
+        overwhelming the MIP SDK or filesystem.
+
+        Args:
+            items: List of (file_path, label_id) tuples.
+            max_concurrent: Maximum concurrent labeling operations.
+            on_progress: Optional callback(completed, total) after each file.
+
+        Returns:
+            List of result dicts with keys: file, label_id, success, error.
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+        total = len(items)
+        completed = 0
+
+        async def _process(file_path: str, label_id: str) -> Dict[str, Any]:
+            nonlocal completed
+            async with semaphore:
+                result = await self.apply_label(file_path, label_id)
+                completed += 1
+                if on_progress:
+                    on_progress(completed, total)
+                return {
+                    "file": file_path,
+                    "label_id": label_id,
+                    "success": result.success,
+                    "error": result.error,
+                }
+
+        tasks = [_process(fp, lid) for fp, lid in items]
+        return list(await asyncio.gather(*tasks))
 
 
 def is_mip_available() -> bool:
