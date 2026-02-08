@@ -981,6 +981,19 @@ async def execute_parallel_scan_task(
                 total_entities=fstats["total_entities"],
             )
 
+        # ── Post-scan: detect missing/deleted files ──────────────
+        if orchestrator._seen_file_paths:
+            missing_count = await inventory.mark_missing_files(
+                orchestrator._seen_file_paths, job.id,
+            )
+            if missing_count > 0:
+                logger.info(f"Marked {missing_count} files for rescan (not seen in current scan)")
+                stats["files_missing"] = missing_count
+
+        # ── Post-scan: inventory stats ─────────────────────────
+        inv_stats = await inventory.get_inventory_stats()
+        stats["inventory"] = inv_stats
+
         # ── Post-scan: auto-labeling (F.7) ────────────────────────
         if settings.labeling.enabled and settings.labeling.mode == "auto":
             try:

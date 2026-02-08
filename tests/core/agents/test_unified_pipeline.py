@@ -151,31 +151,53 @@ class TestScanOrchestratorRiskScoring:
     """Test the _compute_risk static method."""
 
     def test_minimal_risk(self):
-        score, tier = ScanOrchestrator._compute_risk({}, 0, "PRIVATE")
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({}, 0, "PRIVATE")
         assert tier == "MINIMAL"
         assert score == 0
+        assert content_score == 0
+        assert mult == 1.0
 
     def test_low_risk(self):
-        score, tier = ScanOrchestrator._compute_risk({"SSN": 2}, 2, "PRIVATE")
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"SSN": 2}, 2, "PRIVATE")
         assert tier == "LOW"
         assert score == 20
+        assert content_score == 20
+        assert mult == 1.0
 
     def test_high_risk_with_exposure(self):
-        # 7 entities * 10 = 70 base, * 1.5 ORG_WIDE = 100 (capped)
-        score, tier = ScanOrchestrator._compute_risk({"SSN": 7}, 7, "ORG_WIDE")
+        # 7 entities * 10 = 70 base, * 1.5 ORG_WIDE = 105 → capped at 100
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"SSN": 7}, 7, "ORG_WIDE")
         assert tier == "CRITICAL"
         assert score == 100
+        assert content_score == 70  # base score before multiplier
+        assert mult == 1.5
 
     def test_medium_risk(self):
-        score, tier = ScanOrchestrator._compute_risk({"EMAIL": 4}, 4, "PRIVATE")
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"EMAIL": 4}, 4, "PRIVATE")
         assert tier == "MEDIUM"
         assert score == 40
+        assert content_score == 40
 
     def test_public_exposure_multiplier(self):
         # 3 entities * 10 = 30 base, * 2.0 PUBLIC = 60
-        score, tier = ScanOrchestrator._compute_risk({"SSN": 3}, 3, "PUBLIC")
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"SSN": 3}, 3, "PUBLIC")
         assert tier == "HIGH"
         assert score == 60
+        assert content_score == 30  # base before multiplier
+        assert mult == 2.0
+
+    def test_internal_exposure_multiplier(self):
+        # 5 entities * 10 = 50 base, * 1.2 INTERNAL = 60
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"EMAIL": 5}, 5, "INTERNAL")
+        assert tier == "HIGH"
+        assert score == 60
+        assert content_score == 50
+        assert mult == 1.2
+
+    def test_unknown_exposure_defaults_to_1(self):
+        score, tier, content_score, mult = ScanOrchestrator._compute_risk({"SSN": 3}, 3, "UNKNOWN")
+        assert mult == 1.0
+        assert score == 30
 
 
 class TestScanOrchestratorDeltaCheck:
@@ -337,10 +359,15 @@ class TestScanOrchestratorPersistUnified:
         # Check the kwargs passed to ScanResult(...)
         call_kwargs = MockScanResult.call_args[1]
         assert call_kwargs["risk_tier"] == "MEDIUM"  # 4 entities * 10 = 40 → MEDIUM
+        assert call_kwargs["risk_score"] == 40
         assert call_kwargs["total_entities"] == 4
         assert call_kwargs["exposure_level"] == "PRIVATE"
         assert call_kwargs["owner"] == "alice"
         assert call_kwargs["content_hash"] == "abc123"
+        # content_score should be base score (before multiplier)
+        assert call_kwargs["content_score"] == 40.0
+        # exposure_multiplier should be 1.0 for PRIVATE
+        assert call_kwargs["exposure_multiplier"] == 1.0
 
         # Stats updated
         assert orchestrator.stats["files_scanned"] == 1
@@ -393,6 +420,9 @@ class TestScanOrchestratorPersistUnified:
         call_kwargs = MockScanResult.call_args[1]
         assert call_kwargs["risk_tier"] == "HIGH"
         assert call_kwargs["risk_score"] == 60
+        # content_score = base score 30, exposure_multiplier = 2.0
+        assert call_kwargs["content_score"] == 30.0
+        assert call_kwargs["exposure_multiplier"] == 2.0
 
 
 class TestScanOrchestratorLegacy:
@@ -423,3 +453,186 @@ class TestScanOrchestratorLegacy:
         await orchestrator._persist_batch([file_result])
         assert len(handler_called) == 1
         assert handler_called[0].file_path == "/tmp/test.txt"
+
+
+# ── TextChunker tests ─────────────────────────────────────────────
+
+class TestTextChunker:
+    """Tests for the TextChunker module."""
+
+    def test_empty_text(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        chunker = TextChunker()
+        assert chunker.chunk("") == []
+
+    def test_short_text_single_chunk(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        chunker = TextChunker(max_chunk_size=100)
+        chunks = chunker.chunk("Hello world")
+        assert len(chunks) == 1
+        assert chunks[0].text == "Hello world"
+        assert chunks[0].start == 0
+        assert chunks[0].end == 11
+
+    def test_exact_boundary(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        text = "a" * 100
+        chunker = TextChunker(max_chunk_size=100, overlap=10)
+        chunks = chunker.chunk(text)
+        assert len(chunks) == 1  # exactly at boundary
+
+    def test_long_text_multiple_chunks(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        # 10 words of ~11 chars each = 110 chars
+        text = " ".join(["word"] * 30)  # 149 chars
+        chunker = TextChunker(max_chunk_size=50, overlap=10)
+        chunks = chunker.chunk(text)
+        assert len(chunks) > 1
+        # First chunk starts at 0
+        assert chunks[0].start == 0
+        # All text is covered
+        assert chunks[-1].end == len(text)
+
+    def test_overlap_between_chunks(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        text = " ".join(["word"] * 50)  # ~249 chars
+        chunker = TextChunker(max_chunk_size=80, overlap=20)
+        chunks = chunker.chunk(text)
+        # Consecutive chunks should overlap
+        for i in range(len(chunks) - 1):
+            assert chunks[i + 1].start < chunks[i].end, (
+                f"Chunks {i} and {i+1} don't overlap"
+            )
+
+    def test_whitespace_boundary_splitting(self):
+        from openlabels.core.pipeline.chunking import TextChunker
+        # Create text where the split should prefer whitespace
+        text = "a" * 45 + " " + "b" * 45 + " " + "c" * 45
+        chunker = TextChunker(max_chunk_size=50, overlap=5)
+        chunks = chunker.chunk(text)
+        # The first chunk should break at a space, not mid-word
+        assert chunks[0].text.endswith(" ") or chunks[0].text.endswith("a")
+
+
+# ── Aggregate file results test ────────────────────────────────────
+
+class TestAggregateFileResults:
+    """Test the _aggregate_file_results method."""
+
+    def test_single_chunk_aggregation(self):
+        orchestrator = ScanOrchestrator()
+        orchestrator._file_results["/tmp/test.txt"] = [
+            AgentResult(
+                work_id="test:0",
+                file_path="/tmp/test.txt",
+                chunk_index=0,
+                entities=[
+                    EntityMatch(entity_type="SSN", value="123-45-6789", start=0, end=11, confidence=0.99, source="checksum"),
+                    EntityMatch(entity_type="EMAIL", value="a@b.com", start=20, end=27, confidence=0.95, source="regex"),
+                ],
+                processing_time_ms=50.0,
+                agent_id=0,
+                error=None,
+            ),
+        ]
+        result = orchestrator._aggregate_file_results("/tmp/test.txt")
+        assert result.file_path == "/tmp/test.txt"
+        assert result.entity_counts == {"SSN": 1, "EMAIL": 1}
+        assert result.total_entities == 2
+        assert result.chunk_count == 1
+        assert result.errors == []
+
+    def test_multi_chunk_aggregation(self):
+        orchestrator = ScanOrchestrator()
+        orchestrator._file_results["/tmp/big.txt"] = [
+            AgentResult(
+                work_id="big:0",
+                file_path="/tmp/big.txt",
+                chunk_index=0,
+                entities=[
+                    EntityMatch(entity_type="SSN", value="123-45-6789", start=0, end=11, confidence=0.99, source="checksum"),
+                ],
+                processing_time_ms=30.0,
+                agent_id=0,
+                error=None,
+            ),
+            AgentResult(
+                work_id="big:1",
+                file_path="/tmp/big.txt",
+                chunk_index=1,
+                entities=[
+                    EntityMatch(entity_type="SSN", value="987-65-4321", start=0, end=11, confidence=0.98, source="checksum"),
+                    EntityMatch(entity_type="CREDIT_CARD", value="4111111111111111", start=15, end=31, confidence=0.97, source="checksum"),
+                ],
+                processing_time_ms=45.0,
+                agent_id=0,
+                error=None,
+            ),
+        ]
+        result = orchestrator._aggregate_file_results("/tmp/big.txt")
+        assert result.entity_counts == {"SSN": 2, "CREDIT_CARD": 1}
+        assert result.total_entities == 3
+        assert result.chunk_count == 2
+        assert result.total_processing_ms == 75.0
+
+    def test_aggregation_with_errors(self):
+        orchestrator = ScanOrchestrator()
+        orchestrator._file_results["/tmp/err.txt"] = [
+            AgentResult(
+                work_id="err:0",
+                file_path="/tmp/err.txt",
+                chunk_index=0,
+                entities=[],
+                processing_time_ms=10.0,
+                agent_id=0,
+                error="Model timeout",
+            ),
+        ]
+        result = orchestrator._aggregate_file_results("/tmp/err.txt")
+        assert result.has_errors
+        assert "Chunk 0: Model timeout" in result.errors
+
+
+# ── Seen file paths test ───────────────────────────────────────────
+
+class TestSeenFilePaths:
+    """Test that the orchestrator tracks all seen file paths."""
+
+    @pytest.mark.asyncio
+    async def test_seen_paths_includes_all_walked_files(self):
+        """All files from ChangeProvider should be in _seen_file_paths."""
+        files = [
+            _make_file_info("/tmp/a.txt", "a.txt"),
+            _make_file_info("/tmp/b.txt", "b.txt"),
+            _make_file_info("/tmp/c.txt", "c.txt"),
+        ]
+        provider = MockChangeProvider(files)
+        orchestrator = ScanOrchestrator(change_provider=provider)
+
+        await orchestrator._walk_files()
+
+        assert orchestrator._seen_file_paths == {"/tmp/a.txt", "/tmp/b.txt", "/tmp/c.txt"}
+
+    @pytest.mark.asyncio
+    async def test_seen_paths_includes_oversized_files(self):
+        """Even oversized files that are skipped should be in _seen_file_paths."""
+        files = [
+            _make_file_info("/tmp/small.txt", "small.txt", size=100),
+            _make_file_info("/tmp/big.txt", "big.txt", size=999999999),
+        ]
+        provider = MockChangeProvider(files)
+
+        settings = MagicMock()
+        settings.scan.max_file_size_mb = 1  # 1 MB limit
+
+        orchestrator = ScanOrchestrator(
+            change_provider=provider,
+            settings=settings,
+        )
+
+        await orchestrator._walk_files()
+
+        # Both files seen, but big one was skipped
+        assert "/tmp/small.txt" in orchestrator._seen_file_paths
+        assert "/tmp/big.txt" in orchestrator._seen_file_paths
+        assert orchestrator.stats["files_skipped"] == 1

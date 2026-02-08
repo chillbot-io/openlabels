@@ -494,6 +494,9 @@ class ScanOrchestrator:
         # Folder-level stats for inventory updates
         self._folder_stats: dict[str, dict] = {}
 
+        # Track all file paths seen during walk (for mark_missing_files)
+        self._seen_file_paths: set[str] = set()
+
     async def run(self) -> PoolStats:
         """Run the unified scan pipeline.
 
@@ -558,13 +561,13 @@ class ScanOrchestrator:
 
         max_file_size = 0
         if self._settings:
-            max_file_size = getattr(self._settings, 'scan', None)
-            if max_file_size:
-                max_file_size = max_file_size.max_file_size_mb * 1024 * 1024
-            else:
-                max_file_size = 0
+            scan_config = getattr(self._settings, 'scan', None)
+            if scan_config:
+                max_file_size = scan_config.max_file_size_mb * 1024 * 1024
 
         async for file_info in self._change_provider.changed_files():
+            self._seen_file_paths.add(file_info.path)
+
             # Size guard
             if max_file_size and file_info.size > max_file_size:
                 logger.warning("Skipping oversized file: %s (%d bytes)", file_info.path, file_info.size)
@@ -781,6 +784,16 @@ class ScanOrchestrator:
         from openlabels.server.models import ScanResult
         from openlabels.jobs.inventory import get_folder_path
 
+        # Import WebSocket sender once (not per-file)
+        _send_file_result = None
+        _send_progress = None
+        try:
+            from openlabels.server.routes.ws import send_scan_file_result, send_scan_progress
+            _send_file_result = send_scan_file_result
+            _send_progress = send_scan_progress
+        except ImportError:
+            pass
+
         for file_result in completed_files:
             try:
                 meta = self._file_metadata.get(file_result.file_path, {})
@@ -790,7 +803,7 @@ class ScanOrchestrator:
                 owner = meta.get("owner")
 
                 # ── Risk scoring (full engine, not hardcoded) ──────
-                risk_score, risk_tier = self._compute_risk(
+                risk_score, risk_tier, content_score, exp_multiplier = self._compute_risk(
                     file_result.entity_counts,
                     file_result.total_entities,
                     exposure_level,
@@ -811,8 +824,8 @@ class ScanOrchestrator:
                     total_entities=file_result.total_entities,
                     exposure_level=exposure_level,
                     owner=owner,
-                    content_score=float(risk_score),
-                    exposure_multiplier=1.0,
+                    content_score=float(content_score),
+                    exposure_multiplier=exp_multiplier,
                 )
                 self._session.add(scan_result)
 
@@ -855,17 +868,32 @@ class ScanOrchestrator:
                         )
 
                 # ── WebSocket streaming ────────────────────────────
-                try:
-                    from openlabels.server.routes.ws import send_scan_file_result
-                    await send_scan_file_result(
-                        scan_id=self._job.id,
-                        file_path=file_result.file_path,
-                        risk_score=risk_score,
-                        risk_tier=risk_tier,
-                        entity_counts=file_result.entity_counts,
-                    )
-                except (ImportError, ConnectionError, OSError):
-                    pass
+                if _send_file_result:
+                    try:
+                        await _send_file_result(
+                            scan_id=self._job.id,
+                            file_path=file_result.file_path,
+                            risk_score=risk_score,
+                            risk_tier=risk_tier,
+                            entity_counts=file_result.entity_counts,
+                        )
+                    except (ConnectionError, OSError):
+                        pass
+
+                # Send progress updates every 10 files
+                if _send_progress and self.stats["files_scanned"] % 10 == 0:
+                    try:
+                        await _send_progress(
+                            scan_id=self._job.id,
+                            status="running",
+                            progress={
+                                "files_scanned": self.stats["files_scanned"],
+                                "files_with_pii": self.stats["files_with_pii"],
+                                "files_skipped": self.stats["files_skipped"],
+                            },
+                        )
+                    except (ConnectionError, OSError):
+                        pass
 
                 # ── Job progress ───────────────────────────────────
                 self._job.files_scanned = self.stats["files_scanned"]
@@ -892,14 +920,17 @@ class ScanOrchestrator:
         entity_counts: dict[str, int],
         total_entities: int,
         exposure_level: str,
-    ) -> tuple[int, str]:
+    ) -> tuple[int, str, int, float]:
         """Compute risk score and tier from entity counts + exposure.
 
         Uses the same tier thresholds as the detection engine, with an
         exposure multiplier for non-private files.
+
+        Returns:
+            (risk_score, risk_tier, content_score, exposure_multiplier)
         """
-        # Base score from entity count
-        base_score = min(total_entities * 10, 100)
+        # Base score from entity count (content_score before multiplier)
+        content_score = min(total_entities * 10, 100)
 
         # Exposure multiplier
         exposure_multipliers = {
@@ -909,7 +940,7 @@ class ScanOrchestrator:
             "PUBLIC": 2.0,
         }
         multiplier = exposure_multipliers.get(exposure_level, 1.0)
-        score = min(int(base_score * multiplier), 100)
+        score = min(int(content_score * multiplier), 100)
 
         # Tier from score
         if score >= 80:
@@ -923,7 +954,7 @@ class ScanOrchestrator:
         else:
             tier = "MINIMAL"
 
-        return score, tier
+        return score, tier, content_score, multiplier
 
     def _aggregate_file_results(self, file_path: str) -> FileResult:
         """Aggregate all chunk results for a file into a single FileResult."""
