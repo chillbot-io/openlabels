@@ -17,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import Date, and_, case, cast, extract, func, select
 
 from openlabels.analytics.service import (
+    AccessStats,
     EntityTrendsData,
     FileStats,
     HeatmapFileRow,
@@ -268,3 +269,52 @@ class PostgresDashboardService:
                     entity_counts=row.entity_counts or {},
                 ))
         return rows_out, total
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
+        from datetime import timedelta, timezone
+        from openlabels.server.models import FileAccessEvent
+
+        session = await self._get_session()
+        now = datetime.now(timezone.utc)
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        # Total + time-bucketed counts
+        stats_q = select(
+            func.count().label("total"),
+            func.sum(case((FileAccessEvent.event_time >= last_24h, 1), else_=0)).label("last_24h"),
+            func.sum(case((FileAccessEvent.event_time >= last_7d, 1), else_=0)).label("last_7d"),
+        ).where(FileAccessEvent.tenant_id == tenant_id)
+        result = await session.execute(stats_q)
+        row = result.one()
+
+        # By action
+        action_q = (
+            select(FileAccessEvent.action, func.count().label("count"))
+            .where(FileAccessEvent.tenant_id == tenant_id)
+            .group_by(FileAccessEvent.action)
+        )
+        action_result = await session.execute(action_q)
+        by_action = {r.action: r.count for r in action_result.all()}
+
+        # Top users
+        user_q = (
+            select(FileAccessEvent.user_name, func.count().label("count"))
+            .where(
+                FileAccessEvent.tenant_id == tenant_id,
+                FileAccessEvent.user_name.isnot(None),
+            )
+            .group_by(FileAccessEvent.user_name)
+            .order_by(func.count().desc())
+            .limit(10)
+        )
+        user_result = await session.execute(user_q)
+        by_user = [{"user": r.user_name, "count": r.count} for r in user_result.all()]
+
+        return AccessStats(
+            total_events=row.total or 0,
+            events_last_24h=row.last_24h or 0,
+            events_last_7d=row.last_7d or 0,
+            by_action=by_action,
+            by_user=by_user,
+        )

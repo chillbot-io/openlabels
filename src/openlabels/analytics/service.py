@@ -61,6 +61,16 @@ class HeatmapFileRow:
     entity_counts: dict[str, int]
 
 
+@dataclass
+class AccessStats:
+    """Aggregated access event statistics."""
+    total_events: int = 0
+    events_last_24h: int = 0
+    events_last_7d: int = 0
+    by_action: dict[str, int] = field(default_factory=dict)
+    by_user: list[dict] = field(default_factory=list)
+
+
 # ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
@@ -85,6 +95,8 @@ class DashboardQueryService(Protocol):
     async def get_heatmap_data(
         self, tenant_id: UUID, *, job_id: UUID | None = None, limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]: ...
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -118,6 +130,50 @@ class AnalyticsService:
             self._executor,
             lambda: self._engine.fetch_arrow(sql, params),
         )
+
+    async def export_scan_results(
+        self,
+        tenant_id: UUID,
+        *,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
+        has_label: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """Export scan results from Parquet with filter pushdown.
+
+        All filters are applied in the DuckDB query so only matching
+        rows are returned — much cheaper than post-filtering in Python.
+        """
+        conditions = ["tenant = ?"]
+        params: list[Any] = [str(tenant_id)]
+
+        if job_id:
+            conditions.append(f"job_id = decode('{job_id.hex}', 'hex')")
+        if risk_tier:
+            conditions.append("risk_tier = ?")
+            params.append(risk_tier)
+        if has_label is True:
+            conditions.append("label_applied = true")
+        elif has_label is False:
+            conditions.append("label_applied = false")
+
+        where = " AND ".join(conditions)
+        sql = f"""
+            SELECT
+                file_path, file_name, risk_score, risk_tier,
+                total_entities, exposure_level, owner,
+                current_label_name, label_applied
+            FROM scan_results
+            WHERE {where}
+            ORDER BY risk_score DESC
+        """
+        try:
+            return await self.query(sql, params)
+        except Exception as exc:
+            # Stub tables (no Parquet files) only have a placeholder column
+            if "not found in FROM clause" in str(exc) or "placeholder" in str(exc):
+                return []
+            raise
 
     def refresh_views(self) -> None:
         """Re-register DuckDB views after new Parquet files are written."""
@@ -351,3 +407,60 @@ class DuckDBDashboardService:
                 entity_counts=entity_counts,
             ))
         return result, total
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
+        from datetime import timedelta, timezone as tz
+
+        now = datetime.now(tz.utc)
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        # Total + time-bucketed counts in one query
+        count_rows = await self._safe_query(
+            """
+            SELECT
+                count(*)                                            AS total,
+                count(*) FILTER (WHERE event_time >= ?)             AS last_24h,
+                count(*) FILTER (WHERE event_time >= ?)             AS last_7d
+            FROM access_events
+            WHERE tenant = ?
+            """,
+            [last_24h.isoformat(), last_7d.isoformat(), str(tenant_id)],
+        )
+        total = count_rows[0]["total"] if count_rows else 0
+        l24 = count_rows[0]["last_24h"] if count_rows else 0
+        l7d = count_rows[0]["last_7d"] if count_rows else 0
+
+        # Events by action type
+        action_rows = await self._safe_query(
+            """
+            SELECT action, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ?
+            GROUP BY action
+            """,
+            [str(tenant_id)],
+        )
+        by_action = {r["action"]: r["cnt"] for r in action_rows}
+
+        # Top 10 users
+        user_rows = await self._safe_query(
+            """
+            SELECT user_name, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ? AND user_name IS NOT NULL
+            GROUP BY user_name
+            ORDER BY cnt DESC
+            LIMIT 10
+            """,
+            [str(tenant_id)],
+        )
+        by_user = [{"user": r["user_name"], "count": r["cnt"]} for r in user_rows]
+
+        return AccessStats(
+            total_events=total,
+            events_last_24h=l24,
+            events_last_7d=l7d,
+            by_action=by_action,
+            by_user=by_user,
+        )

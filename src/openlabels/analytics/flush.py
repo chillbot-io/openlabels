@@ -13,11 +13,8 @@ Three flush operations:
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -58,12 +55,7 @@ def _flush_state_path(storage: CatalogStorage) -> str:
 
 
 def load_flush_state(storage: CatalogStorage) -> dict:
-    """Load the last-flushed cursor state from ``_metadata/flush_state.json``.
-
-    Uses ``storage.root`` to resolve the path.  When remote backends
-    (S3 / Azure) are added, this should be migrated to a ``read_json``
-    method on the :class:`CatalogStorage` protocol.
-    """
+    """Load the last-flushed cursor state from ``_metadata/flush_state.json``."""
     path = _flush_state_path(storage)
     if not storage.exists(path):
         return {
@@ -71,23 +63,12 @@ def load_flush_state(storage: CatalogStorage) -> dict:
             "last_audit_log_flush": None,
             "schema_version": 1,
         }
-
-    resolved = Path(storage.root) / path
-    with open(resolved) as f:
-        return json.load(f)
+    return storage.read_json(path)
 
 
 def save_flush_state(storage: CatalogStorage, state: dict) -> None:
-    """Persist flush cursor state.
-
-    Uses ``storage.root`` directly.  When remote backends are added,
-    this should be migrated to a ``write_json`` method on the protocol.
-    """
-    resolved = Path(storage.root) / _METADATA_DIR
-    resolved.mkdir(parents=True, exist_ok=True)
-    dest = resolved / _FLUSH_STATE_FILE
-    with open(dest, "w") as f:
-        json.dump(state, f, indent=2, default=str)
+    """Persist flush cursor state."""
+    storage.write_json(_flush_state_path(storage), state)
 
 
 # ── 1. Scan completion flush ─────────────────────────────────────────

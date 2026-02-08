@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from openlabels.analytics.service import (
+    AccessStats,
     AnalyticsService,
     DuckDBDashboardService,
     EntityTrendsData,
@@ -184,3 +185,91 @@ class TestDuckDBDashboardService:
         stats_b = await dashboard_service.get_file_stats(TENANT_B)
         assert stats_a.total_files == 3
         assert stats_b.total_files == 3  # same shape, but distinct
+
+    async def test_get_access_stats_empty(
+        self, dashboard_service: DuckDBDashboardService,
+    ):
+        stats = await dashboard_service.get_access_stats(TENANT_A)
+        assert isinstance(stats, AccessStats)
+        assert stats.total_events == 0
+        assert stats.events_last_24h == 0
+        assert stats.by_action == {}
+        assert stats.by_user == []
+
+    async def test_get_access_stats_with_data(
+        self,
+        storage: LocalStorage,
+        analytics: AnalyticsService,
+        dashboard_service: DuckDBDashboardService,
+    ):
+        write_access_events(storage)
+        analytics.refresh_views()
+
+        stats = await dashboard_service.get_access_stats(TENANT_A)
+        assert stats.total_events == 5
+        assert stats.by_action.get("read") == 5
+        assert len(stats.by_user) >= 1
+        assert stats.by_user[0]["user"] == "alice"
+
+
+@pytest.mark.asyncio
+class TestExportScanResults:
+    async def test_export_empty(self, analytics: AnalyticsService):
+        rows = await analytics.export_scan_results(TENANT_A)
+        assert rows == []
+
+    async def test_export_with_data(
+        self, storage: LocalStorage, analytics: AnalyticsService,
+    ):
+        write_scan_results(storage)
+        analytics.refresh_views()
+
+        rows = await analytics.export_scan_results(TENANT_A)
+        assert len(rows) == 3
+        assert all("file_path" in r for r in rows)
+        assert all("risk_score" in r for r in rows)
+        # Ordered by risk_score DESC
+        scores = [r["risk_score"] for r in rows]
+        assert scores == sorted(scores, reverse=True)
+
+    async def test_export_risk_tier_filter(
+        self, storage: LocalStorage, analytics: AnalyticsService,
+    ):
+        write_scan_results(storage)
+        analytics.refresh_views()
+
+        rows = await analytics.export_scan_results(
+            TENANT_A, risk_tier="CRITICAL",
+        )
+        assert len(rows) == 1
+        assert rows[0]["risk_tier"] == "CRITICAL"
+
+    async def test_export_has_label_filter(
+        self, storage: LocalStorage, analytics: AnalyticsService,
+    ):
+        write_scan_results(storage)
+        analytics.refresh_views()
+
+        labeled = await analytics.export_scan_results(
+            TENANT_A, has_label=True,
+        )
+        assert len(labeled) == 1  # only report.pdf
+
+        unlabeled = await analytics.export_scan_results(
+            TENANT_A, has_label=False,
+        )
+        assert len(unlabeled) == 2
+
+    async def test_export_tenant_isolation(
+        self, storage: LocalStorage, analytics: AnalyticsService,
+    ):
+        from tests.analytics.conftest import TENANT_B
+
+        write_scan_results(storage, tenant_id=TENANT_A)
+        write_scan_results(storage, tenant_id=TENANT_B, scan_date="2026-02-02")
+        analytics.refresh_views()
+
+        rows_a = await analytics.export_scan_results(TENANT_A)
+        rows_b = await analytics.export_scan_results(TENANT_B)
+        assert len(rows_a) == 3
+        assert len(rows_b) == 3
