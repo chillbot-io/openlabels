@@ -29,10 +29,10 @@ class TestStreamChangeProvider:
     def test_notify_same_file_updates_timestamp(self):
         provider = _StreamChangeProvider()
         provider.notify("/a.txt")
-        first_ts = provider._changed["/a.txt"]
+        first_ts = provider._changed["/a.txt"][0]
         provider.notify("/a.txt")
         # Timestamp should be updated (or at least same)
-        assert provider._changed["/a.txt"] >= first_ts
+        assert provider._changed["/a.txt"][0] >= first_ts
 
     @pytest.mark.asyncio
     async def test_changed_files_yields_notified(self):
@@ -63,6 +63,18 @@ class TestStreamChangeProvider:
         async for fi in provider.changed_files():
             files2.append(fi)
         assert len(files2) == 0
+
+    @pytest.mark.asyncio
+    async def test_change_type_propagated(self):
+        provider = _StreamChangeProvider()
+        provider.notify("/a.txt", change_type="deleted")
+
+        files = []
+        async for fi in provider.changed_files():
+            files.append(fi)
+
+        assert len(files) == 1
+        assert files[0].change_type == "deleted"
 
     @pytest.mark.asyncio
     async def test_changed_files_empty_when_no_changes(self):

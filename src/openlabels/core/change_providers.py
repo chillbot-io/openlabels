@@ -95,12 +95,12 @@ class _StreamChangeProvider:
     """
 
     def __init__(self) -> None:
-        self._changed: dict[str, datetime] = {}
+        self._changed: dict[str, tuple[datetime, str]] = {}
         self._lock = asyncio.Lock()
 
     def notify(self, file_path: str, change_type: str = "modified") -> None:
         """Record a file change (called from EventStreamManager)."""
-        self._changed[file_path] = datetime.now(timezone.utc)
+        self._changed[file_path] = (datetime.now(timezone.utc), change_type)
 
     async def changed_files(self) -> AsyncIterator[FileInfo]:
         """Yield files that changed since the last call, then clear."""
@@ -108,7 +108,7 @@ class _StreamChangeProvider:
             snapshot = dict(self._changed)
             self._changed.clear()
 
-        for path, modified in snapshot.items():
+        for path, (modified, change_type) in snapshot.items():
             from pathlib import Path as _Path
 
             p = _Path(path)
@@ -123,7 +123,7 @@ class _StreamChangeProvider:
                 name=p.name,
                 size=size,
                 modified=modified,
-                change_type="modified",
+                change_type=change_type,
             )
 
 

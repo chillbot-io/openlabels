@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 
@@ -246,33 +245,72 @@ class EventStreamManager:
     async def _persist_events(
         self, events: list[RawAccessEvent],
     ) -> int:
-        """Write events to the database using the harvester's persistence logic."""
+        """Write events to the database.
+
+        Mirrors ``EventHarvester._persist_events`` — resolves monitored
+        files from the DB and creates ``FileAccessEvent`` rows.
+        """
         from openlabels.server.db import get_session_context
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+        from sqlalchemy import select
 
         _VALID_DB_ACTIONS = frozenset({
             "read", "write", "delete", "rename", "permission_change", "execute",
         })
 
+        valid_events = [e for e in events if e.action in _VALID_DB_ACTIONS]
+        if not valid_events:
+            return 0
+
         persisted = 0
 
-        try:
-            async with get_session_context() as session:
-                for event in events:
-                    if event.action not in _VALID_DB_ACTIONS:
-                        continue
+        async with get_session_context() as session:
+            # Batch-resolve file paths to MonitoredFile rows
+            file_paths = {e.file_path for e in valid_events}
+            result = await session.execute(
+                select(MonitoredFile)
+                .where(MonitoredFile.file_path.in_(file_paths))
+                .order_by(MonitoredFile.tenant_id)
+            )
+            rows = result.scalars().all()
+            path_to_monitored: dict[str, MonitoredFile] = {}
+            for row in rows:
+                if row.file_path not in path_to_monitored:
+                    path_to_monitored[row.file_path] = row
 
-                    from openlabels.monitoring.harvester import _create_access_event_row
-                    row = _create_access_event_row(event)
-                    if row is not None:
-                        session.add(row)
-                        persisted += 1
+            for event in valid_events:
+                monitored = path_to_monitored.get(event.file_path)
+                if monitored is None:
+                    continue
 
-                await session.commit()
-        except ImportError:
-            # Harvester helper not available — fall back to direct insert
-            logger.debug("Harvester helper not available, skipping persist")
-        except Exception:
-            raise
+                session.add(FileAccessEvent(
+                    tenant_id=monitored.tenant_id,
+                    monitored_file_id=monitored.id,
+                    file_path=event.file_path,
+                    action=event.action,
+                    success=event.success,
+                    user_sid=event.user_sid,
+                    user_name=event.user_name,
+                    user_domain=event.user_domain,
+                    process_name=event.process_name,
+                    process_id=event.process_id,
+                    event_id=event.event_id,
+                    event_source=event.event_source,
+                    event_time=event.event_time,
+                ))
+                persisted += 1
+
+                # Update monitored file stats
+                monitored.access_count = (monitored.access_count or 0) + 1
+                if (
+                    monitored.last_event_at is None
+                    or event.event_time > monitored.last_event_at
+                ):
+                    monitored.last_event_at = event.event_time
+
+            if persisted:
+                await session.flush()
+            await session.commit()
 
         return persisted
 

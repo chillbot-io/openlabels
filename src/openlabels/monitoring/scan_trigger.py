@@ -31,7 +31,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 
@@ -85,7 +85,6 @@ class ScanTriggerBuffer:
 
         # Pending scans keyed by file_path
         self._pending: dict[str, PendingScan] = {}
-        self._pending_lock = asyncio.Lock()
 
         # Cooldown tracker: file_path → monotonic expiry time
         self._cooldowns: dict[str, float] = {}

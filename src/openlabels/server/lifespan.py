@@ -254,6 +254,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Real-time event stream manager (Phase I: USN + fanotify)
     stream_shutdown = asyncio.Event()
     stream_task: asyncio.Task | None = None
+    trigger_task: asyncio.Task | None = None
     _fanotify_provider = None
     if settings.monitoring.enabled and settings.monitoring.stream_enabled:
         try:
@@ -336,17 +337,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
 
-    # Stop real-time event streams
+    # Stop real-time event streams and scan trigger
     if stream_task and not stream_task.done():
         stream_shutdown.set()
+        # Wait for both stream_task and trigger_task (share the same shutdown event)
+        stream_tasks_to_stop = [stream_task]
+        if trigger_task and not trigger_task.done():
+            stream_tasks_to_stop.append(trigger_task)
         try:
-            await asyncio.wait_for(stream_task, timeout=5.0)
+            await asyncio.wait_for(
+                asyncio.gather(*stream_tasks_to_stop, return_exceptions=True),
+                timeout=5.0,
+            )
         except asyncio.TimeoutError:
-            stream_task.cancel()
-            try:
-                await stream_task
-            except asyncio.CancelledError:
-                pass
+            for t in stream_tasks_to_stop:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*stream_tasks_to_stop, return_exceptions=True)
         logger.info("EventStreamManager stopped")
 
     # Close fanotify fd

@@ -22,8 +22,7 @@ import struct
 import sys
 from ctypes import wintypes
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 
@@ -89,23 +88,20 @@ def _filetime_to_datetime(ft: int) -> datetime:
 
 # ── USN_RECORD_V2 parser ────────────────────────────────────────────
 
-# Struct layout (fixed portion = 60 bytes for V2, then variable-length filename)
-_USN_RECORD_V2_FIXED = struct.Struct("<IHHqqqIIIIHH")
+# Struct layout (fixed portion = 64 bytes for V2, then variable-length filename)
 #   RecordLength          I   4
 #   MajorVersion          H   2
 #   MinorVersion          H   2
 #   FileReferenceNumber   q   8
 #   ParentFileRefNumber   q   8
 #   Usn                   q   8
-#   TimeStamp             I+I 8 (FILETIME as two DWORDs — read as q below)
+#   TimeStamp             Q   8 (FILETIME as uint64)
 #   Reason                I   4
 #   SourceInfo            I   4
 #   SecurityId            I   4
 #   FileAttributes        I   4
 #   FileNameLength        H   2
 #   FileNameOffset        H   2
-# Total fixed = 64 bytes
-
 _USN_RECORD_V2_FMT = "<IHHqqqQIIIIHH"
 _USN_RECORD_V2_SIZE = struct.calcsize(_USN_RECORD_V2_FMT)  # 64
 
@@ -173,15 +169,7 @@ FSCTL_QUERY_USN_JOURNAL = 0x000900F4
 FSCTL_READ_USN_JOURNAL = 0x000900BB
 FSCTL_ENUM_USN_DATA = 0x000900B3
 
-# READ_USN_JOURNAL_DATA_V0 struct (24 bytes)
-_READ_USN_JOURNAL_DATA_V0 = struct.Struct("<qIIHH")
-#   StartUsn         q  8
-#   ReasonMask       I  4
-#   ReturnOnlyOnClose I 4
-#   Timeout          H  2 (actually DWORDLONG=8, but simplified)
-#   BytesToWaitFor   H  2
-# Pad to 24 bytes — use full struct below
-
+# READ_USN_JOURNAL_DATA_V0 input buffer format
 _READ_JOURNAL_FMT = "<qIIQQ"
 _READ_JOURNAL_SIZE = struct.calcsize(_READ_JOURNAL_FMT)  # 32
 

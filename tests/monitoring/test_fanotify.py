@@ -87,7 +87,6 @@ class TestFanotifyProvider:
             provider = FanotifyProvider.__new__(FanotifyProvider)
             provider._fan_fd = -1
             provider._marked_paths = set()
-            provider._pending_events = []
             provider._event_mask = FAN_MODIFY
         assert provider.name == "fanotify"
 
@@ -99,7 +98,6 @@ class TestFanotifyProvider:
         provider = FanotifyProvider.__new__(FanotifyProvider)
         provider._fan_fd = -1
         provider._marked_paths = set()
-        provider._pending_events = []
         provider._event_mask = FAN_MODIFY
 
         events = await provider.collect()
@@ -109,7 +107,6 @@ class TestFanotifyProvider:
         provider = FanotifyProvider.__new__(FanotifyProvider)
         provider._fan_fd = -1
         provider._marked_paths = set()
-        provider._pending_events = []
         provider._event_mask = FAN_MODIFY
 
         # With fd=-1, marks won't actually succeed but tracking should work
@@ -121,7 +118,6 @@ class TestFanotifyProvider:
         provider = FanotifyProvider.__new__(FanotifyProvider)
         provider._fan_fd = -1
         provider._marked_paths = {"/test"}
-        provider._pending_events = []
         provider._event_mask = FAN_MODIFY
 
         provider.close()
@@ -133,7 +129,6 @@ class TestFanotifyProvider:
         provider = FanotifyProvider.__new__(FanotifyProvider)
         provider._fan_fd = -1
         provider._marked_paths = set()
-        provider._pending_events = []
         provider._event_mask = FAN_MODIFY
 
         since = datetime(2026, 1, 1, tzinfo=timezone.utc)

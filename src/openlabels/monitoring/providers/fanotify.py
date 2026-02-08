@@ -24,7 +24,7 @@ import struct
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 
@@ -74,20 +74,10 @@ DEFAULT_EVENT_MASK = (
     | FAN_MOVED_TO
 )
 
-# fanotify_event_metadata struct (24 bytes on 64-bit)
-_EVENT_METADATA_FMT = "<IBBHiq"
-_EVENT_METADATA_SIZE = struct.calcsize(_EVENT_METADATA_FMT)
-#   event_len       I  4
-#   vers            B  1
-#   reserved        B  1
-#   metadata_len    H  2
-#   mask            q  8  (aligned — actually at offset 8)
-#   fd              i  4
-#   pid             i  4
-
-# Actual kernel struct alignment
-_FANOTIFY_METADATA_FMT = "<IBBHxxi"  # Simplified — use raw parsing
-_FANOTIFY_EVENT_SIZE = 24  # sizeof(struct fanotify_event_metadata)
+# sizeof(struct fanotify_event_metadata) on 64-bit Linux
+# Layout: uint32_t event_len, uint8_t vers, uint8_t reserved,
+#         uint16_t metadata_len, uint64_t mask (aligned), int32_t fd, int32_t pid
+_FANOTIFY_EVENT_SIZE = 24
 
 # Syscall numbers (x86_64)
 _SYS_FANOTIFY_INIT = 300
@@ -220,7 +210,6 @@ class FanotifyProvider:
         self._event_mask = event_mask
         self._fan_fd: int = -1
         self._marked_paths: set[str] = set()
-        self._pending_events: list[RawAccessEvent] = []
 
         # Initialize fanotify fd
         if _IS_LINUX:
