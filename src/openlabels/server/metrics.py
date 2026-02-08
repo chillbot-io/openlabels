@@ -98,6 +98,37 @@ processing_duration_seconds = Histogram(
 
 
 # =============================================================================
+# Catalog / Data Lake Metrics
+# =============================================================================
+
+catalog_flush_lag_seconds = Gauge(
+    "openlabels_catalog_flush_lag_seconds",
+    "Seconds since last successful catalog event flush",
+    registry=registry,
+)
+
+catalog_file_count = Gauge(
+    "openlabels_catalog_file_count",
+    "Number of Parquet files in the catalog",
+    labelnames=["table"],
+    registry=registry,
+)
+
+catalog_storage_bytes = Gauge(
+    "openlabels_catalog_storage_bytes",
+    "Total size of Parquet files in the catalog (bytes)",
+    registry=registry,
+)
+
+catalog_flush_total = Counter(
+    "openlabels_catalog_flush_total",
+    "Total number of catalog flush operations",
+    labelnames=["status"],
+    registry=registry,
+)
+
+
+# =============================================================================
 # Convenience Functions
 # =============================================================================
 
@@ -174,3 +205,51 @@ def record_entities_found(entity_counts: dict[str, int]) -> None:
 def record_processing_duration(adapter: str, duration: float) -> None:
     """Record file processing duration."""
     processing_duration_seconds.labels(adapter=adapter).observe(duration)
+
+
+def record_catalog_flush(success: bool) -> None:
+    """Record a catalog flush attempt."""
+    catalog_flush_total.labels(status="success" if success else "failure").inc()
+    if success:
+        catalog_flush_lag_seconds.set(0)
+
+
+def update_catalog_health(storage) -> None:
+    """Update catalog health gauges from storage state.
+
+    Call periodically (e.g. after each flush) to keep metrics current.
+    """
+    import time
+    from openlabels.analytics.flush import load_flush_state
+
+    try:
+        state = load_flush_state(storage)
+
+        # Flush lag — time since last successful event flush
+        last_flush = state.get("last_access_event_flush") or state.get("last_audit_log_flush")
+        if last_flush:
+            from datetime import datetime, timezone
+            last_dt = datetime.fromisoformat(last_flush)
+            lag = (datetime.now(timezone.utc) - last_dt).total_seconds()
+            catalog_flush_lag_seconds.set(max(0, lag))
+
+        # File counts per table
+        tables = [
+            "scan_results", "file_inventory", "access_events",
+            "audit_log", "remediation_actions",
+        ]
+        for table in tables:
+            files = storage.list_files(table)
+            catalog_file_count.labels(table=table).set(len(files))
+
+        # Total storage size (local only — remote would need HEAD calls)
+        total_bytes = 0
+        if hasattr(storage, "_base"):
+            import pathlib
+            base = pathlib.Path(storage._base)
+            for p in base.rglob("*.parquet"):
+                total_bytes += p.stat().st_size
+        catalog_storage_bytes.set(total_bytes)
+
+    except Exception:
+        pass  # Metrics are best-effort

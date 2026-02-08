@@ -386,8 +386,8 @@ class DuckDBDashboardService:
         count_params: list = [str(tenant_id)]
         count_sql = "SELECT count(*) AS cnt FROM scan_results WHERE tenant = ?"
         if job_id:
-            job_hex = job_id.hex
-            count_sql += f" AND job_id = decode('{job_hex}', 'hex')"
+            count_sql += " AND job_id = ?"
+            count_params.append(job_id.bytes)
 
         count_rows = await self._safe_query(count_sql, count_params)
         total = count_rows[0]["cnt"] if count_rows else 0
@@ -400,7 +400,8 @@ class DuckDBDashboardService:
             WHERE tenant = ?
         """
         if job_id:
-            sql += f" AND job_id = decode('{job_id.hex}', 'hex')"
+            sql += " AND job_id = ?"
+            params.append(job_id.bytes)
         sql += " ORDER BY risk_score DESC LIMIT ?"
         params.append(limit)
 

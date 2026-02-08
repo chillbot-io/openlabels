@@ -408,6 +408,7 @@ def _enable_batch_linux(
     """Single auditctl invocation for all files."""
     import shutil
 
+    _INJECTION_CHARS = set('"\'`$\n\r;&|')
     results: List[MonitoringResult] = []
     validated: List[Path] = []
 
@@ -419,7 +420,12 @@ def _enable_batch_linux(
 
     for p in paths:
         resolved = Path(p).resolve()
-        if not resolved.exists():
+        resolved_str = str(resolved)
+        if any(c in resolved_str for c in _INJECTION_CHARS):
+            results.append(MonitoringResult(
+                success=False, path=resolved, error="Path contains invalid characters",
+            ))
+        elif not resolved.exists():
             results.append(MonitoringResult(
                 success=False, path=resolved, error=f"File not found: {p}",
             ))
@@ -430,6 +436,7 @@ def _enable_batch_linux(
         return results
 
     # Build a single shell script with one auditctl call per file
+    # Paths are validated above to not contain shell metacharacters
     commands = "\n".join(
         f'auditctl -w "{p}" -p rwa -k openlabels && echo "OK:{p}" || echo "FAIL:{p}"'
         for p in validated

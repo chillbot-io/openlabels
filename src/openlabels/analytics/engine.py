@@ -29,6 +29,7 @@ class DuckDBEngine:
         *,
         memory_limit: str = "2GB",
         threads: int = 4,
+        storage_config=None,
     ) -> None:
         self._catalog_root = catalog_root.rstrip("/")
         self._db = duckdb.connect(":memory:")
@@ -48,6 +49,10 @@ class DuckDBEngine:
         self._db.execute(f"SET memory_limit = '{memory_limit}';")
         self._db.execute(f"SET threads = {threads};")
 
+        # Load remote storage extensions when needed
+        if storage_config is not None:
+            self._configure_remote_storage(storage_config)
+
         self._register_views()
         logger.info(
             "DuckDB engine initialised (root=%s, mem=%s, threads=%d)",
@@ -56,10 +61,50 @@ class DuckDBEngine:
             threads,
         )
 
+    @staticmethod
+    def _esc(value: str) -> str:
+        """Escape a value for use in a DuckDB SET statement."""
+        return value.replace("'", "''")
+
+    def _configure_remote_storage(self, config) -> None:
+        """Install and configure DuckDB extensions for S3/Azure backends."""
+        backend = getattr(config, "backend", "local")
+
+        if backend == "s3":
+            self._db.execute("INSTALL httpfs; LOAD httpfs;")
+            s3 = config.s3
+            if s3.region:
+                self._db.execute(f"SET s3_region = '{self._esc(s3.region)}';")
+            if s3.access_key:
+                self._db.execute(f"SET s3_access_key_id = '{self._esc(s3.access_key)}';")
+            if s3.secret_key:
+                self._db.execute(f"SET s3_secret_access_key = '{self._esc(s3.secret_key)}';")
+            if s3.endpoint_url:
+                # Strip protocol for DuckDB
+                endpoint = s3.endpoint_url.replace("https://", "").replace("http://", "")
+                self._db.execute(f"SET s3_endpoint = '{self._esc(endpoint)}';")
+                if s3.endpoint_url.startswith("http://"):
+                    self._db.execute("SET s3_use_ssl = false;")
+                self._db.execute("SET s3_url_style = 'path';")
+            logger.info("DuckDB httpfs extension loaded for S3")
+
+        elif backend == "azure":
+            self._db.execute("INSTALL azure; LOAD azure;")
+            az = config.azure
+            if az.connection_string:
+                self._db.execute(
+                    f"SET azure_storage_connection_string = '{self._esc(az.connection_string)}';"
+                )
+            elif az.account_name and az.account_key:
+                self._db.execute(f"SET azure_account_name = '{self._esc(az.account_name)}';")
+                self._db.execute(f"SET azure_account_key = '{self._esc(az.account_key)}';")
+            logger.info("DuckDB azure extension loaded")
+
     # View definitions: (view_name, glob_pattern)
     _VIEW_DEFS: list[tuple[str, str]] = [
         ("scan_results", "scan_results/**/*.parquet"),
         ("file_inventory", "file_inventory/**/*.parquet"),
+        ("folder_inventory", "folder_inventory/**/*.parquet"),
         ("access_events", "access_events/**/*.parquet"),
         ("audit_log", "audit_log/**/*.parquet"),
         ("remediation_actions", "remediation_actions/**/*.parquet"),

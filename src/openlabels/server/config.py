@@ -460,6 +460,82 @@ class RedisSettings(BaseSettings):
     memory_cache_max_size: int = 1000  # Max items in memory cache
 
 
+class S3CatalogSettings(BaseSettings):
+    """S3 storage configuration for the data catalog."""
+
+    bucket: str = ""
+    prefix: str = "openlabels/catalog"
+    region: str = "us-east-1"
+    access_key: str = ""
+    secret_key: str = ""
+    endpoint_url: str | None = None  # For S3-compatible (MinIO)
+
+
+class AzureCatalogSettings(BaseSettings):
+    """Azure Blob storage configuration for the data catalog."""
+
+    container: str = ""
+    prefix: str = "openlabels/catalog"
+    connection_string: str | None = None
+    account_name: str | None = None
+    account_key: str | None = None
+
+
+class MonitoringSettings(BaseSettings):
+    """
+    File access monitoring and event harvesting configuration.
+
+    Controls the EventHarvester background tasks that periodically collect
+    access events from OS audit subsystems (Windows SACL, Linux auditd)
+    and cloud APIs (M365 Management Activity API) and persist them to the
+    ``file_access_events`` table.
+
+    Environment variables::
+
+        OPENLABELS_MONITORING__ENABLED=true
+        OPENLABELS_MONITORING__HARVEST_INTERVAL_SECONDS=60
+        OPENLABELS_MONITORING__PROVIDERS=windows_sacl,auditd,m365_audit
+        OPENLABELS_MONITORING__STORE_RAW_EVENTS=false
+        OPENLABELS_MONITORING__M365_HARVEST_INTERVAL_SECONDS=300
+        OPENLABELS_MONITORING__M365_SITE_URLS=https://contoso.sharepoint.com/sites/finance
+        OPENLABELS_MONITORING__WEBHOOK_ENABLED=false
+        OPENLABELS_MONITORING__WEBHOOK_URL=https://your-domain.com/api/v1/webhooks/graph
+        OPENLABELS_MONITORING__WEBHOOK_CLIENT_STATE=<random-secret>
+    """
+
+    enabled: bool = False
+    # DB tenant UUID for registry cache sync (populate on startup, sync on shutdown).
+    # If not set, cache sync is skipped (the harvester still works via DB queries).
+    tenant_id: str | None = None
+    # How often the EventHarvester polls OS providers for new events
+    harvest_interval_seconds: int = 60
+    # Which event providers to activate (comma-separated in env vars)
+    providers: list[str] = Field(default_factory=lambda: ["windows_sacl", "auditd"])
+    # Store the raw OS event in FileAccessEvent.raw_event (useful for debugging)
+    store_raw_events: bool = False
+    # Maximum events to process per harvest cycle (back-pressure)
+    max_events_per_cycle: int = 10_000
+    # Sync registry cache to DB on startup and shutdown
+    sync_cache_on_startup: bool = True
+    sync_cache_on_shutdown: bool = True
+
+    # --- M365 audit (Management Activity API) ---
+    # Separate harvest interval for M365 (API batches events; 5 min is typical)
+    m365_harvest_interval_seconds: int = 300
+    # SharePoint site URLs to filter events (None = all sites)
+    m365_site_urls: list[str] = Field(default_factory=list)
+
+    # --- Graph webhooks ---
+    webhook_enabled: bool = False
+    # Public HTTPS URL for Graph change notification subscriptions.
+    # Graph sends POST notifications to this URL when drive items change.
+    # Example: https://your-domain.com/api/v1/webhooks/graph
+    webhook_url: str = ""
+    # Shared secret for validating inbound webhook notifications
+    # (matched against ``clientState`` in the subscription).
+    webhook_client_state: str = ""
+
+
 class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
@@ -474,11 +550,18 @@ class CatalogSettings(BaseSettings):
         OPENLABELS_CATALOG__ENABLED=true
         OPENLABELS_CATALOG__BACKEND=local
         OPENLABELS_CATALOG__LOCAL_PATH=/data/openlabels/catalog
+        OPENLABELS_CATALOG__S3__BUCKET=my-bucket
+        OPENLABELS_CATALOG__S3__REGION=us-east-1
+        OPENLABELS_CATALOG__AZURE__CONTAINER=my-container
     """
 
     enabled: bool = False
     backend: Literal["local", "s3", "azure"] = "local"
     local_path: str = ""
+
+    # Remote storage sub-configs
+    s3: S3CatalogSettings = Field(default_factory=S3CatalogSettings)
+    azure: AzureCatalogSettings = Field(default_factory=AzureCatalogSettings)
 
     # Flush tuning
     event_flush_interval_seconds: int = 300  # 5 minutes
@@ -517,6 +600,7 @@ class Settings(BaseSettings):
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

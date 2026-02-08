@@ -46,6 +46,9 @@ from openlabels.cli.commands.remediation import quarantine, lock_down_cmd
 # Monitoring commands
 from openlabels.cli.commands.monitor import monitor
 
+# Catalog management commands
+from openlabels.cli.commands.catalog import catalog
+
 # System commands
 from openlabels.cli.commands.system import status, backup, restore
 
@@ -67,6 +70,7 @@ __all__ = [
     "labels",
     "export",
     "monitor",
+    "catalog",
     # Standalone commands
     "classify",
     "find",

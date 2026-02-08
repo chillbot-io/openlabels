@@ -68,6 +68,17 @@ class TestLocalStorage:
     def test_implements_protocol(self, storage: LocalStorage):
         assert isinstance(storage, CatalogStorage)
 
+    def test_write_and_read_bytes(self, storage: LocalStorage):
+        data = b'{"version": 1, "cursor": "2026-02-08T12:00:00"}'
+        storage.write_bytes("_metadata/flush_state.json", data)
+        result = storage.read_bytes("_metadata/flush_state.json")
+        assert result == data
+
+    def test_read_bytes_creates_parents(self, storage: LocalStorage):
+        data = b"test"
+        storage.write_bytes("deep/nested/dir/file.json", data)
+        assert storage.read_bytes("deep/nested/dir/file.json") == data
+
 
     def test_read_json_write_json_roundtrip(self, storage: LocalStorage):
         data = {"schema_version": 1, "last_flush": "2026-02-01T12:00:00+00:00"}

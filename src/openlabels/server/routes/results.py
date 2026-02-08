@@ -265,7 +265,7 @@ async def export_results(
             params.append(str(_tenant.id))
         if job_id:
             where_clauses.append("job_id = ?")
-            params.append(str(job_id).replace("-", ""))
+            params.append(job_id.bytes)
         if risk_tier:
             where_clauses.append("risk_tier = ?")
             params.append(risk_tier)

@@ -66,12 +66,15 @@ def load_flush_state(storage: CatalogStorage) -> dict:
             "last_remediation_action_flush": None,
             "schema_version": 1,
         }
-    return storage.read_json(path)
+    data = storage.read_bytes(path)
+    return json.loads(data)
 
 
 def save_flush_state(storage: CatalogStorage, state: dict) -> None:
     """Persist flush cursor state."""
-    storage.write_json(_flush_state_path(storage), state)
+    path = _flush_state_path(storage)
+    data = json.dumps(state, indent=2, default=str).encode()
+    storage.write_bytes(path, data)
 
 
 # ── 1. Scan completion flush ─────────────────────────────────────────
