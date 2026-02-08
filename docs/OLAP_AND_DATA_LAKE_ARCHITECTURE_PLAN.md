@@ -1,6 +1,6 @@
 # OLAP and Data Lake Architecture Plan
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Proposed
 **Last Updated:** February 2026
 
@@ -21,7 +21,11 @@
 11. [Data Lifecycle and Retention](#11-data-lifecycle-and-retention)
 12. [Unified Event Collection](#12-unified-event-collection)
 13. [Unified Scan Pipeline](#13-unified-scan-pipeline)
-14. [Implementation Phases](#14-implementation-phases)
+14. [Policy Engine Integration](#14-policy-engine-integration)
+15. [Alerting and Notification System](#15-alerting-and-notification-system)
+16. [Reporting and Distribution](#16-reporting-and-distribution)
+17. [Operational Readiness](#17-operational-readiness)
+18. [Implementation Phases](#18-implementation-phases)
 
 ---
 
@@ -2003,7 +2007,395 @@ delta detection and scoring.
 
 ---
 
-## 14. Implementation Phases
+## 14. Policy Engine Integration
+
+### Current State
+
+A complete policy engine exists at `src/openlabels/core/policies/` (~500 lines) with:
+
+- `PolicyEngine` class — add/remove/evaluate policies (`engine.py`)
+- `PolicyPack` schema — defines policy rules, conditions, and actions (`schema.py`)
+- Compliance framework categories: HIPAA, GDPR, PCI-DSS, SOC2, CCPA
+- Risk level ordering and policy matching logic
+- Policy loader utilities (`loader.py`)
+
+**The problem:** Nothing in the application ever imports or calls it. It's complete
+dead code. Scan results don't include policy violations, no API endpoint exposes
+policy evaluation, and there's no way to define or manage policies through the UI.
+
+### What Policy Integration Looks Like
+
+Policies answer: "Given what we found in this file, what rules does it violate?"
+
+```
+File scanned → 3 SSNs found, exposure=PUBLIC, risk_tier=CRITICAL
+                        │
+                        ▼
+              ┌─────────────────────┐
+              │   Policy Engine     │
+              │                     │
+              │  HIPAA Rule:        │
+              │    has(SSN) AND     │──► VIOLATION: HIPAA §164.502
+              │    exposure=PUBLIC  │    Action: quarantine + notify
+              │                     │
+              │  PCI-DSS Rule:      │
+              │    has(CREDIT_CARD) │──► No match (no credit cards)
+              │    AND count > 5    │
+              │                     │
+              │  Internal Policy:   │
+              │    tier=CRITICAL    │──► VIOLATION: Corporate Policy
+              │    AND !labeled     │    Action: auto-label + alert
+              └─────────────────────┘
+```
+
+### Integration Points
+
+1. **Scan pipeline** (`scan.py` post-classification): Evaluate policies against each
+   `ScanResult` after scoring. Add `policy_violations` field to result.
+
+2. **API endpoints**: New `/api/v1/policies/` resource group:
+   - `GET /policies` — List configured policies
+   - `POST /policies` — Create policy from pack template or custom
+   - `PUT /policies/{id}` — Update policy rules/actions
+   - `DELETE /policies/{id}` — Remove policy
+   - `POST /policies/evaluate` — Dry-run evaluation against existing results
+
+3. **Automated actions**: Policy violations can trigger:
+   - Quarantine (connect to `remediation/quarantine.py`)
+   - Label application (connect to `labeling/engine.py`)
+   - Alert notification (connect to Section 15 alerting)
+   - Monitoring enrollment (add to `MonitoredFile`)
+
+4. **Dashboard integration**: Policy compliance stats as a DuckDB OLAP query —
+   violations by policy, trend over time, compliance percentage per target.
+
+### Data Model Addition
+
+```python
+# Addition to ScanResult model
+class ScanResult(Base):
+    ...
+    policy_violations: list[dict] = Column(JSONB, default=[])
+    # [{"policy_id": "...", "policy_name": "HIPAA PHI Exposure",
+    #   "framework": "HIPAA", "severity": "critical",
+    #   "rule": "has(SSN) AND exposure=PUBLIC",
+    #   "action_taken": "quarantine"}]
+```
+
+---
+
+## 15. Alerting and Notification System
+
+### Current State
+
+The only notification mechanism is Windows system tray balloon messages (`tray.py`).
+The web UI settings page has a notifications section that renders forms but **discards
+all input** — the POST handlers don't persist anything.
+
+For an enterprise data classification tool that detects CRITICAL risk files, this is
+a fundamental gap. Finding sensitive data is useless if nobody is told about it.
+
+### Alert Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                      ALERT TRIGGERS                               │
+│                                                                    │
+│  Scan completion ──┐                                              │
+│  CRITICAL finding ─┤                                              │
+│  Policy violation ─┤──► AlertEngine.evaluate() ──► Alert Rules    │
+│  Anomaly detected ─┤                                              │
+│  Remediation event ┘                                              │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                      ALERT RULES                                  │
+│                                                                    │
+│  Rule: "CRITICAL files found"                                     │
+│    Condition: scan.critical_files > 0                             │
+│    Severity: HIGH                                                 │
+│    Channels: [email, slack]                                       │
+│    Throttle: max 1 per hour per target                            │
+│                                                                    │
+│  Rule: "Anomalous access detected"                                │
+│    Condition: anomaly.type = "high_volume"                        │
+│    Severity: CRITICAL                                             │
+│    Channels: [email, slack, webhook]                              │
+│    Throttle: immediate                                            │
+└──────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   DELIVERY CHANNELS                               │
+│                                                                    │
+│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ │
+│  │  Email  │ │  Slack  │ │  Teams   │ │ Webhook │ │  Syslog  │ │
+│  │  (SMTP) │ │  (API)  │ │ (Connec.)│ │ (HTTP)  │ │ (RFC5424)│ │
+│  └─────────┘ └─────────┘ └──────────┘ └─────────┘ └──────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Delivery Channels
+
+| Channel | Protocol | Use Case |
+|---------|----------|----------|
+| **Email** | SMTP/STARTTLS | Default — compliance reports, scan summaries, critical alerts |
+| **Slack** | Slack Web API (`chat.postMessage`) | Real-time team notifications |
+| **Microsoft Teams** | Incoming Webhook Connector | M365-centric organizations |
+| **Generic Webhook** | HTTP POST (JSON payload) | SIEM integration, custom automation |
+| **Syslog** | RFC 5424 (UDP/TCP/TLS) | Enterprise logging infrastructure |
+
+### Channel Protocol
+
+```python
+# src/openlabels/alerting/channels/base.py
+
+@dataclass
+class AlertMessage:
+    """Normalized alert message for all channels."""
+
+    title: str
+    body: str                     # Markdown formatted
+    severity: str                 # info, warning, high, critical
+    source: str                   # scan, monitoring, remediation, policy
+    tenant_id: UUID
+    metadata: dict                # Channel-specific data (scan_id, file_path, etc.)
+    timestamp: datetime
+
+
+class AlertChannel(Protocol):
+    """Protocol for alert delivery channels."""
+
+    async def send(self, message: AlertMessage) -> bool:
+        """Send an alert. Returns True if delivery succeeded."""
+        ...
+
+    async def test(self) -> bool:
+        """Test channel connectivity. Used by UI 'Send Test' button."""
+        ...
+```
+
+### Configuration
+
+```python
+class AlertSettings(BaseSettings):
+    """Alerting configuration."""
+
+    enabled: bool = False
+
+    # Email (SMTP)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_from_address: str = "openlabels@example.com"
+    smtp_to_addresses: list[str] = []
+
+    # Slack
+    slack_webhook_url: str = ""
+    slack_channel: str = ""
+
+    # Microsoft Teams
+    teams_webhook_url: str = ""
+
+    # Generic webhook
+    webhook_url: str = ""
+    webhook_headers: dict[str, str] = {}
+
+    # Syslog
+    syslog_host: str = ""
+    syslog_port: int = 514
+    syslog_protocol: str = "udp"   # udp, tcp, tls
+
+    # Throttling
+    throttle_window_seconds: int = 3600  # 1 hour default
+    max_alerts_per_window: int = 10
+```
+
+```bash
+# Environment variables
+OPENLABELS_ALERTING__ENABLED=true
+OPENLABELS_ALERTING__SMTP_HOST=smtp.company.com
+OPENLABELS_ALERTING__SMTP_TO_ADDRESSES=["security@company.com","compliance@company.com"]
+OPENLABELS_ALERTING__SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
+OPENLABELS_ALERTING__TEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/...
+```
+
+### Alert Trigger Integration
+
+Alerts fire from existing code paths with minimal changes:
+
+| Trigger Point | File | What Fires |
+|--------------|------|------------|
+| Scan completed | `scan.py:420-430` | Summary: X files scanned, Y critical, Z labeled |
+| CRITICAL file found | `scan.py:302-323` (per-file) | Immediate: "CRITICAL risk file detected at {path}" |
+| Policy violation | Policy engine (Section 14) | Per-policy: "HIPAA violation: SSN in public file" |
+| Anomaly detected | `monitoring.py:464-538` | "Unusual access: {user} accessed {N} files in {T}h" |
+| Remediation action | `remediation/quarantine.py` | "File quarantined: {path} (risk: {tier})" |
+| Label applied | `labeling/engine.py` | "Sensitivity label applied: {label} to {N} files" |
+
+---
+
+## 16. Reporting and Distribution
+
+### Current State
+
+- CLI `report.py` generates text/JSON/CSV/HTML reports (one-off, stdout or file)
+- CLI `export.py` exports scan results as CSV/JSON
+- API `export_results` endpoint streams results
+- No PDF generation, no scheduled reports, no email delivery
+
+### Target Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    REPORT GENERATION                              │
+│                                                                    │
+│  Templates:                                                       │
+│  ├── Executive Summary (1-page PDF, risk posture overview)       │
+│  ├── Compliance Report (policy violations by framework)           │
+│  ├── Scan Detail (per-target file listing with findings)          │
+│  ├── Access Audit (who accessed what, when — from events)         │
+│  └── Trend Report (risk score trends over time)                   │
+│                                                                    │
+│  Formats: PDF, HTML, CSV, JSON                                   │
+│  Data source: DuckDB (OLAP) for aggregations, Postgres for CRUD  │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    DISTRIBUTION                                   │
+│                                                                    │
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐   │
+│  │  Scheduled   │  │  On-demand  │  │  Event-triggered       │   │
+│  │  (cron)      │  │  (API/CLI)  │  │  (post-scan, weekly)   │   │
+│  └──────┬──────┘  └──────┬──────┘  └───────────┬────────────┘   │
+│         └────────────────┼─────────────────────┘                 │
+│                          ▼                                        │
+│  Delivery: Email (SMTP), S3/Azure upload, local file, API download│
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### PDF Generation
+
+Uses `weasyprint` (HTML→PDF via CSS) rather than a heavy reporting framework.
+Report templates are Jinja2 HTML with print-optimized CSS — same templates used
+for HTML export and PDF rendering.
+
+```python
+# src/openlabels/reporting/renderer.py
+
+class ReportRenderer:
+    """Render reports in multiple formats from Jinja2 templates."""
+
+    async def render_pdf(self, template: str, data: dict) -> bytes:
+        html = self._render_html(template, data)
+        return weasyprint.HTML(string=html).write_pdf()
+
+    async def render_html(self, template: str, data: dict) -> str:
+        return self._render_html(template, data)
+
+    async def render_csv(self, template: str, data: dict) -> str:
+        # Flat tabular export
+        ...
+```
+
+### Report Scheduling
+
+```python
+# Addition to existing ScheduleSettings or new ReportSettings
+class ReportSchedule(BaseSettings):
+    """Scheduled report configuration."""
+
+    enabled: bool = False
+    reports: list[dict] = []
+    # [{"template": "executive_summary", "schedule": "0 8 * * MON",
+    #   "recipients": ["ciso@company.com"], "format": "pdf"}]
+```
+
+Reports use the existing cron/schedule infrastructure (`croniter`-based scheduling
+in the job system) and the alerting email channel (Section 15) for delivery.
+
+---
+
+## 17. Operational Readiness
+
+### Current Gaps
+
+| Gap | Risk | Fix |
+|-----|------|-----|
+| **Web UI settings don't persist** | Users configure settings that silently vanish | Fix POST handlers in `web/routes.py` to write to config/DB |
+| **`scan_all_sites`/`scan_all_users` unused** | Config keys defined but adapters ignore them | Wire into SharePoint/OneDrive adapter `list_files()` |
+| **Permission restore missing** | Can lock down files but can't undo programmatically | Add `restore_permissions()` using backed-up ACLs from `lock_down()` |
+| **Health endpoint requires auth** | `/api/v1/health/status` needs authentication; load balancers can't probe | Make health endpoints unauthenticated |
+| **`system backup` command stubbed** | `cli/commands/system.py` has placeholder | Implement `pg_dump` wrapper + config export |
+| **WebSocket no rate limiting** | Unbounded message rate/size on WS connections | Add message rate and payload size limits |
+| **Dev hardcodes in production** | `ws.py:167` has `"dev-tenant"`, `ws.py:179` has `"dev@localhost"` | Gate behind `DEBUG` flag or remove |
+| **64x `except Exception`** | Broad exception handlers mask real errors | Narrow to specific exception types in critical paths |
+| **OCR models not bundled** | Code exists but models require separate download | Auto-download on first use, or bundle in Docker image |
+| **ML detectors non-functional** | PHI-BERT/PII-BERT scaffolded but models not included | Bundle models or add download CLI command |
+
+### Database Backup and Restore
+
+```python
+# src/openlabels/cli/commands/system.py
+
+# openlabels system backup --output /backups/openlabels-2026-02-08.sql.gz
+async def backup(output: str):
+    """Full database backup via pg_dump + config export."""
+    settings = get_settings()
+    # 1. pg_dump --format=custom to compressed file
+    # 2. Export current settings as YAML
+    # 3. Export Parquet catalog metadata (flush_state.json, schema_version.json)
+    ...
+
+# openlabels system restore --input /backups/openlabels-2026-02-08.sql.gz
+async def restore(input: str):
+    """Restore from backup."""
+    # 1. pg_restore from backup file
+    # 2. Rebuild Parquet catalog from restored DB (openlabels catalog rebuild)
+    ...
+```
+
+### CI/CD Pipeline
+
+Current GitHub Actions: lint + mypy + tests only.
+
+Add:
+
+| Stage | Tool | Purpose |
+|-------|------|---------|
+| **Dependency audit** | `pip-audit` / `safety` | CVE scanning on Python dependencies |
+| **SAST** | `bandit` | Static security analysis (catches the `except Exception` pattern) |
+| **Docker build** | `docker build` | Build production image with bundled models |
+| **Python matrix** | `matrix: [3.11, 3.12, 3.13]` | Verify compatibility |
+| **Integration tests** | `docker compose` | Full stack: Postgres + Redis + app |
+| **Coverage gate** | `pytest-cov` | Minimum coverage threshold |
+
+### Model Bundling Strategy
+
+```
+Models needed:
+├── NER model (~350MB) — Required for all scans
+│   └── Auto-download from HuggingFace on first use
+│       OR bundled in Docker image (openlabels:full)
+├── OCR model (~50MB) — Optional, for image/scanned PDF
+│   └── Auto-download when enable_ocr=true
+│       OR pip install openlabels[ocr]
+└── ML detectors (~200MB each) — Optional PHI/PII-BERT
+    └── openlabels models download phi-bert
+        OR pip install openlabels[ml]
+
+# Docker images:
+# openlabels:slim  — No models bundled (~200MB), downloads on first use
+# openlabels:full  — NER + OCR bundled (~800MB), air-gap ready
+```
+
+---
+
+## 18. Implementation Phases
 
 ### Phase A: Foundation (Storage + Arrow Converters)
 
@@ -2110,6 +2502,85 @@ Merge the two scan code paths into one pipeline with parallel classification age
 6. Add MIP label application to result pipeline
 7. Add Parquet flush hook to result pipeline (Section 5.1)
 8. Tests: End-to-end pipeline with mock adapter, agent pool, and DB verification
+
+### Phase J: Policy Engine Integration
+
+Wire the dead `core/policies/` package into the live scan pipeline and expose via API.
+
+1. Add `policy_violations` JSONB column to `ScanResult` model
+2. Create database migration for the new column
+3. Call `PolicyEngine.evaluate()` in scan pipeline after scoring (post-classification)
+4. Store violations in `ScanResult.policy_violations`
+5. Add `/api/v1/policies/` CRUD endpoints (list, create, update, delete)
+6. Add `POST /api/v1/policies/evaluate` dry-run endpoint against existing results
+7. Connect policy violation actions to remediation (quarantine, label, monitor)
+8. Connect policy violations to alerting system (Section 15)
+9. Add compliance dashboard stats to DuckDB OLAP queries
+10. Add default policy packs: HIPAA, GDPR, PCI-DSS, SOC2 (loadable templates)
+11. Tests: Policy evaluation against scan results, action triggering, API CRUD
+
+### Phase K: Alerting and Notification System
+
+Build the alert delivery infrastructure that all other subsystems use.
+
+1. Create `src/openlabels/alerting/` package
+2. Implement `AlertChannel` protocol and `AlertMessage` dataclass
+3. Implement `EmailChannel` — SMTP/STARTTLS with Jinja2 email templates
+4. Implement `SlackChannel` — Slack Web API `chat.postMessage`
+5. Implement `TeamsChannel` — Microsoft Teams Incoming Webhook Connector
+6. Implement `WebhookChannel` — generic HTTP POST with configurable headers
+7. Implement `SyslogChannel` — RFC 5424 over UDP/TCP/TLS
+8. Implement `AlertEngine` — rule evaluation, throttling, channel routing
+9. Add `AlertSettings` to config (SMTP, Slack, Teams, webhook, syslog credentials)
+10. Add alert trigger hooks to: scan completion, CRITICAL findings, anomaly detection, remediation
+11. Add `/api/v1/alerts/` endpoints: list rules, create rule, test channel
+12. Fix web UI settings persistence — POST handlers must write to config/DB
+13. Tests: Channel delivery (mocked), throttling, rule evaluation, template rendering
+
+### Phase L: Reporting and Distribution
+
+Scheduled and on-demand report generation with email delivery.
+
+1. Create `src/openlabels/reporting/` package
+2. Implement `ReportRenderer` — Jinja2 HTML templates → PDF (via `weasyprint`), HTML, CSV
+3. Create report templates: executive summary, compliance report, scan detail, access audit
+4. Add `weasyprint` as optional dependency (`pip install openlabels[reports]`)
+5. Implement report scheduling via existing cron/job infrastructure
+6. Add email delivery using alerting `EmailChannel` (Phase K)
+7. Add `/api/v1/reports/` endpoints: generate, schedule, list, download
+8. Add `openlabels report generate --template executive_summary --format pdf` CLI command
+9. Tests: Template rendering, PDF generation, scheduled report execution
+
+### Phase M: Operational Hardening
+
+Fix the known wiring issues, security gaps, and deployment infrastructure.
+
+1. Fix web UI settings persistence — `web/routes.py` POST handlers write to config
+2. Wire `scan_all_sites` / `scan_all_users` config into SharePoint/OneDrive adapters
+3. Implement `restore_permissions()` — inverse of `lock_down()` using backed-up ACLs
+4. Make `/api/v1/health/status` unauthenticated (load balancer probe)
+5. Add WebSocket rate limiting (message rate + payload size)
+6. Remove dev hardcodes from `ws.py` (gate behind `DEBUG` or remove entirely)
+7. Narrow 64x `except Exception` to specific exception types in critical paths
+8. Implement `openlabels system backup` — `pg_dump` wrapper + config export
+9. Implement `openlabels system restore` — `pg_restore` + catalog rebuild
+10. Tests: Settings persistence round-trip, permission restore, backup/restore cycle
+
+### Phase N: Model Bundling and CI/CD
+
+Production deployment pipeline and model distribution strategy.
+
+1. Add `pip-audit` / `safety` to CI for dependency CVE scanning
+2. Add `bandit` to CI for static security analysis
+3. Add Python version matrix (3.11, 3.12, 3.13) to GitHub Actions
+4. Build `Dockerfile` with multi-stage build (slim + full variants)
+5. Add `docker compose` integration test suite (Postgres + Redis + app)
+6. Add `pytest-cov` coverage gate to CI
+7. Implement model auto-download on first use (NER model from HuggingFace)
+8. Implement `openlabels models download` CLI command for air-gapped environments
+9. Add OCR model download/bundling (`pip install openlabels[ocr]`)
+10. Wire ML detectors (PHI-BERT, PII-BERT) into detection pipeline when models present
+11. Tests: Model download mocking, Docker build verification, CI pipeline
 
 ---
 
