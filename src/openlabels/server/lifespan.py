@@ -82,6 +82,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("Scheduler disabled by configuration")
 
+    # Analytics engine (DuckDB + Parquet data lake)
+    if settings.catalog.enabled:
+        try:
+            from openlabels.analytics.engine import DuckDBEngine
+            from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
+
+            catalog_root = settings.catalog.local_path  # Phase E adds S3/Azure
+            engine = DuckDBEngine(
+                catalog_root,
+                memory_limit=settings.catalog.duckdb_memory_limit,
+                threads=settings.catalog.duckdb_threads,
+            )
+            analytics_svc = AnalyticsService(engine)
+            app.state.analytics = analytics_svc
+            app.state.dashboard_service = DuckDBDashboardService(analytics_svc)
+            logger.info("Analytics engine initialized (DuckDB + Parquet)")
+        except Exception as e:
+            logger.error(
+                "Analytics engine initialization failed (%s: %s) — "
+                "falling back to PostgreSQL for dashboard queries",
+                type(e).__name__, e,
+            )
+            app.state.analytics = None
+            app.state.dashboard_service = None
+    else:
+        app.state.analytics = None
+        app.state.dashboard_service = None
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
@@ -92,6 +120,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
+
+    # Close analytics engine
+    if getattr(app.state, "analytics", None):
+        try:
+            app.state.analytics.close()
+            logger.info("Analytics engine closed")
+        except Exception as e:
+            logger.warning(f"Error closing analytics engine: {type(e).__name__}: {e}")
 
     await close_cache()
     await close_db()

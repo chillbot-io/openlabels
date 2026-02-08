@@ -472,6 +472,23 @@ async def execute_scan_task(
                 logger.error(f"Auto-labeling failed - runtime error: {e}")
                 stats["auto_label_error"] = str(e)
 
+        # Flush scan results + inventory to Parquet data lake (non-fatal)
+        if settings.catalog.enabled:
+            try:
+                from openlabels.analytics.flush import flush_scan_to_catalog
+                from openlabels.analytics.storage import create_storage
+
+                _catalog_storage = create_storage(settings.catalog)
+                flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
+                stats["catalog_flushed"] = flushed
+            except Exception as e:
+                logger.warning(
+                    "Catalog flush failed for job %s; data lake will catch up on next flush: %s",
+                    job.id,
+                    e,
+                )
+                stats["catalog_flush_error"] = str(e)
+
         return stats
 
     except PermissionError as e:

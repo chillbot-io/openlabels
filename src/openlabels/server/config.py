@@ -460,6 +460,37 @@ class RedisSettings(BaseSettings):
     memory_cache_max_size: int = 1000  # Max items in memory cache
 
 
+class CatalogSettings(BaseSettings):
+    """
+    Data lake / Parquet catalog configuration.
+
+    When ``enabled`` is True, analytical queries (dashboard stats, trends,
+    heatmaps, exports) are served from DuckDB over Parquet files instead
+    of PostgreSQL.  PostgreSQL remains the source of truth — Parquet is a
+    derived, append-optimised analytical copy.
+
+    Environment variables::
+
+        OPENLABELS_CATALOG__ENABLED=true
+        OPENLABELS_CATALOG__BACKEND=local
+        OPENLABELS_CATALOG__LOCAL_PATH=/data/openlabels/catalog
+    """
+
+    enabled: bool = False
+    backend: Literal["local", "s3", "azure"] = "local"
+    local_path: str = ""
+
+    # Flush tuning
+    event_flush_interval_seconds: int = 300  # 5 minutes
+    max_parquet_row_group_size: int = 100_000
+    max_parquet_file_size_mb: int = 256
+    compression: Literal["zstd", "snappy", "gzip", "none"] = "zstd"
+
+    # DuckDB tuning
+    duckdb_memory_limit: str = "2GB"
+    duckdb_threads: int = 4
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -485,6 +516,7 @@ class Settings(BaseSettings):
     jobs: JobSettings = Field(default_factory=JobSettings)
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
+    catalog: CatalogSettings = Field(default_factory=CatalogSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:
