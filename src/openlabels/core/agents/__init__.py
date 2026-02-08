@@ -13,13 +13,16 @@ from openlabels.core.agents.pool import (
     ScanOrchestrator,
 )
 from openlabels.core.agents.worker import ClassificationAgent, AgentResult
+from openlabels.core.change_providers import ChangeProvider, FullWalkProvider
 
 __all__ = [
     "AgentPool",
     "AgentPoolConfig",
+    "ChangeProvider",
     "ClassificationAgent",
     "AgentResult",
     "FileResult",
+    "FullWalkProvider",
     "ResultHandler",
     "ScanOrchestrator",
 ]

@@ -880,10 +880,12 @@ async def execute_parallel_scan_task(
     payload: dict,
 ) -> dict:
     """
-    Execute a scan task using parallel agent pool.
+    Execute a scan task using the unified parallel pipeline.
 
-    This mode spawns multiple classification agents for CPU-bound
-    workloads, providing significant speedup on multi-core systems.
+    Uses ScanOrchestrator with a ChangeProvider to combine multi-process
+    classification agents with the full feature set: delta scanning,
+    proper risk scoring with exposure multipliers, inventory updates,
+    auto-labeling, and Parquet flush.
 
     Args:
         session: Database session
@@ -895,7 +897,8 @@ async def execute_parallel_scan_task(
     Returns:
         Result dictionary with scan statistics
     """
-    from openlabels.core.agents import AgentPool, AgentPoolConfig, FileResult
+    from openlabels.core.agents import ScanOrchestrator, AgentPoolConfig, FullWalkProvider
+    from openlabels.jobs.inventory import InventoryService
 
     job_id = UUID(payload["job_id"])
     num_agents = payload.get("num_agents", 0)
@@ -910,7 +913,6 @@ async def execute_parallel_scan_task(
             context="job may have been deleted or never created",
         )
 
-    # Check if job was cancelled before we start
     if job.status == "cancelled":
         logger.info(f"Parallel scan job {job_id} was cancelled before processing")
         return {"status": "cancelled", "files_scanned": 0}
@@ -924,145 +926,89 @@ async def execute_parallel_scan_task(
             context=f"target_id={job.target_id} may have been deleted",
         )
 
-    # Update job status
     job.status = "running"
-    job.progress = {"mode": "parallel", "num_agents": num_agents}
+    job.progress = {"mode": "unified", "num_agents": num_agents}
     await session.flush()
 
-    # Track statistics
-    stats = {
-        "files_scanned": 0,
-        "files_with_pii": 0,
-        "total_entities": 0,
-        "errors": 0,
-        "scan_mode": "parallel",
-        "cancelled": False,
-    }
+    settings = get_settings()
 
-    async def result_handler(file_results: list[FileResult]) -> None:
-        """Persist file results to database and stream via WebSocket."""
-        nonlocal stats
+    # Get adapter and inventory (same as sequential path)
+    adapter = _get_adapter(target.adapter, target.config)
+    inventory = InventoryService(session, job.tenant_id, target.id)
+    await inventory.load_file_inventory()
+    await inventory.load_folder_inventory()
 
-        # Check for cancellation at each batch
-        if await _check_cancellation(session, job_id):
-            logger.info(f"Parallel scan job {job_id} cancelled at {stats['files_scanned']} files")
-            stats["cancelled"] = True
-            stats["status"] = "cancelled"
-            return  # Stop processing results
+    # Build the change provider
+    target_path = target.config.get("path") or target.config.get("site_id", ".")
+    change_provider = FullWalkProvider(adapter, target_path)
 
-        for result in file_results:
-            try:
-                # Calculate risk tier based on entity counts
-                total = result.total_entities
-                if total >= 20:
-                    risk_tier = "CRITICAL"
-                elif total >= 10:
-                    risk_tier = "HIGH"
-                elif total >= 5:
-                    risk_tier = "MEDIUM"
-                elif total >= 1:
-                    risk_tier = "LOW"
-                else:
-                    risk_tier = "MINIMAL"
+    # Stash force_full_scan on job for orchestrator delta check
+    job._force_full_scan = force_full_scan
 
-                # Create scan result record
-                scan_result = ScanResult(
-                    tenant_id=job.tenant_id,
-                    job_id=job.id,
-                    file_path=result.file_path,
-                    file_name=result.file_path.split("/")[-1],
-                    risk_tier=risk_tier,
-                    entity_counts=result.entity_counts,
-                    total_entities=result.total_entities,
-                    exposure_level="PRIVATE",  # Will be updated from adapter
-                )
-                session.add(scan_result)
-
-                # Update stats
-                stats["files_scanned"] += 1
-                if result.total_entities > 0:
-                    stats["files_with_pii"] += 1
-                stats["total_entities"] += result.total_entities
-                if result.has_errors:
-                    stats["errors"] += len(result.errors)
-
-                # Stream via WebSocket
-                if _ws_streaming_enabled:
-                    try:
-                        await send_scan_file_result(
-                            scan_id=job.id,
-                            file_path=result.file_path,
-                            risk_score=result.total_entities * 10,  # Simple score
-                            risk_tier=risk_tier,
-                            entity_counts=result.entity_counts,
-                        )
-                    except (ConnectionError, OSError) as e:
-                        logger.debug(f"Failed to send file result event: {e}")
-
-            except PermissionError as e:
-                logger.error(f"Permission denied persisting result for {result.file_path}: {e}")
-                stats["errors"] += 1
-            except OSError as e:
-                logger.error(f"OS error persisting result for {result.file_path}: {e}")
-                stats["errors"] += 1
-
-        # Commit batch
-        await session.commit()
-
-        # Update job progress
-        job.files_scanned = stats["files_scanned"]
-        job.files_with_pii = stats["files_with_pii"]
-        job.progress = {
-            "mode": "parallel",
-            "files_scanned": stats["files_scanned"],
-            "files_with_pii": stats["files_with_pii"],
-        }
-
-        # Stream progress
-        if _ws_streaming_enabled:
-            try:
-                await send_scan_progress(
-                    scan_id=job.id,
-                    status="running",
-                    progress=job.progress,
-                )
-            except (ConnectionError, OSError) as e:
-                logger.debug(f"Failed to send scan progress event: {e}")
+    pool_config = AgentPoolConfig(
+        num_agents=num_agents,
+        result_batch_size=25,
+        result_batch_timeout=1.0,
+    )
 
     try:
-        from openlabels.core.agents import ScanOrchestrator, AgentPoolConfig
-
-        # Configure agent pool
-        pool_config = AgentPoolConfig(
-            num_agents=num_agents,  # 0 = auto-detect
-            result_batch_size=25,
-            result_batch_timeout=1.0,
-        )
-
-        # Create orchestrator with result handler
         orchestrator = ScanOrchestrator(
             pool_config=pool_config,
-            result_handler=result_handler,
+            adapter=adapter,
+            change_provider=change_provider,
+            inventory=inventory,
+            session=session,
+            job=job,
+            settings=settings,
         )
 
-        # Get target path
-        target_path = target.config.get("path") or target.config.get("site_id", ".")
-
-        # Run the parallel scan
-        pool_stats = await orchestrator.scan_directory(
-            path=target_path,
-            recursive=True,
-        )
-
-        # Update final stats from pool
+        pool_stats = await orchestrator.run()
+        stats = dict(orchestrator.stats)
+        stats["scan_mode"] = "unified"
         stats["throughput_per_sec"] = pool_stats.throughput_per_second
         stats["avg_processing_ms"] = pool_stats.avg_processing_ms
+
+        # ── Post-scan: folder inventory update ─────────────────────
+        for folder_path, fstats in orchestrator._folder_stats.items():
+            await inventory.update_folder_inventory(
+                folder_path=folder_path,
+                adapter=target.adapter,
+                job_id=job.id,
+                file_count=fstats["file_count"],
+                total_size=fstats["total_size"],
+                has_sensitive=fstats["has_sensitive"],
+                highest_risk=fstats["highest_risk"],
+                total_entities=fstats["total_entities"],
+            )
+
+        # ── Post-scan: auto-labeling (F.7) ────────────────────────
+        if settings.labeling.enabled and settings.labeling.mode == "auto":
+            try:
+                auto_label_stats = await _auto_label_results(session, job)
+                stats["auto_labeled"] = auto_label_stats.get("labeled", 0)
+                stats["auto_label_errors"] = auto_label_stats.get("errors", 0)
+            except (PermissionError, OSError, RuntimeError) as e:
+                logger.error(f"Auto-labeling failed: {e}")
+                stats["auto_label_error"] = str(e)
+
+        # ── Post-scan: Parquet flush (F.8) ─────────────────────────
+        if settings.catalog.enabled:
+            try:
+                from openlabels.analytics.flush import flush_scan_to_catalog
+                from openlabels.analytics.storage import create_storage
+
+                _catalog_storage = create_storage(settings.catalog)
+                flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
+                stats["catalog_flushed"] = flushed
+            except Exception as e:
+                logger.warning("Catalog flush failed for job %s: %s", job.id, e)
+                stats["catalog_flush_error"] = str(e)
 
         # Mark completed
         job.status = "completed"
         await session.commit()
 
-        # Stream completion
+        # Stream completion via WebSocket
         if _ws_streaming_enabled:
             try:
                 await send_scan_completed(
@@ -1070,14 +1016,14 @@ async def execute_parallel_scan_task(
                     status="completed",
                     summary=stats,
                 )
-            except (ConnectionError, OSError) as e:
-                logger.debug(f"Failed to send scan completed event: {e}")
+            except (ConnectionError, OSError):
+                pass
 
         return stats
 
-    except PermissionError as e:
+    except (PermissionError, OSError, RuntimeError) as e:
         job.status = "failed"
-        job.error = f"Permission denied: {e}"
+        job.error = str(e)
         await session.commit()
 
         if _ws_streaming_enabled:
@@ -1085,48 +1031,12 @@ async def execute_parallel_scan_task(
                 await send_scan_completed(
                     scan_id=job.id,
                     status="failed",
-                    summary={"error": f"Permission denied: {e}"},
+                    summary={"error": str(e)},
                 )
-            except (ConnectionError, OSError) as ws_err:
-                logger.debug(f"Failed to send scan failed event: {ws_err}")
-
-        raise
-
-    except OSError as e:
-        job.status = "failed"
-        job.error = f"OS error: {e}"
-        await session.commit()
-
-        if _ws_streaming_enabled:
-            try:
-                await send_scan_completed(
-                    scan_id=job.id,
-                    status="failed",
-                    summary={"error": f"OS error: {e}"},
-                )
-            except (ConnectionError, OSError) as ws_err:
-                logger.debug(f"Failed to send scan failed event: {ws_err}")
-
-        raise
-
-    except RuntimeError as e:
-        job.status = "failed"
-        job.error = f"Runtime error: {e}"
-        await session.commit()
-
-        if _ws_streaming_enabled:
-            try:
-                await send_scan_completed(
-                    scan_id=job.id,
-                    status="failed",
-                    summary={"error": f"Runtime error: {e}"},
-                )
-            except (ConnectionError, OSError) as ws_err:
-                logger.debug(f"Failed to send scan failed event: {ws_err}")
+            except (ConnectionError, OSError):
+                pass
 
         raise
 
     finally:
-        # Release ML processor to free memory (200-500MB)
-        # This ensures cleanup happens whether scan completes, fails, or is cancelled
         cleanup_processor()

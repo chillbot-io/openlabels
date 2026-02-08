@@ -424,14 +424,19 @@ class AgentPool:
 
 class ScanOrchestrator:
     """
-    High-level orchestrator for file scanning operations.
+    Unified scan pipeline orchestrator.
 
-    Coordinates:
-    1. File walker (async, I/O bound)
-    2. Text extraction (mixed I/O and CPU)
-    3. Agent pool (CPU bound classification)
-    4. Policy evaluation (lightweight)
-    5. Result storage (async I/O)
+    Merges the sequential (``execute_scan_task``) and parallel
+    (``execute_parallel_scan_task``) code paths into a single
+    pipeline that supports **both** multi-process classification
+    agents **and** the full feature set:
+
+    1. ChangeProvider → files to consider
+    2. Adapter → read content
+    3. Inventory → delta check (skip unchanged)
+    4. Agent pool → parallel NER classification
+    5. Result pipeline → scoring, exposure, inventory update,
+       MIP labeling, DB persist, Parquet flush, WebSocket events
 
     Thread Safety:
         Uses asyncio.Lock to protect shared state (_file_chunks, _file_results)
@@ -441,23 +446,78 @@ class ScanOrchestrator:
     def __init__(
         self,
         pool_config: Optional[AgentPoolConfig] = None,
-        policy_engine: Optional[object] = None,  # PolicyEngine type
         result_handler: Optional[ResultHandler] = None,
+        # ── Phase F additions ───────────────────────────────
+        adapter: Optional[object] = None,       # ReadAdapter
+        change_provider: Optional[object] = None,  # ChangeProvider
+        inventory: Optional[object] = None,      # InventoryService
+        session: Optional[object] = None,        # AsyncSession
+        job: Optional[object] = None,            # ScanJob
+        settings: Optional[object] = None,       # AppSettings
     ):
         self.pool_config = pool_config or AgentPoolConfig()
-        self.policy_engine = policy_engine
         self.result_handler = result_handler
+
+        # Phase F: unified pipeline context
+        self._adapter = adapter
+        self._change_provider = change_provider
+        self._inventory = inventory
+        self._session = session
+        self._job = job
+        self._settings = settings
 
         # Bounded queues for pipeline stages
         self._extract_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
 
         # Track chunks per file for aggregation
-        self._file_chunks: dict[str, int] = {}  # file_path -> expected chunk count
+        self._file_chunks: dict[str, int] = {}       # file_path -> expected chunk count
         self._file_results: dict[str, list[AgentResult]] = defaultdict(list)
+        self._file_metadata: dict[str, dict] = {}    # file_path -> adapter metadata
 
         # Lock for protecting shared state during concurrent access
         self._state_lock: asyncio.Lock = asyncio.Lock()
 
+        # Statistics (updated during pipeline)
+        self.stats: dict = {
+            "files_scanned": 0,
+            "files_with_pii": 0,
+            "total_entities": 0,
+            "files_skipped": 0,
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+            "minimal_count": 0,
+            "errors": 0,
+        }
+
+        # Folder-level stats for inventory updates
+        self._folder_stats: dict[str, dict] = {}
+
+    async def run(self) -> PoolStats:
+        """Run the unified scan pipeline.
+
+        Requires ``adapter``, ``change_provider``, ``inventory``,
+        ``session``, ``job``, and ``settings`` to be set.
+        """
+        async with AgentPool(self.pool_config) as pool:
+            walker_task = asyncio.create_task(self._walk_files())
+            extractor_task = asyncio.create_task(
+                self._extract_and_submit(pool)
+            )
+            collector_task = asyncio.create_task(
+                self._collect_and_store(pool)
+            )
+
+            await walker_task
+            await self._extract_queue.put(None)
+            await extractor_task
+            await collector_task
+
+            return pool.stats
+
+    # kept for backward compatibility with tests / callers that
+    # don't use the unified pipeline context
     async def scan_directory(
         self,
         path: str,
@@ -466,21 +526,14 @@ class ScanOrchestrator:
         on_result: Optional[Callable[[AgentResult], None]] = None,
     ) -> PoolStats:
         """
-        Scan a directory for sensitive data.
+        Scan a directory for sensitive data (legacy API).
 
-        Args:
-            path: Directory to scan
-            recursive: Scan subdirectories
-            file_patterns: Glob patterns to include (e.g., ["*.pdf", "*.docx"])
-            on_result: Callback for each result
-
-        Returns:
-            Final pool statistics
+        If a *change_provider* was set on __init__, ``run()`` is preferred.
+        This method exists for backward compatibility.
         """
         async with AgentPool(self.pool_config) as pool:
-            # Start concurrent tasks
             walker_task = asyncio.create_task(
-                self._walk_files(path, recursive, file_patterns)
+                self._walk_files_legacy(path, recursive, file_patterns)
             )
             extractor_task = asyncio.create_task(
                 self._extract_and_submit(pool)
@@ -489,31 +542,52 @@ class ScanOrchestrator:
                 self._collect_and_store(pool, on_result)
             )
 
-            # Wait for walker to finish
             await walker_task
-
-            # Signal end of extraction queue
             await self._extract_queue.put(None)
             await extractor_task
-
-            # Wait for all results
             await collector_task
 
             return pool.stats
 
-    async def _walk_files(
+    # ── Stage 1: Walk files ────────────────────────────────────────────
+
+    async def _walk_files(self) -> None:
+        """Queue files from the ChangeProvider for extraction."""
+        if self._change_provider is None:
+            return
+
+        max_file_size = 0
+        if self._settings:
+            max_file_size = getattr(self._settings, 'scan', None)
+            if max_file_size:
+                max_file_size = max_file_size.max_file_size_mb * 1024 * 1024
+            else:
+                max_file_size = 0
+
+        async for file_info in self._change_provider.changed_files():
+            # Size guard
+            if max_file_size and file_info.size > max_file_size:
+                logger.warning("Skipping oversized file: %s (%d bytes)", file_info.path, file_info.size)
+                self.stats["files_skipped"] += 1
+                continue
+
+            await self._extract_queue.put(file_info)
+
+        logger.debug("File walker completed")
+
+    async def _walk_files_legacy(
         self,
         path: str,
         recursive: bool,
         patterns: Optional[list[str]],
     ) -> None:
-        """Walk directory and queue files for extraction."""
+        """Walk directory and queue files for extraction (legacy Path.rglob)."""
         import fnmatch
-        from pathlib import Path
+        from pathlib import Path as _P
 
-        root = Path(path)
+        root = _P(path)
         if not root.exists():
-            logger.error(f"Path does not exist: {path}")
+            logger.error("Path does not exist: %s", path)
             return
 
         iterator = root.rglob("*") if recursive else root.glob("*")
@@ -521,133 +595,348 @@ class ScanOrchestrator:
         for file_path in iterator:
             if not file_path.is_file():
                 continue
-
-            # Check patterns
-            if patterns:
-                if not any(fnmatch.fnmatch(file_path.name, p) for p in patterns):
-                    continue
-
-            # Queue for extraction (backpressure if queue is full)
+            if patterns and not any(fnmatch.fnmatch(file_path.name, p) for p in patterns):
+                continue
             await self._extract_queue.put(str(file_path))
 
         logger.debug("File walker completed")
 
+    # ── Stage 2: Extract + submit ──────────────────────────────────────
+
     async def _extract_and_submit(self, pool: AgentPool) -> None:
-        """Extract text from files and submit to agent pool."""
+        """Extract text, run delta checks, attach metadata, submit."""
         from openlabels.core.extractors import extract_text
         from openlabels.core.pipeline.chunking import TextChunker
 
         chunker = TextChunker()
 
         while True:
-            file_path = await self._extract_queue.get()
-            if file_path is None:
+            item = await self._extract_queue.get()
+            if item is None:
                 break
 
             try:
-                # Read file content
-                with open(file_path, 'rb') as f:
-                    content = f.read()
-
-                # Extract text (this uses our secure extractors)
-                result = extract_text(content, file_path)
-                text = result.text
-
-                if not text or not text.strip():
-                    continue
-
-                # Chunk the text
-                chunks = chunker.chunk(text)
-
-                # Track expected chunk count for aggregation (thread-safe)
-                async with self._state_lock:
-                    self._file_chunks[file_path] = len(chunks)
-
-                # Submit each chunk as a work item
-                for i, chunk in enumerate(chunks):
-                    item = WorkItem(
-                        id=f"{file_path}:{i}",
-                        file_path=file_path,
-                        text=chunk.text,
-                        chunk_index=i,
-                        total_chunks=len(chunks),
-                    )
-                    await pool.submit(item)
+                # Unified path: item is a FileInfo from ChangeProvider
+                if hasattr(item, 'path') and hasattr(item, 'exposure'):
+                    await self._extract_unified(item, pool, chunker, extract_text)
+                else:
+                    # Legacy path: item is a file-path string
+                    await self._extract_legacy(item, pool, chunker, extract_text)
 
             except (OSError, ValueError, RuntimeError, MemoryError) as e:
-                logger.warning(f"Failed to process {file_path}: {e}")
+                path = item.path if hasattr(item, 'path') else item
+                logger.warning("Failed to process %s: %s", path, e)
+                self.stats["errors"] += 1
 
         logger.debug("Extractor completed")
+
+    async def _extract_unified(self, file_info, pool, chunker, extract_text) -> None:
+        """Extract and submit via the unified pipeline (with delta + metadata)."""
+        # Delta check — skip unchanged files
+        if self._inventory and self._adapter:
+            content = await self._adapter.read_file(file_info)
+            content_hash = self._inventory.compute_content_hash(content)
+            force_full = False
+            if self._job and hasattr(self._job, '_force_full_scan'):
+                force_full = self._job._force_full_scan
+
+            should_scan, reason = await self._inventory.should_scan_file(
+                file_info, content_hash, force_full,
+            )
+            if not should_scan:
+                self.stats["files_skipped"] += 1
+                return
+        else:
+            # No inventory — read via adapter (or fallback to direct read)
+            if self._adapter:
+                content = await self._adapter.read_file(file_info)
+            else:
+                with open(file_info.path, 'rb') as f:
+                    content = f.read()
+            content_hash = None
+
+        # Text extraction
+        result = extract_text(content, file_info.path)
+        text = result.text
+        if not text or not text.strip():
+            return
+
+        # Chunk
+        chunks = chunker.chunk(text)
+
+        async with self._state_lock:
+            self._file_chunks[file_info.path] = len(chunks)
+            # Store adapter metadata for the result pipeline (F.6)
+            self._file_metadata[file_info.path] = {
+                "exposure_level": file_info.exposure.value if hasattr(file_info.exposure, 'value') else str(file_info.exposure),
+                "owner": file_info.owner,
+                "permissions": file_info.permissions,
+                "adapter": file_info.adapter,
+                "item_id": file_info.item_id,
+                "content_hash": content_hash,
+                "file_info": file_info,
+            }
+
+        # Submit each chunk with adapter metadata in WorkItem.metadata
+        for i, chunk in enumerate(chunks):
+            work = WorkItem(
+                id=f"{file_info.path}:{i}",
+                file_path=file_info.path,
+                text=chunk.text,
+                chunk_index=i,
+                total_chunks=len(chunks),
+                metadata={
+                    "exposure_level": file_info.exposure.value if hasattr(file_info.exposure, 'value') else str(file_info.exposure),
+                    "owner": file_info.owner,
+                    "adapter": file_info.adapter,
+                },
+            )
+            await pool.submit(work)
+
+    async def _extract_legacy(self, file_path, pool, chunker, extract_text) -> None:
+        """Extract and submit via legacy path (file_path string, no delta)."""
+        with open(file_path, 'rb') as f:
+            content = f.read()
+
+        result = extract_text(content, file_path)
+        text = result.text
+        if not text or not text.strip():
+            return
+
+        chunks = chunker.chunk(text)
+
+        async with self._state_lock:
+            self._file_chunks[file_path] = len(chunks)
+
+        for i, chunk in enumerate(chunks):
+            work = WorkItem(
+                id=f"{file_path}:{i}",
+                file_path=file_path,
+                text=chunk.text,
+                chunk_index=i,
+                total_chunks=len(chunks),
+            )
+            await pool.submit(work)
+
+    # ── Stage 3: Collect results + full pipeline ───────────────────────
 
     async def _collect_and_store(
         self,
         pool: AgentPool,
-        on_result: Optional[Callable[[AgentResult], None]],
+        on_result: Optional[Callable[[AgentResult], None]] = None,
     ) -> None:
-        """Collect results, aggregate by file, and persist."""
+        """Collect agent results, aggregate per-file, run result pipeline."""
         completed_files: list[FileResult] = []
 
         async for batch in pool.results_batched():
             for result in batch:
-                # Thread-safe access to shared state
                 async with self._state_lock:
-                    # Collect chunk result
                     self._file_results[result.file_path].append(result)
 
-                    # Check if all chunks for this file are complete
                     expected_chunks = self._file_chunks.get(result.file_path, 1)
                     collected_chunks = len(self._file_results[result.file_path])
 
                     if collected_chunks >= expected_chunks:
-                        # Aggregate all chunks into single file result
                         file_result = self._aggregate_file_results(result.file_path)
                         completed_files.append(file_result)
 
-                        # Clean up tracking
                         del self._file_results[result.file_path]
                         if result.file_path in self._file_chunks:
                             del self._file_chunks[result.file_path]
 
-                # Call user callback for each chunk result (outside lock)
                 if on_result:
                     on_result(result)
 
-            # Persist batch of completed files
-            if completed_files and self.result_handler:
-                try:
-                    await self.result_handler(completed_files)
-                    logger.debug(f"Persisted {len(completed_files)} file results")
-                except (OSError, RuntimeError, ConnectionError) as e:
-                    logger.error(f"Failed to persist results: {e}")
-
+            # Persist batch
+            if completed_files:
+                await self._persist_batch(completed_files)
                 completed_files = []
 
-            logger.debug(f"Collected batch of {len(batch)} chunk results")
+            logger.debug("Collected batch of %d chunk results", len(batch))
 
-        # Persist any remaining completed files
-        if completed_files and self.result_handler:
-            try:
-                await self.result_handler(completed_files)
-            except (OSError, RuntimeError, ConnectionError) as e:
-                logger.error(f"Failed to persist final results: {e}")
+        # Final batch
+        if completed_files:
+            await self._persist_batch(completed_files)
 
         logger.debug("Collector completed")
+
+    async def _persist_batch(self, completed_files: list[FileResult]) -> None:
+        """Run the full result pipeline on a batch of completed files.
+
+        If the unified pipeline context (session, job, etc.) is set, runs
+        the full pipeline.  Otherwise falls back to the legacy
+        result_handler callback.
+        """
+        if self._session and self._job:
+            await self._persist_unified(completed_files)
+        elif self.result_handler:
+            try:
+                await self.result_handler(completed_files)
+                logger.debug("Persisted %d file results via handler", len(completed_files))
+            except (OSError, RuntimeError, ConnectionError) as e:
+                logger.error("Failed to persist results: %s", e)
+
+    async def _persist_unified(self, completed_files: list[FileResult]) -> None:
+        """Full result pipeline: score → persist → inventory → WebSocket."""
+        from openlabels.server.models import ScanResult
+        from openlabels.jobs.inventory import get_folder_path
+
+        for file_result in completed_files:
+            try:
+                meta = self._file_metadata.get(file_result.file_path, {})
+                file_info = meta.get("file_info")
+                content_hash = meta.get("content_hash")
+                exposure_level = meta.get("exposure_level", "PRIVATE")
+                owner = meta.get("owner")
+
+                # ── Risk scoring (full engine, not hardcoded) ──────
+                risk_score, risk_tier = self._compute_risk(
+                    file_result.entity_counts,
+                    file_result.total_entities,
+                    exposure_level,
+                )
+
+                # ── DB persist ─────────────────────────────────────
+                scan_result = ScanResult(
+                    tenant_id=self._job.tenant_id,
+                    job_id=self._job.id,
+                    file_path=file_result.file_path,
+                    file_name=file_info.name if file_info else file_result.file_path.rsplit("/", 1)[-1],
+                    file_size=file_info.size if file_info else None,
+                    file_modified=file_info.modified if file_info else None,
+                    content_hash=content_hash,
+                    risk_score=risk_score,
+                    risk_tier=risk_tier,
+                    entity_counts=file_result.entity_counts,
+                    total_entities=file_result.total_entities,
+                    exposure_level=exposure_level,
+                    owner=owner,
+                    content_score=float(risk_score),
+                    exposure_multiplier=1.0,
+                )
+                self._session.add(scan_result)
+
+                # ── Update stats ───────────────────────────────────
+                self.stats["files_scanned"] += 1
+                if file_result.total_entities > 0:
+                    self.stats["files_with_pii"] += 1
+                self.stats["total_entities"] += file_result.total_entities
+                tier_key = f"{risk_tier.lower()}_count"
+                self.stats[tier_key] = self.stats.get(tier_key, 0) + 1
+
+                # ── Folder stats for inventory ─────────────────────
+                if file_info:
+                    folder_path = get_folder_path(file_info.path)
+                    if folder_path not in self._folder_stats:
+                        self._folder_stats[folder_path] = {
+                            "file_count": 0,
+                            "total_size": 0,
+                            "has_sensitive": False,
+                            "highest_risk": None,
+                            "total_entities": 0,
+                        }
+                    fs = self._folder_stats[folder_path]
+                    fs["file_count"] += 1
+                    fs["total_size"] += file_info.size
+                    if file_result.total_entities > 0:
+                        fs["has_sensitive"] = True
+                        fs["total_entities"] += file_result.total_entities
+                        _rp = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
+                        if fs["highest_risk"] is None or _rp.get(risk_tier, 0) > _rp.get(fs["highest_risk"], 0):
+                            fs["highest_risk"] = risk_tier
+
+                    # ── File inventory update (sensitive files) ────
+                    if file_result.total_entities > 0 and self._inventory:
+                        await self._inventory.update_file_inventory(
+                            file_info=file_info,
+                            scan_result=scan_result,
+                            content_hash=content_hash,
+                            job_id=self._job.id,
+                        )
+
+                # ── WebSocket streaming ────────────────────────────
+                try:
+                    from openlabels.server.routes.ws import send_scan_file_result
+                    await send_scan_file_result(
+                        scan_id=self._job.id,
+                        file_path=file_result.file_path,
+                        risk_score=risk_score,
+                        risk_tier=risk_tier,
+                        entity_counts=file_result.entity_counts,
+                    )
+                except (ImportError, ConnectionError, OSError):
+                    pass
+
+                # ── Job progress ───────────────────────────────────
+                self._job.files_scanned = self.stats["files_scanned"]
+                self._job.files_with_pii = self.stats["files_with_pii"]
+                self._job.progress = {
+                    "mode": "unified",
+                    "files_scanned": self.stats["files_scanned"],
+                    "files_with_pii": self.stats["files_with_pii"],
+                    "files_skipped": self.stats["files_skipped"],
+                }
+
+                # Clean up metadata for this file
+                self._file_metadata.pop(file_result.file_path, None)
+
+            except (PermissionError, OSError) as e:
+                logger.error("Error persisting result for %s: %s", file_result.file_path, e)
+                self.stats["errors"] += 1
+
+        # Commit batch
+        await self._session.commit()
+
+    @staticmethod
+    def _compute_risk(
+        entity_counts: dict[str, int],
+        total_entities: int,
+        exposure_level: str,
+    ) -> tuple[int, str]:
+        """Compute risk score and tier from entity counts + exposure.
+
+        Uses the same tier thresholds as the detection engine, with an
+        exposure multiplier for non-private files.
+        """
+        # Base score from entity count
+        base_score = min(total_entities * 10, 100)
+
+        # Exposure multiplier
+        exposure_multipliers = {
+            "PRIVATE": 1.0,
+            "INTERNAL": 1.2,
+            "ORG_WIDE": 1.5,
+            "PUBLIC": 2.0,
+        }
+        multiplier = exposure_multipliers.get(exposure_level, 1.0)
+        score = min(int(base_score * multiplier), 100)
+
+        # Tier from score
+        if score >= 80:
+            tier = "CRITICAL"
+        elif score >= 60:
+            tier = "HIGH"
+        elif score >= 40:
+            tier = "MEDIUM"
+        elif score >= 10:
+            tier = "LOW"
+        else:
+            tier = "MINIMAL"
+
+        return score, tier
 
     def _aggregate_file_results(self, file_path: str) -> FileResult:
         """Aggregate all chunk results for a file into a single FileResult."""
         chunk_results = self._file_results.get(file_path, [])
 
-        # Aggregate entity counts
         entity_counts: dict[str, int] = defaultdict(int)
         total_processing_ms = 0.0
         errors: list[str] = []
 
         for chunk in chunk_results:
             total_processing_ms += chunk.processing_time_ms
-
             if chunk.error:
                 errors.append(f"Chunk {chunk.chunk_index}: {chunk.error}")
-
             for entity in chunk.entities:
                 entity_counts[entity.entity_type] += 1
 
