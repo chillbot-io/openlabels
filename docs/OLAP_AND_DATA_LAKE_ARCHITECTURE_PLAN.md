@@ -1,6 +1,6 @@
 # OLAP and Data Lake Architecture Plan
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Proposed
 **Last Updated:** February 2026
 
@@ -19,7 +19,9 @@
 9. [Endpoint Migration Map](#9-endpoint-migration-map)
 10. [Integration Points](#10-integration-points)
 11. [Data Lifecycle and Retention](#11-data-lifecycle-and-retention)
-12. [Implementation Phases](#12-implementation-phases)
+12. [Unified Event Collection](#12-unified-event-collection)
+13. [Unified Scan Pipeline](#13-unified-scan-pipeline)
+14. [Implementation Phases](#14-implementation-phases)
 
 ---
 
@@ -724,6 +726,23 @@ src/openlabels/analytics/
 ├── arrow_convert.py         # SQLAlchemy model → PyArrow Table converters
 ├── partition.py             # Hive-style partition path generation, partition pruning helpers
 └── schemas.py               # PyArrow schema definitions for each table
+
+src/openlabels/monitoring/
+├── __init__.py              # Existing — exports MonitoringRegistry, EventCollector
+├── collector.py             # Existing — platform event parsing (refactored into providers)
+├── registry.py              # Existing — SACL/auditd configuration + cache management
+├── history.py               # Existing — on-demand access history queries
+├── harvester.py             # NEW — EventHarvester background service
+├── stream.py                # NEW — EventStreamManager for real-time providers
+└── providers/
+    ├── __init__.py
+    ├── base.py              # EventProvider protocol + RawAccessEvent dataclass
+    ├── windows_sacl.py      # Windows Security Event Log harvester
+    ├── windows_usn.py       # NTFS USN Journal real-time stream
+    ├── linux_auditd.py      # Linux auditd log harvester
+    ├── linux_fanotify.py    # Linux fanotify real-time stream
+    ├── m365_audit.py        # M365 Management Activity API harvester
+    └── graph_webhook.py     # Graph API webhook change notifications
 ```
 
 ### Dependency Map
@@ -736,6 +755,11 @@ server/routes/results.py ────┘                                        
 jobs/tasks/scan.py ──► analytics/flush.py ──► analytics/storage.py ──► S3/Azure/Local
                                             ▲
 jobs/tasks/flush.py ─────────────────────────┘  (periodic event flush)
+
+monitoring/harvester.py ──► monitoring/providers/* ──► FileAccessEvent (PostgreSQL)
+monitoring/stream.py ───────┘                                  │
+                                                               ▼
+                                              analytics/flush.py (periodic → Parquet)
 ```
 
 ### New Dependencies
@@ -805,10 +829,41 @@ class CatalogSettings(BaseSettings):
     duckdb_threads: int = 4
 
 
+class MonitoringSettings(BaseSettings):
+    """Event collection and monitoring configuration."""
+
+    # Harvester settings
+    harvest_enabled: bool = False
+    harvest_interval_seconds: int = 30          # On-prem: 30s, M365: 300s
+    m365_harvest_interval_seconds: int = 300    # M365 audit API batches events
+
+    # Real-time stream settings
+    stream_enabled: bool = False
+    stream_batch_size: int = 100
+    stream_flush_interval_seconds: float = 5.0
+
+    # Provider selection (auto-detected if empty)
+    providers: list[str] = []   # e.g., ["windows_sacl", "usn_journal", "m365_audit"]
+
+    # M365 audit API (reuses existing Graph OAuth2 credentials)
+    m365_content_type: str = "Audit.SharePoint"
+
+    # Graph webhooks
+    webhook_enabled: bool = False
+    webhook_url: str = ""       # Public HTTPS URL for M365 push notifications
+
+    # USN Journal (Windows)
+    usn_volumes: list[str] = [] # e.g., ["C:", "D:"] — empty = auto-detect
+
+    # fanotify (Linux)
+    fanotify_mount_points: list[str] = []  # e.g., ["/data", "/home"] — empty = skip
+
+
 # Added to main Settings class:
 class Settings(BaseSettings):
     ...
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 ```
 
 ### Environment Variable Examples
@@ -838,6 +893,24 @@ OPENLABELS_CATALOG__AZURE__CONNECTION_STRING=DefaultEndpointsProtocol=https;...
 # Tune DuckDB
 OPENLABELS_CATALOG__DUCKDB_MEMORY_LIMIT=4GB
 OPENLABELS_CATALOG__DUCKDB_THREADS=8
+
+# Enable event collection (Windows example)
+OPENLABELS_MONITORING__HARVEST_ENABLED=true
+OPENLABELS_MONITORING__PROVIDERS=["windows_sacl","usn_journal"]
+OPENLABELS_MONITORING__STREAM_ENABLED=true
+OPENLABELS_MONITORING__USN_VOLUMES=["C:","D:"]
+
+# Enable event collection (Linux example)
+OPENLABELS_MONITORING__HARVEST_ENABLED=true
+OPENLABELS_MONITORING__PROVIDERS=["linux_auditd","fanotify"]
+OPENLABELS_MONITORING__STREAM_ENABLED=true
+OPENLABELS_MONITORING__FANOTIFY_MOUNT_POINTS=["/data","/home"]
+
+# Enable M365 audit collection
+OPENLABELS_MONITORING__HARVEST_ENABLED=true
+OPENLABELS_MONITORING__PROVIDERS=["m365_audit"]
+OPENLABELS_MONITORING__WEBHOOK_ENABLED=true
+OPENLABELS_MONITORING__WEBHOOK_URL=https://openlabels.example.com/api/v1/webhooks/m365
 ```
 
 ### YAML Example
@@ -854,6 +927,22 @@ catalog:
   event_flush_interval_seconds: 300
   duckdb_memory_limit: 4GB
   duckdb_threads: 8
+
+monitoring:
+  harvest_enabled: true
+  harvest_interval_seconds: 30
+  stream_enabled: true
+  providers:
+    - windows_sacl
+    - usn_journal
+  usn_volumes:
+    - "C:"
+    - "D:"
+  # For M365:
+  # providers:
+  #   - m365_audit
+  # webhook_enabled: true
+  # webhook_url: https://openlabels.example.com/api/v1/webhooks/m365
 ```
 
 ---
@@ -990,7 +1079,44 @@ async def startup():
 
 Route handlers access via `request.app.state.analytics`.
 
-### 10.4 Full Re-Export (Bootstrap / Recovery)
+### 10.4 Event Collection Startup
+
+**File:** `src/openlabels/server/app.py`
+
+On startup, initialize the event harvester and stream manager based on configured providers:
+
+```python
+@app.on_event("startup")
+async def startup():
+    ...
+    settings = get_settings()
+
+    # Start event collection
+    if settings.monitoring.harvest_enabled:
+        from openlabels.monitoring.harvester import EventHarvester
+        from openlabels.monitoring.providers import auto_detect_providers
+
+        providers = auto_detect_providers(settings.monitoring)
+        harvester = EventHarvester(providers, get_session)
+        app.state.harvester_task = asyncio.create_task(
+            harvester.run_forever(settings.monitoring.harvest_interval_seconds)
+        )
+
+    if settings.monitoring.stream_enabled:
+        from openlabels.monitoring.stream import EventStreamManager
+
+        stream_providers = [p for p in providers if hasattr(p, 'start_stream')]
+        if stream_providers:
+            stream_mgr = EventStreamManager(
+                stream_providers, get_session,
+                batch_size=settings.monitoring.stream_batch_size,
+                flush_interval=settings.monitoring.stream_flush_interval_seconds,
+            )
+            await stream_mgr.start()
+            app.state.stream_manager = stream_mgr
+```
+
+### 10.5 Full Re-Export (Bootstrap / Recovery)
 
 For initial migration or if `flush_state.json` is lost:
 
@@ -1061,7 +1187,823 @@ OLTP performance — the data lake becomes the long-term archive.
 
 ---
 
-## 12. Implementation Phases
+## 12. Unified Event Collection
+
+### Current State
+
+The monitoring subsystem has **models, API endpoints, and OS-level audit configuration**
+fully implemented — but the critical middle layer that actually *collects* events into the
+database is missing. The plumbing exists at both ends with nothing connecting them.
+
+**What works today:**
+
+| Component | File | Status |
+|-----------|------|--------|
+| `FileAccessEvent` model | `models.py:670-722` | Schema + indexes ready |
+| `MonitoredFile` registration | `routes/monitoring.py:139-211` | API + CLI working |
+| Windows SACL configuration | `registry.py:476-569` | PowerShell adds audit rules |
+| Linux auditd configuration | `registry.py:628-721` | `auditctl -w` adds watch rules |
+| Windows event log parser | `collector.py:46-131` | Parses Event 4663/4656 via `wevtutil` |
+| Linux auditd parser | `collector.py:137-226` | Parses `ausearch` output |
+| On-demand history query | `history.py:29-68` | CLI: `openlabels monitor history` |
+| Monitoring API (8 endpoints) | `routes/monitoring.py:252-538` | Stats, anomalies, filtering |
+
+**What's missing:**
+
+| Gap | Impact |
+|-----|--------|
+| No background event harvester | `EventCollector` class exists but is never instantiated |
+| No continuous collection loop | Zero `FileAccessEvent` rows created in production |
+| No SharePoint/OneDrive audit collection | M365 audit logs never queried |
+| No real-time filesystem events | Only poll-based OS audit log parsing |
+| Cache-to-DB sync never called | `registry.py:173-241` — dead code |
+
+### Event Provider Architecture
+
+A unified `EventProvider` protocol abstracts all four platforms behind one interface.
+Each provider converts platform-specific events into `FileAccessEvent` records.
+
+```python
+# src/openlabels/monitoring/providers/base.py
+
+@dataclass
+class RawAccessEvent:
+    """Platform-normalized access event before DB persistence."""
+
+    file_path: str
+    action: str                    # read, write, delete, rename, permission_change, execute
+    success: bool
+    user_name: str
+    user_domain: str | None = None
+    user_sid: str | None = None    # Windows SID or Linux UID
+    process_name: str | None = None
+    process_id: int | None = None
+    event_time: datetime = None
+    event_id: str | None = None    # Platform-specific event ID
+    event_source: str = ""         # "ntfs_sacl", "auditd", "graph_audit", "usn", "fanotify"
+    raw_event: dict | None = None  # Original event for forensics
+
+
+class EventProvider(Protocol):
+    """Protocol for platform-specific event collection."""
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        """
+        Collect events since the last checkpoint.
+
+        Args:
+            checkpoint: Opaque checkpoint string from previous call (None for first run).
+
+        Returns:
+            Tuple of (events, new_checkpoint).
+            The checkpoint is provider-specific:
+              - Windows SACL: last event record ID
+              - Linux auditd: last ausearch timestamp
+              - M365 audit: continuation URI
+              - USN journal: last USN number
+              - fanotify: not applicable (real-time only)
+        """
+        ...
+
+    async def start_stream(self) -> AsyncIterator[RawAccessEvent]:
+        """
+        Start a real-time event stream (for providers that support it).
+
+        Not all providers support streaming — SACL and auditd are poll-only.
+        USN journal, fanotify, and Graph webhooks support streaming.
+
+        Raises NotImplementedError for poll-only providers.
+        """
+        ...
+
+    def platform(self) -> str:
+        """Return platform identifier: 'windows', 'linux', 'sharepoint', 'onedrive'."""
+        ...
+```
+
+### Platform Implementations
+
+#### 12.1 Windows — SACL Event Harvester
+
+**What it does:** Periodically reads Windows Security Event Log for file access audit events
+on monitored files.
+
+**Existing code to wire up:** `collector.py:46-131` (`_collect_windows`)
+
+```python
+# src/openlabels/monitoring/providers/windows_sacl.py
+
+class WindowsSACLProvider:
+    """
+    Harvests file access events from Windows Security Event Log.
+
+    Prerequisites:
+    - SACL audit rules configured on monitored files (registry.py handles this)
+    - "Audit Object Access" policy enabled in Windows Security Policy
+    - Service running with SeSecurityPrivilege
+
+    Collects:
+    - Event 4663: An attempt was made to access an object
+    - Event 4656: A handle to an object was requested
+    - Event 4660: An object was deleted
+    - Event 4670: Permissions on an object were changed
+    """
+
+    def __init__(self, monitored_paths: list[str]):
+        self._paths = set(monitored_paths)
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        # Use wevtutil or win32evtlog to read Security log
+        # Filter by event IDs and monitored paths
+        # checkpoint = last EventRecordID processed
+        ...
+
+    def platform(self) -> str:
+        return "windows"
+```
+
+**Key events captured:**
+
+| Event ID | Meaning | Maps To |
+|----------|---------|---------|
+| 4663 | Object access attempted | `read`, `write`, `execute` (from AccessMask) |
+| 4656 | Handle requested | `read` (used for access tracking) |
+| 4660 | Object deleted | `delete` |
+| 4670 | Permissions changed | `permission_change` |
+| 4659 | Delete intent | `delete` (handle requested with DELETE) |
+
+#### 12.2 Windows — USN Journal Provider (Real-Time)
+
+**What it does:** Reads the NTFS Update Sequence Number journal for real-time file change
+notifications. This is how Windows Search, backup software, and "Everything" work.
+
+**This is new code** — not in the current codebase.
+
+```python
+# src/openlabels/monitoring/providers/windows_usn.py
+
+class USNJournalProvider:
+    """
+    Real-time file change detection via NTFS USN Journal.
+
+    The USN journal records every file system change on a volume:
+    - File create, modify, delete, rename
+    - Attribute and security changes
+    - No user/process attribution (use SACL for that)
+
+    Two operations:
+    1. FSCTL_ENUM_USN_DATA: Enumerate entire MFT (~30 seconds for 10M files)
+    2. FSCTL_READ_USN_JOURNAL: Read changes since a USN number (milliseconds)
+
+    Use cases:
+    - Fast initial file inventory (replaces slow recursive walk)
+    - Real-time change detection for delta scans
+    - Complements SACL by providing change events (SACL provides access events)
+    """
+
+    def __init__(self, volume: str = "C:"):
+        self._volume = volume
+        self._handle = None
+
+    async def enumerate_all_files(self) -> AsyncIterator[FileInfo]:
+        """
+        Enumerate every file on the volume via MFT.
+
+        ~30 seconds for 10M files vs hours for recursive walk.
+        Returns file_path, size, timestamps, attributes.
+        Does NOT return content or security info (that requires separate calls).
+        """
+        # FSCTL_ENUM_USN_DATA via ctypes/DeviceIoControl
+        ...
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        # checkpoint = last USN number (int serialized as string)
+        # FSCTL_READ_USN_JOURNAL returns changes since that USN
+        # USN_REASON flags map to actions:
+        #   USN_REASON_DATA_OVERWRITE → write
+        #   USN_REASON_DATA_EXTEND → write
+        #   USN_REASON_FILE_CREATE → create
+        #   USN_REASON_FILE_DELETE → delete
+        #   USN_REASON_RENAME_NEW_NAME → rename
+        #   USN_REASON_SECURITY_CHANGE → permission_change
+        ...
+
+    async def start_stream(self) -> AsyncIterator[RawAccessEvent]:
+        """
+        Continuous journal monitoring — poll every 1 second for new entries.
+        Near real-time with minimal CPU overhead.
+        """
+        ...
+
+    def platform(self) -> str:
+        return "windows"
+```
+
+**USN journal vs SACL — complementary, not competing:**
+
+| Aspect | USN Journal | SACL Event Log |
+|--------|-------------|----------------|
+| **What** | File changes (create/modify/delete/rename) | File access (read/write/execute) |
+| **Who** | No user attribution | Full user SID, process name, PID |
+| **Speed** | Microseconds for delta | Seconds to parse event log |
+| **Volume** | Very low (journal entries are tiny) | Can be high (verbose security log) |
+| **Use for** | Change detection → trigger scans | Access auditing → anomaly detection |
+
+**Best together:** USN journal detects *what changed* (feed to scan pipeline).
+SACL tracks *who accessed what* (feed to `FileAccessEvent` for analytics).
+
+#### 12.3 Linux — auditd Harvester
+
+**What it does:** Periodically reads auditd logs for file access events on monitored files.
+
+**Existing code to wire up:** `collector.py:137-226` (`_collect_linux`)
+
+```python
+# src/openlabels/monitoring/providers/linux_auditd.py
+
+class AuditdProvider:
+    """
+    Harvests file access events from Linux auditd.
+
+    Prerequisites:
+    - auditd service running
+    - Watch rules added via auditctl (registry.py handles this)
+    - Rules tagged with -k openlabels for efficient querying
+
+    Collects via ausearch:
+    - open/openat syscalls → read/write (based on flags)
+    - unlink/unlinkat → delete
+    - rename/renameat → rename
+    - chmod/fchmod → permission_change
+    """
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        # checkpoint = last audit event timestamp
+        # ausearch -k openlabels -ts <checkpoint> --format csv
+        # Parse CSV rows into RawAccessEvent
+        ...
+
+    def platform(self) -> str:
+        return "linux"
+```
+
+**Syscall to action mapping (from existing `collector.py:175-226`):**
+
+| Syscall | Action | Notes |
+|---------|--------|-------|
+| `open`, `openat` | `read` or `write` | Based on O_RDONLY/O_WRONLY/O_RDWR flags |
+| `read`, `pread64` | `read` | Direct read syscalls |
+| `write`, `pwrite64` | `write` | Direct write syscalls |
+| `unlink`, `unlinkat` | `delete` | File removal |
+| `rename`, `renameat`, `renameat2` | `rename` | File move/rename |
+| `chmod`, `fchmod`, `fchmodat` | `permission_change` | Mode bits changed |
+| `chown`, `fchown`, `fchownat` | `permission_change` | Ownership changed |
+| `execve` | `execute` | Binary execution |
+
+#### 12.4 Linux — fanotify Provider (Real-Time)
+
+**What it does:** Kernel-level filesystem monitoring that watches entire mount points.
+Unlike inotify (per-directory watches, 8192 limit), fanotify scales to any filesystem size.
+
+**This is new code.**
+
+```python
+# src/openlabels/monitoring/providers/linux_fanotify.py
+
+class FanotifyProvider:
+    """
+    Real-time file access monitoring via Linux fanotify.
+
+    Advantages over inotify:
+    - FAN_MARK_FILESYSTEM: Watch entire filesystem, not per-directory
+    - No watch limit (inotify limited to fs.inotify.max_user_watches, default 8192)
+    - Can monitor access (reads), not just modifications
+    - Provides PID of accessing process
+    - Used by ClamAV, AIDE, and enterprise EDR tools
+
+    Requirements:
+    - Linux kernel ≥ 5.1 (for FAN_REPORT_FID)
+    - CAP_SYS_ADMIN capability
+    - Python fanotify bindings (cffi or ctypes)
+
+    Events monitored:
+    - FAN_ACCESS: File was read
+    - FAN_MODIFY: File was written
+    - FAN_CLOSE_WRITE: File closed after writing (best for "file changed" detection)
+    - FAN_CLOSE_NOWRITE: File closed after reading only
+    - FAN_OPEN: File was opened
+    - FAN_MOVED_FROM / FAN_MOVED_TO: File renamed/moved
+    - FAN_DELETE: File deleted (kernel ≥ 5.1)
+    - FAN_CREATE: File created (kernel ≥ 5.1)
+    """
+
+    def __init__(self, mount_point: str = "/", monitored_paths: set[str] | None = None):
+        self._mount = mount_point
+        self._paths = monitored_paths  # None = monitor all, set = filter to these
+        self._fd = None
+
+    async def start_stream(self) -> AsyncIterator[RawAccessEvent]:
+        """
+        Start continuous monitoring.
+
+        Uses fanotify_init() + fanotify_mark() to register.
+        Reads events from the fanotify fd in a loop.
+        """
+        # fanotify_init(FAN_CLASS_NOTIF | FAN_REPORT_FID, O_RDONLY)
+        # fanotify_mark(fd, FAN_MARK_ADD | FAN_MARK_FILESYSTEM,
+        #               FAN_ACCESS | FAN_MODIFY | FAN_CLOSE_WRITE | ...,
+        #               AT_FDCWD, mount_point)
+        # Loop: read(fd) → parse fanotify_event_metadata → yield RawAccessEvent
+        ...
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        raise NotImplementedError("fanotify is real-time only; use start_stream()")
+
+    def platform(self) -> str:
+        return "linux"
+```
+
+**fanotify vs auditd — complementary:**
+
+| Aspect | fanotify | auditd |
+|--------|----------|--------|
+| **Latency** | Real-time (in-kernel callback) | Seconds (log file parsing) |
+| **Scope** | Entire mount point | Per-file watch rules |
+| **User info** | PID only (resolve via /proc) | Full UID, username, syscall |
+| **Persistence** | In-memory only (events lost on restart) | Persisted to audit.log |
+| **Use for** | Real-time alerts, trigger immediate scans | Historical auditing, compliance |
+
+#### 12.5 SharePoint — M365 Management Activity API
+
+**What it does:** Collects file access audit events from Microsoft 365 unified audit log.
+This is the only way to get "who accessed what file in SharePoint/OneDrive" data.
+
+**This is new code** — the current adapters only do file scanning, not audit collection.
+
+```python
+# src/openlabels/monitoring/providers/m365_audit.py
+
+class M365AuditProvider:
+    """
+    Collects file access events from Microsoft 365 Management Activity API.
+
+    API: https://manage.office.com/api/v1.0/{tenant}/activity/feed
+    Content type: Audit.SharePoint (covers both SharePoint and OneDrive)
+
+    Events collected:
+    - FileAccessed: User opened/viewed a file
+    - FileModified: User edited a file
+    - FileDeleted: User deleted a file
+    - FileMoved: User moved a file
+    - FileRenamed: User renamed a file
+    - FileCopied: User copied a file
+    - SharingSet: Sharing permissions changed
+    - SharingRevoked: Sharing removed
+    - FileDownloaded: User downloaded a file
+    - FileUploaded: User uploaded a file
+    - FilePreviewed: User previewed (no download)
+
+    Each event includes:
+    - UserId (UPN), ClientIP, UserAgent
+    - ObjectId (full file URL), SourceFileName
+    - SiteUrl, SourceRelativeUrl
+    - ItemType (File, Folder, Web)
+    - EventSource (SharePoint, OneDrive)
+
+    Authentication:
+    - Uses existing Graph API OAuth2 credentials
+    - Requires additional permission: ActivityFeed.Read (Office 365 Management API)
+
+    Subscription model:
+    1. Start subscription: POST /subscriptions/start?contentType=Audit.SharePoint
+    2. List available content: GET /subscriptions/content?contentType=Audit.SharePoint
+    3. Retrieve content blobs: GET {contentUri}
+    4. Content available for 7 days after event
+    """
+
+    def __init__(self, tenant_id: str, client_id: str, client_secret: str):
+        self._tenant_id = tenant_id
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._base_url = f"https://manage.office.com/api/v1.0/{tenant_id}/activity/feed"
+
+    async def collect_since(self, checkpoint: str | None) -> tuple[list[RawAccessEvent], str]:
+        """
+        Collect events from M365 audit log.
+
+        checkpoint = last content URI processed, or ISO timestamp for first run.
+        """
+        # 1. List available content blobs since checkpoint
+        # GET /subscriptions/content?contentType=Audit.SharePoint
+        #     &startTime={checkpoint}&endTime={now}
+        # Returns list of content URIs
+
+        # 2. Fetch each content blob (batch of events as JSON array)
+        # GET {contentUri}
+        # Returns [{ Operation, UserId, ObjectId, ClientIP, ... }, ...]
+
+        # 3. Filter to monitored sites/paths if configured
+        # 4. Map M365 operations to RawAccessEvent actions
+        # 5. Return (events, last_content_uri)
+        ...
+
+    async def start_stream(self) -> AsyncIterator[RawAccessEvent]:
+        """
+        Near-real-time via webhook subscription.
+
+        POST /subscriptions/start with webhook URL.
+        M365 sends POST to webhook when new content is available.
+        Webhook handler calls collect_since() to fetch new events.
+        Latency: typically 5-15 minutes (M365 batches audit events).
+        """
+        ...
+
+    def platform(self) -> str:
+        return "sharepoint"  # Covers both SharePoint and OneDrive
+
+
+# M365 operation → action mapping
+M365_OPERATION_MAP = {
+    "FileAccessed": "read",
+    "FileModified": "write",
+    "FileDeleted": "delete",
+    "FileMoved": "rename",
+    "FileRenamed": "rename",
+    "FileCopied": "read",       # Copy is a read from source perspective
+    "FileDownloaded": "read",
+    "FileUploaded": "write",
+    "FilePreviewed": "read",
+    "SharingSet": "permission_change",
+    "SharingRevoked": "permission_change",
+    "FileCheckedOut": "write",   # Exclusive lock for editing
+    "FileCheckedIn": "write",
+    "FileRecycled": "delete",    # Moved to recycle bin
+    "FileRestored": "write",     # Restored from recycle bin
+}
+```
+
+#### 12.6 Graph API Webhooks (SharePoint/OneDrive Real-Time)
+
+**What it does:** Receives push notifications from Microsoft Graph when files change
+in monitored SharePoint sites or OneDrive locations. Complements the M365 audit API
+with lower-latency change detection.
+
+```python
+# src/openlabels/monitoring/providers/graph_webhook.py
+
+class GraphWebhookProvider:
+    """
+    Real-time change notifications via Microsoft Graph webhooks.
+
+    Subscribes to /drives/{drive-id}/root changes.
+    Graph sends POST to our webhook endpoint when files change.
+
+    Differences from M365 Audit:
+    - Audit API: Who accessed what (user, IP, operation) — 5-15 min latency
+    - Webhooks: What changed (delta) — seconds latency, no user attribution
+
+    Use webhooks to trigger delta scans immediately.
+    Use audit API for access tracking and anomaly detection.
+    """
+
+    async def subscribe(self, drive_id: str, webhook_url: str) -> str:
+        """Create a change notification subscription (max 30 days, must renew)."""
+        # POST /subscriptions
+        # { changeType: "updated", resource: f"/drives/{drive_id}/root",
+        #   notificationUrl: webhook_url, expirationDateTime: now + 29 days }
+        ...
+
+    async def handle_notification(self, notification: dict) -> list[RawAccessEvent]:
+        """
+        Process incoming webhook notification.
+
+        Called by FastAPI webhook endpoint.
+        Fetches delta to get actual changed files.
+        """
+        # 1. Validate notification (clientState matches)
+        # 2. Use delta query to get changed items: GET /drives/{id}/root/delta
+        # 3. Map each changed item to RawAccessEvent
+        ...
+```
+
+### Event Harvester Service
+
+The `EventHarvester` is the background service that ties providers to the database.
+It runs as a periodic task alongside the Parquet flush.
+
+```python
+# src/openlabels/monitoring/harvester.py
+
+class EventHarvester:
+    """
+    Background service that collects events from all configured providers
+    and persists them as FileAccessEvent records.
+
+    Runs on a configurable interval (default: 30 seconds for on-prem,
+    5 minutes for M365 audit).
+    """
+
+    def __init__(self, providers: list[EventProvider], session_factory):
+        self._providers = providers
+        self._session_factory = session_factory
+        self._checkpoints: dict[str, str] = {}  # provider_key → checkpoint
+
+    async def harvest_cycle(self) -> int:
+        """
+        Run one collection cycle across all providers.
+
+        Returns total number of events collected.
+        """
+        total = 0
+
+        for provider in self._providers:
+            key = f"{provider.platform()}:{id(provider)}"
+            checkpoint = self._checkpoints.get(key)
+
+            try:
+                events, new_checkpoint = await provider.collect_since(checkpoint)
+
+                if events:
+                    async with self._session_factory() as session:
+                        for raw in events:
+                            # Look up monitored_file_id if this path is monitored
+                            monitored_file = await self._resolve_monitored_file(
+                                session, raw.file_path
+                            )
+
+                            db_event = FileAccessEvent(
+                                file_path=raw.file_path,
+                                action=raw.action,
+                                success=raw.success,
+                                user_name=raw.user_name,
+                                user_domain=raw.user_domain,
+                                user_sid=raw.user_sid,
+                                process_name=raw.process_name,
+                                process_id=raw.process_id,
+                                event_time=raw.event_time,
+                                event_id=raw.event_id,
+                                event_source=raw.event_source,
+                                collected_at=datetime.utcnow(),
+                                raw_event=raw.raw_event,
+                                monitored_file_id=(
+                                    monitored_file.id if monitored_file else None
+                                ),
+                                tenant_id=monitored_file.tenant_id if monitored_file else None,
+                            )
+                            session.add(db_event)
+
+                        await session.commit()
+                        total += len(events)
+
+                    # Update monitored file stats
+                    if monitored_file:
+                        monitored_file.access_count += len(events)
+                        monitored_file.last_event_at = events[-1].event_time
+
+                self._checkpoints[key] = new_checkpoint
+
+            except Exception:
+                logger.warning(
+                    "Event collection failed for %s; will retry next cycle",
+                    provider.platform(),
+                    exc_info=True,
+                )
+                # Non-fatal — retry on next cycle with same checkpoint
+
+        return total
+
+    async def run_forever(self, interval_seconds: float = 30.0):
+        """Run harvest cycles in a loop."""
+        while True:
+            count = await self.harvest_cycle()
+            if count > 0:
+                logger.info("Collected %d access events", count)
+            await asyncio.sleep(interval_seconds)
+```
+
+### Real-Time Event Stream Manager
+
+For providers that support streaming (USN journal, fanotify, Graph webhooks),
+a separate manager runs continuous listeners:
+
+```python
+# src/openlabels/monitoring/stream.py
+
+class EventStreamManager:
+    """
+    Manages real-time event streams from providers that support them.
+
+    Runs as long-lived async tasks alongside the main application.
+    Writes events to an in-memory buffer, flushed to DB in batches
+    every N seconds or N events (whichever comes first).
+    """
+
+    def __init__(
+        self,
+        providers: list[EventProvider],
+        session_factory,
+        batch_size: int = 100,
+        flush_interval: float = 5.0,
+    ):
+        self._providers = providers
+        self._session_factory = session_factory
+        self._batch_size = batch_size
+        self._flush_interval = flush_interval
+        self._buffer: list[RawAccessEvent] = []
+        self._tasks: list[asyncio.Task] = []
+
+    async def start(self):
+        """Start stream listeners for all capable providers."""
+        for provider in self._providers:
+            try:
+                stream = provider.start_stream()
+                task = asyncio.create_task(self._consume_stream(provider, stream))
+                self._tasks.append(task)
+                logger.info("Started real-time stream for %s", provider.platform())
+            except NotImplementedError:
+                # Provider is poll-only (SACL, auditd) — skip
+                pass
+
+        # Start buffer flush task
+        self._tasks.append(asyncio.create_task(self._periodic_flush()))
+
+    async def _consume_stream(self, provider, stream: AsyncIterator[RawAccessEvent]):
+        """Read events from a real-time stream into the buffer."""
+        async for event in stream:
+            self._buffer.append(event)
+            if len(self._buffer) >= self._batch_size:
+                await self._flush_buffer()
+
+    async def _periodic_flush(self):
+        """Flush buffer on timer even if batch_size not reached."""
+        while True:
+            await asyncio.sleep(self._flush_interval)
+            if self._buffer:
+                await self._flush_buffer()
+
+    async def _flush_buffer(self):
+        """Persist buffered events to database."""
+        events = self._buffer
+        self._buffer = []
+
+        async with self._session_factory() as session:
+            for raw in events:
+                session.add(FileAccessEvent(
+                    file_path=raw.file_path,
+                    action=raw.action,
+                    success=raw.success,
+                    user_name=raw.user_name,
+                    user_domain=raw.user_domain,
+                    event_time=raw.event_time,
+                    event_source=raw.event_source,
+                    collected_at=datetime.utcnow(),
+                ))
+            await session.commit()
+```
+
+### Data Flow — Events to OLAP
+
+Event collection feeds directly into the OLAP data lake pipeline defined in
+[Section 5.2](#52-event-flush-periodic):
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     EVENT COLLECTION LAYER                              │
+│                                                                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌─────────────┐ │
+│  │ Windows  │ │ Windows  │ │  Linux   │ │  Linux    │ │    M365     │ │
+│  │  SACL    │ │   USN    │ │ auditd   │ │ fanotify  │ │ Audit API   │ │
+│  │(harvest) │ │(stream)  │ │(harvest) │ │ (stream)  │ │ (harvest)   │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘ └──────┬──────┘ │
+│       │             │            │              │              │        │
+│       ▼             ▼            ▼              ▼              ▼        │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              EventHarvester / EventStreamManager                 │   │
+│  │                  ┌─────────────────────┐                        │   │
+│  │                  │  RawAccessEvent buf  │                       │   │
+│  │                  └──────────┬──────────┘                        │   │
+│  └─────────────────────────────┼───────────────────────────────────┘   │
+└────────────────────────────────┼───────────────────────────────────────┘
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │  PostgreSQL             │
+                    │  file_access_events     │
+                    │  (OLTP — recent events) │
+                    └────────────┬────────────┘
+                                 │
+                    Every 5 min (periodic flush from Section 5.2)
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │  Parquet (Data Lake)    │
+                    │  access_events/         │
+                    │  tenant=.../            │
+                    │  event_date=.../        │
+                    │  part-N.parquet         │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │  DuckDB (OLAP)         │
+                    │  Access heatmaps       │
+                    │  Anomaly detection     │
+                    │  User activity reports  │
+                    └────────────────────────┘
+```
+
+### Platform Availability Matrix
+
+| Provider | Collection Mode | Latency | User Attribution | Requirements |
+|----------|----------------|---------|-----------------|--------------|
+| Windows SACL | Periodic harvest | 30-60s | Full (SID, process) | SeSecurityPrivilege, audit policy |
+| Windows USN | Continuous stream | <1s | None (change only) | Admin for `CreateFile` on volume |
+| Linux auditd | Periodic harvest | 30-60s | Full (UID, syscall) | auditd running, CAP_AUDIT_CONTROL |
+| Linux fanotify | Continuous stream | <1s | PID only | CAP_SYS_ADMIN, kernel ≥ 5.1 |
+| M365 Audit API | Periodic harvest | 5-15 min | Full (UPN, IP, client) | ActivityFeed.Read permission |
+| Graph Webhooks | Push notification | 1-30s | None (change only) | Graph subscription, HTTPS endpoint |
+
+**Recommended combinations:**
+
+- **Windows on-prem:** SACL harvester (who accessed) + USN stream (what changed)
+- **Linux on-prem:** auditd harvester (who accessed) + fanotify stream (what changed)
+- **SharePoint/OneDrive:** M365 audit harvester (who accessed) + Graph webhooks (what changed)
+
+---
+
+## 13. Unified Scan Pipeline
+
+### Current State
+
+Two completely separate scan code paths exist:
+
+- **`execute_scan_task`** (`scan.py:148-521`): Sequential, adapter-integrated, full
+  delta detection, scoring, labeling, inventory — but single-threaded
+- **`execute_parallel_scan_task`** (`scan.py:861-1115`): Multi-process agents via
+  `AgentPool` — but bypasses adapters, no delta detection, hardcoded scoring,
+  no labeling, local filesystem only
+
+### Target Architecture
+
+One unified pipeline that separates concerns into concurrent stages:
+
+```
+┌────────────────────────┐
+│   Change Provider      │   USN / fanotify / Graph delta / full walk
+│   (Section 12)         │   Yields only files that need scanning
+└──────────┬─────────────┘
+           ▼
+┌────────────────────────┐
+│   Adapter + Delta      │   adapter.read_file() → content_hash →
+│   Filter               │   inventory.should_scan_file() → skip unchanged
+└──────────┬─────────────┘
+           ▼
+┌────────────────────────┐
+│   Text Extraction      │   extract_text() + TextChunker
+│   + Chunking           │   Produces WorkItems with metadata attached
+└──────────┬─────────────┘
+           ▼
+    ┌──────┴──────┐
+    │  Work Queue  │   Bounded, backpressure (existing AgentPool)
+    └──────┬──────┘
+     ┌─────┼─────┬─────┐
+     ▼     ▼     ▼     ▼
+   ┌───┐ ┌───┐ ┌───┐ ┌───┐
+   │ A │ │ A │ │ A │ │ A │   N ClassificationAgents (separate processes)
+   │ 0 │ │ 1 │ │ 2 │ │ 3 │   Each with own NER model (existing worker.py)
+   └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘
+     └─────┼─────┴─────┘
+           ▼
+    ┌──────┴──────┐
+    │ Result Queue │
+    └──────┬──────┘
+           ▼
+┌────────────────────────┐
+│   Result Pipeline      │   Risk scoring engine (full, not hardcoded)
+│                        │   → Exposure calculation (from adapter metadata)
+│                        │   → Inventory update (content_hash, scan_count)
+│                        │   → Label application (MIP client)
+│                        │   → DB persist (ScanResult + FileInventory)
+│                        │   → Parquet flush (Section 5.1)
+│                        │   → WebSocket progress events
+└────────────────────────┘
+```
+
+The existing `AgentPool` and `ClassificationAgent` classes don't change.
+What changes is `ScanOrchestrator`:
+
+1. **`_walk_files()`** uses the adapter + change provider instead of `Path.rglob`
+2. **`_extract_and_submit()`** runs delta checks before reading file content
+3. **`_collect_and_store()`** runs the full result pipeline instead of the
+   simplified persist logic in `execute_parallel_scan_task`
+
+This eliminates the two-code-path problem and makes parallel classification
+work across all platforms (filesystem, SharePoint, OneDrive) with full
+delta detection and scoring.
+
+---
+
+## 14. Implementation Phases
 
 ### Phase A: Foundation (Storage + Arrow Converters)
 
@@ -1108,6 +2050,66 @@ OLTP performance — the data lake becomes the long-term archive.
 4. Implement partition compaction
 5. Add catalog health metrics (flush lag, partition count, storage size)
 6. Tests: S3/Azure integration tests (mocked), compaction correctness
+
+### Phase F: On-Prem Event Collection (Windows + Linux)
+
+Wire up the existing but disconnected event collection code, and add the background
+harvester that persists events to `FileAccessEvent`.
+
+1. Create `EventProvider` protocol and `RawAccessEvent` dataclass (`monitoring/providers/base.py`)
+2. Implement `WindowsSACLProvider` — wrap existing `collector.py:46-131` behind the protocol
+3. Implement `AuditdProvider` — wrap existing `collector.py:137-226` behind the protocol
+4. Implement `EventHarvester` — periodic background task that calls providers and persists
+5. Add `MonitoringSettings` to config (harvest interval, enabled providers, checkpoint storage)
+6. Register harvester as background task in `app.py` startup (alongside periodic flush)
+7. Wire up `registry.py:173-241` cache-to-DB sync on startup (currently dead code)
+8. Fix security issue: command injection in `_disable_monitoring_windows` (`registry.py:573-577`)
+9. Fix security issue: unused `escaped_path` in `_get_history_windows` (`history.py:121-131`)
+10. Tests: Harvester cycle with mock providers, checkpoint persistence, DB insertion
+
+### Phase G: Cloud Event Collection (M365 Audit)
+
+Add SharePoint and OneDrive audit log collection via the Office 365 Management Activity API.
+
+1. Implement `M365AuditProvider` — subscribe to `Audit.SharePoint` content type
+2. Add M365 operation → action mapping (FileAccessed→read, FileModified→write, etc.)
+3. Add `ActivityFeed.Read` permission to Graph OAuth2 scope configuration
+4. Implement content blob pagination (7-day sliding window, continuation URIs)
+5. Add webhook endpoint for near-real-time M365 audit notifications (`POST /api/v1/webhooks/m365`)
+6. Implement `GraphWebhookProvider` — subscription management + delta query on notification
+7. Add webhook validation (clientState matching, validation token handling)
+8. Add M365 provider to `EventHarvester` with separate harvest interval (5 min default)
+9. Tests: M365 audit response parsing, webhook validation, subscription lifecycle
+
+### Phase H: Real-Time Event Streams (USN + fanotify)
+
+Add real-time, low-latency event sources that complement the periodic harvesters.
+
+1. Implement `USNJournalProvider` — NTFS USN journal via `ctypes`/`DeviceIoControl`
+   - `FSCTL_READ_USN_JOURNAL` for change stream
+   - `FSCTL_ENUM_USN_DATA` for fast MFT enumeration (initial inventory bootstrap)
+2. Implement `FanotifyProvider` — Linux kernel filesystem monitoring via `ctypes`
+   - `fanotify_init()` with `FAN_CLASS_NOTIF | FAN_REPORT_FID`
+   - `fanotify_mark()` with `FAN_MARK_FILESYSTEM` for whole-mount monitoring
+   - PID → username resolution via `/proc/{pid}/status`
+3. Implement `EventStreamManager` — long-lived async tasks, batched DB writes
+4. Add real-time alert hooks — trigger immediate scan on high-risk file modification
+5. Integrate USN journal with scan pipeline as change provider (Section 13)
+6. Integrate fanotify with scan pipeline as change provider (Section 13)
+7. Tests: USN journal parsing (mock DeviceIoControl), fanotify event parsing, buffer flush
+
+### Phase I: Unified Scan Pipeline
+
+Merge the two scan code paths into one pipeline with parallel classification agents.
+
+1. Refactor `ScanOrchestrator._walk_files()` to accept adapter + change provider
+2. Refactor `ScanOrchestrator._extract_and_submit()` to run `inventory.should_scan_file()` delta check
+3. Refactor `ScanOrchestrator._collect_and_store()` to run full result pipeline (scoring, exposure, labeling)
+4. Remove `execute_parallel_scan_task()` — replaced by unified pipeline
+5. Add adapter metadata (exposure level, permissions) to `WorkItem.metadata` for post-classification scoring
+6. Add MIP label application to result pipeline
+7. Add Parquet flush hook to result pipeline (Section 5.1)
+8. Tests: End-to-end pipeline with mock adapter, agent pool, and DB verification
 
 ---
 
