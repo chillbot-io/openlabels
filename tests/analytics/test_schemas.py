@@ -7,6 +7,7 @@ from openlabels.analytics.schemas import (
     ACCESS_EVENTS_SCHEMA,
     AUDIT_LOG_SCHEMA,
     FILE_INVENTORY_SCHEMA,
+    REMEDIATION_ACTIONS_SCHEMA,
     SCAN_RESULTS_SCHEMA,
 )
 
@@ -27,6 +28,10 @@ from openlabels.analytics.schemas import (
     ]),
     (AUDIT_LOG_SCHEMA, "audit_log", [
         "id", "tenant_id", "action", "created_at",
+    ]),
+    (REMEDIATION_ACTIONS_SCHEMA, "remediation_actions", [
+        "id", "tenant_id", "action_type", "status", "source_path",
+        "performed_by", "created_at",
     ]),
 ])
 def test_schema_has_expected_fields(schema, name, expected_fields):
@@ -52,7 +57,7 @@ def test_risk_tier_is_dictionary_encoded():
 
 def test_timestamps_have_tz():
     """All timestamp columns should be UTC-aware to avoid timezone bugs."""
-    for schema in [SCAN_RESULTS_SCHEMA, FILE_INVENTORY_SCHEMA, ACCESS_EVENTS_SCHEMA]:
+    for schema in [SCAN_RESULTS_SCHEMA, FILE_INVENTORY_SCHEMA, ACCESS_EVENTS_SCHEMA, REMEDIATION_ACTIONS_SCHEMA]:
         for i in range(len(schema)):
             f = schema.field(i)
             if pa.types.is_timestamp(f.type):

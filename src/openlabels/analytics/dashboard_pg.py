@@ -17,9 +17,11 @@ from uuid import UUID
 from sqlalchemy import Date, and_, case, cast, extract, func, select
 
 from openlabels.analytics.service import (
+    AccessStats,
     EntityTrendsData,
     FileStats,
     HeatmapFileRow,
+    RemediationStats,
     TrendPoint,
 )
 
@@ -32,14 +34,14 @@ logger = logging.getLogger(__name__)
 class PostgresDashboardService:
     """Implements :class:`DashboardQueryService` using the existing PostgreSQL queries."""
 
-    def __init__(self, session_factory) -> None:
-        self._session_factory = session_factory
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
 
     # -- helpers -----------------------------------------------------------
 
     async def _get_session(self) -> AsyncSession:
-        """Get a session from the factory (works as context-manager or DI generator)."""
-        return self._session_factory
+        """Return the request-scoped SQLAlchemy session."""
+        return self._session
 
     # -- protocol methods --------------------------------------------------
 
@@ -268,3 +270,82 @@ class PostgresDashboardService:
                     entity_counts=row.entity_counts or {},
                 ))
         return rows_out, total
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
+        from datetime import timedelta, timezone
+        from openlabels.server.models import FileAccessEvent
+
+        session = await self._get_session()
+        now = datetime.now(timezone.utc)
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        # Total + time-bucketed counts
+        stats_q = select(
+            func.count().label("total"),
+            func.sum(case((FileAccessEvent.event_time >= last_24h, 1), else_=0)).label("last_24h"),
+            func.sum(case((FileAccessEvent.event_time >= last_7d, 1), else_=0)).label("last_7d"),
+        ).where(FileAccessEvent.tenant_id == tenant_id)
+        result = await session.execute(stats_q)
+        row = result.one()
+
+        # By action
+        action_q = (
+            select(FileAccessEvent.action, func.count().label("count"))
+            .where(FileAccessEvent.tenant_id == tenant_id)
+            .group_by(FileAccessEvent.action)
+        )
+        action_result = await session.execute(action_q)
+        by_action = {r.action: r.count for r in action_result.all()}
+
+        # Top users
+        user_q = (
+            select(FileAccessEvent.user_name, func.count().label("count"))
+            .where(
+                FileAccessEvent.tenant_id == tenant_id,
+                FileAccessEvent.user_name.isnot(None),
+            )
+            .group_by(FileAccessEvent.user_name)
+            .order_by(func.count().desc())
+            .limit(10)
+        )
+        user_result = await session.execute(user_q)
+        by_user = [{"user": r.user_name, "count": r.count} for r in user_result.all()]
+
+        return AccessStats(
+            total_events=row.total or 0,
+            events_last_24h=row.last_24h or 0,
+            events_last_7d=row.last_7d or 0,
+            by_action=by_action,
+            by_user=by_user,
+        )
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
+        from openlabels.server.models import RemediationAction
+
+        session = await self._get_session()
+        q = select(
+            func.count().label("total"),
+            func.sum(case((RemediationAction.action_type == "quarantine", 1), else_=0)).label("quarantine"),
+            func.sum(case((RemediationAction.action_type == "lockdown", 1), else_=0)).label("lockdown"),
+            func.sum(case((RemediationAction.action_type == "rollback", 1), else_=0)).label("rollback"),
+            func.sum(case((RemediationAction.status == "completed", 1), else_=0)).label("completed"),
+            func.sum(case((RemediationAction.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((RemediationAction.status == "pending", 1), else_=0)).label("pending"),
+        ).where(RemediationAction.tenant_id == tenant_id)
+
+        result = await session.execute(q)
+        row = result.one()
+        return RemediationStats(
+            total_actions=row.total or 0,
+            by_type={
+                "quarantine": row.quarantine or 0,
+                "lockdown": row.lockdown or 0,
+                "rollback": row.rollback or 0,
+            },
+            by_status={
+                "completed": row.completed or 0,
+                "failed": row.failed or 0,
+                "pending": row.pending or 0,
+            },
+        )

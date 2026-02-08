@@ -61,6 +61,24 @@ class HeatmapFileRow:
     entity_counts: dict[str, int]
 
 
+@dataclass
+class AccessStats:
+    """Aggregated access event statistics."""
+    total_events: int = 0
+    events_last_24h: int = 0
+    events_last_7d: int = 0
+    by_action: dict[str, int] = field(default_factory=dict)
+    by_user: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class RemediationStats:
+    """Aggregated remediation action statistics."""
+    total_actions: int = 0
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_status: dict[str, int] = field(default_factory=dict)
+
+
 # ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
@@ -85,6 +103,10 @@ class DashboardQueryService(Protocol):
     async def get_heatmap_data(
         self, tenant_id: UUID, *, job_id: UUID | None = None, limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]: ...
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats: ...
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -118,6 +140,50 @@ class AnalyticsService:
             self._executor,
             lambda: self._engine.fetch_arrow(sql, params),
         )
+
+    async def export_scan_results(
+        self,
+        tenant_id: UUID,
+        *,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
+        has_label: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """Export scan results from Parquet with filter pushdown.
+
+        All filters are applied in the DuckDB query so only matching
+        rows are returned — much cheaper than post-filtering in Python.
+        """
+        conditions = ["tenant = ?"]
+        params: list[Any] = [str(tenant_id)]
+
+        if job_id:
+            conditions.append(f"job_id = decode('{job_id.hex}', 'hex')")
+        if risk_tier:
+            conditions.append("risk_tier = ?")
+            params.append(risk_tier)
+        if has_label is True:
+            conditions.append("label_applied = true")
+        elif has_label is False:
+            conditions.append("label_applied = false")
+
+        where = " AND ".join(conditions)
+        sql = f"""
+            SELECT
+                file_path, file_name, risk_score, risk_tier,
+                total_entities, exposure_level, owner,
+                current_label_name, label_applied
+            FROM scan_results
+            WHERE {where}
+            ORDER BY risk_score DESC
+        """
+        try:
+            return await self.query(sql, params)
+        except Exception as exc:
+            # Stub tables (no Parquet files) only have a placeholder column
+            if "not found in FROM clause" in str(exc) or "placeholder" in str(exc):
+                return []
+            raise
 
     def refresh_views(self) -> None:
         """Re-register DuckDB views after new Parquet files are written."""
@@ -280,10 +346,12 @@ class DuckDBDashboardService:
     async def get_access_heatmap(
         self, tenant_id: UUID, since: datetime,
     ) -> list[list[int]]:
+        # Use isodow() for ISO weekday numbering (1=Mon ... 7=Sun) to
+        # match PostgreSQL's EXTRACT(isodow ...) used in the PG fallback.
         rows = await self._safe_query(
             """
             SELECT
-                dayofweek(event_time) AS day_of_week,
+                isodow(event_time)   AS day_of_week,
                 hour(event_time)     AS hour,
                 count(*)             AS access_count
             FROM access_events
@@ -295,9 +363,8 @@ class DuckDBDashboardService:
         )
         heatmap = [[0] * 24 for _ in range(7)]
         for r in rows:
-            # DuckDB dayofweek: 0=Sunday, 1=Monday ... 6=Saturday
-            # We want 0=Monday ... 6=Sunday
-            day = (r["day_of_week"] - 1) % 7
+            # isodow: 1=Monday ... 7=Sunday → index 0=Monday ... 6=Sunday
+            day = int(r["day_of_week"]) - 1
             hour = r["hour"]
             if 0 <= day < 7 and 0 <= hour < 24:
                 heatmap[day][hour] = r["access_count"]
@@ -310,12 +377,13 @@ class DuckDBDashboardService:
         job_id: UUID | None = None,
         limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]:
-        # Total count
+        # job_id is stored as binary(16) in Parquet; DuckDB can compare
+        # binary columns to hex-encoded blob literals via decode().
         count_params: list = [str(tenant_id)]
         count_sql = "SELECT count(*) AS cnt FROM scan_results WHERE tenant = ?"
         if job_id:
-            count_sql += " AND job_id = ?"
-            count_params.append(str(job_id).replace("-", ""))
+            job_hex = job_id.hex
+            count_sql += f" AND job_id = decode('{job_hex}', 'hex')"
 
         count_rows = await self._safe_query(count_sql, count_params)
         total = count_rows[0]["cnt"] if count_rows else 0
@@ -328,8 +396,7 @@ class DuckDBDashboardService:
             WHERE tenant = ?
         """
         if job_id:
-            sql += " AND job_id = ?"
-            params.append(str(job_id).replace("-", ""))
+            sql += f" AND job_id = decode('{job_id.hex}', 'hex')"
         sql += " ORDER BY risk_score DESC LIMIT ?"
         params.append(limit)
 
@@ -350,3 +417,92 @@ class DuckDBDashboardService:
                 entity_counts=entity_counts,
             ))
         return result, total
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
+        from datetime import timedelta, timezone as tz
+
+        now = datetime.now(tz.utc)
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        # Total + time-bucketed counts in one query
+        count_rows = await self._safe_query(
+            """
+            SELECT
+                count(*)                                            AS total,
+                count(*) FILTER (WHERE event_time >= ?)             AS last_24h,
+                count(*) FILTER (WHERE event_time >= ?)             AS last_7d
+            FROM access_events
+            WHERE tenant = ?
+            """,
+            [last_24h.isoformat(), last_7d.isoformat(), str(tenant_id)],
+        )
+        total = count_rows[0]["total"] if count_rows else 0
+        l24 = count_rows[0]["last_24h"] if count_rows else 0
+        l7d = count_rows[0]["last_7d"] if count_rows else 0
+
+        # Events by action type
+        action_rows = await self._safe_query(
+            """
+            SELECT action, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ?
+            GROUP BY action
+            """,
+            [str(tenant_id)],
+        )
+        by_action = {r["action"]: r["cnt"] for r in action_rows}
+
+        # Top 10 users
+        user_rows = await self._safe_query(
+            """
+            SELECT user_name, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ? AND user_name IS NOT NULL
+            GROUP BY user_name
+            ORDER BY cnt DESC
+            LIMIT 10
+            """,
+            [str(tenant_id)],
+        )
+        by_user = [{"user": r["user_name"], "count": r["cnt"]} for r in user_rows]
+
+        return AccessStats(
+            total_events=total,
+            events_last_24h=l24,
+            events_last_7d=l7d,
+            by_action=by_action,
+            by_user=by_user,
+        )
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
+        # Total + breakdown by action_type
+        type_rows = await self._safe_query(
+            """
+            SELECT action_type, count(*) AS cnt
+            FROM remediation_actions
+            WHERE tenant = ?
+            GROUP BY action_type
+            """,
+            [str(tenant_id)],
+        )
+        by_type = {r["action_type"]: r["cnt"] for r in type_rows}
+        total = sum(by_type.values())
+
+        # Breakdown by status
+        status_rows = await self._safe_query(
+            """
+            SELECT status, count(*) AS cnt
+            FROM remediation_actions
+            WHERE tenant = ?
+            GROUP BY status
+            """,
+            [str(tenant_id)],
+        )
+        by_status = {r["status"]: r["cnt"] for r in status_rows}
+
+        return RemediationStats(
+            total_actions=total,
+            by_type=by_type,
+            by_status=by_status,
+        )

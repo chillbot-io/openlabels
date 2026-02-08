@@ -30,6 +30,10 @@ SCAN_RESULTS_SCHEMA = pa.schema([
     pa.field("total_entities", pa.int32()),
     pa.field("label_applied", pa.bool_()),
     pa.field("current_label_name", pa.utf8()),
+    pa.field("current_label_id", pa.utf8()),
+    pa.field("recommended_label_name", pa.utf8()),
+    pa.field("label_applied_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("label_error", pa.utf8()),
     pa.field("scanned_at", pa.timestamp("ms", tz="UTC")),
 ])
 
@@ -51,7 +55,13 @@ FILE_INVENTORY_SCHEMA = pa.schema([
     pa.field("exposure_level", _dict_str),
     pa.field("owner", pa.utf8()),
     pa.field("current_label_name", pa.utf8()),
+    pa.field("current_label_id", pa.utf8()),
+    pa.field("label_applied_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("is_monitored", pa.bool_()),
+    pa.field("needs_rescan", pa.bool_()),
     pa.field("last_scanned_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("discovered_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("updated_at", pa.timestamp("ms", tz="UTC")),
     pa.field("scan_count", pa.int32()),
     pa.field("content_changed_count", pa.int32()),
 ])
@@ -65,7 +75,10 @@ ACCESS_EVENTS_SCHEMA = pa.schema([
     pa.field("success", pa.bool_()),
     pa.field("user_name", pa.utf8()),
     pa.field("user_domain", pa.utf8()),
+    pa.field("user_sid", pa.utf8()),
     pa.field("process_name", pa.utf8()),
+    pa.field("process_id", pa.int32()),
+    pa.field("event_source", _dict_str),
     pa.field("event_time", pa.timestamp("ms", tz="UTC")),
     pa.field("collected_at", pa.timestamp("ms", tz="UTC")),
 ])
@@ -79,4 +92,20 @@ AUDIT_LOG_SCHEMA = pa.schema([
     pa.field("resource_id", pa.binary(16)),
     pa.field("details", pa.utf8()),  # JSON string
     pa.field("created_at", pa.timestamp("ms", tz="UTC")),
+])
+
+REMEDIATION_ACTIONS_SCHEMA = pa.schema([
+    pa.field("id", pa.binary(16)),
+    pa.field("tenant_id", pa.binary(16)),
+    pa.field("file_inventory_id", pa.binary(16)),
+    pa.field("action_type", _dict_str),
+    pa.field("status", _dict_str),
+    pa.field("source_path", pa.utf8()),
+    pa.field("dest_path", pa.utf8()),
+    pa.field("performed_by", pa.utf8()),
+    pa.field("dry_run", pa.bool_()),
+    pa.field("error", pa.utf8()),
+    pa.field("rollback_of_id", pa.binary(16)),
+    pa.field("created_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("completed_at", pa.timestamp("ms", tz="UTC")),
 ])
