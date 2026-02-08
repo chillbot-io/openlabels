@@ -51,6 +51,7 @@ class DuckDBEngine:
         ("file_inventory", "file_inventory/**/*.parquet"),
         ("access_events", "access_events/**/*.parquet"),
         ("audit_log", "audit_log/**/*.parquet"),
+        ("remediation_actions", "remediation_actions/**/*.parquet"),
     ]
 
     def _register_views(self) -> None:

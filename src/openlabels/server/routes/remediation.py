@@ -600,45 +600,25 @@ async def rollback_action(
 
 @router.get("/stats/summary")
 async def get_remediation_stats(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
 ):
-    """Get summary statistics for remediation actions."""
-    stats_query = select(
-        func.count().label("total"),
-        func.sum(
-            case((RemediationAction.action_type == "quarantine", 1), else_=0)
-        ).label("quarantine_count"),
-        func.sum(
-            case((RemediationAction.action_type == "lockdown", 1), else_=0)
-        ).label("lockdown_count"),
-        func.sum(
-            case((RemediationAction.action_type == "rollback", 1), else_=0)
-        ).label("rollback_count"),
-        func.sum(
-            case((RemediationAction.status == "completed", 1), else_=0)
-        ).label("completed"),
-        func.sum(
-            case((RemediationAction.status == "failed", 1), else_=0)
-        ).label("failed"),
-        func.sum(
-            case((RemediationAction.status == "pending", 1), else_=0)
-        ).label("pending"),
-    ).where(RemediationAction.tenant_id == user.tenant_id)
+    """Get summary statistics for remediation actions.
 
-    result = await session.execute(stats_query)
-    row = result.one()
+    When backed by DuckDB, aggregations run on Parquet for faster
+    full-table scans.  Otherwise falls back to PostgreSQL.
+    """
+    from openlabels.analytics.dashboard_pg import PostgresDashboardService
+
+    svc = getattr(request.app.state, "dashboard_service", None)
+    if svc is None:
+        svc = PostgresDashboardService(session)
+
+    stats = await svc.get_remediation_stats(user.tenant_id)
 
     return {
-        "total_actions": row.total or 0,
-        "by_type": {
-            "quarantine": row.quarantine_count or 0,
-            "lockdown": row.lockdown_count or 0,
-            "rollback": row.rollback_count or 0,
-        },
-        "by_status": {
-            "completed": row.completed or 0,
-            "failed": row.failed or 0,
-            "pending": row.pending or 0,
-        },
+        "total_actions": stats.total_actions,
+        "by_type": stats.by_type,
+        "by_status": stats.by_status,
     }

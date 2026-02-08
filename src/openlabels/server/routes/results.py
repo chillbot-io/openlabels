@@ -200,6 +200,7 @@ async def get_result_stats(
 
 @router.get("/export")
 async def export_results(
+    request: Request,
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
     job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
@@ -207,7 +208,12 @@ async def export_results(
     has_label: Optional[str] = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
-    """Export scan results as CSV or JSON using memory-efficient streaming."""
+    """Export scan results as CSV or JSON.
+
+    When the catalog is enabled, results are streamed directly from
+    Parquet via DuckDB (zero-copy Arrow to CSV/JSON).  Otherwise falls
+    back to PostgreSQL streaming.
+    """
     import csv
     import io
     import json
@@ -229,6 +235,45 @@ async def export_results(
             return False
         return True
 
+    # Determine data source — DuckDB (Parquet) or PostgreSQL
+    analytics_svc = getattr(request.app.state, "analytics", None)
+    use_duckdb = analytics_svc is not None
+
+    async def _duckdb_row_iter():
+        """Stream rows from DuckDB scan_results Parquet as dicts."""
+        where_clauses = ["1=1"]
+        params: list = []
+        if _tenant.id:
+            where_clauses.append("tenant = ?")
+            params.append(str(_tenant.id))
+        if job_id:
+            where_clauses.append("job_id = ?")
+            params.append(str(job_id).replace("-", ""))
+        if risk_tier:
+            where_clauses.append("risk_tier = ?")
+            params.append(risk_tier)
+
+        sql = f"""
+            SELECT file_path, file_name, risk_score, risk_tier,
+                   total_entities, exposure_level, owner,
+                   current_label_name, label_applied
+            FROM scan_results
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY risk_score DESC
+        """
+        rows = await analytics_svc.query(sql, params)
+        for r in rows:
+            yield r
+
+    async def _pg_row_iter():
+        """Stream rows from PostgreSQL (existing path)."""
+        async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
+            if not _matches_filters(row_dict):
+                continue
+            yield row_dict
+
+    row_iter = _duckdb_row_iter if use_duckdb else _pg_row_iter
+
     if format == "csv":
         async def _csv_generator():
             header_buf = io.StringIO()
@@ -240,8 +285,8 @@ async def export_results(
             ])
             yield header_buf.getvalue()
 
-            async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
-                if not _matches_filters(row_dict):
+            async for row_dict in row_iter():
+                if not use_duckdb and not _matches_filters(row_dict):
                     continue
                 row_buf = io.StringIO()
                 row_writer = csv.writer(row_buf)
@@ -269,13 +314,13 @@ async def export_results(
         async def _json_generator():
             yield "[\n"
             first = True
-            async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
-                if not _matches_filters(row_dict):
+            async for row_dict in row_iter():
+                if not use_duckdb and not _matches_filters(row_dict):
                     continue
                 if not first:
                     yield ",\n"
                 first = False
-                yield json.dumps(row_dict, indent=2)
+                yield json.dumps(row_dict, indent=2, default=str)
             yield "\n]\n"
 
         return StreamingResponse(

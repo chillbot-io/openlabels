@@ -18,7 +18,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -61,6 +61,24 @@ class HeatmapFileRow:
     entity_counts: dict[str, int]
 
 
+@dataclass
+class AccessStats:
+    """Aggregated access event statistics."""
+    total_events: int = 0
+    events_last_24h: int = 0
+    events_last_7d: int = 0
+    by_action: dict[str, int] = field(default_factory=dict)
+    top_users: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class RemediationStats:
+    """Aggregated remediation action statistics."""
+    total_actions: int = 0
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_status: dict[str, int] = field(default_factory=dict)
+
+
 # ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
@@ -85,6 +103,14 @@ class DashboardQueryService(Protocol):
     async def get_heatmap_data(
         self, tenant_id: UUID, *, job_id: UUID | None = None, limit: int = 10_000,
     ) -> tuple[list[HeatmapFileRow], int]: ...
+
+    async def get_access_stats(
+        self, tenant_id: UUID,
+    ) -> AccessStats: ...
+
+    async def get_remediation_stats(
+        self, tenant_id: UUID,
+    ) -> RemediationStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -350,3 +376,85 @@ class DuckDBDashboardService:
                 entity_counts=entity_counts,
             ))
         return result, total
+
+    async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+        rows = await self._safe_query(
+            """
+            SELECT
+                count(*)                                                       AS total_events,
+                count(*) FILTER (WHERE event_time >= ? ::TIMESTAMP - INTERVAL 1 DAY)  AS events_last_24h,
+                count(*) FILTER (WHERE event_time >= ? ::TIMESTAMP - INTERVAL 7 DAY)  AS events_last_7d
+            FROM access_events
+            WHERE tenant = ?
+            """,
+            [now_iso, now_iso, str(tenant_id)],
+        )
+        total_events = rows[0]["total_events"] if rows else 0
+        events_24h = rows[0]["events_last_24h"] if rows else 0
+        events_7d = rows[0]["events_last_7d"] if rows else 0
+
+        action_rows = await self._safe_query(
+            """
+            SELECT action, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ?
+            GROUP BY action
+            """,
+            [str(tenant_id)],
+        )
+        by_action = {r["action"]: r["cnt"] for r in action_rows}
+
+        user_rows = await self._safe_query(
+            """
+            SELECT user_name, count(*) AS cnt
+            FROM access_events
+            WHERE tenant = ? AND user_name IS NOT NULL
+            GROUP BY user_name
+            ORDER BY cnt DESC
+            LIMIT 10
+            """,
+            [str(tenant_id)],
+        )
+        top_users = [{"user": r["user_name"], "count": r["cnt"]} for r in user_rows]
+
+        return AccessStats(
+            total_events=total_events,
+            events_last_24h=events_24h,
+            events_last_7d=events_7d,
+            by_action=by_action,
+            top_users=top_users,
+        )
+
+    async def get_remediation_stats(self, tenant_id: UUID) -> RemediationStats:
+        rows = await self._safe_query(
+            """
+            SELECT
+                count(*)                                              AS total,
+                count(*) FILTER (WHERE action_type = 'quarantine')    AS quarantine_count,
+                count(*) FILTER (WHERE action_type = 'lockdown')      AS lockdown_count,
+                count(*) FILTER (WHERE action_type = 'rollback')      AS rollback_count,
+                count(*) FILTER (WHERE status = 'completed')          AS completed,
+                count(*) FILTER (WHERE status = 'failed')             AS failed,
+                count(*) FILTER (WHERE status = 'pending')            AS pending_count
+            FROM remediation_actions
+            WHERE tenant = ?
+            """,
+            [str(tenant_id)],
+        )
+        if not rows:
+            return RemediationStats()
+        r = rows[0]
+        return RemediationStats(
+            total_actions=r["total"],
+            by_type={
+                "quarantine": r["quarantine_count"],
+                "lockdown": r["lockdown_count"],
+                "rollback": r["rollback_count"],
+            },
+            by_status={
+                "completed": r["completed"],
+                "failed": r["failed"],
+                "pending": r["pending_count"],
+            },
+        )

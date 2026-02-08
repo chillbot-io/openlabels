@@ -50,6 +50,15 @@ def audit_log_partition(
     return f"audit_log/tenant={tenant_id}/log_date={d}"
 
 
+def remediation_action_partition(
+    tenant_id: UUID,
+    action_date: date | datetime,
+) -> str:
+    """Return the Hive partition path for remediation-action Parquet files."""
+    d = action_date if isinstance(action_date, date) else action_date.date()
+    return f"remediation_actions/tenant={tenant_id}/action_date={d}"
+
+
 def part_filename(sequence: int = 0) -> str:
     """Generate a deterministic part file name."""
     return f"part-{sequence:05d}.parquet"

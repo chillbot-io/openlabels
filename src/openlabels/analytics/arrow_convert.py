@@ -19,6 +19,7 @@ from openlabels.analytics.schemas import (
     ACCESS_EVENTS_SCHEMA,
     AUDIT_LOG_SCHEMA,
     FILE_INVENTORY_SCHEMA,
+    REMEDIATION_ACTIONS_SCHEMA,
     SCAN_RESULTS_SCHEMA,
 )
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
         AuditLog,
         FileAccessEvent,
         FileInventory,
+        RemediationAction,
         ScanResult,
     )
 
@@ -164,3 +166,26 @@ def audit_log_to_arrow(rows: Iterable[AuditLog]) -> pa.Table:
         records["created_at"].append(_ts(r.created_at))
 
     return pa.table(records, schema=AUDIT_LOG_SCHEMA)
+
+
+# ── Remediation Actions ──────────────────────────────────────────────
+
+def remediation_actions_to_arrow(rows: Iterable[RemediationAction]) -> pa.Table:
+    """Convert RemediationAction ORM instances to a PyArrow Table."""
+    records: dict[str, list] = {f.name: [] for f in REMEDIATION_ACTIONS_SCHEMA}
+
+    for r in rows:
+        records["id"].append(_uuid_bytes(r.id))
+        records["tenant_id"].append(_uuid_bytes(r.tenant_id))
+        records["file_inventory_id"].append(_uuid_bytes(r.file_inventory_id))
+        records["action_type"].append(str(r.action_type) if r.action_type else None)
+        records["status"].append(str(r.status) if r.status else None)
+        records["source_path"].append(r.source_path)
+        records["dest_path"].append(r.dest_path)
+        records["performed_by"].append(r.performed_by)
+        records["dry_run"].append(r.dry_run)
+        records["error"].append(r.error)
+        records["created_at"].append(_ts(r.created_at))
+        records["completed_at"].append(_ts(r.completed_at))
+
+    return pa.table(records, schema=REMEDIATION_ACTIONS_SCHEMA)

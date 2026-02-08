@@ -27,12 +27,14 @@ from openlabels.analytics.arrow_convert import (
     access_events_to_arrow,
     audit_log_to_arrow,
     file_inventory_to_arrow,
+    remediation_actions_to_arrow,
     scan_results_to_arrow,
 )
 from openlabels.analytics.partition import (
     access_event_partition,
     audit_log_partition,
     file_inventory_path,
+    remediation_action_partition,
     scan_result_partition,
     timestamped_part_filename,
 )
@@ -63,6 +65,7 @@ def load_flush_state(storage: CatalogStorage) -> dict:
         return {
             "last_access_event_flush": None,
             "last_audit_log_flush": None,
+            "last_remediation_action_flush": None,
             "schema_version": 1,
         }
     import pyarrow  # noqa: F401 — only needed for the read path
@@ -149,12 +152,12 @@ async def flush_events_to_catalog(
     """
     Export new access events and audit logs since the last flush.
 
-    Returns ``{"access_events": N, "audit_logs": M}``.
+    Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": K}``.
     """
-    from openlabels.server.models import AuditLog, FileAccessEvent
+    from openlabels.server.models import AuditLog, FileAccessEvent, RemediationAction
 
     state = load_flush_state(storage)
-    counts: dict[str, int] = {"access_events": 0, "audit_logs": 0}
+    counts: dict[str, int] = {"access_events": 0, "audit_logs": 0, "remediation_actions": 0}
 
     # ── Access events ────────────────────────────────────────────────
     last_ae = state.get("last_access_event_flush")
@@ -190,6 +193,22 @@ async def flush_events_to_catalog(
         _write_partitioned_audit_logs(storage, al_rows, table)
         state["last_audit_log_flush"] = al_rows[-1].created_at.isoformat()
         counts["audit_logs"] = len(al_rows)
+
+    # ── Remediation actions ───────────────────────────────────────────
+    last_ra = state.get("last_remediation_action_flush")
+    ra_query = select(RemediationAction).order_by(RemediationAction.created_at)
+    if last_ra:
+        cutoff = datetime.fromisoformat(last_ra)
+        ra_query = ra_query.where(RemediationAction.created_at > cutoff)
+
+    ra_result = await session.execute(ra_query)
+    ra_rows = list(ra_result.scalars())
+
+    if ra_rows:
+        table = remediation_actions_to_arrow(ra_rows)
+        _write_partitioned_remediation_actions(storage, ra_rows, table)
+        state["last_remediation_action_flush"] = ra_rows[-1].created_at.isoformat()
+        counts["remediation_actions"] = len(ra_rows)
 
     save_flush_state(storage, state)
     return counts
@@ -235,6 +254,26 @@ def _write_partitioned_audit_logs(
         from uuid import UUID as _UUID
 
         partition = audit_log_partition(_UUID(tenant_str), log_date)
+        subset = table.take(indices)
+        dest = f"{partition}/{timestamped_part_filename()}"
+        storage.write_parquet(dest, subset)
+
+
+def _write_partitioned_remediation_actions(
+    storage: CatalogStorage,
+    rows,
+    table,
+) -> None:
+    """Group remediation actions by (tenant_id, action_date) and write partitioned Parquet."""
+    groups: dict[tuple, list[int]] = {}
+    for idx, r in enumerate(rows):
+        key = (str(r.tenant_id), r.created_at.date())
+        groups.setdefault(key, []).append(idx)
+
+    for (tenant_str, action_date), indices in groups.items():
+        from uuid import UUID as _UUID
+
+        partition = remediation_action_partition(_UUID(tenant_str), action_date)
         subset = table.take(indices)
         dest = f"{partition}/{timestamped_part_filename()}"
         storage.write_parquet(dest, subset)

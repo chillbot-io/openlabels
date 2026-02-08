@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -385,6 +385,7 @@ async def get_user_access_history(
 
 @router.get("/stats", response_model=AccessStatsResponse)
 async def get_access_stats(
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
@@ -392,59 +393,18 @@ async def get_access_stats(
     Get access monitoring statistics.
 
     Returns summary statistics about file access events.
+    When backed by DuckDB, event aggregations run on Parquet;
+    monitored file count always comes from PostgreSQL (OLTP).
     """
-    now = datetime.now(timezone.utc)
-    last_24h = now - timedelta(hours=24)
-    last_7d = now - timedelta(days=7)
+    from openlabels.analytics.dashboard_pg import PostgresDashboardService
 
-    # Total events and time-based counts
-    stats_query = select(
-        func.count().label("total"),
-        func.sum(
-            case((FileAccessEvent.event_time >= last_24h, 1), else_=0)
-        ).label("last_24h"),
-        func.sum(
-            case((FileAccessEvent.event_time >= last_7d, 1), else_=0)
-        ).label("last_7d"),
-    ).where(FileAccessEvent.tenant_id == user.tenant_id)
+    svc = getattr(request.app.state, "dashboard_service", None)
+    if svc is None:
+        svc = PostgresDashboardService(session)
 
-    result = await session.execute(stats_query)
-    row = result.one()
+    access_stats = await svc.get_access_stats(user.tenant_id)
 
-    total_events = row.total or 0
-    events_last_24h = row.last_24h or 0
-    events_last_7d = row.last_7d or 0
-
-    # Events by action type
-    action_query = (
-        select(
-            FileAccessEvent.action,
-            func.count().label("count"),
-        )
-        .where(FileAccessEvent.tenant_id == user.tenant_id)
-        .group_by(FileAccessEvent.action)
-    )
-    action_result = await session.execute(action_query)
-    by_action = {row.action: row.count for row in action_result.all()}
-
-    # Top users by access count
-    user_query = (
-        select(
-            FileAccessEvent.user_name,
-            func.count().label("count"),
-        )
-        .where(
-            FileAccessEvent.tenant_id == user.tenant_id,
-            FileAccessEvent.user_name.isnot(None),
-        )
-        .group_by(FileAccessEvent.user_name)
-        .order_by(func.count().desc())
-        .limit(10)
-    )
-    user_result = await session.execute(user_query)
-    by_user = [{"user": row.user_name, "count": row.count} for row in user_result.all()]
-
-    # Monitored files count
+    # Monitored files count — always from PostgreSQL (OLTP state)
     monitored_query = select(func.count()).select_from(MonitoredFile).where(
         MonitoredFile.tenant_id == user.tenant_id
     )
@@ -452,11 +412,11 @@ async def get_access_stats(
     monitored_count = monitored_result.scalar() or 0
 
     return AccessStatsResponse(
-        total_events=total_events,
-        events_last_24h=events_last_24h,
-        events_last_7d=events_last_7d,
-        by_action=by_action,
-        by_user=by_user,
+        total_events=access_stats.total_events,
+        events_last_24h=access_stats.events_last_24h,
+        events_last_7d=access_stats.events_last_7d,
+        by_action=access_stats.by_action,
+        by_user=access_stats.top_users,
         monitored_files_count=monitored_count,
     )
 
