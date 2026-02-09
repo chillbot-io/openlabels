@@ -42,6 +42,8 @@ async def periodic_siem_export(
         engine.adapter_names,
     )
 
+    from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+
     while not shutdown_event.is_set():
         try:
             from openlabels.server.db import get_session_context
@@ -49,55 +51,58 @@ async def periodic_siem_export(
             from sqlalchemy import select
 
             async with get_session_context() as session:
-                from openlabels.server.models import Tenant
+                if not await try_advisory_lock(session, AdvisoryLockID.SIEM_EXPORT):
+                    logger.debug("Periodic SIEM export: another instance is running, skipping")
+                else:
+                    from openlabels.server.models import Tenant
 
-                # Iterate tenants to maintain proper isolation
-                tenants = (await session.execute(
-                    select(Tenant)
-                )).scalars().all()
-
-                for tenant in tenants:
-                    rows = (await session.execute(
-                        select(ScanResult)
-                        .where(ScanResult.tenant_id == tenant.id)
-                        .order_by(ScanResult.scanned_at.desc())
-                        .limit(5000)
+                    # Iterate tenants to maintain proper isolation
+                    tenants = (await session.execute(
+                        select(Tenant)
                     )).scalars().all()
 
-                    if not rows:
-                        continue
+                    for tenant in tenants:
+                        rows = (await session.execute(
+                            select(ScanResult)
+                            .where(ScanResult.tenant_id == tenant.id)
+                            .order_by(ScanResult.scanned_at.desc())
+                            .limit(5000)
+                        )).scalars().all()
 
-                    result_dicts = [
-                        {
-                            "file_path": r.file_path,
-                            "risk_score": r.risk_score,
-                            "risk_tier": r.risk_tier,
-                            "entity_counts": r.entity_counts,
-                            "policy_violations": r.policy_violations,
-                            "owner": r.owner,
-                            "scanned_at": r.scanned_at,
-                        }
-                        for r in rows
-                    ]
-                    export_records = scan_result_to_export_records(
-                        result_dicts, tenant.id,
-                    )
-                    # Apply record type filter from config
-                    allowed_types = settings.siem_export.export_record_types
-                    if allowed_types:
-                        export_records = [
-                            r for r in export_records
-                            if r.record_type in allowed_types
+                        if not rows:
+                            continue
+
+                        result_dicts = [
+                            {
+                                "file_path": r.file_path,
+                                "risk_score": r.risk_score,
+                                "risk_tier": r.risk_tier,
+                                "entity_counts": r.entity_counts,
+                                "policy_violations": r.policy_violations,
+                                "owner": r.owner,
+                                "scanned_at": r.scanned_at,
+                            }
+                            for r in rows
                         ]
-                    results = await engine.export_since_last(
-                        tenant.id, export_records,
-                    )
-                    total = sum(results.values())
-                    if total > 0:
-                        logger.info(
-                            "Periodic SIEM export for tenant %s: %s",
-                            tenant.id, results,
+                        export_records = scan_result_to_export_records(
+                            result_dicts, tenant.id,
                         )
+                        # Apply record type filter from config
+                        allowed_types = settings.siem_export.export_record_types
+                        if allowed_types:
+                            export_records = [
+                                r for r in export_records
+                                if r.record_type in allowed_types
+                            ]
+                        results = await engine.export_since_last(
+                            tenant.id, export_records,
+                        )
+                        total = sum(results.values())
+                        if total > 0:
+                            logger.info(
+                                "Periodic SIEM export for tenant %s: %s",
+                                tenant.id, results,
+                            )
 
         except Exception as exc:
             logger.error("Periodic SIEM export cycle failed: %s", exc)

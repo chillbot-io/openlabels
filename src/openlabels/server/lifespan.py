@@ -384,10 +384,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # WebSocket pub/sub for cross-instance delivery
+    try:
+        from openlabels.server.routes.ws import broadcaster as ws_broadcaster
+
+        pubsub_active = await ws_broadcaster.start()
+        if pubsub_active:
+            logger.info("WebSocket pub/sub: distributed mode (Redis)")
+        else:
+            logger.info("WebSocket pub/sub: local-only mode")
+    except Exception as e:
+        logger.warning(
+            "WebSocket pub/sub initialization failed: %s: %s",
+            type(e).__name__, e,
+        )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
     # Shutdown
+
+    # Stop WebSocket pub/sub
+    try:
+        from openlabels.server.routes.ws import broadcaster as ws_broadcaster
+
+        await ws_broadcaster.stop()
+    except Exception as e:
+        logger.warning("WebSocket pub/sub shutdown error: %s: %s", type(e).__name__, e)
 
     # Stop real-time event streams and scan trigger
     if stream_task and not stream_task.done():
