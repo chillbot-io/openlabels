@@ -616,7 +616,7 @@ async def execute_scan_task(
                     stats["siem_export"] = total_exported
                     logger.info(
                         "Post-scan SIEM export for job %s: %s",
-                        job.id, export_results,
+                        job.id, total_exported,
                     )
             except (ImportError, ConnectionError, OSError, RuntimeError, ValueError) as e:
                 logger.warning(
@@ -927,66 +927,63 @@ async def _cloud_label_sync_back(
     """
     sync_stats = {"synced": 0, "skipped": 0, "errors": 0}
 
-    # Get labeled results for this job
+    # Stream labeled results in batches to avoid loading all into memory
     results_query = (
         select(ScanResult)
         .where(ScanResult.job_id == job.id)
         .where(ScanResult.label_applied == True)
         .where(ScanResult.current_label_id.isnot(None))
     )
-    results = await session.execute(results_query)
-    scan_results = results.scalars().all()
-
-    if not scan_results:
-        return sync_stats
 
     adapter = _get_adapter(target.adapter, target.config)
 
     async with adapter:
-        for result in scan_results:
-            item_id = (
-                result.file_path.split("://", 1)[-1].split("/", 1)[-1]
-                if "://" in result.file_path
-                else result.file_path
-            )
-            file_info = FileInfo(
-                path=result.file_path,
-                name=result.file_name,
-                size=result.file_size or 0,
-                modified=result.file_modified or datetime.now(timezone.utc),
-                adapter=target.adapter,
-                item_id=item_id,
-            )
-
-            try:
-                # Refresh metadata to get current ETag/generation for conflict detection
-                file_info = await adapter.get_metadata(file_info)
-
-                sync_result = await adapter.apply_label_and_sync(
-                    file_info=file_info,
-                    label_id=str(result.current_label_id),
-                    label_name=result.current_label_name,
+        result_stream = await session.stream(results_query)
+        async for batch in result_stream.scalars().partitions(500):
+            for result in batch:
+                item_id = (
+                    result.file_path.split("://", 1)[-1].split("/", 1)[-1]
+                    if "://" in result.file_path
+                    else result.file_path
+                )
+                file_info = FileInfo(
+                    path=result.file_path,
+                    name=result.file_name,
+                    size=result.file_size or 0,
+                    modified=result.file_modified or datetime.now(timezone.utc),
+                    adapter=target.adapter,
+                    item_id=item_id,
                 )
 
-                if sync_result.get("success"):
-                    sync_stats["synced"] += 1
-                elif sync_result.get("method") == "skipped":
-                    sync_stats["skipped"] += 1
-                    logger.debug(
-                        "Skipped label sync for %s: %s",
-                        result.file_path,
-                        sync_result.get("error"),
+                try:
+                    # Refresh metadata to get current ETag/generation for conflict detection
+                    file_info = await adapter.get_metadata(file_info)
+
+                    sync_result = await adapter.apply_label_and_sync(
+                        file_info=file_info,
+                        label_id=str(result.current_label_id),
+                        label_name=result.current_label_name,
                     )
-                else:
+
+                    if sync_result.get("success"):
+                        sync_stats["synced"] += 1
+                    elif sync_result.get("method") == "skipped":
+                        sync_stats["skipped"] += 1
+                        logger.debug(
+                            "Skipped label sync for %s: %s",
+                            result.file_path,
+                            sync_result.get("error"),
+                        )
+                    else:
+                        sync_stats["errors"] += 1
+                        logger.warning(
+                            "Label sync-back failed for %s: %s",
+                            result.file_path,
+                            sync_result.get("error"),
+                        )
+                except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                     sync_stats["errors"] += 1
-                    logger.warning(
-                        "Label sync-back failed for %s: %s",
-                        result.file_path,
-                        sync_result.get("error"),
-                    )
-            except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-                sync_stats["errors"] += 1
-                logger.error("Label sync-back error for %s: %s", result.file_path, e)
+                    logger.error("Label sync-back error for %s: %s", result.file_path, e)
 
     logger.info(
         "Cloud label sync-back for job %s: synced=%d, skipped=%d, errors=%d",

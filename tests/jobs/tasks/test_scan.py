@@ -481,8 +481,6 @@ class TestExecuteScanTask:
 
             with patch('openlabels.jobs.inventory.InventoryService') as MockInventory:
                 mock_inv = MagicMock()
-                mock_inv.load_file_inventory = AsyncMock(return_value={})
-                mock_inv.load_folder_inventory = AsyncMock(return_value={})
                 mock_inv.update_file_inventory = AsyncMock()
                 mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
@@ -574,8 +572,6 @@ class TestScanTaskDeltaMode:
 
             with patch('openlabels.jobs.inventory.InventoryService') as MockInventory:
                 mock_inv = MagicMock()
-                mock_inv.load_file_inventory = AsyncMock(return_value={})
-                mock_inv.load_folder_inventory = AsyncMock(return_value={})
                 mock_inv.update_file_inventory = AsyncMock()
                 mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
@@ -918,8 +914,6 @@ class TestLargeFilesHandling:
 
             with patch('openlabels.jobs.inventory.InventoryService') as MockInventory:
                 mock_inv = MagicMock()
-                mock_inv.load_file_inventory = AsyncMock(return_value={})
-                mock_inv.load_folder_inventory = AsyncMock(return_value={})
                 mock_inv.update_file_inventory = AsyncMock()
                 mock_inv.update_folder_inventory = AsyncMock()
                 mock_inv.mark_missing_files = AsyncMock(return_value=0)
