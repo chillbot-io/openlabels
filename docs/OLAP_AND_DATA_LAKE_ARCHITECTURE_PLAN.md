@@ -3195,19 +3195,19 @@ Requires unified scan pipeline (Phase F) for single integration point.
 14. ~~Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle~~ ✅
 15. ~~Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection~~ ✅
 
-### Phase M: Reporting and Distribution
+### Phase M: Reporting and Distribution ✅ [Git: see audit fix commit]
 
 Scheduled and on-demand report generation with distribution.
 
-1. Create `src/openlabels/reporting/` package
-2. Implement `ReportRenderer` — Jinja2 HTML templates → PDF (via `weasyprint`), HTML, CSV
-3. Create report templates: executive summary, compliance report, scan detail, access audit, sensitive files report
-4. Add `weasyprint` as optional dependency (`pip install openlabels[reports]`)
-5. Implement report scheduling via existing cron/job infrastructure
-6. Add email delivery via SMTP (reuse `SIEMExportSettings` SMTP config or standalone)
-7. Add `/api/v1/reports/` endpoints: generate, schedule, list, download
-8. Add `openlabels report generate --template executive_summary --format pdf` CLI command
-9. Tests: Template rendering, PDF generation, scheduled report execution
+1. ~~Create `src/openlabels/reporting/` package~~ ✅
+2. ~~Implement `ReportRenderer` — Jinja2 HTML templates → PDF (via `weasyprint`), HTML, CSV~~ ✅
+3. ~~Create report templates: executive summary, compliance report, scan detail, access audit, sensitive files report~~ ✅
+4. ~~Add `weasyprint` as optional dependency (`pip install openlabels[reports]`)~~ ✅
+5. ~~Implement report scheduling via existing cron/job infrastructure~~ ✅
+6. ~~Add email delivery via SMTP (reuse `SIEMExportSettings` SMTP config or standalone)~~ ✅
+7. ~~Add `/api/v1/reporting/` endpoints: generate, schedule, list, download, distribute~~ ✅
+8. ~~Add `openlabels report generate --template executive_summary --format pdf` CLI command~~ ✅
+9. ~~Tests: Template rendering, PDF generation, scheduled report execution~~ ✅
 
 ### Phase N: Operational Hardening
 
