@@ -96,7 +96,7 @@ UserRoleEnum = ENUM(
 
 # Adapter types for scan targets
 AdapterTypeEnum = ENUM(
-    'filesystem', 'sharepoint', 'onedrive', 's3', 'gcs',
+    'filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob',
     name='adapter_type',
     create_type=True,
 )

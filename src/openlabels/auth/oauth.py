@@ -16,7 +16,8 @@ import time
 from typing import Any, Optional
 
 import httpx
-from jose import jwt, JWTError  # type: ignore[import-untyped]
+import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, PyJWTError
 from pydantic import BaseModel, model_validator
 
 from openlabels.exceptions import TokenExpiredError, TokenInvalidError
@@ -163,12 +164,15 @@ async def validate_token(token: str) -> TokenClaims:
         kid = unverified_header.get("kid")
 
         # Find signing key (with automatic cache refresh on rotation)
-        key = await _find_signing_key(kid, tenant_id)
+        key_data = await _find_signing_key(kid, tenant_id)
+
+        # Convert JWK dict to PyJWK for decoding
+        signing_key = jwt.PyJWK(key_data)
 
         # Validate and decode
         claims = jwt.decode(
             token,
-            key,
+            signing_key,
             algorithms=["RS256"],
             audience=settings.auth.client_id,
             issuer=f"https://login.microsoftonline.com/{tenant_id}/v2.0",
@@ -184,14 +188,12 @@ async def validate_token(token: str) -> TokenClaims:
 
     except (TokenExpiredError, TokenInvalidError):
         raise
-    except JWTError as e:
-        error_str = str(e).lower()
-        if "expired" in error_str:
-            raise TokenExpiredError(f"Token expired: {e}")
-        elif "signature" in error_str:
-            raise TokenInvalidError(f"Invalid signature: {e}")
-        else:
-            raise TokenInvalidError(f"Invalid token: {e}")
+    except ExpiredSignatureError as e:
+        raise TokenExpiredError(f"Token expired: {e}")
+    except InvalidSignatureError as e:
+        raise TokenInvalidError(f"Invalid signature: {e}")
+    except PyJWTError as e:
+        raise TokenInvalidError(f"Invalid token: {e}")
 
 
 def clear_jwks_cache() -> None:

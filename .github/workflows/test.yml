@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
+          pip install -e ".[dev]"
 
       - name: Ruff check
         run: ruff check src/
@@ -29,7 +29,7 @@ jobs:
         run: ruff format --check src/
 
       - name: Mypy type check
-        run: mypy src/openlabels --ignore-missing-imports --no-error-summary || true
+        run: mypy src/openlabels --ignore-missing-imports --no-error-summary
 
   test:
     runs-on: ubuntu-latest
@@ -49,6 +49,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -61,11 +71,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install asyncpg  # For PostgreSQL async support
 
       - name: Run tests
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test
+          REDIS_URL: redis://localhost:6379
         run: |
           pytest --cov=openlabels --cov-report=xml --cov-report=term-missing
 

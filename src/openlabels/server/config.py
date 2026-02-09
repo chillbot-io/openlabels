@@ -135,6 +135,19 @@ class GCSAdapterSettings(BaseSettings):
     label_sync_enabled: bool = True
 
 
+class AzureBlobAdapterSettings(BaseSettings):
+    """Azure Blob Storage adapter configuration (Phase L)."""
+
+    enabled: bool = False
+    containers: list[str] = Field(default_factory=list)
+    storage_account: str = ""
+    connection_string: str = ""
+    account_key: str = ""
+    sas_token: str = ""
+    # Label sync-back
+    label_sync_enabled: bool = True
+
+
 class AdapterSettings(BaseSettings):
     """All adapter configurations."""
 
@@ -143,6 +156,7 @@ class AdapterSettings(BaseSettings):
     onedrive: OneDriveAdapterSettings = Field(default_factory=OneDriveAdapterSettings)
     s3: S3AdapterSettings = Field(default_factory=S3AdapterSettings)
     gcs: GCSAdapterSettings = Field(default_factory=GCSAdapterSettings)
+    azure_blob: AzureBlobAdapterSettings = Field(default_factory=AzureBlobAdapterSettings)
 
 
 class MipSettings(BaseSettings):

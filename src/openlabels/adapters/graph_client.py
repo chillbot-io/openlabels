@@ -15,7 +15,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import AsyncIterator, Optional, Any
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -551,18 +551,77 @@ class GraphClient:
 
         return items, is_delta
 
+    async def iter_with_delta(
+        self,
+        initial_path: str,
+        resource_path: str,
+    ) -> tuple[AsyncIterator[dict], bool]:
+        """Stream items using delta query, yielding each item as it arrives.
+
+        Unlike :meth:`get_with_delta`, this returns an async iterator that
+        yields items page-by-page instead of accumulating all items in memory.
+
+        Returns:
+            Tuple of (async_iterator, is_delta).
+        """
+        delta_token = self.get_delta_token(resource_path)
+        is_delta = delta_token is not None
+
+        if delta_token:
+            logger.info(f"Using delta query for {resource_path}")
+            path = delta_token.delta_link
+        else:
+            logger.info(f"Performing full sync for {resource_path}")
+            path = initial_path
+
+        async def _iter() -> AsyncIterator[dict]:
+            nonlocal path
+            item_count = 0
+            while path:
+                data = await self.get(path)
+                for item in data.get("value", []):
+                    item_count += 1
+                    yield item
+                next_path = data.get("@odata.nextLink")
+                if not next_path and "@odata.deltaLink" in data:
+                    self.store_delta_token(
+                        resource_path,
+                        data["@odata.deltaLink"],
+                        item_count=item_count,
+                    )
+                path = next_path
+
+        return _iter(), is_delta
+
     # =========================================================================
     # Pagination Helper
     # =========================================================================
 
     async def get_all_pages(self, path: str) -> list[dict]:
-        """Get all pages of a paginated response."""
+        """Get all pages of a paginated response.
+
+        Convenience method for small collections (site lists, drive lists).
+        For large collections use :meth:`iter_all_pages` to stream results.
+        """
         items = []
         while path:
             data = await self.get(path)
             items.extend(data.get("value", []))
             path = data.get("@odata.nextLink")
         return items
+
+    async def iter_all_pages(self, path: str) -> AsyncIterator[dict]:
+        """Stream all pages of a paginated response item-by-item.
+
+        Unlike :meth:`get_all_pages`, this yields each item as it arrives
+        so callers can begin processing before all pages are fetched.
+        Memory usage is O(page_size) instead of O(total_items).
+        """
+        while path:
+            data = await self.get(path)
+            for item in data.get("value", []):
+                yield item
+            path = data.get("@odata.nextLink")
 
     def get_stats(self) -> dict:
         """Get client statistics."""

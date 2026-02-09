@@ -772,3 +772,48 @@ class JobQueue:
                 stats["running"]["avg_hours"] = round(running_row.avg_age_seconds / 3600, 2)
 
         return stats
+
+
+async def dequeue_next_job(
+    session: AsyncSession,
+    worker_id: str,
+) -> Optional[JobQueueModel]:
+    """
+    Dequeue the next available job across all tenants in a single query.
+
+    Replaces per-tenant iteration with one SELECT FOR UPDATE SKIP LOCKED,
+    reducing the polling cost from O(tenants) queries to O(1).
+
+    Args:
+        session: Database session
+        worker_id: Identifier of the worker claiming the job
+
+    Returns:
+        Job model or None if no jobs available
+    """
+    now = datetime.now(timezone.utc)
+
+    query = (
+        select(JobQueueModel)
+        .where(
+            JobQueueModel.status == "pending",
+            (JobQueueModel.scheduled_for.is_(None)) | (JobQueueModel.scheduled_for <= now),
+        )
+        .order_by(
+            JobQueueModel.priority.desc(),
+            JobQueueModel.created_at.asc(),
+        )
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+
+    result = await session.execute(query)
+    job = result.scalar_one_or_none()
+
+    if job:
+        job.status = "running"
+        job.worker_id = worker_id
+        job.started_at = now
+        await session.flush()
+
+    return job
