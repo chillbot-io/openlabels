@@ -20,7 +20,7 @@ from uuid import UUID
 
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult, ScanTarget, AuditLog, ScanSchedule
-from openlabels.auth.dependencies import get_current_user, get_optional_user
+from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ async def monitoring_page(request: Request):
 async def settings_page(
     request: Request,
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """Settings page with current configuration values.
 
@@ -242,9 +242,21 @@ async def settings_page(
             ) or "",
         },
         "scan": {
-            "max_file_size_mb": tenant_settings.max_file_size_mb if tenant_settings else config.detection.max_file_size_mb,
-            "concurrent_files": tenant_settings.concurrent_files if tenant_settings else 10,
-            "enable_ocr": tenant_settings.enable_ocr if tenant_settings else config.detection.enable_ocr,
+            "max_file_size_mb": (
+                tenant_settings.max_file_size_mb
+                if tenant_settings and tenant_settings.max_file_size_mb is not None
+                else config.detection.max_file_size_mb
+            ),
+            "concurrent_files": (
+                tenant_settings.concurrent_files
+                if tenant_settings and tenant_settings.concurrent_files is not None
+                else getattr(config.detection, "concurrent_files", 10)
+            ),
+            "enable_ocr": (
+                tenant_settings.enable_ocr
+                if tenant_settings and tenant_settings.enable_ocr is not None
+                else config.detection.enable_ocr
+            ),
         },
         "entities": {
             "enabled": (

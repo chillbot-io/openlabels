@@ -250,7 +250,7 @@ async def get_health_status(
     if user is not None:
       try:
         today = datetime.now(timezone.utc).date()
-        today_start = datetime.combine(today, datetime.min.time())
+        today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
 
         # Scans today
         scans_query = select(func.count()).select_from(ScanJob).where(
@@ -310,10 +310,23 @@ async def get_health_status(
         age_stats = await job_queue.get_job_age_stats()
         stale_jobs = await job_queue.get_stale_pending_jobs()
 
+        # Query tenant-scoped pending/failed counts (not the global ones)
+        tenant_pending_query = select(func.count()).select_from(JobQueue).where(
+            JobQueue.status == "pending",
+            JobQueue.tenant_id == user.tenant_id,
+        )
+        tenant_pending = (await session.execute(tenant_pending_query)).scalar() or 0
+
+        tenant_failed_query = select(func.count()).select_from(JobQueue).where(
+            JobQueue.status == "failed",
+            JobQueue.tenant_id == user.tenant_id,
+        )
+        tenant_failed = (await session.execute(tenant_failed_query)).scalar() or 0
+
         status["job_metrics"] = JobMetrics(
-            pending_count=pending_count,  # Already computed above
+            pending_count=tenant_pending,
             running_count=age_stats.get("running_count", 0),
-            failed_count=failed_count,  # Already computed above
+            failed_count=tenant_failed,
             completed_count=age_stats.get("completed_count", 0),
             stuck_jobs_count=age_stats.get("stuck_count", 0),
             stale_pending_count=len(stale_jobs),

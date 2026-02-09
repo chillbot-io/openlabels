@@ -451,21 +451,35 @@ def _restore_permissions_windows(path: Path, acl_data: str) -> RemediationResult
                 f"Failed to reset permissions before restore: {result.stderr}", path,
             )
 
-        # Parse original icacls output and re-grant each ACE
+        # Parse original icacls output and re-grant each ACE.
+        # icacls output format: "  PRINCIPAL:(PERM)(PERM)..."
+        # Use regex to handle principals with spaces (e.g. "DOMAIN\User Name").
+        import re
+        ace_pattern = re.compile(r"(\S.*?):(\([^)]+\)(?:\([^)]+\))*\S*)")
+        restore_failures = []
         for line in acl_data.splitlines():
             line = line.strip()
             if not line:
                 continue
-            # Extract principal:(permissions) tokens from the line
-            parts = line.split()
-            for part in parts:
-                if ":(" in part:
-                    grant_result = subprocess.run(
-                        ["icacls", str(path), "/grant", part],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    if grant_result.returncode != 0:
-                        logger.warning("Failed to restore ACE %s: %s", part, grant_result.stderr)
+            for match in ace_pattern.finditer(line):
+                ace_str = match.group(0)  # "PRINCIPAL:(OI)(CI)F"
+                grant_result = subprocess.run(
+                    ["icacls", str(path), "/grant", ace_str],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if grant_result.returncode != 0:
+                    restore_failures.append(ace_str)
+                    logger.warning("Failed to restore ACE %s: %s", ace_str, grant_result.stderr)
+
+        if restore_failures:
+            logger.warning("Some ACEs could not be restored for %s: %s", path, restore_failures)
+            return RemediationResult(
+                success=False,
+                action=RemediationAction.RESTORE,
+                source_path=path,
+                performed_by=get_current_user(),
+                error=f"Failed to restore {len(restore_failures)} ACE(s)",
+            )
 
         logger.info("Restored permissions for %s from backup", path)
         return RemediationResult(
@@ -504,6 +518,11 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
     except (ValueError, SyntaxError):
         acl_dict = {"acl": acl_data}
 
+    # Validate that parsed data is a dict (not a list, string, etc.)
+    if not isinstance(acl_dict, dict):
+        logger.warning("ACL backup data is not a dict (got %s), treating as raw ACL", type(acl_dict).__name__)
+        acl_dict = {"acl": acl_data}
+
     try:
         # Restore mode
         if "mode" in acl_dict:
@@ -511,6 +530,7 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
             os.chmod(path, mode)
 
         # Restore ACLs via setfacl if data available
+        setfacl_failed = False
         if "acl" in acl_dict and _has_setfacl():
             import tempfile
             with tempfile.NamedTemporaryFile(mode="w", suffix=".acl", delete=False) as tmp:
@@ -522,9 +542,19 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
                     capture_output=True, text=True, timeout=30,
                 )
                 if result.returncode != 0:
+                    setfacl_failed = True
                     logger.warning("setfacl --restore failed: %s", result.stderr)
             finally:
                 Path(tmp_path).unlink(missing_ok=True)
+
+        if setfacl_failed:
+            return RemediationResult(
+                success=False,
+                action=RemediationAction.RESTORE,
+                source_path=path,
+                performed_by=get_current_user(),
+                error="setfacl --restore failed (mode was restored, ACLs were not)",
+            )
 
         logger.info("Restored permissions for %s from backup", path)
         return RemediationResult(

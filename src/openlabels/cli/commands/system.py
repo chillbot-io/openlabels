@@ -2,7 +2,9 @@
 
 import json
 import logging
+import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import click
 import httpx
@@ -10,6 +12,31 @@ import httpx
 from openlabels.cli.base import get_api_client, server_options
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_pg_env(db_url: str) -> dict[str, str]:
+    """Parse a PostgreSQL connection URL into PGPASSWORD/PGHOST/etc env vars.
+
+    This avoids passing credentials as CLI arguments to pg_dump/psql
+    (which would be visible in ``ps`` output).
+    """
+    env: dict[str, str] = {}
+    try:
+        parsed = urlparse(db_url)
+        if parsed.hostname:
+            env["PGHOST"] = parsed.hostname
+        if parsed.port:
+            env["PGPORT"] = str(parsed.port)
+        if parsed.username:
+            env["PGUSER"] = parsed.username
+        if parsed.password:
+            env["PGPASSWORD"] = parsed.password
+        if parsed.path and parsed.path != "/":
+            env["PGDATABASE"] = parsed.path.lstrip("/")
+    except (ValueError, TypeError):
+        # Fallback: let pg_dump/psql parse the URL itself (less secure)
+        pass
+    return env
 
 
 @click.command()
@@ -192,20 +219,37 @@ def backup(output: str, include_db: bool, db_url: str | None, server: str, token
             dump_path = backup_dir / "database.sql.gz"
             click.echo("  Running pg_dump...")
             try:
-                result = subprocess.run(
-                    ["pg_dump", db_connection, "--no-owner", "--no-acl"],
-                    capture_output=True,
-                    timeout=600,
+                # Use env vars instead of passing credentials on CLI (visible in ps)
+                import gzip
+                pg_env = _parse_pg_env(db_connection)
+                pg_cmd = [
+                    "pg_dump", "--no-owner", "--no-acl",
+                    "-h", pg_env.get("PGHOST", "localhost"),
+                    "-p", pg_env.get("PGPORT", "5432"),
+                    "-U", pg_env.get("PGUSER", "openlabels"),
+                    "-d", pg_env.get("PGDATABASE", "openlabels"),
+                ]
+                # Stream through gzip to avoid holding entire dump in memory
+                proc = subprocess.Popen(
+                    pg_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={**os.environ, **pg_env},
                 )
-                if result.returncode == 0:
-                    import gzip
-                    with gzip.open(dump_path, "wb") as gz:
-                        gz.write(result.stdout)
+                with gzip.open(dump_path, "wb") as gz:
+                    while True:
+                        chunk = proc.stdout.read(65536)
+                        if not chunk:
+                            break
+                        gz.write(chunk)
+                proc.wait(timeout=600)
+                if proc.returncode == 0:
                     click.echo(f"  Exported: database.sql.gz ({dump_path.stat().st_size:,} bytes)")
                 else:
-                    click.echo(f"  pg_dump failed: {result.stderr.decode()[:200]}", err=True)
+                    stderr_out = proc.stderr.read().decode()[:200] if proc.stderr else ""
+                    click.echo(f"  pg_dump failed: {stderr_out}", err=True)
             except FileNotFoundError:
-                click.echo("  pg_dump not found on PATH. Install PostgreSQL client tools.", err=True)
+                click.echo("  ERROR: pg_dump not found on PATH. Database backup SKIPPED.", err=True)
             except subprocess.TimeoutExpired:
                 click.echo("  pg_dump timed out after 10 minutes.", err=True)
 
@@ -256,18 +300,25 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
                     import gzip
                     with gzip.open(dump_file, "rb") as gz:
                         sql_data = gz.read()
+                    # Use env vars instead of passing credentials on CLI
+                    pg_env = _parse_pg_env(db_connection)
                     result = subprocess.run(
-                        ["psql", db_connection],
+                        ["psql",
+                         "-h", pg_env.get("PGHOST", "localhost"),
+                         "-p", pg_env.get("PGPORT", "5432"),
+                         "-U", pg_env.get("PGUSER", "openlabels"),
+                         "-d", pg_env.get("PGDATABASE", "openlabels")],
                         input=sql_data,
                         capture_output=True,
                         timeout=600,
+                        env={**os.environ, **pg_env},
                     )
                     if result.returncode == 0:
                         click.echo("  Database restored successfully")
                     else:
                         click.echo(f"  psql errors: {result.stderr.decode()[:200]}", err=True)
                 except FileNotFoundError:
-                    click.echo("  psql not found on PATH. Install PostgreSQL client tools.", err=True)
+                    click.echo("  ERROR: psql not found on PATH. Database restore SKIPPED.", err=True)
                 except subprocess.TimeoutExpired:
                     click.echo("  psql timed out after 10 minutes.", err=True)
 

@@ -197,8 +197,9 @@ async def execute_scan_task(
     job.status = "running"
     await session.flush()
 
-    # Get adapter
+    # Get adapter (use as async context manager for proper resource cleanup)
     adapter = _get_adapter(target.adapter, target.config)
+    await adapter.__aenter__()
 
     # Initialize inventory service for delta scanning
     inventory = InventoryService(session, job.tenant_id, target.id)
@@ -246,10 +247,24 @@ async def execute_scan_task(
         else:
             scan_paths = [target_path] if target_path else []
 
+        if not scan_paths:
+            logger.warning(
+                "No scan paths discovered for target %s (adapter=%s). "
+                "Check adapter config and scan_all_sites/scan_all_users settings.",
+                target.id, target.adapter,
+            )
+
         async def _iter_all_files():
             for sp in scan_paths:
-                async for fi in adapter.list_files(sp):
-                    yield fi
+                try:
+                    async for fi in adapter.list_files(sp):
+                        yield fi
+                except (ConnectionError, OSError, RuntimeError, ValueError) as list_err:
+                    logger.error(
+                        "Failed to list files for path %r (adapter=%s): %s",
+                        sp, target.adapter, list_err,
+                    )
+                    # Continue to next path instead of aborting entire scan
 
         async for file_info in _iter_all_files():
             try:
@@ -392,12 +407,15 @@ async def execute_scan_task(
                         folder_stats[folder_path]["highest_risk"] = new_risk
 
                     # Update file inventory for sensitive files
-                    await inventory.update_file_inventory(
-                        file_info=file_info,
-                        scan_result=scan_result,
-                        content_hash=content_hash,
-                        job_id=job.id,
-                    )
+                    try:
+                        await inventory.update_file_inventory(
+                            file_info=file_info,
+                            scan_result=scan_result,
+                            content_hash=content_hash,
+                            job_id=job.id,
+                        )
+                    except (OSError, RuntimeError, ValueError) as inv_err:
+                        logger.warning("Inventory update failed for %s: %s", file_info.path, inv_err)
 
                 # Update job progress
                 job.files_scanned = stats["files_scanned"]
@@ -456,16 +474,19 @@ async def execute_scan_task(
 
         # Update folder inventory
         for folder_path, fstats in folder_stats.items():
-            await inventory.update_folder_inventory(
-                folder_path=folder_path,
-                adapter=target.adapter,
-                job_id=job.id,
-                file_count=fstats["file_count"],
-                total_size=fstats["total_size"],
-                has_sensitive=fstats["has_sensitive"],
-                highest_risk=fstats["highest_risk"],
-                total_entities=fstats["total_entities"],
-            )
+            try:
+                await inventory.update_folder_inventory(
+                    folder_path=folder_path,
+                    adapter=target.adapter,
+                    job_id=job.id,
+                    file_count=fstats["file_count"],
+                    total_size=fstats["total_size"],
+                    has_sensitive=fstats["has_sensitive"],
+                    highest_risk=fstats["highest_risk"],
+                    total_entities=fstats["total_entities"],
+                )
+            except (OSError, RuntimeError, ValueError) as inv_err:
+                logger.warning("Folder inventory update failed for %s: %s", folder_path, inv_err)
 
         # Mark files that weren't seen (may be deleted/moved)
         missing_count = await inventory.mark_missing_files(seen_file_paths, job.id)
@@ -647,6 +668,12 @@ async def execute_scan_task(
         raise
 
     finally:
+        # Close adapter to release HTTP connections and SDK sessions
+        try:
+            await adapter.__aexit__(None, None, None)
+        except (ConnectionError, OSError, RuntimeError) as adapter_err:
+            logger.debug("Adapter cleanup error (non-fatal): %s", adapter_err)
+
         # Release ML processor to free memory (200-500MB)
         # This ensures cleanup happens whether scan completes, fails, or is cancelled
         cleanup_processor()
@@ -843,7 +870,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                 size=result.file_size or 0,
                 modified=result.file_modified or datetime.now(timezone.utc),
                 adapter=target.adapter if target else "filesystem",
-                exposure=ExposureLevel.PRIVATE,
+                exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
                 item_id=str(result.id),  # Use item_id for Graph API tracking
             )
 

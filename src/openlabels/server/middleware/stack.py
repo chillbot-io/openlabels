@@ -14,6 +14,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -190,6 +191,19 @@ def register_middleware(app: FastAPI) -> None:
 
     # CSRF protection
     app.add_middleware(CSRFMiddleware)
+
+    # Trusted host validation (prevents Host header injection)
+    # Derive allowed hosts from server host + CORS allowed origins
+    from urllib.parse import urlparse as _urlparse
+    allowed_hosts = {"localhost", "127.0.0.1", settings.server.host}
+    for origin in settings.cors.allowed_origins:
+        try:
+            parsed = _urlparse(origin)
+            if parsed.hostname:
+                allowed_hosts.add(parsed.hostname)
+        except (ValueError, TypeError):
+            pass
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
     # --- function-based middleware ---
     # Registered via app.middleware() which wraps them in BaseHTTPMiddleware.

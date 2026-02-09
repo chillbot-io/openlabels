@@ -25,10 +25,27 @@ GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 # Scopes for client credentials flow (no user context)
 GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
 
-# Pattern to detect potentially malicious OData injection attempts
+# Pattern to detect OData injection: only match operator-like patterns that
+# are NOT likely to be legitimate names.  Keyword-only matching (\bor\b etc.)
+# causes false positives for names like "Anderson", "Norton", "Martin Lee".
+# Instead we look for OData operator syntax: keyword followed by space and
+# operand, or function call syntax.
 _ODATA_INJECTION_PATTERN = re.compile(
-    r"(\bor\b|\band\b|\bnot\b|\beq\b|\bne\b|\bgt\b|\blt\b|\bge\b|\ble\b|"
-    r"\bstartswith\s*\(|\bendswith\s*\(|\bcontains\s*\(|\bsubstringof\s*\()",
+    r"("
+    r"\beq\s+|"       # eq <value>
+    r"\bne\s+|"       # ne <value>
+    r"\bgt\s+|"       # gt <value>
+    r"\blt\s+|"       # lt <value>
+    r"\bge\s+|"       # ge <value>
+    r"\ble\s+|"       # le <value>
+    r"\bor\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|"  # or <field> eq — real injection
+    r"\band\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|" # and <field> eq — real injection
+    r"\bnot\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|" # not <field> eq
+    r"\bstartswith\s*\(|"
+    r"\bendswith\s*\(|"
+    r"\bcontains\s*\(|"
+    r"\bsubstringof\s*\("
+    r")",
     re.IGNORECASE,
 )
 
