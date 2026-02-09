@@ -107,12 +107,42 @@ class OneDriveAdapterSettings(BaseSettings):
     users: list[str] = Field(default_factory=list)
 
 
+class S3AdapterSettings(BaseSettings):
+    """S3 adapter configuration (Phase L)."""
+
+    enabled: bool = False
+    buckets: list[str] = Field(default_factory=list)
+    region: str = "us-east-1"
+    access_key: str = ""
+    secret_key: str = ""
+    endpoint_url: str | None = None
+    # SQS change detection
+    sqs_queue_url: str = ""
+    # Label sync-back
+    label_sync_enabled: bool = True
+
+
+class GCSAdapterSettings(BaseSettings):
+    """GCS adapter configuration (Phase L)."""
+
+    enabled: bool = False
+    buckets: list[str] = Field(default_factory=list)
+    project: str = ""
+    credentials_path: str | None = None
+    # Pub/Sub change detection
+    pubsub_subscription: str = ""
+    # Label sync-back
+    label_sync_enabled: bool = True
+
+
 class AdapterSettings(BaseSettings):
     """All adapter configurations."""
 
     filesystem: FilesystemAdapterSettings = Field(default_factory=FilesystemAdapterSettings)
     sharepoint: SharePointAdapterSettings = Field(default_factory=SharePointAdapterSettings)
     onedrive: OneDriveAdapterSettings = Field(default_factory=OneDriveAdapterSettings)
+    s3: S3AdapterSettings = Field(default_factory=S3AdapterSettings)
+    gcs: GCSAdapterSettings = Field(default_factory=GCSAdapterSettings)
 
 
 class MipSettings(BaseSettings):

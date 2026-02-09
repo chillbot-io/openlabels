@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanJob, ScanTarget, ScanResult, LabelRule, SensitivityLabel
-from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter
+from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter, S3Adapter, GCSAdapter
 from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
@@ -502,6 +502,22 @@ async def execute_scan_task(
                 logger.error(f"Auto-labeling failed - runtime error: {e}")
                 stats["auto_label_error"] = str(e)
 
+        # Cloud label sync-back for S3/GCS adapters (Phase L, non-fatal)
+        target = await session.get(ScanTarget, job.target_id)
+        if target and target.adapter in ("s3", "gcs") and settings.labeling.enabled:
+            adapter_settings = getattr(settings.adapters, target.adapter, None)
+            if adapter_settings and getattr(adapter_settings, "label_sync_enabled", False):
+                try:
+                    sync_stats = await _cloud_label_sync_back(
+                        session, job, target, settings
+                    )
+                    stats["label_sync_back"] = sync_stats
+                except Exception as e:
+                    logger.warning(
+                        "Cloud label sync-back failed for job %s: %s", job.id, e
+                    )
+                    stats["label_sync_back_error"] = str(e)
+
         # Flush scan results + inventory to Parquet data lake (non-fatal)
         if settings.catalog.enabled:
             try:
@@ -660,11 +676,29 @@ def _get_adapter(adapter_type: str, config: dict):
             client_id=settings.auth.client_id,
             client_secret=settings.auth.client_secret,
         )
+    elif adapter_type == "s3":
+        return S3Adapter(
+            bucket=config.get("bucket", ""),
+            prefix=config.get("prefix", ""),
+            region=config.get("region", settings.adapters.s3.region),
+            access_key=config.get("access_key", settings.adapters.s3.access_key),
+            secret_key=config.get("secret_key", settings.adapters.s3.secret_key),
+            endpoint_url=config.get("endpoint_url", settings.adapters.s3.endpoint_url),
+        )
+    elif adapter_type == "gcs":
+        return GCSAdapter(
+            bucket=config.get("bucket", ""),
+            prefix=config.get("prefix", ""),
+            project=config.get("project", settings.adapters.gcs.project),
+            credentials_path=config.get(
+                "credentials_path", settings.adapters.gcs.credentials_path
+            ),
+        )
     else:
         raise AdapterError(
             f"Unknown adapter type: {adapter_type}",
             adapter_type=adapter_type,
-            context="valid types are: filesystem, sharepoint, onedrive",
+            context="valid types are: filesystem, sharepoint, onedrive, s3, gcs",
         )
 
 
@@ -824,6 +858,94 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
 
     await session.commit()
     return stats
+
+
+async def _cloud_label_sync_back(
+    session: AsyncSession,
+    job: ScanJob,
+    target: ScanTarget,
+    settings,
+) -> dict:
+    """Re-upload labeled files to S3/GCS with label metadata (Phase L).
+
+    After auto-labeling writes labels to the DB, this step syncs those
+    labels back to the cloud object by re-uploading with updated metadata.
+    Uses conditional writes (ETag for S3, generation for GCS) to avoid
+    overwriting concurrent modifications.
+
+    Returns:
+        Dict with sync-back statistics.
+    """
+    sync_stats = {"synced": 0, "skipped": 0, "errors": 0}
+
+    # Get labeled results for this job
+    results_query = (
+        select(ScanResult)
+        .where(ScanResult.job_id == job.id)
+        .where(ScanResult.label_applied == True)
+        .where(ScanResult.current_label_id.isnot(None))
+    )
+    results = await session.execute(results_query)
+    scan_results = results.scalars().all()
+
+    if not scan_results:
+        return sync_stats
+
+    adapter = _get_adapter(target.adapter, target.config)
+
+    for result in scan_results:
+        item_id = (
+            result.file_path.split("://", 1)[-1].split("/", 1)[-1]
+            if "://" in result.file_path
+            else result.file_path
+        )
+        file_info = FileInfo(
+            path=result.file_path,
+            name=result.file_name,
+            size=result.file_size or 0,
+            modified=result.file_modified or datetime.now(timezone.utc),
+            adapter=target.adapter,
+            item_id=item_id,
+        )
+
+        try:
+            # Refresh metadata to get current ETag/generation for conflict detection
+            file_info = await adapter.get_metadata(file_info)
+
+            sync_result = await adapter.apply_label_and_sync(
+                file_info=file_info,
+                label_id=str(result.current_label_id),
+                label_name=result.current_label_name,
+            )
+
+            if sync_result.get("success"):
+                sync_stats["synced"] += 1
+            elif sync_result.get("method") == "skipped":
+                sync_stats["skipped"] += 1
+                logger.debug(
+                    "Skipped label sync for %s: %s",
+                    result.file_path,
+                    sync_result.get("error"),
+                )
+            else:
+                sync_stats["errors"] += 1
+                logger.warning(
+                    "Label sync-back failed for %s: %s",
+                    result.file_path,
+                    sync_result.get("error"),
+                )
+        except Exception as e:
+            sync_stats["errors"] += 1
+            logger.error("Label sync-back error for %s: %s", result.file_path, e)
+
+    logger.info(
+        "Cloud label sync-back for job %s: synced=%d, skipped=%d, errors=%d",
+        job.id,
+        sync_stats["synced"],
+        sync_stats["skipped"],
+        sync_stats["errors"],
+    )
+    return sync_stats
 
 
 async def _detect_and_score(content: bytes, file_info, adapter_type: str = "filesystem") -> dict:

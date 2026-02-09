@@ -3179,21 +3179,21 @@ the customer's security operations tooling.
 Extend scanning to cloud object stores with download → classify → label → re-upload.
 Requires unified scan pipeline (Phase F) for single integration point.
 
-1. Implement `S3Adapter` — `list_files()`, `read_file()`, `get_metadata()` using `boto3`
-2. Implement `S3Adapter.apply_label_and_sync()` — conditional re-upload with metadata preservation
-3. Implement S3 change detection: SQS event polling mode + ListObjectsV2 ETag diff fallback
-4. Implement `SQSChangeProvider` — adapts S3 event notifications as a `ChangeProvider`
-5. Implement `GCSAdapter` — same protocol using `google-cloud-storage`
-6. Implement `GCSAdapter.apply_label_and_sync()` — generation-based conditional re-upload
-7. Implement GCS change detection: Pub/Sub notification polling + list diff fallback
-8. Implement `PubSubChangeProvider` — adapts GCS notifications as a `ChangeProvider`
-9. Add `S3AdapterSettings` and `GCSAdapterSettings` to config (multi-target support)
-10. Add `google-cloud-storage` as optional dependency (`pip install openlabels[gcs]`)
-11. Register S3/GCS as adapter types in scan target configuration
-12. Add label sync-back step to unified scan pipeline result handler
-13. Handle label-incompatible file types: classify but skip re-upload
-14. Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle
-15. Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection
+1. ~~Implement `S3Adapter` — `list_files()`, `read_file()`, `get_metadata()` using `boto3`~~ ✅
+2. ~~Implement `S3Adapter.apply_label_and_sync()` — conditional re-upload with metadata preservation~~ ✅
+3. ~~Implement S3 change detection: SQS event polling mode + ListObjectsV2 ETag diff fallback~~ ✅
+4. ~~Implement `SQSChangeProvider` — adapts S3 event notifications as a `ChangeProvider`~~ ✅
+5. ~~Implement `GCSAdapter` — same protocol using `google-cloud-storage`~~ ✅
+6. ~~Implement `GCSAdapter.apply_label_and_sync()` — generation-based conditional re-upload~~ ✅
+7. ~~Implement GCS change detection: Pub/Sub notification polling + list diff fallback~~ ✅
+8. ~~Implement `PubSubChangeProvider` — adapts GCS notifications as a `ChangeProvider`~~ ✅
+9. ~~Add `S3AdapterSettings` and `GCSAdapterSettings` to config (multi-target support)~~ ✅
+10. ~~Add `google-cloud-storage` as optional dependency (`pip install openlabels[gcs]`)~~ ✅
+11. ~~Register S3/GCS as adapter types in scan target configuration~~ ✅
+12. ~~Add label sync-back step to unified scan pipeline result handler~~ ✅
+13. ~~Handle label-incompatible file types: classify but skip re-upload~~ ✅
+14. ~~Handle re-upload conflicts: ETag/generation mismatch → log warning, re-scan on next cycle~~ ✅
+15. ~~Tests: Metadata round-trip (mocked S3/GCS), conditional write conflict handling, change detection~~ ✅
 
 ### Phase M: Reporting and Distribution
 

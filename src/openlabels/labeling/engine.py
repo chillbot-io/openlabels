@@ -762,6 +762,16 @@ class LabelingEngine:
             return await self._apply_local_label(file_info.path, label_id, label_name)
         elif file_info.adapter in ("sharepoint", "onedrive"):
             return await self._apply_graph_label(file_info, label_id, label_name)
+        elif file_info.adapter in ("s3", "gcs"):
+            # Cloud object store labels are applied via adapter.apply_label_and_sync()
+            # in the scan pipeline's _cloud_label_sync_back step (Phase L).
+            # Return success here so auto-labeling marks the DB record.
+            return LabelResult(
+                success=True,
+                label_id=label_id,
+                label_name=label_name,
+                method="deferred_cloud_sync",
+            )
         else:
             return LabelResult(
                 success=False,
