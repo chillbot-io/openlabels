@@ -261,8 +261,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from openlabels.monitoring.stream_manager import EventStreamManager
             from openlabels.monitoring.scan_trigger import ScanTriggerBuffer
             from openlabels.monitoring.registry import get_watched_file, get_watched_files
+            from openlabels.core.change_providers import (
+                USNChangeProvider,
+                FanotifyChangeProvider,
+            )
 
             stream_providers = []
+            change_providers = []
             active_paths = [str(wf.path) for wf in get_watched_files()]
 
             # USN Journal (Windows)
@@ -274,6 +279,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         watched_paths=active_paths or None,
                     )
                     stream_providers.append(usn)
+                    change_providers.append(USNChangeProvider())
                     logger.info("USN journal provider activated (drive %s:)", settings.monitoring.usn_drive_letter)
 
             # fanotify (Linux)
@@ -284,6 +290,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         watched_paths=active_paths or None,
                     )
                     stream_providers.append(_fanotify_provider)
+                    change_providers.append(FanotifyChangeProvider())
                     logger.info("fanotify provider activated (%d paths)", len(active_paths))
 
             if stream_providers:
@@ -302,8 +309,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     batch_size=settings.monitoring.stream_batch_size,
                     flush_interval=settings.monitoring.stream_flush_interval,
                     scan_trigger=scan_trigger,
+                    change_providers=change_providers,
                 )
                 app.state.stream_manager = manager
+                app.state.change_providers = change_providers
 
                 stream_task = asyncio.create_task(
                     manager.run(stream_shutdown),

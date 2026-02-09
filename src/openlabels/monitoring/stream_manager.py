@@ -23,6 +23,11 @@ from openlabels.monitoring.providers.base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
 
+# Valid action values for the DB access_action enum (shared with harvester).
+_VALID_DB_ACTIONS = frozenset({
+    "read", "write", "delete", "rename", "permission_change", "execute",
+})
+
 
 # ── StreamProvider protocol ──────────────────────────────────────────
 
@@ -66,12 +71,14 @@ class EventStreamManager:
         flush_interval: float = 5.0,
         max_buffer_size: int = 50_000,
         scan_trigger: object | None = None,
+        change_providers: list | None = None,
     ) -> None:
         self._providers = providers
         self._batch_size = batch_size
         self._flush_interval = flush_interval
         self._max_buffer_size = max_buffer_size
         self._scan_trigger = scan_trigger
+        self._change_providers = change_providers or []
 
         # Shared event buffer (append-only from provider tasks, drained
         # by the flush task — guarded by an asyncio.Lock)
@@ -173,10 +180,13 @@ class EventStreamManager:
                     self._buffer.extend(batch)
                     self.total_events_received += len(batch)
 
-                    # Notify scan trigger (non-blocking)
-                    if self._scan_trigger is not None:
+                    # Notify scan trigger and change providers (non-blocking)
+                    if self._scan_trigger is not None or self._change_providers:
                         for event in batch:
-                            self._scan_trigger.on_event(event)
+                            if self._scan_trigger is not None:
+                                self._scan_trigger.on_event(event)
+                            for cp in self._change_providers:
+                                cp.notify(event.file_path, event.action)
 
                 # Flush immediately if buffer exceeds batch size
                 if len(self._buffer) >= self._batch_size:
@@ -254,10 +264,6 @@ class EventStreamManager:
         from openlabels.server.models import FileAccessEvent, MonitoredFile
         from sqlalchemy import select
 
-        _VALID_DB_ACTIONS = frozenset({
-            "read", "write", "delete", "rename", "permission_change", "execute",
-        })
-
         valid_events = [e for e in events if e.action in _VALID_DB_ACTIONS]
         if not valid_events:
             return 0
@@ -308,8 +314,6 @@ class EventStreamManager:
                 ):
                     monitored.last_event_at = event.event_time
 
-            if persisted:
-                await session.flush()
             await session.commit()
 
         return persisted

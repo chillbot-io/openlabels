@@ -11,6 +11,8 @@ Providers
 - ``AuditdProvider`` — Linux auditd via ``ausearch``
 - ``M365AuditProvider`` — Office 365 Management Activity API (SharePoint/OneDrive audit)
 - ``GraphWebhookProvider`` — Microsoft Graph change notifications (delta queries)
+- ``USNJournalProvider`` — Windows NTFS USN journal real-time stream (Phase I)
+- ``FanotifyProvider`` — Linux fanotify real-time stream (Phase I)
 """
 
 from .base import EventProvider, RawAccessEvent
@@ -21,6 +23,11 @@ from .linux import AuditdProvider
 # (they pull in httpx and GraphClient at import time).  Use:
 #   from openlabels.monitoring.providers.m365_audit import M365AuditProvider
 #   from openlabels.monitoring.providers.graph_webhook import GraphWebhookProvider
+
+# USNJournalProvider and FanotifyProvider are imported lazily
+# (platform-specific; ctypes/syscall calls at import time).  Use:
+#   from openlabels.monitoring.providers.usn_journal import USNJournalProvider
+#   from openlabels.monitoring.providers.fanotify import FanotifyProvider
 
 __all__ = [
     "EventProvider",
