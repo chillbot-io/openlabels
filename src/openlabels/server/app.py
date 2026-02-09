@@ -65,7 +65,7 @@ limiter = Limiter(key_func=get_client_ip)
 _LEGACY_API_PREFIXES = [
     "audit", "jobs", "scans", "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
-    "health", "settings", "policies",
+    "health", "settings", "policies", "export",
 ]
 
 

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from openlabels.server.auth import get_current_tenant_id
 from openlabels.server.config import get_settings
 
-router = APIRouter(prefix="/export", tags=["export"])
+router = APIRouter()
 
 
 # ── Request / Response schemas ───────────────────────────────────────
@@ -97,10 +97,12 @@ async def trigger_siem_export(
         ]
 
     export_records = scan_result_to_export_records(result_dicts, tenant_id)
+    # Use request-level filter if provided, otherwise fall back to config default
+    record_types = body.record_types or settings.siem_export.export_record_types or None
     results = await engine.export_full(
         tenant_id, export_records,
         since=body.since,
-        record_types=body.record_types,
+        record_types=record_types,
     )
     return SIEMExportResponse(
         exported=results,

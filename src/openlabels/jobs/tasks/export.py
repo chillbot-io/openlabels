@@ -49,14 +49,24 @@ async def periodic_siem_export(
             from sqlalchemy import select
 
             async with get_session_context() as session:
-                # Fetch recent results (last 24h window, capped)
-                rows = (await session.execute(
-                    select(ScanResult)
-                    .order_by(ScanResult.scanned_at.desc())
-                    .limit(5000)
+                from openlabels.server.models import Tenant
+
+                # Iterate tenants to maintain proper isolation
+                tenants = (await session.execute(
+                    select(Tenant)
                 )).scalars().all()
 
-                if rows:
+                for tenant in tenants:
+                    rows = (await session.execute(
+                        select(ScanResult)
+                        .where(ScanResult.tenant_id == tenant.id)
+                        .order_by(ScanResult.scanned_at.desc())
+                        .limit(5000)
+                    )).scalars().all()
+
+                    if not rows:
+                        continue
+
                     result_dicts = [
                         {
                             "file_path": r.file_path,
@@ -69,16 +79,25 @@ async def periodic_siem_export(
                         }
                         for r in rows
                     ]
-                    tenant_id = rows[0].tenant_id
                     export_records = scan_result_to_export_records(
-                        result_dicts, tenant_id,
+                        result_dicts, tenant.id,
                     )
+                    # Apply record type filter from config
+                    allowed_types = settings.siem_export.export_record_types
+                    if allowed_types:
+                        export_records = [
+                            r for r in export_records
+                            if r.record_type in allowed_types
+                        ]
                     results = await engine.export_since_last(
-                        tenant_id, export_records,
+                        tenant.id, export_records,
                     )
                     total = sum(results.values())
                     if total > 0:
-                        logger.info("Periodic SIEM export: %s", results)
+                        logger.info(
+                            "Periodic SIEM export for tenant %s: %s",
+                            tenant.id, results,
+                        )
 
         except Exception as exc:
             logger.error("Periodic SIEM export cycle failed: %s", exc)

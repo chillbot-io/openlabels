@@ -98,7 +98,8 @@ class SplunkAdapter:
 
     def _format_event(self, record: ExportRecord) -> str:
         """Convert an ExportRecord to a Splunk HEC JSON event."""
-        epoch = record.timestamp.replace(tzinfo=timezone.utc).timestamp()
+        ts = record.timestamp if record.timestamp.tzinfo else record.timestamp.replace(tzinfo=timezone.utc)
+        epoch = ts.timestamp()
         event = {
             "event": record.to_dict(),
             "time": epoch,

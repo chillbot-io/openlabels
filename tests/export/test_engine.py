@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -38,7 +38,8 @@ def sample_records(tenant_id: UUID) -> list[ExportRecord]:
 
 def _make_mock_adapter(name: str = "mock", export_count: int | None = None):
     adapter = AsyncMock()
-    adapter.format_name.return_value = name
+    # format_name is a sync method — use MagicMock so it returns a string, not a coroutine
+    adapter.format_name = MagicMock(return_value=name)
     adapter.test_connection.return_value = True
     if export_count is not None:
         adapter.export_batch.return_value = export_count

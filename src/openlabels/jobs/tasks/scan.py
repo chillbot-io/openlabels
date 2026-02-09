@@ -550,8 +550,10 @@ async def execute_scan_task(
                     export_records = scan_result_to_export_records(
                         result_dicts, job.tenant_id,
                     )
-                    export_results = await engine.export_scan(
-                        job.id, job.tenant_id, export_records,
+                    export_results = await engine.export_full(
+                        job.tenant_id,
+                        export_records,
+                        record_types=settings.siem_export.export_record_types or None,
                     )
                     stats["siem_export"] = export_results
                     logger.info(

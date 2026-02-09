@@ -3160,19 +3160,19 @@ to the OLAP layer for compliance dashboards.
 Build adapters for major SIEM platforms so OpenLabels findings flow natively into
 the customer's security operations tooling.
 
-1. Create `src/openlabels/export/` package with `SIEMAdapter` protocol and `ExportRecord` dataclass
-2. Implement `SplunkAdapter` — HTTP Event Collector (HEC) with batched JSON events
-3. Implement `SentinelAdapter` — Log Analytics Data Collector API with HMAC-SHA256 auth
-4. Implement `QRadarAdapter` — syslog transport with LEEF/CEF format encoding
-5. Implement `ElasticAdapter` — Elasticsearch Bulk API with ECS field mapping
-6. Implement `SyslogCEFAdapter` — generic CEF over syslog (fallback for other SIEMs)
-7. Implement `ExportEngine` — adapter lifecycle, cursor tracking, batch scheduling
-8. Add `SIEMExportSettings` to config (per-adapter credentials and options)
-9. Add post-scan export hook to unified scan pipeline — push findings after each scan
-10. Add periodic export mode — background task exports new records on interval
-11. Add `/api/v1/export/siem` endpoint: trigger export, test connection, view status
-12. Add `openlabels export siem --adapter splunk --since 2026-02-01` CLI command
-13. Tests: Adapter serialization (CEF/LEEF/JSON), connection testing (mocked), cursor tracking
+1. ~~Create `src/openlabels/export/` package with `SIEMAdapter` protocol and `ExportRecord` dataclass~~ ✅
+2. ~~Implement `SplunkAdapter` — HTTP Event Collector (HEC) with batched JSON events~~ ✅
+3. ~~Implement `SentinelAdapter` — Log Analytics Data Collector API with HMAC-SHA256 auth~~ ✅
+4. ~~Implement `QRadarAdapter` — syslog transport with LEEF/CEF format encoding~~ ✅
+5. ~~Implement `ElasticAdapter` — Elasticsearch Bulk API with ECS field mapping~~ ✅
+6. ~~Implement `SyslogCEFAdapter` — generic CEF over syslog (fallback for other SIEMs)~~ ✅
+7. ~~Implement `ExportEngine` — adapter lifecycle, cursor tracking, batch scheduling~~ ✅
+8. ~~Add `SIEMExportSettings` to config (per-adapter credentials and options)~~ ✅
+9. ~~Add post-scan export hook to unified scan pipeline — push findings after each scan~~ ✅
+10. ~~Add periodic export mode — background task exports new records on interval~~ ✅
+11. ~~Add `/api/v1/export/siem` endpoint: trigger export, test connection, view status~~ ✅
+12. ~~Add `openlabels export siem --adapter splunk --since 2026-02-01` CLI command~~ ✅
+13. ~~Tests: Adapter serialization (CEF/LEEF/JSON), connection testing (mocked), cursor tracking~~ ✅
 
 ### Phase L: Cloud Object Store Adapters (S3 + GCS)
 
