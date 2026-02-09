@@ -12,15 +12,13 @@ import asyncio
 import hashlib
 import json
 import logging
-import time
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import select, and_, delete
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select, and_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 try:
@@ -33,7 +31,6 @@ except ImportError:
 from openlabels.server.models import (
     FolderInventory,
     FileInventory,
-    ScanTarget,
     ScanResult,
 )
 from openlabels.adapters.base import FileInfo
@@ -45,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 # Default TTL for scan inventory cache (1 hour)
 DEFAULT_INVENTORY_TTL = 3600
+
+# Bounded LRU cache sizes for on-demand lookups (B4)
+_FILE_CACHE_MAX = 2000
+_FOLDER_CACHE_MAX = 500
 
 
 class DistributedScanInventory:
@@ -226,11 +227,10 @@ class DistributedScanInventory:
             try:
                 key = self._make_redis_key(self._folders_key)
                 serialized = self._serialize(data)
-                await self._redis_client.hset(key, path, serialized)
-                # Set TTL on the hash key (only if not already set)
-                ttl = await self._redis_client.ttl(key)
-                if ttl < 0:  # -1 means no TTL, -2 means key doesn't exist
-                    await self._redis_client.expire(key, self.ttl)
+                async with self._redis_client.pipeline(transaction=False) as pipe:
+                    pipe.hset(key, path, serialized)
+                    pipe.expire(key, self.ttl, nx=True)
+                    await pipe.execute()
                 logger.debug(f"Set folder in Redis: {path}")
                 return True
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
@@ -359,11 +359,10 @@ class DistributedScanInventory:
             try:
                 key = self._make_redis_key(self._files_key)
                 serialized = self._serialize(data)
-                await self._redis_client.hset(key, path, serialized)
-                # Set TTL on the hash key (only if not already set)
-                ttl = await self._redis_client.ttl(key)
-                if ttl < 0:
-                    await self._redis_client.expire(key, self.ttl)
+                async with self._redis_client.pipeline(transaction=False) as pipe:
+                    pipe.hset(key, path, serialized)
+                    pipe.expire(key, self.ttl, nx=True)
+                    await pipe.execute()
                 logger.debug(f"Set file in Redis: {path}")
                 return True
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
@@ -455,18 +454,16 @@ class DistributedScanInventory:
         if self._use_redis:
             try:
                 key = self._make_redis_key(self._scanned_key)
-                # SADD returns 1 if the element was added, 0 if it already existed
-                result = await self._redis_client.sadd(key, path)
-                # Set TTL on first addition
-                if result > 0:
-                    ttl = await self._redis_client.ttl(key)
-                    if ttl < 0:
-                        await self._redis_client.expire(key, self.ttl)
+                async with self._redis_client.pipeline(transaction=False) as pipe:
+                    pipe.sadd(key, path)
+                    pipe.expire(key, self.ttl, nx=True)
+                    results = await pipe.execute()
+                added = results[0] > 0
+                if added:
                     logger.debug(f"Marked file as scanned (Redis): {path}")
-                    return True
                 else:
                     logger.debug(f"File already marked as scanned (Redis): {path}")
-                    return False
+                return added
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis mark_file_scanned error for {path}: {type(e).__name__}: {e}")
                 # Fall through to local cache
@@ -610,10 +607,10 @@ class DistributedScanInventory:
             try:
                 redis_key = self._make_redis_key(self._meta_key)
                 serialized = self._serialize({"value": value})
-                await self._redis_client.hset(redis_key, key, serialized)
-                ttl = await self._redis_client.ttl(redis_key)
-                if ttl < 0:
-                    await self._redis_client.expire(redis_key, self.ttl)
+                async with self._redis_client.pipeline(transaction=False) as pipe:
+                    pipe.hset(redis_key, key, serialized)
+                    pipe.expire(redis_key, self.ttl, nx=True)
+                    await pipe.execute()
                 return True
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis set_metadata error for {key}: {type(e).__name__}: {e}")
@@ -704,8 +701,10 @@ class DistributedScanInventory:
                     self._make_redis_key(self._scanned_key),
                     self._make_redis_key(self._meta_key),
                 ]
-                for key in keys:
-                    await self._redis_client.expire(key, self.ttl)
+                async with self._redis_client.pipeline(transaction=False) as pipe:
+                    for key in keys:
+                        pipe.expire(key, self.ttl)
+                    await pipe.execute()
                 logger.debug(f"Refreshed TTL for inventory cache")
                 return True
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
@@ -771,8 +770,8 @@ class InventoryService:
         self.session = session
         self.tenant_id = tenant_id
         self.target_id = target_id
-        self._folder_cache: dict[str, FolderInventory] = {}
-        self._file_cache: dict[str, FileInventory] = {}
+        self._folder_cache: OrderedDict[str, FolderInventory] = OrderedDict()
+        self._file_cache: OrderedDict[str, FileInventory] = OrderedDict()
 
         # Distributed cache for multi-worker consistency
         self._use_distributed_cache = use_distributed_cache
@@ -799,6 +798,60 @@ class InventoryService:
     def distributed_inventory(self) -> Optional[DistributedScanInventory]:
         """Get the distributed inventory instance (if enabled)."""
         return self._distributed_inventory
+
+    async def _get_folder_inv(self, folder_path: str) -> Optional[FolderInventory]:
+        """On-demand folder inventory lookup: LRU cache -> DB query."""
+        if folder_path in self._folder_cache:
+            self._folder_cache.move_to_end(folder_path)
+            return self._folder_cache[folder_path]
+
+        query = select(FolderInventory).where(
+            and_(
+                FolderInventory.tenant_id == self.tenant_id,
+                FolderInventory.target_id == self.target_id,
+                FolderInventory.folder_path == folder_path,
+            )
+        )
+        result = await self.session.execute(query)
+        folder_inv = result.scalar_one_or_none()
+
+        if folder_inv is not None:
+            self._cache_folder(folder_path, folder_inv)
+        return folder_inv
+
+    async def _get_file_inv(self, file_path: str) -> Optional[FileInventory]:
+        """On-demand file inventory lookup: LRU cache -> DB query."""
+        if file_path in self._file_cache:
+            self._file_cache.move_to_end(file_path)
+            return self._file_cache[file_path]
+
+        query = select(FileInventory).where(
+            and_(
+                FileInventory.tenant_id == self.tenant_id,
+                FileInventory.target_id == self.target_id,
+                FileInventory.file_path == file_path,
+            )
+        )
+        result = await self.session.execute(query)
+        file_inv = result.scalar_one_or_none()
+
+        if file_inv is not None:
+            self._cache_file(file_path, file_inv)
+        return file_inv
+
+    def _cache_folder(self, path: str, inv: FolderInventory) -> None:
+        """Add to bounded LRU cache, evicting oldest if over limit."""
+        self._folder_cache[path] = inv
+        self._folder_cache.move_to_end(path)
+        while len(self._folder_cache) > _FOLDER_CACHE_MAX:
+            self._folder_cache.popitem(last=False)
+
+    def _cache_file(self, path: str, inv: FileInventory) -> None:
+        """Add to bounded LRU cache, evicting oldest if over limit."""
+        self._file_cache[path] = inv
+        self._file_cache.move_to_end(path)
+        while len(self._file_cache) > _FILE_CACHE_MAX:
+            self._file_cache.popitem(last=False)
 
     async def sync_folder_to_distributed_cache(self, folder_path: str, folder_inv: FolderInventory) -> None:
         """
@@ -915,34 +968,6 @@ class InventoryService:
         if self._distributed_inventory:
             await self._distributed_inventory.refresh_ttl()
 
-    async def load_folder_inventory(self) -> dict[str, FolderInventory]:
-        """Load existing folder inventory into cache."""
-        query = select(FolderInventory).where(
-            and_(
-                FolderInventory.tenant_id == self.tenant_id,
-                FolderInventory.target_id == self.target_id,
-            )
-        )
-        result = await self.session.execute(query)
-        folders = result.scalars().all()
-
-        self._folder_cache = {f.folder_path: f for f in folders}
-        return self._folder_cache
-
-    async def load_file_inventory(self) -> dict[str, FileInventory]:
-        """Load existing file inventory into cache."""
-        query = select(FileInventory).where(
-            and_(
-                FileInventory.tenant_id == self.tenant_id,
-                FileInventory.target_id == self.target_id,
-            )
-        )
-        result = await self.session.execute(query)
-        files = result.scalars().all()
-
-        self._file_cache = {f.file_path: f for f in files}
-        return self._file_cache
-
     async def should_scan_folder(
         self,
         folder_path: str,
@@ -963,10 +988,9 @@ class InventoryService:
         if force_full_scan:
             return True
 
-        if folder_path not in self._folder_cache:
+        folder_inv = await self._get_folder_inv(folder_path)
+        if folder_inv is None:
             return True  # New folder
-
-        folder_inv = self._folder_cache[folder_path]
 
         # If no last scan, needs scanning
         if not folder_inv.last_scanned_at:
@@ -1004,11 +1028,10 @@ class InventoryService:
             return True, "full_scan"
 
         file_path = file_info.path
+        file_inv = await self._get_file_inv(file_path)
 
-        if file_path not in self._file_cache:
+        if file_inv is None:
             return True, "new_file"
-
-        file_inv = self._file_cache[file_path]
 
         # Check if flagged for rescan
         if file_inv.needs_rescan:
@@ -1063,8 +1086,9 @@ class InventoryService:
         Returns:
             Updated or created FolderInventory
         """
-        if folder_path in self._folder_cache:
-            folder_inv = self._folder_cache[folder_path]
+        folder_inv = await self._get_folder_inv(folder_path)
+
+        if folder_inv is not None:
             folder_inv.file_count = file_count
             folder_inv.total_size_bytes = total_size
             folder_inv.folder_modified = folder_modified
@@ -1089,7 +1113,7 @@ class InventoryService:
                 total_entities_found=total_entities,
             )
             self.session.add(folder_inv)
-            self._folder_cache[folder_path] = folder_inv
+            self._cache_folder(folder_path, folder_inv)
 
         # Sync to distributed cache for multi-worker consistency
         await self.sync_folder_to_distributed_cache(folder_path, folder_inv)
@@ -1118,10 +1142,9 @@ class InventoryService:
             Updated or created FileInventory
         """
         file_path = file_info.path
+        file_inv = await self._get_file_inv(file_path)
 
-        if file_path in self._file_cache:
-            file_inv = self._file_cache[file_path]
-
+        if file_inv is not None:
             # Track content changes
             if file_inv.content_hash != content_hash:
                 file_inv.content_changed_count += 1
@@ -1169,62 +1192,97 @@ class InventoryService:
                 label_applied_at=scan_result.label_applied_at if scan_result.label_applied else None,
             )
             self.session.add(file_inv)
-            self._file_cache[file_path] = file_inv
+            self._cache_file(file_path, file_inv)
 
         # Sync to distributed cache for multi-worker consistency
         await self.sync_file_to_distributed_cache(file_path, file_inv)
 
         return file_inv
 
-    async def mark_missing_files(self, seen_paths: set[str], job_id: UUID) -> int:
+    async def mark_missing_files(self, job_id: UUID) -> int:
         """
-        Mark files that were not seen in current scan.
+        Mark files not seen in the current scan for rescan.
 
-        Files that exist in inventory but weren't seen may have been:
-        - Deleted
-        - Moved
-        - Access revoked
+        Uses a single DB UPDATE instead of iterating an in-memory cache:
+        any file whose last_scan_job_id doesn't match the current job
+        wasn't seen and may have been deleted, moved, or access revoked.
 
         Args:
-            seen_paths: Set of file paths seen in current scan
             job_id: Current scan job ID
 
         Returns:
             Count of files marked for rescan
         """
-        marked_count = 0
-
-        for file_path, file_inv in self._file_cache.items():
-            if file_path not in seen_paths:
-                # File not seen - mark for rescan
-                file_inv.needs_rescan = True
-                marked_count += 1
-
-        return marked_count
+        stmt = (
+            update(FileInventory)
+            .where(
+                and_(
+                    FileInventory.tenant_id == self.tenant_id,
+                    FileInventory.target_id == self.target_id,
+                    FileInventory.last_scan_job_id != job_id,
+                    FileInventory.needs_rescan == False,
+                )
+            )
+            .values(needs_rescan=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount
 
     async def get_inventory_stats(self) -> dict:
-        """Get statistics about the current inventory."""
-        folder_count = len(self._folder_cache)
-        file_count = len(self._file_cache)
+        """Get statistics about the current inventory via DB aggregation."""
+        base_filter = and_(
+            FileInventory.tenant_id == self.tenant_id,
+            FileInventory.target_id == self.target_id,
+        )
+
+        # Folder count
+        folder_q = select(func.count()).select_from(FolderInventory).where(
+            and_(
+                FolderInventory.tenant_id == self.tenant_id,
+                FolderInventory.target_id == self.target_id,
+            )
+        )
+        folder_count = (await self.session.execute(folder_q)).scalar() or 0
+
+        # File aggregate stats
+        file_q = select(
+            func.count().label("total"),
+            func.coalesce(func.sum(FileInventory.total_entities), 0).label("total_entities"),
+        ).where(base_filter)
+        file_row = (await self.session.execute(file_q)).one()
+
+        # Labeled count (non-null current_label_id)
+        labeled_q = select(func.count()).select_from(FileInventory).where(
+            and_(base_filter, FileInventory.current_label_id.isnot(None))
+        )
+        labeled_count = (await self.session.execute(labeled_q)).scalar() or 0
+
+        # Pending rescan count
+        rescan_q = select(func.count()).select_from(FileInventory).where(
+            and_(base_filter, FileInventory.needs_rescan == True)
+        )
+        pending_rescan = (await self.session.execute(rescan_q)).scalar() or 0
+
+        # Risk tier breakdown
+        risk_q = (
+            select(FileInventory.risk_tier, func.count().label("cnt"))
+            .where(base_filter)
+            .group_by(FileInventory.risk_tier)
+        )
+        risk_rows = (await self.session.execute(risk_q)).all()
 
         risk_tiers = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "MINIMAL": 0}
-        total_entities = 0
-        labeled_count = 0
-
-        for file_inv in self._file_cache.values():
-            if file_inv.risk_tier in risk_tiers:
-                risk_tiers[file_inv.risk_tier] += 1
-            total_entities += file_inv.total_entities
-            if file_inv.current_label_id:
-                labeled_count += 1
+        for row in risk_rows:
+            if row.risk_tier in risk_tiers:
+                risk_tiers[row.risk_tier] = row.cnt
 
         stats = {
             "total_folders": folder_count,
-            "total_sensitive_files": file_count,
+            "total_sensitive_files": file_row.total or 0,
             "risk_tier_breakdown": risk_tiers,
-            "total_entities": total_entities,
+            "total_entities": file_row.total_entities,
             "labeled_files": labeled_count,
-            "pending_rescan": sum(1 for f in self._file_cache.values() if f.needs_rescan),
+            "pending_rescan": pending_rescan,
         }
 
         # Include distributed cache stats if enabled

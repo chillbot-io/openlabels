@@ -201,13 +201,8 @@ async def execute_scan_task(
     adapter = _get_adapter(target.adapter, target.config)
     await adapter.__aenter__()
 
-    # Initialize inventory service for delta scanning
+    # Initialize inventory service for delta scanning (on-demand lookups, no bulk load)
     inventory = InventoryService(session, job.tenant_id, target.id)
-    await inventory.load_file_inventory()
-    await inventory.load_folder_inventory()
-
-    # Track seen files for missing file detection
-    seen_file_paths: set[str] = set()
     folder_stats: dict[str, dict] = {}
 
     # Security: Get max file size limit to prevent DoS via memory exhaustion
@@ -293,7 +288,6 @@ async def execute_scan_task(
 
                         return stats
 
-                seen_file_paths.add(file_info.path)
                 folder_path = get_folder_path(file_info.path)
 
                 # Initialize folder stats
@@ -491,7 +485,7 @@ async def execute_scan_task(
                 logger.warning("Folder inventory update failed for %s: %s", folder_path, inv_err)
 
         # Mark files that weren't seen (may be deleted/moved)
-        missing_count = await inventory.mark_missing_files(seen_file_paths, job.id)
+        missing_count = await inventory.mark_missing_files(job.id)
         if missing_count > 0:
             logger.info(f"Marked {missing_count} files for rescan (not seen in current scan)")
             stats["files_missing"] = missing_count

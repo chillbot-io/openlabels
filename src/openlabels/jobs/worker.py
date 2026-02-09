@@ -29,7 +29,7 @@ except ImportError:
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import init_db, get_session_context
-from openlabels.jobs.queue import JobQueue
+from openlabels.jobs.queue import JobQueue, dequeue_next_job
 from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
 from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
@@ -601,20 +601,11 @@ class Worker:
 
             try:
                 async with get_session_context() as session:
-                    # Get tenant IDs to process (simplified - in production would iterate tenants)
-                    from sqlalchemy import select
-                    from openlabels.server.models import Tenant
+                    job = await dequeue_next_job(session, worker_tag)
 
-                    result = await session.execute(select(Tenant))
-                    tenants = result.scalars().all()
-
-                    for tenant in tenants:
-                        queue = JobQueue(session, tenant.id)
-                        job = await queue.dequeue(worker_tag)
-
-                        if job:
-                            await self._execute_job(session, queue, job)
-                            break  # Process one job at a time per tenant
+                    if job:
+                        queue = JobQueue(session, job.tenant_id)
+                        await self._execute_job(session, queue, job)
 
             except SQLAlchemyError as e:
                 logger.error(
