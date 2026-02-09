@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# WebSocket rate limiting constants
+WS_MAX_MESSAGE_SIZE = 4096  # 4 KB max inbound message size
+WS_MAX_MESSAGES_PER_MINUTE = 60  # Max client messages per minute
+WS_RATE_WINDOW_SECONDS = 60
+
 
 def validate_websocket_origin(websocket: WebSocket) -> bool:
     """
@@ -42,10 +47,6 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
         True if origin is valid, False otherwise
     """
     settings = get_settings()
-
-    # In development mode, allow any origin
-    if settings.server.environment == "development":
-        return True
 
     # Get the Origin header
     origin = None
@@ -159,40 +160,22 @@ async def authenticate_websocket(
     """
     settings = get_settings()
 
-    # In dev mode, allow connections without auth
+    # In dev mode with auth disabled, use the existing dev tenant/user
+    # that was created by the auth bootstrapper at startup — do NOT
+    # auto-create users or bypass authentication entirely.
     if settings.auth.provider == "none":
-        # Get or create dev user
         async with get_session_factory()() as session:
-            # Find dev tenant
             tenant_query = select(Tenant).where(Tenant.azure_tenant_id == "dev-tenant")
             result = await session.execute(tenant_query)
             tenant = result.scalar_one_or_none()
-
-            if not tenant:
-                tenant = Tenant(name="Development Tenant", azure_tenant_id="dev-tenant")
-                session.add(tenant)
-                await session.flush()
-
-            # Find dev user
-            user_query = select(User).where(
-                User.tenant_id == tenant.id,
-                User.email == "dev@localhost",
-            )
-            result = await session.execute(user_query)
-            user = result.scalar_one_or_none()
-
-            if not user:
-                user = User(
-                    tenant_id=tenant.id,
-                    email="dev@localhost",
-                    name="Development User",
-                    role="admin",
-                )
-                session.add(user)
-                await session.flush()
-
-            await session.commit()
-            return (user.id, tenant.id)
+            if tenant:
+                user_query = select(User).where(User.tenant_id == tenant.id)
+                result = await session.execute(user_query)
+                user = result.scalar_one_or_none()
+                if user:
+                    return (user.id, tenant.id)
+        logger.warning("WebSocket: auth.provider=none but no dev tenant/user found")
+        return None
 
     # Get session cookie from websocket headers
     cookies = websocket.cookies
@@ -290,6 +273,9 @@ async def websocket_scan_progress(
 
     conn = await manager.connect(scan_id, websocket, user_id, tenant_id)
 
+    # Rate limiting state
+    message_timestamps: list[float] = []
+
     try:
         while True:
             # Keep connection alive and wait for messages
@@ -298,6 +284,29 @@ async def websocket_scan_progress(
                     websocket.receive_text(),
                     timeout=30.0,
                 )
+
+                # Enforce payload size limit
+                if len(data) > WS_MAX_MESSAGE_SIZE:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Message exceeds max size ({WS_MAX_MESSAGE_SIZE} bytes)",
+                    })
+                    continue
+
+                # Enforce message rate limit
+                now = asyncio.get_event_loop().time()
+                message_timestamps = [
+                    ts for ts in message_timestamps
+                    if now - ts < WS_RATE_WINDOW_SECONDS
+                ]
+                if len(message_timestamps) >= WS_MAX_MESSAGES_PER_MINUTE:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Rate limit exceeded, slow down",
+                    })
+                    continue
+                message_timestamps.append(now)
+
                 # Handle any client messages (e.g., ping)
                 if data == "ping":
                     await websocket.send_text("pong")

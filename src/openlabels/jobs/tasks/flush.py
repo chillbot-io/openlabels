@@ -65,10 +65,10 @@ async def periodic_event_flush(
                     from openlabels.server.metrics import record_catalog_flush, update_catalog_health
                     record_catalog_flush(success=True)
                     update_catalog_health(storage)
-                except Exception:
+                except (ImportError, RuntimeError, OSError):
                     pass
 
-        except Exception:
+        except Exception:  # noqa: BLE001 — catch-all for DB + storage retry loop
             logger.warning(
                 "Periodic event flush failed; will retry next cycle",
                 exc_info=True,
@@ -76,7 +76,7 @@ async def periodic_event_flush(
             try:
                 from openlabels.server.metrics import record_catalog_flush
                 record_catalog_flush(success=False)
-            except Exception:
+            except (ImportError, RuntimeError, OSError):
                 pass
 
         # Wait for the next cycle or shutdown

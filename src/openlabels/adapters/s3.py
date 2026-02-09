@@ -26,6 +26,12 @@ from openlabels.adapters.base import (
     is_label_compatible,
 )
 
+try:
+    from botocore.exceptions import BotoCoreError, ClientError as BotoClientError
+except ImportError:
+    BotoCoreError = Exception  # type: ignore[misc,assignment]
+    BotoClientError = Exception  # type: ignore[misc,assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,7 +101,7 @@ class S3Adapter:
                 client.head_bucket, Bucket=self._bucket
             )
             return True
-        except Exception:
+        except (BotoCoreError, BotoClientError, OSError, ConnectionError):
             logger.exception("S3 connection test failed for bucket %s", self._bucket)
             return False
 
@@ -221,7 +227,7 @@ class S3Adapter:
             head = await asyncio.to_thread(
                 client.head_object, Bucket=self._bucket, Key=key
             )
-        except Exception as exc:
+        except (BotoCoreError, BotoClientError, OSError) as exc:
             return {"success": False, "method": "s3_metadata", "error": str(exc)}
 
         original_etag = head.get("ETag", "").strip('"')
@@ -261,7 +267,7 @@ class S3Adapter:
                 "ContentType": content_type,
             }
             await asyncio.to_thread(lambda: client.copy_object(**copy_kwargs))
-        except Exception as exc:
+        except (BotoCoreError, BotoClientError, OSError) as exc:
             error_str = str(exc)
             if "PreconditionFailed" in error_str or "412" in error_str:
                 logger.warning("Re-upload failed for %s: object modified", key)

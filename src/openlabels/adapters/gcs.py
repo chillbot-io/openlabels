@@ -26,6 +26,11 @@ from openlabels.adapters.base import (
     is_label_compatible,
 )
 
+try:
+    from google.api_core.exceptions import GoogleAPIError
+except ImportError:
+    GoogleAPIError = Exception  # type: ignore[misc,assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +96,7 @@ class GCSAdapter:
             bucket = client.bucket(self._bucket_name)
             await asyncio.to_thread(bucket.exists)
             return True
-        except Exception:
+        except (GoogleAPIError, OSError, ConnectionError):
             logger.exception("GCS connection test failed for bucket %s", self._bucket_name)
             return False
 
@@ -224,7 +229,7 @@ class GCSAdapter:
         # Fetch current metadata for generation check
         try:
             await asyncio.to_thread(blob.reload)
-        except Exception as exc:
+        except (GoogleAPIError, OSError) as exc:
             return {"success": False, "method": "gcs_metadata", "error": str(exc)}
 
         expected_generation = (file_info.permissions or {}).get("generation")
@@ -247,7 +252,7 @@ class GCSAdapter:
         if content is None:
             try:
                 content = await asyncio.to_thread(blob.download_as_bytes)
-            except Exception as exc:
+            except (GoogleAPIError, OSError) as exc:
                 return {"success": False, "method": "gcs_metadata", "error": str(exc)}
 
         # Update metadata with label info
@@ -269,7 +274,7 @@ class GCSAdapter:
                     if_generation_match=current_generation,
                 )
             )
-        except Exception as exc:
+        except (GoogleAPIError, OSError) as exc:
             error_str = str(exc)
             if "conditionNotMet" in error_str or "412" in error_str:
                 logger.warning("Conditional re-upload failed for %s: object modified", blob_name)

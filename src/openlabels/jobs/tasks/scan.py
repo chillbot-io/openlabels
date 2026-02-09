@@ -231,7 +231,27 @@ async def execute_scan_task(
         # Get target path from config
         target_path = target.config.get("path") or target.config.get("site_id")
 
-        async for file_info in adapter.list_files(target_path):
+        # Support scan_all_sites / scan_all_users auto-discovery
+        scan_paths: list[str] = []
+        if target.adapter == "sharepoint" and settings.adapters.sharepoint.scan_all_sites and not target_path:
+            sp_adapter: SharePointAdapter = adapter  # type: ignore[assignment]
+            sites = await sp_adapter.list_sites()
+            scan_paths = [s["id"] for s in sites if s.get("id")]
+            logger.info("scan_all_sites enabled: discovered %d sites", len(scan_paths))
+        elif target.adapter == "onedrive" and settings.adapters.onedrive.scan_all_users and not target_path:
+            od_adapter: OneDriveAdapter = adapter  # type: ignore[assignment]
+            all_users = await od_adapter.list_users()
+            scan_paths = [u["id"] for u in all_users if u.get("id")]
+            logger.info("scan_all_users enabled: discovered %d users", len(scan_paths))
+        else:
+            scan_paths = [target_path] if target_path else []
+
+        async def _iter_all_files():
+            for sp in scan_paths:
+                async for fi in adapter.list_files(sp):
+                    yield fi
+
+        async for file_info in _iter_all_files():
             try:
                 # Check for cancellation periodically
                 if stats["files_scanned"] % CANCELLATION_CHECK_INTERVAL == 0:
@@ -347,7 +367,7 @@ async def execute_scan_task(
                                     "Policy action %s failed for %s: %s",
                                     ar.action, file_info.path, ar.error,
                                 )
-                    except Exception as e:
+                    except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
                         logger.error(
                             "Policy action execution failed for %s: %s",
                             file_info.path, e,
@@ -512,7 +532,7 @@ async def execute_scan_task(
                         session, job, target, settings
                     )
                     stats["label_sync_back"] = sync_stats
-                except Exception as e:
+                except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                     logger.warning(
                         "Cloud label sync-back failed for job %s: %s", job.id, e
                     )
@@ -527,7 +547,7 @@ async def execute_scan_task(
                 _catalog_storage = create_storage(settings.catalog)
                 flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
                 stats["catalog_flushed"] = flushed
-            except Exception as e:
+            except (ImportError, OSError, RuntimeError, ValueError) as e:
                 logger.warning(
                     "Catalog flush failed for job %s; data lake will catch up on next flush: %s",
                     job.id,
@@ -576,7 +596,7 @@ async def execute_scan_task(
                         "Post-scan SIEM export for job %s: %s",
                         job.id, export_results,
                     )
-            except Exception as e:
+            except (ImportError, ConnectionError, OSError, RuntimeError, ValueError) as e:
                 logger.warning(
                     "SIEM export failed for job %s (non-fatal): %s",
                     job.id, e,
@@ -935,7 +955,7 @@ async def _cloud_label_sync_back(
                         result.file_path,
                         sync_result.get("error"),
                     )
-            except Exception as e:
+            except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                 sync_stats["errors"] += 1
                 logger.error("Label sync-back error for %s: %s", result.file_path, e)
 

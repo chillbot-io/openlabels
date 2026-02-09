@@ -333,8 +333,7 @@ class FileProcessor:
             logger.warning(f"Extraction failed for {file_path}: {type(e).__name__}: {e}")
             # Fall back to trying as text
             return await self._decode_text(content)
-        except Exception as e:
-            # Catch-all for unexpected extraction errors
+        except Exception as e:  # noqa: BLE001 — catch-all for third-party extraction libraries
             logger.warning(f"Unexpected extraction error for {file_path}: {type(e).__name__}: {e}")
             return await self._decode_text(content)
 

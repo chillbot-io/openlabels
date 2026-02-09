@@ -118,9 +118,19 @@ def status(server: str, token: str | None) -> None:
 
 @click.command()
 @click.option("--output", default="./backup", help="Output directory")
+@click.option("--include-db", is_flag=True, default=False, help="Include pg_dump database backup")
+@click.option("--db-url", default=None, help="PostgreSQL connection URL (overrides config)")
 @server_options
-def backup(output: str, server: str, token: str | None) -> None:
-    """Backup OpenLabels data."""
+def backup(output: str, include_db: bool, db_url: str | None, server: str, token: str | None) -> None:
+    """Backup OpenLabels data (API export + optional pg_dump).
+
+    \b
+    Examples:
+        openlabels system backup
+        openlabels system backup --include-db
+        openlabels system backup --include-db --db-url postgresql://localhost/openlabels
+    """
+    import subprocess
     from datetime import datetime, timezone
 
     output_path = Path(output)
@@ -131,13 +141,13 @@ def backup(output: str, server: str, token: str | None) -> None:
 
     click.echo(f"Creating backup: {backup_name}")
 
-    client = get_api_client(server, token)
-
     backup_dir = output_path / backup_name
     backup_dir.mkdir(exist_ok=True)
 
+    # Export API data
+    client = get_api_client(server, token)
     try:
-        for endpoint in ["targets", "labels", "labels/rules", "schedules"]:
+        for endpoint in ["targets", "labels", "labels/rules", "schedules", "policies"]:
             try:
                 response = client.get(f"/api/{endpoint}")
                 if response.status_code == 200:
@@ -150,20 +160,73 @@ def backup(output: str, server: str, token: str | None) -> None:
                 click.echo(f"  Failed to export {endpoint}: cannot connect to server", err=True)
             except httpx.HTTPStatusError as e:
                 click.echo(f"  Failed to export {endpoint}: HTTP {e.response.status_code}", err=True)
-
-        click.echo(f"Backup created: {backup_dir}")
-
     except OSError as e:
-        click.echo(f"Backup failed: file system error: {e}", err=True)
+        click.echo(f"API export failed: file system error: {e}", err=True)
     finally:
         client.close()
+
+    # Export config
+    try:
+        from openlabels.server.config import load_yaml_config
+        yaml_config = load_yaml_config()
+        if yaml_config:
+            config_path = backup_dir / "config.json"
+            with open(config_path, "w") as f:
+                json.dump(yaml_config, f, indent=2)
+            click.echo("  Exported: config.json")
+    except (ImportError, OSError) as e:
+        logger.debug(f"Config export skipped: {e}")
+
+    # Optional: pg_dump
+    if include_db:
+        db_connection = db_url
+        if not db_connection:
+            try:
+                from openlabels.server.config import get_settings
+                settings = get_settings()
+                db_connection = settings.database.url.replace("+asyncpg", "")
+            except (ImportError, ValueError) as e:
+                click.echo(f"  Cannot determine database URL: {e}", err=True)
+
+        if db_connection:
+            dump_path = backup_dir / "database.sql.gz"
+            click.echo("  Running pg_dump...")
+            try:
+                result = subprocess.run(
+                    ["pg_dump", db_connection, "--no-owner", "--no-acl"],
+                    capture_output=True,
+                    timeout=600,
+                )
+                if result.returncode == 0:
+                    import gzip
+                    with gzip.open(dump_path, "wb") as gz:
+                        gz.write(result.stdout)
+                    click.echo(f"  Exported: database.sql.gz ({dump_path.stat().st_size:,} bytes)")
+                else:
+                    click.echo(f"  pg_dump failed: {result.stderr.decode()[:200]}", err=True)
+            except FileNotFoundError:
+                click.echo("  pg_dump not found on PATH. Install PostgreSQL client tools.", err=True)
+            except subprocess.TimeoutExpired:
+                click.echo("  pg_dump timed out after 10 minutes.", err=True)
+
+    click.echo(f"\nBackup created: {backup_dir}")
 
 
 @click.command()
 @click.option("--from", "from_path", required=True, help="Backup directory to restore from")
+@click.option("--include-db", is_flag=True, default=False, help="Restore database from pg_dump backup")
+@click.option("--db-url", default=None, help="PostgreSQL connection URL (overrides config)")
 @server_options
-def restore(from_path: str, server: str, token: str | None) -> None:
-    """Restore OpenLabels data from backup."""
+def restore(from_path: str, include_db: bool, db_url: str | None, server: str, token: str | None) -> None:
+    """Restore OpenLabels data from backup.
+
+    \b
+    Examples:
+        openlabels system restore --from ./backup/openlabels_backup_20260209
+        openlabels system restore --from ./backup/openlabels_backup_20260209 --include-db
+    """
+    import subprocess
+
     backup_path = Path(from_path)
 
     if not backup_path.exists():
@@ -172,21 +235,68 @@ def restore(from_path: str, server: str, token: str | None) -> None:
 
     click.echo(f"Restoring from: {backup_path}")
 
+    # Restore database if requested and dump file exists
+    if include_db:
+        dump_file = backup_path / "database.sql.gz"
+        if not dump_file.exists():
+            click.echo("  No database.sql.gz found in backup, skipping DB restore.", err=True)
+        else:
+            db_connection = db_url
+            if not db_connection:
+                try:
+                    from openlabels.server.config import get_settings
+                    settings = get_settings()
+                    db_connection = settings.database.url.replace("+asyncpg", "")
+                except (ImportError, ValueError) as e:
+                    click.echo(f"  Cannot determine database URL: {e}", err=True)
+
+            if db_connection:
+                click.echo("  Restoring database from pg_dump...")
+                try:
+                    import gzip
+                    with gzip.open(dump_file, "rb") as gz:
+                        sql_data = gz.read()
+                    result = subprocess.run(
+                        ["psql", db_connection],
+                        input=sql_data,
+                        capture_output=True,
+                        timeout=600,
+                    )
+                    if result.returncode == 0:
+                        click.echo("  Database restored successfully")
+                    else:
+                        click.echo(f"  psql errors: {result.stderr.decode()[:200]}", err=True)
+                except FileNotFoundError:
+                    click.echo("  psql not found on PATH. Install PostgreSQL client tools.", err=True)
+                except subprocess.TimeoutExpired:
+                    click.echo("  psql timed out after 10 minutes.", err=True)
+
+    # Restore API data
     client = get_api_client(server, token)
 
     try:
-        for file in backup_path.glob("*.json"):
+        for file in sorted(backup_path.glob("*.json")):
+            if file.name == "config.json":
+                click.echo(f"  Skipped: config.json (apply manually)")
+                continue
+
             endpoint = file.stem.replace("_", "/")
             try:
                 with open(file) as f:
                     data = json.load(f)
 
                 if isinstance(data, list):
+                    restored = 0
                     for item in data:
                         response = client.post(f"/api/{endpoint}", json=item)
-                        if response.status_code not in (200, 201):
-                            click.echo(f"  Warning: Failed to restore item in {endpoint}", err=True)
-                    click.echo(f"  Restored: {endpoint} ({len(data)} items)")
+                        if response.status_code in (200, 201):
+                            restored += 1
+                        else:
+                            logger.debug(
+                                "Failed to restore item in %s: %s",
+                                endpoint, response.status_code,
+                            )
+                    click.echo(f"  Restored: {endpoint} ({restored}/{len(data)} items)")
                 else:
                     click.echo(f"  Skipped: {file.name} (not a list)")
 

@@ -198,29 +198,60 @@ async def monitoring_page(request: Request):
 
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, user=Depends(get_current_user)):
-    """Settings page with current configuration values."""
+async def settings_page(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """Settings page with current configuration values.
+
+    Reads persisted tenant settings from the database, falling back to
+    system defaults from config when no tenant overrides exist.
+    """
     from openlabels.server.config import get_settings
+    from openlabels.server.models import TenantSettings
 
     config = get_settings()
 
-    # Build settings object that matches template expectations
+    # Load tenant-specific overrides from DB
+    tenant_settings = None
+    if hasattr(user, "tenant_id"):
+        result = await session.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+        )
+        tenant_settings = result.scalar_one_or_none()
+
+    all_entities = [
+        "SSN", "CREDIT_CARD", "EMAIL", "PHONE", "PERSON",
+        "ADDRESS", "DATE_OF_BIRTH", "PASSPORT", "DRIVER_LICENSE",
+        "BANK_ACCOUNT", "IP_ADDRESS", "MEDICAL_RECORD",
+    ]
+
+    # Build settings object merging DB overrides with system defaults
     settings = {
         "azure": {
-            "tenant_id": config.auth.tenant_id or "",
-            "client_id": config.auth.client_id or "",
+            "tenant_id": (
+                tenant_settings.azure_tenant_id
+                if tenant_settings and tenant_settings.azure_tenant_id
+                else config.auth.tenant_id
+            ) or "",
+            "client_id": (
+                tenant_settings.azure_client_id
+                if tenant_settings and tenant_settings.azure_client_id
+                else config.auth.client_id
+            ) or "",
         },
         "scan": {
-            "max_file_size_mb": config.detection.max_file_size_mb,
-            "concurrent_files": 10,  # Default, could be added to config
-            "enable_ocr": config.detection.enable_ocr,
+            "max_file_size_mb": tenant_settings.max_file_size_mb if tenant_settings else config.detection.max_file_size_mb,
+            "concurrent_files": tenant_settings.concurrent_files if tenant_settings else 10,
+            "enable_ocr": tenant_settings.enable_ocr if tenant_settings else config.detection.enable_ocr,
         },
         "entities": {
-            "enabled": [
-                "SSN", "CREDIT_CARD", "EMAIL", "PHONE", "PERSON",
-                "ADDRESS", "DATE_OF_BIRTH", "PASSPORT", "DRIVER_LICENSE",
-                "BANK_ACCOUNT", "IP_ADDRESS", "MEDICAL_RECORD"
-            ],  # All enabled by default
+            "enabled": (
+                tenant_settings.enabled_entities
+                if tenant_settings and tenant_settings.enabled_entities
+                else all_entities
+            ),
         },
     }
 

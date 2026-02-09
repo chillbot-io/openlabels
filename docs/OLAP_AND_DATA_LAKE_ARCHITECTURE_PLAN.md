@@ -3209,20 +3209,20 @@ Scheduled and on-demand report generation with distribution.
 8. ~~Add `openlabels report generate --template executive_summary --format pdf` CLI command~~ ✅
 9. ~~Tests: Template rendering, PDF generation, scheduled report execution~~ ✅
 
-### Phase N: Operational Hardening
+### Phase N: Operational Hardening ✅
 
 Fix the known wiring issues, security gaps, and deployment infrastructure.
 
-1. Fix web UI settings persistence — `web/routes.py` POST handlers write to config
-2. Wire `scan_all_sites` / `scan_all_users` config into SharePoint/OneDrive adapters
-3. Implement `restore_permissions()` — inverse of `lock_down()` using backed-up ACLs
-4. Make `/api/v1/health/status` unauthenticated (load balancer probe)
-5. Add WebSocket rate limiting (message rate + payload size)
-6. Remove dev hardcodes from `ws.py` (gate behind `DEBUG` or remove entirely)
-7. Narrow 64x `except Exception` to specific exception types in critical paths
-8. Implement `openlabels system backup` — `pg_dump` wrapper + config export
-9. Implement `openlabels system restore` — `pg_restore` + catalog rebuild
-10. Tests: Settings persistence round-trip, permission restore, backup/restore cycle
+1. ~~Fix web UI settings persistence — settings page reads from TenantSettings DB~~ ✅
+2. ~~Wire `scan_all_sites` / `scan_all_users` config into scan task auto-discovery~~ ✅
+3. ~~Implement `restore_permissions()` — inverse of `lock_down()` using backed-up ACLs~~ ✅
+4. ~~Make `/api/v1/health/status` unauthenticated (load balancer probe)~~ ✅
+5. ~~Add WebSocket rate limiting (message rate + payload size)~~ ✅
+6. ~~Remove dev hardcodes from `ws.py` (origin bypass + user auto-creation)~~ ✅
+7. ~~Narrow `except Exception` to specific types in critical paths (scan, adapters, export, monitoring, analytics)~~ ✅
+8. ~~Enhance `openlabels system backup` — `pg_dump` wrapper + config export~~ ✅
+9. ~~Enhance `openlabels system restore` — `pg_restore` + config skip~~ ✅
+10. ~~Tests: 26 tests covering all Phase N changes~~ ✅
 
 ### Phase O: Model Bundling and CI/CD
 

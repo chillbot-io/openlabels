@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanResult, JobQueue
 from openlabels.server.cache import get_cache_manager, get_cache_stats
-from openlabels.auth.dependencies import get_current_user
+from openlabels.auth.dependencies import get_current_user, get_optional_user
 from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.jobs.queue import JobQueue as JobQueueService
 
@@ -94,10 +94,14 @@ _server_start_time = datetime.now(timezone.utc)
 @router.get("/status", response_model=HealthStatus)
 async def get_health_status(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
+    user=Depends(get_optional_user),
 ):
     """
     Get comprehensive system health status.
+
+    Authentication is optional — unauthenticated requests (e.g. load
+    balancer probes) receive component health without tenant-specific
+    scan statistics.
 
     Returns status of all system components:
     - API server
@@ -106,7 +110,7 @@ async def get_health_status(
     - ML models
     - MIP SDK
     - OCR engine
-    - Scan statistics
+    - Scan statistics (authenticated only)
     """
     status = {
         "api": "healthy",
@@ -242,8 +246,9 @@ async def get_health_status(
         status["ocr"] = "warning"
         status["ocr_text"] = "Not available"
 
-    # Get scan statistics
-    try:
+    # Get scan statistics (tenant-specific, requires authentication)
+    if user is not None:
+      try:
         today = datetime.now(timezone.utc).date()
         today_start = datetime.combine(today, datetime.min.time())
 
@@ -277,7 +282,7 @@ async def get_health_status(
         completed = row.completed or 0
         status["success_rate"] = (completed / total * 100) if total > 0 else 100.0
 
-    except (SQLAlchemyError, ConnectionError, OSError) as e:
+      except (SQLAlchemyError, ConnectionError, OSError) as e:
         logger.warning(f"Stats query failed: {e}")
 
     # Add circuit breaker status
@@ -298,8 +303,9 @@ async def get_health_status(
         # Circuit breaker status is informational - log at debug level
         logger.debug(f"Could not retrieve circuit breaker status: {type(e).__name__}: {e}")
 
-    # Add job metrics
-    try:
+    # Add job metrics (tenant-specific, requires authentication)
+    if user is not None:
+      try:
         job_queue = JobQueueService(session, user.tenant_id)
         age_stats = await job_queue.get_job_age_stats()
         stale_jobs = await job_queue.get_stale_pending_jobs()
@@ -314,7 +320,7 @@ async def get_health_status(
             oldest_pending_hours=age_stats.get("oldest_pending_hours"),
             oldest_running_hours=age_stats.get("oldest_running_hours"),
         )
-    except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
+      except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
         # Job metrics failure may indicate queue issues
         logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
