@@ -526,7 +526,9 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
     try:
         # Restore mode
         if "mode" in acl_dict:
-            mode = int(acl_dict["mode"], 8) if isinstance(acl_dict["mode"], str) else acl_dict["mode"]
+            # oct() returns strings like '0o100644'; use base 0 to auto-detect
+            # the prefix, rather than base 8 which rejects the '0o' prefix.
+            mode = int(acl_dict["mode"], 0) if isinstance(acl_dict["mode"], str) else acl_dict["mode"]
             os.chmod(path, mode)
 
         # Restore ACLs via setfacl if data available

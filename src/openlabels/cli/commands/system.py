@@ -219,16 +219,12 @@ def backup(output: str, include_db: bool, db_url: str | None, server: str, token
             dump_path = backup_dir / "database.sql.gz"
             click.echo("  Running pg_dump...")
             try:
-                # Use env vars instead of passing credentials on CLI (visible in ps)
+                # Pass credentials exclusively via PG* env vars so that
+                # passwords (and other connection details) are not visible
+                # in ``ps`` output.
                 import gzip
                 pg_env = _parse_pg_env(db_connection)
-                pg_cmd = [
-                    "pg_dump", "--no-owner", "--no-acl",
-                    "-h", pg_env.get("PGHOST", "localhost"),
-                    "-p", pg_env.get("PGPORT", "5432"),
-                    "-U", pg_env.get("PGUSER", "openlabels"),
-                    "-d", pg_env.get("PGDATABASE", "openlabels"),
-                ]
+                pg_cmd = ["pg_dump", "--no-owner", "--no-acl"]
                 # Stream through gzip to avoid holding entire dump in memory
                 proc = subprocess.Popen(
                     pg_cmd,
@@ -298,25 +294,29 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
                 click.echo("  Restoring database from pg_dump...")
                 try:
                     import gzip
-                    with gzip.open(dump_file, "rb") as gz:
-                        sql_data = gz.read()
-                    # Use env vars instead of passing credentials on CLI
+                    # Stream gzip → psql via pipe to avoid loading
+                    # entire dump into memory (mirrors backup streaming)
                     pg_env = _parse_pg_env(db_connection)
-                    result = subprocess.run(
-                        ["psql",
-                         "-h", pg_env.get("PGHOST", "localhost"),
-                         "-p", pg_env.get("PGPORT", "5432"),
-                         "-U", pg_env.get("PGUSER", "openlabels"),
-                         "-d", pg_env.get("PGDATABASE", "openlabels")],
-                        input=sql_data,
-                        capture_output=True,
-                        timeout=600,
+                    proc = subprocess.Popen(
+                        ["psql"],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
                         env={**os.environ, **pg_env},
                     )
-                    if result.returncode == 0:
+                    with gzip.open(dump_file, "rb") as gz:
+                        while True:
+                            chunk = gz.read(65536)
+                            if not chunk:
+                                break
+                            proc.stdin.write(chunk)
+                    proc.stdin.close()
+                    proc.wait(timeout=600)
+                    if proc.returncode == 0:
                         click.echo("  Database restored successfully")
                     else:
-                        click.echo(f"  psql errors: {result.stderr.decode()[:200]}", err=True)
+                        stderr_out = proc.stderr.read().decode()[:200] if proc.stderr else ""
+                        click.echo(f"  psql errors: {stderr_out}", err=True)
                 except FileNotFoundError:
                     click.echo("  ERROR: psql not found on PATH. Database restore SKIPPED.", err=True)
                 except subprocess.TimeoutExpired:
