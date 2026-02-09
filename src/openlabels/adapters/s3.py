@@ -157,8 +157,17 @@ class S3Adapter:
 
                 yield file_info
 
-    async def read_file(self, file_info: FileInfo) -> bytes:
-        """Download object content from S3."""
+    async def read_file(
+        self,
+        file_info: FileInfo,
+        max_size_bytes: int = 100 * 1024 * 1024,
+    ) -> bytes:
+        """Download object content from S3 with size limit."""
+        if file_info.size > max_size_bytes:
+            raise ValueError(
+                f"File too large for processing: {file_info.size} bytes "
+                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+            )
         client = self._ensure_client()
         key = file_info.item_id or file_info.path.split(f"s3://{self._bucket}/", 1)[-1]
 
@@ -166,7 +175,13 @@ class S3Adapter:
             client.get_object, Bucket=self._bucket, Key=key
         )
         body = response["Body"]
-        return await asyncio.to_thread(body.read)
+        content = await asyncio.to_thread(body.read)
+        if len(content) > max_size_bytes:
+            raise ValueError(
+                f"File content exceeds limit: {len(content)} bytes "
+                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+            )
+        return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
         """Refresh metadata via HeadObject."""

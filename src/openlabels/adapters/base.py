@@ -244,14 +244,22 @@ class ReadAdapter(Protocol):
         """
         ...
 
-    async def read_file(self, file_info: FileInfo) -> bytes:
-        """Read file content.
+    async def read_file(
+        self,
+        file_info: FileInfo,
+        max_size_bytes: int = 100 * 1024 * 1024,
+    ) -> bytes:
+        """Read file content with size limit.
 
         Args:
             file_info: FileInfo object from list_files
+            max_size_bytes: Maximum file size to read (default 100MB)
 
         Returns:
             File content as bytes
+
+        Raises:
+            ValueError: If file exceeds max_size_bytes
         """
         ...
 

@@ -354,6 +354,7 @@ async def execute_scan_task(
                     owner=file_info.owner,
                     content_score=result.get("content_score"),
                     exposure_multiplier=result.get("exposure_multiplier"),
+                    co_occurrence_rules=result.get("co_occurrence_rules"),
                     findings=result.get("findings"),
                     policy_violations=result.get("policy_violations"),
                 )
@@ -1101,8 +1102,9 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
             "risk_tier": result.risk_tier.value,
             "entity_counts": result.entity_counts,
             "total_entities": sum(result.entity_counts.values()),
-            "content_score": float(result.risk_score),
-            "exposure_multiplier": 1.0,  # Already factored into risk_score
+            "content_score": result.content_score,
+            "exposure_multiplier": result.exposure_multiplier,
+            "co_occurrence_rules": result.co_occurrence_rules,
             "findings": findings_dict,
             "policy_violations": policy_violations,
             "processing_time_ms": result.processing_time_ms,
