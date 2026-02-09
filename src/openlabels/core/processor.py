@@ -71,6 +71,9 @@ class FileClassification:
     # Scoring results
     risk_score: int = 0
     risk_tier: RiskTier = RiskTier.MINIMAL
+    content_score: float = 0.0
+    exposure_multiplier: float = 1.0
+    co_occurrence_rules: List[str] = field(default_factory=list)
 
     # Metadata
     processed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -87,6 +90,9 @@ class FileClassification:
             "entity_counts": self.entity_counts,
             "risk_score": self.risk_score,
             "risk_tier": self.risk_tier.value,
+            "content_score": self.content_score,
+            "exposure_multiplier": self.exposure_multiplier,
+            "co_occurrence_rules": self.co_occurrence_rules,
             "processed_at": self.processed_at.isoformat(),
             "processing_time_ms": self.processing_time_ms,
             "error": self.error,
@@ -219,6 +225,9 @@ class FileProcessor:
                 )
                 result.risk_score = score_result.score
                 result.risk_tier = score_result.tier
+                result.content_score = score_result.content_score
+                result.exposure_multiplier = score_result.exposure_multiplier
+                result.co_occurrence_rules = score_result.co_occurrence_rules
 
         except (DetectionError, ExtractionError, SecurityError) as e:
             # Domain-specific errors - log with full context

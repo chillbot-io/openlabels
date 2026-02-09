@@ -346,6 +346,7 @@ async def execute_scan_task(
                     file_size=file_info.size,
                     file_modified=file_info.modified,
                     content_hash=content_hash,
+                    adapter_item_id=file_info.item_id,
                     risk_score=result["risk_score"],
                     risk_tier=result["risk_tier"],
                     entity_counts=result["entity_counts"],
@@ -354,6 +355,7 @@ async def execute_scan_task(
                     owner=file_info.owner,
                     content_score=result.get("content_score"),
                     exposure_multiplier=result.get("exposure_multiplier"),
+                    co_occurrence_rules=result.get("co_occurrence_rules"),
                     findings=result.get("findings"),
                     policy_violations=result.get("policy_violations"),
                 )
@@ -871,7 +873,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                 modified=result.file_modified or datetime.now(timezone.utc),
                 adapter=target.adapter if target else "filesystem",
                 exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
-                item_id=str(result.id),  # Use item_id for Graph API tracking
+                item_id=result.adapter_item_id,
             )
 
             # Apply label
@@ -1101,8 +1103,9 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
             "risk_tier": result.risk_tier.value,
             "entity_counts": result.entity_counts,
             "total_entities": sum(result.entity_counts.values()),
-            "content_score": float(result.risk_score),
-            "exposure_multiplier": 1.0,  # Already factored into risk_score
+            "content_score": result.content_score,
+            "exposure_multiplier": result.exposure_multiplier,
+            "co_occurrence_rules": result.co_occurrence_rules,
             "findings": findings_dict,
             "policy_violations": policy_violations,
             "processing_time_ms": result.processing_time_ms,

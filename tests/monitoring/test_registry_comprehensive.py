@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from openlabels.exceptions import MonitoringError
 from openlabels.monitoring.base import MonitoringResult, WatchedFile
 from openlabels.monitoring.registry import (
     _enable_monitoring_linux,
@@ -45,10 +46,10 @@ class TestEnableMonitoringValidation:
     """Tests for enable_monitoring input validation."""
 
     def test_file_not_found_raises(self, tmp_path):
-        """Raises FileNotFoundError if file doesn't exist."""
+        """Raises MonitoringError if file doesn't exist."""
         nonexistent = tmp_path / "nonexistent.txt"
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(MonitoringError, match="File not found"):
             enable_monitoring(nonexistent)
 
     def test_accepts_path_object(self, tmp_path):

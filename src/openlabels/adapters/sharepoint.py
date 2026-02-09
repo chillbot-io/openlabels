@@ -151,12 +151,27 @@ class SharePointAdapter(BaseGraphAdapter):
             site_id=site_id,
         )
 
-    async def read_file(self, file_info: FileInfo) -> bytes:
-        """Download file content."""
+    async def read_file(
+        self,
+        file_info: FileInfo,
+        max_size_bytes: int = 100 * 1024 * 1024,
+    ) -> bytes:
+        """Download file content with size limit."""
+        if file_info.size > max_size_bytes:
+            raise ValueError(
+                f"File too large for processing: {file_info.size} bytes "
+                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+            )
         client = await self._get_client()
-        return await client.get_bytes(
+        content = await client.get_bytes(
             f"/sites/{file_info.site_id}/drive/items/{file_info.item_id}/content"
         )
+        if len(content) > max_size_bytes:
+            raise ValueError(
+                f"File content exceeds limit: {len(content)} bytes "
+                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+            )
+        return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
         """Get updated metadata for a file."""
