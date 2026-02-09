@@ -310,6 +310,7 @@ class ScanResult(Base):
     file_size: Mapped[Optional[int]] = mapped_column(BigInteger)
     file_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     content_hash: Mapped[Optional[str]] = mapped_column(String(64))  # SHA-256
+    adapter_item_id: Mapped[Optional[str]] = mapped_column(String(512))  # Original adapter file ID (e.g. Graph API drive item ID)
 
     # Risk scoring
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-100

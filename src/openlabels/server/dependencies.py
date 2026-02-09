@@ -35,7 +35,7 @@ import logging
 from functools import lru_cache
 from typing import Annotated, AsyncGenerator
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import Settings, get_settings as _get_settings, load_yaml_config

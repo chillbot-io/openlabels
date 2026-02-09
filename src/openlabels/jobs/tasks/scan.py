@@ -346,6 +346,7 @@ async def execute_scan_task(
                     file_size=file_info.size,
                     file_modified=file_info.modified,
                     content_hash=content_hash,
+                    adapter_item_id=file_info.item_id,
                     risk_score=result["risk_score"],
                     risk_tier=result["risk_tier"],
                     entity_counts=result["entity_counts"],
@@ -872,7 +873,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                 modified=result.file_modified or datetime.now(timezone.utc),
                 adapter=target.adapter if target else "filesystem",
                 exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
-                item_id=str(result.id),  # Use item_id for Graph API tracking
+                item_id=result.adapter_item_id,
             )
 
             # Apply label

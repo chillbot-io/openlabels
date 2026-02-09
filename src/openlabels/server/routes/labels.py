@@ -254,8 +254,18 @@ async def list_label_rules(
         offset=pagination.offset,
     )
 
-    # Build responses - rules come back as LabelRule objects
-    items = [LabelRuleResponse.model_validate(rule) for rule in rules]
+    # Build responses - rules come back as LabelRule objects with eager-loaded label
+    items = [
+        LabelRuleResponse(
+            id=rule.id,
+            rule_type=rule.rule_type,
+            match_value=rule.match_value,
+            label_id=rule.label_id,
+            label_name=rule.label.name if rule.label else None,
+            priority=rule.priority,
+        )
+        for rule in rules
+    ]
 
     return PaginatedResponse[LabelRuleResponse](
         **create_paginated_response(

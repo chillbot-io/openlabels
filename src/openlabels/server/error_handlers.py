@@ -13,10 +13,17 @@ from slowapi.errors import RateLimitExceeded
 
 from openlabels.exceptions import (
     APIError,
+    AdapterUnavailableError,
+    AuthError,
     ConflictError,
+    ForbiddenError,
+    LabelingError,
     NotFoundError,
     OpenLabelsError,
     RateLimitError,
+    SecurityError,
+    TokenExpiredError,
+    TokenInvalidError,
     ValidationError,
 )
 from openlabels.server.config import get_settings
@@ -25,7 +32,20 @@ from openlabels.server.logging import get_request_id
 logger = logging.getLogger(__name__)
 
 # Domain exceptions mapped to HTTP status codes.
+# Order matters: more specific subclasses must appear before their parents.
 _DOMAIN_ERROR_STATUS: dict[type[OpenLabelsError], tuple[int, str]] = {
+    # Auth errors (subclasses first)
+    TokenExpiredError: (401, "TOKEN_EXPIRED"),
+    TokenInvalidError: (401, "TOKEN_INVALID"),
+    ForbiddenError: (403, "FORBIDDEN"),
+    AuthError: (401, "UNAUTHORIZED"),
+    # Security
+    SecurityError: (403, "FORBIDDEN"),
+    # Adapter availability
+    AdapterUnavailableError: (503, "SERVICE_UNAVAILABLE"),
+    # Labeling
+    LabelingError: (502, "LABELING_ERROR"),
+    # Domain errors
     NotFoundError: (404, "NOT_FOUND"),
     ConflictError: (409, "CONFLICT"),
     ValidationError: (400, "VALIDATION_ERROR"),
