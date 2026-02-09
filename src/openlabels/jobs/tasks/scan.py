@@ -320,6 +320,7 @@ async def execute_scan_task(
                     content_score=result.get("content_score"),
                     exposure_multiplier=result.get("exposure_multiplier"),
                     findings=result.get("findings"),
+                    policy_violations=result.get("policy_violations"),
                 )
                 session.add(scan_result)
 
@@ -804,6 +805,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
 
         # Policy evaluation
         policy_data = None
+        policy_violations = None
         if result.spans:
             try:
                 entity_matches = [
@@ -820,6 +822,20 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
                 policy_result = get_policy_engine().evaluate(entity_matches)
                 if policy_result.is_sensitive:
                     policy_data = policy_result.to_dict()
+                    # Build per-violation records for the dedicated column
+                    policy_violations = [
+                        {
+                            "policy_name": match.policy_name,
+                            "framework": next(
+                                (c.value for c in policy_result.categories),
+                                "custom",
+                            ),
+                            "severity": policy_result.risk_level.value,
+                            "trigger_type": match.trigger_type,
+                            "matched_entities": match.matched_entities,
+                        }
+                        for match in policy_result.matches
+                    ]
             except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed for {file_info.path}: {e}")
 
@@ -836,6 +852,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
             "content_score": float(result.risk_score),
             "exposure_multiplier": 1.0,  # Already factored into risk_score
             "findings": findings_dict,
+            "policy_violations": policy_violations,
             "processing_time_ms": result.processing_time_ms,
             "error": result.error,
         }

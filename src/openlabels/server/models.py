@@ -138,6 +138,7 @@ AuditActionEnum = ENUM(
     'schedule_created', 'schedule_updated', 'schedule_deleted',
     'quarantine_executed', 'lockdown_executed', 'rollback_executed',
     'monitoring_enabled', 'monitoring_disabled',
+    'policy_violation',
     name='audit_action',
     create_type=True,
 )
@@ -329,6 +330,9 @@ class ScanResult(Base):
 
     # Detailed findings (optional)
     findings: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    # Policy violations (Phase J)
+    policy_violations: Mapped[Optional[list]] = mapped_column(JSONB)
 
     # Labeling status
     current_label_id: Mapped[Optional[str]] = mapped_column(String(36))
@@ -812,4 +816,36 @@ class TenantSettings(Base):
 
     __table_args__ = (
         Index('ix_tenant_settings_tenant_id', 'tenant_id', unique=True),
+    )
+
+
+class Policy(Base):
+    """Tenant-scoped policy configurations (Phase J).
+
+    Each row represents a policy pack loaded from a built-in template or
+    user-defined YAML/JSON.  The ``config`` JSONB column stores the full
+    serialized ``PolicyPack`` so it can be reconstituted by the engine at
+    evaluation time.
+    """
+
+    __tablename__ = "policies"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    framework: Mapped[str] = mapped_column(String(50), nullable=False)  # hipaa, gdpr, pci_dss, soc2 …
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="high")
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False)  # Serialized PolicyPack
+    priority: Mapped[int] = mapped_column(Integer, server_default="0")
+
+    # Audit
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+
+    __table_args__ = (
+        Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
+        Index('ix_policies_tenant_enabled', 'tenant_id', 'enabled'),
     )

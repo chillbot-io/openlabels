@@ -1620,9 +1620,9 @@ class TestSchemaConstruction:
 class TestBuiltinPolicyIntegrity:
     """Ensure the set of built-in policies is complete and named correctly."""
 
-    def test_exactly_eight_builtin_policies(self):
+    def test_builtin_policy_count(self):
         policies = load_builtin_policies()
-        assert len(policies) == 8
+        assert len(policies) == 9  # 8 original + SOC2 (Phase J)
 
     def test_all_expected_names_present(self):
         names = {p.name for p in load_builtin_policies()}
@@ -1635,6 +1635,7 @@ class TestBuiltinPolicyIntegrity:
             "GLBA",
             "FERPA",
             "Credentials & Secrets",
+            "SOC2 Trust Services",  # Phase J
         }
         assert names == expected
 
