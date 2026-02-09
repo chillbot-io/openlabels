@@ -1966,17 +1966,22 @@ delta detection and scoring.
 
 ### Current State
 
-A complete policy engine exists at `src/openlabels/core/policies/` (~500 lines) with:
+The policy engine at `src/openlabels/core/policies/` (~1,500 lines) is fully integrated:
 
 - `PolicyEngine` class — add/remove/evaluate policies (`engine.py`)
 - `PolicyPack` schema — defines policy rules, conditions, and actions (`schema.py`)
-- Compliance framework categories: HIPAA, GDPR, PCI-DSS, SOC2, CCPA
+- 9 built-in compliance packs: HIPAA, GDPR, PCI-DSS, SOC2, CCPA, GLBA, FERPA, PII General, Credentials (`loader.py`)
+- `PolicyActionExecutor` — remediation actions triggered by violations (`actions.py`)
 - Risk level ordering and policy matching logic
 - Policy loader utilities (`loader.py`)
 
-**The problem:** Nothing in the application ever imports or calls it. It's complete
-dead code. Scan results don't include policy violations, no API endpoint exposes
-policy evaluation, and there's no way to define or manage policies through the UI.
+**Integration status:** The policy engine is wired into the scan pipeline
+(`jobs/tasks/scan.py`), exposed via `/api/v1/policies/` CRUD endpoints, and
+violations are stored in `ScanResult.policy_violations` (JSONB). A `policies`
+table stores tenant-scoped policy configurations. Policy violations trigger
+automated remediation actions (quarantine, labeling, monitoring, audit logging).
+Compliance statistics are available via the DuckDB OLAP layer and the
+`/api/v1/policies/compliance/stats` endpoint.
 
 ### What Policy Integration Looks Like
 
@@ -2030,11 +2035,26 @@ File scanned → 3 SSNs found, exposure=PUBLIC, risk_tier=CRITICAL
 # Addition to ScanResult model
 class ScanResult(Base):
     ...
-    policy_violations: list[dict] = Column(JSONB, default=[])
-    # [{"policy_id": "...", "policy_name": "HIPAA PHI Exposure",
-    #   "framework": "HIPAA", "severity": "critical",
-    #   "rule": "has(SSN) AND exposure=PUBLIC",
-    #   "action_taken": "quarantine"}]
+    policy_violations: Mapped[Optional[list]] = mapped_column(JSONB)
+    # None when no violations evaluated; list of dicts when present:
+    # [{"policy_name": "HIPAA PHI", "framework": "hipaa",
+    #   "severity": "critical", "trigger_type": "any_of",
+    #   "matched_entities": ["ssn"]}]
+
+# New table for tenant-scoped policy configurations
+class Policy(Base):
+    __tablename__ = "policies"
+    id: UUID (PK)
+    tenant_id: UUID (FK tenants.id)
+    name: str
+    description: Optional[str]
+    framework: str           # hipaa, gdpr, pci_dss, soc2, etc.
+    risk_level: str          # DEFAULT 'high'
+    enabled: bool            # DEFAULT true
+    config: JSONB            # Serialized PolicyPack
+    priority: int            # DEFAULT 0
+    created_at, updated_at: DateTime
+    created_by: UUID (FK users.id)
 ```
 
 ---
@@ -3116,19 +3136,24 @@ These also serve as change providers for the unified scan pipeline (Phase F).
 
 ### Phase J: Policy Engine Integration
 
-Wire the dead `core/policies/` package into the live scan pipeline and expose via API.
+Wire `core/policies/` into the live scan pipeline, expose via API, and connect
+to the OLAP layer for compliance dashboards.
 
-1. Add `policy_violations` JSONB column to `ScanResult` model
-2. Create database migration for the new column
-3. Call `PolicyEngine.evaluate()` in scan pipeline after scoring (post-classification)
-4. Store violations in `ScanResult.policy_violations`
-5. Add `/api/v1/policies/` CRUD endpoints (list, create, update, delete)
-6. Add `POST /api/v1/policies/evaluate` dry-run endpoint against existing results
-7. Connect policy violation actions to remediation (quarantine, label, monitor)
-8. Connect policy violations to SIEM export (Section 15)
-9. Add compliance dashboard stats to DuckDB OLAP queries
-10. Add default policy packs: HIPAA, GDPR, PCI-DSS, SOC2 (loadable templates)
-11. Tests: Policy evaluation against scan results, action triggering, API CRUD
+1. Add `policy_violations` JSONB column to `ScanResult` model (with GIN index)
+2. Create `policies` table for tenant-scoped policy configurations
+3. Create database migration for both schema additions
+4. Call `PolicyEngine.evaluate()` in scan pipeline after scoring (post-classification)
+5. Store violations in `ScanResult.policy_violations`
+6. Wire `PolicyActionExecutor` into scan pipeline — triggers quarantine, labeling, monitoring, and audit actions
+7. Add `/api/v1/policies/` CRUD endpoints (list, create, update, delete, toggle)
+8. Add `POST /api/v1/policies/evaluate` dry-run endpoint against existing results
+9. Add `GET /api/v1/policies/compliance/stats` compliance statistics endpoint
+10. Add `policy_violations` to Parquet schema and Arrow converter for OLAP export
+11. Add `get_compliance_stats()` to `DashboardQueryService` protocol (DuckDB + PostgreSQL)
+12. Expose `policy_violations` in scan results API response (`ResultDetailResponse`)
+13. Connect policy violations to SIEM export (Section 15) — deferred to Phase K
+14. Add default policy packs: HIPAA, GDPR, PCI-DSS, SOC2, CCPA, GLBA, FERPA, PII General, Credentials (9 packs)
+15. Tests: Policy evaluation against scan results, action triggering, API CRUD, SOC2 pack
 
 ### Phase K: SIEM Export Integration
 

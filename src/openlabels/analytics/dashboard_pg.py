@@ -18,6 +18,7 @@ from sqlalchemy import Date, and_, case, cast, extract, func, select
 
 from openlabels.analytics.service import (
     AccessStats,
+    ComplianceStats,
     EntityTrendsData,
     FileStats,
     HeatmapFileRow,
@@ -346,4 +347,54 @@ class PostgresDashboardService:
                 "failed": row.failed or 0,
                 "pending": row.pending_count or 0,
             },
+        )
+
+    async def get_compliance_stats(self, tenant_id: UUID) -> ComplianceStats:
+        from openlabels.server.models import ScanResult
+
+        session = await self._get_session()
+
+        total_q = select(func.count()).select_from(
+            select(ScanResult).where(ScanResult.tenant_id == tenant_id).subquery()
+        )
+        total = (await session.execute(total_q)).scalar_one()
+        if total == 0:
+            return ComplianceStats()
+
+        violated_q = select(func.count()).select_from(
+            select(ScanResult).where(
+                ScanResult.tenant_id == tenant_id,
+                ScanResult.policy_violations.isnot(None),
+            ).subquery()
+        )
+        violated = (await session.execute(violated_q)).scalar_one()
+        compliance_pct = round(((total - violated) / total) * 100, 2)
+
+        detail_q = (
+            select(ScanResult.policy_violations)
+            .where(
+                ScanResult.tenant_id == tenant_id,
+                ScanResult.policy_violations.isnot(None),
+            )
+            .limit(500)
+        )
+        rows = (await session.execute(detail_q)).scalars().all()
+
+        by_framework: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        for violations in rows:
+            if not violations:
+                continue
+            for v in violations:
+                fw = v.get("framework", "unknown")
+                by_framework[fw] = by_framework.get(fw, 0) + 1
+                sev = v.get("severity", "unknown")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+
+        return ComplianceStats(
+            total_results=total,
+            results_with_violations=violated,
+            compliance_pct=compliance_pct,
+            violations_by_framework=by_framework,
+            violations_by_severity=by_severity,
         )

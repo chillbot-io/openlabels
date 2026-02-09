@@ -324,6 +324,35 @@ async def execute_scan_task(
                 )
                 session.add(scan_result)
 
+                # Execute policy-triggered remediation actions
+                if result.get("policy_violations"):
+                    try:
+                        from openlabels.core.policies.actions import (
+                            PolicyActionExecutor,
+                            PolicyActionContext,
+                        )
+                        await session.flush()  # ensure scan_result.id is assigned
+                        action_ctx = PolicyActionContext(
+                            file_path=file_info.path,
+                            tenant_id=job.tenant_id,
+                            scan_result_id=scan_result.id,
+                            risk_tier=result["risk_tier"],
+                            violations=result["policy_violations"],
+                        )
+                        executor = PolicyActionExecutor()
+                        action_results = await executor.execute_all(action_ctx)
+                        for ar in action_results:
+                            if not ar.success:
+                                logger.warning(
+                                    "Policy action %s failed for %s: %s",
+                                    ar.action, file_info.path, ar.error,
+                                )
+                    except Exception as e:
+                        logger.error(
+                            "Policy action execution failed for %s: %s",
+                            file_info.path, e,
+                        )
+
                 # Update stats
                 stats["files_scanned"] += 1
                 if result["total_entities"] > 0:

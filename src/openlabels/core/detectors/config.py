@@ -32,7 +32,7 @@ class DetectionConfig:
     # Post-processing
     enable_coref: bool = False
     enable_context_enhancement: bool = False
-    enable_policy: bool = False
+    enable_policy: bool = True
 
     # Tuning
     confidence_threshold: float = 0.70
@@ -46,6 +46,7 @@ class DetectionConfig:
             enable_ml=True,
             enable_coref=True,
             enable_context_enhancement=True,
+            enable_policy=True,
         )
 
     @classmethod

@@ -79,6 +79,16 @@ class RemediationStats:
     by_status: dict[str, int] = field(default_factory=dict)
 
 
+@dataclass
+class ComplianceStats:
+    """Policy compliance statistics for the dashboard."""
+    total_results: int = 0
+    results_with_violations: int = 0
+    compliance_pct: float = 100.0
+    violations_by_framework: dict[str, int] = field(default_factory=dict)
+    violations_by_severity: dict[str, int] = field(default_factory=dict)
+
+
 # ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
@@ -111,6 +121,10 @@ class DashboardQueryService(Protocol):
     async def get_remediation_stats(
         self, tenant_id: UUID,
     ) -> RemediationStats: ...
+
+    async def get_compliance_stats(
+        self, tenant_id: UUID,
+    ) -> ComplianceStats: ...
 
 
 # ── Low-level async wrapper ──────────────────────────────────────────
@@ -503,4 +517,55 @@ class DuckDBDashboardService:
                 "failed": r["failed"],
                 "pending": r["pending_count"],
             },
+        )
+
+    async def get_compliance_stats(self, tenant_id: UUID) -> ComplianceStats:
+        import json as _json
+
+        count_rows = await self._safe_query(
+            """
+            SELECT
+                count(*)                                                   AS total,
+                count(*) FILTER (WHERE policy_violations IS NOT NULL)       AS violated
+            FROM scan_results
+            WHERE tenant = ?
+            """,
+            [str(tenant_id)],
+        )
+        total = count_rows[0]["total"] if count_rows else 0
+        violated = count_rows[0]["violated"] if count_rows else 0
+        if total == 0:
+            return ComplianceStats()
+
+        compliance_pct = round(((total - violated) / total) * 100, 2)
+
+        # Parse JSONB stored as JSON string in Parquet to build breakdowns
+        detail_rows = await self._safe_query(
+            """
+            SELECT policy_violations
+            FROM scan_results
+            WHERE tenant = ? AND policy_violations IS NOT NULL
+            LIMIT 500
+            """,
+            [str(tenant_id)],
+        )
+        by_framework: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        for r in detail_rows:
+            raw = r.get("policy_violations")
+            if not raw:
+                continue
+            violations = _json.loads(raw) if isinstance(raw, str) else raw
+            for v in violations:
+                fw = v.get("framework", "unknown")
+                by_framework[fw] = by_framework.get(fw, 0) + 1
+                sev = v.get("severity", "unknown")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+
+        return ComplianceStats(
+            total_results=total,
+            results_with_violations=violated,
+            compliance_pct=compliance_pct,
+            violations_by_framework=by_framework,
+            violations_by_severity=by_severity,
         )

@@ -101,6 +101,9 @@ def scan_results_to_arrow(rows: Iterable[ScanResult]) -> pa.Table:
         records["label_error"].append(
             r.label_error if hasattr(r, "label_error") else None
         )
+        records["policy_violations"].append(
+            json.dumps(r.policy_violations) if r.policy_violations else None
+        )
         records["scanned_at"].append(_ts(r.scanned_at))
 
     return pa.table(records, schema=SCAN_RESULTS_SCHEMA)
