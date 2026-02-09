@@ -241,8 +241,8 @@ class TestValidateToken:
                         await validate_token("token-with-unknown-kid")
 
     async def test_jwt_expired_error_raised(self):
-        """JWTError with 'expired' should raise TokenExpiredError."""
-        from jose import JWTError
+        """ExpiredSignatureError should raise TokenExpiredError."""
+        from jwt.exceptions import ExpiredSignatureError
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
@@ -256,14 +256,14 @@ class TestValidateToken:
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
                     with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.side_effect = JWTError("Token expired")
+                        mock_decode.side_effect = ExpiredSignatureError("Signature has expired")
 
                         with pytest.raises(TokenExpiredError, match="Token expired"):
                             await validate_token("expired-token")
 
     async def test_jwt_invalid_error_raised(self):
-        """JWTError without 'expired' should raise TokenInvalidError."""
-        from jose import JWTError
+        """Generic PyJWTError should raise TokenInvalidError."""
+        from jwt.exceptions import PyJWTError
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
@@ -277,7 +277,7 @@ class TestValidateToken:
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
                     with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.side_effect = JWTError("Malformed token")
+                        mock_decode.side_effect = PyJWTError("Malformed token")
 
                         with pytest.raises(TokenInvalidError, match="Invalid token"):
                             await validate_token("malformed-token")

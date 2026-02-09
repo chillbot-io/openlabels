@@ -31,7 +31,7 @@ def upgrade() -> None:
     # ==========================================================================
 
     op.execute("CREATE TYPE user_role AS ENUM ('admin', 'viewer')")
-    op.execute("CREATE TYPE adapter_type AS ENUM ('filesystem', 'sharepoint', 'onedrive', 's3', 'azure_blob')")
+    op.execute("CREATE TYPE adapter_type AS ENUM ('filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob')")
     op.execute("CREATE TYPE job_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled')")
     op.execute("CREATE TYPE risk_tier AS ENUM ('MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL')")
     op.execute("CREATE TYPE exposure_level AS ENUM ('PRIVATE', 'INTERNAL', 'ORG_WIDE', 'PUBLIC')")
@@ -85,7 +85,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('tenants.id'), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
-        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
+        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
         sa.Column('config', postgresql.JSONB, nullable=False),
         sa.Column('enabled', sa.Boolean, server_default='true'),
         sa.Column('created_by', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id'), nullable=True),
@@ -148,7 +148,7 @@ def upgrade() -> None:
         sa.Column('risk_tier', postgresql.ENUM('MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL', name='risk_tier', create_type=False), nullable=False),
         sa.Column('content_score', sa.Float, nullable=True),
         sa.Column('exposure_multiplier', sa.Float, nullable=True),
-        sa.Column('co_occurrence_rules', postgresql.ARRAY(sa.Text), nullable=True),
+        sa.Column('co_occurrence_rules', postgresql.JSONB(), nullable=True),
         sa.Column('exposure_level', postgresql.ENUM('PRIVATE', 'INTERNAL', 'ORG_WIDE', 'PUBLIC', name='exposure_level', create_type=False), nullable=True),
         sa.Column('owner', sa.String(255), nullable=True),
         sa.Column('entity_counts', postgresql.JSONB, nullable=False),
@@ -251,7 +251,7 @@ def upgrade() -> None:
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('tenants.id'), nullable=False),
         sa.Column('target_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('scan_targets.id'), nullable=False),
         sa.Column('folder_path', sa.Text, nullable=False),
-        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
+        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
         sa.Column('file_count', sa.Integer, server_default='0'),
         sa.Column('total_size_bytes', sa.BigInteger, nullable=True),
         sa.Column('folder_modified', sa.DateTime(timezone=True), nullable=True),
@@ -276,7 +276,7 @@ def upgrade() -> None:
         sa.Column('folder_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('folder_inventory.id'), nullable=True),
         sa.Column('file_path', sa.Text, nullable=False),
         sa.Column('file_name', sa.String(255), nullable=False),
-        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
+        sa.Column('adapter', postgresql.ENUM('filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob', name='adapter_type', create_type=False), nullable=False),
         sa.Column('content_hash', sa.String(64), nullable=True),
         sa.Column('file_size', sa.BigInteger, nullable=True),
         sa.Column('file_modified', sa.DateTime(timezone=True), nullable=True),

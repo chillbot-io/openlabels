@@ -50,7 +50,7 @@ dependencies = [
     "uuid-utils>=0.6.0",  # Fast UUIDv7 generation (Rust)
 
     # Auth
-    "python-jose[cryptography]>=3.3.0",
+    "PyJWT[crypto]>=2.8.0",
     "msal>=1.26.0",
 
     # CLI
