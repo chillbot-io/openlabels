@@ -91,12 +91,12 @@ class OneDriveAdapter(BaseGraphAdapter):
 
         if use_delta:
             initial_path = f"/users/{user_id}/drive/root/delta"
-            items, is_delta = await client.get_with_delta(initial_path, resource_path)
+            items_iter, is_delta = await client.iter_with_delta(initial_path, resource_path)
 
             if is_delta:
-                logger.info(f"Delta scan for {user_id} returned {len(items)} changed items")
+                logger.info(f"Delta scan for {resource_path}")
 
-            for item in items:
+            async for item in items_iter:
                 # Skip deleted items
                 if item.get("deleted"):
                     yield FileInfo(
@@ -145,9 +145,8 @@ class OneDriveAdapter(BaseGraphAdapter):
             endpoint = f"/users/{user_id}/drive/root:{path}:/children"
 
         try:
-            items = await client.get_all_pages(endpoint)
+            items_iter = client.iter_all_pages(endpoint)
         except PermissionError as e:
-            # Handle 403 for inaccessible folders
             logger.debug(
                 f"Cannot access {path} for {user_id} - permission denied: {e}",
                 exc_info=True
@@ -160,14 +159,13 @@ class OneDriveAdapter(BaseGraphAdapter):
             )
             return
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
-            # Log unexpected errors with full context for debugging
             logger.debug(
                 f"Cannot access {path} for {user_id} - unexpected error ({type(e).__name__}): {e}",
                 exc_info=True
             )
             return
 
-        for item in items:
+        async for item in items_iter:
             if "folder" in item:
                 if recursive:
                     folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"

@@ -315,9 +315,10 @@ class FileProcessor:
         if ext in TEXT_EXTENSIONS:
             return await self._decode_text(content)
 
-        # Use secure extractors for all other formats
+        # Use secure extractors for all other formats (CPU-bound, offload to thread)
         try:
-            result = _extract_text_from_file(
+            result = await asyncio.to_thread(
+                _extract_text_from_file,
                 content=content,
                 filename=file_path,
                 ocr_engine=self._ocr_engine,
@@ -346,6 +347,18 @@ class FileProcessor:
             logger.warning(f"Unexpected extraction error for {file_path}: {type(e).__name__}: {e}")
             return await self._decode_text(content)
 
+    def _extract_image_sync(self, content: bytes) -> str:
+        """Synchronous image OCR -- all CPU-bound work in one call."""
+        import io
+        from PIL import Image
+        import numpy as np
+
+        image = Image.open(io.BytesIO(content))
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        image_array = np.array(image)
+        return self._ocr_engine.extract_text(image_array)
+
     async def _extract_image(self, content: bytes) -> str:
         """
         Extract text from image using OCR.
@@ -361,27 +374,11 @@ class FileProcessor:
             return ""
 
         try:
-            import io
-            from PIL import Image
-            import numpy as np
-
-            # Load image from bytes
-            image = Image.open(io.BytesIO(content))
-            # Convert to RGB if needed (OCR expects RGB)
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            # Convert to numpy array for RapidOCR
-            image_array = np.array(image)
-
-            # Extract text using OCR
-            text = self._ocr_engine.extract_text(image_array)
-            return text
-
+            return await asyncio.to_thread(self._extract_image_sync, content)
         except ImportError as e:
             logger.warning(f"Image processing library not installed: {e}")
             return ""
         except (OSError, ValueError, RuntimeError, MemoryError) as e:
-            # Log image OCR failures with context
             logger.warning(f"Error extracting text from image: {type(e).__name__}: {e}")
             return ""
 

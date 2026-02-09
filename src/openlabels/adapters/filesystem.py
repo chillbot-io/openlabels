@@ -85,7 +85,11 @@ class FilesystemAdapter:
         filter_config = filter_config or DEFAULT_FILTER
         target_path = Path(target)
 
-        if not target_path.exists():
+        exists, is_dir = await asyncio.to_thread(
+            lambda: (target_path.exists(), target_path.is_dir()),
+        )
+
+        if not exists:
             raise FilesystemError(
                 f"Target path does not exist",
                 path=target,
@@ -93,7 +97,7 @@ class FilesystemAdapter:
                 context="ensure the path exists and is accessible",
             )
 
-        if not target_path.is_dir():
+        if not is_dir:
             raise FilesystemError(
                 f"Target path is not a directory",
                 path=target,
@@ -224,9 +228,9 @@ class FilesystemAdapter:
 
             return content
 
-    async def get_metadata(self, file_info: FileInfo) -> FileInfo:
-        """Get updated metadata for a file."""
-        path = Path(file_info.path)
+    def _get_metadata_sync(self, file_path: str) -> FileInfo:
+        """Synchronous metadata collection -- all blocking I/O in one call."""
+        path = Path(file_path)
         stat_info = path.stat()
 
         return FileInfo(
@@ -240,6 +244,10 @@ class FilesystemAdapter:
             adapter=self.adapter_type,
         )
 
+    async def get_metadata(self, file_info: FileInfo) -> FileInfo:
+        """Get updated metadata for a file."""
+        return await asyncio.to_thread(self._get_metadata_sync, file_info.path)
+
     async def test_connection(self, config: dict) -> bool:
         """Test if we can access the configured path."""
         path = config.get("path")
@@ -247,7 +255,7 @@ class FilesystemAdapter:
             return False
 
         target = Path(path)
-        return target.exists() and target.is_dir()
+        return await asyncio.to_thread(lambda: target.exists() and target.is_dir())
 
     def _get_owner(self, path: Path) -> Optional[str]:
         """Get file owner."""
@@ -462,27 +470,15 @@ class FilesystemAdapter:
             logger.debug(f"OS error getting POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
-    async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
-        """
-        Move a file to a new location (quarantine).
-
-        Args:
-            file_info: FileInfo of file to move
-            dest_path: Destination path
-
-        Returns:
-            True if successful
-        """
+    def _move_file_sync(self, source_path: str, dest_path: str) -> bool:
+        """Synchronous file move -- all blocking I/O in one call."""
         import shutil
 
-        source = Path(file_info.path)
+        source = Path(source_path)
         dest = Path(dest_path)
 
         try:
-            # Create destination directory if needed
             dest.parent.mkdir(parents=True, exist_ok=True)
-
-            # Move the file
             shutil.move(str(source), str(dest))
             return True
         except PermissionError as e:
@@ -495,6 +491,19 @@ class FilesystemAdapter:
             logger.error(f"OS error moving {source} to {dest}: {e}")
             return False
 
+    async def move_file(self, file_info: FileInfo, dest_path: str) -> bool:
+        """
+        Move a file to a new location (quarantine).
+
+        Args:
+            file_info: FileInfo of file to move
+            dest_path: Destination path
+
+        Returns:
+            True if successful
+        """
+        return await asyncio.to_thread(self._move_file_sync, file_info.path, dest_path)
+
     async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
         """
         Get ACL for a file.
@@ -504,9 +513,9 @@ class FilesystemAdapter:
         path = Path(file_info.path)
 
         if sys.platform == "win32":
-            return self._get_windows_acl(path)
+            return await asyncio.to_thread(self._get_windows_acl, path)
         else:
-            return self._get_posix_acl(path)
+            return await asyncio.to_thread(self._get_posix_acl, path)
 
     def _get_windows_acl(self, path: Path) -> Optional[dict]:
         """Get Windows ACL (DACL)."""
@@ -586,9 +595,9 @@ class FilesystemAdapter:
         platform = acl.get("platform", "")
 
         if platform == "windows" and sys.platform == "win32":
-            return self._set_windows_acl(path, acl)
+            return await asyncio.to_thread(self._set_windows_acl, path, acl)
         elif platform == "posix":
-            return self._set_posix_acl(path, acl)
+            return await asyncio.to_thread(self._set_posix_acl, path, acl)
         else:
             logger.error(f"ACL platform mismatch: {platform} vs {sys.platform}")
             return False
@@ -675,9 +684,9 @@ class FilesystemAdapter:
         path = Path(file_info.path)
 
         if sys.platform == "win32":
-            success = self._lockdown_windows(path, allowed_sids or [])
+            success = await asyncio.to_thread(self._lockdown_windows, path, allowed_sids or [])
         else:
-            success = self._lockdown_posix(path)
+            success = await asyncio.to_thread(self._lockdown_posix, path)
 
         return success, original_acl if success else None
 

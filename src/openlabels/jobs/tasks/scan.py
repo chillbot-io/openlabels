@@ -590,31 +590,36 @@ async def execute_scan_task(
                 adapters = build_adapters_from_settings(settings.siem_export)
                 if adapters:
                     engine = ExportEngine(adapters)
-                    # Fetch scan results for this job
-                    job_results = (await session.execute(
+                    # Stream scan results in batches to avoid loading all into memory
+                    batch_size = 500
+                    total_exported = {}
+                    result_stream = await session.stream(
                         select(ScanResult).where(ScanResult.job_id == job.id)
-                    )).scalars().all()
-                    result_dicts = [
-                        {
-                            "file_path": r.file_path,
-                            "risk_score": r.risk_score,
-                            "risk_tier": r.risk_tier,
-                            "entity_counts": r.entity_counts,
-                            "policy_violations": r.policy_violations,
-                            "owner": r.owner,
-                            "scanned_at": r.scanned_at,
-                        }
-                        for r in job_results
-                    ]
-                    export_records = scan_result_to_export_records(
-                        result_dicts, job.tenant_id,
                     )
-                    export_results = await engine.export_full(
-                        job.tenant_id,
-                        export_records,
-                        record_types=settings.siem_export.export_record_types or None,
-                    )
-                    stats["siem_export"] = export_results
+                    async for batch in result_stream.scalars().partitions(batch_size):
+                        result_dicts = [
+                            {
+                                "file_path": r.file_path,
+                                "risk_score": r.risk_score,
+                                "risk_tier": r.risk_tier,
+                                "entity_counts": r.entity_counts,
+                                "policy_violations": r.policy_violations,
+                                "owner": r.owner,
+                                "scanned_at": r.scanned_at,
+                            }
+                            for r in batch
+                        ]
+                        export_records = scan_result_to_export_records(
+                            result_dicts, job.tenant_id,
+                        )
+                        batch_results = await engine.export_full(
+                            job.tenant_id,
+                            export_records,
+                            record_types=settings.siem_export.export_record_types or None,
+                        )
+                        for key, val in batch_results.items():
+                            total_exported[key] = total_exported.get(key, 0) + val
+                    stats["siem_export"] = total_exported
                     logger.info(
                         "Post-scan SIEM export for job %s: %s",
                         job.id, export_results,
@@ -810,19 +815,6 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                 if rule.match_value not in entity_type_rules:
                     entity_type_rules[rule.match_value] = (rule, label)
 
-    # Get scan results for this job that don't have labels yet
-    results_query = (
-        select(ScanResult)
-        .where(ScanResult.job_id == job.id)
-        .where(ScanResult.label_applied == False)
-    )
-    results = await session.execute(results_query)
-    scan_results = results.scalars().all()
-
-    if not scan_results:
-        logger.info(f"No unlabeled results for job {job.id}")
-        return stats
-
     # Initialize labeling engine
     labeling_engine = LabelingEngine(
         tenant_id=settings.auth.tenant_id,
@@ -833,77 +825,91 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
     # Get target for adapter info
     target = await session.get(ScanTarget, job.target_id)
 
-    for result in scan_results:
-        try:
-            matched_label = None
-            matched_label_name = None
+    # Stream unlabeled results in batches to avoid loading all into memory
+    results_query = (
+        select(ScanResult)
+        .where(ScanResult.job_id == job.id)
+        .where(ScanResult.label_applied == False)
+    )
+    result_stream = await session.stream(results_query)
+    has_results = False
 
-            # Try to match by entity type first (highest priority)
-            if entity_type_rules and result.entity_counts:
-                for entity_type in result.entity_counts.keys():
-                    if entity_type in entity_type_rules:
-                        rule, label = entity_type_rules[entity_type]
+    async for partition in result_stream.scalars().partitions(500):
+        for result in partition:
+            has_results = True
+            try:
+                matched_label = None
+                matched_label_name = None
+
+                # Try to match by entity type first (highest priority)
+                if entity_type_rules and result.entity_counts:
+                    for entity_type in result.entity_counts.keys():
+                        if entity_type in entity_type_rules:
+                            rule, label = entity_type_rules[entity_type]
+                            matched_label = label.id
+                            matched_label_name = label.name
+                            break
+
+                # Fall back to risk tier matching
+                if not matched_label:
+                    if risk_tier_rules and result.risk_tier in risk_tier_rules:
+                        rule, label = risk_tier_rules[result.risk_tier]
                         matched_label = label.id
                         matched_label_name = label.name
-                        break
+                    elif settings.labeling.risk_tier_mapping:
+                        # Use settings mapping as fallback with prefetched labels
+                        label_name = settings.labeling.risk_tier_mapping.get(result.risk_tier)
+                        if label_name and label_name in labels_by_name:
+                            label = labels_by_name[label_name]
+                            matched_label = label.id
+                            matched_label_name = label.name
 
-            # Fall back to risk tier matching
-            if not matched_label:
-                if risk_tier_rules and result.risk_tier in risk_tier_rules:
-                    rule, label = risk_tier_rules[result.risk_tier]
-                    matched_label = label.id
-                    matched_label_name = label.name
-                elif settings.labeling.risk_tier_mapping:
-                    # Use settings mapping as fallback with prefetched labels
-                    label_name = settings.labeling.risk_tier_mapping.get(result.risk_tier)
-                    if label_name and label_name in labels_by_name:
-                        label = labels_by_name[label_name]
-                        matched_label = label.id
-                        matched_label_name = label.name
+                if not matched_label:
+                    stats["skipped"] += 1
+                    continue
 
-            if not matched_label:
-                stats["skipped"] += 1
-                continue
+                # Build FileInfo for labeling engine
+                file_info = FileInfo(
+                    path=result.file_path,
+                    name=result.file_name,
+                    size=result.file_size or 0,
+                    modified=result.file_modified or datetime.now(timezone.utc),
+                    adapter=target.adapter if target else "filesystem",
+                    exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
+                    item_id=result.adapter_item_id,
+                )
 
-            # Build FileInfo for labeling engine
-            file_info = FileInfo(
-                path=result.file_path,
-                name=result.file_name,
-                size=result.file_size or 0,
-                modified=result.file_modified or datetime.now(timezone.utc),
-                adapter=target.adapter if target else "filesystem",
-                exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
-                item_id=result.adapter_item_id,
-            )
+                # Apply label
+                label_result = await labeling_engine.apply_label(
+                    file_info=file_info,
+                    label_id=matched_label,
+                    label_name=matched_label_name,
+                )
 
-            # Apply label
-            label_result = await labeling_engine.apply_label(
-                file_info=file_info,
-                label_id=matched_label,
-                label_name=matched_label_name,
-            )
+                if label_result.success:
+                    result.current_label_id = matched_label
+                    result.current_label_name = matched_label_name
+                    result.label_applied = True
+                    result.label_applied_at = datetime.now(timezone.utc)
+                    stats["labeled"] += 1
+                    logger.info(f"Applied label '{matched_label_name}' to {result.file_path}")
+                else:
+                    result.label_error = label_result.error
+                    stats["errors"] += 1
+                    logger.warning(f"Failed to label {result.file_path}: {label_result.error}")
 
-            if label_result.success:
-                result.current_label_id = matched_label
-                result.current_label_name = matched_label_name
-                result.label_applied = True
-                result.label_applied_at = datetime.now(timezone.utc)
-                stats["labeled"] += 1
-                logger.info(f"Applied label '{matched_label_name}' to {result.file_path}")
-            else:
-                result.label_error = label_result.error
+            except PermissionError as e:
                 stats["errors"] += 1
-                logger.warning(f"Failed to label {result.file_path}: {label_result.error}")
+                logger.error(f"Permission denied auto-labeling {result.file_path}: {e}")
+            except OSError as e:
+                stats["errors"] += 1
+                logger.error(f"OS error auto-labeling {result.file_path}: {e}")
+            except RuntimeError as e:
+                stats["errors"] += 1
+                logger.error(f"Runtime error auto-labeling {result.file_path}: {e}")
 
-        except PermissionError as e:
-            stats["errors"] += 1
-            logger.error(f"Permission denied auto-labeling {result.file_path}: {e}")
-        except OSError as e:
-            stats["errors"] += 1
-            logger.error(f"OS error auto-labeling {result.file_path}: {e}")
-        except RuntimeError as e:
-            stats["errors"] += 1
-            logger.error(f"Runtime error auto-labeling {result.file_path}: {e}")
+    if not has_results:
+        logger.info(f"No unlabeled results for job {job.id}")
 
     await session.commit()
     return stats
