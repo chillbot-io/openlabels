@@ -53,7 +53,7 @@ class TargetDialog(QDialog):
         basic_layout.addRow("Name:", self.name_edit)
 
         self.adapter_combo = QComboBox()
-        self.adapter_combo.addItems(["filesystem", "sharepoint", "onedrive"])
+        self.adapter_combo.addItems(["filesystem", "sharepoint", "onedrive", "s3", "gcs"])
         self.adapter_combo.currentTextChanged.connect(self._on_adapter_changed)
         basic_layout.addRow("Adapter:", self.adapter_combo)
 
@@ -74,6 +74,22 @@ class TargetDialog(QDialog):
         # OneDrive fields
         self.user_email_edit = QLineEdit()
         self.user_email_edit.setPlaceholderText("e.g., user@company.com or 'all' for all users")
+
+        # S3 fields
+        self.s3_bucket_edit = QLineEdit()
+        self.s3_bucket_edit.setPlaceholderText("e.g., my-data-bucket")
+        self.s3_prefix_edit = QLineEdit()
+        self.s3_prefix_edit.setPlaceholderText("e.g., documents/ (optional)")
+        self.s3_region_edit = QLineEdit()
+        self.s3_region_edit.setPlaceholderText("e.g., us-east-1")
+
+        # GCS fields
+        self.gcs_bucket_edit = QLineEdit()
+        self.gcs_bucket_edit.setPlaceholderText("e.g., my-gcs-bucket")
+        self.gcs_prefix_edit = QLineEdit()
+        self.gcs_prefix_edit.setPlaceholderText("e.g., documents/ (optional)")
+        self.gcs_project_edit = QLineEdit()
+        self.gcs_project_edit.setPlaceholderText("e.g., my-gcp-project")
 
         layout.addWidget(self.config_group)
 
@@ -100,6 +116,14 @@ class TargetDialog(QDialog):
             self.config_layout.addRow("Site URL:", self.site_url_edit)
         elif adapter == "onedrive":
             self.config_layout.addRow("User Email:", self.user_email_edit)
+        elif adapter == "s3":
+            self.config_layout.addRow("Bucket:", self.s3_bucket_edit)
+            self.config_layout.addRow("Prefix:", self.s3_prefix_edit)
+            self.config_layout.addRow("Region:", self.s3_region_edit)
+        elif adapter == "gcs":
+            self.config_layout.addRow("Bucket:", self.gcs_bucket_edit)
+            self.config_layout.addRow("Prefix:", self.gcs_prefix_edit)
+            self.config_layout.addRow("Project:", self.gcs_project_edit)
 
     def _populate_from_target(self, target: dict):
         """Populate fields from existing target."""
@@ -114,6 +138,14 @@ class TargetDialog(QDialog):
             self.site_url_edit.setText(config.get("site_url", ""))
         elif adapter == "onedrive":
             self.user_email_edit.setText(config.get("user_email", ""))
+        elif adapter == "s3":
+            self.s3_bucket_edit.setText(config.get("bucket", ""))
+            self.s3_prefix_edit.setText(config.get("prefix", ""))
+            self.s3_region_edit.setText(config.get("region", ""))
+        elif adapter == "gcs":
+            self.gcs_bucket_edit.setText(config.get("bucket", ""))
+            self.gcs_prefix_edit.setText(config.get("prefix", ""))
+            self.gcs_project_edit.setText(config.get("project", ""))
 
     def get_target_data(self) -> dict:
         """Get target data from form."""
@@ -126,6 +158,14 @@ class TargetDialog(QDialog):
             config["site_url"] = self.site_url_edit.text()
         elif adapter == "onedrive":
             config["user_email"] = self.user_email_edit.text()
+        elif adapter == "s3":
+            config["bucket"] = self.s3_bucket_edit.text()
+            config["prefix"] = self.s3_prefix_edit.text()
+            config["region"] = self.s3_region_edit.text()
+        elif adapter == "gcs":
+            config["bucket"] = self.gcs_bucket_edit.text()
+            config["prefix"] = self.gcs_prefix_edit.text()
+            config["project"] = self.gcs_project_edit.text()
 
         return {
             "name": self.name_edit.text(),
@@ -200,9 +240,14 @@ class TargetsWidget(QWidget):
         adapter_item = QTableWidgetItem(adapter)
         self.table.setItem(row, 1, adapter_item)
 
-        # Path/URL
+        # Path/URL/Bucket
         config = target.get("config", {})
-        path = config.get("path") or config.get("site_url") or config.get("user_email", "")
+        bucket = config.get("bucket", "")
+        path = config.get("path") or config.get("site_url") or config.get("user_email") or (
+            f"s3://{bucket}/{config.get('prefix', '')}" if adapter == "s3" and bucket else
+            f"gs://{bucket}/{config.get('prefix', '')}" if adapter == "gcs" and bucket else
+            ""
+        )
         path_item = QTableWidgetItem(path)
         self.table.setItem(row, 2, path_item)
 

@@ -23,27 +23,10 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    is_label_compatible,
 )
 
 logger = logging.getLogger(__name__)
-
-# Label-compatible extensions that support metadata round-trip via re-upload
-_LABEL_COMPATIBLE_EXTENSIONS = frozenset({
-    ".docx", ".xlsx", ".pptx", ".pdf",
-    ".doc", ".xls", ".ppt",
-    ".csv", ".tsv", ".json", ".xml",
-    ".txt", ".md", ".rst", ".html", ".htm",
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
-    ".zip", ".tar", ".gz",
-})
-
-
-def _is_label_compatible(name: str) -> bool:
-    """Check if a file type supports label metadata via S3 object metadata."""
-    dot = name.rfind(".")
-    if dot == -1:
-        return False
-    return name[dot:].lower() in _LABEL_COMPATIBLE_EXTENSIONS
 
 
 class S3Adapter:
@@ -207,25 +190,23 @@ class S3Adapter:
         file_info: FileInfo,
         label_id: str,
         label_name: str | None = None,
-        content: bytes | None = None,
     ) -> dict:
-        """Apply a sensitivity label by re-uploading with updated metadata.
+        """Apply a sensitivity label via metadata-only self-copy.
 
-        For label-compatible files, downloads the object (if *content* is not
-        supplied), injects the label into S3 user metadata, and performs a
-        conditional PUT using the original ETag to prevent overwrites on
-        concurrent modifications.
+        For label-compatible files, performs a server-side ``copy_object``
+        self-copy with ``MetadataDirective=REPLACE`` and
+        ``CopySourceIfMatch`` set to the original ETag.  This updates
+        metadata atomically without downloading or re-uploading content.
 
         Args:
             file_info: FileInfo from list_files / get_metadata.
             label_id: MIP label GUID.
             label_name: Human-readable label name.
-            content: Pre-downloaded content (avoids a second GET).
 
         Returns:
             Dict with ``success``, ``method``, and optional ``error`` keys.
         """
-        if not _is_label_compatible(file_info.name):
+        if not is_label_compatible(file_info.name):
             return {
                 "success": False,
                 "method": "skipped",
@@ -256,16 +237,6 @@ class S3Adapter:
                 "error": f"ETag mismatch: object modified since scan (expected {stored_etag}, got {original_etag})",
             }
 
-        # Download content if not supplied
-        if content is None:
-            try:
-                response = await asyncio.to_thread(
-                    client.get_object, Bucket=self._bucket, Key=key
-                )
-                content = await asyncio.to_thread(response["Body"].read)
-            except Exception as exc:
-                return {"success": False, "method": "s3_metadata", "error": str(exc)}
-
         # Build updated metadata
         existing_metadata = head.get("Metadata", {})
         existing_metadata["openlabels-label-id"] = label_id
@@ -274,16 +245,22 @@ class S3Adapter:
 
         content_type = head.get("ContentType", "application/octet-stream")
 
-        # Re-upload with updated metadata
+        # Use copy_object self-copy to update metadata atomically.
+        # CopySourceIfMatch ensures the copy only succeeds if the ETag
+        # still matches, closing the TOCTOU window between head_object
+        # and the write.
         try:
-            put_kwargs: dict = {
+            copy_source = f"{self._bucket}/{key}"
+            copy_kwargs: dict = {
                 "Bucket": self._bucket,
                 "Key": key,
-                "Body": content,
+                "CopySource": copy_source,
+                "CopySourceIfMatch": f'"{original_etag}"',
                 "Metadata": existing_metadata,
+                "MetadataDirective": "REPLACE",
                 "ContentType": content_type,
             }
-            await asyncio.to_thread(lambda: client.put_object(**put_kwargs))
+            await asyncio.to_thread(lambda: client.copy_object(**copy_kwargs))
         except Exception as exc:
             error_str = str(exc)
             if "PreconditionFailed" in error_str or "412" in error_str:

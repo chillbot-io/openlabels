@@ -251,12 +251,92 @@ def validate_onedrive_target_config(config: dict) -> dict:
     return sanitized
 
 
+def validate_s3_target_config(config: dict) -> dict:
+    """
+    Validate S3 scan target configuration.
+
+    Args:
+        config: Target configuration dictionary
+
+    Returns:
+        Validated and sanitized config
+
+    Raises:
+        HTTPException: If configuration is invalid
+    """
+    if not config:
+        raise HTTPException(status_code=400, detail="Configuration is required")
+
+    bucket = config.get("bucket")
+    if not bucket:
+        raise HTTPException(
+            status_code=400,
+            detail="S3 target requires 'bucket' in config",
+        )
+
+    # Validate bucket name per S3 naming rules
+    if not re.match(r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$", bucket):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid S3 bucket name",
+        )
+
+    prefix = config.get("prefix", "")
+    if ".." in prefix:
+        raise HTTPException(
+            status_code=400,
+            detail="S3 prefix contains invalid traversal sequences",
+        )
+
+    return config
+
+
+def validate_gcs_target_config(config: dict) -> dict:
+    """
+    Validate GCS scan target configuration.
+
+    Args:
+        config: Target configuration dictionary
+
+    Returns:
+        Validated and sanitized config
+
+    Raises:
+        HTTPException: If configuration is invalid
+    """
+    if not config:
+        raise HTTPException(status_code=400, detail="Configuration is required")
+
+    bucket = config.get("bucket")
+    if not bucket:
+        raise HTTPException(
+            status_code=400,
+            detail="GCS target requires 'bucket' in config",
+        )
+
+    # Validate bucket name per GCS naming rules
+    if not re.match(r"^[a-z0-9][a-z0-9_\-\.]{1,220}[a-z0-9]$", bucket):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid GCS bucket name",
+        )
+
+    prefix = config.get("prefix", "")
+    if ".." in prefix:
+        raise HTTPException(
+            status_code=400,
+            detail="GCS prefix contains invalid traversal sequences",
+        )
+
+    return config
+
+
 def validate_target_config(adapter: str, config: dict) -> dict:
     """
     Validate scan target configuration based on adapter type.
 
     Args:
-        adapter: The adapter type ('filesystem', 'sharepoint', 'onedrive')
+        adapter: The adapter type ('filesystem', 'sharepoint', 'onedrive', 's3', 'gcs')
         config: Target configuration dictionary
 
     Returns:
@@ -269,6 +349,8 @@ def validate_target_config(adapter: str, config: dict) -> dict:
         "filesystem": validate_filesystem_target_config,
         "sharepoint": validate_sharepoint_target_config,
         "onedrive": validate_onedrive_target_config,
+        "s3": validate_s3_target_config,
+        "gcs": validate_gcs_target_config,
     }
 
     validator = validators.get(adapter)
@@ -282,7 +364,7 @@ class TargetCreate(BaseModel):
     """Request to create a scan target."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Target name")
-    adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive)$", description="Adapter type")
+    adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive|s3|gcs)$", description="Adapter type")
     config: dict = Field(..., description="Adapter-specific configuration")
 
     @field_validator("name")
@@ -362,7 +444,7 @@ async def create_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Create a new scan target."""
-    if request.adapter not in ("filesystem", "sharepoint", "onedrive"):
+    if request.adapter not in ("filesystem", "sharepoint", "onedrive", "s3", "gcs"):
         raise HTTPException(status_code=400, detail="Invalid adapter type")
 
     # Security: Validate target configuration to prevent path traversal and SSRF

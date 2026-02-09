@@ -44,7 +44,7 @@ def target_list(server: str, token: str | None, output_format: str) -> None:
 
 @target.command("add")
 @click.argument("name")
-@click.option("--adapter", required=True, type=click.Choice(["filesystem", "sharepoint", "onedrive"]))
+@click.option("--adapter", required=True, type=click.Choice(["filesystem", "sharepoint", "onedrive", "s3", "gcs"]))
 @click.option("--path", required=True, help="Path or site URL to scan")
 @server_options
 def target_add(name: str, adapter: str, path: str, server: str, token: str | None) -> None:

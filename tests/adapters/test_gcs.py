@@ -29,17 +29,17 @@ class TestGCSAdapterProperties:
 
 class TestGCSLabelCompatibility:
     def test_compatible_extensions(self):
-        from openlabels.adapters.gcs import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("report.pdf") is True
-        assert _is_label_compatible("data.csv") is True
-        assert _is_label_compatible("doc.docx") is True
+        assert is_label_compatible("report.pdf") is True
+        assert is_label_compatible("data.csv") is True
+        assert is_label_compatible("doc.docx") is True
 
     def test_incompatible_extensions(self):
-        from openlabels.adapters.gcs import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("binary.bin") is False
-        assert _is_label_compatible("noext") is False
+        assert is_label_compatible("binary.bin") is False
+        assert is_label_compatible("noext") is False
 
 
 class TestGCSAdapterListFiles:
