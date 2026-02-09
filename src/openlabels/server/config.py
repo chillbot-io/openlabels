@@ -553,6 +553,60 @@ class MonitoringSettings(BaseSettings):
     webhook_client_state: str = ""
 
 
+class SIEMExportSettings(BaseSettings):
+    """SIEM export configuration.
+
+    Environment variables::
+
+        OPENLABELS_SIEM_EXPORT__ENABLED=true
+        OPENLABELS_SIEM_EXPORT__MODE=post_scan
+        OPENLABELS_SIEM_EXPORT__SPLUNK_HEC_URL=https://splunk:8088/services/collector/event
+        OPENLABELS_SIEM_EXPORT__SPLUNK_HEC_TOKEN=xxxx
+    """
+
+    model_config = SettingsConfigDict(env_prefix="OPENLABELS_SIEM_EXPORT__")
+
+    enabled: bool = False
+    mode: Literal["post_scan", "periodic", "continuous"] = "post_scan"
+    periodic_interval_seconds: int = 300
+
+    # Splunk HEC
+    splunk_hec_url: str = ""
+    splunk_hec_token: str = ""
+    splunk_index: str = "main"
+    splunk_sourcetype: str = "openlabels"
+    splunk_verify_ssl: bool = True
+
+    # Microsoft Sentinel
+    sentinel_workspace_id: str = ""
+    sentinel_shared_key: str = ""
+    sentinel_log_type: str = "OpenLabels"
+
+    # IBM QRadar
+    qradar_syslog_host: str = ""
+    qradar_syslog_port: int = 514
+    qradar_protocol: str = "tcp"
+    qradar_use_tls: bool = False
+    qradar_format: str = "leef"
+
+    # Elastic
+    elastic_hosts: list[str] = []
+    elastic_api_key: str = ""
+    elastic_username: str = ""
+    elastic_password: str = ""
+    elastic_index_prefix: str = "openlabels"
+    elastic_verify_ssl: bool = True
+
+    # Generic syslog (CEF)
+    syslog_host: str = ""
+    syslog_port: int = 514
+    syslog_protocol: str = "tcp"
+    syslog_use_tls: bool = False
+
+    # Record types to export
+    export_record_types: list[str] = ["scan_result", "policy_violation"]
+
+
 class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
@@ -618,6 +672,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    siem_export: SIEMExportSettings = Field(default_factory=SIEMExportSettings)
 
 
 def load_yaml_config(path: Path | None = None) -> dict:

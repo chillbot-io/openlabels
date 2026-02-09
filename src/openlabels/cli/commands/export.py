@@ -53,3 +53,61 @@ def export_results(job: str, fmt: str, output: str, server: str, token: str | No
         click.echo(f"Error: Cannot write to output file: {e}", err=True)
     finally:
         client.close()
+
+
+@export.command("siem")
+@click.option(
+    "--adapter",
+    default=None,
+    type=click.Choice(["splunk", "sentinel", "qradar", "elastic", "syslog_cef"]),
+    help="Export to a specific adapter (all configured if omitted)",
+)
+@click.option("--since", default=None, help="Export records since ISO datetime")
+@click.option("--test", "test_conn", is_flag=True, help="Test connection only")
+@server_options
+def export_siem(
+    adapter: str | None,
+    since: str | None,
+    test_conn: bool,
+    server: str,
+    token: str | None,
+) -> None:
+    """Export findings to configured SIEM platforms."""
+    from openlabels.cli.base import spinner
+
+    client = get_api_client(server, token)
+
+    try:
+        if test_conn:
+            with spinner("Testing SIEM connections..."):
+                response = client.post("/api/v1/export/siem/test")
+            if response.status_code == 200:
+                data = response.json()
+                for name, ok in data.get("results", {}).items():
+                    status = "OK" if ok else "FAILED"
+                    click.echo(f"  {name}: {status}")
+            else:
+                click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+            return
+
+        payload: dict = {}
+        if adapter:
+            payload["adapter"] = adapter
+        if since:
+            payload["since"] = since
+
+        with spinner("Exporting to SIEM..."):
+            response = client.post("/api/v1/export/siem", json=payload)
+
+        if response.status_code == 200:
+            data = response.json()
+            click.echo(f"Exported {data.get('total_records', 0)} records:")
+            for name, count in data.get("exported", {}).items():
+                click.echo(f"  {name}: {count} records")
+        else:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
+    finally:
+        client.close()

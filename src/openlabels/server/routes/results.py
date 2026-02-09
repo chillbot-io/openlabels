@@ -72,6 +72,7 @@ class ResultDetailResponse(ResultResponse):
     exposure_multiplier: Optional[float] = None
     co_occurrence_rules: Optional[list[str]] = None
     findings: Optional[dict] = None
+    policy_violations: Optional[list[dict]] = None
     label_applied_at: Optional[datetime] = None
     label_error: Optional[str] = None
 

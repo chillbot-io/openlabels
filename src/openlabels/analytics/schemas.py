@@ -34,6 +34,7 @@ SCAN_RESULTS_SCHEMA = pa.schema([
     pa.field("recommended_label_name", pa.utf8()),
     pa.field("label_applied_at", pa.timestamp("ms", tz="UTC")),
     pa.field("label_error", pa.utf8()),
+    pa.field("policy_violations", pa.utf8()),  # JSON string of violation records
     pa.field("scanned_at", pa.timestamp("ms", tz="UTC")),
 ])
 

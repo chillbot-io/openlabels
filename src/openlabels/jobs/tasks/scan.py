@@ -324,6 +324,35 @@ async def execute_scan_task(
                 )
                 session.add(scan_result)
 
+                # Execute policy-triggered remediation actions
+                if result.get("policy_violations"):
+                    try:
+                        from openlabels.core.policies.actions import (
+                            PolicyActionExecutor,
+                            PolicyActionContext,
+                        )
+                        await session.flush()  # ensure scan_result.id is assigned
+                        action_ctx = PolicyActionContext(
+                            file_path=file_info.path,
+                            tenant_id=job.tenant_id,
+                            scan_result_id=scan_result.id,
+                            risk_tier=result["risk_tier"],
+                            violations=result["policy_violations"],
+                        )
+                        executor = PolicyActionExecutor()
+                        action_results = await executor.execute_all(action_ctx)
+                        for ar in action_results:
+                            if not ar.success:
+                                logger.warning(
+                                    "Policy action %s failed for %s: %s",
+                                    ar.action, file_info.path, ar.error,
+                                )
+                    except Exception as e:
+                        logger.error(
+                            "Policy action execution failed for %s: %s",
+                            file_info.path, e,
+                        )
+
                 # Update stats
                 stats["files_scanned"] += 1
                 if result["total_entities"] > 0:
@@ -489,6 +518,54 @@ async def execute_scan_task(
                     e,
                 )
                 stats["catalog_flush_error"] = str(e)
+
+        # Post-scan SIEM export (fire-and-forget, non-fatal)
+        if settings.siem_export.enabled and settings.siem_export.mode == "post_scan":
+            try:
+                from openlabels.export.engine import (
+                    ExportEngine,
+                    scan_result_to_export_records,
+                )
+                from openlabels.export.setup import build_adapters_from_settings
+
+                adapters = build_adapters_from_settings(settings.siem_export)
+                if adapters:
+                    engine = ExportEngine(adapters)
+                    # Fetch scan results for this job
+                    job_results = (await session.execute(
+                        select(ScanResult).where(ScanResult.job_id == job.id)
+                    )).scalars().all()
+                    result_dicts = [
+                        {
+                            "file_path": r.file_path,
+                            "risk_score": r.risk_score,
+                            "risk_tier": r.risk_tier,
+                            "entity_counts": r.entity_counts,
+                            "policy_violations": r.policy_violations,
+                            "owner": r.owner,
+                            "scanned_at": r.scanned_at,
+                        }
+                        for r in job_results
+                    ]
+                    export_records = scan_result_to_export_records(
+                        result_dicts, job.tenant_id,
+                    )
+                    export_results = await engine.export_full(
+                        job.tenant_id,
+                        export_records,
+                        record_types=settings.siem_export.export_record_types or None,
+                    )
+                    stats["siem_export"] = export_results
+                    logger.info(
+                        "Post-scan SIEM export for job %s: %s",
+                        job.id, export_results,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "SIEM export failed for job %s (non-fatal): %s",
+                    job.id, e,
+                )
+                stats["siem_export_error"] = str(e)
 
         return stats
 

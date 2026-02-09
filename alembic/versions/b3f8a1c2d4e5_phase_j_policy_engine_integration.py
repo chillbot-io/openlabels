@@ -52,9 +52,16 @@ def upgrade() -> None:
     )
     op.create_index('ix_policies_tenant_framework', 'policies', ['tenant_id', 'framework'])
     op.create_index('ix_policies_tenant_enabled', 'policies', ['tenant_id', 'enabled'])
+    op.create_index(
+        'ix_scan_results_policy_violations',
+        'scan_results',
+        ['policy_violations'],
+        postgresql_using='gin',
+    )
 
 
 def downgrade() -> None:
+    op.drop_index('ix_scan_results_policy_violations', table_name='scan_results')
     op.drop_index('ix_policies_tenant_enabled', table_name='policies')
     op.drop_index('ix_policies_tenant_framework', table_name='policies')
     op.drop_table('policies')

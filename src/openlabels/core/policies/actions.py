@@ -66,6 +66,10 @@ class PolicyActionExecutor:
         if "critical" in severities:
             results.append(await self.quarantine(ctx))
 
+        # Apply label for high+ severity
+        if severities & {"critical", "high"}:
+            results.append(await self.apply_label(ctx))
+
         # Enroll in monitoring for high+ severity
         if severities & {"critical", "high"}:
             results.append(await self.enroll_monitoring(ctx))
@@ -104,6 +108,36 @@ class PolicyActionExecutor:
                 success=False,
                 error=str(e),
             )
+
+    async def apply_label(self, ctx: PolicyActionContext) -> ActionResult:
+        """Apply a sensitivity label based on policy violation severity."""
+        try:
+            from openlabels.labeling.engine import LabelingEngine
+
+            engine = LabelingEngine()
+            # Map risk tier to label recommendation
+            label = engine.recommend_label(risk_tier=ctx.risk_tier)
+            if label is None:
+                return ActionResult(
+                    action="label",
+                    success=True,
+                    detail="No matching label for risk tier",
+                )
+
+            applied = engine.apply_label(
+                file_path=ctx.file_path,
+                label_id=label.label_id,
+                label_name=label.label_name,
+            )
+            return ActionResult(
+                action="label",
+                success=applied.success,
+                detail=f"Applied label: {label.label_name}" if applied.success else None,
+                error=applied.error,
+            )
+        except Exception as e:
+            logger.error("Label application failed for %s: %s", ctx.file_path, e)
+            return ActionResult(action="label", success=False, error=str(e))
 
     async def enroll_monitoring(self, ctx: PolicyActionContext) -> ActionResult:
         """Add the file to the monitoring registry."""
