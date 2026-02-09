@@ -145,7 +145,11 @@ class DetectorOrchestrator:
         model_dir = Path(model_dir).expanduser()
 
         if not model_dir.exists():
-            logger.warning(f"ML model directory not found: {model_dir}")
+            logger.warning(
+                "ML model directory not found: %s  "
+                "(download models with: openlabels models download ner)",
+                model_dir,
+            )
             return
 
         if use_onnx:

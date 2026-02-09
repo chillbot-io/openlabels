@@ -292,8 +292,9 @@ class OCREngine:
 
         if not self.is_available:
             raise ImportError(
-                "rapidocr-onnxruntime not installed. "
-                "Run: pip install rapidocr-onnxruntime"
+                "OCR engine not available. Either install the bundled package "
+                "(pip install rapidocr-onnxruntime) or download OCR models "
+                "(openlabels models download ocr)"
             )
 
         try:

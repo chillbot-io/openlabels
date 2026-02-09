@@ -161,7 +161,11 @@ class ONNXDetector(BaseDetector):
         """
         onnx_path = self._get_onnx_path()
         if not onnx_path:
-            logger.warning(f"{self.name} detector disabled: ONNX model not found at {self.model_dir}")
+            logger.warning(
+                "%s detector disabled: ONNX model not found at %s  "
+                "(download with: openlabels models download %s)",
+                self.name, self.model_dir, self.model_name,
+            )
             return False
 
         # Try standalone tokenizer first (fast, no transformers)

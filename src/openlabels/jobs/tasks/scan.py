@@ -212,7 +212,7 @@ async def execute_scan_task(
 
     # Security: Get max file size limit to prevent DoS via memory exhaustion
     settings = get_settings()
-    max_file_size_bytes = settings.scan.max_file_size_mb * 1024 * 1024
+    max_file_size_bytes = settings.detection.max_file_size_mb * 1024 * 1024
 
     # Scan statistics
     stats = {

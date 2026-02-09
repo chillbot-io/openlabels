@@ -248,42 +248,42 @@ async def get_health_status(
 
     # Get scan statistics (tenant-specific, requires authentication)
     if user is not None:
-      try:
-        today = datetime.now(timezone.utc).date()
-        today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+        try:
+            today = datetime.now(timezone.utc).date()
+            today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
 
-        # Scans today
-        scans_query = select(func.count()).select_from(ScanJob).where(
-            ScanJob.tenant_id == user.tenant_id,
-            ScanJob.created_at >= today_start,
-        )
-        result = await session.execute(scans_query)
-        status["scans_today"] = result.scalar() or 0
+            # Scans today
+            scans_query = select(func.count()).select_from(ScanJob).where(
+                ScanJob.tenant_id == user.tenant_id,
+                ScanJob.created_at >= today_start,
+            )
+            result = await session.execute(scans_query)
+            status["scans_today"] = result.scalar() or 0
 
-        # Files processed (all time for tenant)
-        files_query = select(func.count()).select_from(ScanResult).where(
-            ScanResult.tenant_id == user.tenant_id,
-        )
-        result = await session.execute(files_query)
-        status["files_processed"] = result.scalar() or 0
+            # Files processed (all time for tenant)
+            files_query = select(func.count()).select_from(ScanResult).where(
+                ScanResult.tenant_id == user.tenant_id,
+            )
+            result = await session.execute(files_query)
+            status["files_processed"] = result.scalar() or 0
 
-        # Success rate (completed vs failed scans in last 7 days)
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        success_query = select(
-            func.count().label("total"),
-            func.sum(func.cast(ScanJob.status == "completed", Integer)).label("completed"),
-        ).where(
-            ScanJob.tenant_id == user.tenant_id,
-            ScanJob.created_at >= week_ago,
-        )
-        result = await session.execute(success_query)
-        row = result.one()
-        total = row.total or 0
-        completed = row.completed or 0
-        status["success_rate"] = (completed / total * 100) if total > 0 else 100.0
+            # Success rate (completed vs failed scans in last 7 days)
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            success_query = select(
+                func.count().label("total"),
+                func.sum(func.cast(ScanJob.status == "completed", Integer)).label("completed"),
+            ).where(
+                ScanJob.tenant_id == user.tenant_id,
+                ScanJob.created_at >= week_ago,
+            )
+            result = await session.execute(success_query)
+            row = result.one()
+            total = row.total or 0
+            completed = row.completed or 0
+            status["success_rate"] = (completed / total * 100) if total > 0 else 100.0
 
-      except (SQLAlchemyError, ConnectionError, OSError) as e:
-        logger.warning(f"Stats query failed: {e}")
+        except (SQLAlchemyError, ConnectionError, OSError) as e:
+            logger.warning(f"Stats query failed: {e}")
 
     # Add circuit breaker status
     try:
@@ -305,37 +305,37 @@ async def get_health_status(
 
     # Add job metrics (tenant-specific, requires authentication)
     if user is not None:
-      try:
-        job_queue = JobQueueService(session, user.tenant_id)
-        age_stats = await job_queue.get_job_age_stats()
-        stale_jobs = await job_queue.get_stale_pending_jobs()
+        try:
+            job_queue = JobQueueService(session, user.tenant_id)
+            age_stats = await job_queue.get_job_age_stats()
+            stale_jobs = await job_queue.get_stale_pending_jobs()
 
-        # Query tenant-scoped pending/failed counts (not the global ones)
-        tenant_pending_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == "pending",
-            JobQueue.tenant_id == user.tenant_id,
-        )
-        tenant_pending = (await session.execute(tenant_pending_query)).scalar() or 0
+            # Query tenant-scoped pending/failed counts (not the global ones)
+            tenant_pending_query = select(func.count()).select_from(JobQueue).where(
+                JobQueue.status == "pending",
+                JobQueue.tenant_id == user.tenant_id,
+            )
+            tenant_pending = (await session.execute(tenant_pending_query)).scalar() or 0
 
-        tenant_failed_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == "failed",
-            JobQueue.tenant_id == user.tenant_id,
-        )
-        tenant_failed = (await session.execute(tenant_failed_query)).scalar() or 0
+            tenant_failed_query = select(func.count()).select_from(JobQueue).where(
+                JobQueue.status == "failed",
+                JobQueue.tenant_id == user.tenant_id,
+            )
+            tenant_failed = (await session.execute(tenant_failed_query)).scalar() or 0
 
-        status["job_metrics"] = JobMetrics(
-            pending_count=tenant_pending,
-            running_count=age_stats.get("running_count", 0),
-            failed_count=tenant_failed,
-            completed_count=age_stats.get("completed_count", 0),
-            stuck_jobs_count=age_stats.get("stuck_count", 0),
-            stale_pending_count=len(stale_jobs),
-            oldest_pending_hours=age_stats.get("oldest_pending_hours"),
-            oldest_running_hours=age_stats.get("oldest_running_hours"),
-        )
-      except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
-        # Job metrics failure may indicate queue issues
-        logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
+            status["job_metrics"] = JobMetrics(
+                pending_count=tenant_pending,
+                running_count=age_stats.get("running_count", 0),
+                failed_count=tenant_failed,
+                completed_count=age_stats.get("completed_count", 0),
+                stuck_jobs_count=age_stats.get("stuck_count", 0),
+                stale_pending_count=len(stale_jobs),
+                oldest_pending_hours=age_stats.get("oldest_pending_hours"),
+                oldest_running_hours=age_stats.get("oldest_running_hours"),
+            )
+        except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
+            # Job metrics failure may indicate queue issues
+            logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
     # Add system info
     status["python_version"] = platform.python_version()

@@ -144,7 +144,7 @@ class DuckDBEngine:
                         union_by_name = true
                     );
                 """)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # No Parquet files exist yet for this view.  Create an
                 # empty stub table so that ``SELECT ... FROM <view>``
                 # returns zero rows instead of crashing.  The stub is

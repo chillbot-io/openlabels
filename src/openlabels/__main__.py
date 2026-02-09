@@ -26,6 +26,7 @@ from openlabels.cli.commands import (
     export,
     monitor,
     catalog,
+    models,
     # Standalone commands
     classify,
     find,
@@ -62,6 +63,7 @@ cli.add_command(labels)
 cli.add_command(export)
 cli.add_command(monitor)
 cli.add_command(catalog)
+cli.add_command(models)
 
 # Register standalone commands
 cli.add_command(classify)
