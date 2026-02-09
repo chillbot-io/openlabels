@@ -45,6 +45,7 @@ from openlabels.server.routes import (
     health,
     settings,
     policies,
+    export,
 )
 from openlabels.web import router as web_router
 
@@ -88,6 +89,7 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/health", "Health", health),
     ("/settings", "Settings", settings),
     ("/policies", "Policies", policies),
+    ("/export", "Export", export),
 ]
 
 

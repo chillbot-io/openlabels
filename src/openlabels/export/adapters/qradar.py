@@ -1,0 +1,190 @@
+"""IBM QRadar adapter — syslog transport with LEEF/CEF encoding.
+
+Exports OpenLabels findings to IBM QRadar via syslog using LEEF (preferred)
+or CEF format.  QRadar auto-parses structured fields into event properties.
+
+Transport: Syslog over TCP/UDP/TLS (RFC 5424)
+Format: LEEF:2.0|OpenLabels|Scanner|2.0|{EventID}|...
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import socket
+import ssl
+from datetime import timezone
+
+from openlabels.export.adapters.base import ExportRecord
+
+logger = logging.getLogger(__name__)
+
+_PRODUCT = "OpenLabels"
+_PRODUCT_VERSION = "2.0"
+_VENDOR = "OpenLabels"
+_LEEF_VERSION = "2.0"
+
+
+class QRadarAdapter:
+    """Export to IBM QRadar via syslog using LEEF or CEF format."""
+
+    def __init__(
+        self,
+        syslog_host: str,
+        syslog_port: int = 514,
+        *,
+        protocol: str = "tcp",
+        use_tls: bool = False,
+        fmt: str = "leef",
+    ) -> None:
+        self._host = syslog_host
+        self._port = syslog_port
+        self._protocol = protocol.lower()
+        self._use_tls = use_tls
+        self._fmt = fmt.lower()  # "leef" or "cef"
+
+    # ── SIEMAdapter protocol ─────────────────────────────────────────
+
+    async def export_batch(self, records: list[ExportRecord]) -> int:
+        if not records:
+            return 0
+
+        messages = []
+        for r in records:
+            msg = self._to_leef(r) if self._fmt == "leef" else self._to_cef(r)
+            messages.append(msg)
+
+        return await self._send_syslog(messages)
+
+    async def test_connection(self) -> bool:
+        try:
+            if self._protocol == "udp":
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(5)
+                sock.sendto(b"<14>OpenLabels connection test\n", (self._host, self._port))
+                sock.close()
+            else:
+                reader, writer = await asyncio.wait_for(
+                    self._open_tcp_connection(), timeout=10,
+                )
+                writer.write(b"<14>OpenLabels connection test\n")
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+            return True
+        except (OSError, asyncio.TimeoutError) as exc:
+            logger.warning("QRadar connection test failed: %s", exc)
+            return False
+
+    def format_name(self) -> str:
+        return "qradar"
+
+    # ── LEEF / CEF formatters ────────────────────────────────────────
+
+    def _to_leef(self, record: ExportRecord) -> str:
+        """Convert ExportRecord to LEEF 2.0 syslog message."""
+        event_id = record.record_type.replace("_", "")
+        kv_sep = "\t"
+        fields = {
+            "devTime": record.timestamp.strftime("%b %d %Y %H:%M:%S"),
+            "filePath": record.file_path,
+            "riskScore": str(record.risk_score or 0),
+            "riskTier": record.risk_tier or "",
+            "entityTypes": ",".join(record.entity_types),
+            "entityCounts": json.dumps(record.entity_counts),
+            "policyViolations": ",".join(record.policy_violations),
+            "actionTaken": record.action_taken or "",
+            "userName": record.user or "",
+            "sourceAdapter": record.source_adapter,
+            "tenantId": str(record.tenant_id),
+        }
+        extensions = kv_sep.join(f"{k}={v}" for k, v in fields.items())
+        header = (
+            f"LEEF:{_LEEF_VERSION}|{_VENDOR}|{_PRODUCT}|"
+            f"{_PRODUCT_VERSION}|{event_id}|"
+        )
+        return header + extensions
+
+    def _to_cef(self, record: ExportRecord) -> str:
+        """Convert ExportRecord to CEF format string."""
+        severity = self._risk_tier_to_cef_severity(record.risk_tier)
+        event_id = record.record_type.replace("_", "")
+        name = f"OpenLabels {record.record_type}"
+        extensions = (
+            f"filePath={self._cef_escape(record.file_path)} "
+            f"riskScore={record.risk_score or 0} "
+            f"riskTier={record.risk_tier or 'MINIMAL'} "
+            f"entityTypes={','.join(record.entity_types)} "
+            f"policyViolations={','.join(record.policy_violations)} "
+            f"suser={self._cef_escape(record.user or '')} "
+            f"act={self._cef_escape(record.action_taken or '')} "
+            f"rt={record.timestamp.strftime('%b %d %Y %H:%M:%S')}"
+        )
+        return (
+            f"CEF:0|{_VENDOR}|{_PRODUCT}|{_PRODUCT_VERSION}|"
+            f"{event_id}|{name}|{severity}|{extensions}"
+        )
+
+    # ── transport ────────────────────────────────────────────────────
+
+    async def _send_syslog(self, messages: list[str]) -> int:
+        """Send syslog messages over configured transport."""
+        sent = 0
+        try:
+            if self._protocol == "udp":
+                sent = await self._send_udp(messages)
+            else:
+                sent = await self._send_tcp(messages)
+        except (OSError, asyncio.TimeoutError) as exc:
+            logger.error("QRadar syslog send failed: %s", exc)
+        return sent
+
+    async def _send_udp(self, messages: list[str]) -> int:
+        loop = asyncio.get_running_loop()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            for msg in messages:
+                syslog_msg = f"<14>{msg}\n"
+                await loop.run_in_executor(
+                    None, sock.sendto, syslog_msg.encode("utf-8"),
+                    (self._host, self._port),
+                )
+        finally:
+            sock.close()
+        return len(messages)
+
+    async def _send_tcp(self, messages: list[str]) -> int:
+        reader, writer = await asyncio.wait_for(
+            self._open_tcp_connection(), timeout=30,
+        )
+        try:
+            for msg in messages:
+                syslog_msg = f"<14>{msg}\n"
+                writer.write(syslog_msg.encode("utf-8"))
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        return len(messages)
+
+    async def _open_tcp_connection(self):
+        if self._use_tls:
+            ctx = ssl.create_default_context()
+            return await asyncio.open_connection(
+                self._host, self._port, ssl=ctx,
+            )
+        return await asyncio.open_connection(self._host, self._port)
+
+    # ── helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _risk_tier_to_cef_severity(tier: str | None) -> int:
+        return {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 5, "LOW": 3, "MINIMAL": 1}.get(
+            (tier or "").upper(), 1
+        )
+
+    @staticmethod
+    def _cef_escape(value: str) -> str:
+        """Escape CEF special characters: backslash, equals, pipe."""
+        return value.replace("\\", "\\\\").replace("=", "\\=").replace("|", "\\|")

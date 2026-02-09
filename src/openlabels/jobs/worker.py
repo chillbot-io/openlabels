@@ -656,6 +656,9 @@ class Worker:
                 result = await execute_label_task(session, job.payload)
             elif job.task_type == "label_sync":
                 result = await execute_label_sync_task(session, job.payload)
+            elif job.task_type == "export":
+                from openlabels.jobs.tasks.export import execute_export_task
+                result = await execute_export_task(session, job.payload)
             else:
                 raise JobError(
                     f"Unknown task type: {job.task_type}",

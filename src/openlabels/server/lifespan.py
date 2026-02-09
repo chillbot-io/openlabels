@@ -139,6 +139,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # Periodic SIEM export background task
+    siem_shutdown = asyncio.Event()
+    siem_task: asyncio.Task | None = None
+    if settings.siem_export.enabled and settings.siem_export.mode == "periodic":
+        try:
+            from openlabels.jobs.tasks.export import periodic_siem_export
+
+            siem_task = asyncio.create_task(
+                periodic_siem_export(
+                    interval_seconds=settings.siem_export.periodic_interval_seconds,
+                    shutdown_event=siem_shutdown,
+                )
+            )
+            logger.info(
+                "Periodic SIEM export task started (interval=%ds)",
+                settings.siem_export.periodic_interval_seconds,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start periodic SIEM export: %s: %s",
+                type(e).__name__, e,
+            )
+
     # Monitoring: populate registry cache from DB on startup
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_startup:
         try:
@@ -427,6 +450,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
+
+    # Stop periodic SIEM export
+    if siem_task and not siem_task.done():
+        siem_shutdown.set()
+        try:
+            await asyncio.wait_for(siem_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            siem_task.cancel()
+            try:
+                await siem_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Periodic SIEM export stopped")
 
     # Stop periodic event flush
     if flush_task and not flush_task.done():

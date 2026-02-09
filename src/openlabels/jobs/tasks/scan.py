@@ -519,6 +519,52 @@ async def execute_scan_task(
                 )
                 stats["catalog_flush_error"] = str(e)
 
+        # Post-scan SIEM export (fire-and-forget, non-fatal)
+        if settings.siem_export.enabled and settings.siem_export.mode == "post_scan":
+            try:
+                from openlabels.export.engine import (
+                    ExportEngine,
+                    scan_result_to_export_records,
+                )
+                from openlabels.export.setup import build_adapters_from_settings
+
+                adapters = build_adapters_from_settings(settings.siem_export)
+                if adapters:
+                    engine = ExportEngine(adapters)
+                    # Fetch scan results for this job
+                    job_results = (await session.execute(
+                        select(ScanResult).where(ScanResult.job_id == job.id)
+                    )).scalars().all()
+                    result_dicts = [
+                        {
+                            "file_path": r.file_path,
+                            "risk_score": r.risk_score,
+                            "risk_tier": r.risk_tier,
+                            "entity_counts": r.entity_counts,
+                            "policy_violations": r.policy_violations,
+                            "owner": r.owner,
+                            "scanned_at": r.scanned_at,
+                        }
+                        for r in job_results
+                    ]
+                    export_records = scan_result_to_export_records(
+                        result_dicts, job.tenant_id,
+                    )
+                    export_results = await engine.export_scan(
+                        job.id, job.tenant_id, export_records,
+                    )
+                    stats["siem_export"] = export_results
+                    logger.info(
+                        "Post-scan SIEM export for job %s: %s",
+                        job.id, export_results,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "SIEM export failed for job %s (non-fatal): %s",
+                    job.id, e,
+                )
+                stats["siem_export_error"] = str(e)
+
         return stats
 
     except PermissionError as e:
