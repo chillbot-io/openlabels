@@ -234,7 +234,7 @@ class CORSSettings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"]
     )
     allow_credentials: bool = True
-    allow_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    allow_methods: list[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
     allow_headers: list[str] = Field(
         default_factory=lambda: [
             "Accept",

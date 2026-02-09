@@ -136,7 +136,7 @@ def _lock_down_windows(
             previous_acl = base64.b64encode(
                 acl_info.get("raw", "").encode()
             ).decode()
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning(f"Failed to backup ACL: {e}")
 
     if dry_run:
@@ -226,7 +226,7 @@ def _lock_down_windows(
             source=path,
             error=error_msg,
         )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.error(f"Failed to lock down {path}: {e}")
         return RemediationResult.failure(
             action=RemediationAction.LOCKDOWN,
@@ -256,7 +256,7 @@ def _lock_down_unix(
             previous_acl = base64.b64encode(
                 str(acl_info).encode()
             ).decode()
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning(f"Failed to backup permissions: {e}")
 
     if dry_run:
@@ -316,7 +316,7 @@ def _lock_down_unix(
             performed_by=get_current_user(),
         )
 
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.error(f"Failed to lock down {path}: {e}")
         return RemediationResult.failure(
             action=RemediationAction.LOCKDOWN,
@@ -381,3 +381,191 @@ def _has_getfacl() -> bool:
     import shutil
 
     return shutil.which("getfacl") is not None
+
+
+def restore_permissions(
+    path: Path,
+    previous_acl: str,
+    dry_run: bool = False,
+) -> RemediationResult:
+    """
+    Restore file permissions from a previously backed-up ACL.
+
+    Reverses a ``lock_down()`` operation by applying the saved ACL state.
+    The *previous_acl* string is base64-encoded (the format stored by
+    ``lock_down(backup_acl=True)``).
+
+    Args:
+        path: Path to file whose permissions should be restored.
+        previous_acl: Base64-encoded ACL snapshot produced by ``lock_down()``.
+        dry_run: If True, report what would happen without modifying permissions.
+
+    Returns:
+        RemediationResult with success/failure status.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        RemediationPermissionError: If permissions cannot be restored.
+    """
+    path = Path(path).resolve()
+
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+
+    try:
+        acl_data = base64.b64decode(previous_acl).decode()
+    except (ValueError, UnicodeDecodeError) as e:
+        raise RemediationPermissionError(
+            f"Invalid base64-encoded ACL data: {e}", path
+        )
+
+    if dry_run:
+        logger.info("[DRY RUN] Would restore permissions for %s", path)
+        return RemediationResult(
+            success=True,
+            action=RemediationAction.RESTORE,
+            source_path=path,
+            performed_by=get_current_user(),
+        )
+
+    if platform.system() == "Windows":
+        return _restore_permissions_windows(path, acl_data)
+    else:
+        return _restore_permissions_unix(path, acl_data)
+
+
+def _restore_permissions_windows(path: Path, acl_data: str) -> RemediationResult:
+    """Restore Windows ACL from icacls output.
+
+    Parses backed-up icacls output lines and reapplies each grant
+    via ``icacls /grant``.
+    """
+    try:
+        # Reset to clean state first
+        result = subprocess.run(
+            ["icacls", str(path), "/reset"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            raise RemediationPermissionError(
+                f"Failed to reset permissions before restore: {result.stderr}", path,
+            )
+
+        # Parse original icacls output and re-grant each ACE.
+        # icacls output format: "  PRINCIPAL:(PERM)(PERM)..."
+        # Use regex to handle principals with spaces (e.g. "DOMAIN\User Name").
+        import re
+        ace_pattern = re.compile(r"(\S.*?):(\([^)]+\)(?:\([^)]+\))*\S*)")
+        restore_failures = []
+        for line in acl_data.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            for match in ace_pattern.finditer(line):
+                ace_str = match.group(0)  # "PRINCIPAL:(OI)(CI)F"
+                grant_result = subprocess.run(
+                    ["icacls", str(path), "/grant", ace_str],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if grant_result.returncode != 0:
+                    restore_failures.append(ace_str)
+                    logger.warning("Failed to restore ACE %s: %s", ace_str, grant_result.stderr)
+
+        if restore_failures:
+            logger.warning("Some ACEs could not be restored for %s: %s", path, restore_failures)
+            return RemediationResult(
+                success=False,
+                action=RemediationAction.RESTORE,
+                source_path=path,
+                performed_by=get_current_user(),
+                error=f"Failed to restore {len(restore_failures)} ACE(s)",
+            )
+
+        logger.info("Restored permissions for %s from backup", path)
+        return RemediationResult(
+            success=True,
+            action=RemediationAction.RESTORE,
+            source_path=path,
+            performed_by=get_current_user(),
+        )
+
+    except RemediationPermissionError:
+        raise
+    except subprocess.TimeoutExpired:
+        error_msg = "Permission restore operation timed out"
+        logger.error("%s: %s", error_msg, path)
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE, source=path, error=error_msg,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.error("Failed to restore permissions for %s: %s", path, e)
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE, source=path, error=str(e),
+        )
+
+
+def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
+    """Restore Unix permissions from backed-up stat/getfacl data.
+
+    The backup is a ``repr(dict)`` containing ``mode``, ``uid``, ``gid``,
+    and optionally ``acl`` (getfacl output).
+    """
+    import ast
+    import os
+
+    try:
+        acl_dict = ast.literal_eval(acl_data)
+    except (ValueError, SyntaxError):
+        acl_dict = {"acl": acl_data}
+
+    # Validate that parsed data is a dict (not a list, string, etc.)
+    if not isinstance(acl_dict, dict):
+        logger.warning("ACL backup data is not a dict (got %s), treating as raw ACL", type(acl_dict).__name__)
+        acl_dict = {"acl": acl_data}
+
+    try:
+        # Restore mode
+        if "mode" in acl_dict:
+            mode = int(acl_dict["mode"], 8) if isinstance(acl_dict["mode"], str) else acl_dict["mode"]
+            os.chmod(path, mode)
+
+        # Restore ACLs via setfacl if data available
+        setfacl_failed = False
+        if "acl" in acl_dict and _has_setfacl():
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".acl", delete=False) as tmp:
+                tmp.write(acl_dict["acl"])
+                tmp_path = tmp.name
+            try:
+                result = subprocess.run(
+                    ["setfacl", "--restore", tmp_path],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode != 0:
+                    setfacl_failed = True
+                    logger.warning("setfacl --restore failed: %s", result.stderr)
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+
+        if setfacl_failed:
+            return RemediationResult(
+                success=False,
+                action=RemediationAction.RESTORE,
+                source_path=path,
+                performed_by=get_current_user(),
+                error="setfacl --restore failed (mode was restored, ACLs were not)",
+            )
+
+        logger.info("Restored permissions for %s from backup", path)
+        return RemediationResult(
+            success=True,
+            action=RemediationAction.RESTORE,
+            source_path=path,
+            performed_by=get_current_user(),
+        )
+
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.error("Failed to restore permissions for %s: %s", path, e)
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE, source=path, error=str(e),
+        )

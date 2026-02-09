@@ -567,7 +567,7 @@ Set-Acl -Path $path -AclObject $acl
             path=path,
             error="Operation timed out",
         )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.error(f"Error enabling monitoring on {path}: {e}")
         return MonitoringResult(
             success=False,
@@ -619,7 +619,7 @@ Set-Acl -Path $path -AclObject $acl
                 error=f"Failed to remove SACL: {error}",
             )
 
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return MonitoringResult(
             success=False,
             path=path,
@@ -719,7 +719,7 @@ def _enable_monitoring_linux(
             path=path,
             error="Operation timed out",
         )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.error(f"Error enabling monitoring on {path}: {e}")
         return MonitoringResult(
             success=False,
@@ -762,7 +762,7 @@ def _disable_monitoring_linux(path: Path) -> MonitoringResult:
             message="Audit rule removed",
         )
 
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return MonitoringResult(
             success=False,
             path=path,

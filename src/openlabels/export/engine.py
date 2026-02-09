@@ -86,7 +86,7 @@ class ExportEngine:
                     self._cursors[name] = max(
                         r.timestamp for r in filtered
                     )
-            except Exception as exc:
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
                 logger.error(
                     "Export to %s failed: %s", name, exc,
                 )
@@ -117,7 +117,7 @@ class ExportEngine:
             name = adapter.format_name()
             try:
                 results[name] = await adapter.test_connection()
-            except Exception as exc:
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
                 logger.error("Connection test for %s failed: %s", name, exc)
                 results[name] = False
         return results
@@ -144,7 +144,7 @@ class ExportEngine:
                     self._cursors[name] = max(
                         r.timestamp for r in records
                     )
-            except Exception as exc:
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
                 logger.error("Export to %s failed: %s", name, exc)
                 results[name] = 0
         return results

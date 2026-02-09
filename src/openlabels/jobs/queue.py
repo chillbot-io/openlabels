@@ -194,7 +194,7 @@ class JobQueue:
         if self._on_complete and job:
             try:
                 await self._on_complete(job)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — catch-all for arbitrary user callback
                 logger.error("on_complete callback failed for job %s: %s", job_id, exc)
 
     async def fail(
@@ -244,7 +244,7 @@ class JobQueue:
         if job.status == "failed" and self._on_failed:
             try:
                 await self._on_failed(job)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — catch-all for arbitrary user callback
                 logger.error("on_failed callback failed for job %s: %s", job_id, exc)
 
     async def get_job(self, job_id: UUID) -> Optional[JobQueueModel]:

@@ -127,6 +127,9 @@ class DuckDBEngine:
         root = self._catalog_root.replace("'", "''")
 
         for view_name, pattern in self._VIEW_DEFS:
+            # Validate view_name is a safe SQL identifier (alphanumeric + underscore only)
+            if not view_name.isidentifier():
+                raise ValueError(f"Invalid view name: {view_name!r}")
             # Drop any previous object (table first, then view) to
             # avoid DuckDB type-mismatch errors on DROP.
             self._db.execute(f"DROP TABLE IF EXISTS {view_name};")

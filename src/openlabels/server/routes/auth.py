@@ -75,8 +75,10 @@ def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
         if redirect_uri.startswith("//"):
             logger.warning(f"Blocked protocol-relative redirect: {redirect_uri}")
             return "/"
-        # Ensure no path traversal or weird characters
-        # Only allow safe relative paths
+        # Block path traversal and control characters
+        if ".." in redirect_uri or any(c in redirect_uri for c in "\x00\r\n"):
+            logger.warning(f"Blocked unsafe redirect path: {redirect_uri}")
+            return "/"
         return redirect_uri
 
     # Parse the URL for validation
@@ -244,7 +246,7 @@ async def login(
             session_id,
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
-            samesite="lax",
+            samesite="strict",
             secure=request.url.scheme == "https",
         )
         return response
@@ -439,7 +441,7 @@ async def auth_callback(
     return response
 
 
-@router.get("/logout")
+@router.post("/logout")
 async def logout(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -459,7 +461,11 @@ async def logout(
 
     # Create response that clears cookie
     response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+    )
 
     # Optionally redirect to Microsoft logout
     if settings.auth.provider == "azure_ad" and settings.auth.tenant_id:
@@ -473,6 +479,7 @@ async def logout(
 
 
 @router.get("/me", response_model=UserInfoResponse)
+@limiter.limit(lambda: get_settings().rate_limit.api_limit)
 async def get_current_user_info(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -522,6 +529,7 @@ async def get_current_user_info(
 
 
 @router.post("/token", response_model=TokenResponse)
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def get_token(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -607,6 +615,7 @@ async def get_token(
 
 
 @router.get("/status")
+@limiter.limit(lambda: get_settings().rate_limit.api_limit)
 async def auth_status(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -648,6 +657,7 @@ async def auth_status(
 
 
 @router.post("/revoke")
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def revoke_token(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -679,6 +689,7 @@ async def revoke_token(
 
 
 @router.post("/logout-all")
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def logout_all_sessions(
     request: Request,
     db: AsyncSession = Depends(get_session),

@@ -32,7 +32,7 @@ from openlabels.exceptions import (
 )
 from .quarantine import quarantine, restore_from_quarantine
 from .manifest import QuarantineEntry, QuarantineManifest
-from .permissions import lock_down, get_current_acl
+from .permissions import lock_down, get_current_acl, restore_permissions
 
 __all__ = [
     # Types
@@ -49,6 +49,7 @@ __all__ = [
     "quarantine",
     "restore_from_quarantine",
     "lock_down",
+    "restore_permissions",
     "get_current_acl",
     "get_current_user",
 ]

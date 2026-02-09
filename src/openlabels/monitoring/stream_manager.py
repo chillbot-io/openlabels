@@ -194,7 +194,7 @@ class EventStreamManager:
 
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception:  # noqa: BLE001 — catch-all for provider crash
             logger.error(
                 "Stream reader for %s crashed", provider.name, exc_info=True,
             )
@@ -241,7 +241,7 @@ class EventStreamManager:
                     count,
                     self.total_flush_cycles,
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 — catch-all for flush resilience
             # Re-buffer events on failure (best-effort)
             async with self._buffer_lock:
                 headroom = self._max_buffer_size - len(self._buffer)

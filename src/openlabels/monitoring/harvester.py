@@ -125,7 +125,7 @@ class EventHarvester:
                     logger.info("Harvest cycle: persisted %d events", total)
                 else:
                     logger.debug("Harvest cycle: no new events")
-            except Exception:
+            except Exception:  # noqa: BLE001 — catch-all for harvest cycle retry
                 # Transaction rolled back — discard pending checkpoints.
                 # Stats are NOT updated because the commit failed.
                 self._pending_checkpoints.clear()
@@ -178,7 +178,7 @@ class EventHarvester:
             since = self._checkpoints.get(provider.name)
             try:
                 raw_events = await provider.collect(since=since)
-            except Exception:
+            except Exception:  # noqa: BLE001 — catch-all for provider error
                 logger.warning(
                     "Provider %s failed to collect events",
                     provider.name,
@@ -447,5 +447,5 @@ async def periodic_m365_harvest(
         if m365_provider is not None:
             try:
                 await m365_provider.close()
-            except Exception:
+            except (ConnectionError, OSError, RuntimeError):
                 pass

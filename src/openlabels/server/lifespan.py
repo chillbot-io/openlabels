@@ -38,6 +38,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Database
     await init_db(settings.database.url)
 
+    # Purge expired sessions and stale pending-auth entries on startup
+    try:
+        from openlabels.server.session import SessionStore, PendingAuthStore
+        from openlabels.server.db import get_session_context
+
+        async with get_session_context() as db_session:
+            ss = SessionStore(db_session)
+            ps = PendingAuthStore(db_session)
+            expired = await ss.cleanup_expired()
+            stale = await ps.cleanup_expired()
+            if expired or stale:
+                logger.info(
+                    "Startup session cleanup: removed %d expired sessions, %d stale auth entries",
+                    expired, stale,
+                )
+    except Exception as e:
+        logger.warning("Startup session cleanup failed: %s: %s", type(e).__name__, e)
+
     # Cache (Redis with in-memory fallback)
     try:
         cache_manager = await get_cache_manager()

@@ -297,7 +297,7 @@ class S3Storage:
             # Single object
             try:
                 self._s3.delete_object(Bucket=self._bucket, Key=key)
-            except Exception:
+            except Exception:  # noqa: BLE001 — best-effort S3 SDK delete
                 pass
 
 
@@ -427,7 +427,7 @@ class AzureBlobStorage:
         try:
             blob_client.get_blob_properties()
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 — Azure SDK exists check
             return False
 
     def read_bytes(self, path: str) -> bytes:
@@ -447,7 +447,7 @@ class AzureBlobStorage:
         try:
             blob_client.delete_blob()
             return
-        except Exception:
+        except Exception:  # noqa: BLE001 — best-effort Azure SDK delete
             pass
 
         # Delete all blobs under the prefix (directory-like delete)

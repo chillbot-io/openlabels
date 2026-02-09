@@ -84,7 +84,7 @@ def compact_table(
                 partition_dir,
                 len(files),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — catch-all for compaction resilience
             logger.warning(
                 "Failed to compact %s",
                 partition_dir,
@@ -112,7 +112,7 @@ def _compact_partition(
         try:
             t = storage.read_parquet(f)
             tables.append(t)
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             logger.warning("Could not read %s during compaction, skipping", f)
 
     if not tables:
@@ -143,5 +143,5 @@ def _compact_partition(
     for f in files:
         try:
             storage.delete(f)
-        except Exception:
+        except (OSError, RuntimeError):
             logger.warning("Could not delete %s after compaction", f)
