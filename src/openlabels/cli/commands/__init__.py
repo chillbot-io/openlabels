@@ -52,6 +52,9 @@ from openlabels.cli.commands.catalog import catalog
 # System commands
 from openlabels.cli.commands.system import status, backup, restore
 
+# Model management commands
+from openlabels.cli.commands.models import models
+
 # Diagnostic command
 from openlabels.cli.commands.doctor import doctor
 
@@ -81,5 +84,6 @@ __all__ = [
     "status",
     "backup",
     "restore",
+    "models",
     "doctor",
 ]
