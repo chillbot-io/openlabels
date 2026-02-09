@@ -61,7 +61,6 @@ class PolicyActionExecutor:
         results: list[ActionResult] = []
 
         severities = {v.get("severity", "").lower() for v in ctx.violations}
-        frameworks = {v.get("framework", "").lower() for v in ctx.violations}
 
         # Quarantine critical violations
         if "critical" in severities:
@@ -89,7 +88,9 @@ class PolicyActionExecutor:
                     error=f"File not found: {ctx.file_path}",
                 )
 
-            result = do_quarantine(source=source)
+            # Use a tenant-scoped quarantine directory
+            quarantine_dir = Path("/var/openlabels/quarantine") / str(ctx.tenant_id)
+            result = do_quarantine(source=source, destination=quarantine_dir)
             return ActionResult(
                 action="quarantine",
                 success=result.success,
@@ -132,7 +133,7 @@ class PolicyActionExecutor:
                     id=generate_uuid(),
                     tenant_id=ctx.tenant_id,
                     file_path=ctx.file_path,
-                    risk_tier=ctx.risk_tier,
+                    risk_tier=ctx.risk_tier.upper(),
                 ))
                 await session.commit()
 

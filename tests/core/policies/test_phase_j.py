@@ -398,6 +398,19 @@ class TestPolicyRoutes:
         assert "/compliance/stats" in paths
         assert "/{policy_id}" in paths
 
+    def test_static_routes_before_parametric(self):
+        """Static paths must come before /{policy_id} to avoid shadowing."""
+        from openlabels.server.routes.policies import router
+        get_paths = [
+            r.path for r in router.routes
+            if hasattr(r, "methods") and "GET" in r.methods
+        ]
+        # /compliance/stats and /builtins must appear before /{policy_id}
+        if "/compliance/stats" in get_paths and "/{policy_id}" in get_paths:
+            assert get_paths.index("/compliance/stats") < get_paths.index("/{policy_id}")
+        if "/builtins" in get_paths and "/{policy_id}" in get_paths:
+            assert get_paths.index("/builtins") < get_paths.index("/{policy_id}")
+
     def test_app_includes_policies_route(self):
         """The policies module is registered in _ROUTE_MODULES."""
         try:

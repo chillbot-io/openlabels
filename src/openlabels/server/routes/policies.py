@@ -148,7 +148,7 @@ async def _get_policy_service(
 PolicyServiceDep = Depends(_get_policy_service)
 
 
-# ── CRUD endpoints ──────────────────────────────────────────────────
+# ── Collection endpoints (no path params) ───────────────────────────
 
 
 @router.get("", response_model=PaginatedResponse[PolicyResponse])
@@ -176,6 +176,21 @@ async def list_policies(
     )
 
 
+@router.post("", response_model=PolicyResponse, status_code=201)
+async def create_policy(
+    request: PolicyCreate,
+    _admin: AdminContextDep,
+    svc=PolicyServiceDep,
+):
+    """Create a custom policy."""
+    policy = await svc.create_policy(request.model_dump())
+    await svc.commit()
+    return PolicyResponse.model_validate(policy)
+
+
+# ── Static sub-paths (must come BEFORE /{policy_id}) ────────────────
+
+
 @router.get("/builtins", response_model=list[BuiltinPackResponse])
 async def list_builtin_packs(
     _tenant: TenantContextDep,
@@ -198,6 +213,37 @@ async def load_builtin_pack(
     return PolicyResponse.model_validate(policy)
 
 
+@router.post("/evaluate", response_model=list[EvaluateResultItem])
+async def evaluate_policies(
+    request: EvaluateRequest,
+    _tenant: TenantContextDep,
+    svc=PolicyServiceDep,
+):
+    """Dry-run: evaluate existing scan results against the tenant's active policies.
+
+    Does **not** persist any changes — returns the evaluation output for review.
+    """
+    results = await svc.evaluate_results(
+        job_id=request.job_id,
+        result_ids=request.result_ids,
+        limit=request.limit,
+    )
+    return [EvaluateResultItem(**r) for r in results]
+
+
+@router.get("/compliance/stats", response_model=ComplianceStatsResponse)
+async def compliance_stats(
+    _tenant: TenantContextDep,
+    svc=PolicyServiceDep,
+):
+    """Get compliance statistics for the current tenant."""
+    stats = await svc.compliance_stats()
+    return ComplianceStatsResponse(**stats)
+
+
+# ── Per-policy endpoints (/{policy_id} must come LAST) ──────────────
+
+
 @router.get("/{policy_id}", response_model=PolicyResponse)
 async def get_policy(
     policy_id: UUID,
@@ -206,18 +252,6 @@ async def get_policy(
 ):
     """Get a specific policy by ID."""
     policy = await svc.get_policy(policy_id)
-    return PolicyResponse.model_validate(policy)
-
-
-@router.post("", response_model=PolicyResponse, status_code=201)
-async def create_policy(
-    request: PolicyCreate,
-    _admin: AdminContextDep,
-    svc=PolicyServiceDep,
-):
-    """Create a custom policy."""
-    policy = await svc.create_policy(request.model_dump())
-    await svc.commit()
     return PolicyResponse.model_validate(policy)
 
 
@@ -257,37 +291,3 @@ async def toggle_policy(
     policy = await svc.toggle_policy(policy_id, request.enabled)
     await svc.commit()
     return PolicyResponse.model_validate(policy)
-
-
-# ── Dry-run evaluation ──────────────────────────────────────────────
-
-
-@router.post("/evaluate", response_model=list[EvaluateResultItem])
-async def evaluate_policies(
-    request: EvaluateRequest,
-    _tenant: TenantContextDep,
-    svc=PolicyServiceDep,
-):
-    """Dry-run: evaluate existing scan results against the tenant's active policies.
-
-    Does **not** persist any changes — returns the evaluation output for review.
-    """
-    results = await svc.evaluate_results(
-        job_id=request.job_id,
-        result_ids=request.result_ids,
-        limit=request.limit,
-    )
-    return [EvaluateResultItem(**r) for r in results]
-
-
-# ── Compliance stats ────────────────────────────────────────────────
-
-
-@router.get("/compliance/stats", response_model=ComplianceStatsResponse)
-async def compliance_stats(
-    _tenant: TenantContextDep,
-    svc=PolicyServiceDep,
-):
-    """Get compliance statistics for the current tenant."""
-    stats = await svc.compliance_stats()
-    return ComplianceStatsResponse(**stats)

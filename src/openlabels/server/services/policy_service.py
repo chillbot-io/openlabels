@@ -11,10 +11,9 @@ Provides business logic for policy management:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select
 
 from openlabels.server.models import Policy, ScanResult
 from openlabels.server.services.base import BaseService

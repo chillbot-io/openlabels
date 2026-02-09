@@ -819,16 +819,21 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
                     )
                     for span in result.spans
                 ]
-                policy_result = get_policy_engine().evaluate(entity_matches)
+                engine = get_policy_engine()
+                policy_result = engine.evaluate(entity_matches)
                 if policy_result.is_sensitive:
                     policy_data = policy_result.to_dict()
+                    # Map policy names to their framework categories
+                    name_to_framework = {
+                        p.name: p.category.value
+                        for p in engine._policies
+                    }
                     # Build per-violation records for the dedicated column
                     policy_violations = [
                         {
                             "policy_name": match.policy_name,
-                            "framework": next(
-                                (c.value for c in policy_result.categories),
-                                "custom",
+                            "framework": name_to_framework.get(
+                                match.policy_name, "custom"
                             ),
                             "severity": policy_result.risk_level.value,
                             "trigger_type": match.trigger_type,
