@@ -27,6 +27,7 @@ from .base import (
     get_current_user,
 )
 from openlabels.exceptions import QuarantineError
+from openlabels.exceptions import QuarantineError
 
 logger = logging.getLogger(__name__)
 
@@ -79,26 +80,25 @@ def quarantine(
         RemediationResult with success/failure status
 
     Raises:
-        QuarantineError: If quarantine fails and raise_on_error is True
-        FileNotFoundError: If source file doesn't exist
-        NotADirectoryError: If destination is not a directory
+        QuarantineError: If quarantine fails, source file doesn't exist,
+            or destination is not a directory
     """
     source = Path(source).resolve()
     destination = Path(destination).resolve()
 
     # Validate inputs
     if not source.exists():
-        raise FileNotFoundError(f"Source file not found: {source}")
+        raise QuarantineError(f"Source file not found: {source}", path=source)
 
     if not source.is_file():
-        raise ValueError(f"Source must be a file, not directory: {source}")
+        raise QuarantineError(f"Source must be a file, not directory: {source}", path=source)
 
     # Create destination directory if needed
     if not dry_run:
         destination.mkdir(parents=True, exist_ok=True)
 
     if not destination.is_dir() and not dry_run:
-        raise NotADirectoryError(f"Destination must be a directory: {destination}")
+        raise QuarantineError(f"Destination must be a directory: {destination}", path=destination)
 
     # Compute file hash before move for integrity verification
     pre_hash: str | None = None

@@ -261,8 +261,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         client_secret=settings.auth.client_secret,
                     )
                 except Exception as _gc_err:
-                    logger.warning(
-                        "Failed to create GraphClient for webhook provider: %s",
+                    logger.error(
+                        "Failed to create GraphClient for webhook provider — "
+                        "graph_webhook monitoring will be unavailable: %s: %s",
+                        type(_gc_err).__name__,
                         _gc_err,
                     )
 

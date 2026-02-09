@@ -13,25 +13,26 @@ from openlabels.remediation.quarantine import (
     ROBOCOPY_ERROR_CODES,
 )
 from openlabels.remediation.base import RemediationAction
+from openlabels.exceptions import QuarantineError
 
 
 class TestQuarantineValidation:
     """Tests for quarantine input validation."""
 
     def test_source_not_found_raises(self):
-        """Raises FileNotFoundError if source doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+        """Raises QuarantineError if source doesn't exist."""
+        with pytest.raises(QuarantineError, match="Source file not found"):
             quarantine(
                 source=Path("/nonexistent/file.txt"),
                 destination=Path("/tmp/quarantine"),
             )
 
     def test_source_is_directory_raises(self, tmp_path):
-        """Raises ValueError if source is a directory."""
+        """Raises QuarantineError if source is a directory."""
         source_dir = tmp_path / "source_dir"
         source_dir.mkdir()
 
-        with pytest.raises(ValueError, match="must be a file"):
+        with pytest.raises(QuarantineError, match="must be a file"):
             quarantine(
                 source=source_dir,
                 destination=tmp_path / "dest",

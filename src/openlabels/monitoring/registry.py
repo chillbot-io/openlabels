@@ -74,7 +74,7 @@ def enable_monitoring(
     path_str = str(path)
 
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise MonitoringError(f"File not found: {path}", path=path)
 
     # Check if already monitored (lock protects the dict read)
     with _watched_lock:

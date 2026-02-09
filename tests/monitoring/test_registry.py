@@ -13,6 +13,7 @@ from openlabels.monitoring.registry import (
     get_watched_file,
     _watched_files,
 )
+from openlabels.exceptions import MonitoringError
 
 
 @pytest.fixture(autouse=True)
@@ -27,8 +28,8 @@ class TestEnableMonitoringValidation:
     """Tests for enable_monitoring input validation."""
 
     def test_file_not_found_raises(self):
-        """Raises FileNotFoundError if file doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+        """Raises MonitoringError if file doesn't exist."""
+        with pytest.raises(MonitoringError, match="File not found"):
             enable_monitoring(Path("/nonexistent/file.txt"))
 
 

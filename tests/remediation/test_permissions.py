@@ -12,14 +12,15 @@ from openlabels.remediation.permissions import (
     DEFAULT_UNIX_PRINCIPALS,
 )
 from openlabels.remediation.base import RemediationAction
+from openlabels.exceptions import RemediationPermissionError
 
 
 class TestLockDownValidation:
     """Tests for lock_down input validation."""
 
     def test_file_not_found_raises(self):
-        """Raises FileNotFoundError if file doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+        """Raises RemediationPermissionError if file doesn't exist."""
+        with pytest.raises(RemediationPermissionError, match="File not found"):
             lock_down(Path("/nonexistent/file.txt"))
 
 
@@ -76,8 +77,8 @@ class TestGetCurrentAcl:
     """Tests for get_current_acl function."""
 
     def test_file_not_found_raises(self):
-        """Raises FileNotFoundError if file doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+        """Raises RemediationPermissionError if file doesn't exist."""
+        with pytest.raises(RemediationPermissionError, match="File not found"):
             get_current_acl(Path("/nonexistent/file.txt"))
 
     def test_returns_dict(self, tmp_path):

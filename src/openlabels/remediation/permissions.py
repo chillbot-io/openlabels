@@ -55,13 +55,12 @@ def lock_down(
         RemediationResult with success/failure status and previous ACL
 
     Raises:
-        FileNotFoundError: If file doesn't exist
-        RemediationPermissionError: If unable to modify permissions
+        RemediationPermissionError: If file doesn't exist or unable to modify permissions
     """
     path = Path(path).resolve()
 
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise RemediationPermissionError(f"File not found: {path}", path=path)
 
     # Set default principals based on platform
     if allowed_principals is None:
@@ -103,7 +102,7 @@ def get_current_acl(path: Path) -> dict:
     path = Path(path).resolve()
 
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise RemediationPermissionError(f"File not found: {path}", path=path)
 
     if platform.system() == "Windows":
         return _get_acl_windows(path)
@@ -404,13 +403,12 @@ def restore_permissions(
         RemediationResult with success/failure status.
 
     Raises:
-        FileNotFoundError: If the file doesn't exist.
-        RemediationPermissionError: If permissions cannot be restored.
+        RemediationPermissionError: If the file doesn't exist or permissions cannot be restored.
     """
     path = Path(path).resolve()
 
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise RemediationPermissionError(f"File not found: {path}", path=path)
 
     try:
         acl_data = base64.b64decode(previous_acl).decode()
