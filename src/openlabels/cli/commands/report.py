@@ -1,5 +1,5 @@
 """
-Report command for generating scan reports.
+Report commands — local scanning and server-backed report generation.
 """
 
 import asyncio
@@ -11,15 +11,18 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import httpx
 
-from openlabels.cli.utils import validate_where_filter
+from openlabels.cli.base import get_api_client, server_options
+from openlabels.cli.utils import handle_http_error, validate_where_filter
 from openlabels.core.path_validation import validate_output_path, PathValidationError
 
 logger = logging.getLogger(__name__)
 
 
-@click.command()
-@click.argument("path", type=click.Path(exists=True))
+@click.group(invoke_without_command=True)
+@click.pass_context
+@click.argument("path", required=False, type=click.Path(exists=True))
 @click.option("--where", "where_filter", callback=validate_where_filter,
               help='Filter expression (e.g., "score > 75")')
 @click.option("--recursive", "-r", is_flag=True, help="Search directories recursively")
@@ -27,15 +30,33 @@ logger = logging.getLogger(__name__)
               help="Output format")
 @click.option("--output", "-o", type=click.Path(), help="Output file (default: stdout)")
 @click.option("--title", default="OpenLabels Scan Report", help="Report title")
-def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
-           output: Optional[str], title: str):
+def report(ctx, path: Optional[str], where_filter: Optional[str], recursive: bool,
+           fmt: str, output: Optional[str], title: str):
     """Generate a report of sensitive data findings.
 
+    When called without a subcommand, scans local files and produces a report.
+
+    \b
     Examples:
         openlabels report ./data -r --format html -o report.html
         openlabels report ./docs --where "tier = CRITICAL" --format json
-        openlabels report . -r --where "has(SSN)" --format csv -o findings.csv
+        openlabels report generate --template executive_summary --format pdf
     """
+    # If a subcommand was invoked, let click dispatch to it.
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Otherwise run the legacy local-scan report.
+    if path is None:
+        click.echo(ctx.get_help())
+        return
+
+    _local_report(path, where_filter, recursive, fmt, output, title)
+
+
+def _local_report(path: str, where_filter: Optional[str], recursive: bool,
+                  fmt: str, output: Optional[str], title: str):
+    """Original local-scan report logic."""
     from openlabels.cli.filter_executor import filter_scan_results
 
     target_path = Path(path)
@@ -257,3 +278,82 @@ def report(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
     except OSError as e:
         click.echo(f"Error: File system error: {e}", err=True)
         sys.exit(1)
+
+
+# ── Server-backed subcommands ───────────────────────────────────────
+
+
+@report.command("generate")
+@click.option(
+    "--template", "-t", "template",
+    required=True,
+    type=click.Choice([
+        "executive_summary", "compliance_report", "scan_detail",
+        "access_audit", "sensitive_files",
+    ]),
+    help="Report template",
+)
+@click.option("--format", "fmt", default="html", type=click.Choice(["html", "pdf", "csv"]))
+@click.option("--job", default=None, help="Scope to a scan job ID")
+@click.option("--output", "-o", type=click.Path(), help="Download to this path")
+@server_options
+def report_generate(
+    template: str,
+    fmt: str,
+    job: Optional[str],
+    output: Optional[str],
+    server: str,
+    token: Optional[str],
+) -> None:
+    """Generate a report on the server.
+
+    \b
+    Examples:
+        openlabels report generate --template executive_summary --format pdf
+        openlabels report generate -t scan_detail --job <id> --format html -o report.html
+    """
+    from openlabels.cli.base import spinner
+
+    client = get_api_client(server, token)
+
+    try:
+        payload: dict = {
+            "report_type": template,
+            "format": fmt,
+        }
+        if job:
+            payload["job_id"] = job
+
+        with spinner("Generating report..."):
+            response = client.post("/api/v1/reporting/generate", json=payload)
+
+        if response.status_code != 201:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+            return
+
+        data = response.json()
+        report_id = data["id"]
+        click.echo(f"Report generated: {data['name']} (id={report_id}, status={data['status']})")
+
+        if output and data["status"] == "generated":
+            try:
+                validated_output = validate_output_path(output, create_parent=True)
+            except PathValidationError as e:
+                click.echo(f"Error: Invalid output path: {e}", err=True)
+                return
+
+            with spinner("Downloading report..."):
+                dl = client.get(f"/api/v1/reporting/{report_id}/download")
+
+            if dl.status_code == 200:
+                with open(validated_output, "wb") as f:
+                    f.write(dl.content)
+                size_kb = len(dl.content) / 1024
+                click.echo(f"Downloaded to: {validated_output} ({size_kb:.1f} KB)")
+            else:
+                click.echo(f"Download failed: {dl.status_code} - {dl.text}", err=True)
+
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
+    finally:
+        client.close()

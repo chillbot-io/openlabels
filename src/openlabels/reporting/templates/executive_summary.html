@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Executive Summary &mdash; OpenLabels{% endblock %}
+{% block content %}
+<h1>Executive Summary</h1>
+<p class="meta">{{ generated_at }}{% if tenant_name %} &mdash; {{ tenant_name }}{% endif %}</p>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="value">{{ total_files | commafy }}</div><div class="label">Files Scanned</div></div>
+  <div class="summary-card"><div class="value">{{ files_with_findings | commafy }}</div><div class="label">Files with Findings</div></div>
+  <div class="summary-card"><div class="value">{{ total_entities | commafy }}</div><div class="label">Entities Detected</div></div>
+  <div class="summary-card"><div class="value">{{ avg_risk_score }}</div><div class="label">Avg Risk Score</div></div>
+</div>
+
+<h2>Risk Distribution</h2>
+<table>
+<tr><th>Tier</th><th>Files</th><th>% of Total</th></tr>
+{% for tier in ["CRITICAL","HIGH","MEDIUM","LOW","MINIMAL"] %}
+{% set count = by_tier.get(tier, 0) %}
+<tr><td class="tier-{{ tier }}">{{ tier }}</td><td>{{ count | commafy }}</td><td>{{ (count / total_files * 100) | pct if total_files else "0.0%" }}</td></tr>
+{% endfor %}
+</table>
+
+{% if by_entity %}
+<h2>Top Entity Types</h2>
+<table>
+<tr><th>Entity Type</th><th>Occurrences</th></tr>
+{% for etype, ecount in by_entity | dictsort(by='value', reverse=true) %}
+<tr><td>{{ etype }}</td><td>{{ ecount | commafy }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if top_risk_files %}
+<h2>Highest Risk Files (Top 10)</h2>
+<table>
+<tr><th>File</th><th>Score</th><th>Tier</th><th>Entities</th></tr>
+{% for f in top_risk_files[:10] %}
+<tr>
+  <td>{{ f.file_path }}</td>
+  <td>{{ f.risk_score }}</td>
+  <td class="tier-{{ f.risk_tier }}">{{ f.risk_tier }}</td>
+  <td>{{ f.total_entities }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

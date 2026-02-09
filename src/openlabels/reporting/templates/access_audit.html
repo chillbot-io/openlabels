@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Access Audit Report &mdash; OpenLabels{% endblock %}
+{% block content %}
+<h1>Access Audit Report</h1>
+<p class="meta">{{ generated_at }}{% if tenant_name %} &mdash; {{ tenant_name }}{% endif %}{% if period %} &mdash; {{ period }}{% endif %}</p>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="value">{{ total_events | commafy }}</div><div class="label">Total Access Events</div></div>
+  <div class="summary-card"><div class="value">{{ unique_users | commafy }}</div><div class="label">Unique Users</div></div>
+  <div class="summary-card"><div class="value">{{ sensitive_accesses | commafy }}</div><div class="label">Sensitive File Accesses</div></div>
+</div>
+
+{% if top_users %}
+<h2>Top Users by Access Volume</h2>
+<table>
+<tr><th>User</th><th>Events</th><th>Sensitive Files</th></tr>
+{% for u in top_users[:20] %}
+<tr>
+  <td>{{ u.user }}</td>
+  <td>{{ u.event_count | commafy }}</td>
+  <td>{{ u.sensitive_count | commafy }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if top_files %}
+<h2>Most Accessed Sensitive Files</h2>
+<table>
+<tr><th>File</th><th>Access Count</th><th>Unique Users</th><th>Risk Tier</th></tr>
+{% for f in top_files[:20] %}
+<tr>
+  <td>{{ f.file_path }}</td>
+  <td>{{ f.access_count | commafy }}</td>
+  <td>{{ f.unique_users }}</td>
+  <td class="tier-{{ f.risk_tier }}">{{ f.risk_tier }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if events %}
+<h2>Recent Access Events</h2>
+<table>
+<tr><th>Timestamp</th><th>User</th><th>Action</th><th>File</th></tr>
+{% for e in events[:100] %}
+<tr>
+  <td>{{ e.timestamp }}</td>
+  <td>{{ e.user }}</td>
+  <td>{{ e.action }}</td>
+  <td>{{ e.file_path }}</td>
+</tr>
+{% endfor %}
+{% if events | length > 100 %}<tr><td colspan="4"><em>... and {{ events | length - 100 }} more events</em></td></tr>{% endif %}
+</table>
+{% endif %}
+{% endblock %}

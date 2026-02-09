@@ -703,6 +703,36 @@ class Settings(BaseSettings):
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     siem_export: SIEMExportSettings = Field(default_factory=SIEMExportSettings)
+    reporting: "ReportingSettings" = Field(default_factory=lambda: ReportingSettings())
+
+
+class ReportingSettings(BaseSettings):
+    """Reporting and distribution configuration (Phase M).
+
+    Environment variables::
+
+        OPENLABELS_REPORTING__ENABLED=true
+        OPENLABELS_REPORTING__STORAGE_PATH=/data/openlabels/reports
+        OPENLABELS_REPORTING__SMTP_HOST=smtp.company.com
+    """
+
+    model_config = SettingsConfigDict(env_prefix="OPENLABELS_REPORTING__")
+
+    enabled: bool = True
+    storage_path: str = "/data/openlabels/reports"
+    retention_days: int = 90
+
+    # SMTP distribution
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_from_addr: str = "openlabels@localhost"
+
+    # Scheduling
+    schedule_enabled: bool = False
+    schedule_cron: str = "0 2 * * 1"  # Weekly Monday 02:00
 
 
 def load_yaml_config(path: Path | None = None) -> dict:
