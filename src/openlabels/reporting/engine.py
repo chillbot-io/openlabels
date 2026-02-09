@@ -6,9 +6,11 @@ Uses ``weasyprint`` for PDF generation (optional dependency).
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -50,6 +52,14 @@ class ReportRenderer:
         self._env.filters["pct"] = lambda v: f"{v:.1f}%"
         self._env.filters["commafy"] = lambda v: f"{v:,}"
 
+    def _validate_report_type(self, report_type: str) -> None:
+        """Raise ValueError if report_type is not supported."""
+        if report_type not in REPORT_TYPES:
+            raise ValueError(
+                f"Unknown report_type {report_type!r}. "
+                f"Must be one of: {', '.join(REPORT_TYPES)}"
+            )
+
     def render_html(self, report_type: str, data: dict[str, Any]) -> str:
         """Render a report to HTML.
 
@@ -60,6 +70,7 @@ class ReportRenderer:
         Returns:
             Rendered HTML string.
         """
+        self._validate_report_type(report_type)
         template = self._env.get_template(f"{report_type}.html")
         return template.render(
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -79,28 +90,48 @@ class ReportRenderer:
                 "Install with: pip install openlabels[reports]"
             )
 
+        self._validate_report_type(report_type)
         html_str = self.render_html(report_type, data)
         return WeasyprintHTML(string=html_str).write_pdf()
 
     def render_csv(self, report_type: str, data: dict[str, Any]) -> str:
-        """Render a flat CSV export of the report findings.
-
-        The CSV always includes: file_path, risk_score, risk_tier, entity_counts.
-        """
-        findings: list[dict] = data.get("findings", [])
+        """Render a flat CSV export appropriate for the report type."""
+        self._validate_report_type(report_type)
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["file_path", "risk_score", "risk_tier", "entity_counts"])
-        for f in findings:
-            entities = ";".join(
-                f"{k}:{v}" for k, v in (f.get("entity_counts") or {}).items()
-            )
-            writer.writerow([
-                f.get("file_path", ""),
-                f.get("risk_score", ""),
-                f.get("risk_tier", ""),
-                entities,
-            ])
+
+        if report_type == "access_audit":
+            writer.writerow(["timestamp", "user", "action", "file_path"])
+            for e in data.get("events", []):
+                writer.writerow([
+                    e.get("timestamp", ""),
+                    e.get("user", ""),
+                    e.get("action", ""),
+                    e.get("file_path", ""),
+                ])
+        elif report_type == "compliance_report":
+            writer.writerow(["policy", "violations", "severity"])
+            for v in data.get("violations_by_policy", []):
+                writer.writerow([
+                    v.get("name", ""),
+                    v.get("count", ""),
+                    v.get("severity", ""),
+                ])
+        else:
+            # Default: findings-based CSV
+            findings: list[dict] = data.get("findings", [])
+            writer.writerow(["file_path", "risk_score", "risk_tier", "entity_counts"])
+            for f in findings:
+                entities = ";".join(
+                    f"{k}:{v}" for k, v in (f.get("entity_counts") or {}).items()
+                )
+                writer.writerow([
+                    f.get("file_path", ""),
+                    f.get("risk_score", ""),
+                    f.get("risk_tier", ""),
+                    entities,
+                ])
+
         return buf.getvalue()
 
     def render(
@@ -143,24 +174,31 @@ class ReportEngine:
     ) -> Path:
         """Generate a report and persist it to storage.
 
+        Rendering (especially PDF via weasyprint) is offloaded to a thread
+        to avoid blocking the event loop.
+
         Returns the path to the written file.
         """
-        content = self.renderer.render(report_type, data, fmt)
 
-        if filename is None:
-            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            ext = fmt if fmt != "pdf" else "pdf"
-            filename = f"{report_type}_{ts}.{ext}"
+        def _render_and_write() -> Path:
+            content = self.renderer.render(report_type, data, fmt)
 
-        dest = self.storage_dir / filename
+            nonlocal filename
+            if filename is None:
+                ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                filename = f"{report_type}_{ts}.{fmt}"
 
-        if isinstance(content, bytes):
-            dest.write_bytes(content)
-        else:
-            dest.write_text(content, encoding="utf-8")
+            dest = self.storage_dir / filename
 
-        logger.info("Generated report: %s (%s)", dest, fmt)
-        return dest
+            if isinstance(content, bytes):
+                dest.write_bytes(content)
+            else:
+                dest.write_text(content, encoding="utf-8")
+
+            logger.info("Generated report: %s (%s)", dest, fmt)
+            return dest
+
+        return await asyncio.to_thread(_render_and_write)
 
     async def distribute_email(
         self,
@@ -176,7 +214,6 @@ class ReportEngine:
         subject: str = "OpenLabels Report",
     ) -> None:
         """Send a generated report as an email attachment via SMTP."""
-        import asyncio
         from email.message import EmailMessage
         from email.utils import formatdate
         import mimetypes
@@ -203,9 +240,10 @@ class ReportEngine:
 
         def _send() -> None:
             if smtp_use_tls:
+                ctx = ssl.create_default_context()
                 with smtplib.SMTP(smtp_host, smtp_port) as s:
                     s.ehlo()
-                    s.starttls()
+                    s.starttls(context=ctx)
                     if smtp_user:
                         s.login(smtp_user, smtp_password)
                     s.send_message(msg)

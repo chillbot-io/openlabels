@@ -2,9 +2,10 @@
 Reporting API endpoints (Phase M).
 
 Provides:
-- POST /generate  — trigger report generation
-- GET  /           — list generated reports
-- GET  /{id}       — get report details
+- POST /generate      — trigger report generation
+- POST /schedule      — schedule recurring report generation
+- GET  /              — list generated reports
+- GET  /{id}          — get report details
 - GET  /{id}/download — download generated report
 - POST /{id}/distribute — distribute report via email
 """
@@ -24,7 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
-from openlabels.server.models import Report, ScanResult, ScanJob, generate_uuid
+from openlabels.server.models import (
+    Report, ScanResult, ScanJob, Policy, FileAccessEvent, generate_uuid,
+)
 from openlabels.server.dependencies import TenantContextDep
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -50,6 +53,14 @@ class ReportGenerateRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=255, description="Optional friendly name")
     job_id: Optional[UUID] = Field(default=None, description="Scope to a specific scan job")
     filters: Optional[dict] = Field(default=None, description="Additional query filters")
+
+
+class ReportScheduleRequest(BaseModel):
+    report_type: str = Field(..., description="Report type to schedule")
+    format: str = Field(default="html", description="Output format: html, pdf, csv")
+    cron: str = Field(..., description="Cron expression (e.g., '0 9 * * MON')")
+    name: Optional[str] = Field(default=None, max_length=255, description="Schedule name")
+    distribute_to: Optional[list[str]] = Field(default=None, description="Email addresses for distribution")
 
 
 class ReportDistributeRequest(BaseModel):
@@ -170,6 +181,166 @@ async def _build_report_data(
         reverse=True,
     )
 
+    # ── Compliance data from Policy model + ScanResult.policy_violations ──
+    total_policies = 0
+    total_violations = 0
+    violations_by_policy: list[dict] = []
+    violations_by_framework: dict[str, int] = {}
+    top_violating_files: list[dict] = []
+
+    try:
+        policy_result = await session.execute(
+            select(Policy).where(Policy.tenant_id == tenant_id, Policy.enabled == True)  # noqa: E712
+        )
+        policies = policy_result.scalars().all()
+        total_policies = len(policies)
+
+        # Build policy lookup by name
+        policy_lookup: dict[str, Policy] = {p.name: p for p in policies}
+
+        # Aggregate violations from scan results
+        violation_counts_by_policy: dict[str, int] = {}
+        file_violation_counts: dict[str, dict] = {}
+        for r in rows:
+            violations = r.policy_violations or []
+            for v in violations:
+                pname = v.get("policy") or v.get("policy_name", "Unknown")
+                violation_counts_by_policy[pname] = violation_counts_by_policy.get(pname, 0) + 1
+                total_violations += 1
+
+                # Map to framework
+                pol = policy_lookup.get(pname)
+                if pol:
+                    fw = pol.framework
+                    violations_by_framework[fw] = violations_by_framework.get(fw, 0) + 1
+
+                # Track per-file
+                fpath = r.file_path
+                if fpath not in file_violation_counts:
+                    file_violation_counts[fpath] = {"file_path": fpath, "violation_count": 0, "policies": set()}
+                file_violation_counts[fpath]["violation_count"] += 1
+                file_violation_counts[fpath]["policies"].add(pname)
+
+        violations_by_policy = sorted(
+            [
+                {"name": k, "count": v, "severity": getattr(policy_lookup.get(k), "risk_level", "medium")}
+                for k, v in violation_counts_by_policy.items()
+            ],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+        top_violating_files = sorted(
+            [
+                {**fv, "policies": sorted(fv["policies"])}
+                for fv in file_violation_counts.values()
+            ],
+            key=lambda x: x["violation_count"],
+            reverse=True,
+        )[:20]
+    except Exception:
+        logger.debug("Could not load compliance data", exc_info=True)
+
+    compliance_rate = round(
+        ((total_files - total_violations) / total_files * 100) if total_files else 100.0,
+        1,
+    )
+
+    # ── Access audit data from FileAccessEvent ──
+    access_total_events = 0
+    access_unique_users = 0
+    access_sensitive_accesses = 0
+    access_top_users: list[dict] = []
+    access_top_files: list[dict] = []
+    access_events: list[dict] = []
+
+    try:
+        # Total events
+        count_result = await session.execute(
+            select(func.count(FileAccessEvent.id)).where(
+                FileAccessEvent.tenant_id == tenant_id,
+            )
+        )
+        access_total_events = count_result.scalar() or 0
+
+        # Unique users
+        users_result = await session.execute(
+            select(func.count(func.distinct(FileAccessEvent.user_name))).where(
+                FileAccessEvent.tenant_id == tenant_id,
+            )
+        )
+        access_unique_users = users_result.scalar() or 0
+
+        # Sensitive accesses (files that have scan results with entities)
+        sensitive_paths = {f["file_path"] for f in findings if f["total_entities"] > 0}
+        if sensitive_paths:
+            sens_result = await session.execute(
+                select(func.count(FileAccessEvent.id)).where(
+                    FileAccessEvent.tenant_id == tenant_id,
+                    FileAccessEvent.file_path.in_(sensitive_paths),
+                )
+            )
+            access_sensitive_accesses = sens_result.scalar() or 0
+
+        # Top users by event count
+        top_users_q = await session.execute(
+            select(
+                FileAccessEvent.user_name,
+                func.count(FileAccessEvent.id).label("event_count"),
+            )
+            .where(FileAccessEvent.tenant_id == tenant_id)
+            .group_by(FileAccessEvent.user_name)
+            .order_by(desc(func.count(FileAccessEvent.id)))
+            .limit(20)
+        )
+        access_top_users = [
+            {"user": row.user_name or "unknown", "event_count": row.event_count, "sensitive_count": 0}
+            for row in top_users_q
+        ]
+
+        # Top accessed files
+        top_files_q = await session.execute(
+            select(
+                FileAccessEvent.file_path,
+                func.count(FileAccessEvent.id).label("access_count"),
+                func.count(func.distinct(FileAccessEvent.user_name)).label("unique_users"),
+            )
+            .where(FileAccessEvent.tenant_id == tenant_id)
+            .group_by(FileAccessEvent.file_path)
+            .order_by(desc(func.count(FileAccessEvent.id)))
+            .limit(20)
+        )
+        access_top_files = [
+            {
+                "file_path": row.file_path,
+                "access_count": row.access_count,
+                "unique_users": row.unique_users,
+                "risk_tier": next(
+                    (f["risk_tier"] for f in findings if f["file_path"] == row.file_path),
+                    "MINIMAL",
+                ),
+            }
+            for row in top_files_q
+        ]
+
+        # Recent events (limit 200)
+        recent_q = await session.execute(
+            select(FileAccessEvent)
+            .where(FileAccessEvent.tenant_id == tenant_id)
+            .order_by(desc(FileAccessEvent.event_time))
+            .limit(200)
+        )
+        access_events = [
+            {
+                "timestamp": e.event_time.strftime("%Y-%m-%d %H:%M:%S") if e.event_time else "-",
+                "user": e.user_name or "unknown",
+                "action": e.action,
+                "file_path": e.file_path,
+            }
+            for e in recent_q.scalars()
+        ]
+    except Exception:
+        logger.debug("Could not load access audit data", exc_info=True)
+
     return {
         # Shared
         "findings": findings if report_type != "sensitive_files" else sensitive_findings,
@@ -187,19 +358,19 @@ async def _build_report_data(
         "files_with_pii": files_with_pii,
         "scan_duration": scan_duration,
         # compliance_report
-        "total_policies": 0,
-        "total_violations": 0,
-        "compliance_rate": 100.0,
-        "violations_by_policy": [],
-        "violations_by_framework": {},
-        "top_violating_files": [],
-        # access_audit (placeholder — populated when access events are available)
-        "total_events": 0,
-        "unique_users": 0,
-        "sensitive_accesses": 0,
-        "top_users": [],
-        "top_files": [],
-        "events": [],
+        "total_policies": total_policies,
+        "total_violations": total_violations,
+        "compliance_rate": compliance_rate,
+        "violations_by_policy": violations_by_policy,
+        "violations_by_framework": violations_by_framework,
+        "top_violating_files": top_violating_files,
+        # access_audit
+        "total_events": access_total_events,
+        "unique_users": access_unique_users,
+        "sensitive_accesses": access_sensitive_accesses,
+        "top_users": access_top_users,
+        "top_files": access_top_files,
+        "events": access_events,
         # sensitive_files
         "total_sensitive": len(sensitive_findings),
         "publicly_exposed": publicly_exposed,
@@ -237,6 +408,7 @@ async def generate_report(
         format=request.format,
         status="pending",
         filters=request.filters,
+        created_by=getattr(tenant, "user_id", None),
     )
     session.add(report)
     await session.flush()
@@ -336,6 +508,17 @@ async def download_report(
     if not report.result_path or not Path(report.result_path).exists():
         raise HTTPException(status_code=404, detail="Report file not found on disk")
 
+    # Validate the stored path is within the configured storage directory
+    settings = get_settings()
+    storage_root = Path(settings.reporting.storage_path).resolve()
+    report_file = Path(report.result_path).resolve()
+    if not str(report_file).startswith(str(storage_root)):
+        logger.warning(
+            "Report %s has result_path outside storage directory: %s",
+            report_id, report.result_path,
+        )
+        raise HTTPException(status_code=403, detail="Report file path is outside storage directory")
+
     media_type = {
         "pdf": "application/pdf",
         "csv": "text/csv",
@@ -395,3 +578,61 @@ async def distribute_report(
     await session.commit()
     await session.refresh(report)
     return ReportResponse.model_validate(report)
+
+
+class ReportScheduleResponse(BaseModel):
+    status: str
+    message: str
+    report_type: str
+    format: str
+    cron: str
+    distribute_to: Optional[list[str]] = None
+
+
+@router.post("/schedule", response_model=ReportScheduleResponse, status_code=201)
+async def schedule_report(
+    request: ReportScheduleRequest,
+    tenant: TenantContextDep,
+    session: AsyncSession = Depends(get_session),
+) -> ReportScheduleResponse:
+    """Schedule recurring report generation via the job queue.
+
+    Creates a job queue entry of type ``report`` that the scheduler
+    will trigger at the requested cron cadence.
+    """
+    from openlabels.server.models import JobQueue
+
+    if request.report_type not in VALID_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid report_type. Must be one of: {', '.join(sorted(VALID_TYPES))}")
+    if request.format not in VALID_FORMATS:
+        raise HTTPException(status_code=400, detail=f"Invalid format. Must be one of: {', '.join(sorted(VALID_FORMATS))}")
+
+    tenant_id = tenant.tenant_id
+    name = request.name or f"scheduled_{request.report_type}"
+
+    job = JobQueue(
+        id=generate_uuid(),
+        tenant_id=tenant_id,
+        task_type="report",
+        payload={
+            "report_type": request.report_type,
+            "format": request.format,
+            "cron": request.cron,
+            "name": name,
+            "distribute_to": request.distribute_to,
+        },
+        status="pending",
+    )
+    session.add(job)
+    await session.commit()
+
+    logger.info("Scheduled report %s (%s) with cron '%s'", name, request.report_type, request.cron)
+
+    return ReportScheduleResponse(
+        status="scheduled",
+        message=f"Report '{name}' scheduled with cron '{request.cron}'",
+        report_type=request.report_type,
+        format=request.format,
+        cron=request.cron,
+        distribute_to=request.distribute_to,
+    )

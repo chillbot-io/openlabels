@@ -358,3 +358,96 @@ class TestCLI:
             if isinstance(node, ast.FunctionDef)
         ]
         assert "report_generate" in func_names
+
+    def test_report_list_subcommand(self):
+        report_py = Path("src/openlabels/cli/commands/report.py").read_text()
+        tree = ast.parse(report_py)
+        func_names = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        ]
+        assert "report_list" in func_names
+
+    def test_report_schedule_subcommand(self):
+        report_py = Path("src/openlabels/cli/commands/report.py").read_text()
+        tree = ast.parse(report_py)
+        func_names = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        ]
+        assert "report_schedule" in func_names
+
+
+# ── Engine audit fixes ───────────────────────────────────────────────
+
+
+class TestRendererValidation:
+    def test_invalid_report_type_raises(self):
+        from openlabels.reporting.engine import ReportRenderer
+
+        renderer = ReportRenderer()
+        with pytest.raises(ValueError, match="Unknown report_type"):
+            renderer.render_html("nonexistent_report", {})
+
+    def test_invalid_report_type_csv_raises(self):
+        from openlabels.reporting.engine import ReportRenderer
+
+        renderer = ReportRenderer()
+        with pytest.raises(ValueError, match="Unknown report_type"):
+            renderer.render_csv("bad_type", {})
+
+
+class TestCsvReportTypes:
+    def test_csv_access_audit_columns(self):
+        from openlabels.reporting.engine import ReportRenderer
+
+        renderer = ReportRenderer()
+        data = {
+            "events": [
+                {"timestamp": "2026-01-01 10:00:00", "user": "alice", "action": "read", "file_path": "/data/f.csv"},
+            ],
+        }
+        csv_out = renderer.render_csv("access_audit", data)
+        assert "timestamp,user,action,file_path" in csv_out
+        assert "alice" in csv_out
+
+    def test_csv_compliance_report_columns(self):
+        from openlabels.reporting.engine import ReportRenderer
+
+        renderer = ReportRenderer()
+        data = {
+            "violations_by_policy": [
+                {"name": "PII Policy", "count": 5, "severity": "high"},
+            ],
+        }
+        csv_out = renderer.render_csv("compliance_report", data)
+        assert "policy,violations,severity" in csv_out
+        assert "PII Policy" in csv_out
+
+
+class TestEngineNonBlocking:
+    @pytest.mark.asyncio
+    async def test_generate_uses_thread(self, tmp_path):
+        """Verify generate still works correctly after thread offload."""
+        from openlabels.reporting.engine import ReportEngine
+
+        engine = ReportEngine(storage_dir=tmp_path)
+        data = TestReportRenderer()._sample_data()
+        path = await engine.generate("executive_summary", data, "html")
+        assert path.exists()
+        assert "Executive Summary" in path.read_text()
+
+
+class TestRouteScheduleEndpoint:
+    def test_schedule_endpoint_exists(self):
+        routes_py = Path("src/openlabels/server/routes/reporting.py").read_text()
+        assert "schedule_report" in routes_py
+        assert "ReportScheduleRequest" in routes_py
+
+    def test_route_has_path_validation(self):
+        routes_py = Path("src/openlabels/server/routes/reporting.py").read_text()
+        assert "storage_root" in routes_py or "startswith" in routes_py
+
+    def test_route_sets_created_by(self):
+        routes_py = Path("src/openlabels/server/routes/reporting.py").read_text()
+        assert "created_by" in routes_py

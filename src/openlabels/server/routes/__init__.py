@@ -44,7 +44,8 @@ def __getattr__(name: str):
     valid_modules = {
         "audit", "auth", "jobs", "scans", "results", "targets",
         "schedules", "labels", "dashboard", "ws", "users",
-        "remediation", "monitoring", "health", "settings", "reporting", "v1",
+        "remediation", "monitoring", "health", "settings",
+        "policies", "export", "reporting", "v1",
     }
 
     if name in valid_modules:
@@ -72,5 +73,8 @@ __all__ = [
     "monitoring",
     "health",
     "settings",
+    "policies",
+    "export",
+    "reporting",
     "v1",
 ]

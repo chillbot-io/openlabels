@@ -357,3 +357,125 @@ def report_generate(
         handle_http_error(e, server)
     finally:
         client.close()
+
+
+@report.command("list")
+@click.option("--type", "report_type", default=None,
+              type=click.Choice([
+                  "executive_summary", "compliance_report", "scan_detail",
+                  "access_audit", "sensitive_files",
+              ]),
+              help="Filter by report type")
+@click.option("--limit", "page_size", default=20, help="Number of reports to show")
+@server_options
+def report_list(
+    report_type: Optional[str],
+    page_size: int,
+    server: str,
+    token: Optional[str],
+) -> None:
+    """List generated reports on the server.
+
+    \b
+    Examples:
+        openlabels report list
+        openlabels report list --type executive_summary
+    """
+    client = get_api_client(server, token)
+
+    try:
+        params: dict = {"page_size": page_size}
+        if report_type:
+            params["report_type"] = report_type
+
+        response = client.get("/api/v1/reporting", params=params)
+
+        if response.status_code != 200:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+            return
+
+        data = response.json()
+        items = data.get("items", [])
+
+        if not items:
+            click.echo("No reports found.")
+            return
+
+        # Header
+        click.echo(f"{'ID':<38} {'Type':<22} {'Format':<6} {'Status':<12} {'Created At'}")
+        click.echo("-" * 100)
+
+        for r in items:
+            created = r.get("created_at", "-")[:19]
+            click.echo(
+                f"{r['id']:<38} {r['report_type']:<22} {r['format']:<6} "
+                f"{r['status']:<12} {created}"
+            )
+
+        total = data.get("total", len(items))
+        if total > page_size:
+            click.echo(f"\nShowing {len(items)} of {total} reports. Use --limit to see more.")
+
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
+    finally:
+        client.close()
+
+
+@report.command("schedule")
+@click.option(
+    "--template", "-t", "template",
+    required=True,
+    type=click.Choice([
+        "executive_summary", "compliance_report", "scan_detail",
+        "access_audit", "sensitive_files",
+    ]),
+    help="Report template",
+)
+@click.option("--format", "fmt", default="html", type=click.Choice(["html", "pdf", "csv"]))
+@click.option("--cron", required=True, help="Cron expression (e.g., '0 9 * * MON')")
+@click.option("--name", default=None, help="Schedule name")
+@click.option("--email", multiple=True, help="Email address for distribution (repeatable)")
+@server_options
+def report_schedule(
+    template: str,
+    fmt: str,
+    cron: str,
+    name: Optional[str],
+    email: tuple,
+    server: str,
+    token: Optional[str],
+) -> None:
+    """Schedule recurring report generation on the server.
+
+    \b
+    Examples:
+        openlabels report schedule -t executive_summary --cron "0 9 * * MON" --format pdf
+        openlabels report schedule -t compliance_report --cron "0 2 1 * *" --email admin@co.com
+    """
+    client = get_api_client(server, token)
+
+    try:
+        payload: dict = {
+            "report_type": template,
+            "format": fmt,
+            "cron": cron,
+        }
+        if name:
+            payload["name"] = name
+        if email:
+            payload["distribute_to"] = list(email)
+
+        response = client.post("/api/v1/reporting/schedule", json=payload)
+
+        if response.status_code != 201:
+            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+            return
+
+        data = response.json()
+        click.echo(f"Scheduled: {data['message']}")
+
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        handle_http_error(e, server)
+    finally:
+        client.close()
