@@ -7,6 +7,7 @@ Provides:
 - OneDriveAdapter: OneDrive for Business via Graph API
 - S3Adapter: AWS S3 buckets via boto3
 - GCSAdapter: Google Cloud Storage via google-cloud-storage
+- AzureBlobAdapter: Azure Blob Storage via azure-storage-blob
 - FilterConfig: File/account exclusion configuration
 - GraphClient: Rate-limited Graph API client with connection pooling
 """
@@ -29,6 +30,7 @@ from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 from openlabels.adapters.health import AdapterHealth, AdapterHealthChecker
 from openlabels.adapters.s3 import S3Adapter
 from openlabels.adapters.gcs import GCSAdapter
+from openlabels.adapters.azure_blob import AzureBlobAdapter
 
 __all__ = [
     "ReadAdapter",
@@ -42,6 +44,7 @@ __all__ = [
     "OneDriveAdapter",
     "S3Adapter",
     "GCSAdapter",
+    "AzureBlobAdapter",
     "BaseGraphAdapter",
     "GraphClient",
     "RateLimiterConfig",

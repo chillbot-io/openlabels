@@ -144,12 +144,16 @@ gcs = [
     "google-cloud-storage>=2.14.0",
     "google-cloud-pubsub>=2.19.0",
 ]
+azure = [
+    "azure-storage-blob>=12.19.0",
+    "azure-identity>=1.15.0",
+]
 # Report generation (Phase M)
 reports = [
     "weasyprint>=62.0",
 ]
 all = [
-    "openlabels[gui,mip,windows,dev,hyperscan,ocr,s3,gcs,reports]",
+    "openlabels[gui,mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports]",
 ]
 
 [project.scripts]
@@ -250,6 +254,11 @@ module = [
     # Observability
     "prometheus_client", "prometheus_client.*",
     "sentry_sdk", "sentry_sdk.*",
+    # Cloud SDKs
+    "boto3", "boto3.*",
+    "botocore", "botocore.*",
+    "google", "google.*",
+    "azure", "azure.*",
     # Utilities
     "pydantic_settings", "pydantic_settings.*",
     "click", "click.*",

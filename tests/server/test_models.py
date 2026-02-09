@@ -193,7 +193,7 @@ class TestScanTargetModel:
         """Adapter type must be one of the supported adapters."""
         from openlabels.server.models import AdapterTypeEnum
 
-        expected = {'filesystem', 'sharepoint', 'onedrive'}
+        expected = {'filesystem', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob'}
         actual = set(AdapterTypeEnum.enums)
         assert actual == expected
 

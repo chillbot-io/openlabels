@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import ScanJob, ScanTarget, ScanResult, LabelRule, SensitivityLabel
-from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter, S3Adapter, GCSAdapter
+from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter, S3Adapter, GCSAdapter, AzureBlobAdapter
 from openlabels.adapters.base import FileInfo, ExposureLevel
 from openlabels.server.config import get_settings
 from openlabels.core.processor import FileProcessor
@@ -742,11 +742,28 @@ def _get_adapter(adapter_type: str, config: dict):
                 "credentials_path", settings.adapters.gcs.credentials_path
             ),
         )
+    elif adapter_type == "azure_blob":
+        return AzureBlobAdapter(
+            storage_account=config.get(
+                "storage_account", settings.adapters.azure_blob.storage_account
+            ),
+            container=config.get("container", ""),
+            prefix=config.get("prefix", ""),
+            connection_string=config.get(
+                "connection_string", settings.adapters.azure_blob.connection_string
+            ),
+            account_key=config.get(
+                "account_key", settings.adapters.azure_blob.account_key
+            ),
+            sas_token=config.get(
+                "sas_token", settings.adapters.azure_blob.sas_token
+            ),
+        )
     else:
         raise AdapterError(
             f"Unknown adapter type: {adapter_type}",
             adapter_type=adapter_type,
-            context="valid types are: filesystem, sharepoint, onedrive, s3, gcs",
+            context="valid types are: filesystem, sharepoint, onedrive, s3, gcs, azure_blob",
         )
 
 
