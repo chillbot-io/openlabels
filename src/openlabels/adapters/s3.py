@@ -12,7 +12,6 @@ Requires ``boto3``: install with ``pip install openlabels[s3]``.
 
 from __future__ import annotations
 
-import io
 import logging
 from datetime import datetime, timezone
 from types import TracebackType
@@ -275,7 +274,7 @@ class S3Adapter:
 
         content_type = head.get("ContentType", "application/octet-stream")
 
-        # Conditional re-upload (copy-replace with metadata update)
+        # Re-upload with updated metadata
         try:
             put_kwargs: dict = {
                 "Bucket": self._bucket,
@@ -283,21 +282,18 @@ class S3Adapter:
                 "Body": content,
                 "Metadata": existing_metadata,
                 "ContentType": content_type,
-                "MetadataDirective": "REPLACE",
             }
             await asyncio.to_thread(lambda: client.put_object(**put_kwargs))
-        except client.exceptions.ClientError as exc:
-            error_code = exc.response.get("Error", {}).get("Code", "")
-            if error_code == "PreconditionFailed":
-                logger.warning("Conditional re-upload failed for %s: object modified", key)
+        except Exception as exc:
+            error_str = str(exc)
+            if "PreconditionFailed" in error_str or "412" in error_str:
+                logger.warning("Re-upload failed for %s: object modified", key)
                 return {
                     "success": False,
                     "method": "s3_metadata",
                     "error": "Object modified during re-upload (PreconditionFailed)",
                 }
-            return {"success": False, "method": "s3_metadata", "error": str(exc)}
-        except Exception as exc:
-            return {"success": False, "method": "s3_metadata", "error": str(exc)}
+            return {"success": False, "method": "s3_metadata", "error": error_str}
 
         logger.info("Applied label %s to s3://%s/%s", label_id, self._bucket, key)
         return {"success": True, "method": "s3_metadata"}

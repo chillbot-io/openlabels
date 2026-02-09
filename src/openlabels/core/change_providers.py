@@ -25,6 +25,7 @@ from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
 import json
 from typing import Any
+from urllib.parse import unquote_plus
 
 from openlabels.adapters.base import FileInfo, FilterConfig, ReadAdapter
 
@@ -231,7 +232,6 @@ class SQSChangeProvider:
                     continue
 
                 # URL-decode the key (S3 event notifications URL-encode keys)
-                from urllib.parse import unquote_plus
                 key = unquote_plus(key)
 
                 size = obj.get("size", 0)
