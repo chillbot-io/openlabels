@@ -53,6 +53,13 @@ from .harvester import EventHarvester
 #   from openlabels.monitoring.providers.m365_audit import M365AuditProvider
 #   from openlabels.monitoring.providers.graph_webhook import GraphWebhookProvider
 
+# Phase I providers and stream manager are imported lazily
+# (platform-specific ctypes / syscall at import time).  Use:
+#   from openlabels.monitoring.providers.usn_journal import USNJournalProvider
+#   from openlabels.monitoring.providers.fanotify import FanotifyProvider
+#   from openlabels.monitoring.stream_manager import EventStreamManager
+#   from openlabels.monitoring.scan_trigger import ScanTriggerBuffer
+
 __all__ = [
     # Types
     "AccessEvent",

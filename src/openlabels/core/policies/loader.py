@@ -434,6 +434,65 @@ def _create_credentials() -> PolicyPack:
     )
 
 
+def _create_soc2() -> PolicyPack:
+    """SOC 2 Trust Services Criteria policy.
+
+    Focuses on confidentiality, availability, and processing integrity
+    controls relevant to service-organization data.  Triggers on PII,
+    credentials, and financial identifiers that are commonly flagged
+    during SOC 2 Type II audits.
+    """
+    return PolicyPack(
+        name="SOC2 Trust Services",
+        version="1.0",
+        description=(
+            "SOC 2 Trust Services Criteria — data confidentiality and "
+            "processing integrity controls for service organizations"
+        ),
+        category=PolicyCategory.SOC2,
+        risk_level=RiskLevel.HIGH,
+        triggers=PolicyTrigger(
+            any_of=[
+                # Confidentiality criteria
+                "ssn",
+                "social_security_number",
+                "credit_card",
+                "bank_account",
+                "iban",
+                "api_key",
+                "password",
+                "private_key",
+                "aws_key",
+                "aws_secret",
+                "client_secret",
+                "database_password",
+                "encryption_key",
+            ],
+            combinations=[
+                # PII + financial identifiers
+                ["person_name", "bank_account"],
+                ["person_name", "credit_card"],
+                ["email", "ssn"],
+            ],
+            min_confidence=0.7,
+        ),
+        handling=HandlingRequirements(
+            encryption_required=True,
+            encryption_at_rest=True,
+            encryption_in_transit=True,
+            audit_access=True,
+            access_logging=True,
+        ),
+        retention=RetentionPolicy(
+            min_days=365,   # Minimum 1 year for audit evidence
+            review_frequency_days=90,  # Quarterly review
+        ),
+        jurisdictions=["US"],
+        priority=60,
+        tags=["soc2", "trust-services", "confidentiality"],
+    )
+
+
 # All built-in policies
 BUILTIN_POLICIES = [
     _create_hipaa_phi,
@@ -444,6 +503,7 @@ BUILTIN_POLICIES = [
     _create_glba,
     _create_ferpa,
     _create_credentials,
+    _create_soc2,
 ]
 
 

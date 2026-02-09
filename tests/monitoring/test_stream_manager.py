@@ -215,3 +215,32 @@ class TestEventStreamManagerScanTrigger:
         await task
 
         mock_trigger.on_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_change_providers_notified_on_events(self):
+        events = [_make_event("/changed.docx", action="write")]
+        provider = _MockStreamProvider(batches=[events])
+
+        mock_cp = MagicMock()
+        mock_cp.notify = MagicMock()
+
+        manager = EventStreamManager(
+            providers=[provider],
+            batch_size=1000,
+            flush_interval=10.0,
+            change_providers=[mock_cp],
+        )
+
+        shutdown = asyncio.Event()
+
+        async def stop_after_delay():
+            await asyncio.sleep(0.2)
+            shutdown.set()
+
+        manager._persist_events = AsyncMock(return_value=0)
+
+        task = asyncio.create_task(manager.run(shutdown))
+        await stop_after_delay()
+        await task
+
+        mock_cp.notify.assert_called_once_with("/changed.docx", "write")

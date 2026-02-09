@@ -129,12 +129,19 @@ def _resolve_fd_path(fd: int) -> str | None:
 
 # ── libc wrappers ────────────────────────────────────────────────────
 
+_libc_cache = None
+
+
 def _get_libc():
-    """Load libc for syscall access."""
+    """Load and cache libc for syscall access."""
+    global _libc_cache
+    if _libc_cache is not None:
+        return _libc_cache
     libc_name = ctypes.util.find_library("c")
     if libc_name is None:
         libc_name = "libc.so.6"
-    return ctypes.CDLL(libc_name, use_errno=True)
+    _libc_cache = ctypes.CDLL(libc_name, use_errno=True)
+    return _libc_cache
 
 
 def _fanotify_init(flags: int = FAN_CLASS_NOTIF | FAN_CLOEXEC | FAN_NONBLOCK) -> int:
@@ -224,8 +231,22 @@ class FanotifyProvider:
 
     @staticmethod
     def is_available() -> bool:
-        """Return True if running on Linux (fanotify requires CAP_SYS_ADMIN)."""
-        return _IS_LINUX
+        """Return True if running on Linux with fanotify support.
+
+        Performs a quick probe: calls ``fanotify_init()`` and immediately
+        closes the fd.  Returns ``False`` on non-Linux or if the process
+        lacks ``CAP_SYS_ADMIN``.
+        """
+        if not _IS_LINUX:
+            return False
+        fd = _fanotify_init()
+        if fd < 0:
+            return False
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        return True
 
     def _mark_path(self, path: str) -> bool:
         """Add fanotify mark for a file or directory."""

@@ -320,6 +320,7 @@ async def execute_scan_task(
                     content_score=result.get("content_score"),
                     exposure_multiplier=result.get("exposure_multiplier"),
                     findings=result.get("findings"),
+                    policy_violations=result.get("policy_violations"),
                 )
                 session.add(scan_result)
 
@@ -804,6 +805,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
 
         # Policy evaluation
         policy_data = None
+        policy_violations = None
         if result.spans:
             try:
                 entity_matches = [
@@ -817,9 +819,28 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
                     )
                     for span in result.spans
                 ]
-                policy_result = get_policy_engine().evaluate(entity_matches)
+                engine = get_policy_engine()
+                policy_result = engine.evaluate(entity_matches)
                 if policy_result.is_sensitive:
                     policy_data = policy_result.to_dict()
+                    # Map policy names to their framework categories
+                    name_to_framework = {
+                        p.name: p.category.value
+                        for p in engine._policies
+                    }
+                    # Build per-violation records for the dedicated column
+                    policy_violations = [
+                        {
+                            "policy_name": match.policy_name,
+                            "framework": name_to_framework.get(
+                                match.policy_name, "custom"
+                            ),
+                            "severity": policy_result.risk_level.value,
+                            "trigger_type": match.trigger_type,
+                            "matched_entities": match.matched_entities,
+                        }
+                        for match in policy_result.matches
+                    ]
             except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed for {file_info.path}: {e}")
 
@@ -836,6 +857,7 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
             "content_score": float(result.risk_score),
             "exposure_multiplier": 1.0,  # Already factored into risk_score
             "findings": findings_dict,
+            "policy_violations": policy_violations,
             "processing_time_ms": result.processing_time_ms,
             "error": result.error,
         }

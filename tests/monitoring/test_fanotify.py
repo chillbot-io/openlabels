@@ -90,8 +90,23 @@ class TestFanotifyProvider:
             provider._event_mask = FAN_MODIFY
         assert provider.name == "fanotify"
 
-    def test_is_available_on_linux(self):
-        assert FanotifyProvider.is_available() == (sys.platform == "linux")
+    def test_is_available_false_on_non_linux(self):
+        """On non-Linux, is_available() must return False."""
+        if sys.platform != "linux":
+            assert FanotifyProvider.is_available() is False
+
+    def test_is_available_probes_runtime(self):
+        """is_available() does a runtime fanotify_init probe, not just platform check."""
+        with patch("openlabels.monitoring.providers.fanotify._IS_LINUX", True):
+            with patch("openlabels.monitoring.providers.fanotify._fanotify_init", return_value=10):
+                with patch("os.close"):
+                    assert FanotifyProvider.is_available() is True
+
+    def test_is_available_returns_false_when_init_fails(self):
+        """is_available() returns False when fanotify_init fails (e.g. no CAP_SYS_ADMIN)."""
+        with patch("openlabels.monitoring.providers.fanotify._IS_LINUX", True):
+            with patch("openlabels.monitoring.providers.fanotify._fanotify_init", return_value=-1):
+                assert FanotifyProvider.is_available() is False
 
     @pytest.mark.asyncio
     async def test_collect_returns_empty_when_no_fd(self):

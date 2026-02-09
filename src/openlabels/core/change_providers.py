@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path as _Path
 from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
 from openlabels.adapters.base import FileInfo, FilterConfig, ReadAdapter
@@ -109,8 +110,6 @@ class _StreamChangeProvider:
             self._changed.clear()
 
         for path, (modified, change_type) in snapshot.items():
-            from pathlib import Path as _Path
-
             p = _Path(path)
             try:
                 stat = p.stat()
