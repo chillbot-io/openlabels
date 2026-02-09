@@ -3201,7 +3201,7 @@ Scheduled and on-demand report generation with distribution.
 
 1. Create `src/openlabels/reporting/` package
 2. Implement `ReportRenderer` — Jinja2 HTML templates → PDF (via `weasyprint`), HTML, CSV
-3. Create report templates: executive summary, compliance report, scan detail, access audit
+3. Create report templates: executive summary, compliance report, scan detail, access audit, sensitive files report
 4. Add `weasyprint` as optional dependency (`pip install openlabels[reports]`)
 5. Implement report scheduling via existing cron/job infrastructure
 6. Add email delivery via SMTP (reuse `SIEMExportSettings` SMTP config or standalone)

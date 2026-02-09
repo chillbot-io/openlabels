@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Sensitive Files Report &mdash; OpenLabels{% endblock %}
+{% block content %}
+<h1>Sensitive Files Report</h1>
+<p class="meta">{{ generated_at }}{% if tenant_name %} &mdash; {{ tenant_name }}{% endif %}</p>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="value">{{ total_sensitive | commafy }}</div><div class="label">Sensitive Files</div></div>
+  <div class="summary-card"><div class="value">{{ publicly_exposed | commafy }}</div><div class="label">Publicly Exposed</div></div>
+  <div class="summary-card"><div class="value">{{ unlabeled | commafy }}</div><div class="label">Unlabeled</div></div>
+  <div class="summary-card"><div class="value">{{ critical_count | commafy }}</div><div class="label">Critical Risk</div></div>
+</div>
+
+{% if by_entity_type %}
+<h2>Sensitive Data Types Found</h2>
+<table>
+<tr><th>Entity Type</th><th>Files</th><th>Total Occurrences</th></tr>
+{% for e in by_entity_type %}
+<tr>
+  <td>{{ e.entity_type }}</td>
+  <td>{{ e.file_count | commafy }}</td>
+  <td>{{ e.total_count | commafy }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if by_exposure %}
+<h2>Sensitive Files by Exposure Level</h2>
+<table>
+<tr><th>Exposure</th><th>Files</th></tr>
+{% for level in ["PUBLIC","ORG_WIDE","INTERNAL","PRIVATE"] %}
+{% set count = by_exposure.get(level, 0) %}
+{% if count > 0 %}
+<tr><td>{{ level }}</td><td>{{ count | commafy }}</td></tr>
+{% endif %}
+{% endfor %}
+</table>
+{% endif %}
+
+<h2>Sensitive Files</h2>
+<table>
+<tr><th>File</th><th>Score</th><th>Tier</th><th>Exposure</th><th>Entities</th><th>Label</th></tr>
+{% for f in findings %}
+<tr>
+  <td>{{ f.file_path }}</td>
+  <td>{{ f.risk_score }}</td>
+  <td class="tier-{{ f.risk_tier }}">{{ f.risk_tier }}</td>
+  <td>{{ f.exposure_level or "-" }}</td>
+  <td>{% for k, v in (f.entity_counts or {}).items() %}{{ k }}:{{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  <td>{{ f.label_name or "None" }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

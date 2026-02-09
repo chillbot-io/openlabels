@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Scan Detail Report &mdash; OpenLabels{% endblock %}
+{% block content %}
+<h1>Scan Detail Report</h1>
+<p class="meta">{{ generated_at }}{% if job_name %} &mdash; Job: {{ job_name }}{% endif %}</p>
+
+<h2>Scan Summary</h2>
+<div class="summary-grid">
+  <div class="summary-card"><div class="value">{{ files_scanned | commafy }}</div><div class="label">Files Scanned</div></div>
+  <div class="summary-card"><div class="value">{{ files_with_pii | commafy }}</div><div class="label">Files with PII</div></div>
+  <div class="summary-card"><div class="value">{{ scan_duration }}</div><div class="label">Duration</div></div>
+  <div class="summary-card"><div class="value">{{ target_name }}</div><div class="label">Target</div></div>
+</div>
+
+{% if by_tier %}
+<h2>Risk Distribution</h2>
+<table>
+<tr><th>Tier</th><th>Files</th></tr>
+{% for tier in ["CRITICAL","HIGH","MEDIUM","LOW","MINIMAL"] %}
+{% set count = by_tier.get(tier, 0) %}
+{% if count > 0 %}
+<tr><td class="tier-{{ tier }}">{{ tier }}</td><td>{{ count | commafy }}</td></tr>
+{% endif %}
+{% endfor %}
+</table>
+{% endif %}
+
+<h2>All Findings</h2>
+<table>
+<tr><th>File</th><th>Score</th><th>Tier</th><th>Entities</th><th>Exposure</th></tr>
+{% for f in findings %}
+<tr>
+  <td>{{ f.file_path }}</td>
+  <td>{{ f.risk_score }}</td>
+  <td class="tier-{{ f.risk_tier }}">{{ f.risk_tier }}</td>
+  <td>{% for k, v in (f.entity_counts or {}).items() %}{{ k }}:{{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  <td>{{ f.exposure_level or "-" }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

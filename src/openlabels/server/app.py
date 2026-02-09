@@ -46,6 +46,7 @@ from openlabels.server.routes import (
     settings,
     policies,
     export,
+    reporting,
 )
 from openlabels.web import router as web_router
 
@@ -65,7 +66,7 @@ limiter = Limiter(key_func=get_client_ip)
 _LEGACY_API_PREFIXES = [
     "audit", "jobs", "scans", "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
-    "health", "settings", "policies", "export",
+    "health", "settings", "policies", "export", "reporting",
 ]
 
 
@@ -90,6 +91,7 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/settings", "Settings", settings),
     ("/policies", "Policies", policies),
     ("/export", "Export", export),
+    ("/reporting", "Reporting", reporting),
 ]
 
 

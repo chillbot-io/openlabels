@@ -849,3 +849,42 @@ class Policy(Base):
         Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
         Index('ix_policies_tenant_enabled', 'tenant_id', 'enabled'),
     )
+
+
+# =============================================================================
+# REPORTING (Phase M)
+# =============================================================================
+
+class Report(Base):
+    """Generated report record (Phase M).
+
+    Tracks metadata for each generated report: type, format, storage
+    location, and optional distribution status.
+    """
+
+    __tablename__ = "reports"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False)  # executive_summary, compliance_report, …
+    format: Mapped[str] = mapped_column(String(10), nullable=False)  # html, pdf, csv
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")  # pending, generated, distributed, failed
+    filters: Mapped[Optional[dict]] = mapped_column(JSONB)  # Query filters used to generate
+    result_path: Mapped[Optional[str]] = mapped_column(Text)  # Storage path for generated file
+    result_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Distribution
+    distributed_to: Mapped[Optional[list]] = mapped_column(JSONB)  # [{"type": "email", "to": [...]}]
+    distributed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Audit
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+
+    __table_args__ = (
+        Index('ix_reports_tenant_type', 'tenant_id', 'report_type'),
+        Index('ix_reports_tenant_created', 'tenant_id', 'created_at'),
+    )

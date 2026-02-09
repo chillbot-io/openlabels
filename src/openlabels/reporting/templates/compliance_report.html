@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Compliance Report &mdash; OpenLabels{% endblock %}
+{% block content %}
+<h1>Compliance Report</h1>
+<p class="meta">{{ generated_at }}{% if tenant_name %} &mdash; {{ tenant_name }}{% endif %}</p>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="value">{{ total_policies }}</div><div class="label">Policies Evaluated</div></div>
+  <div class="summary-card"><div class="value">{{ total_violations | commafy }}</div><div class="label">Total Violations</div></div>
+  <div class="summary-card"><div class="value">{{ compliance_rate | pct }}</div><div class="label">Compliance Rate</div></div>
+</div>
+
+{% if violations_by_policy %}
+<h2>Violations by Policy</h2>
+<table>
+<tr><th>Policy</th><th>Violations</th><th>Severity</th></tr>
+{% for pol in violations_by_policy %}
+<tr>
+  <td>{{ pol.name }}</td>
+  <td>{{ pol.count | commafy }}</td>
+  <td class="tier-{{ pol.severity | upper }}">{{ pol.severity }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if violations_by_framework %}
+<h2>Violations by Framework</h2>
+<table>
+<tr><th>Framework</th><th>Violations</th></tr>
+{% for fw, count in violations_by_framework | dictsort(by='value', reverse=true) %}
+<tr><td>{{ fw }}</td><td>{{ count | commafy }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
+{% if top_violating_files %}
+<h2>Most Violations per File (Top 20)</h2>
+<table>
+<tr><th>File</th><th>Violations</th><th>Policies</th></tr>
+{% for f in top_violating_files[:20] %}
+<tr>
+  <td>{{ f.file_path }}</td>
+  <td>{{ f.violation_count }}</td>
+  <td>{{ f.policies | join(", ") }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

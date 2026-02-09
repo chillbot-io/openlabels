@@ -144,8 +144,12 @@ gcs = [
     "google-cloud-storage>=2.14.0",
     "google-cloud-pubsub>=2.19.0",
 ]
+# Report generation (Phase M)
+reports = [
+    "weasyprint>=62.0",
+]
 all = [
-    "openlabels[gui,mip,windows,dev,hyperscan,ocr,s3,gcs]",
+    "openlabels[gui,mip,windows,dev,hyperscan,ocr,s3,gcs,reports]",
 ]
 
 [project.scripts]
