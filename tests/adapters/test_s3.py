@@ -29,28 +29,28 @@ class TestS3AdapterProperties:
 
 class TestS3LabelCompatibility:
     def test_compatible_extensions(self):
-        from openlabels.adapters.s3 import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("report.pdf") is True
-        assert _is_label_compatible("data.csv") is True
-        assert _is_label_compatible("doc.docx") is True
-        assert _is_label_compatible("sheet.xlsx") is True
-        assert _is_label_compatible("photo.jpg") is True
-        assert _is_label_compatible("archive.zip") is True
+        assert is_label_compatible("report.pdf") is True
+        assert is_label_compatible("data.csv") is True
+        assert is_label_compatible("doc.docx") is True
+        assert is_label_compatible("sheet.xlsx") is True
+        assert is_label_compatible("photo.jpg") is True
+        assert is_label_compatible("archive.zip") is True
 
     def test_incompatible_extensions(self):
-        from openlabels.adapters.s3 import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("program.exe") is False
-        assert _is_label_compatible("library.dll") is False
-        assert _is_label_compatible("binary.bin") is False
-        assert _is_label_compatible("noextension") is False
+        assert is_label_compatible("program.exe") is False
+        assert is_label_compatible("library.dll") is False
+        assert is_label_compatible("binary.bin") is False
+        assert is_label_compatible("noextension") is False
 
     def test_case_insensitive(self):
-        from openlabels.adapters.s3 import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("REPORT.PDF") is True
-        assert _is_label_compatible("Data.CSV") is True
+        assert is_label_compatible("REPORT.PDF") is True
+        assert is_label_compatible("Data.CSV") is True
 
 
 class TestS3AdapterListFiles:
@@ -162,7 +162,7 @@ class TestS3ApplyLabelAndSync:
             "Metadata": {"existing-key": "existing-val"},
             "ContentType": "application/pdf",
         }
-        mock_client.put_object.return_value = {}
+        mock_client.copy_object.return_value = {}
 
         adapter = S3Adapter(bucket="my-bucket")
         adapter._client = mock_client
@@ -178,16 +178,14 @@ class TestS3ApplyLabelAndSync:
         )
 
         result = await adapter.apply_label_and_sync(
-            fi, label_id="label-uuid", label_name="Confidential", content=b"pdf-bytes"
+            fi, label_id="label-uuid", label_name="Confidential"
         )
 
         assert result["success"] is True
         assert result["method"] == "s3_metadata"
 
-        # Verify put_object was called with merged metadata
-        call_kwargs = mock_client.put_object.call_args
-        # It's called via lambda, so we need to check differently
-        assert mock_client.put_object.called
+        # Verify copy_object was called (server-side self-copy with CopySourceIfMatch)
+        assert mock_client.copy_object.called
 
     @pytest.mark.asyncio
     async def test_apply_label_etag_mismatch(self):
@@ -214,7 +212,7 @@ class TestS3ApplyLabelAndSync:
         )
 
         result = await adapter.apply_label_and_sync(
-            fi, label_id="label-uuid", content=b"content"
+            fi, label_id="label-uuid"
         )
 
         assert result["success"] is False

@@ -197,7 +197,7 @@ class TestOptionalDependencies:
 
 class TestLabelCompatibility:
     def test_s3_label_compatible_types(self):
-        from openlabels.adapters.s3 import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
         compatible = [
             "doc.docx", "sheet.xlsx", "pres.pptx", "report.pdf",
@@ -205,33 +205,30 @@ class TestLabelCompatibility:
             "photo.jpg", "image.png",
         ]
         for name in compatible:
-            assert _is_label_compatible(name) is True, f"{name} should be compatible"
+            assert is_label_compatible(name) is True, f"{name} should be compatible"
 
     def test_s3_label_incompatible_types(self):
-        from openlabels.adapters.s3 import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
         incompatible = [
             "app.exe", "lib.dll", "data.bin", "noextension",
             "archive.7z", "video.mp4", "audio.mp3",
         ]
         for name in incompatible:
-            assert _is_label_compatible(name) is False, f"{name} should be incompatible"
+            assert is_label_compatible(name) is False, f"{name} should be incompatible"
 
     def test_gcs_label_compatible_types(self):
-        from openlabels.adapters.gcs import _is_label_compatible
+        from openlabels.adapters.base import is_label_compatible
 
-        assert _is_label_compatible("doc.docx") is True
-        assert _is_label_compatible("app.exe") is False
+        assert is_label_compatible("doc.docx") is True
+        assert is_label_compatible("app.exe") is False
 
-    def test_both_adapters_share_same_compatible_set(self):
-        from openlabels.adapters.s3 import (
-            _LABEL_COMPATIBLE_EXTENSIONS as s3_ext,
-        )
-        from openlabels.adapters.gcs import (
-            _LABEL_COMPATIBLE_EXTENSIONS as gcs_ext,
-        )
+    def test_extensions_are_shared_from_base(self):
+        from openlabels.adapters.base import LABEL_COMPATIBLE_EXTENSIONS
 
-        assert s3_ext == gcs_ext
+        assert ".pdf" in LABEL_COMPATIBLE_EXTENSIONS
+        assert ".docx" in LABEL_COMPATIBLE_EXTENSIONS
+        assert ".exe" not in LABEL_COMPATIBLE_EXTENSIONS
 
 
 # ── Conflict handling ────────────────────────────────────────────────
@@ -264,7 +261,7 @@ class TestConflictHandling:
             permissions={"etag": "original"},
         )
 
-        result = await adapter.apply_label_and_sync(fi, "label", content=b"x")
+        result = await adapter.apply_label_and_sync(fi, "label")
         assert result["success"] is False
         assert "ETag mismatch" in result["error"]
 

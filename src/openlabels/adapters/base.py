@@ -168,6 +168,25 @@ class FilterConfig:
 # Default filter configuration
 DEFAULT_FILTER = FilterConfig()
 
+# Extensions that support label metadata via cloud object store re-upload.
+# Shared by S3Adapter and GCSAdapter (Phase L).
+LABEL_COMPATIBLE_EXTENSIONS = frozenset({
+    ".docx", ".xlsx", ".pptx", ".pdf",
+    ".doc", ".xls", ".ppt",
+    ".csv", ".tsv", ".json", ".xml",
+    ".txt", ".md", ".rst", ".html", ".htm",
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
+    ".zip", ".tar", ".gz",
+})
+
+
+def is_label_compatible(name: str) -> bool:
+    """Check if a file type supports label metadata via cloud object store re-upload."""
+    dot = name.rfind(".")
+    if dot == -1:
+        return False
+    return name[dot:].lower() in LABEL_COMPATIBLE_EXTENSIONS
+
 
 @dataclass
 class FileInfo:

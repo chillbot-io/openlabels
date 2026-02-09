@@ -637,7 +637,7 @@ def _get_adapter(adapter_type: str, config: dict):
     Get the appropriate adapter instance.
 
     Args:
-        adapter_type: Type of adapter (filesystem, sharepoint, onedrive)
+        adapter_type: Type of adapter (filesystem, sharepoint, onedrive, s3, gcs)
         config: Adapter-specific configuration
 
     Returns:
@@ -893,50 +893,51 @@ async def _cloud_label_sync_back(
 
     adapter = _get_adapter(target.adapter, target.config)
 
-    for result in scan_results:
-        item_id = (
-            result.file_path.split("://", 1)[-1].split("/", 1)[-1]
-            if "://" in result.file_path
-            else result.file_path
-        )
-        file_info = FileInfo(
-            path=result.file_path,
-            name=result.file_name,
-            size=result.file_size or 0,
-            modified=result.file_modified or datetime.now(timezone.utc),
-            adapter=target.adapter,
-            item_id=item_id,
-        )
-
-        try:
-            # Refresh metadata to get current ETag/generation for conflict detection
-            file_info = await adapter.get_metadata(file_info)
-
-            sync_result = await adapter.apply_label_and_sync(
-                file_info=file_info,
-                label_id=str(result.current_label_id),
-                label_name=result.current_label_name,
+    async with adapter:
+        for result in scan_results:
+            item_id = (
+                result.file_path.split("://", 1)[-1].split("/", 1)[-1]
+                if "://" in result.file_path
+                else result.file_path
+            )
+            file_info = FileInfo(
+                path=result.file_path,
+                name=result.file_name,
+                size=result.file_size or 0,
+                modified=result.file_modified or datetime.now(timezone.utc),
+                adapter=target.adapter,
+                item_id=item_id,
             )
 
-            if sync_result.get("success"):
-                sync_stats["synced"] += 1
-            elif sync_result.get("method") == "skipped":
-                sync_stats["skipped"] += 1
-                logger.debug(
-                    "Skipped label sync for %s: %s",
-                    result.file_path,
-                    sync_result.get("error"),
+            try:
+                # Refresh metadata to get current ETag/generation for conflict detection
+                file_info = await adapter.get_metadata(file_info)
+
+                sync_result = await adapter.apply_label_and_sync(
+                    file_info=file_info,
+                    label_id=str(result.current_label_id),
+                    label_name=result.current_label_name,
                 )
-            else:
+
+                if sync_result.get("success"):
+                    sync_stats["synced"] += 1
+                elif sync_result.get("method") == "skipped":
+                    sync_stats["skipped"] += 1
+                    logger.debug(
+                        "Skipped label sync for %s: %s",
+                        result.file_path,
+                        sync_result.get("error"),
+                    )
+                else:
+                    sync_stats["errors"] += 1
+                    logger.warning(
+                        "Label sync-back failed for %s: %s",
+                        result.file_path,
+                        sync_result.get("error"),
+                    )
+            except Exception as e:
                 sync_stats["errors"] += 1
-                logger.warning(
-                    "Label sync-back failed for %s: %s",
-                    result.file_path,
-                    sync_result.get("error"),
-                )
-        except Exception as e:
-            sync_stats["errors"] += 1
-            logger.error("Label sync-back error for %s: %s", result.file_path, e)
+                logger.error("Label sync-back error for %s: %s", result.file_path, e)
 
     logger.info(
         "Cloud label sync-back for job %s: synced=%d, skipped=%d, errors=%d",

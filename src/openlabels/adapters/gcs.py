@@ -23,26 +23,10 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    is_label_compatible,
 )
 
 logger = logging.getLogger(__name__)
-
-# Label-compatible extensions (same set as S3 adapter)
-_LABEL_COMPATIBLE_EXTENSIONS = frozenset({
-    ".docx", ".xlsx", ".pptx", ".pdf",
-    ".doc", ".xls", ".ppt",
-    ".csv", ".tsv", ".json", ".xml",
-    ".txt", ".md", ".rst", ".html", ".htm",
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
-    ".zip", ".tar", ".gz",
-})
-
-
-def _is_label_compatible(name: str) -> bool:
-    dot = name.rfind(".")
-    if dot == -1:
-        return False
-    return name[dot:].lower() in _LABEL_COMPATIBLE_EXTENSIONS
 
 
 class GCSAdapter:
@@ -223,7 +207,7 @@ class GCSAdapter:
         Returns:
             Dict with ``success``, ``method``, and optional ``error`` keys.
         """
-        if not _is_label_compatible(file_info.name):
+        if not is_label_compatible(file_info.name):
             return {
                 "success": False,
                 "method": "skipped",

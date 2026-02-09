@@ -17,6 +17,8 @@ from openlabels.adapters.base import (
     FileInfo,
     ExposureLevel,
     FilterConfig,
+    LABEL_COMPATIBLE_EXTENSIONS,
+    is_label_compatible,
     supports_remediation,
 )
 from openlabels.adapters.filesystem import FilesystemAdapter
