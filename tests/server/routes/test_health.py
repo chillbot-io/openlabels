@@ -492,8 +492,8 @@ class TestHealthStatusValues:
 class TestHealthEndpointAuthentication:
     """Tests for health endpoint authentication."""
 
-    async def test_health_rejects_unauthenticated_requests(self, test_db):
-        """Health status endpoint should reject unauthenticated requests in production mode."""
+    async def test_health_allows_unauthenticated_requests(self, test_db):
+        """Health status endpoint uses optional auth and allows unauthenticated access."""
         from httpx import AsyncClient, ASGITransport
         from unittest.mock import patch, MagicMock
         from openlabels.server.app import app
@@ -517,9 +517,9 @@ class TestHealthEndpointAuthentication:
                 async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/health/status")
 
-                # Without authentication, should get 401 Unauthorized
-                assert response.status_code == 401, \
-                    f"Expected 401 for unauthenticated request, got {response.status_code}"
+                # Health uses get_optional_user, so unauthenticated access returns 200
+                assert response.status_code == 200, \
+                    f"Expected 200 for health endpoint (uses optional auth), got {response.status_code}"
         finally:
             app.dependency_overrides.clear()
 

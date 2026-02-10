@@ -779,7 +779,7 @@ class TestCallbackEndpoint:
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()
-        mock_msal_app.acquire_token_by_authorization_code.side_effect = Exception("Network error")
+        mock_msal_app.acquire_token_by_authorization_code.side_effect = ConnectionError("Network error")
 
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
@@ -856,7 +856,7 @@ class TestLogoutEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
-                    response = await client.get(
+                    response = await client.post(
                         "/api/auth/logout",
                         cookies={"openlabels_session": "logout-test-session"}
                     )
@@ -895,7 +895,7 @@ class TestLogoutEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
-                    response = await client.get(
+                    response = await client.post(
                         "/api/auth/logout",
                         cookies={"openlabels_session": "cookie-test-session"}
                     )
@@ -927,7 +927,7 @@ class TestLogoutEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
-                    response = await client.get("/api/auth/logout")
+                    response = await client.post("/api/auth/logout")
 
                     assert response.status_code == 302
                     location = response.headers.get("location")
@@ -956,7 +956,7 @@ class TestLogoutEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
-                    response = await client.get("/api/auth/logout")
+                    response = await client.post("/api/auth/logout")
 
                     assert response.status_code == 302
         finally:
@@ -2761,7 +2761,7 @@ class TestTokenRefreshEdgeCases:
         mock_settings.auth.client_secret = "test-secret"
 
         mock_msal_app = MagicMock()
-        mock_msal_app.acquire_token_by_refresh_token.side_effect = Exception("Network error")
+        mock_msal_app.acquire_token_by_refresh_token.side_effect = ConnectionError("Network error")
 
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
@@ -2872,12 +2872,14 @@ class TestSecureCookieFlag:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 # Use HTTPS base URL
-                async with AsyncClient(transport=transport, base_url="https://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="https://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login")
 
+                    assert response.status_code == 302
                     set_cookie = response.headers.get("set-cookie", "")
                     # For HTTPS, secure flag should be set
-                    assert "secure" in set_cookie.lower() or response.status_code == 302
+                    if set_cookie:
+                        assert "secure" in set_cookie.lower()
         finally:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()

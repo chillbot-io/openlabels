@@ -249,15 +249,17 @@ class TestTargetCRUD:
     async def test_create_target_and_view(self, test_client: AsyncClient, test_db):
         """Create target and verify it appears in list."""
         # Create target
-        await test_client.post(
+        response = await test_client.post(
             "/ui/targets",
             data={
                 "name": "View Test Target",
-                "adapter": "sharepoint",
+                "adapter": "filesystem",
                 "enabled": "on",
+                "config[path]": "/data/test",
             },
             follow_redirects=False,
         )
+        assert response.status_code in (303, 302, 200)
 
         # Verify target list contains the new target
         response = await test_client.get("/ui/partials/targets-list")
