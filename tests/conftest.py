@@ -369,10 +369,12 @@ def _try_setup_system_postgres():
     ).returncode != 0:
         return None
 
-    # Connect via local socket (trust auth) or TCP with password
+    # Connect via local socket (trust auth), sudo peer auth, or TCP
     psql_prefix = None
+    connection_env = os.environ.copy()
     for cmd in (
         ["psql", "-U", "postgres", "-d", "postgres", "-c", "SELECT 1"],
+        ["sudo", "-u", "postgres", "psql", "-d", "postgres", "-c", "SELECT 1"],
         ["psql", "-h", "localhost", "-U", "postgres", "-d", "postgres", "-c", "SELECT 1"],
     ):
         env = os.environ.copy()
@@ -380,14 +382,13 @@ def _try_setup_system_postgres():
             env["PGPASSWORD"] = "test"
         if subprocess.run(cmd, capture_output=True, env=env).returncode == 0:
             psql_prefix = cmd[:-2]  # drop the "-c" and "SELECT 1"
+            connection_env = env
             break
 
     if psql_prefix is None:
         return None
 
-    env = os.environ.copy()
-    if "-h" in psql_prefix:
-        env["PGPASSWORD"] = "test"
+    env = connection_env
 
     # Set password (idempotent)
     subprocess.run(
@@ -444,22 +445,13 @@ def database_url():
     if url and "postgresql" not in url:
         # SQLite and other databases are not supported - models use JSONB
         return None
+    # Always run auto-setup: it's idempotent and ensures the password is
+    # set and the test database exists even when pytest-env pre-populates
+    # TEST_DATABASE_URL (which would otherwise skip the setup entirely).
+    auto_url = _try_setup_system_postgres()
     if url:
-        # Verify the connection actually works before trusting the env var.
-        # pytest-env (pyproject.toml) always sets TEST_DATABASE_URL, but the
-        # postgres password may not be configured yet.  If it fails, fall
-        # through to _try_setup_system_postgres() which sets the password.
-        import subprocess
-        env = os.environ.copy()
-        env["PGPASSWORD"] = "test"
-        if subprocess.run(
-            ["psql", "-h", "localhost", "-U", "postgres", "-d", "openlabels_test", "-c", "SELECT 1"],
-            capture_output=True, env=env,
-        ).returncode == 0:
-            return url
-        # URL was set but connection failed — try auto-setup
-    # Auto-detect system PostgreSQL, set password, create DB
-    return _try_setup_system_postgres()
+        return url
+    return auto_url
 
 
 # Track whether tables have been created in the test database
