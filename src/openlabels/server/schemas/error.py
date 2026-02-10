@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorResponse(BaseModel):
@@ -47,15 +47,14 @@ class ErrorResponse(BaseModel):
         examples=["abc123ef"],
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "error": "NOT_FOUND",
-                "message": "The requested resource was not found",
-                "details": {"resource_type": "User", "resource_id": "123e4567-e89b-12d3-a456-426614174000"},
-                "request_id": "abc123ef",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "error": "NOT_FOUND",
+            "message": "The requested resource was not found",
+            "details": {"resource_type": "User", "resource_id": "123e4567-e89b-12d3-a456-426614174000"},
+            "request_id": "abc123ef",
         }
+    })
 
 
 class SuccessResponse(BaseModel):

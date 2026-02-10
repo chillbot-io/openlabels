@@ -319,6 +319,7 @@ class TestWorkerShutdown:
         worker = Worker()
         worker.running = True
         worker._state_manager = AsyncMock()
+        worker._update_stopping_state = AsyncMock()
 
         with patch('asyncio.create_task') as mock_create_task:
             worker._handle_shutdown()

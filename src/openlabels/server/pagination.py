@@ -32,7 +32,7 @@ from datetime import datetime
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,10 @@ class CursorData(BaseModel):
     id: UUID
     timestamp: datetime
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-            UUID: lambda v: str(v),
-        }
+    model_config = ConfigDict(json_encoders={
+        datetime: lambda v: v.isoformat(),
+        UUID: lambda v: str(v),
+    })
 
 
 class CursorPaginationParams(BaseModel):
@@ -79,8 +78,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
         description="Whether there are more items after this page"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CursorPaginatedResponse(BaseModel, Generic[T]):
@@ -95,8 +93,7 @@ class CursorPaginatedResponse(BaseModel, Generic[T]):
     next_cursor: str | None = None
     has_more: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 def encode_cursor(id: UUID, timestamp: datetime) -> str:

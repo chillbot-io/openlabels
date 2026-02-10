@@ -820,6 +820,10 @@ class TestProgressReportingAndUpdates:
         session.flush = AsyncMock()
         session.commit = AsyncMock()
         session.add = MagicMock()
+        # _check_cancellation calls session.execute().scalar_one_or_none()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "running"
+        session.execute = AsyncMock(return_value=mock_result)
         return session
 
     async def test_progress_updated_during_scan(self, mock_session):
@@ -910,6 +914,9 @@ class TestLargeFilesHandling:
         session.flush = AsyncMock()
         session.commit = AsyncMock()
         session.add = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "running"
+        session.execute = AsyncMock(return_value=mock_result)
         return session
 
     async def test_large_file_skipped_when_exceeds_limit(self, mock_session):
@@ -982,6 +989,9 @@ class TestPermissionDeniedScenarios:
         session.flush = AsyncMock()
         session.commit = AsyncMock()
         session.add = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "running"
+        session.execute = AsyncMock(return_value=mock_result)
         return session
 
     async def test_permission_denied_on_single_file_continues(self, mock_session):
@@ -1193,6 +1203,9 @@ class TestInventoryDeltaScanning:
         session.flush = AsyncMock()
         session.commit = AsyncMock()
         session.add = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = "running"
+        session.execute = AsyncMock(return_value=mock_result)
         return session
 
     async def test_unchanged_files_skipped_in_delta_mode(self, mock_session):

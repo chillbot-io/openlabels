@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from slowapi import Limiter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -170,8 +170,7 @@ class RemediationResponse(BaseModel):
     error: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get("", response_model=PaginatedResponse[RemediationResponse])
