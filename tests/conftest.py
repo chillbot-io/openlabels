@@ -445,8 +445,20 @@ def database_url():
         # SQLite and other databases are not supported - models use JSONB
         return None
     if url:
-        return url
-    # Auto-detect system PostgreSQL
+        # Verify the connection actually works before trusting the env var.
+        # pytest-env (pyproject.toml) always sets TEST_DATABASE_URL, but the
+        # postgres password may not be configured yet.  If it fails, fall
+        # through to _try_setup_system_postgres() which sets the password.
+        import subprocess
+        env = os.environ.copy()
+        env["PGPASSWORD"] = "test"
+        if subprocess.run(
+            ["psql", "-h", "localhost", "-U", "postgres", "-d", "openlabels_test", "-c", "SELECT 1"],
+            capture_output=True, env=env,
+        ).returncode == 0:
+            return url
+        # URL was set but connection failed — try auto-setup
+    # Auto-detect system PostgreSQL, set password, create DB
     return _try_setup_system_postgres()
 
 
