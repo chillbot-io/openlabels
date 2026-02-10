@@ -16,7 +16,32 @@ cd "$PROJECT_DIR"
 uv pip install -e ".[dev]" 2>&1 || true
 
 # -------------------------------------------------------
-# 2. Start PostgreSQL 16
+# 2. Purge orphaned PostgreSQL and Redis instances
+# -------------------------------------------------------
+echo "Purging orphaned processes..."
+
+# Stop any orphaned PostgreSQL instances cleanly, then kill stragglers
+if command -v pg_ctlcluster &> /dev/null; then
+  pg_ctlcluster 16 main stop -- -m immediate 2>/dev/null || true
+fi
+# Kill any remaining postgres processes (orphaned from previous sessions)
+pkill -9 -x postgres 2>/dev/null || true
+# Remove stale pid and socket files
+rm -f /var/run/postgresql/16-main.pid 2>/dev/null || true
+rm -f /var/run/postgresql/.s.PGSQL.5432* 2>/dev/null || true
+rm -f /var/lib/postgresql/16/main/postmaster.pid 2>/dev/null || true
+sleep 1
+
+# Kill any orphaned redis-server processes
+pkill -9 -x redis-server 2>/dev/null || true
+rm -f /var/run/redis/redis-server.pid 2>/dev/null || true
+rm -f /tmp/redis.sock 2>/dev/null || true
+sleep 1
+
+echo "Orphaned processes purged."
+
+# -------------------------------------------------------
+# 3. Start PostgreSQL 16
 # -------------------------------------------------------
 echo "Setting up PostgreSQL..."
 
@@ -30,19 +55,17 @@ if [ -f "$PG_HBA" ]; then
   fi
 fi
 
-# Start PostgreSQL if not running
+# Start PostgreSQL fresh
+echo "Starting PostgreSQL 16..."
 if command -v pg_ctlcluster &> /dev/null; then
-  if ! pg_isready -h localhost -p 5432 &> /dev/null 2>&1; then
-    echo "Starting PostgreSQL 16..."
-    pg_ctlcluster 16 main start 2>&1 || true
-    # Wait for it to be ready
-    for i in $(seq 1 15); do
-      if pg_isready -h localhost -p 5432 &> /dev/null 2>&1; then
-        break
-      fi
-      sleep 1
-    done
-  fi
+  pg_ctlcluster 16 main start 2>&1 || true
+  # Wait for it to be ready
+  for i in $(seq 1 15); do
+    if pg_isready -h localhost -p 5432 &> /dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
 fi
 
 # Configure postgres role and test database
@@ -59,14 +82,12 @@ else
 fi
 
 # -------------------------------------------------------
-# 3. Start Redis
+# 4. Start Redis
 # -------------------------------------------------------
 echo "Setting up Redis..."
 if command -v redis-server &> /dev/null; then
-  if ! redis-cli ping &> /dev/null 2>&1; then
-    redis-server --daemonize yes 2>/dev/null || true
-    sleep 1
-  fi
+  redis-server --daemonize yes 2>/dev/null || true
+  sleep 1
   if redis-cli ping &> /dev/null 2>&1; then
     echo "Redis is ready."
   else
@@ -75,7 +96,7 @@ if command -v redis-server &> /dev/null; then
 fi
 
 # -------------------------------------------------------
-# 4. Export environment variables for the session
+# 5. Export environment variables for the session
 # -------------------------------------------------------
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo 'export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"' >> "$CLAUDE_ENV_FILE"
