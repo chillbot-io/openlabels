@@ -77,6 +77,34 @@ start_system_postgres() {
 
     echo -e "\n${YELLOW}Setting up system PostgreSQL...${NC}"
 
+    # Fix SSL key permissions if needed (PostgreSQL refuses to start if the
+    # private key is group/world-readable and not owned by root).
+    SSL_KEY="/etc/ssl/private/ssl-cert-snakeoil.key"
+    if [ -f "$SSL_KEY" ]; then
+        PERMS=$(stat -c '%a' "$SSL_KEY" 2>/dev/null || true)
+        OWNER=$(stat -c '%U' "$SSL_KEY" 2>/dev/null || true)
+        if [ "$OWNER" != "root" ] && [ "$PERMS" != "600" ]; then
+            chmod 600 "$SSL_KEY" 2>/dev/null || true
+            echo "Fixed SSL key permissions"
+        fi
+    fi
+
+    # Ensure pg_hba.conf allows local trust auth for postgres user.
+    # If 'peer' appears before 'trust' for postgres, PostgreSQL will reject
+    # local connections when the OS user is not 'postgres'.
+    for PG_VER in 16 15; do
+        HBA="/etc/postgresql/${PG_VER}/main/pg_hba.conf"
+        if [ -f "$HBA" ]; then
+            if grep -q '^local.*postgres.*peer' "$HBA" 2>/dev/null; then
+                sed -i 's/^local\(.*postgres.*\)peer/# local\1peer  # commented out for trust auth/' "$HBA" 2>/dev/null || true
+                # Preserve ownership so PostgreSQL can read the file
+                chown --reference=/etc/postgresql/${PG_VER}/main/postgresql.conf "$HBA" 2>/dev/null || true
+                echo "Fixed pg_hba.conf: commented out peer auth for postgres"
+            fi
+            break
+        fi
+    done
+
     # Start PostgreSQL if not running
     if ! pg_isready -h localhost -p 5432 &> /dev/null; then
         echo "Starting PostgreSQL..."
