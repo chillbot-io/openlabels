@@ -4,34 +4,32 @@ Targets management widget for OpenLabels GUI.
 Provides interface for creating, viewing, editing, and deleting scan targets.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QPushButton,
-    QHeaderView,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QComboBox,
-    QTextEdit,
-    QDialogButtonBox,
-    QMessageBox,
-    QLabel,
-    QGroupBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 
 class TargetDialog(QDialog):
     """Dialog for creating/editing a scan target."""
 
-    def __init__(self, parent=None, target: Optional[dict] = None):
+    def __init__(self, parent=None, target: dict | None = None):
         super().__init__(parent)
         self.target = target
         self.setWindowTitle("Edit Target" if target else "New Target")

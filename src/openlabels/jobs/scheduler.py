@@ -17,14 +17,13 @@ Features:
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from croniter import croniter
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import ScanSchedule, ScanJob, ScanTarget
+from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +77,8 @@ class DatabaseScheduler:
 
     def __init__(
         self,
-        poll_interval: Optional[int] = None,
-        min_trigger_interval: Optional[int] = None,
+        poll_interval: int | None = None,
+        min_trigger_interval: int | None = None,
     ):
         """
         Initialize the database scheduler.
@@ -94,7 +93,7 @@ class DatabaseScheduler:
         self._poll_interval = poll_interval or settings["poll_interval"]
         self._min_trigger_interval = min_trigger_interval or settings["min_trigger_interval"]
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     @property
@@ -178,7 +177,6 @@ class DatabaseScheduler:
     async def _check_due_schedules(self) -> None:
         """Check for and trigger due schedules."""
         from openlabels.server.db import get_session_context
-        from openlabels.jobs.queue import JobQueue
 
         async with get_session_context() as session:
             # Find enabled schedules with cron expressions that might be due
@@ -327,7 +325,7 @@ class DatabaseScheduler:
         self,
         cron_expr: str,
         from_time: datetime,
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """
         Calculate the next run time for a cron expression.
 
@@ -346,7 +344,7 @@ class DatabaseScheduler:
             return None
 
 
-def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
+def parse_cron_expression(cron_expr: str) -> datetime | None:
     """
     Parse a cron expression and return the next run time.
 
@@ -455,7 +453,7 @@ Scheduler = DatabaseScheduler
 
 
 # Global scheduler instance
-_scheduler: Optional[DatabaseScheduler] = None
+_scheduler: DatabaseScheduler | None = None
 
 
 def get_scheduler() -> DatabaseScheduler:

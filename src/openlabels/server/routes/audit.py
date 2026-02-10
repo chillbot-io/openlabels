@@ -9,22 +9,23 @@ Supports both cursor-based and offset-based pagination:
 """
 
 from datetime import datetime
-from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
+    paginate_query,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -33,11 +34,11 @@ class AuditLogResponse(BaseModel):
     """Audit log entry response."""
 
     id: UUID
-    user_id: Optional[UUID]
+    user_id: UUID | None
     action: str
-    resource_type: Optional[str]
-    resource_id: Optional[UUID]
-    details: Optional[dict]
+    resource_type: str | None
+    resource_id: UUID | None
+    details: dict | None
     created_at: datetime
 
     class Config:
@@ -53,12 +54,12 @@ class AuditLogFilters(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[AuditLogResponse])
 async def list_audit_logs(
-    action: Optional[str] = Query(None, description="Filter by action type"),
-    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
-    resource_id: Optional[UUID] = Query(None, description="Filter by resource ID"),
-    user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
-    start_date: Optional[datetime] = Query(None, description="Start of date range"),
-    end_date: Optional[datetime] = Query(None, description="End of date range"),
+    action: str | None = Query(None, description="Filter by action type"),
+    resource_type: str | None = Query(None, description="Filter by resource type"),
+    resource_id: UUID | None = Query(None, description="Filter by resource ID"),
+    user_id: UUID | None = Query(None, description="Filter by user ID"),
+    start_date: datetime | None = Query(None, description="Start of date range"),
+    end_date: datetime | None = Query(None, description="End of date range"),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
@@ -100,31 +101,16 @@ async def list_audit_logs(
     if end_date:
         conditions.append(AuditLog.created_at <= end_date)
 
-    # Count total
-    base_query = select(AuditLog).where(and_(*conditions))
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Get paginated results (newest first)
-    paginated_query = (
+    query = (
         select(AuditLog)
         .where(and_(*conditions))
         .order_by(AuditLog.created_at.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
     )
-    result = await session.execute(paginated_query)
-    logs = result.scalars().all()
-
-    return PaginatedResponse[AuditLogResponse](
-        **create_paginated_response(
-            items=[AuditLogResponse.model_validate(log) for log in logs],
-            total=total,
-            page=pagination.page,
-            page_size=pagination.page_size,
-        )
+    result = await paginate_query(
+        session, query, pagination,
+        transformer=lambda log: AuditLogResponse.model_validate(log),
     )
+    return PaginatedResponse[AuditLogResponse](**result)
 
 
 @router.get("/filters", response_model=AuditLogFilters)
@@ -171,9 +157,7 @@ async def get_audit_log(
     user=Depends(require_admin),
 ):
     """Get a specific audit log entry."""
-    log = await session.get(AuditLog, log_id)
-    if not log or log.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Audit log entry not found")
+    log = await get_or_404(session, AuditLog, log_id, tenant_id=user.tenant_id)
     return AuditLogResponse.model_validate(log)
 
 

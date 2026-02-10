@@ -11,12 +11,16 @@ Provides business logic for policy management:
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import func, select
 
 from openlabels.server.models import Policy, ScanResult
 from openlabels.server.services.base import BaseService
+
+if TYPE_CHECKING:
+    from openlabels.core.policies.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +48,11 @@ class PolicyService(BaseService):
         if enabled_only:
             base = base.where(Policy.enabled.is_(True))
 
-        # Total count
-        count_q = select(func.count()).select_from(base.subquery())
-        total = (await self.session.execute(count_q)).scalar_one()
-
-        # Page
-        rows = (
-            await self.session.execute(
-                base.order_by(Policy.priority.desc(), Policy.created_at)
-                .limit(limit)
-                .offset(offset)
-            )
-        ).scalars().all()
-
-        return list(rows), total
+        return await self.paginate(
+            base.order_by(Policy.priority.desc(), Policy.created_at),
+            limit=limit,
+            offset=offset,
+        )
 
     async def get_policy(self, policy_id: UUID) -> Policy:
         """Fetch a single policy by ID (tenant-isolated)."""
@@ -171,7 +166,6 @@ class PolicyService(BaseService):
         Returns a list of dicts with ``result_id``, ``file_path``, and
         ``violations`` for each result that has at least one violation.
         """
-        from openlabels.core.policies.engine import PolicyEngine
         from openlabels.core.policies.schema import EntityMatch
 
         engine = await self._build_tenant_engine()
@@ -303,7 +297,7 @@ class PolicyService(BaseService):
 
     # ── Internal helpers ────────────────────────────────────────────────
 
-    async def _build_tenant_engine(self) -> "PolicyEngine":
+    async def _build_tenant_engine(self) -> PolicyEngine:
         """Build a PolicyEngine loaded with the tenant's active policies."""
         from openlabels.core.policies.engine import PolicyEngine
         from openlabels.core.policies.loader import load_policy_pack

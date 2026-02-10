@@ -20,9 +20,9 @@ import ctypes
 import logging
 import struct
 import sys
+from collections.abc import AsyncIterator
 from ctypes import wintypes
 from datetime import datetime, timezone
-from typing import AsyncIterator
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 

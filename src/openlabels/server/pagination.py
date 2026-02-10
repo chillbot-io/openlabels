@@ -27,10 +27,10 @@ import base64
 import json
 import logging
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +53,11 @@ class CursorData(BaseModel):
 class CursorPaginationParams(BaseModel):
     """Parameters for cursor-based pagination."""
 
-    cursor: Optional[str] = Field(None, description="Pagination cursor from previous response")
+    cursor: str | None = Field(None, description="Pagination cursor from previous response")
     limit: int = Field(50, ge=1, le=100, description="Number of items per page")
     include_total: bool = Field(True, description="Whether to include total count")
 
-    def decode(self) -> Optional[CursorData]:
+    def decode(self) -> CursorData | None:
         """Decode the cursor string into CursorData."""
         if not self.cursor:
             return None
@@ -68,7 +68,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response with cursor-based navigation."""
 
     items: list[T]
-    next_cursor: Optional[str] = Field(
+    next_cursor: str | None = Field(
         None,
         description="Cursor for fetching next page. None if no more items."
     )
@@ -90,7 +90,7 @@ class CursorPaginatedResponse(BaseModel, Generic[T]):
     """
 
     items: list[T]
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
     has_more: bool = False
 
     class Config:
@@ -120,7 +120,7 @@ def encode_cursor(id: UUID, timestamp: datetime) -> str:
     return base64.urlsafe_b64encode(json_str.encode()).decode()
 
 
-def decode_cursor(cursor: str) -> Optional[CursorData]:
+def decode_cursor(cursor: str) -> CursorData | None:
     """
     Decode a cursor string back into pagination position data.
 

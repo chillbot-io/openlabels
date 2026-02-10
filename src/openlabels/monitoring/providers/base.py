@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -69,14 +69,14 @@ class RawAccessEvent:
     action: str  # AccessAction.value
     event_source: str
 
-    user_sid: Optional[str] = None
-    user_name: Optional[str] = None
-    user_domain: Optional[str] = None
-    process_name: Optional[str] = None
-    process_id: Optional[int] = None
-    event_id: Optional[int] = None
+    user_sid: str | None = None
+    user_name: str | None = None
+    user_domain: str | None = None
+    process_name: str | None = None
+    process_id: int | None = None
+    event_id: int | None = None
     success: bool = True
-    raw: Optional[dict] = field(default=None, hash=False, compare=False)
+    raw: dict | None = field(default=None, hash=False, compare=False)
 
 
 @runtime_checkable
@@ -100,6 +100,6 @@ class EventProvider(Protocol):
         """Short identifier for this provider (e.g. ``"windows_sacl"``)."""
         ...
 
-    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+    async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Return events that occurred after *since*."""
         ...

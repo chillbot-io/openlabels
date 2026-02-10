@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import yaml
 
@@ -566,7 +566,7 @@ def _parse_rights(data: dict[str, Any]) -> DataSubjectRights:
     )
 
 
-def load_policy_pack(source: Union[str, Path, dict]) -> PolicyPack:
+def load_policy_pack(source: str | Path | dict) -> PolicyPack:
     """
     Load a policy pack from YAML, JSON, or dict.
 

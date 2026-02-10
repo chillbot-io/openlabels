@@ -12,7 +12,6 @@ Supports two modes:
 import json
 import logging
 import time
-from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +26,9 @@ except ImportError:
 
 # Check for websockets
 try:
-    import websockets
     import asyncio
+
+    import websockets
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     # websockets not installed - real-time streaming unavailable
@@ -36,7 +36,7 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
 
 try:
-    from PySide6.QtCore import QThread, Signal, QObject
+    from PySide6.QtCore import QObject, QThread, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - GUI worker unavailable
@@ -73,7 +73,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         self,
         target_id: str,
         server_url: str,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
         use_websocket: bool = True,
     ):
         """
@@ -94,8 +94,8 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         self.server_url = server_url.rstrip("/")
         self.use_websocket = use_websocket and WEBSOCKETS_AVAILABLE
         self._cancelled = False
-        self._scan_id: Optional[str] = None
-        self._results: List[Dict] = []
+        self._scan_id: str | None = None
+        self._results: list[dict] = []
 
     def run(self) -> None:
         """Run the scan in background."""
@@ -315,10 +315,10 @@ class LabelWorker(QThread if PYSIDE_AVAILABLE else object):
 
     def __init__(
         self,
-        result_ids: List[str],
+        result_ids: list[str],
         label_id: str,
         server_url: str,
-        parent: Optional[QObject] = None,
+        parent: QObject | None = None,
     ):
         """
         Initialize the label worker.
@@ -409,9 +409,9 @@ class APIWorker(QThread if PYSIDE_AVAILABLE else object):
         self,
         method: str,
         url: str,
-        parent: Optional[QObject] = None,
-        json_data: Optional[dict] = None,
-        params: Optional[dict] = None,
+        parent: QObject | None = None,
+        json_data: dict | None = None,
+        params: dict | None = None,
     ):
         """
         Initialize the API worker.

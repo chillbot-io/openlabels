@@ -34,9 +34,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from openlabels.adapters.graph_client import GraphClient
+
 from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class GraphWebhookProvider:
         *,
         webhook_url: str = "",
         client_state: str = "",
-        drive_ids: Optional[list[str]] = None,
+        drive_ids: list[str] | None = None,
     ) -> None:
         self._client = graph_client
         self._webhook_url = webhook_url
@@ -94,7 +94,7 @@ class GraphWebhookProvider:
     # EventProvider.collect()
     # ------------------------------------------------------------------
 
-    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+    async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Process queued webhook notifications via delta queries.
 
         For each pending notification, runs a delta query on the
@@ -254,7 +254,7 @@ class GraphWebhookProvider:
         return events
 
 
-def _extract_user(item: dict) -> Optional[str]:
+def _extract_user(item: dict) -> str | None:
     """Try to extract user info from a Graph drive item."""
     last_modified = item.get("lastModifiedBy", {})
     user = last_modified.get("user", {})

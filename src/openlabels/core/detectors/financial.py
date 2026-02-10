@@ -17,18 +17,19 @@ Entity Types:
 - SOLANA_ADDRESS, CARDANO_ADDRESS, LITECOIN_ADDRESS, etc.
 """
 
-import re
 import hashlib
-from typing import List
+import re
 
-from ..types import Span, Tier
-from .base import BaseDetector
-from .registry import register_detector
-from .pattern_registry import PatternDefinition, _p
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip,
+)
+from .._rust.validators_py import (
     validate_isin as _validate_isin,
 )
+from ..types import Span, Tier
+from .base import BaseDetector
+from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 
 def _validate_sedol(sedol: str) -> bool:
@@ -373,7 +374,7 @@ class FinancialDetector(BaseDetector):
     name = "financial"
     tier = Tier.CHECKSUM
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
         seen: set[tuple[int, int]] = set()
 

@@ -13,13 +13,11 @@ Provides two complementary rate limiters:
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from collections import defaultdict
-from typing import Any, Annotated
+from typing import Any
 
-from fastapi import Depends, Request
-from fastapi.responses import JSONResponse
 from slowapi import Limiter
 
 from openlabels.server.config import get_settings

@@ -31,10 +31,11 @@ Usage:
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ class CircuitBreakerStats:
     failed_calls: int = 0
     rejected_calls: int = 0
     state_changes: int = 0
-    last_failure_time: Optional[float] = None
-    last_success_time: Optional[float] = None
+    last_failure_time: float | None = None
+    last_success_time: float | None = None
 
 
 class CircuitBreaker:
@@ -98,7 +99,7 @@ class CircuitBreaker:
     def __init__(
         self,
         name: str,
-        config: Optional[CircuitBreakerConfig] = None,
+        config: CircuitBreakerConfig | None = None,
     ):
         """
         Initialize circuit breaker.
@@ -113,7 +114,7 @@ class CircuitBreaker:
         self._state = CircuitState.CLOSED
         self._failure_count = 0
         self._success_count = 0
-        self._last_failure_time: Optional[float] = None
+        self._last_failure_time: float | None = None
         self._lock = asyncio.Lock()
 
         # Statistics
@@ -186,7 +187,7 @@ class CircuitBreaker:
                 # Reset failure count on success
                 self._failure_count = 0
 
-    async def record_failure(self, exception: Optional[Exception] = None) -> None:
+    async def record_failure(self, exception: Exception | None = None) -> None:
         """Record a failed call."""
         async with self._lock:
             self.stats.total_calls += 1

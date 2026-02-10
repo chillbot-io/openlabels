@@ -260,9 +260,10 @@ class EventStreamManager:
         Mirrors ``EventHarvester._persist_events`` — resolves monitored
         files from the DB and creates ``FileAccessEvent`` rows.
         """
+        from sqlalchemy import select
+
         from openlabels.server.db import get_session_context
         from openlabels.server.models import FileAccessEvent, MonitoredFile
-        from sqlalchemy import select
 
         valid_events = [e for e in events if e.action in _VALID_DB_ACTIONS]
         if not valid_events:

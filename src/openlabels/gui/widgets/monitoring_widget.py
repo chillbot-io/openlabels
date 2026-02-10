@@ -9,19 +9,32 @@ Provides:
 """
 
 import logging
-from typing import Optional, List, Dict
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
-        QSplitter, QTextEdit, QMessageBox, QComboBox, QSpinBox,
-        QFormLayout, QDialog, QDialogButtonBox, QLineEdit, QFileDialog,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QComboBox,
+        QDialog,
+        QDialogButtonBox,
+        QFileDialog,
+        QFormLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QLineEdit,
+        QMessageBox,
+        QPushButton,
+        QSpinBox,
+        QSplitter,
+        QTableWidget,
+        QTableWidgetItem,
+        QTextEdit,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - monitoring widget unavailable
@@ -45,14 +58,14 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
         monitoring_disabled = Signal(str)
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
 
         super().__init__(parent)
-        self._watched_files: List[Dict] = []
-        self._access_events: List[Dict] = []
+        self._watched_files: list[dict] = []
+        self._access_events: list[dict] = []
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -162,8 +175,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
     def _enable_monitoring(self, path: str, risk_tier: str) -> None:
         """Enable monitoring for a file."""
         try:
-            from openlabels.monitoring import enable_monitoring
             from pathlib import Path
+
+            from openlabels.monitoring import enable_monitoring
 
             result = enable_monitoring(
                 path=Path(path),
@@ -210,8 +224,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                from openlabels.monitoring import disable_monitoring
                 from pathlib import Path
+
+                from openlabels.monitoring import disable_monitoring
 
                 result = disable_monitoring(path=Path(path))
                 if result.success:
@@ -323,8 +338,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
         days = self._days_spin.value()
 
         try:
-            from openlabels.monitoring import get_access_history
             from pathlib import Path
+
+            from openlabels.monitoring import get_access_history
 
             events = get_access_history(
                 path=Path(path),
@@ -367,7 +383,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
             self._history_table.setItem(row, 3, QTableWidgetItem(event.get("process_name", "")))
             self._history_table.setItem(row, 4, QTableWidgetItem(event.get("details", "")))
 
-    def load_watched_files(self, files: List[Dict]) -> None:
+    def load_watched_files(self, files: list[dict]) -> None:
         """Load watched files from external source."""
         self._watched_files = files
         self._update_watched_table()
@@ -376,7 +392,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
 class AddMonitoringDialog(QDialog if PYSIDE_AVAILABLE else object):
     """Dialog for adding a file to monitoring."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
 

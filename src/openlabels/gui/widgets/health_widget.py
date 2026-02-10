@@ -9,18 +9,25 @@ Displays key system health indicators:
 
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
-        QFrame, QGroupBox, QTableWidget, QTableWidgetItem,
-        QHeaderView, QPushButton,
-    )
-    from PySide6.QtCore import Qt, Signal, QTimer
+    from PySide6.QtCore import Qt, QTimer, Signal
     from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import (
+        QFrame,
+        QGridLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QPushButton,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - health widget unavailable
@@ -39,7 +46,7 @@ class StatusIndicator(QFrame if PYSIDE_AVAILABLE else object):
         "unknown": "#6c757d",
     }
 
-    def __init__(self, label: str, parent: Optional[QWidget] = None):
+    def __init__(self, label: str, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
         super().__init__(parent)
@@ -79,7 +86,7 @@ class HealthWidget(QWidget if PYSIDE_AVAILABLE else object):
     if PYSIDE_AVAILABLE:
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
         super().__init__(parent)
@@ -172,7 +179,7 @@ class HealthWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._last_update.setText(f"Updated: {datetime.now().strftime('%H:%M:%S')}")
         self.refresh_requested.emit()
 
-    def update_status(self, data: Dict) -> None:
+    def update_status(self, data: dict) -> None:
         """Update all status indicators from a single dict."""
         if not PYSIDE_AVAILABLE:
             return

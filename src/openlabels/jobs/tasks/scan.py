@@ -9,29 +9,34 @@ Supports two execution modes:
 - Parallel: Uses agent pool for multi-core classification
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import ScanJob, ScanTarget, ScanResult, LabelRule, SensitivityLabel
-from openlabels.adapters import FilesystemAdapter, SharePointAdapter, OneDriveAdapter, S3Adapter, GCSAdapter, AzureBlobAdapter
-from openlabels.adapters.base import FileInfo, ExposureLevel
-from openlabels.server.config import get_settings
-from openlabels.core.processor import FileProcessor
-from openlabels.exceptions import AdapterError, JobError
+from openlabels.adapters import (
+    AzureBlobAdapter,
+    FilesystemAdapter,
+    GCSAdapter,
+    OneDriveAdapter,
+    S3Adapter,
+    SharePointAdapter,
+)
+from openlabels.adapters.base import ExposureLevel, FileInfo
 from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.policies.schema import EntityMatch
+from openlabels.core.processor import FileProcessor
+from openlabels.exceptions import AdapterError, JobError
 from openlabels.labeling.engine import LabelingEngine
+from openlabels.server.config import get_settings
 from openlabels.server.metrics import (
-    record_file_processed,
     record_entities_found,
+    record_file_processed,
     record_processing_duration,
 )
+from openlabels.server.models import LabelRule, ScanJob, ScanResult, ScanTarget, SensitivityLabel
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +44,9 @@ logger = logging.getLogger(__name__)
 _ws_streaming_enabled = True
 try:
     from openlabels.server.routes.ws import (
-        send_scan_progress,
-        send_scan_file_result,
         send_scan_completed,
+        send_scan_file_result,
+        send_scan_progress,
     )
 except ImportError:
     _ws_streaming_enabled = False
@@ -49,7 +54,7 @@ except ImportError:
 
 # Global processor instance (reuse for efficiency within job lifecycle)
 # IMPORTANT: Call cleanup_processor() during worker shutdown to release memory
-_processor: Optional[FileProcessor] = None
+_processor: FileProcessor | None = None
 
 # Registry of shutdown callbacks for graceful cleanup
 _shutdown_callbacks: list = []
@@ -173,7 +178,7 @@ async def execute_scan_task(
 
     if not job:
         raise JobError(
-            f"Scan job not found in database",
+            "Scan job not found in database",
             job_id=str(job_id),
             job_type="scan",
             context="job may have been deleted or never created",
@@ -187,7 +192,7 @@ async def execute_scan_task(
     target = await session.get(ScanTarget, job.target_id)
     if not target:
         raise JobError(
-            f"Scan target not found for job",
+            "Scan target not found for job",
             job_id=str(job_id),
             job_type="scan",
             context=f"target_id={job.target_id} may have been deleted",
@@ -359,8 +364,8 @@ async def execute_scan_task(
                 if result.get("policy_violations"):
                     try:
                         from openlabels.core.policies.actions import (
-                            PolicyActionExecutor,
                             PolicyActionContext,
+                            PolicyActionExecutor,
                         )
                         await session.flush()  # ensure scan_result.id is assigned
                         action_ctx = PolicyActionContext(

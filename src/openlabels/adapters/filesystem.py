@@ -14,15 +14,15 @@ import logging
 import platform
 import stat
 import sys
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import AsyncIterator, Optional
 
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
+from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig
 from openlabels.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class FilesystemAdapter:
     Supports filtering by file type, path patterns, and account exclusions.
     """
 
-    def __init__(self, service_account: Optional[str] = None):
+    def __init__(self, service_account: str | None = None):
         """
         Initialize the filesystem adapter.
 
@@ -69,7 +69,7 @@ class FilesystemAdapter:
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
     ) -> AsyncIterator[FileInfo]:
         """
         List files in a directory.
@@ -91,7 +91,7 @@ class FilesystemAdapter:
 
         if not exists:
             raise FilesystemError(
-                f"Target path does not exist",
+                "Target path does not exist",
                 path=target,
                 operation="list_files",
                 context="ensure the path exists and is accessible",
@@ -99,7 +99,7 @@ class FilesystemAdapter:
 
         if not is_dir:
             raise FilesystemError(
-                f"Target path is not a directory",
+                "Target path is not a directory",
                 path=target,
                 operation="list_files",
                 context="provide a directory path, not a file path",
@@ -257,14 +257,14 @@ class FilesystemAdapter:
         target = Path(path)
         return await asyncio.to_thread(lambda: target.exists() and target.is_dir())
 
-    def _get_owner(self, path: Path) -> Optional[str]:
+    def _get_owner(self, path: Path) -> str | None:
         """Get file owner."""
         if self.is_windows:
             return self._get_windows_owner(path)
         else:
             return self._get_posix_owner(path)
 
-    def _get_windows_owner(self, path: Path) -> Optional[str]:
+    def _get_windows_owner(self, path: Path) -> str | None:
         """Get file owner on Windows."""
         try:
             import win32security
@@ -286,7 +286,7 @@ class FilesystemAdapter:
             logger.debug(f"OS error getting Windows owner for {path}: {e}")
             return None
 
-    def _get_posix_owner(self, path: Path) -> Optional[str]:
+    def _get_posix_owner(self, path: Path) -> str | None:
         """Get file owner on POSIX systems."""
         try:
             import pwd
@@ -504,7 +504,7 @@ class FilesystemAdapter:
         """
         return await asyncio.to_thread(self._move_file_sync, file_info.path, dest_path)
 
-    async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
+    async def get_acl(self, file_info: FileInfo) -> dict | None:
         """
         Get ACL for a file.
 
@@ -517,7 +517,7 @@ class FilesystemAdapter:
         else:
             return await asyncio.to_thread(self._get_posix_acl, path)
 
-    def _get_windows_acl(self, path: Path) -> Optional[dict]:
+    def _get_windows_acl(self, path: Path) -> dict | None:
         """Get Windows ACL (DACL)."""
         try:
             import win32security
@@ -563,7 +563,7 @@ class FilesystemAdapter:
             logger.error(f"OS error getting Windows ACL for {path}: {e}")
             return None
 
-    def _get_posix_acl(self, path: Path) -> Optional[dict]:
+    def _get_posix_acl(self, path: Path) -> dict | None:
         """Get POSIX permissions."""
         try:
             stat_info = path.stat()
@@ -664,8 +664,8 @@ class FilesystemAdapter:
     async def lockdown_file(
         self,
         file_info: FileInfo,
-        allowed_sids: Optional[list[str]] = None,
-    ) -> tuple[bool, Optional[dict]]:
+        allowed_sids: list[str] | None = None,
+    ) -> tuple[bool, dict | None]:
         """
         Lockdown a file by restricting permissions.
 
@@ -693,8 +693,8 @@ class FilesystemAdapter:
     def _lockdown_windows(self, path: Path, allowed_sids: list[str]) -> bool:
         """Lockdown on Windows - restrict to specific SIDs."""
         try:
-            import win32security
             import ntsecuritycon
+            import win32security
 
             # Create new DACL with only allowed SIDs
             dacl = win32security.ACL()

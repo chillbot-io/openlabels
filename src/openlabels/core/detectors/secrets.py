@@ -23,13 +23,11 @@ Entity Types:
 import base64
 import binascii
 import re
-from typing import List
 
 from ..types import Span, Tier
 from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
 from .registry import register_detector
-
 
 # Pattern definitions: immutable frozen dataclass tuples
 _AWS_KEY_PREFIXES = r'(?:AKIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)'
@@ -160,7 +158,7 @@ class SecretsDetector(BaseDetector):
     name = "secrets"
     tier = Tier.PATTERN
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans = []
         seen = set()
 

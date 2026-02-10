@@ -9,18 +9,26 @@ Allows users to:
 """
 
 import logging
-from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
 # PySide6 imports with graceful fallback
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QTableWidget, QTableWidgetItem, QProgressBar, QComboBox,
-        QGroupBox, QHeaderView, QMessageBox,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QComboBox,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QMessageBox,
+        QProgressBar,
+        QPushButton,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - GUI functionality unavailable
@@ -46,14 +54,14 @@ class ScanWidget(QWidget if PYSIDE_AVAILABLE else object):
         scan_selected = Signal(str)
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
 
         super().__init__(parent)
-        self._targets: List[Dict] = []
-        self._scans: Dict[str, Dict] = {}  # scan_id -> scan data
+        self._targets: list[dict] = []
+        self._scans: dict[str, dict] = {}  # scan_id -> scan data
         self._setup_ui()
         self._connect_signals()
 
@@ -173,7 +181,7 @@ class ScanWidget(QWidget if PYSIDE_AVAILABLE else object):
             self._cancel_btn.setEnabled(False)
             self._view_btn.setEnabled(False)
 
-    def _get_selected_scan_id(self) -> Optional[str]:
+    def _get_selected_scan_id(self) -> str | None:
         """Get the ID of the currently selected scan."""
         selected_rows = self._scans_table.selectedItems()
         if not selected_rows:
@@ -185,7 +193,7 @@ class ScanWidget(QWidget if PYSIDE_AVAILABLE else object):
             return scan_ids[row]
         return None
 
-    def load_targets(self, targets: List[dict]) -> None:
+    def load_targets(self, targets: list[dict]) -> None:
         """Load scan targets into combo box."""
         self._targets = targets
         self._target_combo.clear()
@@ -197,7 +205,7 @@ class ScanWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._start_btn.setEnabled(True)
         self._start_btn.setText("Start Scan")
 
-    def load_scans(self, scans: List[dict]) -> None:
+    def load_scans(self, scans: list[dict]) -> None:
         """Load active scans into the table."""
         self._scans.clear()
         self._scans_table.setRowCount(0)

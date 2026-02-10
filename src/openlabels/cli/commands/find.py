@@ -7,7 +7,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 @click.option("--sort", "sort_by", default="score", type=click.Choice(["score", "path", "tier", "entities"]),
               help="Sort results by field")
 @click.option("--desc/--asc", "descending", default=True, help="Sort direction")
-def find(path: str, where_filter: Optional[str], recursive: bool, fmt: str,
+def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
          limit: int, sort_by: str, descending: bool):
     """Find sensitive files matching filter criteria.
 

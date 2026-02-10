@@ -7,14 +7,13 @@ Replaces in-memory session storage for production use:
 - Automatic cleanup of expired sessions
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
 import logging
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import Session, PendingAuth
+from openlabels.server.models import PendingAuth, Session
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ class SessionStore:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get(self, session_id: str) -> Optional[dict]:
+    async def get(self, session_id: str) -> dict | None:
         """
         Get session data by ID.
 
@@ -69,8 +68,8 @@ class SessionStore:
         session_id: str,
         data: dict,
         ttl: int,
-        tenant_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         """
         Create or update a session.
@@ -183,7 +182,7 @@ class PendingAuthStore:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get(self, state: str) -> Optional[dict]:
+    async def get(self, state: str) -> dict | None:
         """
         Get pending auth data by state.
 

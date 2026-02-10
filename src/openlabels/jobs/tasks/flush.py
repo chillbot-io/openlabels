@@ -46,7 +46,7 @@ async def periodic_event_flush(
         interval_seconds,
     )
 
-    from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+    from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
 
     while not _stop.is_set():
         try:
@@ -67,7 +67,10 @@ async def periodic_event_flush(
 
                     # Update catalog health metrics (best-effort)
                     try:
-                        from openlabels.server.metrics import record_catalog_flush, update_catalog_health
+                        from openlabels.server.metrics import (
+                            record_catalog_flush,
+                            update_catalog_health,
+                        )
                         record_catalog_flush(success=True)
                         update_catalog_health(storage)
                     except (ImportError, RuntimeError, OSError):

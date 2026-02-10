@@ -13,21 +13,19 @@ ACL preservation and retry logic.
 
 import hashlib
 import logging
-import os
 import platform
 import shutil
 import subprocess
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
+
+from openlabels.exceptions import QuarantineError
+from openlabels.remediation.manifest import QuarantineManifest
 
 from .base import (
-    RemediationResult,
     RemediationAction,
+    RemediationResult,
     get_current_user,
 )
-from openlabels.exceptions import QuarantineError
-from openlabels.exceptions import QuarantineError
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +347,6 @@ def restore_from_quarantine(
     Returns:
         RemediationResult with success/failure status.
     """
-    from .manifest import QuarantineManifest  # noqa: F811 — runtime import
 
     entry = manifest.get(entry_id)
     if not entry:

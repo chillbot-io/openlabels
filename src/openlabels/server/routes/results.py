@@ -1,41 +1,31 @@
-"""
-Scan results API endpoints.
-
-Supports both cursor-based and offset-based pagination:
-- Cursor-based (recommended for large datasets): Use `cursor` parameter
-- Offset-based (backward compatible): Use `page` and `page_size` parameters
-
-Cursor-based pagination is more efficient for large datasets as it:
-- Avoids the performance penalty of large OFFSETs
-- Provides consistent results even when data changes between requests
-"""
+"""Scan results API endpoints."""
 
 import logging
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.server.schemas.pagination import (
-    PaginatedResponse,
-    PaginationParams,
-    CursorPaginatedResponse,
-    CursorPaginationParams,
-    create_paginated_response,
-)
+from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
 from openlabels.server.dependencies import (
-    ResultServiceDep,
-    TenantContextDep,
     AdminContextDep,
     DbSessionDep,
+    ResultServiceDep,
+    TenantContextDep,
 )
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
+from openlabels.server.schemas.pagination import (
+    CursorPaginatedResponse,
+    CursorPaginationParams,
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +33,19 @@ router = APIRouter()
 
 
 class ResultResponse(BaseModel):
-    """Scan result response."""
-
     id: UUID
     job_id: UUID
     file_path: str
     file_name: str
-    file_size: Optional[int] = None
+    file_size: int | None = None
     risk_score: int
     risk_tier: str
     entity_counts: dict
     total_entities: int
-    exposure_level: Optional[str] = None
-    owner: Optional[str] = None
-    current_label_name: Optional[str] = None
-    recommended_label_name: Optional[str] = None
+    exposure_level: str | None = None
+    owner: str | None = None
+    current_label_name: str | None = None
+    recommended_label_name: str | None = None
     label_applied: bool = False
     scanned_at: datetime
 
@@ -66,20 +54,16 @@ class ResultResponse(BaseModel):
 
 
 class ResultDetailResponse(ResultResponse):
-    """Detailed scan result with findings."""
-
-    content_score: Optional[float] = None
-    exposure_multiplier: Optional[float] = None
-    co_occurrence_rules: Optional[list[str]] = None
-    findings: Optional[dict] = None
-    policy_violations: Optional[list[dict]] = None
-    label_applied_at: Optional[datetime] = None
-    label_error: Optional[str] = None
+    content_score: float | None = None
+    exposure_multiplier: float | None = None
+    co_occurrence_rules: list[str] | None = None
+    findings: dict | None = None
+    policy_violations: list[dict] | None = None
+    label_applied_at: datetime | None = None
+    label_error: str | None = None
 
 
 class ResultStats(BaseModel):
-    """Aggregated result statistics."""
-
     total_files: int
     files_with_pii: int
     critical_count: int
@@ -96,9 +80,9 @@ class ResultStats(BaseModel):
 async def list_results(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
@@ -124,22 +108,17 @@ async def list_results(
 async def list_results_cursor(
     db: DbSessionDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
-    """
-    List scan results using cursor-based pagination.
-
-    Cursor pagination is more efficient for large datasets and provides
-    stable pagination even when data changes between requests.
-    """
+    """List scan results using cursor-based pagination."""
     from sqlalchemy import select
+
     from openlabels.server.models import ScanResult
     from openlabels.server.schemas.pagination import cursor_paginate_query
 
-    # Build base filter conditions
     conditions = [ScanResult.tenant_id == _tenant.tenant_id]
 
     if job_id:
@@ -152,7 +131,6 @@ async def list_results_cursor(
         else:
             conditions.append(ScanResult.total_entities == 0)
 
-    # Build query sorted by scanned_at desc, id desc for stable cursor
     query = (
         select(ScanResult)
         .where(*conditions)
@@ -174,14 +152,9 @@ async def list_results_cursor(
 async def get_result_stats(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
 ) -> ResultStats:
-    """
-    Get aggregated statistics for scan results using efficient SQL aggregation.
-
-    Combines multiple counts into a single query using CASE expressions for
-    better database performance.
-    """
+    """Get aggregated statistics for scan results."""
     stats = await result_service.get_stats(job_id=job_id)
     entity_stats = await result_service.get_entity_type_stats(job_id=job_id)
 
@@ -204,22 +177,16 @@ async def export_results(
     request: Request,
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_label: Optional[str] = Query(None, description="Filter by label status"),
+    job_id: UUID | None = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_label: str | None = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
-    """Export scan results as CSV or JSON.
-
-    When the catalog is enabled, results are streamed directly from
-    Parquet via DuckDB (zero-copy Arrow to CSV/JSON).  Otherwise falls
-    back to PostgreSQL streaming.
-    """
+    """Export scan results as CSV or JSON."""
     import csv
     import io
     import json
 
-    # Generate filename based on filters
     filename_parts = ["results"]
     if job_id:
         filename_parts.append(str(job_id)[:8])
@@ -254,7 +221,6 @@ async def export_results(
         return True
 
     async def _pg_row_iter():
-        """Stream rows from PostgreSQL (existing path)."""
         async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
             if not _matches_filters(row_dict):
                 continue
@@ -383,7 +349,6 @@ async def clear_all_results(
     """Clear all scan results for the tenant."""
     deleted_count = await result_service.delete_results(job_id=None)
 
-    # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
         return htmx_notify(f"{deleted_count} results cleared")
 
@@ -399,7 +364,6 @@ async def delete_result(
     _admin: AdminContextDep,
 ):
     """Delete a single scan result."""
-    from openlabels.server.models import ScanResult
 
     result = await result_service.get_result(result_id)
     if not result:
@@ -413,7 +377,6 @@ async def delete_result(
     await db.delete(result)
     await db.flush()
 
-    # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
         return htmx_notify(f'Result for "{file_name}" deleted', refreshResults=True)
 
@@ -437,7 +400,6 @@ async def apply_recommended_label(
             resource_id=str(result_id),
         )
 
-    # Check if there's a recommended label
     if not result.recommended_label_id:
         raise BadRequestError(
             message="No recommended label for this result",
@@ -445,7 +407,6 @@ async def apply_recommended_label(
         )
 
     try:
-        # Enqueue labeling job
         queue = JobQueue(db, admin.tenant_id)
         job_id = await queue.enqueue(
             task_type="label",
@@ -457,7 +418,6 @@ async def apply_recommended_label(
             priority=60,
         )
 
-        # Check if HTMX request
         if request.headers.get("HX-Request"):
             return htmx_notify("Label application queued")
 
@@ -469,7 +429,7 @@ async def apply_recommended_label(
         raise InternalError(
             message="Database error occurred while applying label",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
 
 @router.post("/{result_id}/rescan")
@@ -481,8 +441,8 @@ async def rescan_file(
     admin: AdminContextDep,
 ):
     """Rescan a specific file."""
-    from openlabels.server.models import ScanJob
     from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanJob
 
     result = await result_service.get_result(result_id)
     if not result:
@@ -492,7 +452,6 @@ async def rescan_file(
             resource_id=str(result_id),
         )
 
-    # Get the target info from the original job
     target_name = "Rescan"
     target_id = None
     if result.job_id:
@@ -501,14 +460,12 @@ async def rescan_file(
             target_name = job.target_name or "Rescan"
             target_id = job.target_id
 
-    # target_id is required - if we can't find it, return an error
     if target_id is None:
         raise BadRequestError(
             message="Cannot rescan: original scan target not found",
             details={"result_id": str(result_id)},
         )
 
-    # Create a new scan job for just this file
     new_job = ScanJob(
         tenant_id=admin.tenant_id,
         target_id=target_id,
@@ -520,7 +477,6 @@ async def rescan_file(
     db.add(new_job)
     await db.flush()
 
-    # Enqueue the job
     queue = JobQueue(db, admin.tenant_id)
     await queue.enqueue(
         task_type="rescan",
@@ -532,7 +488,6 @@ async def rescan_file(
         priority=70,  # Higher priority for single file rescan
     )
 
-    # Check if HTMX request
     if request.headers.get("HX-Request"):
         return htmx_notify("Rescan queued")
 

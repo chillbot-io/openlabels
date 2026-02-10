@@ -12,7 +12,6 @@ Extracts shared logic between SharePointAdapter and OneDriveAdapter:
 import logging
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import Optional
 
 import httpx
 
@@ -39,14 +38,14 @@ class BaseGraphAdapter:
         tenant_id: str,
         client_id: str,
         client_secret: str,
-        rate_config: Optional[RateLimiterConfig] = None,
+        rate_config: RateLimiterConfig | None = None,
     ):
         self.tenant_id = tenant_id
         self.client_id = client_id
         self.client_secret = client_secret
         self.rate_config = rate_config
 
-        self._client: Optional[GraphClient] = None
+        self._client: GraphClient | None = None
         self._owns_client = False
 
     @property
@@ -97,7 +96,7 @@ class BaseGraphAdapter:
             return datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
         return datetime.now(timezone.utc)
 
-    def _parse_owner(self, item: dict) -> Optional[str]:
+    def _parse_owner(self, item: dict) -> str | None:
         """Extract owner info from a Graph API item."""
         if "createdBy" in item:
             created_by = item["createdBy"]

@@ -328,7 +328,7 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
     try:
         for file in sorted(backup_path.glob("*.json")):
             if file.name == "config.json":
-                click.echo(f"  Skipped: config.json (apply manually)")
+                click.echo("  Skipped: config.json (apply manually)")
                 continue
 
             endpoint = file.stem.replace("_", "/")

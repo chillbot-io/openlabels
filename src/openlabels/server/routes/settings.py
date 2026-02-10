@@ -6,11 +6,10 @@ Note: For security, Azure client secrets are write-only (cannot be retrieved).
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import require_admin
@@ -76,7 +75,7 @@ async def update_azure_settings(
 async def update_scan_settings(
     max_file_size_mb: int = Form(100),
     concurrent_files: int = Form(10),
-    enable_ocr: Optional[str] = Form(None),  # Checkbox sends "on" or nothing
+    enable_ocr: str | None = Form(None),  # Checkbox sends "on" or nothing
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):

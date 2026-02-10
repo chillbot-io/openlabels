@@ -15,37 +15,34 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, func, case
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
 from slowapi import Limiter
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.adapters.base import FileInfo, supports_remediation
+from openlabels.adapters.filesystem import FilesystemAdapter
+from openlabels.auth.dependencies import require_admin
+from openlabels.core.path_validation import (
+    PathValidationError,
+    validate_path,
+)
 from openlabels.server.db import get_session
-from openlabels.server.utils import get_client_ip
 from openlabels.server.models import (
-    RemediationAction,
-    FileInventory,
     AuditLog,
+    RemediationAction,
     ScanResult,
 )
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import require_admin
-from openlabels.adapters.base import FileInfo, supports_remediation
-from openlabels.adapters.filesystem import FilesystemAdapter
-from openlabels.core.path_validation import (
-    validate_path,
-    PathValidationError,
-    BLOCKED_PATH_PREFIXES,
-    BLOCKED_FILE_PATTERNS,
-)
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,11 +71,11 @@ def validate_file_path(file_path: str) -> str:
         error_msg = str(e)
         # Map error messages to appropriate HTTP status codes
         if "system directories" in error_msg or "file type" in error_msg:
-            raise HTTPException(status_code=403, detail=error_msg)
-        raise HTTPException(status_code=400, detail=error_msg)
+            raise HTTPException(status_code=403, detail=error_msg) from e
+        raise HTTPException(status_code=400, detail=error_msg) from e
 
 
-def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> str:
+def validate_quarantine_dir(quarantine_dir: str | None, base_path: str) -> str:
     """
     Validate quarantine directory to prevent path traversal.
 
@@ -102,8 +99,8 @@ def validate_quarantine_dir(quarantine_dir: Optional[str], base_path: str) -> st
             raise HTTPException(
                 status_code=403,
                 detail="Cannot use system directory as quarantine location"
-            )
-        raise HTTPException(status_code=400, detail=error_msg)
+            ) from e
+        raise HTTPException(status_code=400, detail=error_msg) from e
 
     return canonical_dir
 
@@ -130,7 +127,7 @@ class QuarantineRequest(BaseModel):
     """Request to quarantine a file."""
 
     file_path: str = Field(..., description="Path to file to quarantine")
-    quarantine_dir: Optional[str] = Field(
+    quarantine_dir: str | None = Field(
         None, description="Custom quarantine directory (default: .quarantine)"
     )
     dry_run: bool = Field(
@@ -166,9 +163,9 @@ class RemediationResponse(BaseModel):
     action_type: str
     status: str
     source_path: str
-    dest_path: Optional[str]
+    dest_path: str | None
     dry_run: bool
-    error: Optional[str]
+    error: str | None
     created_at: datetime
 
     class Config:
@@ -177,10 +174,10 @@ class RemediationResponse(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[RemediationResponse])
 async def list_remediation_actions(
-    action_type: Optional[str] = Query(
+    action_type: str | None = Query(
         None, description="Filter by action type (quarantine, lockdown, rollback)"
     ),
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None, description="Filter by status (pending, completed, failed, rolled_back)"
     ),
     pagination: PaginationParams = Depends(),
@@ -230,9 +227,7 @@ async def get_remediation_action(
     user=Depends(require_admin),
 ):
     """Get details of a specific remediation action."""
-    action = await session.get(RemediationAction, action_id)
-    if not action or action.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Action not found")
+    action = await get_or_404(session, RemediationAction, action_id, tenant_id=user.tenant_id)
     return action
 
 
@@ -474,9 +469,7 @@ async def rollback_action(
     Use dry_run=true to preview the rollback without executing.
     """
     # Get the original action
-    original = await session.get(RemediationAction, request.action_id)
-    if not original or original.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Action not found")
+    original = await get_or_404(session, RemediationAction, request.action_id, tenant_id=user.tenant_id)
 
     if original.status == "rolled_back":
         raise HTTPException(

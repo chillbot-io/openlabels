@@ -12,25 +12,25 @@ Provides:
 - GraphClient: Rate-limited Graph API client with connection pooling
 """
 
+from openlabels.adapters.azure_blob import AzureBlobAdapter
 from openlabels.adapters.base import (
+    LABEL_COMPATIBLE_EXTENSIONS,
+    ExposureLevel,
+    FileInfo,
+    FilterConfig,
     ReadAdapter,
     RemediationAdapter,
-    FileInfo,
-    ExposureLevel,
-    FilterConfig,
-    LABEL_COMPATIBLE_EXTENSIONS,
     is_label_compatible,
     supports_remediation,
 )
 from openlabels.adapters.filesystem import FilesystemAdapter
-from openlabels.adapters.sharepoint import SharePointAdapter
-from openlabels.adapters.onedrive import OneDriveAdapter
+from openlabels.adapters.gcs import GCSAdapter
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 from openlabels.adapters.health import AdapterHealth, AdapterHealthChecker
+from openlabels.adapters.onedrive import OneDriveAdapter
 from openlabels.adapters.s3 import S3Adapter
-from openlabels.adapters.gcs import GCSAdapter
-from openlabels.adapters.azure_blob import AzureBlobAdapter
+from openlabels.adapters.sharepoint import SharePointAdapter
 
 __all__ = [
     "ReadAdapter",

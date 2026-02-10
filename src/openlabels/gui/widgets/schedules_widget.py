@@ -8,35 +8,34 @@ import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-from typing import Optional
 from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
-    QPushButton,
-    QHeaderView,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QComboBox,
-    QCheckBox,
-    QDialogButtonBox,
-    QMessageBox,
-    QLabel,
-    QGroupBox,
-    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 
 class ScheduleDialog(QDialog):
     """Dialog for creating/editing a scan schedule."""
 
-    def __init__(self, parent=None, schedule: Optional[dict] = None, targets: list[dict] = None):
+    def __init__(self, parent=None, schedule: dict | None = None, targets: list[dict] = None):
         super().__init__(parent)
         self.schedule = schedule
         self.targets = targets or []

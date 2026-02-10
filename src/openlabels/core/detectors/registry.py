@@ -22,17 +22,17 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Type
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .base import BaseDetector
 
 logger = logging.getLogger(__name__)
 
-_REGISTRY: Dict[str, Type[BaseDetector]] = {}
+_REGISTRY: dict[str, type[BaseDetector]] = {}
 
 
-def register_detector(cls: Type[BaseDetector]) -> Type[BaseDetector]:
+def register_detector(cls: type[BaseDetector]) -> type[BaseDetector]:
     """Class decorator that registers a detector by its ``name`` attribute.
 
     Raises ``ValueError`` if *name* is missing, still ``"base"``, or already
@@ -51,12 +51,12 @@ def register_detector(cls: Type[BaseDetector]) -> Type[BaseDetector]:
     return cls
 
 
-def get_registered_detectors() -> Dict[str, Type[BaseDetector]]:
+def get_registered_detectors() -> dict[str, type[BaseDetector]]:
     """Return a snapshot of all registered detector classes."""
     return dict(_REGISTRY)
 
 
-def get_detector_names() -> List[str]:
+def get_detector_names() -> list[str]:
     """Return the names of all registered detectors."""
     return list(_REGISTRY.keys())
 
@@ -73,7 +73,7 @@ def create_detector(name: str, **kwargs: object) -> BaseDetector:
     return _REGISTRY[name](**kwargs)
 
 
-def create_all_detectors(**kwargs: object) -> List[BaseDetector]:
+def create_all_detectors(**kwargs: object) -> list[BaseDetector]:
     """Instantiate every registered detector that reports ``is_available()``."""
     detectors: list[BaseDetector] = []
     for name, cls in _REGISTRY.items():

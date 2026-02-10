@@ -88,7 +88,7 @@ class ReportRenderer:
             raise ImportError(
                 "PDF generation requires weasyprint. "
                 "Install with: pip install openlabels[reports]"
-            )
+            ) from None
 
         self._validate_report_type(report_type)
         html_str = self.render_html(report_type, data)
@@ -214,10 +214,10 @@ class ReportEngine:
         subject: str = "OpenLabels Report",
     ) -> None:
         """Send a generated report as an email attachment via SMTP."""
-        from email.message import EmailMessage
-        from email.utils import formatdate
         import mimetypes
         import smtplib
+        from email.message import EmailMessage
+        from email.utils import formatdate
 
         msg = EmailMessage()
         msg["Subject"] = subject

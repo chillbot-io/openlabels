@@ -20,35 +20,35 @@ import types
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import Limiter
 
 from openlabels import __version__
 from openlabels.server.error_handlers import register_error_handlers
 from openlabels.server.lifespan import lifespan
 from openlabels.server.middleware import register_middleware
-from openlabels.server.utils import get_client_ip
 from openlabels.server.routes import (
-    auth,
     audit,
-    jobs,
-    scans,
-    results,
-    targets,
-    schedules,
-    labels,
+    auth,
     dashboard,
-    ws,
-    users,
-    remediation,
-    monitoring,
-    health,
-    settings,
-    policies,
     export,
+    health,
+    jobs,
+    labels,
+    monitoring,
+    policies,
+    remediation,
     reporting,
+    results,
+    scans,
+    schedules,
+    settings,
+    targets,
+    users,
     webhooks,
+    ws,
 )
+from openlabels.server.utils import get_client_ip
 from openlabels.web import router as web_router
 
 # API version constants

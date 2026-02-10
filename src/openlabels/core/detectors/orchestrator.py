@@ -1,29 +1,20 @@
-"""
-Detector orchestrator for OpenLabels detection engine.
-
-Coordinates multiple detectors running in parallel and handles
-deduplication and post-processing of results.
-
-Supports:
-- Pattern-based detectors (checksum, secrets, financial, government)
-- Hyperscan-accelerated detection (10-100x faster when available)
-- ML detectors (PHI-BERT, PII-BERT) with optional ONNX acceleration
-- Post-processing pipeline (coref, context enhancement)
-"""
+"""Coordinates parallel detectors with deduplication and post-processing."""
 
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
-from ..types import Span, DetectionResult, normalize_entity_type
+from openlabels.exceptions import DetectionError
+
 from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
-from openlabels.exceptions import DetectionError
+from ..types import DetectionResult, Span, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
 from .registry import create_detector
@@ -38,49 +29,18 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.70
 
 
 class DetectorOrchestrator:
-    """
-    Orchestrates multiple detectors for comprehensive entity detection.
-
-    Features:
-    - Runs detectors in parallel for performance
-    - Supports pattern-based and ML-based detectors
-    - Optional Hyperscan acceleration (10-100x faster regex)
-    - Handles deduplication across detectors
-    - Higher tier detections take precedence
-    - Optional post-processing pipeline (coref, context enhancement)
-
-    Usage:
-        orchestrator = DetectorOrchestrator()
-        result = orchestrator.detect("My SSN is 123-45-6789")
-        for span in result.spans:
-            print(f"{span.entity_type}: {span.text}")
-
-        # With Hyperscan acceleration:
-        orchestrator = DetectorOrchestrator(DetectionConfig(enable_hyperscan=True))
-
-        # Full config with ML:
-        orchestrator = DetectorOrchestrator(DetectionConfig.full())
-    """
+    """Runs detectors in parallel, deduplicates results, and applies post-processing."""
 
     def __init__(self, config: DetectionConfig | None = None):
-        """
-        Initialize the orchestrator with configured detectors.
-
-        Args:
-            config: Detection configuration. Uses DetectionConfig() defaults
-                    (all pattern detectors enabled, no ML) when not provided.
-        """
         self.config = config or DetectionConfig()
         self.confidence_threshold = self.config.confidence_threshold
         self.max_workers = self.config.max_workers
-        self.detectors: List[BaseDetector] = []
+        self.detectors: list[BaseDetector] = []
         self._using_hyperscan = False
 
-        # Initialize Hyperscan detector if enabled
         if self.config.enable_hyperscan:
             self._init_hyperscan_detector()
 
-        # Map config flags to registered detector names
         _CONFIG_TO_DETECTORS: list[tuple[str, list[str]]] = [
             ("enable_checksum", ["checksum"]),
             ("enable_secrets", ["secrets"]),
@@ -97,12 +57,10 @@ class DetectorOrchestrator:
                     except KeyError:
                         logger.warning("Detector %r not registered — skipping", name)
 
-        # Initialize ML detectors if enabled
         if self.config.enable_ml:
             self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
 
-        # Initialize post-processing components
-        self._coref_resolver: Callable[..., List[Span]] | None = None
+        self._coref_resolver: Callable[..., list[Span]] | None = None
         self._context_enhancer: Any = None
         if self.config.enable_coref or self.config.enable_context_enhancement:
             self._init_pipeline(
@@ -119,7 +77,7 @@ class DetectorOrchestrator:
     def _init_hyperscan_detector(self) -> None:
         """Initialize Hyperscan-accelerated detector."""
         try:
-            from .hyperscan import HyperscanDetector, SUPPLEMENTAL_PATTERNS
+            from .hyperscan import SUPPLEMENTAL_PATTERNS, HyperscanDetector
 
             hyperscan_detector = HyperscanDetector(
                 additional_patterns=SUPPLEMENTAL_PATTERNS
@@ -135,7 +93,7 @@ class DetectorOrchestrator:
 
     def _init_ml_detectors(
         self,
-        model_dir: Optional[Path],
+        model_dir: Path | None,
         use_onnx: bool = True
     ) -> None:
         """Initialize ML-based detectors."""
@@ -158,13 +116,11 @@ class DetectorOrchestrator:
             try:
                 from .ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
 
-                # PHI-BERT for clinical/healthcare NER
                 phi_bert = PHIBertONNXDetector(model_dir=model_dir)
                 if phi_bert.is_available():
                     self.detectors.append(phi_bert)
                     logger.info("PHI-BERT ONNX detector loaded")
 
-                # PII-BERT for general PII NER
                 pii_bert = PIIBertONNXDetector(model_dir=model_dir)
                 if pii_bert.is_available():
                     self.detectors.append(pii_bert)
@@ -179,7 +135,6 @@ class DetectorOrchestrator:
             try:
                 from .ml import PHIBertDetector, PIIBertDetector
 
-                # PHI-BERT
                 phi_bert_dir = model_dir / "phi_bert"
                 if phi_bert_dir.exists():
                     phi_hf = PHIBertDetector(model_path=phi_bert_dir)
@@ -187,7 +142,6 @@ class DetectorOrchestrator:
                         self.detectors.append(phi_hf)
                         logger.info("PHI-BERT HF detector loaded")
 
-                # PII-BERT
                 pii_bert_dir = model_dir / "pii_bert"
                 if pii_bert_dir.exists():
                     pii_hf = PIIBertDetector(model_path=pii_bert_dir)
@@ -221,25 +175,12 @@ class DetectorOrchestrator:
                 logger.warning(f"Context enhancement not available: {e}")
 
     async def detect(self, text: str) -> DetectionResult:
-        """
-        Async: run all detectors via run_in_executor.
-
-        Use this from async code (server, jobs).  For synchronous
-        callers (CLI, tests), use ``detect_sync`` instead.
-        """
+        """Async wrapper around detect_sync via run_in_executor."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.detect_sync, text)
 
     def detect_sync(self, text: str) -> DetectionResult:
-        """
-        Run all detectors on the input text (synchronous).
-
-        Args:
-            text: Text to scan for entities
-
-        Returns:
-            DetectionResult with all detected spans
-        """
+        """Run all detectors on the input text (synchronous entry point)."""
         start_time = time.time()
 
         if not text or not text.strip():
@@ -251,9 +192,8 @@ class DetectorOrchestrator:
                 text_length=0,
             )
 
-        # Run detectors in parallel
-        all_spans: List[Span] = []
-        detectors_used: List[str] = []
+        all_spans: list[Span] = []
+        detectors_used: list[str] = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_detector = {
@@ -271,24 +211,20 @@ class DetectorOrchestrator:
                 except (DetectionError, RuntimeError, ValueError, OSError) as e:
                     logger.error(f"Detector {detector.name} failed: {e}")
 
-        # Post-process: deduplicate, filter, sort
         processed_spans = self._post_process(all_spans)
 
-        # Run coreference resolution if enabled
         if self._coref_resolver and processed_spans:
             try:
                 processed_spans = self._coref_resolver(text, processed_spans)
             except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Coreference resolution failed: {e}")
 
-        # Run context enhancement if enabled
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
             except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Context enhancement failed: {e}")
 
-        # Policy evaluation
         policy_result = None
         if self.config.enable_policy and processed_spans:
             try:
@@ -307,8 +243,7 @@ class DetectorOrchestrator:
             except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed: {e}")
 
-        # Calculate entity counts
-        entity_counts: Dict[str, int] = {}
+        entity_counts: dict[str, int] = {}
         for span in processed_spans:
             normalized = normalize_entity_type(span.entity_type)
             entity_counts[normalized] = entity_counts.get(normalized, 0) + 1
@@ -324,7 +259,7 @@ class DetectorOrchestrator:
             policy_result=policy_result,
         )
 
-    def _run_detector(self, detector: BaseDetector, text: str) -> List[Span]:
+    def _run_detector(self, detector: BaseDetector, text: str) -> list[Span]:
         """Run a single detector with error handling."""
         try:
             if not detector.is_available():
@@ -335,7 +270,7 @@ class DetectorOrchestrator:
             logger.error(f"Error in detector {detector.name}: {e}")
             return []
 
-    def _post_process(self, spans: List[Span]) -> List[Span]:
+    def _post_process(self, spans: list[Span]) -> list[Span]:
         """Post-process: calibrate confidence, filter, deduplicate, sort."""
         calibrated = calibrate_spans(spans)
         return resolve_spans(
@@ -358,30 +293,18 @@ class DetectorOrchestrator:
         return False
 
     @property
-    def detector_names(self) -> List[str]:
+    def detector_names(self) -> list[str]:
         """Get list of active detector names."""
         return [d.name for d in self.detectors]
 
 
-# Convenience function for simple usage
 def detect(
     text: str,
     config: DetectionConfig | None = None,
     **kwargs: object,
 ) -> DetectionResult:
-    """
-    Convenience function to detect entities in text.
-
-    Args:
-        text: Text to scan
-        config: Detection configuration (defaults to patterns-only)
-        **kwargs: Override individual DetectionConfig fields
-
-    Returns:
-        DetectionResult with detected spans
-    """
+    """Detect entities in text using a one-shot orchestrator."""
     if config is None:
-        # Build config from kwargs for backwards-compatible call sites
         from dataclasses import fields as dc_fields
         config_kwargs = {
             k: v for k, v in kwargs.items()

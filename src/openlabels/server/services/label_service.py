@@ -8,23 +8,23 @@ Provides:
 - Bulk label application to scan results
 """
 
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import delete as sa_delete, select, func, and_
+from sqlalchemy import and_, func, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from openlabels.server.services.base import BaseService, TenantContext
-from openlabels.server.config import Settings
-from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
 from openlabels.exceptions import (
-    NotFoundError,
-    ValidationError,
     BadRequestError,
     InternalError,
+    NotFoundError,
+    ValidationError,
 )
+from openlabels.server.config import Settings
+from openlabels.server.models import LabelRule, ScanResult, SensitivityLabel
+from openlabels.server.services.base import BaseService, TenantContext
 
 
 class LabelService(BaseService):
@@ -76,31 +76,12 @@ class LabelService(BaseService):
         Returns:
             Tuple of (list of labels, total count)
         """
-        # Get total count
-        count_query = (
-            select(func.count())
-            .select_from(SensitivityLabel)
-            .where(SensitivityLabel.tenant_id == self.tenant_id)
-        )
-        count_result = await self.session.execute(count_query)
-        total = count_result.scalar() or 0
-
-        # Get paginated labels
         query = (
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == self.tenant_id)
             .order_by(SensitivityLabel.priority)
-            .offset(offset)
-            .limit(limit)
         )
-        result = await self.session.execute(query)
-        labels = list(result.scalars().all())
-
-        self._log_debug(
-            f"Listed {len(labels)} labels (offset={offset}, limit={limit}, total={total})"
-        )
-
-        return labels, total
+        return await self.paginate(query, limit=limit, offset=offset)
 
     async def get_label(self, label_id: str) -> SensitivityLabel:
         """
@@ -115,16 +96,7 @@ class LabelService(BaseService):
         Raises:
             NotFoundError: If label not found or belongs to another tenant
         """
-        label = await self.session.get(SensitivityLabel, label_id)
-
-        if not label or label.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Label not found",
-                resource_type="SensitivityLabel",
-                resource_id=label_id,
-            )
-
-        return label
+        return await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
 
     async def sync_labels(self, background: bool = True) -> dict:
         """
@@ -208,7 +180,7 @@ class LabelService(BaseService):
             self._log_error(f"Label sync failed: {e}")
             raise InternalError(
                 message=f"Label sync failed: {str(e)}",
-            )
+            ) from e
 
     def _invalidate_label_caches(self) -> None:
         """Invalidate all label-related caches. Failures are logged but not raised."""
@@ -298,13 +270,7 @@ class LabelService(BaseService):
             )
 
         # Verify label exists and belongs to tenant
-        label = await self.session.get(SensitivityLabel, label_id)
-        if not label or label.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Label not found",
-                resource_type="SensitivityLabel",
-                resource_id=label_id,
-            )
+        await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
 
         rule = LabelRule(
             tenant_id=self.tenant_id,
@@ -349,13 +315,7 @@ class LabelService(BaseService):
             ValidationError: If rule_type is invalid
             NotFoundError: If new label_id doesn't exist
         """
-        rule = await self.session.get(LabelRule, rule_id)
-        if not rule or rule.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Label rule not found",
-                resource_type="LabelRule",
-                resource_id=str(rule_id),
-            )
+        rule = await self.get_tenant_entity(LabelRule, rule_id, "LabelRule")
 
         # Validate rule_type if provided
         if "rule_type" in rule_data:
@@ -371,13 +331,7 @@ class LabelService(BaseService):
         # Validate label_id if provided
         if "label_id" in rule_data:
             label_id = rule_data["label_id"]
-            label = await self.session.get(SensitivityLabel, label_id)
-            if not label or label.tenant_id != self.tenant_id:
-                raise NotFoundError(
-                    message="Label not found",
-                    resource_type="SensitivityLabel",
-                    resource_id=label_id,
-                )
+            await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
             rule.label_id = label_id
 
         # Update other fields
@@ -449,13 +403,7 @@ class LabelService(BaseService):
         from openlabels.jobs import JobQueue
 
         # Verify label exists
-        label = await self.session.get(SensitivityLabel, label_id)
-        if not label or label.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Label not found",
-                resource_type="SensitivityLabel",
-                resource_id=label_id,
-            )
+        await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
 
         queue = JobQueue(self.session, self.tenant_id)
 

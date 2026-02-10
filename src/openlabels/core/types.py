@@ -9,10 +9,10 @@ This module defines the fundamental types used throughout the detection system:
 These types are used by all detectors and the scoring engine.
 """
 
-from dataclasses import dataclass
-from enum import IntEnum, Enum
-from typing import Optional, List, Dict, Any, Set, FrozenSet
 import logging
+from dataclasses import dataclass
+from enum import Enum, IntEnum
+from typing import Any
 
 __all__ = [
     # Enums
@@ -80,7 +80,7 @@ class ExposureLevel(Enum):
 # Known entity types - used for validation
 # Categories: Names, Dates, Locations, IDs, Contact, Financial, Medical, Secrets, Government
 # Sources: HIPAA Safe Harbor, i2b2 2014, AI4Privacy, Stanford PHI-BERT, custom detectors
-KNOWN_ENTITY_TYPES: FrozenSet[str] = frozenset([
+KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     # --- NAMES ---
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
     "PERSON", "PER", "PATIENT", "DOCTOR", "PHYSICIAN", "NURSE", "STAFF",
@@ -207,7 +207,7 @@ KNOWN_ENTITY_TYPES: FrozenSet[str] = frozenset([
 
 
 # Clinical entity types - detected for context/analytics but NOT redacted
-CLINICAL_CONTEXT_TYPES: FrozenSet[str] = frozenset([
+CLINICAL_CONTEXT_TYPES: frozenset[str] = frozenset([
     "LAB_TEST",
     "DIAGNOSIS",
     "MEDICATION",
@@ -219,7 +219,7 @@ CLINICAL_CONTEXT_TYPES: FrozenSet[str] = frozenset([
 
 
 # Entity type aliases for normalization
-_ENTITY_ALIASES: Dict[str, str] = {
+_ENTITY_ALIASES: dict[str, str] = {
     # SSN variants
     "US_SSN": "SSN",
     "SOCIAL_SECURITY": "SSN",
@@ -353,8 +353,8 @@ class Span:
     # Optional metadata
     context: SpanContext | None = None  # Extraction context (page, sheet, cell, etc.)
     needs_review: bool = False
-    review_reason: Optional[str] = None
-    coref_anchor_value: Optional[str] = None  # Link to coreference anchor for entity grouping
+    review_reason: str | None = None
+    coref_anchor_value: str | None = None  # Link to coreference anchor for entity grouping
 
     def __post_init__(self) -> None:
         """Validate span attributes."""
@@ -426,12 +426,12 @@ class Span:
 @dataclass
 class DetectionResult:
     """Result of running detection on text."""
-    spans: List[Span]
-    entity_counts: Dict[str, int]
+    spans: list[Span]
+    entity_counts: dict[str, int]
     processing_time_ms: float
-    detectors_used: List[str]
+    detectors_used: list[str]
     text_length: int
-    policy_result: Optional[Any] = None  # Optional[PolicyResult] -- avoids circular import
+    policy_result: Any | None = None  # Optional[PolicyResult] -- avoids circular import
 
     def __repr__(self) -> str:
         return (
@@ -449,8 +449,8 @@ class ScoringResult:
     content_score: float              # Pre-exposure score
     exposure_multiplier: float        # Applied exposure multiplier
     co_occurrence_multiplier: float   # Applied co-occurrence multiplier
-    co_occurrence_rules: List[str]    # Which rules triggered
-    categories: Set[str]              # Entity categories present
+    co_occurrence_rules: list[str]    # Which rules triggered
+    categories: set[str]              # Entity categories present
     exposure: str                     # Exposure level used
 
     def to_dict(self) -> dict[str, object]:

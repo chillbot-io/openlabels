@@ -7,25 +7,19 @@ Provides data visualization components:
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 import numpy as np
 import pyqtgraph as pg
-from pyqtgraph import ColorMap
-
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QFrame,
-    QSizePolicy,
-    QCheckBox,
-    QGroupBox,
+    QVBoxLayout,
+    QWidget,
 )
-
 
 # Configure pyqtgraph for better appearance
 pg.setConfigOptions(antialias=True, background='w', foreground='k')

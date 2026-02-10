@@ -11,11 +11,12 @@ Provides:
 
 import fnmatch
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import TracebackType
-from typing import Protocol, AsyncIterator, Optional, runtime_checkable
-from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +62,8 @@ class FilterConfig:
     exclude_accounts: list[str] = field(default_factory=list)
 
     # Size limits (None = no limit)
-    min_size_bytes: Optional[int] = None
-    max_size_bytes: Optional[int] = None
+    min_size_bytes: int | None = None
+    max_size_bytes: int | None = None
 
     # Common presets that can be enabled
     exclude_temp_files: bool = True
@@ -196,18 +197,18 @@ class FileInfo:
     name: str
     size: int
     modified: datetime
-    owner: Optional[str] = None
-    permissions: Optional[dict] = None
+    owner: str | None = None
+    permissions: dict | None = None
     exposure: ExposureLevel = ExposureLevel.PRIVATE
 
     # Adapter-specific identifiers
     adapter: str = ""
-    item_id: Optional[str] = None  # For Graph API items
-    site_id: Optional[str] = None  # For SharePoint
-    user_id: Optional[str] = None  # For OneDrive
+    item_id: str | None = None  # For Graph API items
+    site_id: str | None = None  # For SharePoint
+    user_id: str | None = None  # For OneDrive
 
     # Delta tracking
-    change_type: Optional[str] = None  # 'created', 'modified', 'deleted' for delta queries
+    change_type: str | None = None  # 'created', 'modified', 'deleted' for delta queries
 
 
 class ReadAdapter(Protocol):
@@ -230,7 +231,7 @@ class ReadAdapter(Protocol):
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List files in the target location.
 
@@ -328,7 +329,7 @@ class RemediationAdapter(Protocol):
         """
         ...
 
-    async def get_acl(self, file_info: FileInfo) -> Optional[dict]:
+    async def get_acl(self, file_info: FileInfo) -> dict | None:
         """Get the access control list for a file.
 
         Args:

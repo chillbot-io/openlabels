@@ -11,16 +11,15 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import Any
 
 from .constants import (
-    MIN_NATIVE_TEXT_LENGTH,
-    MAX_DOCUMENT_PAGES,
-    MAX_SPREADSHEET_ROWS,
     MAX_DECOMPRESSED_SIZE,
+    MAX_DOCUMENT_PAGES,
     MAX_EXTRACTION_RATIO,
+    MAX_SPREADSHEET_ROWS,
+    MIN_NATIVE_TEXT_LENGTH,
 )
-from openlabels.exceptions import ExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +38,10 @@ class ExtractionResult:
     text: str
     pages: int = 1
     needs_ocr: bool = False  # True if any page needed OCR
-    ocr_pages: List[int] = field(default_factory=list)  # Which pages needed OCR
-    warnings: List[str] = field(default_factory=list)  # Non-fatal issues
+    ocr_pages: list[int] = field(default_factory=list)  # Which pages needed OCR
+    warnings: list[str] = field(default_factory=list)  # Non-fatal issues
     confidence: float = 1.0  # Average OCR confidence (1.0 if no OCR)
-    page_infos: List[PageInfo] = field(default_factory=list)
+    page_infos: list[PageInfo] = field(default_factory=list)
 
     @property
     def has_scanned_pages(self) -> bool:
@@ -98,7 +97,7 @@ class PDFExtractor(BaseExtractor):
 
     RENDER_DPI = 150  # DPI for rendering scanned pages
 
-    def __init__(self, ocr_engine: Optional[Any] = None):
+    def __init__(self, ocr_engine: Any | None = None):
         """
         Initialize PDF extractor.
 
@@ -115,7 +114,7 @@ class PDFExtractor(BaseExtractor):
         try:
             import fitz  # PyMuPDF
         except ImportError:
-            raise ImportError("PyMuPDF not installed. Run: pip install pymupdf")
+            raise ImportError("PyMuPDF not installed. Run: pip install pymupdf") from None
 
         doc = fitz.open(stream=content, filetype="pdf")
 
@@ -158,8 +157,8 @@ class PDFExtractor(BaseExtractor):
                         pix = page.get_pixmap(dpi=self.RENDER_DPI)
 
                         # Convert to PIL Image and numpy array
-                        from PIL import Image
                         import numpy as np
+                        from PIL import Image
 
                         img = Image.frombytes(
                             "RGB",
@@ -242,7 +241,7 @@ class DOCXExtractor(BaseExtractor):
         try:
             from docx import Document
         except ImportError:
-            raise ImportError("python-docx not installed. Run: pip install python-docx")
+            raise ImportError("python-docx not installed. Run: pip install python-docx") from None
 
         # SECURITY: Check decompression ratio before extraction
         # DOCX is a ZIP file - malicious files could have huge decompression ratios
@@ -383,7 +382,7 @@ class XLSXExtractor(BaseExtractor):
         try:
             from openpyxl import load_workbook
         except ImportError:
-            raise ImportError("openpyxl not installed. Run: pip install openpyxl")
+            raise ImportError("openpyxl not installed. Run: pip install openpyxl") from None
 
         # SECURITY: Track total extracted size to prevent decompression bombs
         compressed_size = len(content)
@@ -449,7 +448,7 @@ class XLSXExtractor(BaseExtractor):
         try:
             import xlrd
         except ImportError:
-            raise ImportError("xlrd not installed. Run: pip install xlrd")
+            raise ImportError("xlrd not installed. Run: pip install xlrd") from None
 
         wb = xlrd.open_workbook(file_contents=content)
 
@@ -489,7 +488,7 @@ class ImageExtractor(BaseExtractor):
     Handles JPEG, PNG, TIFF, HEIC, GIF, BMP, WebP.
     """
 
-    def __init__(self, ocr_engine: Optional[Any] = None):
+    def __init__(self, ocr_engine: Any | None = None):
         """
         Initialize image extractor.
 
@@ -518,8 +517,8 @@ class ImageExtractor(BaseExtractor):
         ext = Path(filename).suffix.lower()
 
         try:
-            from PIL import Image
             import numpy as np
+            from PIL import Image
 
             # Handle HEIC format
             if ext in (".heic", ".heif"):
@@ -575,8 +574,8 @@ class ImageExtractor(BaseExtractor):
 
     def _extract_multipage_tiff(self, content: bytes, filename: str) -> ExtractionResult:
         """Extract text from multi-page TIFF."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img = Image.open(io.BytesIO(content))
 
@@ -664,7 +663,7 @@ class RTFExtractor(BaseExtractor):
         try:
             from striprtf.striprtf import rtf_to_text
         except ImportError:
-            raise ImportError("striprtf not installed. Run: pip install striprtf")
+            raise ImportError("striprtf not installed. Run: pip install striprtf") from None
 
         # Try to decode - UnicodeDecodeError is expected for wrong encodings
         for encoding in ["utf-8", "latin-1", "cp1252"]:
@@ -725,7 +724,7 @@ class PPTXExtractor(BaseExtractor):
         try:
             from pptx import Presentation
         except ImportError:
-            raise ImportError("python-pptx not installed. Run: pip install python-pptx")
+            raise ImportError("python-pptx not installed. Run: pip install python-pptx") from None
 
         prs = Presentation(io.BytesIO(content))
 
@@ -838,7 +837,7 @@ class EmailExtractor(BaseExtractor):
         try:
             import extract_msg
         except ImportError:
-            raise ImportError("extract-msg not installed. Run: pip install extract-msg")
+            raise ImportError("extract-msg not installed. Run: pip install extract-msg") from None
 
         try:
             msg = extract_msg.Message(io.BytesIO(content))
@@ -1108,7 +1107,7 @@ class HTMLExtractor(BaseExtractor):
             )
 
 
-def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] = None) -> Optional[BaseExtractor]:
+def get_extractor(content_type: str, extension: str, ocr_engine: Any | None = None) -> BaseExtractor | None:
     """
     Get an appropriate extractor for the given file type.
 
@@ -1143,8 +1142,8 @@ def get_extractor(content_type: str, extension: str, ocr_engine: Optional[Any] =
 def extract_text(
     content: bytes,
     filename: str,
-    content_type: Optional[str] = None,
-    ocr_engine: Optional[Any] = None,
+    content_type: str | None = None,
+    ocr_engine: Any | None = None,
 ) -> ExtractionResult:
     """
     Extract text from file content.

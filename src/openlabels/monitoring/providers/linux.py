@@ -14,10 +14,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional
 
-from openlabels.monitoring.collector import EventCollector
 from openlabels.monitoring.base import AccessEvent
+from openlabels.monitoring.collector import EventCollector
+
 from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class AuditdProvider:
 
     def __init__(
         self,
-        watched_paths: Optional[list[str]] = None,
+        watched_paths: list[str] | None = None,
     ) -> None:
         self._collector = EventCollector()
         self._watched_paths = watched_paths
@@ -49,7 +49,7 @@ class AuditdProvider:
     def name(self) -> str:
         return EVENT_SOURCE
 
-    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+    async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Collect events from auditd logs.
 
         The underlying ``ausearch`` subprocess is blocking, so the
@@ -60,7 +60,7 @@ class AuditdProvider:
             None, lambda: self._collect_sync(since),
         )
 
-    def _collect_sync(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+    def _collect_sync(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Synchronous collection — runs in a thread executor."""
         try:
             return [

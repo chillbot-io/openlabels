@@ -21,13 +21,11 @@ import logging
 import re
 import threading
 from pathlib import Path
-from typing import List, Set, Optional, Tuple, Dict
 
 import numpy as np
 
 from ..types import Span, Tier
 from .span_validation import validate_after_coref
-
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +53,7 @@ _ONNX_SESSION = None
 _TOKENIZER = None
 _USE_FAST_TOKENIZER = False
 _ONNX_AVAILABLE = None
-_MODELS_DIR: Optional[Path] = None
+_MODELS_DIR: Path | None = None
 
 
 def set_models_dir(path: Path) -> None:
@@ -65,7 +63,7 @@ def set_models_dir(path: Path) -> None:
     _ONNX_AVAILABLE = None  # Reset availability check
 
 
-def _get_model_paths() -> Tuple[Path, Path, Path, Path]:
+def _get_model_paths() -> tuple[Path, Path, Path, Path]:
     """Get paths for FastCoref model files."""
     if _MODELS_DIR is None:
         from openlabels.core.constants import DEFAULT_MODELS_DIR
@@ -98,7 +96,7 @@ def _check_onnx_available() -> bool:
     # Check for tokenizer (either standalone or HF directory)
     if not tokenizer_json_path.exists() and not tokenizer_dir_path.exists():
         logger.warning(
-            f"FastCoref tokenizer not found - using rule-based fallback"
+            "FastCoref tokenizer not found - using rule-based fallback"
         )
         _ONNX_AVAILABLE = False
         return False
@@ -190,7 +188,7 @@ def _get_tokenizer():
         )
 
 
-def _tokenize_for_coref(text: str) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
+def _tokenize_for_coref(text: str) -> tuple[np.ndarray, np.ndarray, list[tuple[int, int]]]:
     """Tokenize text for coref model."""
     tokenizer, is_fast = _get_tokenizer()
 
@@ -222,12 +220,12 @@ def _get_mention_candidates(
     attention_mask: np.ndarray,
     max_span_length: int = 30,
     top_k: int = 50,
-) -> List[Tuple[int, int, float]]:
+) -> list[tuple[int, int, float]]:
     """Extract top-k mention span candidates from start/end scores."""
     valid_len = int(attention_mask.sum())
 
     # Use a min-heap of size top_k for efficient top-k selection
-    heap: List[Tuple[float, int, int]] = []
+    heap: list[tuple[float, int, int]] = []
 
     for start in range(1, valid_len - 1):  # Skip [CLS] and [SEP]
         for end in range(start, min(start + max_span_length, valid_len - 1)):
@@ -244,7 +242,7 @@ def _get_mention_candidates(
 
 
 def _compute_antecedent_scores(
-    mentions: List[Tuple[int, int, float]],
+    mentions: list[tuple[int, int, float]],
     ante_s2s: np.ndarray,
     ante_e2e: np.ndarray,
     ante_s2e: np.ndarray,
@@ -277,17 +275,17 @@ def _compute_antecedent_scores(
 
 
 def _cluster_mentions(
-    mentions: List[Tuple[int, int, float]],
+    mentions: list[tuple[int, int, float]],
     antecedent_scores: np.ndarray,
     threshold: float = 0.0,
-) -> List[List[Tuple[int, int]]]:
+) -> list[list[tuple[int, int]]]:
     """Greedily cluster mentions based on antecedent scores."""
     n = len(mentions)
     if n == 0:
         return []
 
     cluster_id = [-1] * n
-    clusters: Dict[int, List[int]] = {}
+    clusters: dict[int, list[int]] = {}
     next_cluster = 0
 
     for i in range(n):
@@ -318,9 +316,9 @@ def _cluster_mentions(
 
 
 def _token_spans_to_char_spans(
-    token_spans: List[Tuple[int, int]],
-    offset_mapping: List[Tuple[int, int]],
-) -> List[Tuple[int, int]]:
+    token_spans: list[tuple[int, int]],
+    offset_mapping: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
     """Convert token indices to character offsets."""
     char_spans = []
     for tok_start, tok_end in token_spans:
@@ -334,12 +332,12 @@ def _token_spans_to_char_spans(
 
 def _resolve_with_onnx(
     text: str,
-    spans: List[Span],
+    spans: list[Span],
     window_sentences: int,
     max_expansions_per_anchor: int,
     min_anchor_confidence: float,
     confidence_decay: float,
-) -> List[Span]:
+) -> list[Span]:
     """Resolve coreferences using ONNX FastCoref model."""
     session = _get_onnx_session()
 
@@ -394,7 +392,7 @@ def _resolve_with_onnx(
             char_clusters.append(char_spans)
 
     # Build anchor lookup
-    name_anchors: Dict[Tuple[int, int], Span] = {}
+    name_anchors: dict[tuple[int, int], Span] = {}
     for s in spans:
         if s.entity_type in NAME_TYPES and s.confidence >= min_anchor_confidence:
             name_anchors[(s.start, s.end)] = s
@@ -406,11 +404,11 @@ def _resolve_with_onnx(
     sentences = _split_sentences(text)
 
     # Track covered positions and expansions
-    covered: Set[Tuple[int, int]] = {(s.start, s.end) for s in spans}
-    anchor_expansion_count: Dict[int, int] = {}
+    covered: set[tuple[int, int]] = {(s.start, s.end) for s in spans}
+    anchor_expansion_count: dict[int, int] = {}
     new_spans = []
 
-    def find_overlapping_anchor(start: int, end: int) -> Optional[Span]:
+    def find_overlapping_anchor(start: int, end: int) -> Span | None:
         for (a_start, a_end), anchor in name_anchors.items():
             if start < a_end and end > a_start:
                 return anchor
@@ -505,7 +503,7 @@ MALE_NAMES = frozenset([
 ])
 
 
-def _split_sentences(text: str) -> List[Tuple[int, int, str]]:
+def _split_sentences(text: str) -> list[tuple[int, int, str]]:
     """Split text into sentences with positions."""
     sentences = []
     pos = 0
@@ -524,7 +522,7 @@ def _split_sentences(text: str) -> List[Tuple[int, int, str]]:
     return sentences
 
 
-def _get_sentence_index(pos: int, sentences: List[Tuple[int, int, str]]) -> int:
+def _get_sentence_index(pos: int, sentences: list[tuple[int, int, str]]) -> int:
     """Get sentence index for a character position."""
     for i, (start, end, _) in enumerate(sentences):
         if start <= pos < end:
@@ -532,7 +530,7 @@ def _get_sentence_index(pos: int, sentences: List[Tuple[int, int, str]]) -> int:
     return len(sentences) - 1
 
 
-def _infer_gender(name: str) -> Optional[str]:
+def _infer_gender(name: str) -> str | None:
     """Infer likely gender from name."""
     first = name.split()[0].lower().rstrip('.')
     if first in FEMALE_NAMES:
@@ -542,7 +540,7 @@ def _infer_gender(name: str) -> Optional[str]:
     return None
 
 
-def _pronoun_matches_gender(pronoun: str, gender: Optional[str]) -> bool:
+def _pronoun_matches_gender(pronoun: str, gender: str | None) -> bool:
     """Check if pronoun is compatible with inferred gender."""
     p = pronoun.lower()
     if p in NEUTRAL_PRONOUNS:
@@ -558,12 +556,12 @@ def _pronoun_matches_gender(pronoun: str, gender: Optional[str]) -> bool:
 
 def _resolve_with_rules(
     text: str,
-    spans: List[Span],
+    spans: list[Span],
     window_sentences: int,
     max_expansions_per_anchor: int,
     min_anchor_confidence: float,
     confidence_decay: float,
-) -> List[Span]:
+) -> list[Span]:
     """Rule-based pronoun resolution (fallback)."""
     if not spans:
         return []
@@ -585,7 +583,7 @@ def _resolve_with_rules(
     if not pronoun_matches:
         return list(spans)
 
-    covered: Set[Tuple[int, int]] = {(s.start, s.end) for s in spans}
+    covered: set[tuple[int, int]] = {(s.start, s.end) for s in spans}
     new_spans = []
     anchor_expansions = {id(a): 0 for a, _ in anchors}
 
@@ -652,20 +650,20 @@ def _normalize_name_for_matching(text: str) -> str:
     return text.lower().strip()
 
 
-def _get_name_words(text: str) -> Set[str]:
+def _get_name_words(text: str) -> set[str]:
     """Extract words from a name, excluding common titles."""
     titles = {"dr", "mr", "mrs", "ms", "prof", "rev", "jr", "sr", "ii", "iii", "iv"}
     words = set(_normalize_name_for_matching(text).replace(".", "").split())
     return words - titles
 
 
-def _link_partial_names(spans: List[Span], min_confidence: float = 0.70) -> List[Span]:
+def _link_partial_names(spans: list[Span], min_confidence: float = 0.70) -> list[Span]:
     """Link partial names to their full name anchors."""
     if not spans:
         return []
 
     # Collect NAME-type spans eligible for linking
-    name_spans: List[Tuple[int, Span]] = []
+    name_spans: list[tuple[int, Span]] = []
     for i, span in enumerate(spans):
         if span.entity_type in NAME_TYPES and span.confidence >= min_confidence:
             name_spans.append((i, span))
@@ -674,8 +672,8 @@ def _link_partial_names(spans: List[Span], min_confidence: float = 0.70) -> List
         return list(spans)
 
     # Build word-to-spans index
-    word_to_spans: Dict[str, List[Tuple[int, Span]]] = {}
-    span_words: Dict[int, Set[str]] = {}
+    word_to_spans: dict[str, list[tuple[int, Span]]] = {}
+    span_words: dict[int, set[str]] = {}
 
     for idx, span in name_spans:
         words = _get_name_words(span.text)
@@ -687,8 +685,8 @@ def _link_partial_names(spans: List[Span], min_confidence: float = 0.70) -> List
                 word_to_spans[word].append((idx, span))
 
     # Group spans that share words using union-find approach
-    span_to_group: Dict[int, int] = {}
-    groups: Dict[int, Set[int]] = {}
+    span_to_group: dict[int, int] = {}
+    groups: dict[int, set[int]] = {}
     next_group = 0
 
     for idx, span in name_spans:
@@ -763,13 +761,13 @@ def _link_partial_names(spans: List[Span], min_confidence: float = 0.70) -> List
 
 def resolve_coreferences(
     text: str,
-    spans: List[Span],
+    spans: list[Span],
     window_sentences: int = 2,
     max_expansions_per_anchor: int = 3,
     min_anchor_confidence: float = 0.85,
     confidence_decay: float = 0.90,
-    use_onnx: Optional[bool] = None,
-) -> List[Span]:
+    use_onnx: bool | None = None,
+) -> list[Span]:
     """
     Expand NAME-family detections to include coreferent pronouns and partial names.
 

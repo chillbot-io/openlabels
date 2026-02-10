@@ -29,16 +29,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Windows service support
 try:
-    import win32serviceutil
-    import win32service
-    import win32event
     import servicemanager
+    import win32event
+    import win32service
+    import win32serviceutil
     PYWIN32_AVAILABLE = True
 except ImportError:
     # pywin32 not installed - Windows service functionality unavailable
@@ -69,7 +68,7 @@ except ImportError:
 class DockerManager:
     """Manages Docker Compose lifecycle."""
 
-    def __init__(self, compose_file: Optional[Path] = None):
+    def __init__(self, compose_file: Path | None = None):
         self.compose_file = compose_file or self._find_compose_file()
         self.project_name = "openlabels"
 

@@ -18,22 +18,20 @@ Performance:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
-from openlabels.server.models import ScanJob
-from openlabels.server.cache import get_cache_manager
-from openlabels.auth.dependencies import get_current_user
 from openlabels.analytics.service import (
     DashboardQueryService,
-    HeatmapFileRow,
 )
+from openlabels.auth.dependencies import get_current_user
+from openlabels.server.cache import get_cache_manager
+from openlabels.server.db import get_session
+from openlabels.server.models import ScanJob
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +79,7 @@ class HeatmapNode(BaseModel):
     type: str  # 'folder' | 'file'
     risk_score: int
     entity_counts: dict[str, int]
-    children: Optional[list["HeatmapNode"]] = None
+    children: list["HeatmapNode"] | None = None
 
 
 class HeatmapResponse(BaseModel):
@@ -297,7 +295,7 @@ async def get_access_heatmap(
 @router.get("/heatmap", response_model=HeatmapResponse)
 async def get_heatmap(
     request: Request,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
     limit: int = Query(HEATMAP_MAX_FILES, ge=1, le=HEATMAP_MAX_FILES, description="Max files to include"),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),

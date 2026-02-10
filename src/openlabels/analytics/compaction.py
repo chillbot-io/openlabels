@@ -11,9 +11,6 @@ Schedule: weekly or on-demand via ``openlabels catalog compact``.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-
-import pyarrow.parquet as pq
 
 from openlabels.analytics.storage import CatalogStorage
 

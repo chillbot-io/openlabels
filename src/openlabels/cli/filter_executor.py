@@ -7,7 +7,7 @@ Executes parsed filter expressions against scan results.
 import re
 import signal
 from contextlib import contextmanager
-from typing import Any, List, Optional
+from typing import Any
 
 from openlabels.cli.filter_parser import (
     BinaryOp,
@@ -19,7 +19,6 @@ from openlabels.cli.filter_parser import (
     UnaryOp,
     parse_filter,
 )
-
 
 # Maximum length for regex patterns to prevent ReDoS
 MAX_REGEX_PATTERN_LENGTH = 500
@@ -277,9 +276,9 @@ def execute_filter(expr: FilterExpression, result: Any) -> bool:
 
 
 def filter_scan_results(
-    results: List[Any],
+    results: list[Any],
     filter_str: str,
-) -> List[Any]:
+) -> list[Any]:
     """
     Filter a list of scan results using a filter expression.
 
@@ -302,7 +301,7 @@ def filter_scan_results(
     return [r for r in results if execute_filter(expr, r)]
 
 
-def validate_filter(filter_str: str) -> Optional[str]:
+def validate_filter(filter_str: str) -> str | None:
     """
     Validate a filter expression string.
 

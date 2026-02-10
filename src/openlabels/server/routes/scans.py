@@ -4,31 +4,28 @@ Scan management API endpoints.
 
 import logging
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.exc import SQLAlchemyError
 
+from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
 from openlabels.server.config import get_settings
+from openlabels.server.dependencies import (
+    AdminContextDep,
+    ScanServiceDep,
+    TenantContextDep,
+)
+from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.server.dependencies import (
-    ScanServiceDep,
-    TenantContextDep,
-    AdminContextDep,
-)
-from openlabels.auth.dependencies import require_admin
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
-from openlabels.server.errors import ErrorCode
-from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -37,25 +34,21 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 class ScanCreate(BaseModel):
-    """Request to create a new scan."""
-
     target_id: UUID
-    name: Optional[str] = Field(default=None, max_length=255)
+    name: str | None = Field(default=None, max_length=255)
 
 
 class ScanResponse(BaseModel):
-    """Scan job response."""
-
     id: UUID
     target_id: UUID
-    name: Optional[str]
+    name: str | None
     status: str
-    progress: Optional[dict] = None
+    progress: dict | None = None
     files_scanned: int = 0
     files_with_pii: int = 0
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
     created_at: datetime
 
     class Config:
@@ -82,7 +75,7 @@ async def create_scan(
 async def list_scans(
     scan_service: ScanServiceDep,
     _tenant: TenantContextDep,
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: str | None = Query(None, description="Filter by status"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ScanResponse]:
     """List scan jobs with pagination."""
@@ -133,7 +126,6 @@ async def cancel_scan(
     """Cancel a running scan (POST method for HTMX)."""
     await scan_service.cancel_scan(scan_id)
 
-    # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
         return htmx_notify("Scan cancelled", refreshScans=True)
 
@@ -149,7 +141,6 @@ async def retry_scan(
     try:
         new_job = await scan_service.retry_scan(scan_id)
 
-        # Check if this is an HTMX request
         if request.headers.get("HX-Request"):
             return htmx_notify("Scan retry queued", refreshScans=True)
 
@@ -161,4 +152,4 @@ async def retry_scan(
         raise InternalError(
             message="Database error occurred while retrying scan",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e

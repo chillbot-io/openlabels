@@ -7,7 +7,6 @@ Handles deduplication and merging of overlapping detection spans.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List
 
 from ..types import Span, normalize_entity_type
 
@@ -69,7 +68,7 @@ def _deduplicate(
         key=lambda s: (s.start, -s.tier.value, -s.confidence),
     )
 
-    result: List[Span] = []
+    result: list[Span] = []
 
     for span in sorted_spans:
         absorbed = False

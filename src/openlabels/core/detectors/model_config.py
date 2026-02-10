@@ -58,7 +58,6 @@ How to obtain models:
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from ..constants import DEFAULT_MODELS_DIR
 
@@ -100,8 +99,8 @@ class ModelStatus:
     """Status of a single model."""
     name: str
     available: bool
-    path: Optional[Path] = None
-    missing_files: List[str] = field(default_factory=list)
+    path: Path | None = None
+    missing_files: list[str] = field(default_factory=list)
     backend: str = "unknown"  # "onnx" or "hf"
 
 
@@ -110,7 +109,7 @@ class ModelsReport:
     """Report on all model availability."""
     models_dir: Path
     models_dir_exists: bool
-    models: Dict[str, ModelStatus] = field(default_factory=dict)
+    models: dict[str, ModelStatus] = field(default_factory=dict)
 
     @property
     def any_available(self) -> bool:
@@ -133,8 +132,8 @@ class ModelsReport:
 
 
 def get_model_paths(
-    model_dir: Optional[Path] = None,
-) -> Dict[str, Path]:
+    model_dir: Path | None = None,
+) -> dict[str, Path]:
     """Return expected paths for phi_bert and pii_bert model directories.
 
     Args:
@@ -156,7 +155,7 @@ def get_model_paths(
 
 
 def check_models_available(
-    model_dir: Optional[Path] = None,
+    model_dir: Path | None = None,
     use_onnx: bool = True,
 ) -> ModelsReport:
     """Check which ML models are present and ready for use.

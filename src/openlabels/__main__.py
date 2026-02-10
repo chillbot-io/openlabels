@@ -12,32 +12,32 @@ Usage:
 import click
 
 from openlabels.cli.commands import (
-    # Server commands
-    serve,
-    worker,
-    gui,
-    # Command groups
-    db,
-    config,
-    user,
-    target,
-    scan,
-    labels,
-    export,
-    monitor,
+    backup,
     catalog,
-    models,
     # Standalone commands
     classify,
-    find,
-    report,
-    heatmap,
-    quarantine,
-    lock_down_cmd,
-    status,
-    backup,
-    restore,
+    config,
+    # Command groups
+    db,
     doctor,
+    export,
+    find,
+    gui,
+    heatmap,
+    labels,
+    lock_down_cmd,
+    models,
+    monitor,
+    quarantine,
+    report,
+    restore,
+    scan,
+    # Server commands
+    serve,
+    status,
+    target,
+    user,
+    worker,
 )
 
 

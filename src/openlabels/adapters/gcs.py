@@ -12,12 +12,11 @@ Requires ``google-cloud-storage``: install with ``pip install openlabels[gcs]``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import AsyncIterator, Optional
-
-import asyncio
 
 from openlabels.adapters.base import (
     ExposureLevel,
@@ -74,7 +73,7 @@ class GCSAdapter:
     def supports_delta(self) -> bool:
         return False  # delta via PubSubChangeProvider instead
 
-    async def __aenter__(self) -> "GCSAdapter":
+    async def __aenter__(self) -> GCSAdapter:
         self._client = await asyncio.to_thread(self._build_client)
         self._bucket = self._client.bucket(self._bucket_name)
         return self
@@ -104,7 +103,7 @@ class GCSAdapter:
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List blobs in the GCS bucket under *target* prefix.
 

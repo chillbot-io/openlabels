@@ -6,10 +6,26 @@ individual route modules directly in tests.
 """
 
 import json
+from uuid import UUID
 
 from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openlabels.exceptions import NotFoundError
 
 _module_cache = {}
+
+
+async def get_or_404(session: AsyncSession, model_class, entity_id: UUID, *, tenant_id: UUID):
+    """Fetch an entity by PK, raising NotFoundError if missing or wrong tenant."""
+    entity = await session.get(model_class, entity_id)
+    if not entity or getattr(entity, "tenant_id", None) != tenant_id:
+        raise NotFoundError(
+            message=f"{model_class.__name__} not found",
+            resource_type=model_class.__name__,
+            resource_id=str(entity_id),
+        )
+    return entity
 
 
 def htmx_notify(
@@ -58,6 +74,8 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "get_or_404",
+    "htmx_notify",
     "audit",
     "auth",
     "jobs",
