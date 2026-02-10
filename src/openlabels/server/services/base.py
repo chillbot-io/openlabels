@@ -7,14 +7,13 @@ from contextlib import asynccontextmanager
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, func, select as sa_select
-
-T = TypeVar("T")
-
 from pydantic import BaseModel
+from sqlalchemy import Select, func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import Settings
+
+T = TypeVar("T")
 
 
 class TenantContext(BaseModel):
