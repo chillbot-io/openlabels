@@ -89,8 +89,7 @@ async def create_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> ScheduleResponse:
     """Create a new scan schedule."""
-    # Verify target exists
-    target = await get_or_404(session, ScanTarget, request.target_id, tenant_id=user.tenant_id)
+    await get_or_404(session, ScanTarget, request.target_id, tenant_id=user.tenant_id)
 
     try:
         schedule = ScanSchedule(
@@ -184,8 +183,6 @@ async def trigger_schedule(
     """Trigger an immediate run of a schedule."""
     schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
-    # Create scan job
-    target = await session.get(ScanTarget, schedule.target_id)
     job = ScanJob(
         tenant_id=user.tenant_id,
         target_id=schedule.target_id,

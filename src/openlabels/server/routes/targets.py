@@ -479,8 +479,6 @@ async def get_target(
     try:
         target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
         return target
-    except HTTPException:
-        raise
     except SQLAlchemyError as e:
         logger.error(f"Database error getting target {target_id}: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred") from e
@@ -507,8 +505,6 @@ async def update_target(
             target.enabled = request.enabled
 
         return target
-    except HTTPException:
-        raise
     except SQLAlchemyError as e:
         logger.error(f"Database error updating target {target_id}: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred") from e
@@ -534,8 +530,6 @@ async def delete_target(
 
         # Regular REST response
         return Response(status_code=204)
-    except HTTPException:
-        raise
     except SQLAlchemyError as e:
         logger.error(f"Database error deleting target {target_id}: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred") from e

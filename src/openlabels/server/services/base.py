@@ -1,14 +1,14 @@
 """Base service module providing session management, tenant isolation, and logging."""
 
 import logging
-from abc import ABC
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import Select, func, select as sa_select
+from sqlalchemy import Select, func
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import Settings
@@ -55,7 +55,7 @@ except ImportError:
     CurrentUser = None  # type: ignore
 
 
-class BaseService(ABC):
+class BaseService:
     """Abstract base class for all services.
 
     Transaction Management:
