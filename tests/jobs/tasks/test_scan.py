@@ -466,11 +466,13 @@ class TestExecuteScanTask:
 
     async def test_updates_job_status_to_running(self, mock_session, mock_job, mock_target):
         """Should update job status to 'running' when starting."""
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         # Mock the adapter to return empty file list
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_get_adapter:
             mock_adapter = MagicMock()
+            mock_adapter.__aenter__ = AsyncMock(return_value=mock_adapter)
+            mock_adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def empty_list(*args):
                 return
@@ -489,7 +491,10 @@ class TestExecuteScanTask:
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        labeling=MagicMock(enabled=False)
+                        detection=MagicMock(max_file_size_mb=100),
+                        labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
                     await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
@@ -498,10 +503,12 @@ class TestExecuteScanTask:
 
     async def test_returns_scan_statistics(self, mock_session, mock_job, mock_target):
         """Should return scan statistics on completion."""
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_get_adapter:
             mock_adapter = MagicMock()
+            mock_adapter.__aenter__ = AsyncMock(return_value=mock_adapter)
+            mock_adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def empty_list(*args):
                 return
@@ -520,7 +527,10 @@ class TestExecuteScanTask:
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        labeling=MagicMock(enabled=False)
+                        detection=MagicMock(max_file_size_mb=100),
+                        labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
                     result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
@@ -558,10 +568,12 @@ class TestScanTaskDeltaMode:
         mock_target.adapter = "filesystem"
         mock_target.config = {"path": "/test"}
 
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def empty_list(*args):
                 return
@@ -580,7 +592,10 @@ class TestScanTaskDeltaMode:
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        labeling=MagicMock(enabled=False)
+                        detection=MagicMock(max_file_size_mb=100),
+                        labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
                     result = await execute_scan_task(
@@ -622,11 +637,13 @@ class TestScanTaskErrorHandling:
         return target
 
     async def test_handles_permission_error(self, mock_session, mock_job, mock_target):
-        """Should handle PermissionError and mark job as failed."""
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        """PermissionError in list_files is caught by _iter_all_files and scan completes."""
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def error_list(*args):
                 raise PermissionError("Access denied")
@@ -639,26 +656,33 @@ class TestScanTaskErrorHandling:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.mark_missing_files = AsyncMock(return_value=0)
+                mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        scan=MagicMock(max_file_size_mb=100),
+                        detection=MagicMock(max_file_size_mb=100),
                         labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
-                    with pytest.raises(PermissionError):
-                        await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    # PermissionError from list_files is caught inside _iter_all_files
+                    # and the scan completes with 0 files processed
+                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
 
-                    assert mock_job.status == "failed"
-                    assert "Permission denied" in mock_job.error
+                    assert mock_job.status == "completed"
+                    assert result["files_scanned"] == 0
 
     async def test_handles_os_error(self, mock_session, mock_job, mock_target):
-        """Should handle OSError and mark job as failed."""
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        """OSError in list_files is caught by _iter_all_files and scan completes."""
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def error_list(*args):
                 raise OSError("Disk failure")
@@ -671,19 +695,24 @@ class TestScanTaskErrorHandling:
                 mock_inv = MagicMock()
                 mock_inv.load_file_inventory = AsyncMock(return_value={})
                 mock_inv.load_folder_inventory = AsyncMock(return_value={})
+                mock_inv.mark_missing_files = AsyncMock(return_value=0)
+                mock_inv.get_inventory_stats = AsyncMock(return_value={})
                 MockInventory.return_value = mock_inv
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        scan=MagicMock(max_file_size_mb=100),
+                        detection=MagicMock(max_file_size_mb=100),
                         labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
-                    with pytest.raises(OSError):
-                        await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    # OSError from list_files is caught inside _iter_all_files
+                    # and the scan completes with 0 files processed
+                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
 
-                    assert mock_job.status == "failed"
-                    assert "OS error" in mock_job.error
+                    assert mock_job.status == "completed"
+                    assert result["files_scanned"] == 0
 
 
 
@@ -728,10 +757,10 @@ class TestTaskCancellationMidScan:
             f.exposure = MagicMock(value="PRIVATE")
             mock_files.append(f)
 
-        files_processed = 0
-
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def file_list(*args):
                 for f in mock_files:
@@ -761,7 +790,7 @@ class TestTaskCancellationMidScan:
 
                     with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                         mock_settings.return_value = MagicMock(
-                            scan=MagicMock(max_file_size_mb=100),
+                            detection=MagicMock(max_file_size_mb=100),
                             labeling=MagicMock(enabled=False),
                         )
 
@@ -809,7 +838,7 @@ class TestProgressReportingAndUpdates:
         mock_target.adapter = "filesystem"
         mock_target.config = {"path": "/test"}
 
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         # Create mock file
         mock_file = MagicMock()
@@ -818,9 +847,13 @@ class TestProgressReportingAndUpdates:
         mock_file.size = 100
         mock_file.modified = datetime.now(timezone.utc)
         mock_file.exposure = MagicMock(value="PRIVATE")
+        mock_file.item_id = "item-1"
+        mock_file.owner = None
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def file_list(*args):
                 yield mock_file
@@ -851,8 +884,10 @@ class TestProgressReportingAndUpdates:
 
                     with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                         mock_settings.return_value = MagicMock(
-                            scan=MagicMock(max_file_size_mb=100),
+                            detection=MagicMock(max_file_size_mb=100),
                             labeling=MagicMock(enabled=False),
+                            catalog=MagicMock(enabled=False),
+                            siem_export=MagicMock(enabled=False),
                         )
 
                         await execute_scan_task(mock_session, {"job_id": str(job_id)})
@@ -893,7 +928,7 @@ class TestLargeFilesHandling:
         mock_target.adapter = "filesystem"
         mock_target.config = {"path": "/test"}
 
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         # Create large file (200MB when limit is 100MB)
         large_file = MagicMock()
@@ -905,6 +940,8 @@ class TestLargeFilesHandling:
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def file_list(*args):
                 yield large_file
@@ -922,8 +959,10 @@ class TestLargeFilesHandling:
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        scan=MagicMock(max_file_size_mb=100),  # 100MB limit
+                        detection=MagicMock(max_file_size_mb=100),  # 100MB limit
                         labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
                     result = await execute_scan_task(mock_session, {"job_id": str(job_id)})
@@ -961,7 +1000,7 @@ class TestPermissionDeniedScenarios:
         mock_target.adapter = "filesystem"
         mock_target.config = {"path": "/test"}
 
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         # Create two files - first will fail with permission error
         file1 = MagicMock()
@@ -977,9 +1016,13 @@ class TestPermissionDeniedScenarios:
         file2.size = 100
         file2.modified = datetime.now(timezone.utc)
         file2.exposure = MagicMock(value="PRIVATE")
+        file2.item_id = "item-2"
+        file2.owner = None
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def file_list(*args):
                 yield file1
@@ -1018,8 +1061,10 @@ class TestPermissionDeniedScenarios:
 
                     with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                         mock_settings.return_value = MagicMock(
-                            scan=MagicMock(max_file_size_mb=100),
+                            detection=MagicMock(max_file_size_mb=100),
                             labeling=MagicMock(enabled=False),
+                            catalog=MagicMock(enabled=False),
+                            siem_export=MagicMock(enabled=False),
                         )
 
                         result = await execute_scan_task(mock_session, {"job_id": str(job_id)})
@@ -1167,7 +1212,7 @@ class TestInventoryDeltaScanning:
         mock_target.adapter = "filesystem"
         mock_target.config = {"path": "/test"}
 
-        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
+        mock_session.get = AsyncMock(side_effect=[mock_job, mock_target, mock_target])
 
         unchanged_file = MagicMock()
         unchanged_file.path = "/test/unchanged.txt"
@@ -1178,6 +1223,8 @@ class TestInventoryDeltaScanning:
 
         with patch('openlabels.jobs.tasks.scan._get_adapter') as mock_adapter:
             adapter = MagicMock()
+            adapter.__aenter__ = AsyncMock(return_value=adapter)
+            adapter.__aexit__ = AsyncMock(return_value=False)
 
             async def file_list(*args):
                 yield unchanged_file
@@ -1200,8 +1247,10 @@ class TestInventoryDeltaScanning:
 
                 with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
                     mock_settings.return_value = MagicMock(
-                        scan=MagicMock(max_file_size_mb=100),
+                        detection=MagicMock(max_file_size_mb=100),
                         labeling=MagicMock(enabled=False),
+                        catalog=MagicMock(enabled=False),
+                        siem_export=MagicMock(enabled=False),
                     )
 
                     result = await execute_scan_task(

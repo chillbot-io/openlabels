@@ -76,6 +76,10 @@ def validate_ssn(text: str) -> bool:
     if group == 0 or serial == 0:
         return False
 
+    # Well-known invalid SSNs (Woolworth wallet card, advertising SSN)
+    if digits in ("078051120", "219099999"):
+        return False
+
     return True
 
 

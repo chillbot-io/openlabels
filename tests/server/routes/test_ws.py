@@ -239,12 +239,12 @@ async def create_ws_session(test_client, test_db):
 class TestWebSocketOriginValidation:
     """Tests for WebSocket origin validation (CSWSH prevention)."""
 
-    def test_validate_origin_development_allows_any(self):
-        """In development mode, any origin should be allowed."""
+    def test_validate_origin_rejects_unlisted_origin(self):
+        """Origins not in allowed_origins should be rejected regardless of environment."""
         from openlabels.server.routes.ws import validate_websocket_origin
 
         mock_settings = MagicMock()
-        mock_settings.server.environment = "development"
+        mock_settings.cors.allowed_origins = []
 
         mock_websocket = MagicMock()
         mock_websocket.headers = MagicMock()
@@ -253,7 +253,7 @@ class TestWebSocketOriginValidation:
         ]
 
         with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
-            assert validate_websocket_origin(mock_websocket) is True
+            assert validate_websocket_origin(mock_websocket) is False
 
     def test_validate_origin_no_origin_header_allowed(self):
         """Connections without Origin header should be allowed (same-origin or non-browser)."""
@@ -659,7 +659,7 @@ class TestConnectionManager:
         await manager.connect(scan_id, mock_websocket2, uuid4(), tenant_id)
 
         message = {"type": "test", "data": "hello"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         mock_websocket1.send_json.assert_called_once_with(message)
         mock_websocket2.send_json.assert_called_once_with(message)
@@ -673,7 +673,7 @@ class TestConnectionManager:
         tenant_id = uuid4()
 
         mock_websocket1 = AsyncMock()
-        mock_websocket1.send_json.side_effect = Exception("Connection closed")
+        mock_websocket1.send_json.side_effect = ConnectionError("Connection closed")
 
         mock_websocket2 = AsyncMock()
 
@@ -682,7 +682,7 @@ class TestConnectionManager:
 
         message = {"type": "test", "data": "hello"}
         # Should not raise exception
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # Second connection should still receive message
         mock_websocket2.send_json.assert_called_once_with(message)
@@ -696,7 +696,7 @@ class TestConnectionManager:
 
         message = {"type": "test", "data": "hello"}
         # Should not raise exception
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
 
 # =============================================================================
@@ -826,7 +826,7 @@ class TestTenantIsolation:
 
         # Broadcast a message
         message = {"type": "progress", "data": "secret tenant A data"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # Only tenant A's connection receives the message
         mock_websocket_a.send_json.assert_called_once_with(message)
@@ -851,7 +851,7 @@ class TestTenantIsolation:
         try:
             # Broadcast to scan A only
             message = {"type": "progress", "scan_id": str(scan_a_id)}
-            await manager.broadcast(scan_a_id, message)
+            await manager.deliver_local(scan_a_id, message)
 
             mock_websocket_a.send_json.assert_called_once_with(message)
             mock_websocket_b.send_json.assert_not_called()
@@ -902,7 +902,7 @@ class TestWebSocketErrorHandling:
 
         # First connection will fail
         mock_websocket1 = AsyncMock()
-        mock_websocket1.send_json.side_effect = Exception("Connection reset")
+        mock_websocket1.send_json.side_effect = ConnectionError("Connection reset")
 
         # Second connection is healthy
         mock_websocket2 = AsyncMock()
@@ -915,7 +915,7 @@ class TestWebSocketErrorHandling:
         await manager.connect(scan_id, mock_websocket3, uuid4(), tenant_id)
 
         message = {"type": "test"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # All receive attempts were made
         mock_websocket1.send_json.assert_called_once()
@@ -1016,7 +1016,7 @@ class TestConcurrentConnections:
 
         # Broadcast reaches all
         message = {"type": "progress"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         for ws in websockets:
             ws.send_json.assert_called_once_with(message)
@@ -1044,7 +1044,7 @@ class TestConcurrentConnections:
 
         # All connections should receive broadcast
         message = {"type": "progress"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         for ws in websockets:
             ws.send_json.assert_called_once_with(message)
@@ -1072,7 +1072,7 @@ class TestConcurrentConnections:
 
         # Broadcast to middle scan only
         message = {"type": "progress", "scan_id": str(scans[1])}
-        await manager.broadcast(scans[1], message)
+        await manager.deliver_local(scans[1], message)
 
         # Only middle scan's websockets should receive
         for ws in all_websockets[scans[0]]:
@@ -1137,7 +1137,7 @@ class TestEdgeCases:
         await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
 
         try:
-            await manager.broadcast(scan_id, {})
+            await manager.deliver_local(scan_id, {})
             mock_websocket.send_json.assert_called_once_with({})
         finally:
             manager.active_connections.pop(scan_id, None)
@@ -1155,7 +1155,7 @@ class TestEdgeCases:
         try:
             # Create a large message
             large_data = {"data": "x" * 100000}  # 100KB of data
-            await manager.broadcast(scan_id, large_data)
+            await manager.deliver_local(scan_id, large_data)
             mock_websocket.send_json.assert_called_once_with(large_data)
         finally:
             manager.active_connections.pop(scan_id, None)
@@ -1562,7 +1562,7 @@ class TestBroadcastBehavior:
         ]
 
         for msg in messages:
-            await manager.broadcast(scan_id, msg)
+            await manager.deliver_local(scan_id, msg)
 
         # Verify order
         assert len(received_messages) == 4
@@ -1589,7 +1589,7 @@ class TestBroadcastBehavior:
             websockets.append(ws)
 
         message = {"type": "progress", "data": "test"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # All should receive
         for ws in websockets:
@@ -1611,12 +1611,12 @@ class TestBroadcastBehavior:
         for i in range(10):
             ws = AsyncMock()
             if i % 3 == 0:
-                ws.send_json.side_effect = Exception(f"Connection {i} failed")
+                ws.send_json.side_effect = ConnectionError(f"Connection {i} failed")
             websockets.append(ws)
             await manager.connect(scan_id, ws, uuid4(), tenant_id)
 
         message = {"type": "test"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # Verify all received attempt (failed ones still got called)
         for ws in websockets:
@@ -1651,7 +1651,7 @@ class TestBroadcastBehavior:
             }
         }
 
-        await manager.broadcast(scan_id, nested_message)
+        await manager.deliver_local(scan_id, nested_message)
         mock_websocket.send_json.assert_called_once_with(nested_message)
 
         # Clean up
@@ -1679,7 +1679,7 @@ class TestBroadcastBehavior:
         # Launch multiple broadcasts concurrently
         messages = [{"id": i} for i in range(10)]
         await asyncio.gather(*[
-            manager.broadcast(scan_id, msg) for msg in messages
+            manager.deliver_local(scan_id, msg) for msg in messages
         ])
 
         # All messages should be received
@@ -1843,7 +1843,7 @@ class TestTenantIsolationComprehensive:
 
         # Broadcast to tenant A's scan
         message_a = {"type": "progress", "tenant": "A", "secret": "tenant_a_data"}
-        await manager.broadcast(data["scan_a"].id, message_a)
+        await manager.deliver_local(data["scan_a"].id, message_a)
 
         # Only tenant A should receive
         ws_a.send_json.assert_called_once_with(message_a)
@@ -1854,7 +1854,7 @@ class TestTenantIsolationComprehensive:
 
         # Broadcast to tenant B's scan
         message_b = {"type": "progress", "tenant": "B", "secret": "tenant_b_data"}
-        await manager.broadcast(data["scan_b"].id, message_b)
+        await manager.deliver_local(data["scan_b"].id, message_b)
 
         # Only tenant B should receive
         ws_a.send_json.assert_not_called()
@@ -1885,7 +1885,7 @@ class TestTenantIsolationComprehensive:
         # Broadcast goes to all connections for that scan_id
         # (In production, the endpoint prevents cross-tenant connections)
         message = {"type": "test"}
-        await manager.broadcast(scan_id, message)
+        await manager.deliver_local(scan_id, message)
 
         # Both receive (manager doesn't filter by tenant - endpoint does)
         ws_a.send_json.assert_called_once()
@@ -1916,7 +1916,7 @@ class TestStressAndPerformance:
         # Send many messages rapidly
         num_messages = 1000
         for i in range(num_messages):
-            await manager.broadcast(scan_id, {"type": "progress", "index": i})
+            await manager.deliver_local(scan_id, {"type": "progress", "index": i})
 
         assert mock_websocket.send_json.call_count == num_messages
 
@@ -1947,7 +1947,7 @@ class TestStressAndPerformance:
 
         # Broadcast to each scan
         for scan_id in scans:
-            await manager.broadcast(scan_id, {"type": "test"})
+            await manager.deliver_local(scan_id, {"type": "test"})
 
         # Clean up
         for scan_id in scans:
@@ -2258,8 +2258,8 @@ class TestErrorConditions:
         # Connection should not be added on failure
         assert scan_id not in manager.active_connections
 
-    async def test_broadcast_json_serialization_error(self):
-        """Broadcast should handle JSON serialization errors gracefully."""
+    async def test_deliver_local_send_error(self):
+        """deliver_local should handle send errors gracefully."""
         from openlabels.server.routes.ws import ConnectionManager
 
         manager = ConnectionManager()
@@ -2268,15 +2268,15 @@ class TestErrorConditions:
         mock_websocket = AsyncMock()
 
         # Make send_json raise a serialization error
-        def raise_json_error(msg):
-            raise TypeError("Object of type X is not JSON serializable")
+        def raise_send_error(msg):
+            raise RuntimeError("Connection lost during send")
 
-        mock_websocket.send_json.side_effect = raise_json_error
+        mock_websocket.send_json.side_effect = raise_send_error
 
         await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
 
         # Should not crash
-        await manager.broadcast(scan_id, {"type": "test"})
+        await manager.deliver_local(scan_id, {"type": "test"})
 
         # Clean up
         manager.active_connections.pop(scan_id, None)
@@ -2299,7 +2299,7 @@ class TestErrorConditions:
             await manager.connect(scan_id, ws, uuid4(), uuid4())
 
         # Broadcast should continue past failed connection
-        await manager.broadcast(scan_id, {"type": "test"})
+        await manager.deliver_local(scan_id, {"type": "test"})
 
         # All connections should have received attempt
         for ws in websockets:

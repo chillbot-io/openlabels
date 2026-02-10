@@ -142,11 +142,12 @@ class TestRestorePermissions:
             tmp_path.unlink(missing_ok=True)
 
     def test_restore_permissions_nonexistent_file(self):
-        """Raise FileNotFoundError for missing file."""
+        """Raise RemediationPermissionError for missing file."""
         from openlabels.remediation.permissions import restore_permissions
+        from openlabels.exceptions import RemediationPermissionError
 
         acl = base64.b64encode(b"{}").decode()
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(RemediationPermissionError):
             restore_permissions(Path("/nonexistent/file.txt"), acl)
 
     def test_restore_permissions_invalid_base64(self):

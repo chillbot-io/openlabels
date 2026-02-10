@@ -443,7 +443,7 @@ class HyperscanMatcher:
                 self._compiled = True
                 logger.info(f"Compiled {len(self.patterns)} patterns into Hyperscan database (mode={mode_name})")
                 return  # Success
-            except (RuntimeError, ValueError, OSError, MemoryError) as e:
+            except (RuntimeError, ValueError, OSError, MemoryError, hyperscan.error) as e:
                 logger.debug(f"Hyperscan compile with mode {mode_name} failed: {e}")
                 self._db = None
                 self._scratch = None

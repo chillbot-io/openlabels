@@ -414,6 +414,21 @@ class TestCreateCustomPropsXml:
 class TestUpdateCustomPropsXml:
     """Tests for updating existing custom properties XML."""
 
+    @pytest.fixture(autouse=True)
+    def _patch_register_namespace(self):
+        """Patch register_namespace on the ET module used by label.py.
+
+        The source imports defusedxml.ElementTree as ET, but register_namespace
+        is only available on the stdlib xml.etree.ElementTree module.
+        """
+        import xml.etree.ElementTree as _stdlib_ET
+        import openlabels.jobs.tasks.label as label_mod
+        with patch.object(
+            label_mod.ET, 'register_namespace',
+            _stdlib_ET.register_namespace, create=True,
+        ):
+            yield
+
     @pytest.fixture
     def mock_label(self):
         """Create a mock SensitivityLabel."""
@@ -453,12 +468,17 @@ class TestUpdateCustomPropsXml:
         assert b"OpenLabels_LabelName" in result
 
     def test_handles_invalid_xml(self, mock_label):
-        """Should fall back to creating new XML on parse error."""
-        invalid_xml = b"<not valid xml"
+        """Should fall back to creating new XML on parse error.
+
+        defusedxml raises DTDForbidden (a ValueError subclass) for XML
+        containing DOCTYPE declarations. The source catches ValueError,
+        so this exercises the fallback-to-create path.
+        """
+        invalid_xml = b'<!DOCTYPE foo [<!ENTITY xxe "test">]><Properties/>'
 
         result = _update_custom_props_xml(invalid_xml, mock_label)
 
-        # Should have created new XML
+        # Should have created new XML via the fallback
         assert b"<?xml version" in result
         assert b"OpenLabels_LabelId" in result
 

@@ -156,12 +156,12 @@ class TestIsSameOrigin:
             assert is_same_origin(request) is False
 
     def test_no_origin_or_referer_allowed(self, mock_settings):
-        """Requests without Origin or Referer are allowed (same-page requests)."""
+        """Requests without Origin or Referer are rejected for safety."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings):
             request = self._create_request()
-            # This is intentional - same-origin requests from the page itself
-            # may not send Origin or Referer headers
-            assert is_same_origin(request) is True
+            # Legitimate browser requests always include at least one of
+            # Origin or Referer; missing both is treated as suspicious.
+            assert is_same_origin(request) is False
 
     def test_http_origin_vs_https_host(self, mock_settings):
         """HTTP origin should not match HTTPS host."""
@@ -370,12 +370,14 @@ class TestCSRFMiddleware:
                 assert response.status_code == 403
 
     async def test_valid_origin_passes(self, middleware, mock_call_next, mock_settings_enabled):
-        """Valid origin should pass CSRF check."""
+        """Valid origin with Bearer auth should pass CSRF check."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
             request = self._create_request(
                 method="POST",
                 origin="https://app.example.com"  # Valid origin
             )
+            # Provide Bearer auth so the double-submit token check is skipped
+            request.headers["authorization"] = "Bearer test-token"
             response = await middleware.dispatch(request, mock_call_next)
             # When CSRF passes, the mock response from call_next is returned
             # (which doesn't have status_code). When CSRF fails, we get 403.
