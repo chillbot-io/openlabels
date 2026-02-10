@@ -456,30 +456,35 @@ class Worker:
 
         This handles the case where a worker crashes after dequeuing a job
         but before completing or failing it.
+
+        Uses an advisory lock so only one worker instance runs this per cycle.
         """
+        from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+
         reclaim_interval = 300  # Check every 5 minutes
 
         while self.running:
             try:
                 async with get_session_context() as session:
-                    from sqlalchemy import select
-                    from openlabels.server.models import Tenant
+                    if not await try_advisory_lock(session, AdvisoryLockID.STUCK_JOB_RECLAIM):
+                        logger.debug("Stuck job reclaimer: another instance is running, skipping")
+                    else:
+                        from sqlalchemy import select
+                        from openlabels.server.models import Tenant
 
-                    result = await session.execute(select(Tenant))
-                    tenants = result.scalars().all()
+                        result = await session.execute(select(Tenant))
+                        tenants = result.scalars().all()
 
-                    total_reclaimed = 0
-                    for tenant in tenants:
-                        queue = JobQueue(session, tenant.id)
-                        reclaimed = await queue.reclaim_stuck_jobs()
-                        total_reclaimed += reclaimed
+                        total_reclaimed = 0
+                        for tenant in tenants:
+                            queue = JobQueue(session, tenant.id)
+                            reclaimed = await queue.reclaim_stuck_jobs()
+                            total_reclaimed += reclaimed
 
-                    if total_reclaimed > 0:
-                        await session.commit()
-                        logger.info(f"Reclaimed {total_reclaimed} stuck jobs")
+                        if total_reclaimed > 0:
+                            logger.info(f"Reclaimed {total_reclaimed} stuck jobs")
 
             except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
-                # Log at warning level since stuck jobs could lead to data processing issues
                 logger.warning(f"Stuck job reclaimer error - jobs may remain stuck: {type(e).__name__}: {e}")
 
             await asyncio.sleep(reclaim_interval)
@@ -490,30 +495,35 @@ class Worker:
 
         Removes completed/failed/cancelled jobs that exceed their retention period.
         Runs once per hour to minimize database load.
+
+        Uses an advisory lock so only one worker instance runs this per cycle.
         """
+        from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+
         cleanup_interval = 3600  # Run once per hour
 
         while self.running:
             try:
                 async with get_session_context() as session:
-                    from sqlalchemy import select
-                    from openlabels.server.models import Tenant
+                    if not await try_advisory_lock(session, AdvisoryLockID.JOB_CLEANUP):
+                        logger.debug("Job cleanup: another instance is running, skipping")
+                    else:
+                        from sqlalchemy import select
+                        from openlabels.server.models import Tenant
 
-                    result = await session.execute(select(Tenant))
-                    tenants = result.scalars().all()
+                        result = await session.execute(select(Tenant))
+                        tenants = result.scalars().all()
 
-                    total_cleaned = 0
-                    for tenant in tenants:
-                        queue = JobQueue(session, tenant.id)
-                        counts = await queue.cleanup_expired_jobs()
-                        total_cleaned += sum(counts.values())
+                        total_cleaned = 0
+                        for tenant in tenants:
+                            queue = JobQueue(session, tenant.id)
+                            counts = await queue.cleanup_expired_jobs()
+                            total_cleaned += sum(counts.values())
 
-                    if total_cleaned > 0:
-                        await session.commit()
-                        logger.info(f"Cleaned up {total_cleaned} expired jobs")
+                        if total_cleaned > 0:
+                            logger.info(f"Cleaned up {total_cleaned} expired jobs")
 
             except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
-                # Log at warning level since cleanup failures could cause disk/DB bloat
                 logger.warning(f"Job cleanup task error - expired jobs may accumulate: {type(e).__name__}: {e}")
 
             await asyncio.sleep(cleanup_interval)

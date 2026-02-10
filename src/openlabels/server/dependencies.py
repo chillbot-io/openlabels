@@ -504,7 +504,7 @@ async def check_tenant_rate_limit(
     via ``request.state`` so downstream middleware can include them.
     """
     limiter = get_tenant_rate_limiter()
-    allowed, headers = limiter.check_rate_limit(str(tenant.tenant_id))
+    allowed, headers = await limiter.check_rate_limit(str(tenant.tenant_id))
 
     # Stash headers so middleware/response hooks can forward them.
     request.state.rate_limit_headers = headers

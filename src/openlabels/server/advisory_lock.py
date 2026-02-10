@@ -42,6 +42,8 @@ class AdvisoryLockID(enum.IntEnum):
     M365_HARVEST = 100_004
     MONITORING_SYNC = 100_005
     LABEL_SYNC = 100_006
+    STUCK_JOB_RECLAIM = 100_007
+    JOB_CLEANUP = 100_008
 
 
 async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID) -> bool:
