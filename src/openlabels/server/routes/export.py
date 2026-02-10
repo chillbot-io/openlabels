@@ -6,12 +6,11 @@ Provides endpoints to trigger SIEM export, test connections, and view status.
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from openlabels.server.auth import get_current_tenant_id
+from openlabels.auth.dependencies import CurrentUser, get_current_user
 from openlabels.server.config import get_settings
 
 router = APIRouter()
@@ -47,8 +46,9 @@ class SIEMStatusResponse(BaseModel):
 @router.post("/siem", response_model=SIEMExportResponse)
 async def trigger_siem_export(
     body: SIEMExportRequest,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    user: CurrentUser = Depends(get_current_user),
 ):
+    tenant_id = user.tenant_id
     """Trigger an immediate SIEM export for the current tenant."""
     settings = get_settings()
     if not settings.siem_export.enabled:
@@ -113,7 +113,7 @@ async def trigger_siem_export(
 
 @router.post("/siem/test", response_model=SIEMTestResponse)
 async def test_siem_connections(
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    user: CurrentUser = Depends(get_current_user),
 ):
     """Test connectivity to all configured SIEM endpoints."""
     settings = get_settings()
@@ -134,7 +134,7 @@ async def test_siem_connections(
 
 @router.get("/siem/status", response_model=SIEMStatusResponse)
 async def siem_export_status(
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    user: CurrentUser = Depends(get_current_user),
 ):
     """View SIEM export configuration and cursor status."""
     settings = get_settings()
