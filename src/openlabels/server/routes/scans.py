@@ -9,7 +9,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.exc import SQLAlchemyError
@@ -53,8 +53,7 @@ class ScanResponse(BaseModel):
     error: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post("", response_model=ScanResponse, status_code=201)

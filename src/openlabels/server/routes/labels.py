@@ -19,7 +19,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
 from openlabels.exceptions import InternalError, NotFoundError
@@ -57,8 +57,7 @@ class LabelResponse(BaseModel):
     color: str | None
     parent_id: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LabelRuleCreate(BaseModel):
@@ -80,8 +79,7 @@ class LabelRuleResponse(BaseModel):
     label_name: str | None = None
     priority: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ApplyLabelRequest(BaseModel):

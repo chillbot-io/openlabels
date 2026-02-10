@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Select, func
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,10 +29,7 @@ class TenantContext(BaseModel):
     user_email: str | None = None
     user_role: str | None = None
 
-    class Config:
-        """Pydantic configuration."""
-
-        frozen = True  # Make immutable
+    model_config = ConfigDict(frozen=True)
 
     @classmethod
     def from_current_user(cls, user: CurrentUser) -> TenantContext:

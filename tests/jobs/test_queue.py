@@ -85,6 +85,7 @@ class TestJobQueueEnqueue:
     def queue(self):
         """Create a job queue with mocked session."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session.flush = AsyncMock()
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)
@@ -715,6 +716,7 @@ class TestJobQueueEdgeCases:
     def queue(self):
         """Create a job queue with mocked session."""
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session.flush = AsyncMock()
         tenant_id = uuid4()
         return JobQueue(mock_session, tenant_id)

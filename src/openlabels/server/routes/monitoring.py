@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,8 +56,7 @@ class MonitoredFileResponse(BaseModel):
     last_event_at: datetime | None
     access_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AccessEventResponse(BaseModel):
@@ -72,8 +71,7 @@ class AccessEventResponse(BaseModel):
     process_name: str | None
     event_time: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EnableMonitoringRequest(BaseModel):

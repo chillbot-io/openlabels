@@ -15,7 +15,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from openlabels.server.dependencies import (
     AdminContextDep,
@@ -48,8 +48,7 @@ class PolicyResponse(BaseModel):
     config: dict
     priority: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PolicyCreate(BaseModel):

@@ -10,7 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from openlabels.exceptions import BadRequestError
 from openlabels.server.dependencies import (
@@ -45,8 +45,7 @@ class JobResponse(BaseModel):
     max_retries: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueStatsResponse(BaseModel):
