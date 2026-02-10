@@ -336,13 +336,97 @@ def event_loop():
 
 import os
 
+def _try_setup_system_postgres():
+    """Auto-detect and configure system PostgreSQL for testing.
+
+    Starts the service if stopped, sets the postgres password, and
+    creates the test database.  Returns the async connection URL on
+    success or ``None`` on failure.
+    """
+    import shutil
+    import subprocess
+
+    if not shutil.which("pg_isready"):
+        return None
+
+    # Start PostgreSQL if not running
+    if subprocess.run(
+        ["pg_isready", "-h", "localhost", "-p", "5432"],
+        capture_output=True,
+    ).returncode != 0:
+        for ver in ("16", "15"):
+            if subprocess.run(
+                ["pg_ctlcluster", ver, "main", "start"],
+                capture_output=True,
+            ).returncode == 0:
+                break
+        import time
+        time.sleep(2)
+
+    if subprocess.run(
+        ["pg_isready", "-h", "localhost", "-p", "5432"],
+        capture_output=True,
+    ).returncode != 0:
+        return None
+
+    # Connect via local socket (trust auth) or TCP with password
+    psql_prefix = None
+    for cmd in (
+        ["psql", "-U", "postgres", "-d", "postgres", "-c", "SELECT 1"],
+        ["psql", "-h", "localhost", "-U", "postgres", "-d", "postgres", "-c", "SELECT 1"],
+    ):
+        env = os.environ.copy()
+        if "-h" in cmd:
+            env["PGPASSWORD"] = "test"
+        if subprocess.run(cmd, capture_output=True, env=env).returncode == 0:
+            psql_prefix = cmd[:-2]  # drop the "-c" and "SELECT 1"
+            break
+
+    if psql_prefix is None:
+        return None
+
+    env = os.environ.copy()
+    if "-h" in psql_prefix:
+        env["PGPASSWORD"] = "test"
+
+    # Set password (idempotent)
+    subprocess.run(
+        psql_prefix + ["-c", "ALTER ROLE postgres WITH PASSWORD 'test';"],
+        capture_output=True, env=env,
+    )
+
+    # Create test database if missing
+    result = subprocess.run(
+        psql_prefix + ["-tAc", "SELECT 1 FROM pg_database WHERE datname='openlabels_test'"],
+        capture_output=True, text=True, env=env,
+    )
+    if "1" not in (result.stdout or ""):
+        subprocess.run(
+            psql_prefix + ["-c", "CREATE DATABASE openlabels_test;"],
+            capture_output=True, env=env,
+        )
+
+    # Verify TCP connection with password
+    env2 = os.environ.copy()
+    env2["PGPASSWORD"] = "test"
+    if subprocess.run(
+        ["psql", "-h", "localhost", "-U", "postgres", "-d", "openlabels_test", "-c", "SELECT 1"],
+        capture_output=True, env=env2,
+    ).returncode == 0:
+        return "postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
+
+    return None
+
+
 @pytest.fixture(scope="session")
 def database_url():
     """
     Get database URL for testing.
 
     Uses TEST_DATABASE_URL env var if set (PostgreSQL),
-    otherwise returns None (tests requiring DB will be skipped).
+    otherwise auto-detects and configures system PostgreSQL.
+    Returns None if no PostgreSQL is available (tests requiring DB
+    will be skipped).
 
     IMPORTANT: Must be a PostgreSQL URL (postgresql+asyncpg://...).
     SQLite is NOT supported because models use JSONB.
@@ -360,7 +444,10 @@ def database_url():
     if url and "postgresql" not in url:
         # SQLite and other databases are not supported - models use JSONB
         return None
-    return url
+    if url:
+        return url
+    # Auto-detect system PostgreSQL
+    return _try_setup_system_postgres()
 
 
 # Track whether tables have been created in the test database
