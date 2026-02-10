@@ -22,7 +22,7 @@ Example::
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -40,8 +40,8 @@ class OpenLabelsClient:
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
-        token: Optional[str] = None,
-        api_version: Optional[str] = "v1",
+        token: str | None = None,
+        api_version: str | None = "v1",
         timeout: float = 30.0,
         max_retries: int = 3,
     ):
@@ -50,7 +50,7 @@ class OpenLabelsClient:
         self.api_version = api_version
         self.timeout = timeout
         self.max_retries = max_retries
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -97,13 +97,13 @@ class OpenLabelsClient:
         method: str,
         url: str,
         *,
-        max_retries: Optional[int] = None,
+        max_retries: int | None = None,
         **kwargs,
     ) -> httpx.Response:
         """Make a request with automatic retry on transient failures."""
         client = await self._get_client()
         retries = max_retries if max_retries is not None else self.max_retries
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(retries + 1):
             try:
@@ -150,13 +150,13 @@ class OpenLabelsClient:
         url: str,
         *,
         limit: int = 100,
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> AsyncIterator[dict]:
         """Auto-paginating cursor-based iterator.
 
         The server returns ``{"items": [...], "next_cursor": "...", "has_more": bool}``.
         """
-        cursor: Optional[str] = None
+        cursor: str | None = None
         base_params = dict(params or {})
         while True:
             page_params = {**base_params, "limit": limit}
@@ -195,7 +195,7 @@ class OpenLabelsClient:
     # ==================================================================
 
     async def create_scan(
-        self, target_id: UUID, name: Optional[str] = None,
+        self, target_id: UUID, name: str | None = None,
     ) -> dict:
         """POST /scans"""
         return await self._json(
@@ -205,9 +205,9 @@ class OpenLabelsClient:
 
     async def list_scans(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> dict:
         """GET /scans"""
         params: dict[str, Any] = {"limit": limit}
@@ -245,10 +245,10 @@ class OpenLabelsClient:
 
     async def list_results(
         self,
-        job_id: Optional[UUID] = None,
-        risk_tier: Optional[str] = None,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> dict:
         """GET /results"""
         params: dict[str, Any] = {"limit": limit}
@@ -262,10 +262,10 @@ class OpenLabelsClient:
 
     async def list_results_cursor(
         self,
-        job_id: Optional[UUID] = None,
-        risk_tier: Optional[str] = None,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> dict:
         """GET /results/cursor"""
         params: dict[str, Any] = {"limit": limit}
@@ -283,7 +283,7 @@ class OpenLabelsClient:
         async for item in self._iter_pages("/results/cursor", params=params):
             yield item
 
-    async def get_result_stats(self, job_id: Optional[UUID] = None) -> dict:
+    async def get_result_stats(self, job_id: UUID | None = None) -> dict:
         """GET /results/stats"""
         params = {}
         if job_id:
@@ -292,8 +292,8 @@ class OpenLabelsClient:
 
     async def export_results(
         self,
-        job_id: Optional[UUID] = None,
-        risk_tier: Optional[str] = None,
+        job_id: UUID | None = None,
+        risk_tier: str | None = None,
     ) -> Any:
         """GET /results/export"""
         params: dict[str, Any] = {}
@@ -327,7 +327,7 @@ class OpenLabelsClient:
     # Targets
     # ==================================================================
 
-    async def list_targets(self, adapter: Optional[str] = None) -> Any:
+    async def list_targets(self, adapter: str | None = None) -> Any:
         """GET /targets"""
         params = {}
         if adapter:
@@ -517,7 +517,7 @@ class OpenLabelsClient:
     async def list_access_events(
         self,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
         **filters,
     ) -> dict:
         """GET /monitoring/events"""
@@ -555,7 +555,7 @@ class OpenLabelsClient:
     async def list_audit_logs(
         self,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
         **filters,
     ) -> dict:
         """GET /audit"""
@@ -673,7 +673,7 @@ class OpenLabelsClient:
     async def list_remediation_actions(
         self,
         limit: int = 50,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
         **filters,
     ) -> dict:
         """GET /remediation"""
@@ -733,7 +733,7 @@ class OpenLabelsClient:
         """GET /dashboard/access-heatmap"""
         return await self._json("GET", "/dashboard/access-heatmap", params=params or None)
 
-    async def get_heatmap(self, job_id: Optional[UUID] = None) -> dict:
+    async def get_heatmap(self, job_id: UUID | None = None) -> dict:
         """GET /dashboard/heatmap"""
         params = {}
         if job_id:

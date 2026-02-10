@@ -14,7 +14,6 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Optional
 
 from openlabels.core.policies.schema import (
     EntityMatch,
@@ -192,7 +191,7 @@ class PolicyEngine:
         self,
         policy: PolicyPack,
         ctx: EvaluationContext,
-    ) -> Optional[PolicyMatch]:
+    ) -> PolicyMatch | None:
         """Evaluate a single policy against the context."""
         triggers = policy.triggers
 
@@ -279,7 +278,7 @@ class PolicyEngine:
         self,
         triggers: PolicyTrigger,
         ctx: EvaluationContext,
-    ) -> Optional[list[str]]:
+    ) -> list[str] | None:
         """Evaluate triggers and return matched entity types if triggered."""
         if triggers.any_of:
             any_of_types = {t.lower() for t in triggers.any_of}
@@ -399,7 +398,7 @@ class PolicyEngine:
 
 
 # Global engine singleton
-_engine_instance: Optional[PolicyEngine] = None
+_engine_instance: PolicyEngine | None = None
 
 
 def get_policy_engine() -> PolicyEngine:

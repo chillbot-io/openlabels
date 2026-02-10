@@ -28,7 +28,6 @@ Usage from async context (e.g., FastAPI routes, startup hooks):
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -79,8 +78,8 @@ async def upsert_monitored_file(
     audit_rule_enabled: bool = False,
     audit_read: bool = True,
     audit_write: bool = True,
-    enabled_by: Optional[str] = None,
-    file_inventory_id: Optional[UUID] = None,
+    enabled_by: str | None = None,
+    file_inventory_id: UUID | None = None,
 ) -> MonitoredFile:
     """
     Insert or update a monitored file record in the database.

@@ -18,7 +18,7 @@ import signal
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from multiprocessing.queues import Queue
@@ -75,7 +75,7 @@ class AgentResult:
     entities: list[EntityMatch]
     processing_time_ms: float
     agent_id: int
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def has_sensitive_data(self) -> bool:
@@ -105,7 +105,7 @@ class ClassificationAgent:
         input_queue: Queue[WorkItem | None],
         output_queue: Queue[AgentResult],
         backend: OptimizationBackend = OptimizationBackend.PYTORCH,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         device: str = "cpu",
     ):
         self.agent_id = agent_id
@@ -313,7 +313,7 @@ def agent_process_entry(
     input_queue: Queue[WorkItem | None],
     output_queue: Queue[AgentResult],
     backend: str,
-    model_path: Optional[str],
+    model_path: str | None,
     device: str,
 ) -> None:
     """Entry point for agent subprocess."""

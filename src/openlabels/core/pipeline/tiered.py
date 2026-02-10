@@ -32,7 +32,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
 
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch, PolicyResult
@@ -48,14 +47,14 @@ logger = logging.getLogger(__name__)
 ESCALATION_THRESHOLD = 0.70
 
 # Entity types that benefit from ML refinement
-ML_BENEFICIAL_TYPES: Set[str] = frozenset([
+ML_BENEFICIAL_TYPES: set[str] = frozenset([
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "PERSON",
     "ADDRESS", "LOCATION_OTHER",
     "DATE", "AGE",
 ])
 
 # File extensions that need OCR
-OCR_FILE_EXTENSIONS: Set[str] = frozenset([
+OCR_FILE_EXTENSIONS: set[str] = frozenset([
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
     ".webp", ".heic", ".heif",
 ])
@@ -89,7 +88,7 @@ class PipelineConfig:
     enable_hyperscan: bool = False
 
     # ML settings
-    ml_model_dir: Optional[Path] = None
+    ml_model_dir: Path | None = None
     use_onnx: bool = True
     eager_load_ml: bool = False  # If True, load ML detectors at init rather than on first escalation
 
@@ -109,15 +108,15 @@ class PipelineConfig:
 class PipelineResult:
     """Result from tiered pipeline with stage metadata."""
     result: DetectionResult
-    stages_executed: List[PipelineStage]
+    stages_executed: list[PipelineStage]
     medical_context_detected: bool
-    escalation_reason: Optional[str]
+    escalation_reason: str | None
     ocr_used: bool = False
     ocr_text_detected: bool = False
-    policy_result: Optional[PolicyResult] = None
+    policy_result: PolicyResult | None = None
 
     @property
-    def spans(self) -> List[Span]:
+    def spans(self) -> list[Span]:
         return self.result.spans
 
     @property
@@ -147,7 +146,7 @@ class TieredPipeline:
         - Both run together (PHI-BERT alone misses PII in medical docs)
     """
 
-    def __init__(self, config: Optional[PipelineConfig] = None):
+    def __init__(self, config: PipelineConfig | None = None):
         """
         Initialize the tiered pipeline.
 
@@ -430,7 +429,7 @@ class TieredPipeline:
         processed_spans = self._post_process(text, all_spans)
 
         # Build result
-        entity_counts: Dict[str, int] = {}
+        entity_counts: dict[str, int] = {}
         for span in processed_spans:
             normalized = normalize_entity_type(span.entity_type)
             entity_counts[normalized] = entity_counts.get(normalized, 0) + 1
@@ -470,7 +469,7 @@ class TieredPipeline:
             policy_result=policy_result,
         )
 
-    def _run_stage1(self, text: str) -> Tuple[List[Span], List[str]]:
+    def _run_stage1(self, text: str) -> tuple[list[Span], list[str]]:
         """Run Stage 1 (fast triage) detectors."""
         all_spans = []
         detectors_used = []
@@ -493,7 +492,7 @@ class TieredPipeline:
 
         return all_spans, detectors_used
 
-    def _run_stage2(self, text: str) -> Tuple[List[Span], List[str]]:
+    def _run_stage2(self, text: str) -> tuple[list[Span], list[str]]:
         """Run Stage 2 (ML escalation) detectors."""
         all_spans = []
         detectors_used = []
@@ -510,7 +509,7 @@ class TieredPipeline:
 
         return all_spans, detectors_used
 
-    def _run_deep_analysis(self, text: str) -> Tuple[List[Span], List[str]]:
+    def _run_deep_analysis(self, text: str) -> tuple[list[Span], list[str]]:
         """
         Run Stage 3 (deep analysis) with both PHI-BERT and PII-BERT.
 
@@ -547,7 +546,7 @@ class TieredPipeline:
 
         return all_spans, detectors_used
 
-    def _run_detector(self, detector, text: str) -> List[Span]:
+    def _run_detector(self, detector, text: str) -> list[Span]:
         """Run a single detector with error handling."""
         try:
             if not detector.is_available():
@@ -558,8 +557,8 @@ class TieredPipeline:
             return []
 
     def _should_escalate(
-        self, text: str, stage1_spans: List[Span]
-    ) -> Tuple[bool, Optional[str]]:
+        self, text: str, stage1_spans: list[Span]
+    ) -> tuple[bool, str | None]:
         """
         Determine if ML escalation is needed.
 
@@ -594,7 +593,7 @@ class TieredPipeline:
             logger.debug(f"Medical context detection failed: {e}")
             return False
 
-    def _post_process(self, text: str, spans: List[Span]) -> List[Span]:
+    def _post_process(self, text: str, spans: list[Span]) -> list[Span]:
         """Post-process detected spans."""
         if not spans:
             return []
@@ -631,7 +630,7 @@ class TieredPipeline:
 
         return deduped
 
-    def _deduplicate(self, spans: List[Span]) -> List[Span]:
+    def _deduplicate(self, spans: list[Span]) -> list[Span]:
         """Remove duplicate/overlapping spans (higher tier wins)."""
         if not spans:
             return []
@@ -665,7 +664,7 @@ class TieredPipeline:
 
     def detect_image(
         self,
-        image_path: Union[str, Path],
+        image_path: str | Path,
         skip_if_no_text: bool = True,
     ) -> PipelineResult:
         """
@@ -783,8 +782,8 @@ class TieredPipeline:
 
     def detect_file(
         self,
-        file_path: Union[str, Path],
-        content: Optional[str] = None,
+        file_path: str | Path,
+        content: str | None = None,
     ) -> PipelineResult:
         """
         Detect PII/PHI in a file, auto-selecting OCR for images.
@@ -826,11 +825,11 @@ class TieredPipeline:
             )
 
     @property
-    def stage1_detector_names(self) -> List[str]:
+    def stage1_detector_names(self) -> list[str]:
         """Get names of Stage 1 detectors."""
         return [d.name for d in self._stage1_detectors]
 
-    def get_ml_status(self) -> Dict[str, object]:
+    def get_ml_status(self) -> dict[str, object]:
         """Return status of ML detectors for health checks and diagnostics.
 
         Returns:
@@ -884,7 +883,7 @@ class TieredPipeline:
 def create_pipeline(
     auto_detect_medical: bool = True,
     enable_hyperscan: bool = False,
-    ml_model_dir: Optional[Path] = None,
+    ml_model_dir: Path | None = None,
     **kwargs,
 ) -> TieredPipeline:
     """

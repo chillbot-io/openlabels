@@ -18,7 +18,6 @@ Performance:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -80,7 +79,7 @@ class HeatmapNode(BaseModel):
     type: str  # 'folder' | 'file'
     risk_score: int
     entity_counts: dict[str, int]
-    children: Optional[list["HeatmapNode"]] = None
+    children: list["HeatmapNode"] | None = None
 
 
 class HeatmapResponse(BaseModel):
@@ -296,7 +295,7 @@ async def get_access_heatmap(
 @router.get("/heatmap", response_model=HeatmapResponse)
 async def get_heatmap(
     request: Request,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
     limit: int = Query(HEATMAP_MAX_FILES, ge=1, le=HEATMAP_MAX_FILES, description="Max files to include"),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),

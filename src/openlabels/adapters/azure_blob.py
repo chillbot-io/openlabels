@@ -17,7 +17,6 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import Optional
 
 from openlabels.adapters.base import (
     ExposureLevel,
@@ -116,7 +115,7 @@ class AzureBlobAdapter:
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List blobs in the Azure container under *target* prefix.
 

@@ -9,7 +9,6 @@ Displays key system health indicators:
 
 import logging
 from datetime import datetime
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class StatusIndicator(QFrame if PYSIDE_AVAILABLE else object):
         "unknown": "#6c757d",
     }
 
-    def __init__(self, label: str, parent: Optional[QWidget] = None):
+    def __init__(self, label: str, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
         super().__init__(parent)
@@ -87,7 +86,7 @@ class HealthWidget(QWidget if PYSIDE_AVAILABLE else object):
     if PYSIDE_AVAILABLE:
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
         super().__init__(parent)
@@ -180,7 +179,7 @@ class HealthWidget(QWidget if PYSIDE_AVAILABLE else object):
         self._last_update.setText(f"Updated: {datetime.now().strftime('%H:%M:%S')}")
         self.refresh_requested.emit()
 
-    def update_status(self, data: Dict) -> None:
+    def update_status(self, data: dict) -> None:
         """Update all status indicators from a single dict."""
         if not PYSIDE_AVAILABLE:
             return

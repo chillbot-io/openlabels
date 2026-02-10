@@ -88,7 +88,7 @@ class ReportRenderer:
             raise ImportError(
                 "PDF generation requires weasyprint. "
                 "Install with: pip install openlabels[reports]"
-            )
+            ) from None
 
         self._validate_report_type(report_type)
         html_str = self.render_html(report_type, data)

@@ -13,7 +13,6 @@ import platform
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
 
 from .base import (
     AccessAction,
@@ -28,7 +27,7 @@ def get_access_history(
     days: int = 30,
     limit: int = 100,
     include_system: bool = False,
-) -> List[AccessEvent]:
+) -> list[AccessEvent]:
     """
     Get access history for a file from platform audit logs.
 
@@ -65,7 +64,7 @@ def get_access_history(
     return events[:limit]
 
 
-def _is_system_account(username: Optional[str], sid: Optional[str]) -> bool:
+def _is_system_account(username: str | None, sid: str | None) -> bool:
     """Check if an account is a system/service account."""
     if not username and not sid:
         return False
@@ -103,7 +102,7 @@ def _get_history_windows(
     path: Path,
     days: int,
     limit: int,
-) -> List[AccessEvent]:
+) -> list[AccessEvent]:
     """
     Query Windows Security Event Log for file access events.
 
@@ -257,7 +256,7 @@ def _get_history_linux(
     path: Path,
     days: int,
     limit: int,
-) -> List[AccessEvent]:
+) -> list[AccessEvent]:
     """
     Query Linux audit log for file access events.
 
@@ -312,7 +311,7 @@ def _get_history_linux(
         return []
 
 
-def _parse_ausearch_csv(output: str, path: Path, limit: int) -> List[AccessEvent]:
+def _parse_ausearch_csv(output: str, path: Path, limit: int) -> list[AccessEvent]:
     """Parse ausearch CSV output into AccessEvent objects."""
     events = []
     lines = output.strip().split("\n")
@@ -381,7 +380,7 @@ def _parse_linux_event_type(event_type: str) -> AccessAction:
         return AccessAction.UNKNOWN
 
 
-def _resolve_linux_uid(uid: str) -> Optional[str]:
+def _resolve_linux_uid(uid: str) -> str | None:
     """Resolve Linux UID to username."""
     try:
         import pwd

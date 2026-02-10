@@ -5,7 +5,6 @@ All detectors must inherit from BaseDetector and implement the detect() method.
 """
 
 from abc import ABC, abstractmethod
-from typing import List
 
 from ..types import Span, Tier
 
@@ -29,7 +28,7 @@ class BaseDetector(ABC):
     tier: Tier = Tier.PATTERN
 
     @abstractmethod
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         """
         Detect entities in text.
 

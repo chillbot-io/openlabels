@@ -29,7 +29,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ except ImportError:
 class DockerManager:
     """Manages Docker Compose lifecycle."""
 
-    def __init__(self, compose_file: Optional[Path] = None):
+    def __init__(self, compose_file: Path | None = None):
         self.compose_file = compose_file or self._find_compose_file()
         self.project_name = "openlabels"
 

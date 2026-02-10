@@ -11,7 +11,6 @@ Supports two execution modes:
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select
@@ -55,7 +54,7 @@ except ImportError:
 
 # Global processor instance (reuse for efficiency within job lifecycle)
 # IMPORTANT: Call cleanup_processor() during worker shutdown to release memory
-_processor: Optional[FileProcessor] = None
+_processor: FileProcessor | None = None
 
 # Registry of shutdown callbacks for graceful cleanup
 _shutdown_callbacks: list = []

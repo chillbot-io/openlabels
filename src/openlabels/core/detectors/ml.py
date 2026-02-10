@@ -7,7 +7,7 @@ For production use with ONNX models, see ml_onnx.py.
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..constants import PRODUCT_CODE_PREFIXES
 from ..types import Span, Tier
@@ -71,7 +71,7 @@ def get_device(device_config: str = "auto", cuda_device_id: int = 0) -> int:
         return -1
 
 
-def get_device_info() -> Dict[str, Any]:
+def get_device_info() -> dict[str, Any]:
     """
     Get detailed device information for diagnostics.
 
@@ -107,11 +107,11 @@ class MLDetector(BaseDetector):
 
     name = "ml"
     tier = Tier.ML
-    label_map: Dict[str, str] = {}
+    label_map: dict[str, str] = {}
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):
@@ -223,7 +223,7 @@ class MLDetector(BaseDetector):
             )
             return False
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         """
         Run NER inference using HuggingFace pipeline.
 
@@ -321,7 +321,7 @@ class PHIBertDetector(MLDetector):
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):
@@ -339,7 +339,7 @@ class PIIBertDetector(MLDetector):
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):

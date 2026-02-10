@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -129,10 +129,10 @@ class GraphClient:
         tenant_id: str,
         client_id: str,
         client_secret: str,
-        rate_config: Optional[RateLimiterConfig] = None,
+        rate_config: RateLimiterConfig | None = None,
         pool_size: int = 100,
-        timeout: Optional[float] = None,
-        connect_timeout: Optional[float] = None,
+        timeout: float | None = None,
+        connect_timeout: float | None = None,
     ):
         """
         Initialize Graph client.
@@ -196,8 +196,8 @@ class GraphClient:
             cb_config = CircuitBreakerConfig()
 
         # Token management
-        self._access_token: Optional[str] = None
-        self._token_expires_at: Optional[datetime] = None
+        self._access_token: str | None = None
+        self._token_expires_at: datetime | None = None
         self._token_lock = asyncio.Lock()
 
         # Rate limiting
@@ -213,7 +213,7 @@ class GraphClient:
         )
 
         # Connection pool (created on __aenter__)
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
         # Delta tokens by resource path
         self._delta_tokens: dict[str, DeltaToken] = {}
@@ -483,7 +483,7 @@ class GraphClient:
     # Delta Query Support
     # =========================================================================
 
-    def get_delta_token(self, resource_path: str) -> Optional[DeltaToken]:
+    def get_delta_token(self, resource_path: str) -> DeltaToken | None:
         """Get stored delta token for a resource path."""
         token = self._delta_tokens.get(resource_path)
         if token and not token.is_expired():

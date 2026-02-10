@@ -22,7 +22,6 @@ Security features:
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -50,7 +49,7 @@ def _get_request_context(request: Request) -> dict:
     }
 
 
-def validate_redirect_uri(redirect_uri: Optional[str], request: Request) -> str:
+def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
     """
     Validate redirect URI to prevent open redirect attacks.
 
@@ -130,7 +129,7 @@ class UserInfoResponse(BaseModel):
     """Current user information."""
     id: str
     email: str
-    name: Optional[str]
+    name: str | None
     tenant_id: str
     roles: list[str]
 
@@ -169,7 +168,7 @@ def _generate_session_id() -> str:
 @limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def login(
     request: Request,
-    redirect_uri: Optional[str] = None,
+    redirect_uri: str | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     """
@@ -279,10 +278,10 @@ async def login(
 @limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def auth_callback(
     request: Request,
-    code: Optional[str] = None,
-    state: Optional[str] = None,
-    error: Optional[str] = None,
-    error_description: Optional[str] = None,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     """
@@ -376,7 +375,7 @@ async def auth_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to acquire token",
-        )
+        ) from e
 
     if "error" in result:
         # Log detailed error server-side for debugging
@@ -597,7 +596,7 @@ async def get_token(
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Session expired, please login again",
-                )
+                ) from e
         else:
             await session_store.delete(session_id)
             raise HTTPException(

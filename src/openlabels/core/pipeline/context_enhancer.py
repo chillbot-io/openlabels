@@ -18,7 +18,7 @@ The enhancer adjusts confidence scores based on context, allowing:
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any
 
 from ..types import Span, Tier
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Common words that get falsely detected as NAMEs
-NAME_DENY_LIST: Set[str] = {
+NAME_DENY_LIST: set[str] = {
     # Common verbs/words that are rarely names
     "will", "may", "can",  # Modal verbs
     "ensure", "include", "require", "provide", "support", "involve",
@@ -63,7 +63,7 @@ NAME_DENY_LIST: Set[str] = {
 }
 
 # Common words that get falsely detected as USERNAMEs
-USERNAME_DENY_LIST: Set[str] = {
+USERNAME_DENY_LIST: set[str] = {
     "has", "number", "agent", "details", "reference", "and",
     "the", "for", "with", "from", "that", "this", "are", "was",
     "attempts", "using", "name", "ending", "credentials", "linked",
@@ -72,7 +72,7 @@ USERNAME_DENY_LIST: Set[str] = {
 }
 
 # Common words that get falsely detected as ADDRESSes
-ADDRESS_DENY_LIST: Set[str] = {
+ADDRESS_DENY_LIST: set[str] = {
     "maisonette", "apartment", "flat", "condo", "house", "building",
     "cottage", "bungalow", "villa", "penthouse", "studio", "loft",
     "operations", "department", "division", "unit", "section", "branch",
@@ -81,7 +81,7 @@ ADDRESS_DENY_LIST: Set[str] = {
 }
 
 # Common words falsely detected as MEDICATION
-MEDICATION_DENY_LIST: Set[str] = {
+MEDICATION_DENY_LIST: set[str] = {
     "health", "healthy", "stress", "focus", "burn", "aged", "major", "assist",
     "care", "treatment", "therapy", "recovery", "wellness", "prevention",
     "diagnosis", "symptom", "condition", "disease", "disorder", "syndrome",
@@ -103,7 +103,7 @@ MRN_EXCLUDE_PATTERNS = [
 ]
 
 # Company suffixes
-COMPANY_SUFFIXES: Set[str] = {
+COMPANY_SUFFIXES: set[str] = {
     "inc", "inc.", "llc", "llc.", "ltd", "ltd.", "corp", "corp.",
     "corporation", "company", "co", "co.", "group", "holdings",
     "partners", "associates", "services", "solutions", "systems",
@@ -126,7 +126,7 @@ class HotwordRule:
 
 
 # Positive hotwords - increase confidence these are real names
-NAME_POSITIVE_HOTWORDS: List[HotwordRule] = [
+NAME_POSITIVE_HOTWORDS: list[HotwordRule] = [
     HotwordRule(
         re.compile(r'\b(mr\.?|mrs\.?|ms\.?|miss|dr\.?|prof\.?)\s*$', re.I),
         confidence_delta=0.25,
@@ -160,7 +160,7 @@ NAME_POSITIVE_HOTWORDS: List[HotwordRule] = [
 ]
 
 # Negative hotwords - decrease confidence
-NAME_NEGATIVE_HOTWORDS: List[HotwordRule] = [
+NAME_NEGATIVE_HOTWORDS: list[HotwordRule] = [
     HotwordRule(
         re.compile(r'^\s*(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|group|holdings)\b', re.I),
         confidence_delta=-0.35,
@@ -258,8 +258,8 @@ class EnhancementResult:
     """Result of context enhancement for a span."""
     action: str  # "keep", "reject", "verify" (send to LLM)
     confidence: float
-    reasons: List[str] = field(default_factory=list)
-    span: Optional[Any] = None  # Updated span (if text was modified), else None
+    reasons: list[str] = field(default_factory=list)
+    span: Any | None = None  # Updated span (if text was modified), else None
 
 
 class ContextEnhancer:
@@ -302,13 +302,13 @@ class ContextEnhancer:
         span: Span,
         before: int,
         after: int
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """Get text before and after the span."""
         text_before = text[max(0, span.start - before):span.start]
         text_after = text[span.end:min(len(text), span.end + after)]
         return text_before, text_after
 
-    def _check_deny_list(self, span: Span) -> Optional[str]:
+    def _check_deny_list(self, span: Span) -> str | None:
         """Check if span text is in deny list. Returns reason if denied."""
         text_lower = span.text.lower().strip()
         span_text = span.text.strip()
@@ -354,7 +354,7 @@ class ContextEnhancer:
         text = text.strip()
         return text
 
-    def _check_patterns(self, text: str, span: Span) -> Tuple[Optional[str], Optional[str], int]:
+    def _check_patterns(self, text: str, span: Span) -> tuple[str | None, str | None, int]:
         """Check pattern-based exclusions."""
         span_text = span.text
         start_offset = 0
@@ -421,7 +421,7 @@ class ContextEnhancer:
         text: str,
         span: Span,
         current_confidence: float
-    ) -> Tuple[float, List[str]]:
+    ) -> tuple[float, list[str]]:
         """Apply hotword rules to adjust confidence."""
         confidence = current_confidence
         reasons = []
@@ -513,9 +513,9 @@ class ContextEnhancer:
     def enhance(
         self,
         text: str,
-        spans: List[Span],
+        spans: list[Span],
         return_stats: bool = False
-    ) -> List[Span]:
+    ) -> list[Span]:
         """
         Enhance a list of spans with context analysis.
 

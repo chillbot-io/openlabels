@@ -84,7 +84,7 @@ class DistributedScanInventory:
         self.target_id = target_id
         self.ttl = ttl
         self._cache_manager = cache_manager
-        self._redis_client: Optional[Any] = None
+        self._redis_client: Any | None = None
         self._use_redis = False
         self._initialized = False
 
@@ -171,7 +171,7 @@ class DistributedScanInventory:
     # Folder Operations
     # -------------------------------------------------------------------------
 
-    async def get_folder(self, path: str) -> Optional[dict]:
+    async def get_folder(self, path: str) -> dict | None:
         """
         Get folder data from cache.
 
@@ -303,7 +303,7 @@ class DistributedScanInventory:
     # File Operations
     # -------------------------------------------------------------------------
 
-    async def get_file(self, path: str) -> Optional[dict]:
+    async def get_file(self, path: str) -> dict | None:
         """
         Get file data from cache.
 
@@ -617,7 +617,7 @@ class DistributedScanInventory:
 
         return False
 
-    async def get_metadata(self, key: str) -> Optional[Any]:
+    async def get_metadata(self, key: str) -> Any | None:
         """
         Get scan metadata value.
 
@@ -775,7 +775,7 @@ class InventoryService:
 
         # Distributed cache for multi-worker consistency
         self._use_distributed_cache = use_distributed_cache
-        self._distributed_inventory: Optional[DistributedScanInventory] = None
+        self._distributed_inventory: DistributedScanInventory | None = None
 
         if use_distributed_cache:
             self._distributed_inventory = DistributedScanInventory(
@@ -795,11 +795,11 @@ class InventoryService:
             await self._distributed_inventory.initialize()
 
     @property
-    def distributed_inventory(self) -> Optional[DistributedScanInventory]:
+    def distributed_inventory(self) -> DistributedScanInventory | None:
         """Get the distributed inventory instance (if enabled)."""
         return self._distributed_inventory
 
-    async def _get_folder_inv(self, folder_path: str) -> Optional[FolderInventory]:
+    async def _get_folder_inv(self, folder_path: str) -> FolderInventory | None:
         """On-demand folder inventory lookup: LRU cache -> DB query."""
         if folder_path in self._folder_cache:
             self._folder_cache.move_to_end(folder_path)
@@ -819,7 +819,7 @@ class InventoryService:
             self._cache_folder(folder_path, folder_inv)
         return folder_inv
 
-    async def _get_file_inv(self, file_path: str) -> Optional[FileInventory]:
+    async def _get_file_inv(self, file_path: str) -> FileInventory | None:
         """On-demand file inventory lookup: LRU cache -> DB query."""
         if file_path in self._file_cache:
             self._file_cache.move_to_end(file_path)
@@ -946,7 +946,7 @@ class InventoryService:
 
         return await self._distributed_inventory.is_file_scanned(file_path)
 
-    async def get_distributed_scan_progress(self) -> Optional[dict]:
+    async def get_distributed_scan_progress(self) -> dict | None:
         """
         Get scan progress from distributed cache.
 
@@ -971,7 +971,7 @@ class InventoryService:
     async def should_scan_folder(
         self,
         folder_path: str,
-        folder_modified: Optional[datetime] = None,
+        folder_modified: datetime | None = None,
         force_full_scan: bool = False,
     ) -> bool:
         """
@@ -1010,7 +1010,7 @@ class InventoryService:
     async def should_scan_file(
         self,
         file_info: FileInfo,
-        content_hash: Optional[str] = None,
+        content_hash: str | None = None,
         force_full_scan: bool = False,
     ) -> tuple[bool, str]:
         """
@@ -1064,9 +1064,9 @@ class InventoryService:
         job_id: UUID,
         file_count: int = 0,
         total_size: int = 0,
-        folder_modified: Optional[datetime] = None,
+        folder_modified: datetime | None = None,
         has_sensitive: bool = False,
-        highest_risk: Optional[str] = None,
+        highest_risk: str | None = None,
         total_entities: int = 0,
     ) -> FolderInventory:
         """
@@ -1126,7 +1126,7 @@ class InventoryService:
         scan_result: ScanResult,
         content_hash: str,
         job_id: UUID,
-        folder_id: Optional[UUID] = None,
+        folder_id: UUID | None = None,
     ) -> FileInventory:
         """
         Update or create file inventory entry for a sensitive file.

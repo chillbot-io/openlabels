@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -55,22 +54,22 @@ VALID_FORMATS = {"html", "pdf", "csv"}
 class ReportGenerateRequest(BaseModel):
     report_type: str = Field(..., description="Report type (executive_summary, compliance_report, scan_detail, access_audit, sensitive_files)")
     format: str = Field(default="html", description="Output format: html, pdf, csv")
-    name: Optional[str] = Field(default=None, max_length=255, description="Optional friendly name")
-    job_id: Optional[UUID] = Field(default=None, description="Scope to a specific scan job")
-    filters: Optional[dict] = Field(default=None, description="Additional query filters")
+    name: str | None = Field(default=None, max_length=255, description="Optional friendly name")
+    job_id: UUID | None = Field(default=None, description="Scope to a specific scan job")
+    filters: dict | None = Field(default=None, description="Additional query filters")
 
 
 class ReportScheduleRequest(BaseModel):
     report_type: str = Field(..., description="Report type to schedule")
     format: str = Field(default="html", description="Output format: html, pdf, csv")
     cron: str = Field(..., description="Cron expression (e.g., '0 9 * * MON')")
-    name: Optional[str] = Field(default=None, max_length=255, description="Schedule name")
-    distribute_to: Optional[list[str]] = Field(default=None, description="Email addresses for distribution")
+    name: str | None = Field(default=None, max_length=255, description="Schedule name")
+    distribute_to: list[str] | None = Field(default=None, description="Email addresses for distribution")
 
 
 class ReportDistributeRequest(BaseModel):
     to: list[str] = Field(..., min_length=1, description="List of email addresses")
-    subject: Optional[str] = Field(default=None, description="Custom email subject")
+    subject: str | None = Field(default=None, description="Custom email subject")
 
 
 class ReportResponse(BaseModel):
@@ -79,12 +78,12 @@ class ReportResponse(BaseModel):
     report_type: str
     format: str
     status: str
-    result_path: Optional[str] = None
-    result_size_bytes: Optional[int] = None
-    error: Optional[str] = None
+    result_path: str | None = None
+    result_size_bytes: int | None = None
+    error: str | None = None
     created_at: datetime
-    generated_at: Optional[datetime] = None
-    distributed_at: Optional[datetime] = None
+    generated_at: datetime | None = None
+    distributed_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -445,7 +444,7 @@ async def generate_report(
 async def list_reports(
     tenant: TenantContextDep,
     session: AsyncSession = Depends(get_session),
-    report_type: Optional[str] = Query(None),
+    report_type: str | None = Query(None),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ReportResponse]:
     """List generated reports for the current tenant."""
@@ -578,7 +577,7 @@ async def distribute_report(
         report.distributed_at = datetime.now(timezone.utc)
     except Exception as exc:
         logger.error("Report distribution failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Distribution failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Distribution failed: {exc}") from exc
 
     await session.commit()
     await session.refresh(report)
@@ -591,7 +590,7 @@ class ReportScheduleResponse(BaseModel):
     report_type: str
     format: str
     cron: str
-    distribute_to: Optional[list[str]] = None
+    distribute_to: list[str] | None = None
 
 
 @router.post("/schedule", response_model=ReportScheduleResponse, status_code=201)

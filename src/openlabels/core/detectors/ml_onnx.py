@@ -16,7 +16,6 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -31,7 +30,7 @@ from .registry import register_detector
 logger = logging.getLogger(__name__)
 
 
-def build_word_boundaries(text: str) -> Tuple[List[int], List[int]]:
+def build_word_boundaries(text: str) -> tuple[list[int], list[int]]:
     """Pre-compute word boundary positions for O(1) lookups.
 
     Returns:
@@ -69,10 +68,10 @@ def build_word_boundaries(text: str) -> Tuple[List[int], List[int]]:
 def expand_to_word_boundary(
     start: int,
     end: int,
-    word_starts: List[int],
-    word_ends: List[int],
+    word_starts: list[int],
+    word_ends: list[int],
     text_len: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Expand span to word boundaries using pre-computed boundaries.
 
     Uses binary search for O(log n) lookups instead of O(word_length) iteration.
@@ -110,7 +109,7 @@ class ONNXDetector(BaseDetector):
 
     name = "onnx"
     tier = Tier.ML
-    label_map: Dict[str, str] = {}  # Override in subclass
+    label_map: dict[str, str] = {}  # Override in subclass
 
     # Chunking configuration
     # BERT has 512 token limit, ~4 chars/token average
@@ -120,20 +119,20 @@ class ONNXDetector(BaseDetector):
     CHUNK_MIN_OVERLAP = 200     # Minimum overlap to ensure entity capture
     CHUNK_PARALLEL_WORKERS = 4  # Max parallel chunk processing threads
 
-    def __init__(self, model_dir: Optional[Path] = None, model_name: str = "model"):
+    def __init__(self, model_dir: Path | None = None, model_name: str = "model"):
         self.model_dir = model_dir
         self.model_name = model_name
         self._session = None
         self._tokenizer = None
         self._use_fast_tokenizer = False  # True if using tokenizers lib directly
-        self._id2label: Dict[int, str] = {}
+        self._id2label: dict[int, str] = {}
         self._loaded = False
         self._max_length = BERT_MAX_LENGTH  # Max length for truncation only
 
     def is_available(self) -> bool:
         return self._loaded
 
-    def _get_onnx_path(self) -> Optional[Path]:
+    def _get_onnx_path(self) -> Path | None:
         """Find ONNX model file. Prefers INT8 quantized version."""
         if not self.model_dir:
             return None
@@ -270,9 +269,9 @@ class ONNXDetector(BaseDetector):
             raise ImportError(
                 f"No standalone tokenizer found at {tokenizer_dir.parent / (self.model_name + '.tokenizer.json')}. "
                 "Either run export_tokenizers.py or install transformers."
-            )
+            ) from None
 
-    def _tokenize(self, text: str) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
+    def _tokenize(self, text: str) -> tuple[np.ndarray, np.ndarray, list[tuple[int, int]]]:
         """Tokenize text and return arrays ready for ONNX inference."""
         if self._use_fast_tokenizer:
             # Fast tokenizer path (tokenizers library) - no padding, dynamic length
@@ -300,7 +299,7 @@ class ONNXDetector(BaseDetector):
             return inputs['input_ids'], inputs['attention_mask'], offset_mapping
 
     # --- CHUNKING FOR LONG DOCUMENTS ---
-    def _chunk_text(self, text: str) -> List[Tuple[int, str]]:
+    def _chunk_text(self, text: str) -> list[tuple[int, str]]:
         """Split long text into overlapping chunks for processing."""
         if len(text) <= self.CHUNK_MAX_CHARS:
             return [(0, text)]
@@ -363,7 +362,7 @@ class ONNXDetector(BaseDetector):
 
         return end
 
-    def _dedupe_spans(self, spans: List[Span], full_text: str = "") -> List[Span]:
+    def _dedupe_spans(self, spans: list[Span], full_text: str = "") -> list[Span]:
         """Remove duplicate/overlapping spans from chunk boundaries."""
         if not spans:
             return []
@@ -418,7 +417,7 @@ class ONNXDetector(BaseDetector):
         chunk_text: str,
         full_text: str,
         full_text_len: int
-    ) -> List[Span]:
+    ) -> list[Span]:
         """Process a single chunk and return spans with adjusted offsets."""
         chunk_spans = self._detect_single(chunk_text)
         adjusted_spans = []
@@ -448,7 +447,7 @@ class ONNXDetector(BaseDetector):
         return adjusted_spans
 
     # --- MAIN DETECTION ---
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         """Run NER inference using ONNX runtime.
 
         Handles long documents via chunking with overlap.
@@ -512,7 +511,7 @@ class ONNXDetector(BaseDetector):
                 f"{self.name}: Inference failed: {e}",
             ) from e
 
-    def _detect_single(self, text: str) -> List[Span]:
+    def _detect_single(self, text: str) -> list[Span]:
         """Run inference on a single chunk of text."""
         if not text.strip():
             return []
@@ -550,8 +549,8 @@ class ONNXDetector(BaseDetector):
         text: str,
         predictions: np.ndarray,
         confidences: np.ndarray,
-        offset_mapping: List[Tuple[int, int]],
-    ) -> List[Span]:
+        offset_mapping: list[tuple[int, int]],
+    ) -> list[Span]:
         """Convert token predictions to character-level spans."""
         spans = []
         current_entity = None
@@ -710,9 +709,9 @@ class ONNXDetector(BaseDetector):
         end: int,
         entity_type: str,
         confidence: float,
-        word_starts: List[int] = None,
-        word_ends: List[int] = None,
-    ) -> Optional[Span]:
+        word_starts: list[int] = None,
+        word_ends: list[int] = None,
+    ) -> Span | None:
         """Create a Span with canonical entity type."""
         text_len = len(text)
 
@@ -774,7 +773,7 @@ class PHIBertONNXDetector(ONNXDetector):
     name = "phi_bert_onnx"
     label_map = PHI_BERT_LABELS
 
-    def __init__(self, model_dir: Optional[Path] = None):
+    def __init__(self, model_dir: Path | None = None):
         super().__init__(model_dir, model_name="phi_bert")
         if model_dir:
             self.load()
@@ -787,7 +786,7 @@ class PIIBertONNXDetector(ONNXDetector):
     name = "pii_bert_onnx"
     label_map = PII_BERT_LABELS
 
-    def __init__(self, model_dir: Optional[Path] = None):
+    def __init__(self, model_dir: Path | None = None):
         super().__init__(model_dir, model_name="pii_bert")
         if model_dir:
             self.load()

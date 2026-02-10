@@ -9,7 +9,6 @@ Provides configuration options for:
 """
 
 import logging
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ class SettingsWidget(QWidget if PYSIDE_AVAILABLE else object):
     if PYSIDE_AVAILABLE:
         settings_changed = Signal(dict)
 
-    def __init__(self, server_url: str = "http://localhost:8000", parent: Optional[QWidget] = None):
+    def __init__(self, server_url: str = "http://localhost:8000", parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
@@ -206,7 +205,7 @@ class SettingsWidget(QWidget if PYSIDE_AVAILABLE else object):
         self.settings_changed.emit(settings)
         QMessageBox.information(self, "Settings", "Settings saved successfully.")
 
-    def get_settings(self) -> Dict:
+    def get_settings(self) -> dict:
         """Get current settings as dictionary."""
         return {
             "server_url": self._server_url_input.text(),
@@ -225,7 +224,7 @@ class SettingsWidget(QWidget if PYSIDE_AVAILABLE else object):
             "notify_scan_complete": self._notify_scan_complete_cb.isChecked(),
         }
 
-    def set_settings(self, settings: Dict) -> None:
+    def set_settings(self, settings: dict) -> None:
         """Load settings from dictionary."""
         if "server_url" in settings:
             self._server_url_input.setText(settings["server_url"])

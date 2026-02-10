@@ -12,7 +12,7 @@ import base64
 import json
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from fastapi import Query
@@ -88,7 +88,7 @@ async def paginate_query(
     session: AsyncSession,
     query: Select,
     pagination: PaginationParams,
-    transformer: Optional[callable] = None,
+    transformer: callable | None = None,
 ) -> dict[str, Any]:
     """
     Execute a paginated query and return pagination metadata.
@@ -190,10 +190,10 @@ class CursorPaginatedResponse(BaseModel, Generic[T]):
     """
 
     items: list[T]
-    next_cursor: Optional[str] = Field(
+    next_cursor: str | None = Field(
         None, description="Cursor for next page (null if no more results)"
     )
-    previous_cursor: Optional[str] = Field(
+    previous_cursor: str | None = Field(
         None, description="Cursor for previous page (null if at start)"
     )
     has_next: bool = Field(..., description="Whether there are more results")
@@ -216,7 +216,7 @@ class CursorPaginationParams:
 
     def __init__(
         self,
-        cursor: Optional[str] = Query(None, description="Pagination cursor"),
+        cursor: str | None = Query(None, description="Pagination cursor"),
         page_size: int = Query(
             50, ge=1, le=100, alias="page_size", description="Items per page (max 100)"
         ),
@@ -281,7 +281,7 @@ def decode_cursor(cursor: str) -> tuple[dict[str, Any], str]:
         cursor_data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
         return cursor_data["v"], cursor_data.get("d", "forward")
     except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError) as e:
-        raise ValueError(f"Invalid cursor: {e}")
+        raise ValueError(f"Invalid cursor: {e}") from e
 
 
 async def cursor_paginate_query(
@@ -289,7 +289,7 @@ async def cursor_paginate_query(
     base_query: Select,
     pagination: CursorPaginationParams,
     cursor_columns: list[tuple[Any, str]],
-    transformer: Optional[callable] = None,
+    transformer: callable | None = None,
 ) -> dict[str, Any]:
     """
     Execute a cursor-paginated query.

@@ -5,7 +5,6 @@ Provides access to queue statistics and dead letter queue management.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -34,12 +33,12 @@ class JobResponse(BaseModel):
     payload: dict
     priority: int
     status: str
-    scheduled_for: Optional[datetime]
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    worker_id: Optional[str]
-    result: Optional[dict]
-    error: Optional[str]
+    scheduled_for: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    worker_id: str | None
+    result: dict | None
+    error: str | None
     retry_count: int
     max_retries: int
     created_at: datetime
@@ -68,15 +67,15 @@ class RequeueRequest(BaseModel):
 class RequeueAllRequest(BaseModel):
     """Request to requeue all failed jobs."""
 
-    task_type: Optional[str] = None
+    task_type: str | None = None
     reset_retries: bool = True
 
 
 class PurgeRequest(BaseModel):
     """Request to purge failed jobs."""
 
-    task_type: Optional[str] = None
-    older_than_days: Optional[int] = None
+    task_type: str | None = None
+    older_than_days: int | None = None
 
 
 @router.get("", response_model=QueueStatsResponse)
@@ -112,7 +111,7 @@ async def get_queue_stats(
 async def list_failed_jobs(
     job_service: JobServiceDep,
     _admin: AdminContextDep,
-    task_type: Optional[str] = Query(None, description="Filter by task type"),
+    task_type: str | None = Query(None, description="Filter by task type"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[JobResponse]:
     """
@@ -238,11 +237,11 @@ class WorkerConfigRequest(BaseModel):
 class WorkerStatusResponse(BaseModel):
     """Worker status response."""
 
-    worker_id: Optional[str]
+    worker_id: str | None
     status: str
     concurrency: int
     target_concurrency: int
-    pid: Optional[int]
+    pid: int | None
 
 
 @router.get("/workers/status", response_model=WorkerStatusResponse)

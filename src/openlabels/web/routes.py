@@ -8,7 +8,6 @@ import html
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -30,7 +29,7 @@ templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 
 
-def format_relative_time(dt: Optional[datetime]) -> str:
+def format_relative_time(dt: datetime | None) -> str:
     """Format datetime as relative time string."""
     if not dt:
         return "Never"
@@ -154,7 +153,7 @@ async def new_scan_page(request: Request):
 @router.get("/results", response_class=HTMLResponse)
 async def results_page(
     request: Request,
-    scan_id: Optional[str] = None,
+    scan_id: str | None = None,
 ):
     """Results page with optional scan_id filter."""
     return templates.TemplateResponse(
@@ -502,7 +501,7 @@ async def create_target_form(
     request: Request,
     name: str = Form(...),
     adapter: str = Form(...),
-    enabled: Optional[str] = Form(None),
+    enabled: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
@@ -552,7 +551,7 @@ async def update_target_form(
     target_id: UUID,
     name: str = Form(...),
     adapter: str = Form(...),
-    enabled: Optional[str] = Form(None),
+    enabled: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
@@ -592,7 +591,7 @@ async def create_schedule_form(
     name: str = Form(...),
     target_id: str = Form(...),
     cron: str = Form(...),
-    enabled: Optional[str] = Form(None),
+    enabled: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
@@ -627,7 +626,7 @@ async def update_schedule_form(
     name: str = Form(...),
     target_id: str = Form(...),
     cron: str = Form(...),
-    enabled: Optional[str] = Form(None),
+    enabled: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ):
@@ -939,7 +938,7 @@ async def targets_list_partial(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-    adapter: Optional[str] = None,
+    adapter: str | None = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
@@ -992,7 +991,7 @@ async def scans_list_partial(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-    status: Optional[str] = None,
+    status: str | None = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
@@ -1051,15 +1050,15 @@ async def scans_list_partial(
 async def results_list_partial(
     request: Request,
     # Cursor-based pagination (preferred for large datasets)
-    cursor: Optional[str] = Query(None, description="Cursor for next page"),
+    cursor: str | None = Query(None, description="Cursor for next page"),
     # Offset-based pagination (for backward compatibility)
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     # Filters
-    risk_tier: Optional[str] = None,
-    entity_type: Optional[str] = None,
-    has_label: Optional[str] = None,
-    scan_id: Optional[str] = None,
+    risk_tier: str | None = None,
+    entity_type: str | None = None,
+    has_label: str | None = None,
+    scan_id: str | None = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
@@ -1175,7 +1174,7 @@ async def results_list_partial(
 @router.get("/partials/activity-log", response_class=HTMLResponse)
 async def activity_log_partial(
     request: Request,
-    action: Optional[str] = None,
+    action: str | None = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):

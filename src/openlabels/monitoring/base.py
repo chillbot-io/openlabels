@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class AccessAction(str, Enum):
@@ -41,16 +40,16 @@ class AccessEvent:
     action: AccessAction
 
     # User information
-    user_sid: Optional[str] = None  # Windows SID or Linux UID
-    user_name: Optional[str] = None  # Resolved username
-    user_domain: Optional[str] = None  # Windows domain
+    user_sid: str | None = None  # Windows SID or Linux UID
+    user_name: str | None = None  # Resolved username
+    user_domain: str | None = None  # Windows domain
 
     # Process information
-    process_name: Optional[str] = None
-    process_id: Optional[int] = None
+    process_name: str | None = None
+    process_id: int | None = None
 
     # Platform-specific
-    event_id: Optional[int] = None  # Windows Event ID or audit serial
+    event_id: int | None = None  # Windows Event ID or audit serial
     success: bool = True  # Whether access succeeded
 
     def to_dict(self) -> dict:
@@ -94,11 +93,11 @@ class WatchedFile:
     audit_rule_enabled: bool = False  # Linux: auditd rule added
 
     # Last access info
-    last_event_at: Optional[datetime] = None
+    last_event_at: datetime | None = None
     access_count: int = 0
 
     # Label reference
-    label_id: Optional[str] = None
+    label_id: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -124,8 +123,8 @@ class MonitoringResult:
 
     success: bool
     path: Path
-    message: Optional[str] = None
-    error: Optional[str] = None
+    message: str | None = None
+    error: str | None = None
 
     # For enable operations
     sacl_enabled: bool = False

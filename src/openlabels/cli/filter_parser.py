@@ -23,7 +23,7 @@ Examples:
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Optional, Union
+from typing import Any
 
 
 class TokenType(Enum):
@@ -127,7 +127,7 @@ class Lexer:
 
         raise LexerError(f"Unterminated string starting at position {start - 1}")
 
-    def _read_number(self) -> Union[int, float]:
+    def _read_number(self) -> int | float:
         """Read a numeric literal."""
         start = self.pos
         has_dot = False
@@ -223,7 +223,7 @@ class Lexer:
 
         raise LexerError(f"Unexpected character '{char}' at position {self.pos}")
 
-    def tokenize(self) -> List[Token]:
+    def tokenize(self) -> list[Token]:
         """Tokenize the entire input."""
         tokens = []
         while True:
@@ -274,8 +274,8 @@ class FunctionCall(FilterExpression):
     function: str  # has, missing, count
     argument: str
     # For count(), we need comparison
-    comparison_op: Optional[str] = None
-    comparison_value: Optional[Any] = None
+    comparison_op: str | None = None
+    comparison_value: Any | None = None
 
 
 # =============================================================================
@@ -291,7 +291,7 @@ class Parser:
         TokenType.GE, TokenType.LE, TokenType.REGEX, TokenType.CONTAINS,
     }
 
-    def __init__(self, tokens: List[Token]):
+    def __init__(self, tokens: list[Token]):
         self.tokens = tokens
         self.pos = 0
 

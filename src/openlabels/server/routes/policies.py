@@ -12,7 +12,6 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -42,7 +41,7 @@ class PolicyResponse(BaseModel):
 
     id: UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     framework: str
     risk_level: str
     enabled: bool
@@ -57,7 +56,7 @@ class PolicyCreate(BaseModel):
     """Request to create a custom policy."""
 
     name: str = Field(..., max_length=255)
-    description: Optional[str] = None
+    description: str | None = None
     framework: str = Field(..., max_length=50)
     risk_level: str = Field("high", max_length=20)
     enabled: bool = True
@@ -68,13 +67,13 @@ class PolicyCreate(BaseModel):
 class PolicyUpdate(BaseModel):
     """Request to update a policy (partial)."""
 
-    name: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = None
-    framework: Optional[str] = Field(None, max_length=50)
-    risk_level: Optional[str] = Field(None, max_length=20)
-    enabled: Optional[bool] = None
-    config: Optional[dict] = None
-    priority: Optional[int] = None
+    name: str | None = Field(None, max_length=255)
+    description: str | None = None
+    framework: str | None = Field(None, max_length=50)
+    risk_level: str | None = Field(None, max_length=20)
+    enabled: bool | None = None
+    config: dict | None = None
+    priority: int | None = None
 
 
 class PolicyToggle(BaseModel):
@@ -101,8 +100,8 @@ class LoadPackRequest(BaseModel):
 class EvaluateRequest(BaseModel):
     """Dry-run evaluation request."""
 
-    job_id: Optional[UUID] = None
-    result_ids: Optional[list[UUID]] = None
+    job_id: UUID | None = None
+    result_ids: list[UUID] | None = None
     limit: int = Field(100, ge=1, le=500)
 
 
@@ -156,7 +155,7 @@ async def list_policies(
     _tenant: TenantContextDep,
     svc=PolicyServiceDep,
     pagination: PaginationParams = Depends(),
-    framework: Optional[str] = Query(None),
+    framework: str | None = Query(None),
     enabled_only: bool = Query(False),
 ):
     """List policies for the current tenant."""

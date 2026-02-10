@@ -14,7 +14,6 @@ Behavior:
 """
 
 import logging
-from typing import List, Optional, Tuple
 
 from ..types import Span
 
@@ -32,10 +31,10 @@ class SpanValidationError(Exception):
 
 def validate_span_positions(
     text: str,
-    spans: List[Span],
+    spans: list[Span],
     strict: bool = False,
     context: str = "unknown",
-) -> List[Span]:
+) -> list[Span]:
     """
     Validate span positions and filter or raise on errors.
 
@@ -55,8 +54,8 @@ def validate_span_positions(
         return []
 
     text_len = len(text)
-    valid_spans: List[Span] = []
-    errors: List[Tuple[str, Span]] = []
+    valid_spans: list[Span] = []
+    errors: list[tuple[str, Span]] = []
 
     for span in spans:
         error = _validate_single_span(span, text, text_len)
@@ -86,7 +85,7 @@ def validate_span_positions(
     return valid_spans
 
 
-def _validate_single_span(span: Span, text: str, text_len: int) -> Optional[str]:
+def _validate_single_span(span: Span, text: str, text_len: int) -> str | None:
     """
     Validate a single span.
 
@@ -140,10 +139,10 @@ except ImportError:
 
 
 def check_for_overlaps(
-    spans: List[Span],
+    spans: list[Span],
     allow_identical: bool = True,
     context: str = "unknown",
-) -> List[Tuple[Span, Span]]:
+) -> list[tuple[Span, Span]]:
     """
     Find overlapping spans (diagnostic only, doesn't filter).
 
@@ -180,7 +179,7 @@ def check_for_overlaps(
         return overlaps
 
     # Python fallback: O(n²) nested loop
-    overlaps: List[Tuple[Span, Span]] = []
+    overlaps: list[tuple[Span, Span]] = []
 
     sorted_spans = sorted(spans, key=lambda s: (s.start, s.end))
 
@@ -206,9 +205,9 @@ def check_for_overlaps(
 
 def validate_after_coref(
     text: str,
-    spans: List[Span],
+    spans: list[Span],
     strict: bool = False,
-) -> List[Span]:
+) -> list[Span]:
     """
     Validate spans after coreference resolution.
 

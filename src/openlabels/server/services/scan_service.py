@@ -1,29 +1,6 @@
-"""
-Scan service for managing scan jobs.
-
-Encapsulates all business logic for scan operations:
-- Creating new scans
-- Retrieving scan status
-- Listing scans with filtering and pagination
-- Cancelling and retrying scans
-- Deleting scans
-
-Example usage in a route:
-    @router.post("")
-    async def create_scan(
-        request: ScanCreate,
-        session: AsyncSession = Depends(get_session),
-        user: CurrentUser = Depends(require_admin),
-    ) -> ScanResponse:
-        settings = get_settings()
-        tenant = TenantContext.from_current_user(user)
-        service = ScanService(session, tenant, settings)
-        job = await service.create_scan(request.target_id, request.name)
-        return ScanResponse.model_validate(job)
-"""
+"""Scan job management service."""
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -35,102 +12,16 @@ from openlabels.server.services.base import BaseService
 
 
 class ScanService(BaseService):
-    """
-    Service for scan job management.
-
-    Provides methods for creating, retrieving, listing, cancelling,
-    retrying, and deleting scan jobs. All operations are tenant-isolated.
-
-    This service extends BaseService to inherit:
-    - Database session management
-    - Tenant context for isolation
-    - Settings access
-    - Logging utilities
-
-    Attributes:
-        session: Async database session (from BaseService)
-        tenant_id: Current tenant UUID (from BaseService)
-        user_id: Current user UUID (from BaseService)
-        settings: Application settings (from BaseService)
-    """
-
-    async def _get_target_or_raise(self, target_id: UUID) -> ScanTarget:
-        """
-        Get a scan target by ID, ensuring tenant isolation.
-
-        Args:
-            target_id: UUID of the target to retrieve
-
-        Returns:
-            ScanTarget if found and belongs to current tenant
-
-        Raises:
-            NotFoundError: If target not found or belongs to different tenant
-        """
-        target = await self.session.get(ScanTarget, target_id)
-        if not target or target.tenant_id != self.tenant_id:
-            self._log_warning(
-                f"Target not found: {target_id}",
-                target_id=str(target_id),
-            )
-            raise NotFoundError(
-                message="Target not found",
-                resource_type="ScanTarget",
-                resource_id=str(target_id),
-            )
-        return target
-
-    async def _get_scan_or_raise(self, scan_id: UUID) -> ScanJob:
-        """
-        Get a scan job by ID, ensuring tenant isolation.
-
-        Args:
-            scan_id: UUID of the scan to retrieve
-
-        Returns:
-            ScanJob if found and belongs to current tenant
-
-        Raises:
-            NotFoundError: If scan not found or belongs to different tenant
-        """
-        job = await self.session.get(ScanJob, scan_id)
-        if not job or job.tenant_id != self.tenant_id:
-            self._log_warning(
-                f"Scan not found: {scan_id}",
-                scan_id=str(scan_id),
-            )
-            raise NotFoundError(
-                message="Scan not found",
-                resource_type="ScanJob",
-                resource_id=str(scan_id),
-            )
-        return job
+    """Scan job CRUD, cancellation, retry, and statistics. Tenant-isolated."""
 
     async def create_scan(
         self,
         target_id: UUID,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> ScanJob:
-        """
-        Create a new scan job for a target.
+        """Create a scan job in 'pending' status and enqueue it."""
+        target = await self.get_tenant_entity(ScanTarget, target_id, "ScanTarget")
 
-        Creates a scan job in 'pending' status and enqueues it
-        for processing by the job worker.
-
-        Args:
-            target_id: UUID of the target to scan
-            name: Optional name for the scan (defaults to "Scan: {target.name}")
-
-        Returns:
-            The created ScanJob with status 'pending'
-
-        Raises:
-            NotFoundError: If target_id does not exist or belongs to different tenant
-        """
-        # Verify target exists and belongs to tenant
-        target = await self._get_target_or_raise(target_id)
-
-        # Create scan job
         job = ScanJob(
             tenant_id=self.tenant_id,
             target_id=target_id,
@@ -148,7 +39,6 @@ class ScanService(BaseService):
             target_id=str(target_id),
         )
 
-        # Enqueue the job for processing
         queue = JobQueue(self.session, self.tenant_id)
         await queue.enqueue(
             task_type="scan",
@@ -156,44 +46,21 @@ class ScanService(BaseService):
             priority=50,
         )
 
-        # Refresh to load server-generated defaults
         await self.session.refresh(job)
 
         return job
 
     async def get_scan(self, scan_id: UUID) -> ScanJob:
-        """
-        Get a scan job by ID.
-
-        Args:
-            scan_id: UUID of the scan to retrieve
-
-        Returns:
-            ScanJob if found
-
-        Raises:
-            NotFoundError: If scan not found or belongs to different tenant
-        """
-        return await self._get_scan_or_raise(scan_id)
+        """Get a scan job by ID (tenant-isolated)."""
+        return await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
     async def list_scans(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanJob], int]:
-        """
-        List scan jobs with optional filtering and pagination.
-
-        Args:
-            status: Optional status filter ('pending', 'running', 'completed', 'failed', 'cancelled')
-            limit: Maximum number of results to return (default 50)
-            offset: Number of results to skip (default 0)
-
-        Returns:
-            Tuple of (list of ScanJob objects, total count)
-        """
-        # Build base conditions
+        """List scan jobs with optional status filter and pagination."""
         VALID_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
         conditions = [ScanJob.tenant_id == self.tenant_id]
         if status:
@@ -203,12 +70,10 @@ class ScanService(BaseService):
                 return [], 0
             conditions.append(ScanJob.status == status)
 
-        # Get total count using efficient SQL COUNT
         count_query = select(func.count()).select_from(ScanJob).where(*conditions)
         count_result = await self.session.execute(count_query)
         total = count_result.scalar() or 0
 
-        # Get paginated results
         query = (
             select(ScanJob)
             .where(*conditions)
@@ -229,20 +94,8 @@ class ScanService(BaseService):
         return jobs, total
 
     async def cancel_scan(self, scan_id: UUID) -> ScanJob:
-        """
-        Cancel a pending or running scan.
-
-        Args:
-            scan_id: UUID of the scan to cancel
-
-        Returns:
-            Updated ScanJob with status 'cancelled'
-
-        Raises:
-            NotFoundError: If scan not found or belongs to different tenant
-            BadRequestError: If scan is not in a cancellable state
-        """
-        job = await self._get_scan_or_raise(scan_id)
+        """Cancel a pending or running scan."""
+        job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
         if job.status not in ("pending", "running"):
             self._log_warning(
@@ -270,24 +123,8 @@ class ScanService(BaseService):
         return job
 
     async def retry_scan(self, scan_id: UUID) -> ScanJob:
-        """
-        Retry a failed or cancelled scan by creating a new scan job.
-
-        Creates a new scan job for the same target with slightly
-        higher priority. The original scan is not modified.
-
-        Args:
-            scan_id: UUID of the scan to retry
-
-        Returns:
-            New ScanJob with status 'pending'
-
-        Raises:
-            NotFoundError: If scan not found, target no longer exists,
-                          or belongs to different tenant
-            BadRequestError: If scan is not in a retryable state
-        """
-        job = await self._get_scan_or_raise(scan_id)
+        """Create a new scan job for the same target with higher priority."""
+        job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
         if job.status not in ("failed", "cancelled"):
             self._log_warning(
@@ -317,7 +154,6 @@ class ScanService(BaseService):
                 resource_id=str(job.target_id),
             )
 
-        # Create a new scan job for retry
         new_job = ScanJob(
             tenant_id=self.tenant_id,
             target_id=job.target_id,
@@ -336,7 +172,6 @@ class ScanService(BaseService):
             target_id=str(job.target_id),
         )
 
-        # Enqueue with slightly higher priority for retries
         queue = JobQueue(self.session, self.tenant_id)
         await queue.enqueue(
             task_type="scan",
@@ -349,23 +184,8 @@ class ScanService(BaseService):
         return new_job
 
     async def delete_scan(self, scan_id: UUID) -> bool:
-        """
-        Delete a scan job.
-
-        Only completed, failed, or cancelled scans can be deleted.
-        Pending or running scans must be cancelled first.
-
-        Args:
-            scan_id: UUID of the scan to delete
-
-        Returns:
-            True if deleted successfully
-
-        Raises:
-            NotFoundError: If scan not found or belongs to different tenant
-            BadRequestError: If scan is pending or running
-        """
-        job = await self._get_scan_or_raise(scan_id)
+        """Delete a completed/failed/cancelled scan. Active scans must be cancelled first."""
+        job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
         if job.status in ("pending", "running"):
             self._log_warning(
@@ -392,21 +212,7 @@ class ScanService(BaseService):
         return True
 
     async def get_scan_stats(self) -> dict[str, int]:
-        """
-        Get scan statistics for the current tenant.
-
-        Returns:
-            Dictionary with counts by status:
-            {
-                "pending": 5,
-                "running": 2,
-                "completed": 100,
-                "failed": 3,
-                "cancelled": 1,
-                "total": 111
-            }
-        """
-        # Get counts by status using efficient SQL aggregation
+        """Return scan counts grouped by status for the current tenant."""
         query = (
             select(ScanJob.status, func.count())
             .where(ScanJob.tenant_id == self.tenant_id)
@@ -466,7 +272,7 @@ class ScanService(BaseService):
     async def cleanup_old_scans(
         self,
         days: int = 30,
-        status: Optional[str] = None,
+        status: str | None = None,
     ) -> int:
         """
         Delete scan jobs older than specified days.

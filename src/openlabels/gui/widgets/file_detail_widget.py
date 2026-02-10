@@ -8,7 +8,6 @@ Displays detailed information about a selected scan result including:
 - Label status and recommendations
 """
 
-from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -102,7 +101,7 @@ class FileDetailWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._result: Optional[dict] = None
+        self._result: dict | None = None
         self._available_labels: list[dict] = []
         self._setup_ui()
 

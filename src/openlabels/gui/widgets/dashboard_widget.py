@@ -9,7 +9,6 @@ Displays:
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class StatCard(QFrame if PYSIDE_AVAILABLE else object):
         title: str,
         value: str,
         subtitle: str = "",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         if not PYSIDE_AVAILABLE:
             return
@@ -97,7 +96,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
     if PYSIDE_AVAILABLE:
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
@@ -197,7 +196,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
 
         layout.addWidget(content_splitter, stretch=1)
 
-    def update_stats(self, stats: Dict) -> None:
+    def update_stats(self, stats: dict) -> None:
         """Update dashboard statistics."""
         if not PYSIDE_AVAILABLE:
             return
@@ -230,7 +229,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
                 lines.insert(0, message)
                 self._activity_label.setText("\n".join(lines))
 
-    def update_time_series(self, data: Dict[str, List[Tuple[str, int]]]) -> None:
+    def update_time_series(self, data: dict[str, list[tuple[str, int]]]) -> None:
         """
         Update the sensitive data over time chart.
 
@@ -242,7 +241,7 @@ class DashboardWidget(QWidget if PYSIDE_AVAILABLE else object):
         if PYSIDE_AVAILABLE and CHARTS_AVAILABLE and self._chart_panel:
             self._chart_panel.set_time_series_data(data)
 
-    def update_heat_map(self, data: List[List[int]]) -> None:
+    def update_heat_map(self, data: list[list[int]]) -> None:
         """
         Update the access activity heat map.
 

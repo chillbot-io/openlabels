@@ -3,7 +3,6 @@ User management API endpoints.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -28,15 +27,15 @@ class UserCreate(BaseModel):
     """Request to create a new user."""
 
     email: EmailStr
-    name: Optional[str] = Field(default=None, max_length=255)
+    name: str | None = Field(default=None, max_length=255)
     role: str = Field(default="viewer", pattern="^(admin|viewer)$")
 
 
 class UserUpdate(BaseModel):
     """Request to update a user."""
 
-    name: Optional[str] = Field(default=None, max_length=255)
-    role: Optional[str] = Field(default=None, pattern="^(admin|viewer)$")
+    name: str | None = Field(default=None, max_length=255)
+    role: str | None = Field(default=None, pattern="^(admin|viewer)$")
 
 
 class UserResponse(BaseModel):
@@ -44,7 +43,7 @@ class UserResponse(BaseModel):
 
     id: UUID
     email: str
-    name: Optional[str]
+    name: str | None
     role: str
     created_at: datetime
 

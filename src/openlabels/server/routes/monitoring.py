@@ -8,7 +8,6 @@ Provides:
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -25,10 +24,12 @@ from openlabels.server.models import (
     FileInventory,
     MonitoredFile,
 )
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
+    paginate_query,
 )
 
 router = APIRouter()
@@ -50,7 +51,7 @@ class MonitoredFileResponse(BaseModel):
     audit_read: bool
     audit_write: bool
     added_at: datetime
-    last_event_at: Optional[datetime]
+    last_event_at: datetime | None
     access_count: int
 
     class Config:
@@ -64,9 +65,9 @@ class AccessEventResponse(BaseModel):
     file_path: str
     action: str
     success: bool
-    user_name: Optional[str]
-    user_domain: Optional[str]
-    process_name: Optional[str]
+    user_name: str | None
+    user_domain: str | None
+    process_name: str | None
     event_time: datetime
 
     class Config:
@@ -99,7 +100,7 @@ class AccessStatsResponse(BaseModel):
 
 @router.get("/files", response_model=PaginatedResponse[MonitoredFileResponse])
 async def list_monitored_files(
-    risk_tier: Optional[str] = Query(None, description="Filter by risk tier"),
+    risk_tier: str | None = Query(None, description="Filter by risk tier"),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
@@ -109,31 +110,16 @@ async def list_monitored_files(
 
     Returns files that have monitoring enabled for access auditing.
     """
-    # Build query
     query = select(MonitoredFile).where(MonitoredFile.tenant_id == user.tenant_id)
-
     if risk_tier:
         query = query.where(MonitoredFile.risk_tier == risk_tier)
+    query = query.order_by(MonitoredFile.added_at.desc())
 
-    # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Get paginated results
-    query = query.order_by(MonitoredFile.added_at.desc()).offset(pagination.offset).limit(pagination.limit)
-
-    result = await session.execute(query)
-    files = result.scalars().all()
-
-    return PaginatedResponse[MonitoredFileResponse](
-        **create_paginated_response(
-            items=[MonitoredFileResponse.model_validate(f) for f in files],
-            total=total,
-            page=pagination.page,
-            page_size=pagination.page_size,
-        )
+    result = await paginate_query(
+        session, query, pagination,
+        transformer=lambda f: MonitoredFileResponse.model_validate(f),
     )
+    return PaginatedResponse[MonitoredFileResponse](**result)
 
 
 @router.post("/files", response_model=MonitoredFileResponse)
@@ -156,7 +142,7 @@ async def enable_file_monitoring(
     try:
         validated_path = validate_path(request.file_path)
     except PathValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Check if already monitored
     existing = await session.execute(
@@ -223,9 +209,7 @@ async def disable_file_monitoring(
     This removes the file from monitoring. Access events are preserved
     for audit purposes.
     """
-    monitored = await session.get(MonitoredFile, file_id)
-    if not monitored or monitored.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Monitored file not found")
+    monitored = await get_or_404(session, MonitoredFile, file_id, tenant_id=user.tenant_id)
 
     file_path = monitored.file_path
 
@@ -251,10 +235,10 @@ async def disable_file_monitoring(
 
 @router.get("/events", response_model=PaginatedResponse[AccessEventResponse])
 async def list_access_events(
-    file_path: Optional[str] = Query(None, description="Filter by file path"),
-    user_name: Optional[str] = Query(None, description="Filter by user name"),
-    action: Optional[str] = Query(None, description="Filter by action type"),
-    since: Optional[datetime] = Query(None, description="Filter events after this time"),
+    file_path: str | None = Query(None, description="Filter by file path"),
+    user_name: str | None = Query(None, description="Filter by user name"),
+    action: str | None = Query(None, description="Filter by action type"),
+    since: datetime | None = Query(None, description="Filter events after this time"),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
@@ -338,7 +322,7 @@ async def get_file_access_history(
 @router.get("/events/user/{user_name}", response_model=PaginatedResponse[AccessEventResponse])
 async def get_user_access_history(
     user_name: str,
-    since: Optional[datetime] = Query(None, description="Filter events after this time"),
+    since: datetime | None = Query(None, description="Filter events after this time"),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),

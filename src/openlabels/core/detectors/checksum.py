@@ -17,7 +17,6 @@ they are mathematically validated, not just pattern-matched.
 
 import logging
 import re
-from typing import List, Tuple
 
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip_bool,
@@ -46,7 +45,7 @@ logger = logging.getLogger(__name__)
 luhn_check = validate_luhn
 
 
-def validate_ssn(ssn: str) -> Tuple[bool, float]:
+def validate_ssn(ssn: str) -> tuple[bool, float]:
     """
     Validate SSN format and structure.
 
@@ -84,7 +83,7 @@ def validate_ssn(ssn: str) -> Tuple[bool, float]:
     return True, confidence
 
 
-def validate_credit_card(cc: str) -> Tuple[bool, float]:
+def validate_credit_card(cc: str) -> tuple[bool, float]:
     """
     Validate credit card using Luhn + prefix check.
 
@@ -124,7 +123,7 @@ def validate_credit_card(cc: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_npi(npi: str) -> Tuple[bool, float]:
+def validate_npi(npi: str) -> tuple[bool, float]:
     """Validate NPI using Luhn with 80840 prefix."""
     digits = re.sub(r'\D', '', npi)
 
@@ -141,7 +140,7 @@ def validate_npi(npi: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_dea(dea: str) -> Tuple[bool, float]:
+def validate_dea(dea: str) -> tuple[bool, float]:
     """
     Validate DEA number using DEA checksum formula.
     Format: 2 letters + 7 digits
@@ -166,7 +165,7 @@ def validate_dea(dea: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_iban(iban: str) -> Tuple[bool, float]:
+def validate_iban(iban: str) -> tuple[bool, float]:
     """Validate IBAN using Mod-97 algorithm."""
     iban = iban.upper().replace(' ', '')
 
@@ -190,7 +189,7 @@ def validate_iban(iban: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_vin(vin: str) -> Tuple[bool, float]:
+def validate_vin(vin: str) -> tuple[bool, float]:
     """Validate VIN using check digit (position 9)."""
     vin = vin.upper().replace(' ', '')
 
@@ -227,7 +226,7 @@ def validate_vin(vin: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_aba_routing(aba: str) -> Tuple[bool, float]:
+def validate_aba_routing(aba: str) -> tuple[bool, float]:
     """Validate ABA routing number using prefix and checksum."""
     digits = re.sub(r'\D', '', aba)
 
@@ -260,7 +259,7 @@ def validate_aba_routing(aba: str) -> Tuple[bool, float]:
 # TRACKING NUMBER VALIDATORS
 # =============================================================================
 
-def validate_ups_tracking(tracking: str) -> Tuple[bool, float]:
+def validate_ups_tracking(tracking: str) -> tuple[bool, float]:
     """Validate UPS tracking number (1Z + 16 alphanumeric)."""
     tracking = tracking.upper().replace(' ', '')
 
@@ -297,7 +296,7 @@ def validate_ups_tracking(tracking: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_fedex_tracking(tracking: str) -> Tuple[bool, float]:
+def validate_fedex_tracking(tracking: str) -> tuple[bool, float]:
     """Validate FedEx tracking number (12, 15, 20, or 22 digits)."""
     digits = re.sub(r'\D', '', tracking)
 
@@ -335,7 +334,7 @@ def validate_fedex_tracking(tracking: str) -> Tuple[bool, float]:
     return False, 0.0
 
 
-def validate_usps_tracking(tracking: str) -> Tuple[bool, float]:
+def validate_usps_tracking(tracking: str) -> tuple[bool, float]:
     """Validate USPS tracking number."""
     tracking = tracking.upper().replace(' ', '')
 
@@ -372,7 +371,7 @@ def validate_usps_tracking(tracking: str) -> Tuple[bool, float]:
 # FINANCIAL INSTRUMENT VALIDATORS
 # =============================================================================
 
-def validate_cusip(cusip: str) -> Tuple[bool, float]:
+def validate_cusip(cusip: str) -> tuple[bool, float]:
     """Validate CUSIP (9-character security identifier).
 
     Delegates to the canonical validator in _rust/validators_py.
@@ -382,7 +381,7 @@ def validate_cusip(cusip: str) -> Tuple[bool, float]:
     return True, 0.99
 
 
-def validate_isin(isin: str) -> Tuple[bool, float]:
+def validate_isin(isin: str) -> tuple[bool, float]:
     """Validate ISIN (12-character international security identifier).
 
     Delegates to the canonical validator in _rust/validators_py.
@@ -513,7 +512,7 @@ class ChecksumDetector(BaseDetector):
     name = "checksum"
     tier = Tier.CHECKSUM
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans = []
         seen = set()  # (start, end, text) to avoid duplicates
 

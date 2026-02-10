@@ -14,7 +14,6 @@ Performance:
 """
 
 import logging
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -51,10 +50,10 @@ class LabelResponse(BaseModel):
 
     id: str
     name: str
-    description: Optional[str]
-    priority: Optional[int]
-    color: Optional[str]
-    parent_id: Optional[str]
+    description: str | None
+    priority: int | None
+    color: str | None
+    parent_id: str | None
 
     class Config:
         from_attributes = True
@@ -76,7 +75,7 @@ class LabelRuleResponse(BaseModel):
     rule_type: str
     match_value: str
     label_id: str
-    label_name: Optional[str] = None
+    label_name: str | None = None
     priority: int
 
     class Config:
@@ -100,10 +99,10 @@ class LabelSyncRequest(BaseModel):
 class LabelMappingsResponse(BaseModel):
     """Label mappings for each risk tier."""
 
-    CRITICAL: Optional[str] = None
-    HIGH: Optional[str] = None
-    MEDIUM: Optional[str] = None
-    LOW: Optional[str] = None
+    CRITICAL: str | None = None
+    HIGH: str | None = None
+    MEDIUM: str | None = None
+    LOW: str | None = None
     labels: list[LabelResponse] = []
 
 
@@ -143,7 +142,7 @@ async def list_labels(
 async def sync_labels(
     label_service: LabelServiceDep,
     _admin: AdminContextDep,
-    request: Optional[LabelSyncRequest] = None,
+    request: LabelSyncRequest | None = None,
 ) -> dict:
     """
     Sync sensitivity labels from Microsoft 365.
@@ -185,7 +184,7 @@ async def get_sync_status(
         raise InternalError(
             message="Database error occurred while getting sync status",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
     # Get cache status
     try:
@@ -354,7 +353,7 @@ async def apply_label(
         raise InternalError(
             message="Database error occurred while applying label",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
 
 # =============================================================================

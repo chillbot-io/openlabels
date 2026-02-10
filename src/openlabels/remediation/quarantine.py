@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from openlabels.exceptions import QuarantineError
+from openlabels.remediation.manifest import QuarantineManifest
 
 from .base import (
     RemediationAction,

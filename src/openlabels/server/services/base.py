@@ -1,49 +1,31 @@
-"""
-Base service class for OpenLabels server.
-
-Provides common functionality for all services:
-- Database session management with explicit transaction control
-- Tenant isolation via TenantContext
-- Settings access
-- Logging setup
-"""
+"""Base service module providing session management, tenant isolation, and logging."""
 
 import logging
-from abc import ABC
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Optional, TypeVar
+from typing import TypeVar
 from uuid import UUID
 
-T = TypeVar("T")
-
 from pydantic import BaseModel
+from sqlalchemy import Select, func
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import Settings
 
+T = TypeVar("T")
+
 
 class TenantContext(BaseModel):
-    """
-    Tenant context for service operations.
+    """Encapsulates tenant and user info for data isolation and audit trails.
 
-    Encapsulates the current tenant and user information for
-    proper data isolation and audit trails.
-
-    This is typically constructed from CurrentUser in route handlers
-    and passed to services.
-
-    Attributes:
-        tenant_id: UUID of the current tenant
-        user_id: UUID of the current user (optional for system operations)
-        user_email: Email of the current user (optional)
-        user_role: Role of the current user (optional)
+    Typically constructed from CurrentUser in route handlers and passed to services.
     """
 
     tenant_id: UUID
-    user_id: Optional[UUID] = None
-    user_email: Optional[str] = None
-    user_role: Optional[str] = None
+    user_id: UUID | None = None
+    user_email: str | None = None
+    user_role: str | None = None
 
     class Config:
         """Pydantic configuration."""
@@ -52,15 +34,7 @@ class TenantContext(BaseModel):
 
     @classmethod
     def from_current_user(cls, user: "CurrentUser") -> "TenantContext":
-        """
-        Create TenantContext from CurrentUser.
-
-        Args:
-            user: CurrentUser instance from authentication
-
-        Returns:
-            TenantContext with user information
-        """
+        """Create TenantContext from a CurrentUser instance."""
         return cls(
             tenant_id=user.tenant_id,
             user_id=user.id,
@@ -70,15 +44,7 @@ class TenantContext(BaseModel):
 
     @classmethod
     def system_context(cls, tenant_id: UUID) -> "TenantContext":
-        """
-        Create a system-level context for background jobs.
-
-        Args:
-            tenant_id: UUID of the tenant
-
-        Returns:
-            TenantContext without user information
-        """
+        """Create a system-level context (no user) for background jobs."""
         return cls(tenant_id=tenant_id)
 
 
@@ -89,33 +55,8 @@ except ImportError:
     CurrentUser = None  # type: ignore
 
 
-class BaseService(ABC):
-    """
-    Abstract base class for all services.
-
-    Provides common functionality including:
-    - Database session access with commit/flush/rollback
-    - Tenant context for data isolation
-    - Settings access
-    - Structured logging
-
-    All services should extend this class to ensure consistent
-    behavior across the application.
-
-    Example:
-        class MyService(BaseService):
-            async def my_method(self) -> list[MyModel]:
-                query = select(MyModel).where(
-                    MyModel.tenant_id == self.tenant_id
-                )
-                result = await self.session.execute(query)
-                return list(result.scalars().all())
-
-            async def create_item(self, name: str) -> MyModel:
-                item = MyModel(tenant_id=self.tenant_id, name=name)
-                self.session.add(item)
-                await self.flush()  # Get ID without committing
-                return item
+class BaseService:
+    """Abstract base class for all services.
 
     Transaction Management:
         Services do NOT auto-commit. The caller (usually a route handler)
@@ -136,14 +77,6 @@ class BaseService(ABC):
         tenant: TenantContext,
         settings: Settings,
     ):
-        """
-        Initialize the base service.
-
-        Args:
-            session: Async database session for queries
-            tenant: Tenant context for data isolation
-            settings: Application settings
-        """
         self._session = session
         self._tenant = tenant
         self._settings = settings
@@ -151,114 +84,44 @@ class BaseService(ABC):
 
     @property
     def session(self) -> AsyncSession:
-        """
-        Get the database session.
-
-        Returns:
-            The async database session for this service
-        """
+        """Database session for this service."""
         return self._session
 
     @property
     def tenant_id(self) -> UUID:
-        """
-        Get the tenant ID for data isolation.
-
-        Returns:
-            UUID of the current tenant
-        """
+        """Current tenant UUID for data isolation."""
         return self._tenant.tenant_id
 
     @property
-    def user_id(self) -> Optional[UUID]:
-        """
-        Get the user ID for audit trails.
-
-        Returns:
-            UUID of the current user, or None for system operations
-        """
+    def user_id(self) -> UUID | None:
+        """Current user UUID, or None for system operations."""
         return self._tenant.user_id
 
     @property
     def settings(self) -> Settings:
-        """
-        Get the application settings.
-
-        Returns:
-            Application settings instance
-        """
+        """Application settings."""
         return self._settings
 
     @property
     def tenant(self) -> TenantContext:
-        """
-        Get the full tenant context.
-
-        Returns:
-            TenantContext with tenant and user information
-        """
+        """Full tenant context including user info."""
         return self._tenant
 
     async def commit(self) -> None:
-        """
-        Commit the current transaction.
-
-        Persists all changes made in the current session.
-        Use sparingly - prefer letting the route handler commit.
-
-        Raises:
-            SQLAlchemyError: If commit fails
-        """
+        """Commit the current transaction. Prefer letting the route handler commit."""
         await self._session.commit()
 
     async def flush(self) -> None:
-        """
-        Flush pending changes to the database.
-
-        Synchronizes the session state with the database without
-        committing. Useful for getting auto-generated IDs or
-        checking constraints before final commit.
-
-        Raises:
-            SQLAlchemyError: If flush fails (e.g., constraint violation)
-        """
+        """Flush pending changes without committing (useful for obtaining auto-generated IDs)."""
         await self._session.flush()
 
     async def rollback(self) -> None:
-        """
-        Rollback the current transaction.
-
-        Discards all uncommitted changes in the session.
-        """
+        """Roll back the current transaction."""
         await self._session.rollback()
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
-        """
-        Explicit transaction boundary context manager.
-
-        Provides ACID guarantees for a group of operations.
-        Commits on successful exit, rolls back on exception.
-
-        Usage:
-            async with service.transaction():
-                await service.create_item("foo")
-                await service.update_item(item_id)
-                # Commits automatically
-
-            # Or with explicit error handling:
-            async with service.transaction():
-                try:
-                    await service.risky_operation()
-                except MyError:
-                    raise  # Transaction rolls back
-
-        Yields:
-            None
-
-        Raises:
-            Exception: Re-raises any exception after rollback
-        """
+        """Context manager that commits on success and rolls back on exception."""
         try:
             yield
             await self.commit()
@@ -272,22 +135,7 @@ class BaseService(ABC):
         entity_id: UUID,
         entity_name: str = "Resource",
     ) -> T:
-        """
-        Fetch an entity by ID with tenant isolation.
-
-        Loads the entity and verifies it belongs to the current tenant.
-
-        Args:
-            model_class: SQLAlchemy model class to query
-            entity_id: Primary key of the entity
-            entity_name: Human-readable name for error messages
-
-        Returns:
-            The entity instance
-
-        Raises:
-            NotFoundError: If entity doesn't exist or belongs to another tenant
-        """
+        """Fetch an entity by ID, raising NotFoundError if missing or wrong tenant."""
         from openlabels.exceptions import NotFoundError
 
         entity = await self._session.get(model_class, entity_id)
@@ -298,6 +146,19 @@ class BaseService(ABC):
                 resource_id=str(entity_id),
             )
         return entity
+
+    async def paginate(
+        self,
+        query: Select,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list, int]:
+        """Execute a paginated query, returning (items, total_count)."""
+        count_q = sa_select(func.count()).select_from(query.subquery())
+        total = (await self._session.execute(count_q)).scalar() or 0
+        rows = (await self._session.execute(query.offset(offset).limit(limit))).scalars().all()
+        return list(rows), total
 
     def _log_debug(self, message: str, **kwargs) -> None:
         """Log a debug message with context."""

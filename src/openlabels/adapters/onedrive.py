@@ -11,7 +11,6 @@ Features:
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Optional
 
 import httpx
 
@@ -43,7 +42,7 @@ class OneDriveAdapter(BaseGraphAdapter):
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
         use_delta: bool = True,
     ) -> AsyncIterator[FileInfo]:
         """

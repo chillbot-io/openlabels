@@ -19,7 +19,6 @@ Entity Types:
 
 import hashlib
 import re
-from typing import List
 
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip,
@@ -375,7 +374,7 @@ class FinancialDetector(BaseDetector):
     name = "financial"
     tier = Tier.CHECKSUM
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
         seen: set[tuple[int, int]] = set()
 

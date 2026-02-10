@@ -21,12 +21,11 @@ Sieves (applied in order):
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
 
 from ..types import Span
 
 # Entity types that should only match exactly (isolated)
-ISOLATED_TYPES: Set[str] = frozenset({
+ISOLATED_TYPES: set[str] = frozenset({
     "SSN",
     "MRN",
     "CREDIT_CARD",
@@ -39,7 +38,7 @@ ISOLATED_TYPES: Set[str] = frozenset({
 })
 
 # Entity types that represent person names
-NAME_TYPES: Set[str] = frozenset({
+NAME_TYPES: set[str] = frozenset({
     "NAME",
     "NAME_PATIENT",
     "NAME_PROVIDER",
@@ -53,7 +52,7 @@ class Mention:
     """A single mention of an entity in text."""
     span: Span
     normalized_text: str
-    words: Set[str]
+    words: set[str]
 
 
 @dataclass
@@ -62,8 +61,8 @@ class Entity:
     id: str
     entity_type: str
     canonical_value: str
-    mentions: List[Mention] = field(default_factory=list)
-    semantic_role: Optional[str] = None  # patient, provider, etc.
+    mentions: list[Mention] = field(default_factory=list)
+    semantic_role: str | None = None  # patient, provider, etc.
 
     @property
     def count(self) -> int:
@@ -102,7 +101,7 @@ class EntityResolver:
         """
         self.min_confidence = min_confidence
 
-    def resolve(self, spans: List[Span]) -> List[Entity]:
+    def resolve(self, spans: list[Span]) -> list[Entity]:
         """
         Resolve entity mentions into grouped entities.
 
@@ -141,7 +140,7 @@ class EntityResolver:
         """Normalize text for matching."""
         return text.lower().strip()
 
-    def _get_words(self, text: str, entity_type: str) -> Set[str]:
+    def _get_words(self, text: str, entity_type: str) -> set[str]:
         """Extract words from text, excluding titles."""
         if entity_type not in NAME_TYPES:
             return set()
@@ -150,7 +149,7 @@ class EntityResolver:
         words = set(text.replace(".", "").split())
         return words - titles
 
-    def _apply_sieves(self, mentions: List[Mention]) -> Dict[int, int]:
+    def _apply_sieves(self, mentions: list[Mention]) -> dict[int, int]:
         """
         Apply sieves to group mentions.
 
@@ -171,9 +170,9 @@ class EntityResolver:
                 parent[px] = py
 
         # Index by normalized text and coref anchors
-        text_index: Dict[str, List[int]] = {}
-        coref_index: Dict[str, List[int]] = {}
-        word_index: Dict[str, List[int]] = {}
+        text_index: dict[str, list[int]] = {}
+        coref_index: dict[str, list[int]] = {}
+        word_index: dict[str, list[int]] = {}
 
         for i, m in enumerate(mentions):
             # Index by normalized text
@@ -233,12 +232,12 @@ class EntityResolver:
 
     def _groups_to_entities(
         self,
-        groups: Dict[int, int],
-        mentions: List[Mention]
-    ) -> List[Entity]:
+        groups: dict[int, int],
+        mentions: list[Mention]
+    ) -> list[Entity]:
         """Convert union-find groups to Entity objects."""
         # Group mentions by their root
-        grouped: Dict[int, List[int]] = {}
+        grouped: dict[int, list[int]] = {}
         for i, root in groups.items():
             if root not in grouped:
                 grouped[root] = []
@@ -270,7 +269,7 @@ class EntityResolver:
         return entities
 
 
-def resolve_entities(spans: List[Span], min_confidence: float = 0.70) -> List[Entity]:
+def resolve_entities(spans: list[Span], min_confidence: float = 0.70) -> list[Entity]:
     """
     Convenience function to resolve entities.
 
@@ -285,7 +284,7 @@ def resolve_entities(spans: List[Span], min_confidence: float = 0.70) -> List[En
     return resolver.resolve(spans)
 
 
-def get_entity_counts(entities: List[Entity]) -> Dict[str, int]:
+def get_entity_counts(entities: list[Entity]) -> dict[str, int]:
     """
     Get entity counts by type.
 
@@ -295,7 +294,7 @@ def get_entity_counts(entities: List[Entity]) -> Dict[str, int]:
     Returns:
         Dict mapping entity type to unique entity count
     """
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for entity in entities:
         etype = entity.entity_type
         counts[etype] = counts.get(etype, 0) + 1

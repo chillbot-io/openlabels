@@ -26,7 +26,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Union
 
 try:
     import numpy as np
@@ -84,11 +84,11 @@ class OCRBlock:
     enabling mapping of PHI spans back to image coordinates for redaction.
     """
     text: str
-    bbox: List[List[float]]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] quadrilateral
+    bbox: list[list[float]]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] quadrilateral
     confidence: float
 
     @property
-    def bounding_rect(self) -> Tuple[int, int, int, int]:
+    def bounding_rect(self) -> tuple[int, int, int, int]:
         """
         Convert quadrilateral to axis-aligned rectangle.
 
@@ -124,8 +124,8 @@ class OCRResult:
     Uses IntervalTree for O(log n + k) lookup instead of O(n) linear search.
     """
     full_text: str
-    blocks: List[OCRBlock]
-    offset_map: List[Tuple[int, int, int]]  # (start_char, end_char, block_index)
+    blocks: list[OCRBlock]
+    offset_map: list[tuple[int, int, int]]  # (start_char, end_char, block_index)
     confidence: float
     _interval_tree: "IntervalTree" = field(default=None, repr=False, compare=False)
 
@@ -137,7 +137,7 @@ class OCRResult:
                 if block_start < block_end:  # IntervalTree requires non-empty intervals
                     self._interval_tree[block_start:block_end] = block_idx
 
-    def get_blocks_for_span(self, start: int, end: int) -> List[OCRBlock]:
+    def get_blocks_for_span(self, start: int, end: int) -> list[OCRBlock]:
         """
         Find all OCR blocks that overlap with a character span.
 
@@ -183,7 +183,7 @@ class OCREngine:
         engine.await_ready(timeout=30)  # Blocks until ready
     """
 
-    def __init__(self, models_dir: Optional[Path] = None):
+    def __init__(self, models_dir: Path | None = None):
         """
         Initialize OCR engine.
 
@@ -197,7 +197,7 @@ class OCREngine:
         self._initialized = False
         self._loading = False
         self._ready_event = threading.Event()
-        self._load_error: Optional[Exception] = None
+        self._load_error: Exception | None = None
         self._lock = threading.Lock()
 
     @property
@@ -319,7 +319,7 @@ class OCREngine:
             raise ImportError(
                 "rapidocr-onnxruntime not installed. "
                 "Run: pip install rapidocr-onnxruntime"
-            )
+            ) from None
         except (OSError, RuntimeError, ValueError) as e:
             # Log initialization failures with full context
             logger.error(f"Failed to initialize RapidOCR: {type(e).__name__}: {e}")
@@ -450,7 +450,7 @@ class OCREngine:
     def extract_text_with_confidence(
         self,
         image: Union[str, Path, "np.ndarray", "Image.Image"],
-    ) -> Tuple[str, float]:
+    ) -> tuple[str, float]:
         """
         Extract text with average confidence score.
 

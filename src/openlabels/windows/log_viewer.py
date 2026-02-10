@@ -10,7 +10,6 @@ Requires: PySide6
 
 import logging
 import subprocess
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +86,12 @@ if PYSIDE6_AVAILABLE:
         def __init__(
             self,
             project_name: str = "openlabels",
-            parent: Optional[QWidget] = None,
+            parent: QWidget | None = None,
         ):
             super().__init__(parent)
             self._project_name = project_name
-            self._reader: Optional[_LogReader] = None
-            self._thread: Optional[QThread] = None
+            self._reader: _LogReader | None = None
+            self._thread: QThread | None = None
             self._auto_scroll = True
             self._line_count = 0
 

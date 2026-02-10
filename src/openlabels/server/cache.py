@@ -70,7 +70,7 @@ class InMemoryCache:
         self._hits = 0
         self._misses = 0
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get value from cache if not expired."""
         async with self._lock:
             if key not in self._cache:
@@ -90,7 +90,7 @@ class InMemoryCache:
             self._hits += 1
             return value
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set value in cache with optional TTL."""
         async with self._lock:
             # Calculate expiration time
@@ -169,7 +169,7 @@ class RedisCache:
         self._max_connections = max_connections
         self._connect_timeout = connect_timeout
         self._socket_timeout = socket_timeout
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._connected = False
         self._hits = 0
         self._misses = 0
@@ -212,7 +212,7 @@ class RedisCache:
             self._connected = False
             logger.info("Redis cache connection closed")
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get value from Redis."""
         if not self._connected or not self._client:
             return None
@@ -238,7 +238,7 @@ class RedisCache:
             self._misses += 1
             return None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set value in Redis with optional TTL."""
         if not self._connected or not self._client:
             return False
@@ -355,7 +355,7 @@ class CacheManager:
 
     def __init__(
         self,
-        redis_url: Optional[str] = None,
+        redis_url: str | None = None,
         key_prefix: str = "openlabels:",
         default_ttl: int = 300,
         max_connections: int = 10,
@@ -370,7 +370,7 @@ class CacheManager:
         self._key_prefix = key_prefix
 
         # Initialize backends
-        self._redis: Optional[RedisCache] = None
+        self._redis: RedisCache | None = None
         self._memory = InMemoryCache(max_size=memory_cache_max_size)
 
         if redis_url and enabled:
@@ -405,7 +405,7 @@ class CacheManager:
             return self._redis
         return self._memory
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Get value from cache."""
         if not self._enabled:
             return None
@@ -415,7 +415,7 @@ class CacheManager:
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> bool:
         """Set value in cache."""
         if not self._enabled:
@@ -449,7 +449,7 @@ class CacheManager:
         self,
         key: str,
         factory: Callable[[], Any],
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> Any:
         """Get value from cache or compute and store it."""
         if not self._enabled:
@@ -526,7 +526,7 @@ def _make_cache_key(
     func_name: str,
     args: tuple,
     kwargs: dict,
-    key_builder: Optional[Callable[..., str]] = None,
+    key_builder: Callable[..., str] | None = None,
 ) -> str:
     """
     Generate a cache key from function arguments.
@@ -566,10 +566,10 @@ def _make_cache_key(
 
 
 def cache(
-    ttl: Optional[int] = None,
+    ttl: int | None = None,
     key_prefix: str = "",
-    key_builder: Optional[Callable[..., str]] = None,
-    skip_cache_if: Optional[Callable[..., bool]] = None,
+    key_builder: Callable[..., str] | None = None,
+    skip_cache_if: Callable[..., bool] | None = None,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Decorator for caching async function results.
@@ -648,7 +648,7 @@ async def _invalidate_func_cache(
     func_name: str,
     args: tuple,
     kwargs: dict,
-    key_builder: Optional[Callable[..., str]],
+    key_builder: Callable[..., str] | None,
 ) -> bool:
     """Invalidate cache for a specific function call."""
     try:

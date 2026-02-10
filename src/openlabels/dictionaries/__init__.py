@@ -74,7 +74,7 @@ class DictionaryLoader:
         "professions",
     ]
 
-    def __init__(self, dict_dir: Optional[Path] = None):
+    def __init__(self, dict_dir: Path | None = None):
         """
         Initialize the dictionary loader.
 
@@ -82,10 +82,10 @@ class DictionaryLoader:
             dict_dir: Optional custom directory containing dictionary files
         """
         self.dict_dir = Path(dict_dir) if dict_dir else DICT_DIR
-        self._cache: Dict[str, FrozenSet[str]] = {}
+        self._cache: dict[str, frozenset[str]] = {}
         self._loaded = False
 
-    def _load_dictionary(self, name: str) -> FrozenSet[str]:
+    def _load_dictionary(self, name: str) -> frozenset[str]:
         """Load a dictionary file into a frozenset."""
         if name in self._cache:
             return self._cache[name]
@@ -99,7 +99,7 @@ class DictionaryLoader:
             logger.warning(f"Dictionary file not found: {filepath}")
             return frozenset()
 
-        terms: Set[str] = set()
+        terms: set[str] = set()
         try:
             with open(filepath, encoding="utf-8") as f:
                 for line in f:
@@ -119,7 +119,7 @@ class DictionaryLoader:
             logger.error(f"Error loading dictionary {name}: {e}")
             return frozenset()
 
-    def get_terms(self, name: str) -> FrozenSet[str]:
+    def get_terms(self, name: str) -> frozenset[str]:
         """
         Get all terms from a dictionary.
 
@@ -144,7 +144,7 @@ class DictionaryLoader:
         """
         return term.lower() in self._load_dictionary(name)
 
-    def find_matches(self, name: str, text: str) -> Set[str]:
+    def find_matches(self, name: str, text: str) -> set[str]:
         """
         Find all dictionary terms that appear in text.
 
@@ -246,7 +246,7 @@ class DictionaryLoader:
 
         return False
 
-    def get_medical_indicators(self, text: str) -> Dict[str, Set[str]]:
+    def get_medical_indicators(self, text: str) -> dict[str, set[str]]:
         """
         Get detailed breakdown of medical indicators found in text.
 
@@ -256,7 +256,7 @@ class DictionaryLoader:
         Returns:
             Dictionary mapping category to found terms
         """
-        results: Dict[str, Set[str]] = {
+        results: dict[str, set[str]] = {
             "workflow": set(),
             "professions": set(),
             "drug_patterns": set(),
@@ -295,13 +295,13 @@ class DictionaryLoader:
         logger.info(f"Preloaded {len(self._cache)} dictionaries")
 
     @property
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> dict[str, int]:
         """Get statistics about loaded dictionaries."""
         return {name: len(terms) for name, terms in self._cache.items()}
 
 
 # Singleton instance
-_loader: Optional[DictionaryLoader] = None
+_loader: DictionaryLoader | None = None
 
 
 def get_dictionary_loader() -> DictionaryLoader:

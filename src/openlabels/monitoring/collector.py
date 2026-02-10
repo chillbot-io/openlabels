@@ -13,7 +13,6 @@ import subprocess
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 from .base import WINDOWS_ACCESS_MASKS, AccessAction, AccessEvent
 
@@ -25,8 +24,8 @@ class EventCollector:
 
     def collect_events(
         self,
-        since: Optional[datetime] = None,
-        paths: Optional[List[str]] = None,
+        since: datetime | None = None,
+        paths: list[str] | None = None,
     ) -> Iterator[AccessEvent]:
         """Yield access events, optionally filtered by time and paths.
 
@@ -45,8 +44,8 @@ class EventCollector:
 
     def _collect_windows(
         self,
-        since: Optional[datetime],
-        paths: Optional[List[str]],
+        since: datetime | None,
+        paths: list[str] | None,
     ) -> Iterator[AccessEvent]:
         """Query Windows Security Event Log for file access events.
 
@@ -94,7 +93,7 @@ class EventCollector:
                 yield event
 
     @staticmethod
-    def _parse_windows_event(fields: dict) -> Optional[AccessEvent]:
+    def _parse_windows_event(fields: dict) -> AccessEvent | None:
         """Convert wevtutil text fields into an AccessEvent."""
         object_name = fields.get("Object Name", "")
         if not object_name:
@@ -136,8 +135,8 @@ class EventCollector:
 
     def _collect_linux(
         self,
-        since: Optional[datetime],
-        paths: Optional[List[str]],
+        since: datetime | None,
+        paths: list[str] | None,
     ) -> Iterator[AccessEvent]:
         """Query auditd logs via ``ausearch``."""
         cmd = ["ausearch", "-k", "openlabels", "--format", "csv"]
@@ -175,8 +174,8 @@ class EventCollector:
     def _parse_linux_row(
         cols: list,
         col: dict,
-        paths: Optional[List[str]],
-    ) -> Optional[AccessEvent]:
+        paths: list[str] | None,
+    ) -> AccessEvent | None:
         """Parse a single ausearch CSV row into an AccessEvent."""
         def _get(name: str) -> str:
             idx = col.get(name)

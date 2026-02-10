@@ -138,7 +138,7 @@ def download(names: tuple[str, ...], models_dir: Path | None, force: bool):
     try:
         resolved = resolve_names(list(names))
     except KeyError as e:
-        raise click.BadParameter(str(e))
+        raise click.BadParameter(str(e)) from e
 
     click.echo(f"Models directory: {base}")
     click.echo(f"Downloading: {', '.join(resolved)}")

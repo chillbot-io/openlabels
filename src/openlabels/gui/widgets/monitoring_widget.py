@@ -9,7 +9,6 @@ Provides:
 """
 
 import logging
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +58,14 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
         monitoring_disabled = Signal(str)
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
 
         super().__init__(parent)
-        self._watched_files: List[Dict] = []
-        self._access_events: List[Dict] = []
+        self._watched_files: list[dict] = []
+        self._access_events: list[dict] = []
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -384,7 +383,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
             self._history_table.setItem(row, 3, QTableWidgetItem(event.get("process_name", "")))
             self._history_table.setItem(row, 4, QTableWidgetItem(event.get("details", "")))
 
-    def load_watched_files(self, files: List[Dict]) -> None:
+    def load_watched_files(self, files: list[dict]) -> None:
         """Load watched files from external source."""
         self._watched_files = files
         self._update_watched_table()
@@ -393,7 +392,7 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
 class AddMonitoringDialog(QDialog if PYSIDE_AVAILABLE else object):
     """Dialog for adding a file to monitoring."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             return
 

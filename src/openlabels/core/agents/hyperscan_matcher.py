@@ -21,7 +21,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntFlag
-from typing import Optional
 
 from .._rust.validators_py import (
     validate_luhn as luhn_check,
@@ -78,7 +77,7 @@ class Pattern:
     regex: str
     flags: PatternFlags = PatternFlags.CASELESS
     confidence: float = 1.0
-    validator: Optional[Callable[[str], bool]] = None  # Post-match validation (e.g., Luhn check)
+    validator: Callable[[str], bool] | None = None  # Post-match validation (e.g., Luhn check)
 
 
 # ============================================================================
@@ -373,14 +372,14 @@ class HyperscanMatcher:
 
     def __init__(
         self,
-        patterns: Optional[list[Pattern]] = None,
+        patterns: list[Pattern] | None = None,
         use_fallback: bool = True,
     ):
         self.patterns = patterns or PII_PATTERNS
         self._pattern_map = {p.id: p for p in self.patterns}
         self._use_fallback = use_fallback
-        self._db: Optional[hyperscan.Database] = None
-        self._scratch: Optional[hyperscan.Scratch] = None
+        self._db: hyperscan.Database | None = None
+        self._scratch: hyperscan.Scratch | None = None
         self._compiled = False
 
         if HYPERSCAN_AVAILABLE:
@@ -504,7 +503,7 @@ class HyperscanMatcher:
         callback_count = [0]  # Use list to allow mutation in nested function
 
         # Callback for each match - Hyperscan reports match end position in block mode
-        def on_match(id: int, start: int, end: int, flags: int, context: None) -> Optional[bool]:
+        def on_match(id: int, start: int, end: int, flags: int, context: None) -> bool | None:
             callback_count[0] += 1
             pattern = self._pattern_map.get(id)
             if not pattern:
@@ -626,7 +625,7 @@ class HyperscanMatcher:
 # Global singleton for efficient reuse
 # ============================================================================
 
-_matcher_instance: Optional[HyperscanMatcher] = None
+_matcher_instance: HyperscanMatcher | None = None
 
 
 def get_matcher() -> HyperscanMatcher:

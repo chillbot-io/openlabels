@@ -64,7 +64,7 @@ class InMemoryWorkerState:
             self._states[worker_id] = (state, expires_at)
             return True
 
-    async def get_state(self, worker_id: str) -> Optional[dict[str, Any]]:
+    async def get_state(self, worker_id: str) -> dict[str, Any] | None:
         """Get worker state if not expired."""
         async with self._lock:
             if worker_id not in self._states:
@@ -112,7 +112,7 @@ class WorkerStateManager:
 
     def __init__(
         self,
-        redis_url: Optional[str] = None,
+        redis_url: str | None = None,
         key_prefix: str = WORKER_STATE_KEY_PREFIX,
         default_ttl: int = WORKER_STATE_TTL_SECONDS,
         connect_timeout: float = 5.0,
@@ -124,7 +124,7 @@ class WorkerStateManager:
         self._connect_timeout = connect_timeout
         self._socket_timeout = socket_timeout
 
-        self._redis_client: Optional[Any] = None
+        self._redis_client: Any | None = None
         self._redis_connected = False
         self._memory_fallback = InMemoryWorkerState()
 
@@ -174,7 +174,7 @@ class WorkerStateManager:
         self,
         worker_id: str,
         state: dict[str, Any],
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> bool:
         """
         Set worker state in Redis with TTL.
@@ -204,7 +204,7 @@ class WorkerStateManager:
 
         return await self._memory_fallback.set_state(worker_id, state, ttl)
 
-    async def get_state(self, worker_id: str) -> Optional[dict[str, Any]]:
+    async def get_state(self, worker_id: str) -> dict[str, Any] | None:
         """
         Get worker state from Redis.
 
@@ -347,7 +347,7 @@ class Worker:
     State is automatically synced to Redis (or in-memory fallback) with TTL-based expiration.
     """
 
-    def __init__(self, concurrency: Optional[int] = None) -> None:
+    def __init__(self, concurrency: int | None = None) -> None:
         """
         Initialize the worker.
 
@@ -361,7 +361,7 @@ class Worker:
         self._current_jobs: set[str] = set()
         self._worker_tasks: list[asyncio.Task[None]] = []
         self._concurrency_check_interval = 5  # Check for concurrency changes every 5 seconds
-        self._state_manager: Optional[WorkerStateManager] = None
+        self._state_manager: WorkerStateManager | None = None
 
     async def start(self) -> None:
         """Start the worker loop with dynamic concurrency support."""
@@ -714,7 +714,7 @@ class Worker:
             await queue.fail(job.id, error_msg)
 
 
-def run_worker(concurrency: Optional[int] = None) -> None:
+def run_worker(concurrency: int | None = None) -> None:
     """
     Run the worker process.
 

@@ -112,7 +112,7 @@ def validate_path(
             canonical_path = os.path.normpath(file_path)
     except (ValueError, TypeError) as e:
         logger.warning(f"Invalid file path format: {file_path} - {e}")
-        raise PathValidationError(f"Invalid file path format: {e}")
+        raise PathValidationError(f"Invalid file path format: {e}") from e
 
     # Check if path traversal was attempted
     # If original path contains "..", log a warning (the path was normalized)
@@ -166,7 +166,7 @@ def validate_output_path(output_path: str, *, create_parent: bool = False) -> st
                 os.makedirs(parent, exist_ok=True)
                 logger.debug(f"Created output directory: {parent}")
             except OSError as e:
-                raise PathValidationError(f"Cannot create output directory: {e}")
+                raise PathValidationError(f"Cannot create output directory: {e}") from e
         else:
             raise PathValidationError(f"Output directory does not exist: {parent}")
 

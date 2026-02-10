@@ -5,8 +5,6 @@ All exception classes live here. No per-module exception files.
 
 Hierarchy:
     OpenLabelsError (base)
-    ├── ConfigError
-    │   └── ConfigurationError (alias)
     ├── DetectionError
     ├── ExtractionError
     ├── AdapterError
@@ -39,7 +37,7 @@ Usage:
     from openlabels.exceptions import DetectionError, NotFoundError
 """
 
-from typing import Any, Optional
+from typing import Any
 
 # =============================================================================
 # ROOT
@@ -59,8 +57,8 @@ class OpenLabelsError(Exception):
     def __init__(
         self,
         message: str,
-        context: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
+        context: str | None = None,
+        details: dict[str, Any] | None = None,
     ):
         self.message = message
         self.context = context
@@ -78,37 +76,6 @@ class OpenLabelsError(Exception):
 
 
 # =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-
-class ConfigError(OpenLabelsError):
-    """Configuration or settings error."""
-
-    def __init__(
-        self,
-        message: str,
-        setting_name: Optional[str] = None,
-        setting_value: Optional[Any] = None,
-        **kwargs: Any,
-    ):
-        details = kwargs.pop("details", {})
-        if setting_name:
-            details["setting"] = setting_name
-        if setting_value is not None:
-            details["value"] = repr(setting_value)
-        super().__init__(message, details=details, **kwargs)
-        self.setting_name = setting_name
-        self.setting_value = setting_value
-
-
-class ConfigurationError(ConfigError):
-    """Alias for ConfigError — matches existing core/exceptions.py naming."""
-
-    pass
-
-
-# =============================================================================
 # DETECTION & EXTRACTION
 # =============================================================================
 
@@ -119,8 +86,8 @@ class DetectionError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        detector_name: Optional[str] = None,
-        input_length: Optional[int] = None,
+        detector_name: str | None = None,
+        input_length: int | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -139,8 +106,8 @@ class ExtractionError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        file_path: Optional[str] = None,
-        file_type: Optional[str] = None,
+        file_path: str | None = None,
+        file_type: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -164,8 +131,8 @@ class AdapterError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        adapter_type: Optional[str] = None,
-        operation: Optional[str] = None,
+        adapter_type: str | None = None,
+        operation: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -190,9 +157,9 @@ class GraphAPIError(AdapterError):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        retry_after: Optional[int] = None,
-        endpoint: Optional[str] = None,
+        status_code: int | None = None,
+        retry_after: int | None = None,
+        endpoint: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -214,7 +181,7 @@ class FilesystemError(AdapterError):
     def __init__(
         self,
         message: str,
-        path: Optional[str] = None,
+        path: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -275,8 +242,8 @@ class RemediationError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        path: Optional[Any] = None,
-        code: Optional[int] = None,
+        path: Any | None = None,
+        code: int | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -315,7 +282,7 @@ class MonitoringError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        path: Optional[Any] = None,
+        path: Any | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -348,8 +315,8 @@ class ModelLoadError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        model_name: Optional[str] = None,
-        model_path: Optional[str] = None,
+        model_name: str | None = None,
+        model_path: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -368,9 +335,9 @@ class JobError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        job_id: Optional[str] = None,
-        job_type: Optional[str] = None,
-        worker_id: Optional[str] = None,
+        job_id: str | None = None,
+        job_type: str | None = None,
+        worker_id: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -392,8 +359,8 @@ class SecurityError(OpenLabelsError):
     def __init__(
         self,
         message: str,
-        violation_type: Optional[str] = None,
-        source: Optional[str] = None,
+        violation_type: str | None = None,
+        source: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -417,8 +384,8 @@ class NotFoundError(OpenLabelsError):
     def __init__(
         self,
         message: str = "The requested resource was not found",
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -437,7 +404,7 @@ class ConflictError(OpenLabelsError):
     def __init__(
         self,
         message: str = "The request conflicts with the current state of the resource",
-        conflicting_field: Optional[str] = None,
+        conflicting_field: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -452,8 +419,8 @@ class ValidationError(OpenLabelsError):
     def __init__(
         self,
         message: str = "Request validation failed",
-        field: Optional[str] = None,
-        reason: Optional[str] = None,
+        field: str | None = None,
+        reason: str | None = None,
         **kwargs: Any,
     ):
         details = kwargs.pop("details", {})
@@ -483,14 +450,14 @@ class APIError(OpenLabelsError):
     def __init__(
         self,
         message: str = "An unexpected error occurred",
-        details: Optional[dict[str, Any]] = None,
-        error_code: Optional[str] = None,
+        details: dict[str, Any] | None = None,
+        error_code: str | None = None,
     ):
         if error_code is not None:
             self.error_code = error_code
         super().__init__(message, details=details)
 
-    def to_dict(self, request_id: Optional[str] = None) -> dict[str, Any]:
+    def to_dict(self, request_id: str | None = None) -> dict[str, Any]:
         """Convert to dictionary suitable for ErrorResponse."""
         result: dict[str, Any] = {
             "error": self.error_code,
@@ -512,7 +479,7 @@ class BadRequestError(APIError):
     def __init__(
         self,
         message: str = "The request could not be processed",
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, details=details)
 
@@ -526,8 +493,8 @@ class RateLimitError(APIError):
     def __init__(
         self,
         message: str = "Rate limit exceeded. Please try again later.",
-        details: Optional[dict[str, Any]] = None,
-        retry_after: Optional[int] = None,
+        details: dict[str, Any] | None = None,
+        retry_after: int | None = None,
     ):
         if details is None:
             details = {}
@@ -546,6 +513,6 @@ class InternalError(APIError):
     def __init__(
         self,
         message: str = "An internal error occurred",
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message=message, details=details)

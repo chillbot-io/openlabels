@@ -37,7 +37,7 @@ def validate_where_filter(ctx, param, value):
         parse_filter(value)
         return value
     except (ParseError, LexerError) as e:
-        raise click.BadParameter(f"Invalid filter: {e}")
+        raise click.BadParameter(f"Invalid filter: {e}") from e
 
 
 def handle_http_error(e: Exception, server: str):

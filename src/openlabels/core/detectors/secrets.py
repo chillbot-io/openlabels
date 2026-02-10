@@ -23,7 +23,6 @@ Entity Types:
 import base64
 import binascii
 import re
-from typing import List
 
 from ..types import Span, Tier
 from .base import BaseDetector
@@ -159,7 +158,7 @@ class SecretsDetector(BaseDetector):
     name = "secrets"
     tier = Tier.PATTERN
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans = []
         seen = set()
 

@@ -8,7 +8,6 @@ Provides business logic for scan results with:
 """
 
 from collections.abc import AsyncIterator
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
@@ -308,7 +307,7 @@ class ResultService(BaseService):
 
         return results, total
 
-    async def delete_results(self, job_id: Optional[UUID] = None) -> int:
+    async def delete_results(self, job_id: UUID | None = None) -> int:
         """
         Delete scan results, optionally filtered by job.
 

@@ -34,7 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,9 @@ class SensitivityLabel:
     name: str
     description: str
     tooltip: str
-    color: Optional[str] = None
+    color: str | None = None
     priority: int = 0
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     is_active: bool = True
 
     def to_dict(self) -> dict:
@@ -82,9 +82,9 @@ class LabelingResult:
     """Result of applying a label."""
     success: bool
     file_path: str
-    label_id: Optional[str] = None
-    label_name: Optional[str] = None
-    error: Optional[str] = None
+    label_id: str | None = None
+    label_name: str | None = None
+    error: str | None = None
     was_protected: bool = False
     is_protected: bool = False
 
@@ -231,7 +231,7 @@ class MIPClient:
         client_id: str,
         client_secret: str,
         tenant_id: str,
-        mip_sdk_path: Optional[Path] = None,
+        mip_sdk_path: Path | None = None,
         app_name: str = "OpenLabels",
         app_version: str = "1.0.0",
     ):
@@ -258,7 +258,7 @@ class MIPClient:
         self._file_profile = None
         self._file_engine = None
         self._auth_delegate = None
-        self._labels: List[SensitivityLabel] = []
+        self._labels: list[SensitivityLabel] = []
 
     def _default_sdk_path(self) -> Path:
         """Get default MIP SDK path based on platform."""
@@ -419,7 +419,7 @@ class MIPClient:
         if self._file_profile and self._file_engine:
             self._file_profile.UnloadEngineAsync(self._file_engine.Settings.EngineId).GetAwaiter().GetResult()
 
-    async def get_labels(self, force_refresh: bool = False) -> List[SensitivityLabel]:
+    async def get_labels(self, force_refresh: bool = False) -> list[SensitivityLabel]:
         """
         Get available sensitivity labels.
 
@@ -449,7 +449,7 @@ class MIPClient:
             logger.error(f"Failed to get labels - API mismatch: {e}")
             return []
 
-    def _get_labels_sync(self) -> List[SensitivityLabel]:
+    def _get_labels_sync(self) -> list[SensitivityLabel]:
         """Synchronous label fetch."""
         labels = []
 
@@ -485,7 +485,7 @@ class MIPClient:
 
         return labels
 
-    async def get_label(self, label_id: str) -> Optional[SensitivityLabel]:
+    async def get_label(self, label_id: str) -> SensitivityLabel | None:
         """
         Get a specific label by ID.
 
@@ -503,7 +503,7 @@ class MIPClient:
 
     async def _run_file_operation(
         self,
-        file_path: Union[str, Path],
+        file_path: str | Path,
         sync_fn: Callable[..., Any],
         operation_name: str,
     ) -> Any:
@@ -542,8 +542,8 @@ class MIPClient:
         self,
         file_path: str,
         label_id: str,
-        justification: Optional[str] = None,
-        extended_properties: Optional[Dict[str, str]] = None,
+        justification: str | None = None,
+        extended_properties: dict[str, str] | None = None,
     ) -> LabelingResult:
         """
         Apply a sensitivity label to a file.
@@ -572,8 +572,8 @@ class MIPClient:
         self,
         file_path: str,
         label_id: str,
-        justification: Optional[str],
-        extended_properties: Optional[Dict[str, str]],
+        justification: str | None,
+        extended_properties: dict[str, str] | None,
     ) -> LabelingResult:
         """Synchronous label application."""
         from Microsoft.InformationProtection import (
@@ -770,7 +770,7 @@ class MIPClient:
                 except (RuntimeError, OSError) as e:
                     logger.debug(f"Error disposing file handler: {e}")
 
-    async def get_file_label(self, file_path: str) -> Optional[SensitivityLabel]:
+    async def get_file_label(self, file_path: str) -> SensitivityLabel | None:
         """
         Get the current label on a file.
 
@@ -789,7 +789,7 @@ class MIPClient:
         except (RuntimeError, FileNotFoundError, PermissionError, OSError):
             return None
 
-    def _get_file_label_sync(self, file_path: str) -> Optional[SensitivityLabel]:
+    def _get_file_label_sync(self, file_path: str) -> SensitivityLabel | None:
         """Synchronous label reading."""
         handler = None
         try:
@@ -881,10 +881,10 @@ class MIPClient:
 
     async def apply_labels_batch(
         self,
-        items: List[tuple],
+        items: list[tuple],
         max_concurrent: int = 4,
-        on_progress: Optional[Callable[[int, int], None]] = None,
-    ) -> List[Dict[str, Any]]:
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Apply labels to multiple files concurrently.
 
@@ -903,7 +903,7 @@ class MIPClient:
         total = len(items)
         completed = 0
 
-        async def _process(file_path: str, label_id: str) -> Dict[str, Any]:
+        async def _process(file_path: str, label_id: str) -> dict[str, Any]:
             nonlocal completed
             async with semaphore:
                 result = await self.apply_label(file_path, label_id)

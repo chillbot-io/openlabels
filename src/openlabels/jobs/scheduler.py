@@ -17,7 +17,6 @@ Features:
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from croniter import croniter
 from sqlalchemy import and_, select
@@ -78,8 +77,8 @@ class DatabaseScheduler:
 
     def __init__(
         self,
-        poll_interval: Optional[int] = None,
-        min_trigger_interval: Optional[int] = None,
+        poll_interval: int | None = None,
+        min_trigger_interval: int | None = None,
     ):
         """
         Initialize the database scheduler.
@@ -94,7 +93,7 @@ class DatabaseScheduler:
         self._poll_interval = poll_interval or settings["poll_interval"]
         self._min_trigger_interval = min_trigger_interval or settings["min_trigger_interval"]
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     @property
@@ -326,7 +325,7 @@ class DatabaseScheduler:
         self,
         cron_expr: str,
         from_time: datetime,
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """
         Calculate the next run time for a cron expression.
 
@@ -345,7 +344,7 @@ class DatabaseScheduler:
             return None
 
 
-def parse_cron_expression(cron_expr: str) -> Optional[datetime]:
+def parse_cron_expression(cron_expr: str) -> datetime | None:
     """
     Parse a cron expression and return the next run time.
 
@@ -454,7 +453,7 @@ Scheduler = DatabaseScheduler
 
 
 # Global scheduler instance
-_scheduler: Optional[DatabaseScheduler] = None
+_scheduler: DatabaseScheduler | None = None
 
 
 def get_scheduler() -> DatabaseScheduler:

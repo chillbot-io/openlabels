@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -326,7 +326,7 @@ broadcaster = PubSubBroadcaster(manager)
 
 async def authenticate_websocket(
     websocket: WebSocket,
-) -> Optional[tuple[UUID, UUID]]:
+) -> tuple[UUID, UUID] | None:
     """
     Authenticate WebSocket connection using session cookie.
 

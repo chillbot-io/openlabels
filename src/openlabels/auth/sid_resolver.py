@@ -14,7 +14,6 @@ Features:
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +23,12 @@ class ResolvedUser:
     """Resolved user information from a SID."""
 
     sid: str
-    display_name: Optional[str] = None
-    user_principal_name: Optional[str] = None  # email
-    domain_username: Optional[str] = None  # DOMAIN\username
-    entra_object_id: Optional[str] = None
-    department: Optional[str] = None
-    job_title: Optional[str] = None
+    display_name: str | None = None
+    user_principal_name: str | None = None  # email
+    domain_username: str | None = None  # DOMAIN\username
+    entra_object_id: str | None = None
+    department: str | None = None
+    job_title: str | None = None
     is_well_known: bool = False
     is_system_account: bool = False
     resolved_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -147,7 +146,7 @@ class SIDResolver:
                 return None
         return self._graph_client
 
-    def _check_well_known(self, sid: str) -> Optional[ResolvedUser]:
+    def _check_well_known(self, sid: str) -> ResolvedUser | None:
         """Check if SID is a well-known SID."""
         if sid in WELL_KNOWN_SIDS:
             name, is_system = WELL_KNOWN_SIDS[sid]
@@ -172,7 +171,7 @@ class SIDResolver:
 
         return None
 
-    def _check_cache(self, sid: str) -> Optional[ResolvedUser]:
+    def _check_cache(self, sid: str) -> ResolvedUser | None:
         """Check if SID is in cache and not expired."""
         if sid in self._cache:
             user, cached_at = self._cache[sid]
@@ -322,7 +321,7 @@ class SIDResolver:
 
 
 # Singleton instance
-_resolver: Optional[SIDResolver] = None
+_resolver: SIDResolver | None = None
 
 
 def get_sid_resolver() -> SIDResolver:

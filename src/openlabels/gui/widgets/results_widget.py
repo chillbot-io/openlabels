@@ -8,7 +8,6 @@ import csv
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
@@ -62,14 +61,14 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         label_requested = Signal(list, str)
         refresh_requested = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         if not PYSIDE_AVAILABLE:
             logger.warning("PySide6 not available")
             return
 
         super().__init__(parent)
-        self._all_results: List[Dict] = []
-        self._filtered_results: List[Dict] = []
+        self._all_results: list[dict] = []
+        self._filtered_results: list[dict] = []
         self._setup_ui()
         self._connect_signals()
 
@@ -294,7 +293,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
         logger.info(f"Label requested for {len(selected_ids)} results")
         self.label_requested.emit(selected_ids, "")
 
-    def _get_selected_result_ids(self) -> List[str]:
+    def _get_selected_result_ids(self) -> list[str]:
         """Get IDs of selected results."""
         result_ids = []
         for item in self._results_table.selectedItems():
@@ -392,7 +391,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
             logger.error(f"Unexpected error while exporting JSON to '{validated_path}': {e}", exc_info=True)
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
-    def load_results(self, results: List[dict]) -> None:
+    def load_results(self, results: list[dict]) -> None:
         """Load results into the table."""
         self._all_results = results
         self._apply_filters()

@@ -6,8 +6,6 @@ Provides endpoints to trigger SIEM export, test connections, and view status.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,9 +19,9 @@ router = APIRouter()
 # ── Request / Response schemas ───────────────────────────────────────
 
 class SIEMExportRequest(BaseModel):
-    since: Optional[datetime] = None
-    record_types: Optional[list[str]] = None
-    adapter: Optional[str] = None
+    since: datetime | None = None
+    record_types: list[str] | None = None
+    adapter: str | None = None
 
 
 class SIEMExportResponse(BaseModel):

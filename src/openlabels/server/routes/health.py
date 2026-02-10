@@ -8,7 +8,7 @@ import logging
 import platform
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -47,8 +47,8 @@ class JobMetrics(BaseModel):
     completed_count: int
     stuck_jobs_count: int = 0
     stale_pending_count: int = 0
-    oldest_pending_hours: Optional[float] = None
-    oldest_running_hours: Optional[float] = None
+    oldest_pending_hours: float | None = None
+    oldest_running_hours: float | None = None
 
 
 class HealthStatus(BaseModel):
@@ -76,15 +76,15 @@ class HealthStatus(BaseModel):
     success_rate: float
 
     # Circuit breakers
-    circuit_breakers: Optional[list[CircuitBreakerStatus]] = None
+    circuit_breakers: list[CircuitBreakerStatus] | None = None
 
     # Job metrics
-    job_metrics: Optional[JobMetrics] = None
+    job_metrics: JobMetrics | None = None
 
     # Optional extended info
-    python_version: Optional[str] = None
-    platform: Optional[str] = None
-    uptime_seconds: Optional[int] = None
+    python_version: str | None = None
+    platform: str | None = None
+    uptime_seconds: int | None = None
 
 
 # Track server start time for uptime

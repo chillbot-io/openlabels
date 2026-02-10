@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Union
 
 from openlabels.exceptions import DetectionError, ExtractionError, SecurityError
 
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 # Supported text-based file extensions
-TEXT_EXTENSIONS: Set[str] = frozenset({
+TEXT_EXTENSIONS: set[str] = frozenset({
     ".txt", ".md", ".markdown", ".rst", ".csv", ".tsv",
     ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".conf",
     ".log", ".sql", ".html", ".htm", ".css", ".js", ".ts",
@@ -43,16 +42,16 @@ TEXT_EXTENSIONS: Set[str] = frozenset({
 })
 
 # Office document extensions (require extraction libraries)
-OFFICE_EXTENSIONS: Set[str] = frozenset({
+OFFICE_EXTENSIONS: set[str] = frozenset({
     ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
     ".odt", ".ods", ".odp", ".rtf",
 })
 
 # PDF extension
-PDF_EXTENSIONS: Set[str] = frozenset({".pdf"})
+PDF_EXTENSIONS: set[str] = frozenset({".pdf"})
 
 # Image extensions (require OCR)
-IMAGE_EXTENSIONS: Set[str] = frozenset({
+IMAGE_EXTENSIONS: set[str] = frozenset({
     ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".webp",
 })
 
@@ -63,24 +62,24 @@ class FileClassification:
     file_path: str
     file_name: str
     file_size: int
-    mime_type: Optional[str]
+    mime_type: str | None
     exposure_level: str
 
     # Detection results
-    spans: List[Span] = field(default_factory=list)
-    entity_counts: Dict[str, int] = field(default_factory=dict)
+    spans: list[Span] = field(default_factory=list)
+    entity_counts: dict[str, int] = field(default_factory=dict)
 
     # Scoring results
     risk_score: int = 0
     risk_tier: RiskTier = RiskTier.MINIMAL
     content_score: float = 0.0
     exposure_multiplier: float = 1.0
-    co_occurrence_rules: List[str] = field(default_factory=list)
+    co_occurrence_rules: list[str] = field(default_factory=list)
 
     # Metadata
     processed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     processing_time_ms: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -159,9 +158,9 @@ class FileProcessor:
     async def process_file(
         self,
         file_path: str,
-        content: Union[str, bytes],
+        content: str | bytes,
         exposure_level: str = "PRIVATE",
-        file_size: Optional[int] = None,
+        file_size: int | None = None,
     ) -> FileClassification:
         """
         Process a single file.
@@ -265,7 +264,7 @@ class FileProcessor:
 
     async def process_batch(
         self,
-        files: List[Dict],
+        files: list[dict],
         concurrency: int = 4,
     ) -> AsyncIterator[FileClassification]:
         """
@@ -280,7 +279,7 @@ class FileProcessor:
         """
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def process_one(file_info: Dict) -> FileClassification:
+        async def process_one(file_info: dict) -> FileClassification:
             async with semaphore:
                 return await self.process_file(
                     file_path=file_info["path"],
@@ -456,7 +455,7 @@ class FileProcessor:
 
 async def process_file(
     file_path: str,
-    content: Union[str, bytes],
+    content: str | bytes,
     exposure_level: str = "PRIVATE",
     config: DetectionConfig | None = None,
 ) -> FileClassification:

@@ -4,7 +4,6 @@ Labels management widget for OpenLabels GUI.
 Provides interface for viewing sensitivity labels and managing label rules.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal
@@ -30,7 +29,7 @@ from PySide6.QtWidgets import (
 class LabelRuleDialog(QDialog):
     """Dialog for creating/editing a label rule."""
 
-    def __init__(self, parent=None, rule: Optional[dict] = None, labels: list[dict] = None):
+    def __init__(self, parent=None, rule: dict | None = None, labels: list[dict] = None):
         super().__init__(parent)
         self.rule = rule
         self.labels = labels or []

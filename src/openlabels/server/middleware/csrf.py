@@ -34,7 +34,6 @@ PROTECTED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 EXEMPT_PATHS = {
     "/auth/callback",  # OAuth callback from Microsoft
     "/health",
-    "/api",
     "/api/docs",
     "/api/redoc",
     "/api/openapi.json",

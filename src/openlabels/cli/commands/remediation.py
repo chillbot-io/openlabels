@@ -6,7 +6,6 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -24,8 +23,8 @@ logger = logging.getLogger(__name__)
 @click.option("-r", "--recursive", is_flag=True, help="Recursive scan when using --where")
 @click.option("--preserve-acls/--no-preserve-acls", default=True, help="Preserve ACLs during move")
 @click.option("--dry-run", is_flag=True, help="Preview without moving")
-def quarantine(source: Optional[str], destination: Optional[str], where_filter: Optional[str],
-               scan_path: Optional[str], recursive: bool, preserve_acls: bool, dry_run: bool):
+def quarantine(source: str | None, destination: str | None, where_filter: str | None,
+               scan_path: str | None, recursive: bool, preserve_acls: bool, dry_run: bool):
     """Quarantine sensitive files to a secure location.
 
     Can quarantine a single file (source -> destination) or multiple files
@@ -167,7 +166,7 @@ def quarantine(source: Optional[str], destination: Optional[str], where_filter: 
 @click.option("--keep-inheritance", is_flag=True, help="Keep permission inheritance")
 @click.option("--backup-acl", is_flag=True, help="Backup current ACL for rollback")
 @click.option("--dry-run", is_flag=True, help="Preview without changing permissions")
-def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_path: Optional[str],
+def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: str | None,
                   recursive: bool, principals: tuple, keep_inheritance: bool, backup_acl: bool, dry_run: bool):
     """Lock down file permissions to restrict access.
 

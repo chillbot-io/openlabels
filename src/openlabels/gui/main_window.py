@@ -3,7 +3,6 @@ Main window for the OpenLabels GUI.
 """
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ if PYSIDE_AVAILABLE:
             super().__init__()
 
             self.server_url = server_url
-            self._api_worker: Optional[APIWorker] = None
+            self._api_worker: APIWorker | None = None
 
             self.setWindowTitle("OpenLabels")
             self.setMinimumSize(1200, 800)

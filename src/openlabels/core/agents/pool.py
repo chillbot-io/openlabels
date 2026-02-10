@@ -17,7 +17,6 @@ from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 import psutil
 
@@ -80,7 +79,7 @@ class AgentPoolConfig:
     backend: OptimizationBackend = OptimizationBackend.PYTORCH
 
     # Path to optimized model (for OpenVINO/ONNX)
-    model_path: Optional[str] = None
+    model_path: str | None = None
 
     # Device for inference
     device: str = "cpu"
@@ -177,7 +176,7 @@ class AgentPool:
                 process_result(result)
     """
 
-    def __init__(self, config: Optional[AgentPoolConfig] = None):
+    def __init__(self, config: AgentPoolConfig | None = None):
         self.config = config or AgentPoolConfig()
         self._state = PoolState.INITIALIZING
         self._stats = PoolStats()
@@ -189,12 +188,12 @@ class AgentPool:
             self._num_agents = self.config.num_agents
 
         # Multiprocessing primitives (created in start())
-        self._input_queue: Optional[mp.Queue] = None
-        self._output_queue: Optional[mp.Queue] = None
+        self._input_queue: mp.Queue | None = None
+        self._output_queue: mp.Queue | None = None
         self._processes: list[mp.Process] = []
 
         # Async coordination
-        self._result_task: Optional[asyncio.Task] = None
+        self._result_task: asyncio.Task | None = None
         self._result_queue: asyncio.Queue[AgentResult] = asyncio.Queue()
 
     @property
@@ -372,8 +371,8 @@ class AgentPool:
 
     async def results_batched(
         self,
-        batch_size: Optional[int] = None,
-        timeout: Optional[float] = None,
+        batch_size: int | None = None,
+        timeout: float | None = None,
     ) -> AsyncIterator[list[AgentResult]]:
         """
         Async iterator yielding batches of results.
@@ -447,15 +446,15 @@ class ScanOrchestrator:
 
     def __init__(
         self,
-        pool_config: Optional[AgentPoolConfig] = None,
-        result_handler: Optional[ResultHandler] = None,
+        pool_config: AgentPoolConfig | None = None,
+        result_handler: ResultHandler | None = None,
         # ── Phase F additions ───────────────────────────────
-        adapter: Optional[object] = None,       # ReadAdapter
-        change_provider: Optional[object] = None,  # ChangeProvider
-        inventory: Optional[object] = None,      # InventoryService
-        session: Optional[object] = None,        # AsyncSession
-        job: Optional[object] = None,            # ScanJob
-        settings: Optional[object] = None,       # AppSettings
+        adapter: object | None = None,       # ReadAdapter
+        change_provider: object | None = None,  # ChangeProvider
+        inventory: object | None = None,      # InventoryService
+        session: object | None = None,        # AsyncSession
+        job: object | None = None,            # ScanJob
+        settings: object | None = None,       # AppSettings
     ):
         self.pool_config = pool_config or AgentPoolConfig()
         self.result_handler = result_handler
@@ -527,8 +526,8 @@ class ScanOrchestrator:
         self,
         path: str,
         recursive: bool = True,
-        file_patterns: Optional[list[str]] = None,
-        on_result: Optional[Callable[[AgentResult], None]] = None,
+        file_patterns: list[str] | None = None,
+        on_result: Callable[[AgentResult], None] | None = None,
     ) -> PoolStats:
         """
         Scan a directory for sensitive data (legacy API).
@@ -584,7 +583,7 @@ class ScanOrchestrator:
         self,
         path: str,
         recursive: bool,
-        patterns: Optional[list[str]],
+        patterns: list[str] | None,
     ) -> None:
         """Walk directory and queue files for extraction (legacy Path.rglob)."""
         import fnmatch
@@ -728,7 +727,7 @@ class ScanOrchestrator:
     async def _collect_and_store(
         self,
         pool: AgentPool,
-        on_result: Optional[Callable[[AgentResult], None]] = None,
+        on_result: Callable[[AgentResult], None] | None = None,
     ) -> None:
         """Collect agent results, aggregate per-file, run result pipeline."""
         completed_files: list[FileResult] = []

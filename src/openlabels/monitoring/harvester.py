@@ -23,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,7 +82,7 @@ class EventHarvester:
         # Stats for observability
         self.total_events_persisted: int = 0
         self.total_cycles: int = 0
-        self.last_cycle_at: Optional[datetime] = None
+        self.last_cycle_at: datetime | None = None
 
     # ------------------------------------------------------------------
     # Public API

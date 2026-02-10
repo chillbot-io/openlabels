@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class RiskLevel(str, Enum):
@@ -109,9 +109,9 @@ class DataSubjectRights:
 class RetentionPolicy:
     """Data retention requirements."""
 
-    max_days: Optional[int] = None          # Maximum retention period
-    min_days: Optional[int] = None          # Minimum retention (legal hold)
-    review_frequency_days: Optional[int] = None  # Required review frequency
+    max_days: int | None = None          # Maximum retention period
+    min_days: int | None = None          # Minimum retention (legal hold)
+    review_frequency_days: int | None = None  # Required review frequency
     auto_delete: bool = False               # Auto-delete after max_days
 
 
