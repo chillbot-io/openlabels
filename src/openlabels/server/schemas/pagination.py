@@ -10,15 +10,15 @@ Provides:
 
 import base64
 import json
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Generic, Optional, Sequence, TypeVar, Union
+from typing import Any, Generic, Optional, TypeVar
 from uuid import UUID
 
 from fastapi import Query
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 
 T = TypeVar("T")
 
@@ -323,7 +323,7 @@ async def cursor_paginate_query(
     if pagination.cursor:
         try:
             cursor_values, cursor_direction = decode_cursor(pagination.cursor)
-        except ValueError as e:
+        except ValueError:
             # Invalid cursor, start from beginning
             cursor_values = None
             cursor_direction = pagination.direction

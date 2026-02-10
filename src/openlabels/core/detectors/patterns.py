@@ -78,40 +78,40 @@ def _is_false_positive_name(value: str) -> bool:
     """Check if a detected name is likely a false positive."""
     # Split into words and check each
     words = value.split()
-    
+
     # Single character "names" are almost always false positives
     if len(words) == 1 and len(words[0]) == 1:
         return True
-    
+
     # Very short matches (< 3 chars) are usually false positives
     if len(value.replace(' ', '')) < 3:
         return True
-    
+
     # If ALL words are false positives, reject
     if all(w.upper() in FALSE_POSITIVE_NAMES for w in words):
         return True
-    
+
     # If first word is a common document term (not a name), likely FP
     if words and words[0].upper() in {
         "LABORATORY", "REPORT", "LICENSE", "CERTIFICATE", "DOCUMENT",
         "INSURANCE", "DISCHARGE", "SUMMARY", "ASSESSMENT", "CONSULTATION",
     }:
         return True
-    
+
     # If last word is a common document term, likely FP (catches "Y REPORT", "RY REPORT")
     if words and words[-1].upper() in {
         "REPORT", "REPORTS", "FORM", "DOCUMENT", "CERTIFICATE", "LICENSE",
         "SUMMARY", "RESULTS", "HISTORY", "NOTES", "CHART",
     }:
         return True
-    
+
     # Check for patterns that look like document text fragments
     # e.g., "Y REPORT", "A visitPA", "RY REPORT"
     # These usually have very short first words or all-caps
     if len(words) >= 2:
         first_word = words[0]
         last_word = words[-1]
-        
+
         # Short first word + document term = likely fragment (e.g., "Y REPORT")
         # BUT exclude valid medical credentials after a comma (e.g., "E. Washington, MD")
         VALID_CREDENTIALS = {"MD", "DO", "PA", "NP", "RN", "PHD", "DNP", "APRN", "PAC"}
@@ -120,7 +120,7 @@ def _is_false_positive_name(value: str) -> bool:
             last_clean = last_word.upper().replace("-", "")
             if not ("," in value and last_clean in VALID_CREDENTIALS):
                 return True
-        
+
         # Check if ends with state abbreviation mistaken for credentials
         # Full list of US state abbreviations
         US_STATE_ABBREVS = {
@@ -130,7 +130,7 @@ def _is_false_positive_name(value: str) -> bool:
             "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
             "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"
         }
-        
+
         if last_word.upper() in US_STATE_ABBREVS:
             # Check for "City, STATE" pattern (address, not name)
             # Pattern: "Baltimore, MD" or "New York, NY"
@@ -139,21 +139,21 @@ def _is_false_positive_name(value: str) -> bool:
                 # Split at comma to check what's before it
                 before_comma = value.rsplit(",", 1)[0].strip()
                 before_words = before_comma.split()
-                
+
                 # If only 1-2 words before comma, likely a city not a person
                 # "Baltimore, MD" = 1 word → city
                 # "New York, NY" = 2 words → city
                 # "San Francisco, CA" = 2 words → city
                 # "John Smith, MD" = 2 words → could be either, but...
                 # Key insight: city names before state don't have typical name patterns
-                
+
                 # Simple heuristic: if 1 word before comma + state abbrev, it's a city
                 if len(before_words) == 1:
                     return True
-                
+
                 # If 2 words and second word is a common city suffix/word, it's a city
                 if len(before_words) == 2:
-                    city_words = {"city", "york", "orleans", "angeles", "francisco", 
+                    city_words = {"city", "york", "orleans", "angeles", "francisco",
                                   "diego", "antonio", "vegas", "beach", "springs",
                                   "falls", "rapids", "creek", "river", "lake", "park",
                                   "heights", "hills", "valley", "grove", "point"}
@@ -163,13 +163,13 @@ def _is_false_positive_name(value: str) -> bool:
                 # No comma - state abbrev without comma is likely false positive
                 # e.g., pattern matched "visit MD" as name ending in MD
                 return True
-    
+
     # Check if the value ends with a false positive fragment
     # This catches things like "visitPA" where PA is mistaken for credential
     for fp in ["visitPA", "visitMA", "visitNY"]:
         if value.endswith(fp):
             return True
-    
+
     return False
 
 
@@ -428,7 +428,7 @@ _p(r'\b(\d{2}:\d{2}:\d{2})\b', 'TIME', 0.82, 1),
 # === ISO 8601 datetime formats ===
 # "2024-03-15T14:30:00Z" - full ISO with timezone
 _p(r'\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\b', 'DATETIME', 0.92, 1),
-# "2024-03-15 14:30:00" - ISO-like without T separator  
+# "2024-03-15 14:30:00" - ISO-like without T separator
 _p(r'\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\b', 'DATETIME', 0.88, 1),
 
 # === Timezone-aware times ===
@@ -520,7 +520,7 @@ _p(rf'(?:School\s+)?(?:Counselor|Social\s*Worker|Psychologist|Principal|Teacher)
 # Handwritten/cursive signature detection (common on IDs)
 # Matches names that appear with mixed case in signature style (e.g., "Andrew Sample")
 # This catches signatures that OCR extracts from ID cards
-_p(rf'\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*$', 'NAME', 0.75, 1),  # First Last at end of line
+_p(r'\b([A-Z][a-z]+\s+[A-Z][a-z]+)\s*$', 'NAME', 0.75, 1),  # First Last at end of line
 
 # ID card signature after restrictions field (e.g., "RESTR:NONE Andrew Sample 5DD:")
 # On driver's licenses, signature appears after the restrictions field
@@ -781,7 +781,7 @@ _p(
 
 # All-caps street address (common in OCR from IDs): "123 MAIN STREET"
 _p(
-    rf'\b(\d+[A-Z]?\s+[A-Z]+(?:\s+[A-Z]+)*\s+(?:STREET|ST|AVENUE|AVE|ROAD|RD|BOULEVARD|BLVD|LANE|LN|DRIVE|DR|COURT|CT|WAY|PLACE|PL|TERRACE|TER|CIRCLE|CIR|TRAIL|TRL|PARKWAY|PKWY|HIGHWAY|HWY))\b',
+    r'\b(\d+[A-Z]?\s+[A-Z]+(?:\s+[A-Z]+)*\s+(?:STREET|ST|AVENUE|AVE|ROAD|RD|BOULEVARD|BLVD|LANE|LN|DRIVE|DR|COURT|CT|WAY|PLACE|PL|TERRACE|TER|CIRCLE|CIR|TRAIL|TRL|PARKWAY|PKWY|HIGHWAY|HWY))\b',
     'ADDRESS', 0.88, 1
 ),
 
@@ -1352,7 +1352,7 @@ def _validate_luhn(number: str) -> bool:
     digits = ''.join(c for c in number if c.isdigit())
     if not digits:
         return False
-    
+
     total = 0
     for i, digit in enumerate(reversed(digits)):
         d = int(digit)
@@ -1370,17 +1370,17 @@ def _validate_vin(vin: str) -> bool:
     """
     if len(vin) != 17:
         return False
-    
+
     # Transliteration values
     trans = {
         'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
         'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
         'S': 2, 'T': 3, 'U': 4, 'V': 5, 'W': 6, 'X': 7, 'Y': 8, 'Z': 9,
     }
-    
+
     # Position weights
     weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]
-    
+
     try:
         total = 0
         for i, char in enumerate(vin.upper()):
@@ -1391,7 +1391,7 @@ def _validate_vin(vin: str) -> bool:
             else:
                 return False  # Invalid character
             total += value * weights[i]
-        
+
         check = total % 11
         check_char = 'X' if check == 10 else str(check)
         return vin[8].upper() == check_char
@@ -1403,7 +1403,7 @@ def _validate_vin(vin: str) -> bool:
 # Words that precede numbers but indicate non-SSN context
 _SSN_FALSE_POSITIVE_PREFIXES = frozenset([
     'page', 'pg', 'room', 'rm', 'order', 'ref', 'reference', 'invoice',
-    'confirmation', 'tracking', 'case', 'ticket', 'claim', 'check', 
+    'confirmation', 'tracking', 'case', 'ticket', 'claim', 'check',
     'acct', 'record', 'file', 'document', 'doc',
     'no', 'num', '#', 'code', 'pin', 'serial', 'model',
     'part', 'item', 'sku', 'upc', 'isbn', 'version', 'ver',
@@ -1428,15 +1428,15 @@ def _validate_ssn_context(text: str, start: int, confidence: float) -> bool:
     # Only filter low-confidence bare 9-digit matches
     if confidence > 0.75:
         return True
-    
+
     # Look at the 30 characters before the match (wider window)
     prefix_start = max(0, start - 30)
     prefix = text[prefix_start:start].lower()
-    
+
     # Check if any false positive word appears in the prefix
     if _SSN_FP_PATTERN.search(prefix):
         return False
-    
+
     # Also check immediate prefix for separators like "# " or ": "
     immediate_prefix = prefix[-5:].strip() if len(prefix) >= 5 else prefix.strip()
     if immediate_prefix.endswith(('#', ':', '.', '-')):
@@ -1444,7 +1444,7 @@ def _validate_ssn_context(text: str, start: int, confidence: float) -> bool:
         for fp_word in _SSN_FALSE_POSITIVE_PREFIXES:
             if before_sep.endswith(fp_word):
                 return False
-    
+
     return True
 
 

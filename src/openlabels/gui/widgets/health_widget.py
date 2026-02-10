@@ -9,18 +9,26 @@ Displays key system health indicators:
 
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
-        QFrame, QGroupBox, QTableWidget, QTableWidgetItem,
-        QHeaderView, QPushButton,
-    )
-    from PySide6.QtCore import Qt, Signal, QTimer
+    from PySide6.QtCore import Qt, QTimer, Signal
     from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import (
+        QFrame,
+        QGridLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QPushButton,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - health widget unavailable

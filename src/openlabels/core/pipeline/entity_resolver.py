@@ -21,10 +21,9 @@ Sieves (applied in order):
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Optional, Set
 
 from ..types import Span
-
 
 # Entity types that should only match exactly (isolated)
 ISOLATED_TYPES: Set[str] = frozenset({

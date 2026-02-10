@@ -11,11 +11,12 @@ Provides:
 
 import fnmatch
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import TracebackType
-from typing import Protocol, AsyncIterator, Optional, runtime_checkable
-from dataclasses import dataclass, field
+from typing import Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 

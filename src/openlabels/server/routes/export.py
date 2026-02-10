@@ -55,11 +55,12 @@ async def trigger_siem_export(
     if not settings.siem_export.enabled:
         raise HTTPException(status_code=400, detail="SIEM export is not enabled")
 
+    from sqlalchemy import select
+
     from openlabels.export.engine import ExportEngine, scan_result_to_export_records
     from openlabels.export.setup import build_adapters_from_settings
     from openlabels.server.db import get_session_context
     from openlabels.server.models import ScanResult
-    from sqlalchemy import select
 
     adapters = build_adapters_from_settings(settings.siem_export)
     if body.adapter:

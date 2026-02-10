@@ -142,9 +142,10 @@ class PolicyActionExecutor:
     async def enroll_monitoring(self, ctx: PolicyActionContext) -> ActionResult:
         """Add the file to the monitoring registry."""
         try:
+            from sqlalchemy import select
+
             from openlabels.server.db import get_session_context
             from openlabels.server.models import MonitoredFile
-            from sqlalchemy import select
 
             async with get_session_context() as session:
                 # Check if already monitored

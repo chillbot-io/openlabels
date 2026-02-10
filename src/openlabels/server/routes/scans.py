@@ -8,27 +8,25 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.exc import SQLAlchemyError
 
+from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
 from openlabels.server.config import get_settings
+from openlabels.server.dependencies import (
+    AdminContextDep,
+    ScanServiceDep,
+    TenantContextDep,
+)
+from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.server.dependencies import (
-    ScanServiceDep,
-    TenantContextDep,
-    AdminContextDep,
-)
-from openlabels.auth.dependencies import require_admin
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
-from openlabels.server.errors import ErrorCode
-from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 

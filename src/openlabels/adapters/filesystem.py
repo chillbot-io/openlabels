@@ -14,15 +14,16 @@ import logging
 import platform
 import stat
 import sys
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import AsyncIterator, Optional
+from typing import Optional
 
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig, DEFAULT_FILTER
+from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig
 from openlabels.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ class FilesystemAdapter:
 
         if not exists:
             raise FilesystemError(
-                f"Target path does not exist",
+                "Target path does not exist",
                 path=target,
                 operation="list_files",
                 context="ensure the path exists and is accessible",
@@ -99,7 +100,7 @@ class FilesystemAdapter:
 
         if not is_dir:
             raise FilesystemError(
-                f"Target path is not a directory",
+                "Target path is not a directory",
                 path=target,
                 operation="list_files",
                 context="provide a directory path, not a file path",
@@ -693,8 +694,8 @@ class FilesystemAdapter:
     def _lockdown_windows(self, path: Path, allowed_sids: list[str]) -> bool:
         """Lockdown on Windows - restrict to specific SIDs."""
         try:
-            import win32security
             import ntsecuritycon
+            import win32security
 
             # Create new DACL with only allowed SIDs
             dacl = win32security.ACL()

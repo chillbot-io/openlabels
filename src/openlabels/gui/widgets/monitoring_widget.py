@@ -9,19 +9,33 @@ Provides:
 """
 
 import logging
-from typing import Optional, List, Dict
-from datetime import datetime
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
-        QSplitter, QTextEdit, QMessageBox, QComboBox, QSpinBox,
-        QFormLayout, QDialog, QDialogButtonBox, QLineEdit, QFileDialog,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QComboBox,
+        QDialog,
+        QDialogButtonBox,
+        QFileDialog,
+        QFormLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QLineEdit,
+        QMessageBox,
+        QPushButton,
+        QSpinBox,
+        QSplitter,
+        QTableWidget,
+        QTableWidgetItem,
+        QTextEdit,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - monitoring widget unavailable
@@ -162,8 +176,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
     def _enable_monitoring(self, path: str, risk_tier: str) -> None:
         """Enable monitoring for a file."""
         try:
-            from openlabels.monitoring import enable_monitoring
             from pathlib import Path
+
+            from openlabels.monitoring import enable_monitoring
 
             result = enable_monitoring(
                 path=Path(path),
@@ -210,8 +225,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                from openlabels.monitoring import disable_monitoring
                 from pathlib import Path
+
+                from openlabels.monitoring import disable_monitoring
 
                 result = disable_monitoring(path=Path(path))
                 if result.success:
@@ -323,8 +339,9 @@ class MonitoringWidget(QWidget if PYSIDE_AVAILABLE else object):
         days = self._days_spin.value()
 
         try:
-            from openlabels.monitoring import get_access_history
             from pathlib import Path
+
+            from openlabels.monitoring import get_access_history
 
             events = get_access_history(
                 path=Path(path),

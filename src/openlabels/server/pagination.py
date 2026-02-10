@@ -30,7 +30,7 @@ from datetime import datetime
 from typing import Any, Generic, Optional, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

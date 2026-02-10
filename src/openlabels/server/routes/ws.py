@@ -13,20 +13,20 @@ Security features:
 - Origin validation prevents cross-site WebSocket hijacking (CSWSH)
 """
 
+import asyncio
+import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 from uuid import UUID
-import asyncio
-import json
-import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session_factory
-from openlabels.server.models import ScanJob, User, Tenant
+from openlabels.server.models import ScanJob, Tenant, User
 from openlabels.server.session import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -394,7 +394,7 @@ async def authenticate_websocket(
         tenant = result.scalar_one_or_none()
 
         if not tenant:
-            logger.warning(f"WebSocket connection rejected: tenant not found")
+            logger.warning("WebSocket connection rejected: tenant not found")
             return None
 
         user_query = select(User).where(
@@ -405,7 +405,7 @@ async def authenticate_websocket(
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning(f"WebSocket connection rejected: user not found")
+            logger.warning("WebSocket connection rejected: user not found")
             return None
 
         return (user.id, tenant.id)

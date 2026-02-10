@@ -67,8 +67,8 @@ def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> boo
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.starlette import StarletteIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
 
         environment = sentry_settings.environment or server_environment
         traces_sample_rate = sentry_settings.traces_sample_rate

@@ -8,18 +8,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.exceptions import BadRequestError, ConflictError, NotFoundError
 from openlabels.server.db import get_session
-from openlabels.server.models import User, Tenant
+from openlabels.server.models import User
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     paginate_query,
 )
-from openlabels.exceptions import NotFoundError, ConflictError, BadRequestError
-from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
 

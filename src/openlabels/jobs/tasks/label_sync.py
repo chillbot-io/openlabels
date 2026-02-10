@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import SensitivityLabel, Tenant
+from openlabels.server.models import SensitivityLabel
 
 logger = logging.getLogger(__name__)
 

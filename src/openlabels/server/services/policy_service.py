@@ -171,7 +171,6 @@ class PolicyService(BaseService):
         Returns a list of dicts with ``result_id``, ``file_path``, and
         ``violations`` for each result that has at least one violation.
         """
-        from openlabels.core.policies.engine import PolicyEngine
         from openlabels.core.policies.schema import EntityMatch
 
         engine = await self._build_tenant_engine()
@@ -303,7 +302,7 @@ class PolicyService(BaseService):
 
     # ── Internal helpers ────────────────────────────────────────────────
 
-    async def _build_tenant_engine(self) -> "PolicyEngine":
+    async def _build_tenant_engine(self) -> PolicyEngine:
         """Build a PolicyEngine loaded with the tenant's active policies."""
         from openlabels.core.policies.engine import PolicyEngine
         from openlabels.core.policies.loader import load_policy_pack

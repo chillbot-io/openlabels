@@ -12,7 +12,7 @@ from openlabels.core.agents.pool import (
     ResultHandler,
     ScanOrchestrator,
 )
-from openlabels.core.agents.worker import ClassificationAgent, AgentResult
+from openlabels.core.agents.worker import AgentResult, ClassificationAgent
 from openlabels.core.change_providers import ChangeProvider, FullWalkProvider
 
 __all__ = [

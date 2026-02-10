@@ -30,7 +30,6 @@ from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
 from .registry import register_detector
 
-
 # Pattern definitions: immutable frozen dataclass tuples
 _AWS_KEY_PREFIXES = r'(?:AKIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)'
 

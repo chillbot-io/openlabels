@@ -12,19 +12,17 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Optional
 
 from openlabels.core.policies.schema import (
-    DataSubjectRights,
     EntityMatch,
-    HandlingRequirements,
     PolicyCategory,
     PolicyMatch,
     PolicyPack,
     PolicyResult,
     PolicyTrigger,
-    RetentionPolicy,
     RiskLevel,
 )
 

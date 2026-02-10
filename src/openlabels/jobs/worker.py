@@ -27,13 +27,13 @@ except ImportError:
         """Placeholder when redis is not installed."""
         pass
 
-from openlabels.server.config import get_settings
-from openlabels.server.db import init_db, get_session_context
+from openlabels.exceptions import JobError
 from openlabels.jobs.queue import JobQueue, dequeue_next_job
-from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
 from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
-from openlabels.exceptions import JobError
+from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
+from openlabels.server.config import get_settings
+from openlabels.server.db import get_session_context, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -459,7 +459,7 @@ class Worker:
 
         Uses an advisory lock so only one worker instance runs this per cycle.
         """
-        from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+        from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
 
         reclaim_interval = 300  # Check every 5 minutes
 
@@ -470,6 +470,7 @@ class Worker:
                         logger.debug("Stuck job reclaimer: another instance is running, skipping")
                     else:
                         from sqlalchemy import select
+
                         from openlabels.server.models import Tenant
 
                         result = await session.execute(select(Tenant))
@@ -498,7 +499,7 @@ class Worker:
 
         Uses an advisory lock so only one worker instance runs this per cycle.
         """
-        from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+        from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
 
         cleanup_interval = 3600  # Run once per hour
 
@@ -509,6 +510,7 @@ class Worker:
                         logger.debug("Job cleanup: another instance is running, skipping")
                     else:
                         from sqlalchemy import select
+
                         from openlabels.server.models import Tenant
 
                         result = await session.execute(select(Tenant))

@@ -12,12 +12,12 @@ Requires ``boto3``: install with ``pip install openlabels[s3]``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import AsyncIterator, Optional
-
-import asyncio
+from typing import Optional
 
 from openlabels.adapters.base import (
     ExposureLevel,
@@ -27,7 +27,8 @@ from openlabels.adapters.base import (
 )
 
 try:
-    from botocore.exceptions import BotoCoreError, ClientError as BotoClientError
+    from botocore.exceptions import BotoCoreError
+    from botocore.exceptions import ClientError as BotoClientError
 except ImportError:
     BotoCoreError = Exception  # type: ignore[misc,assignment]
     BotoClientError = Exception  # type: ignore[misc,assignment]
@@ -82,7 +83,7 @@ class S3Adapter:
     def supports_delta(self) -> bool:
         return False  # delta via SQSChangeProvider instead
 
-    async def __aenter__(self) -> "S3Adapter":
+    async def __aenter__(self) -> S3Adapter:
         self._client = await asyncio.to_thread(self._build_client)
         return self
 

@@ -12,14 +12,14 @@ Phase J additions:
 - SOC2 Trust Services built-in policy pack
 """
 
+from openlabels.core.policies.engine import PolicyEngine
+from openlabels.core.policies.loader import load_builtin_policies, load_policy_pack
 from openlabels.core.policies.schema import (
     PolicyPack,
     PolicyResult,
     PolicyTrigger,
     RiskLevel,
 )
-from openlabels.core.policies.engine import PolicyEngine
-from openlabels.core.policies.loader import load_policy_pack, load_builtin_policies
 
 __all__ = [
     "PolicyPack",

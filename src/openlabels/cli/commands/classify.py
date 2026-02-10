@@ -10,7 +10,7 @@ from typing import Optional
 import click
 
 from openlabels.cli.utils import collect_files
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
 @click.command()

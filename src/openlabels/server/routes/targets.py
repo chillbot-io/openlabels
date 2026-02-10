@@ -15,21 +15,20 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanTarget
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
-from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +103,7 @@ def validate_filesystem_target_config(config: dict) -> dict:
     # Normalize the path
     try:
         normalized_path = os.path.normpath(path)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail=f"Invalid path format: {path}")
 
     # Check for path traversal patterns

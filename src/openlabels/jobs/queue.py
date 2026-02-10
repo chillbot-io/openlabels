@@ -9,20 +9,21 @@ Features:
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Optional
+from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update, func, and_
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import JobQueue as JobQueueModel
 from openlabels.server.metrics import (
-    record_job_enqueued,
     record_job_completed,
+    record_job_enqueued,
     record_job_failed,
     update_queue_depth,
 )
+from openlabels.server.models import JobQueue as JobQueueModel
 
 # Retry configuration
 BASE_RETRY_DELAY_SECONDS = 2  # 2 seconds initial delay

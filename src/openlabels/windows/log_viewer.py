@@ -15,12 +15,19 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 try:
+    from PySide6.QtCore import QObject, Qt, QThread, Signal
+    from PySide6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
     from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit,
-        QLineEdit, QPushButton, QComboBox, QLabel, QCheckBox,
+        QCheckBox,
+        QComboBox,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QPlainTextEdit,
+        QPushButton,
+        QVBoxLayout,
+        QWidget,
     )
-    from PySide6.QtGui import QFont, QTextCharFormat, QColor, QTextCursor
-    from PySide6.QtCore import QThread, Signal, QObject, Qt
     PYSIDE6_AVAILABLE = True
 except ImportError:
     PYSIDE6_AVAILABLE = False

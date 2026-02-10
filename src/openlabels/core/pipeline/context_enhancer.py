@@ -15,8 +15,8 @@ The enhancer adjusts confidence scores based on context, allowing:
 - Only ambiguous spans go to LLM (reducing calls by ~80%)
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Set, Tuple
 
@@ -46,7 +46,7 @@ NAME_DENY_LIST: Set[str] = {
     # Tech/product terms often detected as names
     "null", "undefined", "none", "true", "false", "default",
     # HTML/form artifacts
-    "input", "label", "form", "div", "span", "strong", "body",
+    "input", "label", "form", "div", "span", "body",
     # Common single letters/short words
     "e", "in", "of", "or", "an", "to",
     # High-frequency FPs from benchmarks

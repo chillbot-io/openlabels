@@ -15,10 +15,10 @@ import logging
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_, update, func
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 try:
@@ -28,12 +28,12 @@ except ImportError:
         """Placeholder when redis is not installed."""
         pass
 
+from openlabels.adapters.base import FileInfo
 from openlabels.server.models import (
-    FolderInventory,
     FileInventory,
+    FolderInventory,
     ScanResult,
 )
-from openlabels.adapters.base import FileInfo
 
 if TYPE_CHECKING:
     from openlabels.server.cache import CacheManager
@@ -705,7 +705,7 @@ class DistributedScanInventory:
                     for key in keys:
                         pipe.expire(key, self.ttl)
                     await pipe.execute()
-                logger.debug(f"Refreshed TTL for inventory cache")
+                logger.debug("Refreshed TTL for inventory cache")
                 return True
             except (RedisError, ConnectionError, OSError, TimeoutError) as e:
                 logger.warning(f"Redis refresh_ttl error: {type(e).__name__}: {e}")

@@ -10,16 +10,14 @@ Security: Uses defusedxml to prevent XXE (XML External Entity) attacks
 when parsing Office document XML content.
 """
 
-import asyncio
 import base64
 import json
 import logging
 import shutil
 import zipfile
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError

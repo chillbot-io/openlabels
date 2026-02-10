@@ -9,10 +9,10 @@ Usage:
     openlabels models download phi_bert # Single model
 """
 
-import click
 import logging
-
 from pathlib import Path
+
+import click
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,9 @@ def models():
               help="Models directory (default: .openlabels/models/)")
 def list_models(models_dir: Path | None):
     """List available models and their installation status."""
-    from openlabels.core.detectors.model_registry import list_models as _list, get_registry
-    from openlabels.core.detectors.model_registry import MODEL_ALIASES
     from openlabels.core.constants import DEFAULT_MODELS_DIR
+    from openlabels.core.detectors.model_registry import MODEL_ALIASES
+    from openlabels.core.detectors.model_registry import list_models as _list
 
     base = models_dir or DEFAULT_MODELS_DIR
 
@@ -71,9 +71,9 @@ def list_models(models_dir: Path | None):
               help="Check ONNX models (default) or HuggingFace models")
 def check(models_dir: Path | None, use_onnx: bool):
     """Diagnose model availability (detailed file-level check)."""
+    from openlabels.core.constants import DEFAULT_MODELS_DIR
     from openlabels.core.detectors.model_config import check_models_available
     from openlabels.core.ocr import OCREngine
-    from openlabels.core.constants import DEFAULT_MODELS_DIR
 
     base = models_dir or DEFAULT_MODELS_DIR
 
@@ -127,10 +127,11 @@ def download(names: tuple[str, ...], models_dir: Path | None, force: bool):
         openlabels models download ocr         # OCR models
         openlabels models download phi_bert    # Single model
     """
-    from openlabels.core.detectors.model_registry import (
-        resolve_names, download_model,
-    )
     from openlabels.core.constants import DEFAULT_MODELS_DIR
+    from openlabels.core.detectors.model_registry import (
+        download_model,
+        resolve_names,
+    )
 
     base = models_dir or DEFAULT_MODELS_DIR
 

@@ -25,15 +25,14 @@ import logging
 import re
 import threading
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass, field
 
 import httpx
 
 from openlabels.adapters.base import FileInfo
-
 
 logger = logging.getLogger(__name__)
 

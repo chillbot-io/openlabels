@@ -21,72 +21,64 @@ Usage:
     expanded_spans = resolve_coreferences(text, result.spans)
 """
 
-from .types import (
-    Span,
-    SpanContext,
-    Tier,
-    RiskTier,
-    ExposureLevel,
-    DetectionResult,
-    ScoringResult,
-    KNOWN_ENTITY_TYPES,
-    CLINICAL_CONTEXT_TYPES,
-    validate_entity_type,
-    is_clinical_context_type,
-    normalize_entity_type,
-)
-
+from .detectors.base import BaseDetector
 from .detectors.config import DetectionConfig
-
 from .detectors.orchestrator import (
     DetectorOrchestrator,
     detect,
 )
-
-from .detectors.base import BaseDetector
-
-from .scoring.scorer import (
-    score,
-    get_weight,
-    get_category,
-    calculate_content_score,
-    score_to_tier,
-)
-
-from .processor import (
-    FileProcessor,
-    FileClassification,
-    process_file,
-)
-
 from .extractors import (
     BaseExtractor,
+    DOCXExtractor,
     ExtractionResult,
+    ImageExtractor,
     PageInfo,
     PDFExtractor,
-    DOCXExtractor,
-    XLSXExtractor,
-    ImageExtractor,
-    TextExtractor,
     RTFExtractor,
+    TextExtractor,
+    XLSXExtractor,
     extract_text,
     get_extractor,
 )
-
-from .pipeline import (
-    resolve_coreferences,
-    is_onnx_available,
-    is_fastcoref_available,
-    ContextEnhancer,
-    create_enhancer,
-    validate_span_positions,
-)
-
 from .ocr import (
+    OCRBlock,
     OCREngine,
     OCRResult,
-    OCRBlock,
     clean_ocr_text,
+)
+from .pipeline import (
+    ContextEnhancer,
+    create_enhancer,
+    is_fastcoref_available,
+    is_onnx_available,
+    resolve_coreferences,
+    validate_span_positions,
+)
+from .processor import (
+    FileClassification,
+    FileProcessor,
+    process_file,
+)
+from .scoring.scorer import (
+    calculate_content_score,
+    get_category,
+    get_weight,
+    score,
+    score_to_tier,
+)
+from .types import (
+    CLINICAL_CONTEXT_TYPES,
+    KNOWN_ENTITY_TYPES,
+    DetectionResult,
+    ExposureLevel,
+    RiskTier,
+    ScoringResult,
+    Span,
+    SpanContext,
+    Tier,
+    is_clinical_context_type,
+    normalize_entity_type,
+    validate_entity_type,
 )
 
 __all__ = [

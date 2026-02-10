@@ -9,16 +9,16 @@ Provides:
 """
 
 from .engine import (
+    CachedLabel,
+    LabelCache,
     LabelingEngine,
     LabelResult,
-    LabelCache,
-    CachedLabel,
     get_label_cache,
 )
 from .mip import (
+    LabelingResult,
     MIPClient,
     SensitivityLabel,
-    LabelingResult,
     is_mip_available,
 )
 

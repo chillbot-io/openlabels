@@ -18,7 +18,6 @@ Weights are on a 1-10 scale:
 """
 
 import math
-from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
 from ..types import RiskTier, ScoringResult, normalize_entity_type

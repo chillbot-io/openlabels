@@ -18,13 +18,12 @@ Implementations
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path as _Path
-from typing import AsyncIterator, Optional, Protocol, runtime_checkable
-
-import json
-from typing import Any
+from typing import Any, Optional, Protocol, runtime_checkable
 from urllib.parse import unquote_plus
 
 from openlabels.adapters.base import FileInfo, FilterConfig, ReadAdapter

@@ -35,8 +35,10 @@ def config_set(key: str, value: str):
         openlabels config set server.debug true
         openlabels config set cors.allowed_origins http://localhost:3000,http://example.com
     """
-    import yaml
     from pathlib import Path
+
+    import yaml
+
     from openlabels.core.constants import DATA_DIR
 
     # Determine config file location

@@ -19,24 +19,24 @@ Security features:
 - Secure session cookies with HttpOnly and SameSite
 """
 
+import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
-import secrets
-import logging
 
-from fastapi import APIRouter, HTTPException, Request, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
 from msal import ConfidentialClientApplication
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from slowapi import Limiter
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
-from openlabels.server.utils import get_client_ip
 from openlabels.server.db import get_session
-from openlabels.server.session import SessionStore, PendingAuthStore
 from openlabels.server.security import log_security_event
+from openlabels.server.session import PendingAuthStore, SessionStore
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 

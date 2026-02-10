@@ -11,16 +11,15 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 from .constants import (
-    MIN_NATIVE_TEXT_LENGTH,
-    MAX_DOCUMENT_PAGES,
-    MAX_SPREADSHEET_ROWS,
     MAX_DECOMPRESSED_SIZE,
+    MAX_DOCUMENT_PAGES,
     MAX_EXTRACTION_RATIO,
+    MAX_SPREADSHEET_ROWS,
+    MIN_NATIVE_TEXT_LENGTH,
 )
-from openlabels.exceptions import ExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +157,8 @@ class PDFExtractor(BaseExtractor):
                         pix = page.get_pixmap(dpi=self.RENDER_DPI)
 
                         # Convert to PIL Image and numpy array
-                        from PIL import Image
                         import numpy as np
+                        from PIL import Image
 
                         img = Image.frombytes(
                             "RGB",
@@ -518,8 +517,8 @@ class ImageExtractor(BaseExtractor):
         ext = Path(filename).suffix.lower()
 
         try:
-            from PIL import Image
             import numpy as np
+            from PIL import Image
 
             # Handle HEIC format
             if ext in (".heic", ".heif"):
@@ -575,8 +574,8 @@ class ImageExtractor(BaseExtractor):
 
     def _extract_multipage_tiff(self, content: bytes, filename: str) -> ExtractionResult:
         """Extract text from multi-page TIFF."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img = Image.open(io.BytesIO(content))
 

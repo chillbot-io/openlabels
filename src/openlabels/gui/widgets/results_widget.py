@@ -8,20 +8,31 @@ import csv
 import json
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QTableWidget, QTableWidgetItem, QComboBox, QLineEdit,
-        QGroupBox, QHeaderView, QSplitter, QTextEdit, QFileDialog,
-        QMessageBox,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QComboBox,
+        QFileDialog,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QLineEdit,
+        QMessageBox,
+        QPushButton,
+        QSplitter,
+        QTableWidget,
+        QTableWidgetItem,
+        QTextEdit,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - results widget unavailable
@@ -338,7 +349,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
             QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
-        except IOError as e:
+        except OSError as e:
             logger.error(f"I/O error while exporting CSV to '{validated_path}': {e}", exc_info=True)
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
         except Exception as e:
@@ -374,7 +385,7 @@ class ResultsWidget(QWidget if PYSIDE_AVAILABLE else object):
 
             QMessageBox.information(self, "Export", f"Exported {len(self._filtered_results)} results to {validated_path}")
 
-        except IOError as e:
+        except OSError as e:
             logger.error(f"I/O error while exporting JSON to '{validated_path}': {e}", exc_info=True)
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
         except Exception as e:

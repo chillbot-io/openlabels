@@ -11,10 +11,10 @@ Features:
 - Graceful fallback when Graph API unavailable
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import logging
 
 logger = logging.getLogger(__name__)
 

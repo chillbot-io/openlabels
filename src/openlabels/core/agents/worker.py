@@ -47,7 +47,7 @@ class WorkItem:
     priority: int = 0             # Higher = more urgent
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __lt__(self, other: "WorkItem") -> bool:
+    def __lt__(self, other: WorkItem) -> bool:
         """For priority queue ordering."""
         return self.priority > other.priority  # Higher priority first
 
@@ -102,8 +102,8 @@ class ClassificationAgent:
     def __init__(
         self,
         agent_id: int,
-        input_queue: "Queue[WorkItem | None]",
-        output_queue: "Queue[AgentResult]",
+        input_queue: Queue[WorkItem | None],
+        output_queue: Queue[AgentResult],
         backend: OptimizationBackend = OptimizationBackend.PYTORCH,
         model_path: Optional[str] = None,
         device: str = "cpu",
@@ -310,8 +310,8 @@ class ClassificationAgent:
 
 def agent_process_entry(
     agent_id: int,
-    input_queue: "Queue[WorkItem | None]",
-    output_queue: "Queue[AgentResult]",
+    input_queue: Queue[WorkItem | None],
+    output_queue: Queue[AgentResult],
     backend: str,
     model_path: Optional[str],
     device: str,

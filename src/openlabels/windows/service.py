@@ -35,10 +35,10 @@ logger = logging.getLogger(__name__)
 
 # Windows service support
 try:
-    import win32serviceutil
-    import win32service
-    import win32event
     import servicemanager
+    import win32event
+    import win32service
+    import win32serviceutil
     PYWIN32_AVAILABLE = True
 except ImportError:
     # pywin32 not installed - Windows service functionality unavailable

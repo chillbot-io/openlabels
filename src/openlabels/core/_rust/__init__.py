@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 # Try to import the Rust extension
 _RUST_AVAILABLE = False
 try:
-    from openlabels_matcher import PatternMatcher as RustPatternMatcher, RawMatch
+    from openlabels_matcher import PatternMatcher as RustPatternMatcher
+    from openlabels_matcher import RawMatch
     _RUST_AVAILABLE = True
     logger.info("Rust pattern matcher loaded successfully")
 except ImportError:

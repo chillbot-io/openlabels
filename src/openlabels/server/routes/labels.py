@@ -17,25 +17,24 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
+from openlabels.exceptions import InternalError, NotFoundError
+from openlabels.server.dependencies import (
+    AdminContextDep,
+    DbSessionDep,
+    LabelServiceDep,
+    TenantContextDep,
+)
+from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.server.dependencies import (
-    LabelServiceDep,
-    TenantContextDep,
-    AdminContextDep,
-    DbSessionDep,
-)
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
-from openlabels.server.errors import ErrorCode
-from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +164,8 @@ async def get_sync_status(
     _tenant: TenantContextDep,
 ) -> dict:
     """Get label sync status including last sync time and counts."""
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from openlabels.server.models import SensitivityLabel
 
     db = label_service.session
@@ -317,8 +317,8 @@ async def apply_label(
     admin: AdminContextDep,
 ) -> dict:
     """Apply a sensitivity label to a file."""
-    from openlabels.server.models import ScanResult, SensitivityLabel
     from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanResult, SensitivityLabel
 
     result = await db.get(ScanResult, request.result_id)
     if not result or result.tenant_id != admin.tenant_id:
@@ -374,9 +374,10 @@ async def get_label_mappings(
     Results are cached per tenant for improved performance.
     Cache is invalidated when mappings are updated.
     """
+    from sqlalchemy import select
+
     from openlabels.server.cache import get_cache_manager
     from openlabels.server.models import LabelRule, SensitivityLabel
-    from sqlalchemy import select
 
     tenant_id = label_service.tenant_id
     cache_key = f"label_mappings:tenant:{tenant_id}"
@@ -451,9 +452,10 @@ async def update_label_mappings(
     admin: AdminContextDep,
 ):
     """Update label mappings for risk tiers."""
+    from sqlalchemy import select
+
     from openlabels.server.cache import invalidate_cache
     from openlabels.server.models import LabelRule, SensitivityLabel
-    from sqlalchemy import select
 
     tenant_id = label_service.tenant_id
 

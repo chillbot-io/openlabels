@@ -34,9 +34,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from ..types import Span, DetectionResult, normalize_entity_type
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch, PolicyResult
+from ..types import DetectionResult, Span, normalize_entity_type
 
 logger = logging.getLogger(__name__)
 
@@ -173,12 +173,12 @@ class TieredPipeline:
 
     def _init_stage1_detectors(self) -> None:
         """Initialize Stage 1 (fast triage) detectors."""
+        from ..detectors.additional_patterns import AdditionalPatternDetector
         from ..detectors.checksum import ChecksumDetector
-        from ..detectors.secrets import SecretsDetector
         from ..detectors.financial import FinancialDetector
         from ..detectors.government import GovernmentDetector
         from ..detectors.patterns import PatternDetector
-        from ..detectors.additional_patterns import AdditionalPatternDetector
+        from ..detectors.secrets import SecretsDetector
 
         if self.config.enable_checksum:
             self._stage1_detectors.append(ChecksumDetector())
@@ -195,7 +195,7 @@ class TieredPipeline:
         # Optional Hyperscan acceleration
         if self.config.enable_hyperscan:
             try:
-                from ..detectors.hyperscan import HyperscanDetector, SUPPLEMENTAL_PATTERNS
+                from ..detectors.hyperscan import SUPPLEMENTAL_PATTERNS, HyperscanDetector
                 self._stage1_detectors.append(
                     HyperscanDetector(additional_patterns=SUPPLEMENTAL_PATTERNS)
                 )

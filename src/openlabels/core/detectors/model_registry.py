@@ -21,13 +21,12 @@ Usage:
 """
 
 import hashlib
-import json
 import logging
-import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from ..constants import DEFAULT_MODELS_DIR
 

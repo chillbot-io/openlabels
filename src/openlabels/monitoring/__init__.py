@@ -23,30 +23,31 @@ Usage:
         print(f"{event.user} accessed at {event.timestamp}")
 """
 
+from openlabels.exceptions import MonitoringError
+
+from . import db  # noqa: F401 – async DB persistence helpers
 from .base import (
     AccessEvent,
-    WatchedFile,
     MonitoringResult,
-)
-from openlabels.exceptions import MonitoringError
-from .registry import (
-    enable_monitoring,
-    disable_monitoring,
-    enable_monitoring_async,
-    disable_monitoring_async,
-    enable_monitoring_batch,
-    is_monitored,
-    get_watched_files,
-    populate_cache_from_db,
-    sync_cache_to_db,
+    WatchedFile,
 )
 from .collector import EventCollector
+from .harvester import EventHarvester
 from .history import (
     get_access_history,
 )
-from . import db  # noqa: F401 – async DB persistence helpers
 from .providers.base import EventProvider, RawAccessEvent
-from .harvester import EventHarvester
+from .registry import (
+    disable_monitoring,
+    disable_monitoring_async,
+    enable_monitoring,
+    enable_monitoring_async,
+    enable_monitoring_batch,
+    get_watched_files,
+    is_monitored,
+    populate_cache_from_db,
+    sync_cache_to_db,
+)
 
 # M365AuditProvider and GraphWebhookProvider are imported lazily
 # (they pull in httpx and GraphClient at import time).  Use:

@@ -9,10 +9,11 @@ Features:
 """
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import AsyncIterator, Optional
+from typing import Optional
 
-from openlabels.adapters.base import FileInfo, FilterConfig, DEFAULT_FILTER
+from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
 

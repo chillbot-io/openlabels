@@ -19,17 +19,22 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, func, case
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
 from slowapi import Limiter
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.adapters.base import FileInfo, supports_remediation
+from openlabels.adapters.filesystem import FilesystemAdapter
+from openlabels.auth.dependencies import require_admin
+from openlabels.core.path_validation import (
+    PathValidationError,
+    validate_path,
+)
 from openlabels.server.db import get_session
-from openlabels.server.utils import get_client_ip
 from openlabels.server.models import (
-    RemediationAction,
-    FileInventory,
     AuditLog,
+    RemediationAction,
     ScanResult,
 )
 from openlabels.server.schemas.pagination import (
@@ -37,15 +42,7 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import require_admin
-from openlabels.adapters.base import FileInfo, supports_remediation
-from openlabels.adapters.filesystem import FilesystemAdapter
-from openlabels.core.path_validation import (
-    validate_path,
-    PathValidationError,
-    BLOCKED_PATH_PREFIXES,
-    BLOCKED_FILE_PATTERNS,
-)
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

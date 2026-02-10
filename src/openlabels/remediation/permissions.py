@@ -15,12 +15,13 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
+from openlabels.exceptions import RemediationPermissionError
+
 from .base import (
-    RemediationResult,
     RemediationAction,
+    RemediationResult,
     get_current_user,
 )
-from openlabels.exceptions import RemediationPermissionError
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +344,6 @@ def _get_acl_windows(path: Path) -> dict:
 def _get_acl_unix(path: Path) -> dict:
     """Get Unix permissions and ACLs."""
     import os
-    import stat
 
     st = os.stat(path)
 

@@ -17,16 +17,13 @@ import subprocess
 import sys
 import webbrowser
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QApplication, QSystemTrayIcon, QMenu, QMessageBox
-    )
-    from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
-    from PySide6.QtCore import QTimer, QThread, Signal, QObject, Qt
+    from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+    from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+    from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
     PYSIDE6_AVAILABLE = True
 except ImportError:
     PYSIDE6_AVAILABLE = False

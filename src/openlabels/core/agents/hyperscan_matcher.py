@@ -18,12 +18,15 @@ References:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntFlag
-from typing import Callable, Optional
+from typing import Optional
 
 from .._rust.validators_py import (
     validate_luhn as luhn_check,
+)
+from .._rust.validators_py import (
     validate_ssn as ssn_validate,
 )
 

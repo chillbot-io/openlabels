@@ -26,10 +26,10 @@ Base Classes:
 """
 
 from openlabels.server.services.base import BaseService, TenantContext
-from openlabels.server.services.scan_service import ScanService
-from openlabels.server.services.label_service import LabelService
 from openlabels.server.services.job_service import JobService
+from openlabels.server.services.label_service import LabelService
 from openlabels.server.services.result_service import ResultService
+from openlabels.server.services.scan_service import ScanService
 
 __all__ = [
     # Base classes

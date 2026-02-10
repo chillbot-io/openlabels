@@ -18,15 +18,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from openlabels.server.schemas.pagination import (
-    PaginatedResponse,
-    PaginationParams,
-    create_paginated_response,
-)
 from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
     TenantContextDep,
+)
+from openlabels.server.schemas.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,9 +132,9 @@ async def _get_policy_service(
     tenant: TenantContextDep,
 ):
     """Inline dependency — avoids circular import with dependencies.py."""
-    from openlabels.server.services.policy_service import PolicyService
-    from openlabels.server.services.base import TenantContext as ServiceTenantContext
     from openlabels.server.config import get_settings
+    from openlabels.server.services.base import TenantContext as ServiceTenantContext
+    from openlabels.server.services.policy_service import PolicyService
 
     svc_tenant = ServiceTenantContext(
         tenant_id=tenant.tenant_id,

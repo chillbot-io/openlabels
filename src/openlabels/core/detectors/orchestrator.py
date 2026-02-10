@@ -14,16 +14,18 @@ Supports:
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-from ..types import Span, DetectionResult, normalize_entity_type
+from openlabels.exceptions import DetectionError
+
 from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
-from openlabels.exceptions import DetectionError
+from ..types import DetectionResult, Span, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
 from .registry import create_detector
@@ -119,7 +121,7 @@ class DetectorOrchestrator:
     def _init_hyperscan_detector(self) -> None:
         """Initialize Hyperscan-accelerated detector."""
         try:
-            from .hyperscan import HyperscanDetector, SUPPLEMENTAL_PATTERNS
+            from .hyperscan import SUPPLEMENTAL_PATTERNS, HyperscanDetector
 
             hyperscan_detector = HyperscanDetector(
                 additional_patterns=SUPPLEMENTAL_PATTERNS

@@ -41,13 +41,17 @@ def setup_tracing(app: FastAPI, *, settings: TracingSettings | None = None) -> b
 
     try:
         from opentelemetry import trace  # type: ignore[import-not-found]
-        from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
-        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import-not-found]
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
             OTLPSpanExporter,
         )
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
+        from opentelemetry.instrumentation.fastapi import (
+            FastAPIInstrumentor,  # type: ignore[import-not-found]
+        )
+        from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+        from opentelemetry.sdk.trace.export import (
+            BatchSpanProcessor,  # type: ignore[import-not-found]
+        )
     except ImportError:
         logger.warning(
             "opentelemetry packages not installed — tracing disabled. "
@@ -85,7 +89,9 @@ def setup_tracing(app: FastAPI, *, settings: TracingSettings | None = None) -> b
 
         # Optionally instrument HTTPX if available
         try:
-            from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor  # type: ignore[import-not-found]
+            from opentelemetry.instrumentation.httpx import (
+                HTTPXClientInstrumentor,  # type: ignore[import-not-found]
+            )
             HTTPXClientInstrumentor().instrument()
         except ImportError:
             pass

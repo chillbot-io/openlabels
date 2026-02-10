@@ -9,18 +9,17 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
-from fastapi import APIRouter, Depends, Request, Query
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func, case, desc
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from uuid import UUID
 
-from openlabels.server.db import get_session
-from openlabels.server.models import ScanJob, ScanResult, ScanTarget, AuditLog, ScanSchedule
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import case, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
+from openlabels.server.db import get_session
+from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
 logger = logging.getLogger(__name__)
 

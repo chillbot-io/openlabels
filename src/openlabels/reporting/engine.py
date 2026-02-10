@@ -214,10 +214,10 @@ class ReportEngine:
         subject: str = "OpenLabels Report",
     ) -> None:
         """Send a generated report as an email attachment via SMTP."""
-        from email.message import EmailMessage
-        from email.utils import formatdate
         import mimetypes
         import smtplib
+        from email.message import EmailMessage
+        from email.utils import formatdate
 
         msg = EmailMessage()
         msg["Subject"] = subject

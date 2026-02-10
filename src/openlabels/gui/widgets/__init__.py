@@ -14,17 +14,17 @@ Widgets:
 """
 
 try:
-    from .scan_widget import ScanWidget
-    from .results_widget import ResultsWidget
+    from .charts_widget import ChartPanel, HeatMapChart, SensitiveDataChart
     from .dashboard_widget import DashboardWidget, StatCard
-    from .targets_widget import TargetsWidget, TargetDialog
-    from .schedules_widget import SchedulesWidget, ScheduleDialog
-    from .labels_widget import LabelsWidget, LabelRuleDialog
     from .file_detail_widget import FileDetailWidget, RiskGauge
-    from .settings_widget import SettingsWidget
-    from .monitoring_widget import MonitoringWidget, AddMonitoringDialog
-    from .charts_widget import HeatMapChart, SensitiveDataChart, ChartPanel
     from .health_widget import HealthWidget, StatusIndicator
+    from .labels_widget import LabelRuleDialog, LabelsWidget
+    from .monitoring_widget import AddMonitoringDialog, MonitoringWidget
+    from .results_widget import ResultsWidget
+    from .scan_widget import ScanWidget
+    from .schedules_widget import ScheduleDialog, SchedulesWidget
+    from .settings_widget import SettingsWidget
+    from .targets_widget import TargetDialog, TargetsWidget
 
     __all__ = [
         "ScanWidget",

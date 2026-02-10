@@ -19,15 +19,21 @@ import logging
 import re
 from typing import List, Tuple
 
+from .._rust.validators_py import (
+    validate_cusip as _validate_cusip_bool,
+)
+from .._rust.validators_py import (
+    validate_isin as _validate_isin_bool,
+)
+from .._rust.validators_py import (
+    validate_luhn,
+)
+from .._rust.validators_py import (
+    validate_ssn as _validate_ssn_bool,
+)
 from ..types import Span, Tier
 from .base import BaseDetector
 from .registry import register_detector
-from .._rust.validators_py import (
-    validate_luhn,
-    validate_ssn as _validate_ssn_bool,
-    validate_cusip as _validate_cusip_bool,
-    validate_isin as _validate_isin_bool,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -392,18 +398,40 @@ def validate_isin(isin: str) -> Tuple[bool, float]:
 
 try:
     from openlabels_matcher import (
-        checksum_ssn as _rust_ssn,
-        checksum_credit_card as _rust_cc,
-        checksum_npi as _rust_npi,
-        checksum_dea as _rust_dea,
-        checksum_iban as _rust_iban,
-        checksum_vin as _rust_vin,
         checksum_aba_routing as _rust_aba,
-        checksum_ups_tracking as _rust_ups,
-        checksum_fedex_tracking as _rust_fedex,
-        checksum_usps_tracking as _rust_usps,
+    )
+    from openlabels_matcher import (
+        checksum_credit_card as _rust_cc,
+    )
+    from openlabels_matcher import (
         checksum_cusip as _rust_cusip,
+    )
+    from openlabels_matcher import (
+        checksum_dea as _rust_dea,
+    )
+    from openlabels_matcher import (
+        checksum_fedex_tracking as _rust_fedex,
+    )
+    from openlabels_matcher import (
+        checksum_iban as _rust_iban,
+    )
+    from openlabels_matcher import (
         checksum_isin as _rust_isin,
+    )
+    from openlabels_matcher import (
+        checksum_npi as _rust_npi,
+    )
+    from openlabels_matcher import (
+        checksum_ssn as _rust_ssn,
+    )
+    from openlabels_matcher import (
+        checksum_ups_tracking as _rust_ups,
+    )
+    from openlabels_matcher import (
+        checksum_usps_tracking as _rust_usps,
+    )
+    from openlabels_matcher import (
+        checksum_vin as _rust_vin,
     )
 
     # Rebind module-level names so CHECKSUM_PATTERNS captures Rust functions

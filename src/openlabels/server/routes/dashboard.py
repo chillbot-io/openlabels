@@ -23,17 +23,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
-from openlabels.server.models import ScanJob
-from openlabels.server.cache import get_cache_manager
-from openlabels.auth.dependencies import get_current_user
 from openlabels.analytics.service import (
     DashboardQueryService,
-    HeatmapFileRow,
 )
+from openlabels.auth.dependencies import get_current_user
+from openlabels.server.cache import get_cache_manager
+from openlabels.server.db import get_session
+from openlabels.server.models import ScanJob
 
 logger = logging.getLogger(__name__)
 

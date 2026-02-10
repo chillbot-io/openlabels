@@ -37,6 +37,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from openlabels.adapters.graph_client import GraphClient
+
 from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)

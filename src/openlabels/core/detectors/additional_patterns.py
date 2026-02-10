@@ -18,7 +18,6 @@ from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
 from .registry import register_detector
 
-
 # Pattern definitions: frozen tuple of PatternDefinition objects
 ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     # --- EMPLOYER - Company/Organization Names (~773 missed) ---

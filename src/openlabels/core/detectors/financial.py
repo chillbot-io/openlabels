@@ -17,18 +17,20 @@ Entity Types:
 - SOLANA_ADDRESS, CARDANO_ADDRESS, LITECOIN_ADDRESS, etc.
 """
 
-import re
 import hashlib
+import re
 from typing import List
 
-from ..types import Span, Tier
-from .base import BaseDetector
-from .registry import register_detector
-from .pattern_registry import PatternDefinition, _p
 from .._rust.validators_py import (
     validate_cusip as _validate_cusip,
+)
+from .._rust.validators_py import (
     validate_isin as _validate_isin,
 )
+from ..types import Span, Tier
+from .base import BaseDetector
+from .pattern_registry import PatternDefinition, _p
+from .registry import register_detector
 
 
 def _validate_sedol(sedol: str) -> bool:

@@ -101,7 +101,7 @@ class DictionaryLoader:
 
         terms: Set[str] = set()
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     # Skip empty lines and comments

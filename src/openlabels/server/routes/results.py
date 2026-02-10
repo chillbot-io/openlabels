@@ -12,30 +12,30 @@ Cursor-based pagination is more efficient for large datasets as it:
 
 import logging
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.server.schemas.pagination import (
-    PaginatedResponse,
-    PaginationParams,
-    CursorPaginatedResponse,
-    CursorPaginationParams,
-    create_paginated_response,
-)
+from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
 from openlabels.server.dependencies import (
-    ResultServiceDep,
-    TenantContextDep,
     AdminContextDep,
     DbSessionDep,
+    ResultServiceDep,
+    TenantContextDep,
 )
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
+from openlabels.server.schemas.pagination import (
+    CursorPaginatedResponse,
+    CursorPaginationParams,
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,7 @@ async def list_results_cursor(
     stable pagination even when data changes between requests.
     """
     from sqlalchemy import select
+
     from openlabels.server.models import ScanResult
     from openlabels.server.schemas.pagination import cursor_paginate_query
 
@@ -399,7 +400,6 @@ async def delete_result(
     _admin: AdminContextDep,
 ):
     """Delete a single scan result."""
-    from openlabels.server.models import ScanResult
 
     result = await result_service.get_result(result_id)
     if not result:
@@ -481,8 +481,8 @@ async def rescan_file(
     admin: AdminContextDep,
 ):
     """Rescan a specific file."""
-    from openlabels.server.models import ScanJob
     from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanJob
 
     result = await result_service.get_result(result_id)
     if not result:

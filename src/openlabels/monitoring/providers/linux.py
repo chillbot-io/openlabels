@@ -16,8 +16,9 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from openlabels.monitoring.collector import EventCollector
 from openlabels.monitoring.base import AccessEvent
+from openlabels.monitoring.collector import EventCollector
+
 from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)

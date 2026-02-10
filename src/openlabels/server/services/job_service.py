@@ -11,17 +11,17 @@ Provides a service-layer wrapper around JobQueue with:
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.services.base import BaseService, TenantContext
-from openlabels.server.config import Settings
-from openlabels.server.models import JobQueue as JobQueueModel
 from openlabels.exceptions import (
-    NotFoundError,
     BadRequestError,
+    NotFoundError,
 )
 from openlabels.jobs.queue import JobQueue
+from openlabels.server.config import Settings
+from openlabels.server.models import JobQueue as JobQueueModel
+from openlabels.server.services.base import BaseService, TenantContext
 
 
 class JobService(BaseService):

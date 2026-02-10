@@ -3,14 +3,14 @@ Database connection and session management.
 """
 
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-    AsyncEngine,
 )
 from sqlalchemy.orm import DeclarativeBase
 

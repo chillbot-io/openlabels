@@ -20,15 +20,20 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
-from openlabels.server.models import (
-    Report, ScanResult, ScanJob, Policy, FileAccessEvent, generate_uuid,
-)
 from openlabels.server.dependencies import TenantContextDep
+from openlabels.server.models import (
+    FileAccessEvent,
+    Policy,
+    Report,
+    ScanJob,
+    ScanResult,
+    generate_uuid,
+)
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,

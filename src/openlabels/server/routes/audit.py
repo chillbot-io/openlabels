@@ -9,14 +9,15 @@ Supports both cursor-based and offset-based pagination:
 """
 
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_
+from pydantic import BaseModel
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog
 from openlabels.server.schemas.pagination import (
@@ -24,7 +25,6 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter()
 

@@ -192,6 +192,9 @@ select = [
 ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults
+    "UP006", # use X instead of typing.X — needs `from __future__ import annotations` for 3.10
+    "UP007", # use X | Y instead of Union[X, Y] — needs `from __future__ import annotations` for 3.10
+    "UP045", # use X | None instead of Optional[X] — needs `from __future__ import annotations` for 3.10
 ]
 
 [tool.ruff.lint.isort]

@@ -12,12 +12,14 @@ import asyncio
 import logging
 import multiprocessing as mp
 import os
-import psutil
 import time
 from collections import defaultdict
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import AsyncIterator, Awaitable, Callable, Optional
+from typing import Optional
+
+import psutil
 
 from openlabels.core.agents.worker import (
     AgentResult,
@@ -399,7 +401,7 @@ class AgentPool:
         if batch:
             yield batch
 
-    async def __aenter__(self) -> "AgentPool":
+    async def __aenter__(self) -> AgentPool:
         await self.start()
         return self
 
@@ -781,8 +783,8 @@ class ScanOrchestrator:
 
     async def _persist_unified(self, completed_files: list[FileResult]) -> None:
         """Full result pipeline: score → persist → inventory → WebSocket."""
-        from openlabels.server.models import ScanResult
         from openlabels.jobs.inventory import get_folder_path
+        from openlabels.server.models import ScanResult
 
         # Import WebSocket sender once (not per-file)
         _send_file_result = None

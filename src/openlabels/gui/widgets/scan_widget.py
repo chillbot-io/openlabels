@@ -9,18 +9,27 @@ Allows users to:
 """
 
 import logging
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # PySide6 imports with graceful fallback
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QTableWidget, QTableWidgetItem, QProgressBar, QComboBox,
-        QGroupBox, QHeaderView, QMessageBox,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QComboBox,
+        QGroupBox,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QMessageBox,
+        QProgressBar,
+        QPushButton,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - GUI functionality unavailable

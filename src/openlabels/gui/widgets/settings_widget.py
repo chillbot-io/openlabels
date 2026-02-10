@@ -9,17 +9,27 @@ Provides configuration options for:
 """
 
 import logging
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-        QGroupBox, QLineEdit, QSpinBox, QCheckBox, QComboBox,
-        QFormLayout, QMessageBox, QScrollArea,
-    )
     from PySide6.QtCore import Qt, Signal
+    from PySide6.QtWidgets import (
+        QCheckBox,
+        QComboBox,
+        QFormLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QMessageBox,
+        QPushButton,
+        QScrollArea,
+        QSpinBox,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - settings widget unavailable

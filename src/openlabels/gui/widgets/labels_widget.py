@@ -9,24 +9,21 @@ from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
-    QPushButton,
-    QHeaderView,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QComboBox,
-    QDialogButtonBox,
-    QMessageBox,
-    QLabel,
-    QGroupBox,
-    QSpinBox,
     QTabWidget,
-    QFrame,
+    QVBoxLayout,
+    QWidget,
 )
 
 

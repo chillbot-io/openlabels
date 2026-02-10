@@ -21,13 +21,12 @@ import logging
 import re
 import threading
 from pathlib import Path
-from typing import List, Set, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
 from ..types import Span, Tier
 from .span_validation import validate_after_coref
-
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ def _check_onnx_available() -> bool:
     # Check for tokenizer (either standalone or HF directory)
     if not tokenizer_json_path.exists() and not tokenizer_dir_path.exists():
         logger.warning(
-            f"FastCoref tokenizer not found - using rule-based fallback"
+            "FastCoref tokenizer not found - using rule-based fallback"
         )
         _ONNX_AVAILABLE = False
         return False

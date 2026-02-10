@@ -12,20 +12,20 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QGroupBox,
+    QComboBox,
     QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
     QProgressBar,
+    QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
-    QScrollArea,
-    QFrame,
-    QComboBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 

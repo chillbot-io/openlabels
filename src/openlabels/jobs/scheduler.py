@@ -20,11 +20,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from croniter import croniter
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import ScanSchedule, ScanJob, ScanTarget
+from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,6 @@ class DatabaseScheduler:
     async def _check_due_schedules(self) -> None:
         """Check for and trigger due schedules."""
         from openlabels.server.db import get_session_context
-        from openlabels.jobs.queue import JobQueue
 
         async with get_session_context() as session:
             # Find enabled schedules with cron expressions that might be due

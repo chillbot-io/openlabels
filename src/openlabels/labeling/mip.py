@@ -30,10 +30,11 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable, Union
 from functools import partial
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -318,14 +319,14 @@ class MIPClient:
         try:
             # Import MIP namespaces (after assemblies are loaded)
             from Microsoft.InformationProtection import (
-                MipContext,
-                MipConfiguration,
                 ApplicationInfo,
                 LogLevel,
+                MipConfiguration,
+                MipContext,
             )
             from Microsoft.InformationProtection.File import (
-                FileProfile,
                 FileEngineSettings,
+                FileProfile,
             )
 
             app_info = ApplicationInfo()
@@ -575,13 +576,12 @@ class MIPClient:
         extended_properties: Optional[Dict[str, str]],
     ) -> LabelingResult:
         """Synchronous label application."""
-        from Microsoft.InformationProtection.File import (
-            FileHandler,
-            LabelingOptions,
-        )
         from Microsoft.InformationProtection import (
-            AssignmentMethod,
             ActionSource,
+            AssignmentMethod,
+        )
+        from Microsoft.InformationProtection.File import (
+            LabelingOptions,
         )
 
         handler = None
@@ -704,7 +704,6 @@ class MIPClient:
 
     def _remove_label_sync(self, file_path: str) -> LabelingResult:
         """Synchronous label removal."""
-        from Microsoft.InformationProtection.File import FileHandler
         from Microsoft.InformationProtection import ActionSource
 
         handler = None

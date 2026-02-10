@@ -15,7 +15,7 @@ import httpx
 
 from openlabels.cli.base import get_api_client, server_options
 from openlabels.cli.utils import handle_http_error, validate_where_filter
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
 

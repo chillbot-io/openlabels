@@ -294,7 +294,7 @@ def lock_down_cmd(file_path: Optional[str], where_filter: Optional[str], scan_pa
             click.echo(f"Locked down: {result.source_path}")
             click.echo(f"  Principals: {', '.join(result.principals or [])}")
             if result.previous_acl and backup_acl:
-                click.echo(f"  ACL backup saved (can be used for rollback)")
+                click.echo("  ACL backup saved (can be used for rollback)")
         else:
             click.echo(f"Error: {result.error}", err=True)
             sys.exit(1)

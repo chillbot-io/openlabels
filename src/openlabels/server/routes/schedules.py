@@ -8,7 +8,6 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,16 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.db import get_session
 
 logger = logging.getLogger(__name__)
-from openlabels.server.models import ScanSchedule, ScanTarget, ScanJob
+from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
+from openlabels.exceptions import NotFoundError
+from openlabels.jobs import JobQueue, parse_cron_expression
+from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     paginate_query,
 )
-from openlabels.exceptions import NotFoundError
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
-from openlabels.server.routes import htmx_notify
-from openlabels.jobs import JobQueue, parse_cron_expression
 
 router = APIRouter()
 

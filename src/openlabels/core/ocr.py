@@ -26,7 +26,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 try:
     import numpy as np
@@ -38,7 +38,7 @@ try:
 except ImportError:
     IntervalTree = None
 
-from .constants import OCR_READY_TIMEOUT, DEFAULT_MODELS_DIR
+from .constants import DEFAULT_MODELS_DIR, OCR_READY_TIMEOUT
 
 if TYPE_CHECKING:
     from PIL import Image

@@ -13,14 +13,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.oauth import TokenClaims, validate_token
 from openlabels.exceptions import AuthError
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
-from openlabels.server.models import User, Tenant
-from openlabels.auth.oauth import validate_token, TokenClaims
+from openlabels.server.models import Tenant, User
 
 logger = logging.getLogger(__name__)
 

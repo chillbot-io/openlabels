@@ -7,14 +7,14 @@ Replaces in-memory session storage for production use:
 - Automatic cleanup of expired sessions
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import logging
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import Session, PendingAuth
+from openlabels.server.models import PendingAuth, Session
 
 logger = logging.getLogger(__name__)
 

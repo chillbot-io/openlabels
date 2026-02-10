@@ -9,13 +9,13 @@ Linux: queries auditd logs via ``ausearch`` for rules keyed with
 
 import logging
 import platform
-import re
 import subprocess
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
-from .base import AccessAction, AccessEvent, WINDOWS_ACCESS_MASKS
+from .base import WINDOWS_ACCESS_MASKS, AccessAction, AccessEvent
 
 logger = logging.getLogger(__name__)
 

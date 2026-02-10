@@ -48,6 +48,8 @@ def rebuild(batch_size: int, yes: bool) -> None:
 
 async def _run_rebuild(batch_size: int) -> None:
     """Async implementation of the catalog rebuild."""
+    from sqlalchemy import func, select
+
     from openlabels.analytics.arrow_convert import (
         access_events_to_arrow,
         audit_log_to_arrow,
@@ -68,7 +70,7 @@ async def _run_rebuild(batch_size: int) -> None:
     )
     from openlabels.analytics.storage import create_storage
     from openlabels.server.config import get_settings
-    from openlabels.server.db import init_db, get_session_context, close_db
+    from openlabels.server.db import close_db, get_session_context, init_db
     from openlabels.server.models import (
         AuditLog,
         FileAccessEvent,
@@ -77,7 +79,6 @@ async def _run_rebuild(batch_size: int) -> None:
         RemediationAction,
         ScanResult,
     )
-    from sqlalchemy import select, func
 
     settings = get_settings()
     if not settings.catalog.enabled:

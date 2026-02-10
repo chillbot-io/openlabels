@@ -20,7 +20,6 @@ from openlabels.cli.filter_parser import (
     parse_filter,
 )
 
-
 # Maximum length for regex patterns to prevent ReDoS
 MAX_REGEX_PATTERN_LENGTH = 500
 # Maximum time allowed for regex matching (seconds)

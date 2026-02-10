@@ -32,8 +32,9 @@ import json
 import logging
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, ParamSpec
+from typing import Any, Optional, ParamSpec, TypeVar
 
 try:
     from redis.exceptions import RedisError

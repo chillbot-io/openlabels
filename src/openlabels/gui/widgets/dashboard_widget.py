@@ -9,17 +9,25 @@ Displays:
 """
 
 import logging
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
-        QFrame, QGroupBox, QScrollArea, QSplitter, QTabWidget,
-    )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont
+    from PySide6.QtWidgets import (
+        QFrame,
+        QGridLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QLabel,
+        QScrollArea,
+        QSplitter,
+        QTabWidget,
+        QVBoxLayout,
+        QWidget,
+    )
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - dashboard widget unavailable

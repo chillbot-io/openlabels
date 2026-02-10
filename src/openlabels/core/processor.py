@@ -15,18 +15,20 @@ Pipeline:
 import asyncio
 import logging
 import mimetypes
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set, AsyncIterator, Union
+from typing import Dict, List, Optional, Set, Union
 
-from .types import Span, RiskTier
+from openlabels.exceptions import DetectionError, ExtractionError, SecurityError
+
+from .constants import DEFAULT_MODELS_DIR
 from .detectors.config import DetectionConfig
 from .detectors.orchestrator import DetectorOrchestrator
-from .scoring.scorer import score
-from .constants import DEFAULT_MODELS_DIR
 from .extractors import extract_text as _extract_text_from_file
-from openlabels.exceptions import DetectionError, ExtractionError, SecurityError
+from .scoring.scorer import score
+from .types import RiskTier, Span
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +240,7 @@ class FileProcessor:
             error_msg = f"Failed to decode file content: encoding error at position {e.start}"
             logger.warning(f"{file_path}: {error_msg}")
             result.error = error_msg
-        except MemoryError as e:
+        except MemoryError:
             # File too large to process in memory
             error_msg = f"Insufficient memory to process file ({actual_size:,} bytes)"
             logger.error(f"{file_path}: {error_msg}")
@@ -350,8 +352,9 @@ class FileProcessor:
     def _extract_image_sync(self, content: bytes) -> str:
         """Synchronous image OCR -- all CPU-bound work in one call."""
         import io
-        from PIL import Image
+
         import numpy as np
+        from PIL import Image
 
         image = Image.open(io.BytesIO(content))
         if image.mode != "RGB":

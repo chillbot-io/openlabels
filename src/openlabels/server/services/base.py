@@ -8,10 +8,11 @@ Provides common functionality for all services:
 - Logging setup
 """
 
-from abc import ABC
-from contextlib import asynccontextmanager
 import logging
-from typing import AsyncIterator, Optional, TypeVar
+from abc import ABC
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Optional, TypeVar
 from uuid import UUID
 
 T = TypeVar("T")

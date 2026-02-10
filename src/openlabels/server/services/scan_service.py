@@ -28,8 +28,8 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 
-from openlabels.jobs import JobQueue
 from openlabels.exceptions import BadRequestError, NotFoundError
+from openlabels.jobs import JobQueue
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.server.services.base import BaseService
 

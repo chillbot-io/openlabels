@@ -21,7 +21,8 @@ Example::
 
 import asyncio
 import logging
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any, Optional
 from uuid import UUID
 
 import httpx

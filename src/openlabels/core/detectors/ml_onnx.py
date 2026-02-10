@@ -13,15 +13,17 @@ Features:
 import bisect
 import json
 import logging
-import numpy as np
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from ..types import Span, Tier
-from ..constants import NON_NAME_WORDS, NAME_CONNECTORS, BERT_MAX_LENGTH, PRODUCT_CODE_PREFIXES
+import numpy as np
+
 from openlabels.exceptions import DetectionError
+
+from ..constants import BERT_MAX_LENGTH, NAME_CONNECTORS, NON_NAME_WORDS, PRODUCT_CODE_PREFIXES
+from ..types import Span, Tier
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 from .registry import register_detector

@@ -5,11 +5,11 @@ Provides server-to-server authentication using client credentials flow
 for accessing Graph API to resolve user information, including SID lookups.
 """
 
+import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import logging
-import re
 
 import httpx
 from msal import ConfidentialClientApplication

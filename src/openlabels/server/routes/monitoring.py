@@ -13,23 +13,23 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import get_current_user, require_admin
+from openlabels.core.path_validation import PathValidationError, validate_path
 from openlabels.server.db import get_session
 from openlabels.server.models import (
-    MonitoredFile,
+    AuditLog,
     FileAccessEvent,
     FileInventory,
-    AuditLog,
+    MonitoredFile,
 )
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin
-from openlabels.core.path_validation import validate_path, PathValidationError
 
 router = APIRouter()
 

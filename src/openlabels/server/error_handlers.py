@@ -5,15 +5,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 from slowapi.errors import RateLimitExceeded
 
 from openlabels.exceptions import (
-    APIError,
     AdapterUnavailableError,
+    APIError,
     AuthError,
     ConflictError,
     ForbiddenError,

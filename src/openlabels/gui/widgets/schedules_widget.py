@@ -13,23 +13,23 @@ from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
-    QPushButton,
-    QHeaderView,
-    QDialog,
-    QFormLayout,
-    QLineEdit,
-    QComboBox,
-    QCheckBox,
-    QDialogButtonBox,
-    QMessageBox,
-    QLabel,
-    QGroupBox,
-    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 

@@ -12,7 +12,7 @@ Supports two modes:
 import json
 import logging
 import time
-from typing import Optional, List, Dict, Any
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,9 @@ except ImportError:
 
 # Check for websockets
 try:
-    import websockets
     import asyncio
+
+    import websockets
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     # websockets not installed - real-time streaming unavailable
@@ -36,7 +37,7 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
 
 try:
-    from PySide6.QtCore import QThread, Signal, QObject
+    from PySide6.QtCore import QObject, QThread, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
     # PySide6 not installed - GUI worker unavailable

@@ -4,18 +4,16 @@ Supports loading PyTorch models for NER inference.
 For production use with ONNX models, see ml_onnx.py.
 """
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import logging
 import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from ..types import Span, Tier
 from ..constants import PRODUCT_CODE_PREFIXES
-from openlabels.exceptions import ModelLoadError
+from ..types import Span, Tier
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 from .registry import register_detector
-
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +167,7 @@ class MLDetector(BaseDetector):
             return False
 
         try:
-            from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+            from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
             # Load tokenizer and model
             self._tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
@@ -192,7 +190,7 @@ class MLDetector(BaseDetector):
             self._loaded = True
             return True
 
-        except ImportError as e:
+        except ImportError:
             logger.warning(
                 f"{self.name}: transformers library not installed - "
                 f"ML detection disabled. Install with: pip install transformers"
@@ -205,7 +203,7 @@ class MLDetector(BaseDetector):
                 f"files may be corrupted or inaccessible: {e}"
             )
             return False
-        except MemoryError as e:
+        except MemoryError:
             logger.error(
                 f"{self.name}: Insufficient memory to load model from {self.model_path}. "
                 f"Consider using a smaller model or increasing available memory."
@@ -243,7 +241,7 @@ class MLDetector(BaseDetector):
                 f"Input length: {len(text)} chars"
             )
             return []
-        except MemoryError as e:
+        except MemoryError:
             logger.error(
                 f"{self.name}: Insufficient memory for inference on text of {len(text)} chars. "
                 f"Consider processing smaller chunks."

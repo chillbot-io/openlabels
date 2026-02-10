@@ -14,7 +14,6 @@ import json
 import logging
 import socket
 import ssl
-from datetime import timezone
 
 from openlabels.export.adapters.base import ExportRecord
 

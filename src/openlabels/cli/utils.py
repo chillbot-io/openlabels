@@ -32,7 +32,7 @@ def validate_where_filter(ctx, param, value):
     """Validate the --where filter option."""
     if value is None:
         return None
-    from openlabels.cli.filter_parser import parse_filter, ParseError, LexerError
+    from openlabels.cli.filter_parser import LexerError, ParseError, parse_filter
     try:
         parse_filter(value)
         return value
@@ -90,9 +90,8 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
         List of dicts with keys: file_path, file_name, risk_score,
         risk_tier, entity_counts, total_entities.
     """
-    from openlabels.core.processor import FileProcessor
-
     from openlabels.core.detectors.config import DetectionConfig
+    from openlabels.core.processor import FileProcessor
     processor = FileProcessor(config=DetectionConfig(enable_ml=enable_ml))
 
     async def _process_all():

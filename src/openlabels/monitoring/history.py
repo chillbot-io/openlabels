@@ -10,17 +10,14 @@ existing audit logs rather than maintaining our own event stream.
 
 import logging
 import platform
-import re
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
 from .base import (
-    AccessEvent,
     AccessAction,
-    WINDOWS_EVENT_IDS,
-    WINDOWS_ACCESS_MASKS,
+    AccessEvent,
 )
 
 logger = logging.getLogger(__name__)

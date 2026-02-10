@@ -8,23 +8,23 @@ Provides:
 - Bulk label application to scan results
 """
 
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import delete as sa_delete, select, func, and_
+from sqlalchemy import and_, func, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from openlabels.server.services.base import BaseService, TenantContext
-from openlabels.server.config import Settings
-from openlabels.server.models import SensitivityLabel, LabelRule, ScanResult
 from openlabels.exceptions import (
-    NotFoundError,
-    ValidationError,
     BadRequestError,
     InternalError,
+    NotFoundError,
+    ValidationError,
 )
+from openlabels.server.config import Settings
+from openlabels.server.models import LabelRule, ScanResult, SensitivityLabel
+from openlabels.server.services.base import BaseService, TenantContext
 
 
 class LabelService(BaseService):

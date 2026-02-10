@@ -14,9 +14,10 @@ Features:
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional, Any
 from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 import httpx
 

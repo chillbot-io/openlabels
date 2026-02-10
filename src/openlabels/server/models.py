@@ -13,6 +13,8 @@ from typing import Optional
 from uuid import UUID as PyUUID
 
 from sqlalchemy import (
+    JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -21,16 +23,14 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    BigInteger,
-    JSON,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB as PG_JSONB, ENUM
+from sqlalchemy.dialects.postgresql import ENUM, UUID
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
-
 
 # =============================================================================
 # CROSS-DATABASE JSON TYPE
