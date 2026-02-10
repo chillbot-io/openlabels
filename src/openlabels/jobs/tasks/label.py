@@ -385,8 +385,9 @@ def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
         }
 
         # Register namespaces to preserve them in output
-        ET.register_namespace("", ns["cp"])
-        ET.register_namespace("vt", ns["vt"])
+        # (use stdlib; defusedxml doesn't expose register_namespace)
+        _stdlib_ET.register_namespace("", ns["cp"])
+        _stdlib_ET.register_namespace("vt", ns["vt"])
 
         # Security: Use safe XML parsing to prevent XXE attacks
         root = _safe_xml_fromstring(content)
@@ -411,17 +412,18 @@ def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:
                     vt_elem.text = label_props[name]
                 del label_props[name]
 
-        # Add missing properties
+        # Add missing properties (use stdlib for element creation;
+        # defusedxml only wraps parsing, not modification APIs)
         for name, value in label_props.items():
             max_pid += 1
-            prop = ET.SubElement(root, "{%s}property" % ns["cp"])
+            prop = _stdlib_ET.SubElement(root, "{%s}property" % ns["cp"])
             prop.set("fmtid", "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}")
             prop.set("pid", str(max_pid))
             prop.set("name", name)
-            vt = ET.SubElement(prop, "{%s}lpwstr" % ns["vt"])
+            vt = _stdlib_ET.SubElement(prop, "{%s}lpwstr" % ns["vt"])
             vt.text = value
 
-        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        return _stdlib_ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
     except (ValueError, OSError, KeyError) as e:
         logger.debug(f"Failed to update custom props XML, creating new: {e}")
