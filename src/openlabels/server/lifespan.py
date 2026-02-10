@@ -206,6 +206,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # Periodic monitoring registry cache sync (re-populates from DB)
+    monitoring_sync_shutdown = asyncio.Event()
+    monitoring_sync_task: asyncio.Task | None = None
+    if (
+        settings.monitoring.enabled
+        and settings.monitoring.tenant_id
+        and settings.monitoring.cache_sync_interval_seconds > 0
+    ):
+        try:
+            from uuid import UUID as _UUID
+            from openlabels.monitoring.registry import periodic_cache_sync
+
+            monitoring_sync_task = asyncio.create_task(
+                periodic_cache_sync(
+                    tenant_id=_UUID(settings.monitoring.tenant_id),
+                    interval_seconds=settings.monitoring.cache_sync_interval_seconds,
+                    shutdown_event=monitoring_sync_shutdown,
+                )
+            )
+            logger.info(
+                "Monitoring cache periodic sync started (interval=%ds)",
+                settings.monitoring.cache_sync_interval_seconds,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start monitoring cache sync: %s: %s",
+                type(e).__name__, e,
+            )
+
     # Event harvester background task (monitoring)
     harvester_shutdown = asyncio.Event()
     harvester_task: asyncio.Task | None = None
@@ -384,10 +413,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # WebSocket pub/sub for cross-instance delivery
+    try:
+        from openlabels.server.routes.ws import broadcaster as ws_broadcaster
+
+        pubsub_active = await ws_broadcaster.start()
+        if pubsub_active:
+            logger.info("WebSocket pub/sub: distributed mode (Redis)")
+        else:
+            logger.info("WebSocket pub/sub: local-only mode")
+    except Exception as e:
+        logger.warning(
+            "WebSocket pub/sub initialization failed: %s: %s",
+            type(e).__name__, e,
+        )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
     # Shutdown
+
+    # Stop WebSocket pub/sub
+    try:
+        from openlabels.server.routes.ws import broadcaster as ws_broadcaster
+
+        await ws_broadcaster.stop()
+    except Exception as e:
+        logger.warning("WebSocket pub/sub shutdown error: %s: %s", type(e).__name__, e)
 
     # Stop real-time event streams and scan trigger
     if stream_task and not stream_task.done():
@@ -444,6 +496,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _graph_client.close()
         except Exception:
             pass
+
+    # Stop periodic monitoring cache sync
+    if monitoring_sync_task and not monitoring_sync_task.done():
+        monitoring_sync_shutdown.set()
+        try:
+            await asyncio.wait_for(monitoring_sync_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            monitoring_sync_task.cancel()
+            try:
+                await monitoring_sync_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Monitoring cache periodic sync stopped")
 
     # Monitoring: sync registry cache to DB on shutdown
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_shutdown:

@@ -562,6 +562,10 @@ class MonitoringSettings(BaseSettings):
     # Sync registry cache to DB on startup and shutdown
     sync_cache_on_startup: bool = True
     sync_cache_on_shutdown: bool = True
+    # Periodic re-sync interval (seconds) — each instance re-populates its
+    # in-memory cache from DB to pick up changes made by other instances.
+    # Set to 0 to disable periodic sync (startup-only).
+    cache_sync_interval_seconds: int = 300
 
     # --- M365 audit (Management Activity API) ---
     # Separate harvest interval for M365 (API batches events; 5 min is typical)

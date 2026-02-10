@@ -1,6 +1,12 @@
 """
 WebSocket endpoints for real-time updates.
 
+Horizontal scaling:
+- Uses Redis pub/sub to broadcast events across all API instances.
+- Each instance maintains local WebSocket connections and subscribes to
+  a shared Redis channel for cross-instance delivery.
+- Falls back to local-only broadcast when Redis is unavailable.
+
 Security features:
 - WebSocket connections are authenticated using the same session cookie as HTTP requests
 - Unauthenticated connections are rejected
@@ -8,15 +14,15 @@ Security features:
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session_factory
@@ -31,6 +37,9 @@ router = APIRouter()
 WS_MAX_MESSAGE_SIZE = 4096  # 4 KB max inbound message size
 WS_MAX_MESSAGES_PER_MINUTE = 60  # Max client messages per minute
 WS_RATE_WINDOW_SECONDS = 60
+
+# Redis pub/sub channel for WebSocket events
+WS_PUBSUB_CHANNEL = "openlabels:ws:events"
 
 
 def validate_websocket_origin(websocket: WebSocket) -> bool:
@@ -110,7 +119,7 @@ class AuthenticatedConnection:
 
 
 class ConnectionManager:
-    """Manages WebSocket connections for scan progress updates."""
+    """Manages local WebSocket connections for this process."""
 
     def __init__(self):
         self.active_connections: dict[UUID, list[AuthenticatedConnection]] = {}
@@ -136,18 +145,183 @@ class ConnectionManager:
             if not self.active_connections[scan_id]:
                 del self.active_connections[scan_id]
 
-    async def broadcast(self, scan_id: UUID, message: dict):
-        """Send a message to all connections watching a scan."""
-        if scan_id in self.active_connections:
-            for conn in self.active_connections[scan_id]:
-                try:
-                    await conn.websocket.send_json(message)
-                except (WebSocketDisconnect, ConnectionError, OSError, RuntimeError) as e:
-                    # Connection may have been closed - log at info level for visibility
-                    logger.info(f"Failed to send WebSocket message to connection: {type(e).__name__}: {e}")
+    async def deliver_local(self, scan_id: UUID, message: dict):
+        """Deliver a message to all local connections watching a scan."""
+        if scan_id not in self.active_connections:
+            return
+        dead_connections: list[AuthenticatedConnection] = []
+        for conn in self.active_connections[scan_id]:
+            try:
+                await conn.websocket.send_json(message)
+            except (WebSocketDisconnect, ConnectionError, OSError, RuntimeError):
+                dead_connections.append(conn)
+        # Clean up dead connections
+        for conn in dead_connections:
+            self.disconnect(scan_id, conn)
+
+    @property
+    def connection_count(self) -> int:
+        """Total number of active connections on this instance."""
+        return sum(len(conns) for conns in self.active_connections.values())
 
 
+class PubSubBroadcaster:
+    """Distributes WebSocket events across instances via Redis pub/sub.
+
+    When Redis is available:
+    - ``publish()`` sends to the Redis channel so ALL instances receive it.
+    - A background subscriber task on each instance receives messages and
+      delivers them to its local WebSocket connections.
+
+    When Redis is unavailable:
+    - Falls back to local-only delivery (single-instance mode).
+    """
+
+    def __init__(self, local_manager: ConnectionManager):
+        self._local = local_manager
+        self._publisher: Any = None  # redis.asyncio client for publishing
+        self._subscriber: Any = None  # redis.asyncio client for subscribing
+        self._pubsub: Any = None  # PubSub object
+        self._task: asyncio.Task | None = None
+        self._running = False
+
+    @property
+    def is_distributed(self) -> bool:
+        """True if pub/sub is connected and cross-instance delivery is active."""
+        return self._running and self._publisher is not None
+
+    async def start(self) -> bool:
+        """Connect to Redis and start the subscriber background task.
+
+        Returns True if Redis pub/sub is active, False for local-only mode.
+        """
+        settings = get_settings()
+        if not settings.redis.enabled:
+            logger.info("WebSocket pub/sub: Redis disabled, using local-only mode")
+            return False
+
+        redis_url = settings.redis.url
+        try:
+            import redis.asyncio as aioredis
+
+            # Publisher client (shared, non-blocking)
+            self._publisher = aioredis.from_url(
+                redis_url,
+                socket_connect_timeout=settings.redis.connect_timeout,
+                socket_timeout=settings.redis.socket_timeout,
+                decode_responses=True,
+            )
+            await self._publisher.ping()
+
+            # Subscriber client (dedicated connection for pub/sub)
+            self._subscriber = aioredis.from_url(
+                redis_url,
+                socket_connect_timeout=settings.redis.connect_timeout,
+                socket_timeout=settings.redis.socket_timeout,
+                decode_responses=True,
+            )
+            self._pubsub = self._subscriber.pubsub()
+            await self._pubsub.subscribe(WS_PUBSUB_CHANNEL)
+
+            self._running = True
+            self._task = asyncio.create_task(
+                self._subscriber_loop(), name="ws-pubsub-subscriber"
+            )
+            logger.info("WebSocket pub/sub: Redis connected, cross-instance delivery active")
+            return True
+
+        except ImportError:
+            logger.info("WebSocket pub/sub: redis package not installed, local-only mode")
+            return False
+        except Exception as e:
+            logger.warning(
+                "WebSocket pub/sub: Redis connection failed (%s: %s), local-only mode",
+                type(e).__name__, e,
+            )
+            await self._cleanup_clients()
+            return False
+
+    async def stop(self):
+        """Stop the subscriber and close Redis connections."""
+        self._running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        await self._cleanup_clients()
+        logger.info("WebSocket pub/sub stopped")
+
+    async def _cleanup_clients(self):
+        """Close Redis clients."""
+        if self._pubsub:
+            try:
+                await self._pubsub.unsubscribe(WS_PUBSUB_CHANNEL)
+                await self._pubsub.close()
+            except Exception:
+                pass
+            self._pubsub = None
+        if self._subscriber:
+            try:
+                await self._subscriber.close()
+            except Exception:
+                pass
+            self._subscriber = None
+        if self._publisher:
+            try:
+                await self._publisher.close()
+            except Exception:
+                pass
+            self._publisher = None
+
+    async def publish(self, scan_id: UUID, message: dict):
+        """Publish an event. Uses Redis if available, local delivery otherwise."""
+        if self._publisher and self._running:
+            try:
+                payload = json.dumps(message, default=str)
+                await self._publisher.publish(WS_PUBSUB_CHANNEL, payload)
+                return
+            except Exception as e:
+                logger.warning("WebSocket pub/sub publish failed (%s), falling back to local", e)
+
+        # Fallback: deliver locally only
+        scan_id_from_msg = message.get("scan_id")
+        if scan_id_from_msg:
+            await self._local.deliver_local(UUID(scan_id_from_msg), message)
+
+    async def _subscriber_loop(self):
+        """Background task: receive messages from Redis and deliver to local connections."""
+        while self._running:
+            try:
+                message = await self._pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0,
+                )
+                if message is None:
+                    await asyncio.sleep(0.01)
+                    continue
+
+                if message["type"] != "message":
+                    continue
+
+                data = json.loads(message["data"])
+                scan_id_str = data.get("scan_id")
+                if scan_id_str:
+                    await self._local.deliver_local(UUID(scan_id_str), data)
+
+            except asyncio.CancelledError:
+                break
+            except json.JSONDecodeError as e:
+                logger.warning("WebSocket pub/sub: invalid JSON in message: %s", e)
+            except Exception as e:
+                if self._running:
+                    logger.error("WebSocket pub/sub subscriber error: %s: %s", type(e).__name__, e)
+                    await asyncio.sleep(1.0)  # Back off on errors
+
+
+# Module-level instances
 manager = ConnectionManager()
+broadcaster = PubSubBroadcaster(manager)
 
 
 async def authenticate_websocket(
@@ -322,14 +496,14 @@ async def send_scan_progress(
     status: str,
     progress: dict,
 ):
-    """Send scan progress update to all connected clients."""
+    """Send scan progress update to all connected clients (all instances)."""
     message = {
         "type": "progress",
         "scan_id": str(scan_id),
         "status": status,
         "progress": progress,
     }
-    await manager.broadcast(scan_id, message)
+    await broadcaster.publish(scan_id, message)
 
 
 async def send_scan_file_result(
@@ -339,7 +513,7 @@ async def send_scan_file_result(
     risk_tier: str,
     entity_counts: dict,
 ):
-    """Send individual file scan result to connected clients."""
+    """Send individual file scan result to connected clients (all instances)."""
     message = {
         "type": "file_result",
         "scan_id": str(scan_id),
@@ -348,7 +522,7 @@ async def send_scan_file_result(
         "risk_tier": risk_tier,
         "entity_counts": entity_counts,
     }
-    await manager.broadcast(scan_id, message)
+    await broadcaster.publish(scan_id, message)
 
 
 async def send_scan_completed(
@@ -356,11 +530,11 @@ async def send_scan_completed(
     status: str,
     summary: dict,
 ):
-    """Send scan completion notification to connected clients."""
+    """Send scan completion notification to connected clients (all instances)."""
     message = {
         "type": "completed",
         "scan_id": str(scan_id),
         "status": status,
         "summary": summary,
     }
-    await manager.broadcast(scan_id, message)
+    await broadcaster.publish(scan_id, message)

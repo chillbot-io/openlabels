@@ -241,6 +241,64 @@ async def sync_cache_to_db(
     return await monitoring_db.sync_to_db(session, tenant_id, snapshot)
 
 
+async def periodic_cache_sync(
+    tenant_id: UUID,
+    *,
+    interval_seconds: int = 300,
+    shutdown_event: "asyncio.Event | None" = None,
+) -> None:
+    """Periodically re-populate the in-memory cache from the database.
+
+    Each application instance runs this independently (no advisory lock)
+    so that every instance picks up monitoring changes made by other
+    instances via the shared database.
+
+    Parameters
+    ----------
+    tenant_id:
+        The tenant whose monitored files to sync.
+    interval_seconds:
+        Seconds between sync cycles.
+    shutdown_event:
+        When set, the loop exits gracefully.
+    """
+    import asyncio
+
+    from openlabels.server.db import get_session_context
+
+    _stop = shutdown_event or asyncio.Event()
+
+    logger.info(
+        "Periodic monitoring cache sync started (interval=%ds, tenant=%s)",
+        interval_seconds,
+        tenant_id,
+    )
+
+    while not _stop.is_set():
+        try:
+            async with get_session_context() as session:
+                added = await populate_cache_from_db(session, tenant_id)
+                if added > 0:
+                    logger.info(
+                        "Periodic cache sync: added %d new entries from DB", added,
+                    )
+                else:
+                    logger.debug("Periodic cache sync: cache up to date")
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Periodic monitoring cache sync failed; will retry next cycle",
+                exc_info=True,
+            )
+
+        try:
+            await asyncio.wait_for(_stop.wait(), timeout=interval_seconds)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+    logger.info("Periodic monitoring cache sync stopped")
+
+
 # =============================================================================
 # ASYNC WRAPPERS WITH DB PERSISTENCE
 # =============================================================================

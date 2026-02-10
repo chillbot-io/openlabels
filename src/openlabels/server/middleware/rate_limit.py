@@ -6,6 +6,8 @@ Provides two complementary rate limiters:
   for unauthenticated endpoints (``/auth/*``, ``/health``).
 * **Per-tenant** — :class:`TenantRateLimiter` tracks per-tenant request
   counts with sliding windows for authenticated API endpoints.
+  Uses Redis when available for cross-instance accuracy; falls back
+  to in-memory counters (per-instance only) otherwise.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import logging
 import time
 import threading
 from collections import defaultdict
-from typing import Annotated
+from typing import Any, Annotated
 
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
@@ -26,6 +28,7 @@ from openlabels.server.utils import get_client_ip
 logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "openlabels:ratelimit"
+_TENANT_KEY_PREFIX = "openlabels:tenant_rl:"
 
 
 # ---------------------------------------------------------------------------
@@ -99,10 +102,98 @@ def create_limiter() -> Limiter:
 # ---------------------------------------------------------------------------
 
 
+class _InMemoryTenantBackend:
+    """In-memory sliding-window counters. Per-instance only."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._minute_counts: dict[str, list[float]] = defaultdict(list)
+        self._hour_counts: dict[str, list[float]] = defaultdict(list)
+
+    def check_and_record(
+        self, tenant_id: str, rpm_limit: int, rph_limit: int,
+    ) -> tuple[bool, int, int]:
+        """Returns (allowed, minute_remaining, hour_remaining)."""
+        now = time.monotonic()
+
+        with self._lock:
+            minute_ago = now - 60
+            minute_list = self._minute_counts[tenant_id]
+            self._minute_counts[tenant_id] = minute_list = [
+                t for t in minute_list if t > minute_ago
+            ]
+
+            if len(minute_list) >= rpm_limit:
+                return False, 0, 0
+
+            hour_ago = now - 3600
+            hour_list = self._hour_counts[tenant_id]
+            self._hour_counts[tenant_id] = hour_list = [
+                t for t in hour_list if t > hour_ago
+            ]
+
+            if len(hour_list) >= rph_limit:
+                return False, 0, 0
+
+            minute_list.append(now)
+            hour_list.append(now)
+
+        return True, max(0, rpm_limit - len(minute_list)), max(0, rph_limit - len(hour_list))
+
+
+class _RedisTenantBackend:
+    """Redis-backed fixed-window counters shared across all instances.
+
+    Uses two keys per tenant per window:
+    - ``openlabels:tenant_rl:{tenant_id}:m:{window}`` — minute window
+    - ``openlabels:tenant_rl:{tenant_id}:h:{window}`` — hour window
+
+    INCR + EXPIRE is atomic enough for rate limiting (slight over-count
+    at window boundaries is acceptable).
+    """
+
+    def __init__(self, redis_client: Any) -> None:
+        self._redis = redis_client
+
+    async def check_and_record(
+        self, tenant_id: str, rpm_limit: int, rph_limit: int,
+    ) -> tuple[bool, int, int]:
+        """Returns (allowed, minute_remaining, hour_remaining)."""
+        now = int(time.time())
+        minute_window = now // 60
+        hour_window = now // 3600
+
+        minute_key = f"{_TENANT_KEY_PREFIX}{tenant_id}:m:{minute_window}"
+        hour_key = f"{_TENANT_KEY_PREFIX}{tenant_id}:h:{hour_window}"
+
+        pipe = self._redis.pipeline()
+        pipe.incr(minute_key)
+        pipe.expire(minute_key, 120)  # 2 min TTL (covers window + margin)
+        pipe.incr(hour_key)
+        pipe.expire(hour_key, 7200)  # 2 hour TTL
+        results = await pipe.execute()
+
+        minute_count = results[0]
+        hour_count = results[2]
+
+        if minute_count > rpm_limit:
+            return False, 0, 0
+        if hour_count > rph_limit:
+            return False, 0, 0
+
+        return (
+            True,
+            max(0, rpm_limit - minute_count),
+            max(0, rph_limit - hour_count),
+        )
+
+
 class TenantRateLimiter:
     """Sliding-window rate limiter keyed by tenant ID.
 
-    Thread-safe — safe to share as a singleton across async workers.
+    Uses Redis when available for cross-instance accuracy.
+    Falls back to in-memory counters (per-instance only) when Redis
+    is unavailable.
 
     Usage as a FastAPI dependency::
 
@@ -118,58 +209,66 @@ class TenantRateLimiter:
         self,
         requests_per_minute: int = 300,
         requests_per_hour: int = 10_000,
+        redis_client: Any = None,
     ) -> None:
         self.rpm_limit = requests_per_minute
         self.rph_limit = requests_per_hour
-        self._lock = threading.Lock()
-        self._minute_counts: dict[str, list[float]] = defaultdict(list)
-        self._hour_counts: dict[str, list[float]] = defaultdict(list)
+        self._redis_backend: _RedisTenantBackend | None = None
+        self._memory_backend = _InMemoryTenantBackend()
 
-    def check_rate_limit(self, tenant_id: str) -> tuple[bool, dict[str, int]]:
+        if redis_client is not None:
+            self._redis_backend = _RedisTenantBackend(redis_client)
+            logger.info("Tenant rate limiter using Redis (shared across instances)")
+        else:
+            logger.info(
+                "Tenant rate limiter using in-memory storage "
+                "(per-instance only — limits not shared across instances)"
+            )
+
+    @property
+    def is_distributed(self) -> bool:
+        return self._redis_backend is not None
+
+    async def check_rate_limit(self, tenant_id: str) -> tuple[bool, dict[str, int]]:
         """Check and record a request for *tenant_id*.
 
         Returns ``(allowed, headers)`` where *headers* is a dict of
         ``X-RateLimit-*`` values to include in the response.
         """
-        now = time.monotonic()
-
-        with self._lock:
-            # --- per-minute window ---
-            minute_ago = now - 60
-            minute_list = self._minute_counts[tenant_id]
-            self._minute_counts[tenant_id] = minute_list = [
-                t for t in minute_list if t > minute_ago
-            ]
-            minute_remaining = max(0, self.rpm_limit - len(minute_list))
-
-            if len(minute_list) >= self.rpm_limit:
-                return False, {
+        if self._redis_backend is not None:
+            try:
+                allowed, minute_rem, _ = await self._redis_backend.check_and_record(
+                    tenant_id, self.rpm_limit, self.rph_limit,
+                )
+                if not allowed:
+                    return False, {
+                        "X-RateLimit-Limit": self.rpm_limit,
+                        "X-RateLimit-Remaining": 0,
+                        "X-RateLimit-Reset": 60,
+                    }
+                return True, {
                     "X-RateLimit-Limit": self.rpm_limit,
-                    "X-RateLimit-Remaining": 0,
-                    "X-RateLimit-Reset": int(minute_list[0] - minute_ago),
+                    "X-RateLimit-Remaining": minute_rem,
                 }
+            except Exception as e:
+                logger.warning(
+                    "Redis tenant rate limit failed (%s), falling back to in-memory",
+                    e,
+                )
 
-            # --- per-hour window ---
-            hour_ago = now - 3600
-            hour_list = self._hour_counts[tenant_id]
-            self._hour_counts[tenant_id] = hour_list = [
-                t for t in hour_list if t > hour_ago
-            ]
-
-            if len(hour_list) >= self.rph_limit:
-                return False, {
-                    "X-RateLimit-Limit": self.rph_limit,
-                    "X-RateLimit-Remaining": 0,
-                    "X-RateLimit-Reset": int(hour_list[0] - hour_ago),
-                }
-
-            # Record this request
-            minute_list.append(now)
-            hour_list.append(now)
-
+        # In-memory fallback
+        allowed, minute_rem, _ = self._memory_backend.check_and_record(
+            tenant_id, self.rpm_limit, self.rph_limit,
+        )
+        if not allowed:
+            return False, {
+                "X-RateLimit-Limit": self.rpm_limit,
+                "X-RateLimit-Remaining": 0,
+                "X-RateLimit-Reset": 60,
+            }
         return True, {
             "X-RateLimit-Limit": self.rpm_limit,
-            "X-RateLimit-Remaining": minute_remaining - 1,
+            "X-RateLimit-Remaining": minute_rem,
         }
 
 
@@ -182,8 +281,26 @@ def get_tenant_rate_limiter() -> TenantRateLimiter:
     global _tenant_limiter
     if _tenant_limiter is None:
         settings = get_settings()
+
+        redis_client = None
+        if settings.redis.enabled:
+            try:
+                import redis.asyncio as aioredis
+
+                redis_client = aioredis.from_url(
+                    settings.redis.url,
+                    socket_connect_timeout=settings.redis.connect_timeout,
+                    socket_timeout=settings.redis.socket_timeout,
+                    decode_responses=True,
+                )
+            except ImportError:
+                logger.info("redis package not installed — tenant rate limiter in-memory only")
+            except Exception as e:
+                logger.warning("Redis connection for tenant rate limiter failed: %s", e)
+
         _tenant_limiter = TenantRateLimiter(
             requests_per_minute=settings.rate_limit.tenant_rpm,
             requests_per_hour=settings.rate_limit.tenant_rph,
+            redis_client=redis_client,
         )
     return _tenant_limiter

@@ -21,6 +21,7 @@ from typing import List, Optional, Dict, Tuple
 
 from ..types import Span, Tier
 from ..constants import NON_NAME_WORDS, NAME_CONNECTORS, BERT_MAX_LENGTH, PRODUCT_CODE_PREFIXES
+from openlabels.exceptions import DetectionError
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 from .registry import register_detector
@@ -494,16 +495,20 @@ class ONNXDetector(BaseDetector):
                             logger.warning(f"{self.name}: Chunk at {chunk_start} failed: {e}")
             else:
                 for chunk_start, chunk_text in chunks:
-                    chunk_spans = self._process_chunk(
-                        chunk_start, chunk_text, text, full_text_len
-                    )
-                    all_spans.extend(chunk_spans)
+                    try:
+                        chunk_spans = self._process_chunk(
+                            chunk_start, chunk_text, text, full_text_len
+                        )
+                        all_spans.extend(chunk_spans)
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.warning(f"{self.name}: Chunk at {chunk_start} failed: {e}")
 
             return self._dedupe_spans(all_spans, full_text=text)
 
         except (RuntimeError, ValueError, OSError, MemoryError) as e:
-            logger.error(f"{self.name}: Inference failed: {e}")
-            return []
+            raise DetectionError(
+                f"{self.name}: Inference failed: {e}",
+            ) from e
 
     def _detect_single(self, text: str) -> List[Span]:
         """Run inference on a single chunk of text."""

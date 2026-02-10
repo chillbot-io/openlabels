@@ -67,11 +67,13 @@ class EventHarvester:
         interval_seconds: int = 60,
         max_events_per_cycle: int = 10_000,
         store_raw_events: bool = False,
+        advisory_lock_id: int | None = None,
     ) -> None:
         self._providers = providers
         self._interval = interval_seconds
         self._max_events = max_events_per_cycle
         self._store_raw = store_raw_events
+        self._advisory_lock_id = advisory_lock_id
 
         # Per-provider checkpoint: provider.name → last processed event_time
         self._checkpoints: dict[str, datetime] = {}
@@ -114,6 +116,14 @@ class EventHarvester:
         while not _stop.is_set():
             try:
                 async with get_session_context() as session:
+                    # If an advisory lock is configured, only one instance
+                    # runs the harvest per cycle (used for cloud providers
+                    # like M365 that query a shared remote API).
+                    if self._advisory_lock_id is not None:
+                        from openlabels.server.advisory_lock import try_advisory_lock
+                        if not await try_advisory_lock(session, self._advisory_lock_id):
+                            logger.debug("Harvest cycle: another instance is running, skipping")
+                            continue  # skip to sleep
                     total = await self._harvest_cycle(session)
                 # If we reach here, session.commit() succeeded in __aexit__.
                 # NOW it is safe to apply pending checkpoints and update stats.
@@ -434,11 +444,14 @@ async def periodic_m365_harvest(
         logger.warning("No M365 providers available — M365 harvester not started")
         return
 
+    from openlabels.server.advisory_lock import AdvisoryLockID
+
     harvester = EventHarvester(
         providers,
         interval_seconds=interval_seconds,
         max_events_per_cycle=max_events_per_cycle,
         store_raw_events=store_raw_events,
+        advisory_lock_id=AdvisoryLockID.M365_HARVEST,
     )
     try:
         await harvester.run(shutdown_event=shutdown_event)

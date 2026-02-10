@@ -46,27 +46,32 @@ async def periodic_event_flush(
         interval_seconds,
     )
 
+    from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+
     while not _stop.is_set():
         try:
             async with get_session_context() as session:
-                counts = await flush_events_to_catalog(session, storage)
-                total = counts.get("access_events", 0) + counts.get("audit_logs", 0)
-                if total > 0:
-                    logger.info(
-                        "Periodic flush: %d access events, %d audit logs",
-                        counts["access_events"],
-                        counts["audit_logs"],
-                    )
+                if not await try_advisory_lock(session, AdvisoryLockID.EVENT_FLUSH):
+                    logger.debug("Periodic flush: another instance is running, skipping")
                 else:
-                    logger.debug("Periodic flush: nothing new to flush")
+                    counts = await flush_events_to_catalog(session, storage)
+                    total = counts.get("access_events", 0) + counts.get("audit_logs", 0)
+                    if total > 0:
+                        logger.info(
+                            "Periodic flush: %d access events, %d audit logs",
+                            counts["access_events"],
+                            counts["audit_logs"],
+                        )
+                    else:
+                        logger.debug("Periodic flush: nothing new to flush")
 
-                # Update catalog health metrics (best-effort)
-                try:
-                    from openlabels.server.metrics import record_catalog_flush, update_catalog_health
-                    record_catalog_flush(success=True)
-                    update_catalog_health(storage)
-                except (ImportError, RuntimeError, OSError):
-                    pass
+                    # Update catalog health metrics (best-effort)
+                    try:
+                        from openlabels.server.metrics import record_catalog_flush, update_catalog_health
+                        record_catalog_flush(success=True)
+                        update_catalog_health(storage)
+                    except (ImportError, RuntimeError, OSError):
+                        pass
 
         except Exception:  # noqa: BLE001 — catch-all for DB + storage retry loop
             logger.warning(

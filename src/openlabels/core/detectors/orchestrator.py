@@ -23,6 +23,7 @@ from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
+from openlabels.exceptions import DetectionError
 from .base import BaseDetector
 from .config import DetectionConfig
 from .registry import create_detector
@@ -267,7 +268,7 @@ class DetectorOrchestrator:
                     all_spans.extend(spans)
                     if spans:
                         detectors_used.append(detector.name)
-                except (RuntimeError, ValueError, OSError) as e:
+                except (DetectionError, RuntimeError, ValueError, OSError) as e:
                     logger.error(f"Detector {detector.name} failed: {e}")
 
         # Post-process: deduplicate, filter, sort
@@ -330,7 +331,7 @@ class DetectorOrchestrator:
                 logger.warning(f"Detector {detector.name} not available")
                 return []
             return detector.detect(text)
-        except (RuntimeError, ValueError, OSError) as e:
+        except (DetectionError, RuntimeError, ValueError, OSError) as e:
             logger.error(f"Error in detector {detector.name}: {e}")
             return []
 
