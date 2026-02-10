@@ -1,18 +1,10 @@
-"""
-Rust core integration for high-performance pattern matching.
-
-This module provides a Python wrapper around the Rust-based PatternMatcher.
-If the Rust extension is not available, it falls back to a pure Python
-implementation with reduced performance.
-"""
+"""Python wrapper around the Rust PatternMatcher, with pure-Python fallback."""
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to import the Rust extension
 _RUST_AVAILABLE = False
 try:
     from openlabels_matcher import PatternMatcher as RustPatternMatcher
@@ -37,21 +29,9 @@ class MatchResult:
 
 
 class PatternMatcherWrapper:
-    """
-    Wrapper for the pattern matcher that uses Rust if available.
-
-    Example:
-        matcher = PatternMatcherWrapper.with_builtin_patterns()
-        matches = matcher.find_matches("Call me at 555-123-4567")
-    """
+    """Pattern matcher that delegates to Rust when available."""
 
     def __init__(self, patterns: list[tuple[str, str, str | None, float]]):
-        """
-        Initialize the pattern matcher.
-
-        Args:
-            patterns: List of (name, regex, validator, confidence) tuples
-        """
         self._patterns = patterns
 
         if _RUST_AVAILABLE:
@@ -63,7 +43,7 @@ class PatternMatcherWrapper:
             self._init_python_matcher()
 
     def _init_python_matcher(self):
-        """Initialize the Python fallback matcher."""
+        """Compile regex patterns for the Python fallback path."""
         import re
         self._compiled_patterns = []
         for name, pattern, validator, confidence in self._patterns:
@@ -89,15 +69,7 @@ class PatternMatcherWrapper:
             return cls(BUILTIN_PATTERNS)
 
     def find_matches(self, text: str) -> list[MatchResult]:
-        """
-        Find all pattern matches in the text.
-
-        Args:
-            text: Text to search
-
-        Returns:
-            List of MatchResult objects
-        """
+        """Find all pattern matches in the text."""
         if self._use_rust:
             raw_matches = self._rust_matcher.find_matches(text)
             return [
@@ -115,15 +87,7 @@ class PatternMatcherWrapper:
             return self._find_matches_python(text)
 
     def find_matches_batch(self, texts: list[str]) -> list[list[MatchResult]]:
-        """
-        Find matches in multiple texts (parallel if Rust available).
-
-        Args:
-            texts: List of texts to search
-
-        Returns:
-            List of match lists, one per input text
-        """
+        """Find matches in multiple texts (parallel when using Rust)."""
         if self._use_rust:
             batch_results = self._rust_matcher.find_matches_batch(texts)
             return [
@@ -172,7 +136,7 @@ class PatternMatcherWrapper:
 
     @property
     def pattern_count(self) -> int:
-        """Get the number of patterns loaded."""
+        """Number of loaded patterns."""
         if self._use_rust:
             return self._rust_matcher.pattern_count()
         return len(self._compiled_patterns)

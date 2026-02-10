@@ -12,11 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
-
-logger = logging.getLogger(__name__)
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
 from openlabels.jobs import JobQueue, parse_cron_expression
+from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
 from openlabels.server.routes import get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
@@ -24,6 +22,8 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     paginate_query,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -90,13 +90,7 @@ async def create_schedule(
 ) -> ScheduleResponse:
     """Create a new scan schedule."""
     # Verify target exists
-    target = await session.get(ScanTarget, request.target_id)
-    if not target or target.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Target not found",
-            resource_type="ScanTarget",
-            resource_id=str(request.target_id),
-        )
+    target = await get_or_404(session, ScanTarget, request.target_id, tenant_id=user.tenant_id)
 
     try:
         schedule = ScanSchedule(
@@ -133,13 +127,7 @@ async def get_schedule(
     user: CurrentUser = Depends(get_current_user),
 ) -> ScheduleResponse:
     """Get schedule details."""
-    schedule = await session.get(ScanSchedule, schedule_id)
-    if not schedule or schedule.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Schedule not found",
-            resource_type="ScanSchedule",
-            resource_id=str(schedule_id),
-        )
+    schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
     return schedule
 
 
@@ -151,13 +139,7 @@ async def update_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> ScheduleResponse:
     """Update a scan schedule."""
-    schedule = await session.get(ScanSchedule, schedule_id)
-    if not schedule or schedule.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Schedule not found",
-            resource_type="ScanSchedule",
-            resource_id=str(schedule_id),
-        )
+    schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
     if request.name is not None:
         schedule.name = request.name
@@ -179,13 +161,7 @@ async def delete_schedule(
     user: CurrentUser = Depends(require_admin),
 ):
     """Delete a scan schedule."""
-    schedule = await session.get(ScanSchedule, schedule_id)
-    if not schedule or schedule.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Schedule not found",
-            resource_type="ScanSchedule",
-            resource_id=str(schedule_id),
-        )
+    schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
     schedule_name = schedule.name
     await session.delete(schedule)
@@ -206,13 +182,7 @@ async def trigger_schedule(
     user: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Trigger an immediate run of a schedule."""
-    schedule = await session.get(ScanSchedule, schedule_id)
-    if not schedule or schedule.tenant_id != user.tenant_id:
-        raise NotFoundError(
-            message="Schedule not found",
-            resource_type="ScanSchedule",
-            resource_id=str(schedule_id),
-        )
+    schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
     # Create scan job
     target = await session.get(ScanTarget, schedule.target_id)

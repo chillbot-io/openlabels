@@ -13,10 +13,7 @@ from uuid import UUID
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.exceptions import (
-    BadRequestError,
-    NotFoundError,
-)
+from openlabels.exceptions import BadRequestError
 from openlabels.jobs.queue import JobQueue
 from openlabels.server.config import Settings
 from openlabels.server.models import JobQueue as JobQueueModel

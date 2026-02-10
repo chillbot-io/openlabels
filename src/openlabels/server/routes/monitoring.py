@@ -24,9 +24,11 @@ from openlabels.server.models import (
     FileInventory,
     MonitoredFile,
 )
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
+    create_paginated_response,
     paginate_query,
 )
 
@@ -207,9 +209,7 @@ async def disable_file_monitoring(
     This removes the file from monitoring. Access events are preserved
     for audit purposes.
     """
-    monitored = await session.get(MonitoredFile, file_id)
-    if not monitored or monitored.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Monitored file not found")
+    monitored = await get_or_404(session, MonitoredFile, file_id, tenant_id=user.tenant_id)
 
     file_path = monitored.file_path
 

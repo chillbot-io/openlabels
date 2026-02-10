@@ -34,15 +34,11 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 class ScanCreate(BaseModel):
-    """Request to create a new scan."""
-
     target_id: UUID
     name: str | None = Field(default=None, max_length=255)
 
 
 class ScanResponse(BaseModel):
-    """Scan job response."""
-
     id: UUID
     target_id: UUID
     name: str | None
@@ -130,7 +126,6 @@ async def cancel_scan(
     """Cancel a running scan (POST method for HTMX)."""
     await scan_service.cancel_scan(scan_id)
 
-    # Check if this is an HTMX request
     if request.headers.get("HX-Request"):
         return htmx_notify("Scan cancelled", refreshScans=True)
 
@@ -146,7 +141,6 @@ async def retry_scan(
     try:
         new_job = await scan_service.retry_scan(scan_id)
 
-        # Check if this is an HTMX request
         if request.headers.get("HX-Request"):
             return htmx_notify("Scan retry queued", refreshScans=True)
 

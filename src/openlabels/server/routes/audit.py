@@ -11,7 +11,7 @@ Supports both cursor-based and offset-based pagination:
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -156,9 +157,7 @@ async def get_audit_log(
     user=Depends(require_admin),
 ):
     """Get a specific audit log entry."""
-    log = await session.get(AuditLog, log_id)
-    if not log or log.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Audit log entry not found")
+    log = await get_or_404(session, AuditLog, log_id, tenant_id=user.tenant_id)
     return AuditLogResponse.model_validate(log)
 
 

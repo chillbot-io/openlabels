@@ -331,13 +331,7 @@ class LabelService(BaseService):
         # Validate label_id if provided
         if "label_id" in rule_data:
             label_id = rule_data["label_id"]
-            label = await self.session.get(SensitivityLabel, label_id)
-            if not label or label.tenant_id != self.tenant_id:
-                raise NotFoundError(
-                    message="Label not found",
-                    resource_type="SensitivityLabel",
-                    resource_id=label_id,
-                )
+            await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
             rule.label_id = label_id
 
         # Update other fields
@@ -409,13 +403,7 @@ class LabelService(BaseService):
         from openlabels.jobs import JobQueue
 
         # Verify label exists
-        label = await self.session.get(SensitivityLabel, label_id)
-        if not label or label.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Label not found",
-                resource_type="SensitivityLabel",
-                resource_id=label_id,
-            )
+        await self.get_tenant_entity(SensitivityLabel, label_id, "Label")
 
         queue = JobQueue(self.session, self.tenant_id)
 

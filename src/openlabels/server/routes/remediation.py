@@ -36,6 +36,7 @@ from openlabels.server.models import (
     RemediationAction,
     ScanResult,
 )
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -226,9 +227,7 @@ async def get_remediation_action(
     user=Depends(require_admin),
 ):
     """Get details of a specific remediation action."""
-    action = await session.get(RemediationAction, action_id)
-    if not action or action.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Action not found")
+    action = await get_or_404(session, RemediationAction, action_id, tenant_id=user.tenant_id)
     return action
 
 
@@ -470,9 +469,7 @@ async def rollback_action(
     Use dry_run=true to preview the rollback without executing.
     """
     # Get the original action
-    original = await session.get(RemediationAction, request.action_id)
-    if not original or original.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=404, detail="Action not found")
+    original = await get_or_404(session, RemediationAction, request.action_id, tenant_id=user.tenant_id)
 
     if original.status == "rolled_back":
         raise HTTPException(
