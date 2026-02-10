@@ -4,12 +4,14 @@ import pytest
 from datetime import datetime
 from pathlib import Path
 
-from openlabels.remediation.base import (
-    RemediationResult,
-    RemediationAction,
-    RemediationError,
+from openlabels.exceptions import (
     QuarantineError,
-    PermissionError,
+    RemediationError,
+    RemediationPermissionError,
+)
+from openlabels.remediation.base import (
+    RemediationAction,
+    RemediationResult,
     get_current_user,
 )
 
@@ -159,8 +161,8 @@ class TestRemediationErrors:
         assert isinstance(error, RemediationError)
 
     def test_permission_error_is_remediation_error(self):
-        """PermissionError is a RemediationError."""
-        error = PermissionError("Permission change failed")
+        """RemediationPermissionError is a RemediationError."""
+        error = RemediationPermissionError("Permission change failed")
         assert isinstance(error, RemediationError)
 
 

@@ -9,11 +9,13 @@ sequences like ../ or encoded variants.
 import pytest
 from fastapi import HTTPException
 
+from openlabels.core.path_validation import (
+    BLOCKED_FILE_PATTERNS,
+    BLOCKED_PATH_PREFIXES,
+)
 from openlabels.server.routes.remediation import (
     validate_file_path,
     validate_quarantine_dir,
-    BLOCKED_PATH_PREFIXES,
-    BLOCKED_FILE_PATTERNS,
 )
 
 

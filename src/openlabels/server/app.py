@@ -169,7 +169,7 @@ def _register_legacy_redirects(app: FastAPI) -> None:
         methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         include_in_schema=False,
     )
-    async def legacy_api_redirect(request: Request, path: str) -> JSONResponse | RedirectResponse:
+    async def legacy_api_redirect(request: Request, path: str) -> Response:
         path_prefix = path.split("/")[0] if path else ""
         if path_prefix in _LEGACY_API_PREFIXES:
             new_path = f"/api/v1/{path}"

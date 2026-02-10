@@ -33,7 +33,6 @@ from openlabels.core.detectors.patterns import (
     _validate_ssn_context,
     _is_false_positive_name,
     PATTERNS,
-    add_pattern,
 )
 from openlabels.core.types import Tier
 
