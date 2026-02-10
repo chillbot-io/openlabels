@@ -8,6 +8,8 @@ This module provides inventory management to enable efficient delta scans:
 - Distributed caching via Redis for multi-worker consistency
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -69,7 +71,7 @@ class DistributedScanInventory:
         tenant_id: UUID,
         target_id: UUID,
         ttl: int = DEFAULT_INVENTORY_TTL,
-        cache_manager: Optional["CacheManager"] = None,
+        cache_manager: Optional[CacheManager] = None,
     ):
         """
         Initialize the distributed scan inventory.
@@ -754,7 +756,7 @@ class InventoryService:
         target_id: UUID,
         use_distributed_cache: bool = False,
         distributed_cache_ttl: int = DEFAULT_INVENTORY_TTL,
-        cache_manager: Optional["CacheManager"] = None,
+        cache_manager: Optional[CacheManager] = None,
     ):
         """
         Initialize the inventory service.

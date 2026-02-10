@@ -13,6 +13,8 @@ Behavior:
 - In lenient mode (default): Logs warnings and filters invalid spans
 """
 
+from __future__ import annotations
+
 import logging
 
 from ..types import Span

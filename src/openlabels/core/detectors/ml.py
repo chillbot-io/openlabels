@@ -4,6 +4,8 @@ Supports loading PyTorch models for NER inference.
 For production use with ONNX models, see ml_onnx.py.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path

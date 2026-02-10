@@ -11,6 +11,8 @@ Windows implementation uses robocopy for reliable transfers with
 ACL preservation and retry logic.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import platform
@@ -331,7 +333,7 @@ def _quarantine_unix(
 
 def restore_from_quarantine(
     entry_id: str,
-    manifest: "QuarantineManifest",
+    manifest: QuarantineManifest,
     verify_hash: bool = True,
     dry_run: bool = False,
 ) -> RemediationResult:

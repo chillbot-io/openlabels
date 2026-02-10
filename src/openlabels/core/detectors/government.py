@@ -19,6 +19,8 @@ Entity Types:
 - EAR_MARKING: Export Administration Regulations
 """
 
+from __future__ import annotations
+
 import re
 
 from ..types import Span, Tier

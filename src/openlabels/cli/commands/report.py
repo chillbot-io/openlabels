@@ -2,6 +2,8 @@
 Report commands — local scanning and server-backed report generation.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

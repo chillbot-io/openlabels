@@ -8,6 +8,8 @@ Features:
 - Exposure level detection from sharing info
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone

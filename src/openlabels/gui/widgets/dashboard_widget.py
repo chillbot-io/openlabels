@@ -8,6 +8,8 @@ Displays:
 - Trend charts (sensitive data over time, access heat map)
 """
 
+from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger(__name__)

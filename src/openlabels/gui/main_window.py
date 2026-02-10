@@ -2,6 +2,8 @@
 Main window for the OpenLabels GUI.
 """
 
+from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger(__name__)

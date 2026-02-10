@@ -20,6 +20,8 @@ Usage:
         download_model(model.name)
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import shutil

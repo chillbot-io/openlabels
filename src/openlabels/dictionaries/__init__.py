@@ -16,6 +16,8 @@ Dictionaries included:
 - clinical_stopwords: Terms to exclude from matching
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from functools import lru_cache

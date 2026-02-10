@@ -7,6 +7,8 @@ Configuration is loaded from:
 3. Default values (lowest priority)
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -262,7 +264,7 @@ class CORSSettings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_cors_security(self) -> "CORSSettings":
+    def validate_cors_security(self) -> CORSSettings:
         """
         Validate CORS configuration for security.
 
@@ -721,7 +723,7 @@ class Settings(BaseSettings):
     catalog: CatalogSettings = Field(default_factory=CatalogSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     siem_export: SIEMExportSettings = Field(default_factory=SIEMExportSettings)
-    reporting: "ReportingSettings" = Field(default_factory=lambda: ReportingSettings())
+    reporting: ReportingSettings = Field(default_factory=lambda: ReportingSettings())
 
 
 class ReportingSettings(BaseSettings):

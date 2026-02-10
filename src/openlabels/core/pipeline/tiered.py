@@ -26,6 +26,8 @@ Usage:
     result = pipeline.detect_image(image_path)
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed

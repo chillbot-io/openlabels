@@ -14,6 +14,8 @@ Performance (typical on modern CPU):
     - Hyperscan: ~1-10 GB/s
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Sequence
 

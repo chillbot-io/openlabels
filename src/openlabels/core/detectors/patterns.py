@@ -1,5 +1,7 @@
 """Tier 2: Pattern-based detectors for PHI/PII entity recognition."""
 
+from __future__ import annotations
+
 import logging
 import re
 

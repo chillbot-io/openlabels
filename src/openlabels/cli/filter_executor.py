@@ -4,6 +4,8 @@ Filter executor for OpenLabels CLI.
 Executes parsed filter expressions against scan results.
 """
 
+from __future__ import annotations
+
 import re
 import signal
 from contextlib import contextmanager

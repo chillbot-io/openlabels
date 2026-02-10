@@ -4,6 +4,8 @@ Web UI routes for OpenLabels.
 Serves Jinja2 templates with HTMX support for dynamic updates.
 """
 
+from __future__ import annotations
+
 import html
 import logging
 from datetime import datetime, timezone

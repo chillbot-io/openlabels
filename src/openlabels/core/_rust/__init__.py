@@ -1,5 +1,7 @@
 """Python wrapper around the Rust PatternMatcher, with pure-Python fallback."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 
@@ -54,7 +56,7 @@ class PatternMatcherWrapper:
                 logger.warning(f"Invalid pattern '{name}': {e}")
 
     @classmethod
-    def with_builtin_patterns(cls) -> "PatternMatcherWrapper":
+    def with_builtin_patterns(cls) -> PatternMatcherWrapper:
         """Create a matcher with built-in patterns."""
         if _RUST_AVAILABLE:
             # Use Rust's built-in patterns

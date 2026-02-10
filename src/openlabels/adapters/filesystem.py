@@ -9,6 +9,8 @@ Features:
 - Exposure level calculation from permissions
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import platform
@@ -45,7 +47,7 @@ class FilesystemAdapter:
         self.service_account = service_account
         self.is_windows = platform.system() == "Windows"
 
-    async def __aenter__(self) -> "FilesystemAdapter":
+    async def __aenter__(self) -> FilesystemAdapter:
         """No-op — filesystem adapter has no resources to initialize."""
         return self
 

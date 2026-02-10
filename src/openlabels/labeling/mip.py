@@ -26,6 +26,8 @@ Usage:
     await mip.apply_label(file_path, label_id)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os

@@ -15,6 +15,8 @@ The enhancer adjusts confidence scores based on context, allowing:
 - Only ambiguous spans go to LLM (reducing calls by ~80%)
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from dataclasses import dataclass, field

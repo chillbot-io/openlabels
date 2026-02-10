@@ -8,6 +8,8 @@ Provides a service-layer wrapper around JobQueue with:
 - Type hints and documentation
 """
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy import and_, select

@@ -21,6 +21,8 @@ Usage:
         blocks = result.get_blocks_for_span(span.start, span.end)
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import threading
@@ -127,7 +129,7 @@ class OCRResult:
     blocks: list[OCRBlock]
     offset_map: list[tuple[int, int, int]]  # (start_char, end_char, block_index)
     confidence: float
-    _interval_tree: "IntervalTree" = field(default=None, repr=False, compare=False)
+    _interval_tree: IntervalTree = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         """Build interval tree for fast span lookups."""
@@ -356,7 +358,7 @@ class OCREngine:
 
     def extract_text(
         self,
-        image: Union[str, Path, "np.ndarray", "Image.Image"],
+        image: Union[str, Path, np.ndarray, Image.Image],
     ) -> str:
         """
         Extract text from image.
@@ -449,7 +451,7 @@ class OCREngine:
 
     def extract_text_with_confidence(
         self,
-        image: Union[str, Path, "np.ndarray", "Image.Image"],
+        image: Union[str, Path, np.ndarray, Image.Image],
     ) -> tuple[str, float]:
         """
         Extract text with average confidence score.
@@ -511,7 +513,7 @@ class OCREngine:
 
     def extract_with_coordinates(
         self,
-        image: Union[str, Path, "np.ndarray", "Image.Image"],
+        image: Union[str, Path, np.ndarray, Image.Image],
     ) -> OCRResult:
         """
         Extract text with bounding box coordinates.

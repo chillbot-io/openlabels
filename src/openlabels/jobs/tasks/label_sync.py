@@ -5,6 +5,8 @@ Syncs sensitivity labels from Microsoft 365 to the local database.
 Runs on a schedule or on-demand via API.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import datetime, timezone

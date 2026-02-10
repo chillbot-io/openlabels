@@ -37,6 +37,8 @@ Usage:
     from openlabels.exceptions import DetectionError, NotFoundError
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 # =============================================================================

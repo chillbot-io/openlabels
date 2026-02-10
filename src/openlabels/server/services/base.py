@@ -1,5 +1,7 @@
 """Base service module providing session management, tenant isolation, and logging."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -33,7 +35,7 @@ class TenantContext(BaseModel):
         frozen = True  # Make immutable
 
     @classmethod
-    def from_current_user(cls, user: "CurrentUser") -> "TenantContext":
+    def from_current_user(cls, user: CurrentUser) -> TenantContext:
         """Create TenantContext from a CurrentUser instance."""
         return cls(
             tenant_id=user.tenant_id,
@@ -43,7 +45,7 @@ class TenantContext(BaseModel):
         )
 
     @classmethod
-    def system_context(cls, tenant_id: UUID) -> "TenantContext":
+    def system_context(cls, tenant_id: UUID) -> TenantContext:
         """Create a system-level context (no user) for background jobs."""
         return cls(tenant_id=tenant_id)
 

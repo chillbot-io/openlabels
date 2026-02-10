@@ -19,6 +19,8 @@ Sieves (applied in order):
 3. Coreference links: Use coref_anchor_value from pronoun resolution
 """
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 

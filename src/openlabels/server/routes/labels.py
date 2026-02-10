@@ -13,6 +13,8 @@ Performance:
 - Cache is automatically invalidated when labels are synced or mappings updated
 """
 
+from __future__ import annotations
+
 import logging
 from uuid import UUID
 

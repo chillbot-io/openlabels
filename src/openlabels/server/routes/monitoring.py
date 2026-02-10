@@ -7,6 +7,8 @@ Provides:
 - Access statistics and anomaly detection
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 

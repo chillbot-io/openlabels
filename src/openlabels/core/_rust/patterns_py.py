@@ -4,6 +4,8 @@ Python fallback pattern definitions.
 These mirror the Rust patterns for use when the extension is not available.
 """
 
+from __future__ import annotations
+
 # Built-in patterns for sensitive data detection.
 # Format: (name, regex_pattern, validator, base_confidence)
 BUILTIN_PATTERNS: list[tuple[str, str, str | None, float]] = [

@@ -2,6 +2,8 @@
 Find command for searching sensitive files with filtering.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

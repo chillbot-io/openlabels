@@ -4,6 +4,8 @@ Targets management widget for OpenLabels GUI.
 Provides interface for creating, viewing, editing, and deleting scan targets.
 """
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal

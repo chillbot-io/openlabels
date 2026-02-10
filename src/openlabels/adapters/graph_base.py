@@ -9,6 +9,8 @@ Extracts shared logic between SharePointAdapter and OneDriveAdapter:
 - Statistics reporting
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from types import TracebackType
@@ -69,7 +71,7 @@ class BaseGraphAdapter:
             self._owns_client = True
         return self._client
 
-    async def __aenter__(self) -> "BaseGraphAdapter":
+    async def __aenter__(self) -> BaseGraphAdapter:
         """Initialize the GraphClient connection."""
         await self._get_client()
         return self

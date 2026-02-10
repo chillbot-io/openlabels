@@ -23,6 +23,8 @@ Usage:
     python -m openlabels.windows.service remove
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import subprocess

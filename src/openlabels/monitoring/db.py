@@ -26,6 +26,8 @@ Usage from async context (e.g., FastAPI routes, startup hooks):
         await monitoring_db.remove_monitored_file(session, tenant_id, file_path)
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from uuid import UUID

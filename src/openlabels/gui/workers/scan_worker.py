@@ -9,6 +9,8 @@ Supports two modes:
 - WebSocket mode: Real-time streaming updates (preferred)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import time
@@ -140,7 +142,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
             logger.error(f"Scan error: {e}")
             self.error.emit(str(e))
 
-    def _run_websocket_mode(self, client: "httpx.Client") -> None:
+    def _run_websocket_mode(self, client: httpx.Client) -> None:
         """Run scan with WebSocket streaming for real-time updates."""
         import asyncio
 
@@ -219,7 +221,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         if not self._cancelled:
             self.completed.emit(self._results)
 
-    def _run_polling_mode(self, client: "httpx.Client") -> None:
+    def _run_polling_mode(self, client: httpx.Client) -> None:
         """Run scan with periodic polling for status updates."""
         poll_interval = 2.0  # seconds
 
@@ -283,7 +285,7 @@ class ScanWorker(QThread if PYSIDE_AVAILABLE else object):
         self.progress.emit(100, 100, "Scan complete")
         self.completed.emit(self._results)
 
-    def _cancel_scan(self, client: "httpx.Client") -> None:
+    def _cancel_scan(self, client: httpx.Client) -> None:
         """Cancel the running scan."""
         if self._scan_id:
             try:

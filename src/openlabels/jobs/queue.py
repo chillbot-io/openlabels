@@ -8,6 +8,8 @@ Features:
 - Concurrent worker support via SELECT FOR UPDATE SKIP LOCKED
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone

@@ -8,6 +8,8 @@ Supports both cursor-based and offset-based pagination:
 - Offset-based (backward compatible): Use `page` and `page_size` parameters
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
 

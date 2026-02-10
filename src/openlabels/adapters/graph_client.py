@@ -11,6 +11,8 @@ Features:
 - Configurable timeouts
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
@@ -241,7 +243,7 @@ class GraphClient:
             self._access_token = ""
         self._token_expires_at = None
 
-    async def __aenter__(self) -> "GraphClient":
+    async def __aenter__(self) -> GraphClient:
         """Create connection pool on context enter."""
         self._client = httpx.AsyncClient(
             limits=httpx.Limits(

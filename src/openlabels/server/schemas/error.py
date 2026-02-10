@@ -5,6 +5,8 @@ This module contains Pydantic models for error responses,
 ensuring consistent error handling across all API endpoints.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from pydantic import BaseModel, Field

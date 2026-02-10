@@ -5,6 +5,8 @@ Each extractor implements a common interface for extracting text content
 from files, with security protections against decompression bombs.
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import logging

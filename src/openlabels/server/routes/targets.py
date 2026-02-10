@@ -7,6 +7,8 @@ Security features:
 - Configuration sanitization removes potentially dangerous options
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import re

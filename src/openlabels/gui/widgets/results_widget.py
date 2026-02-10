@@ -4,6 +4,8 @@ Results viewer widget.
 Displays scan results with filtering, sorting, and export capabilities.
 """
 
+from __future__ import annotations
+
 import csv
 import json
 import logging

@@ -8,6 +8,8 @@ Features:
 - Redis-based state management with fallback to in-memory
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -42,7 +44,7 @@ WORKER_STATE_KEY_PREFIX = "openlabels:worker:state:"
 WORKER_STATE_TTL_SECONDS = 60  # Workers should heartbeat to stay registered
 
 # Global state manager instance
-_state_manager: Optional["WorkerStateManager"] = None
+_state_manager: Optional[WorkerStateManager] = None
 _state_manager_lock = asyncio.Lock()
 
 

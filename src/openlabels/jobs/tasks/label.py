@@ -10,6 +10,8 @@ Security: Uses defusedxml to prevent XXE (XML External Entity) attacks
 when parsing Office document XML content.
 """
 
+from __future__ import annotations
+
 import base64
 import json
 import logging
