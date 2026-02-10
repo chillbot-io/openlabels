@@ -16,6 +16,8 @@ Performance:
 - Trends data uses longer cache TTL since historical data is stable
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -79,7 +81,7 @@ class HeatmapNode(BaseModel):
     type: str  # 'folder' | 'file'
     risk_score: int
     entity_counts: dict[str, int]
-    children: list["HeatmapNode"] | None = None
+    children: list[HeatmapNode] | None = None
 
 
 class HeatmapResponse(BaseModel):

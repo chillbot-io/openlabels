@@ -9,6 +9,8 @@ Defines the core data structures used across the monitoring module:
 Exception classes live in openlabels.exceptions.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

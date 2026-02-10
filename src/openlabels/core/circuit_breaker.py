@@ -28,6 +28,8 @@ Usage:
         return cached_response
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
@@ -94,7 +96,7 @@ class CircuitBreaker:
     """
 
     # Registry of all circuit breakers for monitoring
-    _registry: dict[str, "CircuitBreaker"] = {}
+    _registry: dict[str, CircuitBreaker] = {}
 
     def __init__(
         self,
@@ -222,7 +224,7 @@ class CircuitBreaker:
                 self.stats.rejected_calls += 1
                 return False
 
-    async def __aenter__(self) -> "CircuitBreaker":
+    async def __aenter__(self) -> CircuitBreaker:
         """Async context manager entry."""
         if not await self.allow_request():
             raise CircuitOpenError(self.name, self.time_until_recovery)

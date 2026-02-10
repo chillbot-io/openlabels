@@ -10,6 +10,8 @@ Features:
 - Parallel chunk processing
 """
 
+from __future__ import annotations
+
 import bisect
 import json
 import logging

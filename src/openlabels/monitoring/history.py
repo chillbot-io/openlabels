@@ -8,6 +8,8 @@ This is on-demand querying, not continuous monitoring - we query the
 existing audit logs rather than maintaining our own event stream.
 """
 
+from __future__ import annotations
+
 import logging
 import platform
 import subprocess

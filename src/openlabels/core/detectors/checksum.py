@@ -15,6 +15,8 @@ These detections have the highest confidence (0.99) because
 they are mathematically validated, not just pattern-matched.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 

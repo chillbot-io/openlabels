@@ -5,6 +5,8 @@ Provides server-to-server authentication using client credentials flow
 for accessing Graph API to resolve user information, including SID lookups.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from dataclasses import dataclass

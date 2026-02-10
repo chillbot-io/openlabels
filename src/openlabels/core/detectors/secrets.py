@@ -20,6 +20,8 @@ Entity Types:
 - And more...
 """
 
+from __future__ import annotations
+
 import base64
 import binascii
 import re

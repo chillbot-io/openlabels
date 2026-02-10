@@ -9,6 +9,8 @@ Provides:
 - RemediationAdapter protocol for write/remediation operations
 """
 
+from __future__ import annotations
+
 import fnmatch
 import logging
 from collections.abc import AsyncIterator
@@ -109,7 +111,7 @@ class FilterConfig:
                 self.max_size_bytes,
             )
 
-    def should_include(self, file_info: "FileInfo") -> bool:
+    def should_include(self, file_info: FileInfo) -> bool:
         """
         Check if a file should be included based on filter rules.
 
@@ -294,7 +296,7 @@ class ReadAdapter(Protocol):
         """
         ...
 
-    async def __aenter__(self) -> "ReadAdapter":
+    async def __aenter__(self) -> ReadAdapter:
         """Initialize adapter resources (connections, sessions)."""
         ...
 

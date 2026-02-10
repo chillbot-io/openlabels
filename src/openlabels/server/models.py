@@ -8,6 +8,8 @@ Design principles:
 - JSONB for truly flexible data only
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID as PyUUID
@@ -181,9 +183,9 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    users: Mapped[list["User"]] = relationship(back_populates="tenant")
-    scan_targets: Mapped[list["ScanTarget"]] = relationship(back_populates="tenant")
-    scan_jobs: Mapped[list["ScanJob"]] = relationship(back_populates="tenant")
+    users: Mapped[list[User]] = relationship(back_populates="tenant")
+    scan_targets: Mapped[list[ScanTarget]] = relationship(back_populates="tenant")
+    scan_jobs: Mapped[list[ScanJob]] = relationship(back_populates="tenant")
 
     __table_args__ = (
         Index('ix_tenants_azure_tenant_id', 'azure_tenant_id'),
@@ -204,7 +206,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(back_populates="users")
+    tenant: Mapped[Tenant] = relationship(back_populates="users")
 
     __table_args__ = (
         Index('ix_users_tenant_email', 'tenant_id', 'email', unique=True),
@@ -227,8 +229,8 @@ class ScanTarget(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(back_populates="scan_targets")
-    schedules: Mapped[list["ScanSchedule"]] = relationship(back_populates="target")
+    tenant: Mapped[Tenant] = relationship(back_populates="scan_targets")
+    schedules: Mapped[list[ScanSchedule]] = relationship(back_populates="target")
 
     __table_args__ = (
         Index('ix_scan_targets_tenant_name', 'tenant_id', 'name'),
@@ -253,8 +255,8 @@ class ScanSchedule(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    target: Mapped["ScanTarget"] = relationship(back_populates="schedules")
-    jobs: Mapped[list["ScanJob"]] = relationship(back_populates="schedule")
+    target: Mapped[ScanTarget] = relationship(back_populates="schedules")
+    jobs: Mapped[list[ScanJob]] = relationship(back_populates="schedule")
 
     __table_args__ = (
         Index('ix_scan_schedules_tenant_enabled', 'tenant_id', 'enabled'),
@@ -284,9 +286,9 @@ class ScanJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(back_populates="scan_jobs")
-    schedule: Mapped[Optional["ScanSchedule"]] = relationship(back_populates="jobs")
-    results: Mapped[list["ScanResult"]] = relationship(back_populates="job")
+    tenant: Mapped[Tenant] = relationship(back_populates="scan_jobs")
+    schedule: Mapped[Optional[ScanSchedule]] = relationship(back_populates="jobs")
+    results: Mapped[list[ScanResult]] = relationship(back_populates="job")
 
     __table_args__ = (
         Index('ix_scan_jobs_tenant_status', 'tenant_id', 'status'),
@@ -348,7 +350,7 @@ class ScanResult(Base):
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    job: Mapped["ScanJob"] = relationship(back_populates="results")
+    job: Mapped[ScanJob] = relationship(back_populates="results")
 
     __table_args__ = (
         # Primary query patterns
@@ -377,7 +379,7 @@ class SensitivityLabel(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    rules: Mapped[list["LabelRule"]] = relationship(back_populates="label")
+    rules: Mapped[list[LabelRule]] = relationship(back_populates="label")
 
     __table_args__ = (
         Index('ix_sensitivity_labels_tenant_priority', 'tenant_id', 'priority'),
@@ -399,7 +401,7 @@ class LabelRule(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    label: Mapped["SensitivityLabel"] = relationship(back_populates="rules")
+    label: Mapped[SensitivityLabel] = relationship(back_populates="rules")
 
     __table_args__ = (
         Index('ix_label_rules_tenant_type', 'tenant_id', 'rule_type', 'priority'),
@@ -563,7 +565,7 @@ class FileInventory(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    folder: Mapped[Optional["FolderInventory"]] = relationship()
+    folder: Mapped[Optional[FolderInventory]] = relationship()
 
     __table_args__ = (
         Index('ix_file_inventory_tenant_target_path', 'tenant_id', 'target_id', 'file_path', unique=True),
@@ -617,7 +619,7 @@ class RemediationAction(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Self-referential relationship for rollbacks
-    rollback_of: Mapped[Optional["RemediationAction"]] = relationship(
+    rollback_of: Mapped[Optional[RemediationAction]] = relationship(
         remote_side=[id], foreign_keys=[rollback_of_id]
     )
 

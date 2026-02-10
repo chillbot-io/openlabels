@@ -26,6 +26,8 @@ Usage:
     await invalidate_cache("labels:*")
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -51,7 +53,7 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 # Global cache manager instance
-_cache_manager: Optional["CacheManager"] = None
+_cache_manager: Optional[CacheManager] = None
 _cache_lock = asyncio.Lock()
 
 

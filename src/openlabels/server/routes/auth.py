@@ -19,6 +19,8 @@ Security features:
 - Secure session cookies with HttpOnly and SameSite
 """
 
+from __future__ import annotations
+
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone

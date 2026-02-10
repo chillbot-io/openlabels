@@ -17,6 +17,8 @@ Entity Types:
 - SOLANA_ADDRESS, CARDANO_ADDRESS, LITECOIN_ADDRESS, etc.
 """
 
+from __future__ import annotations
+
 import hashlib
 import re
 

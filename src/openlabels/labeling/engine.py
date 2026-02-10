@@ -18,6 +18,8 @@ Features:
 - Thread-safe singleton pattern for caching
 """
 
+from __future__ import annotations
+
 import asyncio
 import io
 import json
@@ -73,10 +75,10 @@ class LabelCache:
     Uses TTL-based expiration.
     """
 
-    _instance: Optional["LabelCache"] = None
+    _instance: Optional[LabelCache] = None
     _lock = threading.Lock()
 
-    def __new__(cls) -> "LabelCache":
+    def __new__(cls) -> LabelCache:
         """Singleton pattern."""
         if cls._instance is None:
             with cls._lock:

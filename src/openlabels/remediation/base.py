@@ -7,6 +7,8 @@ operations (quarantine, permission lockdown, etc.).
 Exception classes live in openlabels.exceptions.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -74,7 +76,7 @@ class RemediationResult:
         source: Path,
         dest: Path,
         performed_by: str | None = None,
-    ) -> "RemediationResult":
+    ) -> RemediationResult:
         """Create a successful quarantine result."""
         return cls(
             success=True,
@@ -91,7 +93,7 @@ class RemediationResult:
         principals: list[str],
         previous_acl: str | None = None,
         performed_by: str | None = None,
-    ) -> "RemediationResult":
+    ) -> RemediationResult:
         """Create a successful lockdown result."""
         return cls(
             success=True,
@@ -109,7 +111,7 @@ class RemediationResult:
         source: Path,
         error: str,
         error_code: int | None = None,
-    ) -> "RemediationResult":
+    ) -> RemediationResult:
         """Create a failure result."""
         return cls(
             success=False,

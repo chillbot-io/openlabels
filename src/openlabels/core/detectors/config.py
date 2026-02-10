@@ -1,5 +1,7 @@
 """Detection configuration."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,7 +41,7 @@ class DetectionConfig:
     max_workers: int = 4
 
     @classmethod
-    def full(cls) -> "DetectionConfig":
+    def full(cls) -> DetectionConfig:
         """All detectors and post-processing enabled."""
         return cls(
             enable_hyperscan=True,
@@ -50,12 +52,12 @@ class DetectionConfig:
         )
 
     @classmethod
-    def patterns_only(cls) -> "DetectionConfig":
+    def patterns_only(cls) -> DetectionConfig:
         """Pattern detectors only (no ML, no acceleration)."""
         return cls()
 
     @classmethod
-    def quick(cls) -> "DetectionConfig":
+    def quick(cls) -> DetectionConfig:
         """Fast detectors only — no ML, no post-processing."""
         return cls(
             enable_ml=False,

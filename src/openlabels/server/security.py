@@ -5,6 +5,8 @@ Provides reusable functions for:
 - Security event logging for monitoring and alerting
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Optional
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def log_security_event(
     event_type: str,
-    user: Optional["CurrentUser"] = None,
+    user: Optional[CurrentUser] = None,
     details: dict | None = None,
     level: str = "warning",
 ):

@@ -16,6 +16,8 @@ Constraints:
 - New span confidence = anchor.confidence * 0.90
 """
 
+from __future__ import annotations
+
 import heapq
 import logging
 import re

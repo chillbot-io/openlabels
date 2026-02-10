@@ -7,6 +7,8 @@ Replaces in-memory session storage for production use:
 - Automatic cleanup of expired sessions
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 

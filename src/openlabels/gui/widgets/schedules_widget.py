@@ -4,6 +4,8 @@ Schedules management widget for OpenLabels GUI.
 Provides interface for creating, viewing, editing, and deleting scan schedules.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 

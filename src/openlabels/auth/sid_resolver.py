@@ -11,6 +11,8 @@ Features:
 - Graceful fallback when Graph API unavailable
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone

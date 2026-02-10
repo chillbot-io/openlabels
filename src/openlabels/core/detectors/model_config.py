@@ -55,6 +55,8 @@ How to obtain models:
     4. Place all files under DEFAULT_MODELS_DIR (typically .openlabels/models/).
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path

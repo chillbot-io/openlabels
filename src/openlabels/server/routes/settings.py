@@ -5,6 +5,8 @@ Handles configuration updates from the web UI.
 Note: For security, Azure client secrets are write-only (cannot be retrieved).
 """
 
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, Depends, Form

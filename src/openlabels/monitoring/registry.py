@@ -23,6 +23,8 @@ the in-memory cache from the database so that the registry reflects previously
 persisted state.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import platform
@@ -246,7 +248,7 @@ async def periodic_cache_sync(
     tenant_id: UUID,
     *,
     interval_seconds: int = 300,
-    shutdown_event: "asyncio.Event | None" = None,
+    shutdown_event: asyncio.Event | None = None,
 ) -> None:
     """Periodically re-populate the in-memory cache from the database.
 

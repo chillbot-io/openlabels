@@ -1,5 +1,7 @@
 """User management commands."""
 
+from __future__ import annotations
+
 import click
 import httpx
 

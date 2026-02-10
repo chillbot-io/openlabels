@@ -9,6 +9,8 @@ This module defines the fundamental types used throughout the detection system:
 These types are used by all detectors and the scoring engine.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from enum import Enum, IntEnum
@@ -49,7 +51,7 @@ class Tier(IntEnum):
     CHECKSUM = 4    # Algorithmically validated (Luhn, mod-97, etc.)
 
     @classmethod
-    def from_value(cls, value: int) -> "Tier":
+    def from_value(cls, value: int) -> Tier:
         """Convert int to Tier with validation."""
         if value not in (1, 2, 3, 4):
             raise ValueError(f"Invalid Tier value: {value}. Must be 1-4.")
@@ -383,11 +385,11 @@ class Span:
                 "Consider adding to KNOWN_ENTITY_TYPES."
             )
 
-    def overlaps(self, other: 'Span') -> bool:
+    def overlaps(self, other: Span) -> bool:
         """Check if this span overlaps with another."""
         return not (self.end <= other.start or other.end <= self.start)
 
-    def contains(self, other: 'Span') -> bool:
+    def contains(self, other: Span) -> bool:
         """Check if this span fully contains another."""
         return self.start <= other.start and self.end >= other.end
 

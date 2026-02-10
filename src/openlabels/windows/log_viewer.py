@@ -8,6 +8,8 @@ and auto-scroll capabilities.
 Requires: PySide6
 """
 
+from __future__ import annotations
+
 import logging
 import subprocess
 

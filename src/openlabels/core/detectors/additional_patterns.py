@@ -11,6 +11,8 @@ Covers entity types not handled by existing detectors:
 - BANK_ROUTING: ABA routing numbers
 """
 
+from __future__ import annotations
+
 import re
 
 from ..types import Span, Tier

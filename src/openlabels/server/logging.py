@@ -18,6 +18,8 @@ Usage:
     logger.info("Starting scan", extra={"scan_id": "123", "target": "sharepoint"})
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import sys

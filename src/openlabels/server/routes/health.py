@@ -4,6 +4,8 @@ Health and status API endpoints.
 Provides comprehensive system health information for monitoring dashboards.
 """
 
+from __future__ import annotations
+
 import logging
 import platform
 import sys

@@ -13,6 +13,8 @@ Security features:
 - Origin validation prevents cross-site WebSocket hijacking (CSWSH)
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

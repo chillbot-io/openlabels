@@ -7,6 +7,8 @@ Provides business logic for scan results with:
 - Proper tenant isolation
 """
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from uuid import UUID
 

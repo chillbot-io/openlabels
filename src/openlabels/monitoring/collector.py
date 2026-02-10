@@ -7,6 +7,8 @@ Linux: queries auditd logs via ``ausearch`` for rules keyed with
 ``openlabels``.
 """
 
+from __future__ import annotations
+
 import logging
 import platform
 import subprocess

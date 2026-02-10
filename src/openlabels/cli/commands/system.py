@@ -1,5 +1,7 @@
 """System commands (status, backup, restore)."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
