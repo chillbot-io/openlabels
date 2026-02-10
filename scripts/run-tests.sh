@@ -185,11 +185,17 @@ echo "  REDIS_URL=$REDIS_URL"
 echo -e "\n${YELLOW}Running tests...${NC}"
 cd "$PROJECT_ROOT"
 
+# Use venv python if available, otherwise system python
+PYTHON="python"
+if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+fi
+
 if [ $# -eq 0 ]; then
     # Default: run all tests except auth (which needs special setup)
-    python -m pytest tests/ --ignore=tests/auth -v "$@"
+    $PYTHON -m pytest tests/ --ignore=tests/auth -v "$@"
 else
-    python -m pytest "$@"
+    $PYTHON -m pytest "$@"
 fi
 
 TEST_EXIT_CODE=$?

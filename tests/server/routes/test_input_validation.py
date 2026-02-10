@@ -591,7 +591,7 @@ class TestMalformedData:
 
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
-            base_url="http://test"
+            base_url="http://localhost"
         ) as raw_client:
             response = await raw_client.post(
                 "/api/v1/targets",
@@ -1003,7 +1003,7 @@ class TestEdgeCases:
 
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
-            base_url="http://test"
+            base_url="http://localhost"
         ) as raw_client:
             # Send JSON with wrong content type
             response = await raw_client.post(

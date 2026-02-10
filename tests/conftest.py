@@ -621,12 +621,12 @@ async def test_client(test_db):
     from unittest.mock import AsyncMock, patch, MagicMock
     mock_cache = MagicMock()
     mock_cache.is_redis_connected = False
-    with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
-         patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
-         patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
-         patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+    with patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
+         patch("openlabels.server.lifespan.close_db", new_callable=AsyncMock), \
+         patch("openlabels.server.lifespan.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+         patch("openlabels.server.lifespan.close_cache", new_callable=AsyncMock):
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             yield client
 
     # Re-enable rate limiting

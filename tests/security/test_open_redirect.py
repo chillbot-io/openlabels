@@ -157,7 +157,7 @@ class TestOpenRedirectIntegration:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # Test with malicious redirect
                 response = await client.get(
                     "/api/auth/login",
@@ -200,7 +200,7 @@ class TestOpenRedirectIntegration:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # Attacker tries to inject redirect in callback
                 response = await client.get(
                     "/api/auth/callback",

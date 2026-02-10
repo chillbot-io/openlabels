@@ -514,7 +514,7 @@ class TestHealthEndpointAuthentication:
         try:
             with patch('openlabels.auth.dependencies.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/health/status")
 
                 # Without authentication, should get 401 Unauthorized

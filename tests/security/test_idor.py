@@ -359,13 +359,13 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
     mock_cache = MagicMock()
     mock_cache.is_redis_connected = False
     try:
-        with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
-             patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
-             patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
-             patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+        with patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
+             patch("openlabels.server.lifespan.close_db", new_callable=AsyncMock), \
+             patch("openlabels.server.lifespan.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+             patch("openlabels.server.lifespan.close_cache", new_callable=AsyncMock):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
-                base_url="http://test"
+                base_url="http://localhost"
             ) as client:
                 yield client
     finally:
