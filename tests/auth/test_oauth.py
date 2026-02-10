@@ -255,11 +255,12 @@ class TestValidateToken:
             with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
-                    with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.side_effect = ExpiredSignatureError("Signature has expired")
+                    with patch("openlabels.auth.oauth.jwt.PyJWK"):
+                        with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
+                            mock_decode.side_effect = ExpiredSignatureError("Signature has expired")
 
-                        with pytest.raises(TokenExpiredError, match="Token expired"):
-                            await validate_token("expired-token")
+                            with pytest.raises(TokenExpiredError, match="Token expired"):
+                                await validate_token("expired-token")
 
     async def test_jwt_invalid_error_raised(self):
         """Generic PyJWTError should raise TokenInvalidError."""
@@ -276,11 +277,12 @@ class TestValidateToken:
             with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
-                    with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.side_effect = PyJWTError("Malformed token")
+                    with patch("openlabels.auth.oauth.jwt.PyJWK"):
+                        with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
+                            mock_decode.side_effect = PyJWTError("Malformed token")
 
-                        with pytest.raises(TokenInvalidError, match="Invalid token"):
-                            await validate_token("malformed-token")
+                            with pytest.raises(TokenInvalidError, match="Invalid token"):
+                                await validate_token("malformed-token")
 
     async def test_valid_token_extracts_claims(self):
         """Valid token should have claims extracted correctly."""
@@ -302,16 +304,17 @@ class TestValidateToken:
             with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
-                    with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.return_value = mock_decoded_claims
+                    with patch("openlabels.auth.oauth.jwt.PyJWK"):
+                        with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
+                            mock_decode.return_value = mock_decoded_claims
 
-                        claims = await validate_token("valid-token")
+                            claims = await validate_token("valid-token")
 
-                        assert claims.oid == "user-guid"
-                        assert claims.preferred_username == "user@contoso.com"
-                        assert claims.name == "Test User"
-                        assert claims.tenant_id == "tenant-guid"
-                        assert claims.roles == ["app.read", "app.write"]
+                            assert claims.oid == "user-guid"
+                            assert claims.preferred_username == "user@contoso.com"
+                            assert claims.name == "Test User"
+                            assert claims.tenant_id == "tenant-guid"
+                            assert claims.roles == ["app.read", "app.write"]
 
     async def test_missing_optional_claims_handled(self):
         """Token without optional claims should still work."""
@@ -331,15 +334,16 @@ class TestValidateToken:
             with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
                 with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
                     mock_header.return_value = {"kid": "key1"}
-                    with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
-                        mock_decode.return_value = mock_decoded_claims
+                    with patch("openlabels.auth.oauth.jwt.PyJWK"):
+                        with patch("openlabels.auth.oauth.jwt.decode") as mock_decode:
+                            mock_decode.return_value = mock_decoded_claims
 
-                        claims = await validate_token("minimal-claims-token")
+                            claims = await validate_token("minimal-claims-token")
 
-                        assert claims.oid == "user-guid"
-                        assert claims.name is None
-                        assert claims.tenant_id == "test-tenant"  # Falls back to settings
-                        assert claims.roles == []
+                            assert claims.oid == "user-guid"
+                            assert claims.name is None
+                            assert claims.tenant_id == "test-tenant"  # Falls back to settings
+                            assert claims.roles == []
 
 
 class TestClearJWKSCache:

@@ -1216,15 +1216,17 @@ class TestONNXDetectorDetect:
             result = det.detect(long_text)
             mock_chunk.assert_called_once()
 
-    def test_inference_exception_returns_empty(self):
-        """Exception during inference is caught and returns []."""
+    def test_inference_exception_raises_detection_error(self):
+        """Exception during inference propagates as DetectionError."""
+        from openlabels.exceptions import DetectionError
+
         det = ONNXDetector()
         det._loaded = True
         det._session = MagicMock()
 
         with patch.object(det, "_detect_single", side_effect=RuntimeError("boom")):
-            result = det.detect("short text")
-            assert result == []
+            with pytest.raises(DetectionError, match="Inference failed"):
+                det.detect("short text")
 
 
 # =============================================================================

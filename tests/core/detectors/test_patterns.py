@@ -830,20 +830,20 @@ class TestPatternSpanValidation:
 class TestPatternRegistration:
     """Test pattern registration functionality."""
 
-    def test_pattern_tuple_structure(self):
-        """Test each pattern has correct tuple structure."""
-        for pattern, entity_type, confidence, group_idx in PATTERNS:
+    def test_pattern_definition_structure(self):
+        """Test each pattern has correct PatternDefinition structure."""
+        for p in PATTERNS:
             # Pattern should be compiled regex
-            assert hasattr(pattern, 'finditer')
+            assert hasattr(p.pattern, 'finditer')
             # Entity type should be non-empty string
-            assert isinstance(entity_type, str)
-            assert len(entity_type) > 0
+            assert isinstance(p.entity_type, str)
+            assert len(p.entity_type) > 0
             # Confidence should be float 0-1
-            assert isinstance(confidence, float)
-            assert 0.0 <= confidence <= 1.0
+            assert isinstance(p.confidence, float)
+            assert 0.0 <= p.confidence <= 1.0
             # Group index should be non-negative int
-            assert isinstance(group_idx, int)
-            assert group_idx >= 0
+            assert isinstance(p.group, int)
+            assert p.group >= 0
 
 
 # =============================================================================

@@ -427,7 +427,9 @@ class TestScanFiles:
 
             scan_files(files, enable_ml=True)
 
-        MockFP.assert_called_once_with(enable_ml=True)
+        MockFP.assert_called_once()
+        config = MockFP.call_args.kwargs.get("config") or MockFP.call_args.args[0]
+        assert config.enable_ml is True
 
     def test_exposure_level_forwarded(self, temp_dir, mock_file_classification):
         """The exposure_level kwarg should be forwarded to process_file."""

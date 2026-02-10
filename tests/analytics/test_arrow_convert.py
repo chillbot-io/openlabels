@@ -79,6 +79,7 @@ class FakeScanResult:
     total_entities: int
     label_applied: bool
     current_label_name: Optional[str]
+    policy_violations: Optional[dict]
     scanned_at: datetime
 
 
@@ -102,6 +103,7 @@ def _make_fake(**overrides) -> FakeScanResult:
         total_entities=3,
         label_applied=False,
         current_label_name=None,
+        policy_violations=None,
         scanned_at=datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
     )
     defaults.update(overrides)

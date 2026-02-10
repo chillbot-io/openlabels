@@ -268,12 +268,14 @@ class TestPolicyActionExecutor:
         executor = PolicyActionExecutor()
         # Mock all async methods
         executor.quarantine = AsyncMock(return_value=MagicMock(action="quarantine"))
+        executor.apply_label = AsyncMock(return_value=MagicMock(action="label"))
         executor.enroll_monitoring = AsyncMock(return_value=MagicMock(action="monitor"))
         executor.log_audit = AsyncMock(return_value=MagicMock(action="audit"))
 
         results = await executor.execute_all(ctx)
-        assert len(results) == 3
+        assert len(results) == 4
         executor.quarantine.assert_called_once()
+        executor.apply_label.assert_called_once()
         executor.enroll_monitoring.assert_called_once()
         executor.log_audit.assert_called_once()
 
@@ -295,12 +297,14 @@ class TestPolicyActionExecutor:
 
         executor = PolicyActionExecutor()
         executor.quarantine = AsyncMock(return_value=MagicMock(action="quarantine"))
+        executor.apply_label = AsyncMock(return_value=MagicMock(action="label"))
         executor.enroll_monitoring = AsyncMock(return_value=MagicMock(action="monitor"))
         executor.log_audit = AsyncMock(return_value=MagicMock(action="audit"))
 
         results = await executor.execute_all(ctx)
-        assert len(results) == 2
+        assert len(results) == 3
         executor.quarantine.assert_not_called()
+        executor.apply_label.assert_called_once()
         executor.enroll_monitoring.assert_called_once()
         executor.log_audit.assert_called_once()
 

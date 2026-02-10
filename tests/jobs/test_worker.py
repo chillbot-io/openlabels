@@ -167,16 +167,14 @@ class TestWorkerStateManagerWithMockedRedis:
     """Tests for WorkerStateManager with mocked Redis."""
 
     async def test_redis_connection_failure_falls_back_to_memory(self):
-        """Should fall back to memory on Redis connection failure."""
+        """Should fall back to memory when Redis is unavailable."""
         manager = WorkerStateManager(redis_url="redis://nonexistent:6379")
 
-        # Mock redis import to fail connection
-        with patch('redis.asyncio.from_url') as mock_redis:
-            mock_client = AsyncMock()
-            mock_client.ping.side_effect = Exception("Connection refused")
-            mock_redis.return_value = mock_client
-
-            await manager.initialize()
+        # Initialize will attempt Redis connection:
+        # - If redis package is not installed, ImportError is caught -> memory fallback
+        # - If redis package is installed, connection to nonexistent host fails -> memory fallback
+        # Either way, the manager falls back to in-memory state storage.
+        await manager.initialize()
 
         assert manager.is_redis_connected is False
 
@@ -189,7 +187,7 @@ class TestWorkerStateManagerWithMockedRedis:
         manager = WorkerStateManager(redis_url="redis://localhost:6379")
         manager._redis_connected = True
         manager._redis_client = AsyncMock()
-        manager._redis_client.get.side_effect = Exception("Redis error")
+        manager._redis_client.get.side_effect = ConnectionError("Redis error")
 
         # Should fall back to memory and return None (not set in memory)
         result = await manager.get_state("worker-1")
@@ -468,8 +466,10 @@ class TestWorkerLoop:
             # Run the worker loop for worker_num=3
             await worker._worker_loop(3)
 
-        # Worker 3 exceeds target_concurrency=2, so it should have stopped
-        assert worker.running is False or len([t for t in worker._worker_tasks if not t.done()]) <= worker.target_concurrency
+        # Worker 3 exited immediately because worker_num (3) >= target_concurrency (2)
+        # and active_workers (4) > target_concurrency (2).
+        # The loop returned without ever trying to get a database session.
+        mock_ctx.assert_not_called()
 
 
 

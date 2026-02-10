@@ -826,7 +826,8 @@ class TestErrorHandling:
         p = _minimal_pipeline()
         low_span = _make_span("maybe", entity_type="NAME", confidence=0.40, detector="pattern", tier=Tier.PATTERN)
         p._stage1_detectors = [_make_mock_detector("s1", [low_span])]
-        # _ml_detectors remains empty, _pii_bert stays None
+        # Prevent _init_ml_detectors from loading real models
+        p._init_ml_detectors = lambda: None
 
         result = p.detect("maybe")
         # Escalation was triggered but no ML detectors available
@@ -1098,7 +1099,8 @@ class TestRegressionBugs:
         low_span = _make_span("hmm", entity_type="NAME", confidence=0.30, detector="pattern", tier=Tier.PATTERN)
         p = _minimal_pipeline()
         p._stage1_detectors = [_make_mock_detector("s1", [low_span])]
-        # _ml_detectors empty, no medical context
+        # Prevent _init_ml_detectors from loading real models
+        p._init_ml_detectors = lambda: None
 
         result = p.detect("hmm")
         assert PipelineStage.ML_ESCALATION not in result.stages_executed

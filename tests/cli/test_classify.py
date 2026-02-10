@@ -147,7 +147,10 @@ class TestClassifySingleFile:
             result = runner.invoke(classify, [str(test_file), "--enable-ml"])
 
         assert result.exit_code == 0
-        mock_processor_cls.assert_called_with(enable_ml=True)
+        call_kwargs = mock_processor_cls.call_args
+        assert call_kwargs is not None
+        config = call_kwargs.kwargs.get("config") or call_kwargs.args[0]
+        assert config.enable_ml is True
 
     def test_classify_file_nonexistent_path(self, runner):
         """Classify with non-existent path should fail."""

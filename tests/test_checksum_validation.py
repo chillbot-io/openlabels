@@ -115,11 +115,11 @@ class TestSSNValidation:
         assert confidence == 0.99
 
     def test_ssn_valid_078051120(self):
-        """Test famous valid SSN 078-05-1120."""
+        """Test Woolworth wallet card SSN 078-05-1120 — detected but lower confidence."""
         is_valid, confidence = validate_ssn("078-05-1120")
 
-        assert is_valid is True
-        assert confidence == 0.99
+        assert is_valid is True  # Still detected for safety
+        assert confidence == 0.85  # Lower confidence (known invalid SSN)
 
     def test_ssn_invalid_area_000(self):
         """Test SSN with 000 area code - detected but lower confidence."""

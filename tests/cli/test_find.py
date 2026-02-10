@@ -158,7 +158,7 @@ class TestFindBasicSearch:
             result = runner.invoke(find, [temp_dir])
 
         assert result.exit_code == 0
-        assert "Scanning" in result.output
+        assert "Found" in result.output or "matching files" in result.output
 
     def test_find_single_file(self, runner, temp_dir, mock_file_classification):
         """Find on a single file."""

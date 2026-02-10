@@ -414,7 +414,7 @@ class TestMIPClientGetLabels:
 
         new_labels = [SensitivityLabel(id="new", name="New", description="", tooltip="")]
 
-        with patch("asyncio.get_event_loop") as mock_loop:
+        with patch("asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = AsyncMock(return_value=new_labels)
 
             labels = await client.get_labels(force_refresh=True)
@@ -481,7 +481,7 @@ class TestMIPClientApplyLabel:
             label_name="Confidential",
         )
 
-        with patch("asyncio.get_event_loop") as mock_loop:
+        with patch("asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = AsyncMock(return_value=mock_result)
 
             result = await client.apply_label(str(test_file), "label-123")
@@ -500,9 +500,9 @@ class TestMIPClientApplyLabel:
         test_file = tmp_path / "test.docx"
         test_file.write_text("test content")
 
-        with patch("asyncio.get_event_loop") as mock_loop:
+        with patch("asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=PermissionError("Access denied")
+                side_effect=PermissionError("Permission denied")
             )
 
             result = await client.apply_label(str(test_file), "label-123")

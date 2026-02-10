@@ -28,6 +28,27 @@ from openlabels.jobs.inventory import (
 )
 
 
+def _make_mock_pipeline(execute_return=None):
+    """Create a mock Redis pipeline that supports the async context manager protocol.
+
+    The source code uses ``async with self._redis_client.pipeline(...) as pipe:``
+    so the object returned by ``pipeline()`` must implement ``__aenter__`` / ``__aexit__``.
+    Inside the block, pipeline commands (``hset``, ``sadd``, ``expire``) are *synchronous*
+    queue calls, while ``execute`` is awaited.
+    """
+    mock_pipe = MagicMock()
+    mock_pipe.hset = MagicMock()
+    mock_pipe.expire = MagicMock()
+    mock_pipe.sadd = MagicMock()
+    mock_pipe.execute = AsyncMock(return_value=execute_return if execute_return is not None else [])
+
+    mock_pipeline_cm = MagicMock()
+    mock_pipeline_cm.__aenter__ = AsyncMock(return_value=mock_pipe)
+    mock_pipeline_cm.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_pipeline_cm, mock_pipe
+
+
 class TestDistributedScanInventoryInit:
     """Tests for DistributedScanInventory initialization."""
 
@@ -104,7 +125,7 @@ class TestDistributedScanInventoryInitialize:
         """Should fall back to in-memory on exception."""
         inventory._cache_manager = None
 
-        with patch('openlabels.server.cache.get_cache_manager', side_effect=Exception("Connection failed")):
+        with patch('openlabels.server.cache.get_cache_manager', side_effect=ConnectionError("Connection failed")):
             await inventory.initialize()
 
         assert inventory._initialized is True
@@ -332,14 +353,13 @@ class TestDistributedScanInventoryRedisOperations:
     async def test_set_folder_uses_redis_hset(self, inventory_with_redis):
         """Should use Redis HSET for folder storage."""
         inv = inventory_with_redis
-        inv._redis_client.hset = AsyncMock(return_value=1)
-        inv._redis_client.ttl = AsyncMock(return_value=-1)
-        inv._redis_client.expire = AsyncMock(return_value=True)
+        mock_pipeline_cm, mock_pipe = _make_mock_pipeline(execute_return=[1, True])
+        inv._redis_client.pipeline = MagicMock(return_value=mock_pipeline_cm)
 
         await inv.set_folder("/test", {"path": "/test"})
 
-        inv._redis_client.hset.assert_called_once()
-        inv._redis_client.expire.assert_called_once()
+        mock_pipe.hset.assert_called_once()
+        mock_pipe.expire.assert_called_once()
 
     async def test_get_folder_uses_redis_hget(self, inventory_with_redis):
         """Should use Redis HGET for folder retrieval."""
@@ -354,19 +374,19 @@ class TestDistributedScanInventoryRedisOperations:
     async def test_mark_file_scanned_uses_redis_sadd(self, inventory_with_redis):
         """Should use Redis SADD for atomic file marking."""
         inv = inventory_with_redis
-        inv._redis_client.sadd = AsyncMock(return_value=1)
-        inv._redis_client.ttl = AsyncMock(return_value=-1)
-        inv._redis_client.expire = AsyncMock(return_value=True)
+        mock_pipeline_cm, mock_pipe = _make_mock_pipeline(execute_return=[1, True])
+        inv._redis_client.pipeline = MagicMock(return_value=mock_pipeline_cm)
 
         result = await inv.mark_file_scanned("/test/file.txt")
 
         assert result is True
-        inv._redis_client.sadd.assert_called_once()
+        mock_pipe.sadd.assert_called_once()
 
     async def test_mark_file_scanned_returns_false_when_already_exists(self, inventory_with_redis):
         """Should return False when Redis SADD returns 0."""
         inv = inventory_with_redis
-        inv._redis_client.sadd = AsyncMock(return_value=0)
+        mock_pipeline_cm, mock_pipe = _make_mock_pipeline(execute_return=[0, True])
+        inv._redis_client.pipeline = MagicMock(return_value=mock_pipeline_cm)
 
         result = await inv.mark_file_scanned("/test/file.txt")
 
@@ -384,7 +404,7 @@ class TestDistributedScanInventoryRedisOperations:
     async def test_redis_error_falls_back_to_local_cache(self, inventory_with_redis):
         """Should fall back to local cache on Redis error."""
         inv = inventory_with_redis
-        inv._redis_client.hget = AsyncMock(side_effect=Exception("Redis error"))
+        inv._redis_client.hget = AsyncMock(side_effect=ConnectionError("Redis error"))
         inv._local_folder_cache["/test"] = {"path": "/test"}
 
         result = await inv.get_folder("/test")
@@ -473,12 +493,13 @@ class TestDistributedScanInventoryCacheManagement:
         inv._initialized = True
         inv._use_redis = True
         inv._redis_client = AsyncMock()
-        inv._redis_client.expire = AsyncMock(return_value=True)
+        mock_pipeline_cm, mock_pipe = _make_mock_pipeline(execute_return=[True, True, True, True])
+        inv._redis_client.pipeline = MagicMock(return_value=mock_pipeline_cm)
 
         result = await inv.refresh_ttl()
 
         assert result is True
-        assert inv._redis_client.expire.call_count == 4  # 4 keys
+        assert mock_pipe.expire.call_count == 4  # 4 keys
 
     def test_stats_property_returns_stats(self):
         """Should return correct stats dictionary."""

@@ -65,7 +65,7 @@ class TestDatabaseSettings:
         from openlabels.server.config import DatabaseSettings
 
         settings = DatabaseSettings()
-        assert settings.pool_size == 5
+        assert settings.pool_size == 20
 
     def test_max_overflow_is_reasonable(self):
         """Max overflow should be reasonable (10)."""

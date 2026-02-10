@@ -126,8 +126,9 @@ class TestReportHelp:
 
         result = runner.invoke(report, [])
 
-        assert result.exit_code == 2
-        assert "Missing argument" in result.output or "PATH" in result.output
+        # Group with invoke_without_command shows help when no path given
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
 
 
 class TestReportTextFormat:
@@ -174,7 +175,7 @@ class TestReportTextFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--title", "My Custom Report"])
+            result = runner.invoke(report, ["--title", "My Custom Report", temp_dir])
 
         assert result.exit_code == 0
         assert "My Custom Report" in result.output
@@ -192,7 +193,7 @@ class TestReportJsonFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "json"])
+            result = runner.invoke(report, ["--format", "json", temp_dir])
 
         assert result.exit_code == 0
 
@@ -216,7 +217,7 @@ class TestReportJsonFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "json"])
+            result = runner.invoke(report, ["--format", "json", temp_dir])
 
         # Parse JSON
         lines = result.output.strip().split("\n")
@@ -243,7 +244,7 @@ class TestReportCsvFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "csv"])
+            result = runner.invoke(report, ["--format", "csv", temp_dir])
 
         assert result.exit_code == 0
         # Check CSV header
@@ -261,7 +262,7 @@ class TestReportCsvFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "csv"])
+            result = runner.invoke(report, ["--format", "csv", temp_dir])
 
         # Count lines (should have header + data rows)
         lines = [l for l in result.output.strip().split("\n") if not l.startswith("Scanning")]
@@ -280,7 +281,7 @@ class TestReportHtmlFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "html"])
+            result = runner.invoke(report, ["--format", "html", temp_dir])
 
         assert result.exit_code == 0
         assert "<!DOCTYPE html>" in result.output
@@ -296,7 +297,7 @@ class TestReportHtmlFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "html"])
+            result = runner.invoke(report, ["--format", "html", temp_dir])
 
         assert "<style>" in result.output
         assert ".critical" in result.output
@@ -311,7 +312,7 @@ class TestReportHtmlFormat:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "html"])
+            result = runner.invoke(report, ["--format", "html", temp_dir])
 
         assert "<table>" in result.output
         assert "<th>File</th>" in result.output
@@ -332,7 +333,7 @@ class TestReportOutputFile:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "-o", str(output_file)])
+            result = runner.invoke(report, ["-o", str(output_file), temp_dir])
 
         assert result.exit_code == 0
         assert output_file.exists()
@@ -352,7 +353,7 @@ class TestReportOutputFile:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "json", "-o", str(output_file)])
+            result = runner.invoke(report, ["--format", "json", "-o", str(output_file), temp_dir])
 
         assert result.exit_code == 0
         assert output_file.exists()
@@ -373,7 +374,7 @@ class TestReportOutputFile:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--format", "html", "-o", str(output_file)])
+            result = runner.invoke(report, ["--format", "html", "-o", str(output_file), temp_dir])
 
         assert result.exit_code == 0
         assert output_file.exists()
@@ -394,7 +395,7 @@ class TestReportFiltering:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--where", "score > 50"])
+            result = runner.invoke(report, ["--where", "score > 50", temp_dir])
 
         assert result.exit_code == 0
 
@@ -407,7 +408,7 @@ class TestReportFiltering:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--where", "tier = HIGH"])
+            result = runner.invoke(report, ["--where", "tier = HIGH", temp_dir])
 
         assert result.exit_code == 0
 
@@ -420,7 +421,7 @@ class TestReportFiltering:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--where", "score > 50"])
+            result = runner.invoke(report, ["--where", "score > 50", temp_dir])
 
         assert result.exit_code == 0
         assert "Filter:" in result.output or "score > 50" in result.output
@@ -429,7 +430,7 @@ class TestReportFiltering:
         """Report with invalid filter should fail."""
         from openlabels.cli.commands.report import report
 
-        result = runner.invoke(report, [temp_dir, "--where", "invalid >>>"])
+        result = runner.invoke(report, ["--where", "invalid >>>", temp_dir])
 
         assert result.exit_code == 2
         assert "Invalid filter" in result.output
@@ -447,7 +448,7 @@ class TestReportRecursive:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(report, [temp_dir, "--recursive"])
+            result = runner.invoke(report, ["--recursive", temp_dir])
 
         assert result.exit_code == 0
         # Should process all 3 files including nested
@@ -541,12 +542,12 @@ class TestReportIntegration:
             mock_processor_cls.return_value = mock_processor
 
             result = runner.invoke(report, [
-                temp_dir,
                 "--recursive",
                 "--format", "html",
                 "--where", "score > 0",
                 "--title", "Full Test Report",
                 "-o", str(output_file),
+                temp_dir,
             ])
 
         assert result.exit_code == 0

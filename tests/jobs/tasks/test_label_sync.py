@@ -596,8 +596,8 @@ class TestLabelSyncErrorHandling:
 
     async def test_catches_individual_label_errors(self, mock_session):
         """Should catch and record errors for individual labels."""
-        # Mock batch query to raise exception
-        mock_session.execute = AsyncMock(side_effect=Exception("Database error"))
+        # Mock batch query to raise exception (must be a type caught by the outer handler)
+        mock_session.execute = AsyncMock(side_effect=RuntimeError("Database error"))
 
         with patch('openlabels.jobs.tasks.label_sync._get_graph_token') as mock_token:
             mock_token.return_value = "token"
@@ -621,7 +621,7 @@ class TestLabelSyncErrorHandling:
     async def test_handles_settings_exception(self, mock_session):
         """Should handle exception when getting settings."""
         with patch('openlabels.server.config.get_settings') as mock_settings:
-            mock_settings.side_effect = Exception("Settings error")
+            mock_settings.side_effect = RuntimeError("Settings error")
 
             result = await execute_label_sync_task(
                 mock_session,

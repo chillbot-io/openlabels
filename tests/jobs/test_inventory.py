@@ -438,6 +438,9 @@ class TestUpdateFolderInventory:
         """Should create new folder when not in cache or DB."""
         job_id = uuid4()
 
+        # Mock _get_folder_inv to avoid select(MagicMock) SQLAlchemy error
+        service._get_folder_inv = AsyncMock(return_value=None)
+
         with patch('openlabels.jobs.inventory.FolderInventory') as MockFolderInv:
             mock_new_folder = MagicMock()
             MockFolderInv.return_value = mock_new_folder
@@ -562,6 +565,9 @@ class TestUpdateFileInventory:
     async def test_creates_new_file(self, service, mock_file_info, mock_scan_result):
         """Should create new file when not in cache or DB."""
         job_id = uuid4()
+
+        # Mock _get_file_inv to avoid select(MagicMock) SQLAlchemy error
+        service._get_file_inv = AsyncMock(return_value=None)
 
         with patch('openlabels.jobs.inventory.FileInventory') as MockFileInv:
             mock_new_file = MagicMock()
