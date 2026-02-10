@@ -14,16 +14,18 @@ Supports:
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
-from ..types import Span, DetectionResult, normalize_entity_type
+from openlabels.exceptions import DetectionError
+
 from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
-from openlabels.exceptions import DetectionError
+from ..types import DetectionResult, Span, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
 from .registry import create_detector
@@ -73,7 +75,7 @@ class DetectorOrchestrator:
         self.config = config or DetectionConfig()
         self.confidence_threshold = self.config.confidence_threshold
         self.max_workers = self.config.max_workers
-        self.detectors: List[BaseDetector] = []
+        self.detectors: list[BaseDetector] = []
         self._using_hyperscan = False
 
         # Initialize Hyperscan detector if enabled
@@ -102,7 +104,7 @@ class DetectorOrchestrator:
             self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
 
         # Initialize post-processing components
-        self._coref_resolver: Callable[..., List[Span]] | None = None
+        self._coref_resolver: Callable[..., list[Span]] | None = None
         self._context_enhancer: Any = None
         if self.config.enable_coref or self.config.enable_context_enhancement:
             self._init_pipeline(
@@ -119,7 +121,7 @@ class DetectorOrchestrator:
     def _init_hyperscan_detector(self) -> None:
         """Initialize Hyperscan-accelerated detector."""
         try:
-            from .hyperscan import HyperscanDetector, SUPPLEMENTAL_PATTERNS
+            from .hyperscan import SUPPLEMENTAL_PATTERNS, HyperscanDetector
 
             hyperscan_detector = HyperscanDetector(
                 additional_patterns=SUPPLEMENTAL_PATTERNS
@@ -135,7 +137,7 @@ class DetectorOrchestrator:
 
     def _init_ml_detectors(
         self,
-        model_dir: Optional[Path],
+        model_dir: Path | None,
         use_onnx: bool = True
     ) -> None:
         """Initialize ML-based detectors."""
@@ -252,8 +254,8 @@ class DetectorOrchestrator:
             )
 
         # Run detectors in parallel
-        all_spans: List[Span] = []
-        detectors_used: List[str] = []
+        all_spans: list[Span] = []
+        detectors_used: list[str] = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_detector = {
@@ -308,7 +310,7 @@ class DetectorOrchestrator:
                 logger.error(f"Policy evaluation failed: {e}")
 
         # Calculate entity counts
-        entity_counts: Dict[str, int] = {}
+        entity_counts: dict[str, int] = {}
         for span in processed_spans:
             normalized = normalize_entity_type(span.entity_type)
             entity_counts[normalized] = entity_counts.get(normalized, 0) + 1
@@ -324,7 +326,7 @@ class DetectorOrchestrator:
             policy_result=policy_result,
         )
 
-    def _run_detector(self, detector: BaseDetector, text: str) -> List[Span]:
+    def _run_detector(self, detector: BaseDetector, text: str) -> list[Span]:
         """Run a single detector with error handling."""
         try:
             if not detector.is_available():
@@ -335,7 +337,7 @@ class DetectorOrchestrator:
             logger.error(f"Error in detector {detector.name}: {e}")
             return []
 
-    def _post_process(self, spans: List[Span]) -> List[Span]:
+    def _post_process(self, spans: list[Span]) -> list[Span]:
         """Post-process: calibrate confidence, filter, deduplicate, sort."""
         calibrated = calibrate_spans(spans)
         return resolve_spans(
@@ -358,7 +360,7 @@ class DetectorOrchestrator:
         return False
 
     @property
-    def detector_names(self) -> List[str]:
+    def detector_names(self) -> list[str]:
         """Get list of active detector names."""
         return [d.name for d in self.detectors]
 

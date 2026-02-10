@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse, Response
 from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels.server.config import get_settings
-from openlabels.server.logging import set_request_id, get_request_id
+from openlabels.server.logging import get_request_id, set_request_id
 from openlabels.server.metrics import http_active_connections, record_http_request
 from openlabels.server.middleware.csrf import CSRFMiddleware
 

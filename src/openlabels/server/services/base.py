@@ -8,11 +8,14 @@ Provides common functionality for all services:
 - Logging setup
 """
 
-from abc import ABC
-from contextlib import asynccontextmanager
 import logging
-from typing import AsyncIterator, Optional, TypeVar
+from abc import ABC
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import TypeVar
 from uuid import UUID
+
+from sqlalchemy import Select, func, select as sa_select
 
 T = TypeVar("T")
 
@@ -40,9 +43,9 @@ class TenantContext(BaseModel):
     """
 
     tenant_id: UUID
-    user_id: Optional[UUID] = None
-    user_email: Optional[str] = None
-    user_role: Optional[str] = None
+    user_id: UUID | None = None
+    user_email: str | None = None
+    user_role: str | None = None
 
     class Config:
         """Pydantic configuration."""
@@ -169,7 +172,7 @@ class BaseService(ABC):
         return self._tenant.tenant_id
 
     @property
-    def user_id(self) -> Optional[UUID]:
+    def user_id(self) -> UUID | None:
         """
         Get the user ID for audit trails.
 
@@ -297,6 +300,19 @@ class BaseService(ABC):
                 resource_id=str(entity_id),
             )
         return entity
+
+    async def paginate(
+        self,
+        query: Select,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list, int]:
+        """Execute a paginated query, returning (items, total_count)."""
+        count_q = sa_select(func.count()).select_from(query.subquery())
+        total = (await self._session.execute(count_q)).scalar() or 0
+        rows = (await self._session.execute(query.offset(offset).limit(limit))).scalars().all()
+        return list(rows), total
 
     def _log_debug(self, message: str, **kwargs) -> None:
         """Log a debug message with context."""

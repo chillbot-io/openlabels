@@ -4,18 +4,16 @@ Supports loading PyTorch models for NER inference.
 For production use with ONNX models, see ml_onnx.py.
 """
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import logging
 import os
+from pathlib import Path
+from typing import Any
 
-from ..types import Span, Tier
 from ..constants import PRODUCT_CODE_PREFIXES
-from openlabels.exceptions import ModelLoadError
+from ..types import Span, Tier
 from .base import BaseDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 from .registry import register_detector
-
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +71,7 @@ def get_device(device_config: str = "auto", cuda_device_id: int = 0) -> int:
         return -1
 
 
-def get_device_info() -> Dict[str, Any]:
+def get_device_info() -> dict[str, Any]:
     """
     Get detailed device information for diagnostics.
 
@@ -109,11 +107,11 @@ class MLDetector(BaseDetector):
 
     name = "ml"
     tier = Tier.ML
-    label_map: Dict[str, str] = {}
+    label_map: dict[str, str] = {}
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):
@@ -169,7 +167,7 @@ class MLDetector(BaseDetector):
             return False
 
         try:
-            from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+            from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
             # Load tokenizer and model
             self._tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
@@ -192,7 +190,7 @@ class MLDetector(BaseDetector):
             self._loaded = True
             return True
 
-        except ImportError as e:
+        except ImportError:
             logger.warning(
                 f"{self.name}: transformers library not installed - "
                 f"ML detection disabled. Install with: pip install transformers"
@@ -205,7 +203,7 @@ class MLDetector(BaseDetector):
                 f"files may be corrupted or inaccessible: {e}"
             )
             return False
-        except MemoryError as e:
+        except MemoryError:
             logger.error(
                 f"{self.name}: Insufficient memory to load model from {self.model_path}. "
                 f"Consider using a smaller model or increasing available memory."
@@ -225,7 +223,7 @@ class MLDetector(BaseDetector):
             )
             return False
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         """
         Run NER inference using HuggingFace pipeline.
 
@@ -243,7 +241,7 @@ class MLDetector(BaseDetector):
                 f"Input length: {len(text)} chars"
             )
             return []
-        except MemoryError as e:
+        except MemoryError:
             logger.error(
                 f"{self.name}: Insufficient memory for inference on text of {len(text)} chars. "
                 f"Consider processing smaller chunks."
@@ -323,7 +321,7 @@ class PHIBertDetector(MLDetector):
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):
@@ -341,7 +339,7 @@ class PIIBertDetector(MLDetector):
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
         device: str = "auto",
         cuda_device_id: int = 0,
     ):

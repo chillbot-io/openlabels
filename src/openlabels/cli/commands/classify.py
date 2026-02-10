@@ -5,12 +5,11 @@ Classify command for local file classification.
 import asyncio
 import json
 from pathlib import Path
-from typing import Optional
 
 import click
 
 from openlabels.cli.utils import collect_files
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
 @click.command()
@@ -20,7 +19,7 @@ from openlabels.core.path_validation import validate_output_path, PathValidation
 @click.option("--recursive", "-r", is_flag=True, help="Scan directories recursively")
 @click.option("--output", "-o", help="Output file for results (JSON)")
 @click.option("--min-score", default=0, type=int, help="Minimum risk score to report")
-def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output: Optional[str], min_score: int):
+def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output: str | None, min_score: int):
     """Classify files locally (no server required).
 
     Can classify a single file or a directory of files.

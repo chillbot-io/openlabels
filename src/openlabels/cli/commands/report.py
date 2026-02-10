@@ -8,14 +8,13 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import click
 import httpx
 
 from openlabels.cli.base import get_api_client, server_options
 from openlabels.cli.utils import handle_http_error, validate_where_filter
-from openlabels.core.path_validation import validate_output_path, PathValidationError
+from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +29,8 @@ logger = logging.getLogger(__name__)
               help="Output format")
 @click.option("--output", "-o", type=click.Path(), help="Output file (default: stdout)")
 @click.option("--title", default="OpenLabels Scan Report", help="Report title")
-def report(ctx, path: Optional[str], where_filter: Optional[str], recursive: bool,
-           fmt: str, output: Optional[str], title: str):
+def report(ctx, path: str | None, where_filter: str | None, recursive: bool,
+           fmt: str, output: str | None, title: str):
     """Generate a report of sensitive data findings.
 
     When called without a subcommand, scans local files and produces a report.
@@ -54,8 +53,8 @@ def report(ctx, path: Optional[str], where_filter: Optional[str], recursive: boo
     _local_report(path, where_filter, recursive, fmt, output, title)
 
 
-def _local_report(path: str, where_filter: Optional[str], recursive: bool,
-                  fmt: str, output: Optional[str], title: str):
+def _local_report(path: str, where_filter: str | None, recursive: bool,
+                  fmt: str, output: str | None, title: str):
     """Original local-scan report logic."""
     from openlabels.cli.filter_executor import filter_scan_results
 
@@ -300,10 +299,10 @@ def _local_report(path: str, where_filter: Optional[str], recursive: bool,
 def report_generate(
     template: str,
     fmt: str,
-    job: Optional[str],
-    output: Optional[str],
+    job: str | None,
+    output: str | None,
     server: str,
-    token: Optional[str],
+    token: str | None,
 ) -> None:
     """Generate a report on the server.
 
@@ -369,10 +368,10 @@ def report_generate(
 @click.option("--limit", "page_size", default=20, help="Number of reports to show")
 @server_options
 def report_list(
-    report_type: Optional[str],
+    report_type: str | None,
     page_size: int,
     server: str,
-    token: Optional[str],
+    token: str | None,
 ) -> None:
     """List generated reports on the server.
 
@@ -441,10 +440,10 @@ def report_schedule(
     template: str,
     fmt: str,
     cron: str,
-    name: Optional[str],
+    name: str | None,
     email: tuple,
     server: str,
-    token: Optional[str],
+    token: str | None,
 ) -> None:
     """Schedule recurring report generation on the server.
 

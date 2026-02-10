@@ -9,20 +9,20 @@ Features:
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update, func, and_
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import JobQueue as JobQueueModel
 from openlabels.server.metrics import (
-    record_job_enqueued,
     record_job_completed,
+    record_job_enqueued,
     record_job_failed,
     update_queue_depth,
 )
+from openlabels.server.models import JobQueue as JobQueueModel
 
 # Retry configuration
 BASE_RETRY_DELAY_SECONDS = 2  # 2 seconds initial delay
@@ -81,7 +81,7 @@ class JobQueue:
         task_type: str,
         payload: dict,
         priority: int = 50,
-        scheduled_for: Optional[datetime] = None,
+        scheduled_for: datetime | None = None,
     ) -> UUID:
         """
         Add a job to the queue.
@@ -116,7 +116,7 @@ class JobQueue:
         self,
         worker_id: str,
         max_concurrent: int | None = None,
-    ) -> Optional[JobQueueModel]:
+    ) -> JobQueueModel | None:
         """
         Get the next job for processing.
 
@@ -165,7 +165,7 @@ class JobQueue:
 
         return job
 
-    async def complete(self, job_id: UUID, result: Optional[dict] = None) -> None:
+    async def complete(self, job_id: UUID, result: dict | None = None) -> None:
         """
         Mark a job as completed.
 
@@ -247,7 +247,7 @@ class JobQueue:
             except Exception as exc:  # noqa: BLE001 — catch-all for arbitrary user callback
                 logger.error("on_failed callback failed for job %s: %s", job_id, exc)
 
-    async def get_job(self, job_id: UUID) -> Optional[JobQueueModel]:
+    async def get_job(self, job_id: UUID) -> JobQueueModel | None:
         """Get a job by ID."""
         return await self.session.get(JobQueueModel, job_id)
 
@@ -294,7 +294,7 @@ class JobQueue:
 
     async def get_failed_jobs(
         self,
-        task_type: Optional[str] = None,
+        task_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[JobQueueModel]:
@@ -326,7 +326,7 @@ class JobQueue:
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
-    async def get_failed_count(self, task_type: Optional[str] = None) -> int:
+    async def get_failed_count(self, task_type: str | None = None) -> int:
         """Get count of failed jobs in dead letter queue."""
         conditions = [
             JobQueueModel.tenant_id == self.tenant_id,
@@ -382,7 +382,7 @@ class JobQueue:
 
     async def requeue_all_failed(
         self,
-        task_type: Optional[str] = None,
+        task_type: str | None = None,
         reset_retries: bool = True,
     ) -> int:
         """
@@ -423,8 +423,8 @@ class JobQueue:
 
     async def purge_failed(
         self,
-        task_type: Optional[str] = None,
-        older_than_days: Optional[int] = None,
+        task_type: str | None = None,
+        older_than_days: int | None = None,
     ) -> int:
         """
         Delete failed jobs from the dead letter queue.
@@ -584,8 +584,8 @@ class JobQueue:
 
     async def cleanup_expired_jobs(
         self,
-        completed_ttl_days: Optional[int] = None,
-        failed_ttl_days: Optional[int] = None,
+        completed_ttl_days: int | None = None,
+        failed_ttl_days: int | None = None,
     ) -> dict[str, int]:
         """
         Clean up expired jobs based on TTL configuration.
@@ -667,7 +667,7 @@ class JobQueue:
 
     async def get_stale_pending_jobs(
         self,
-        max_age_hours: Optional[int] = None,
+        max_age_hours: int | None = None,
     ) -> list[JobQueueModel]:
         """
         Get pending jobs that have been waiting too long.
@@ -777,7 +777,7 @@ class JobQueue:
 async def dequeue_next_job(
     session: AsyncSession,
     worker_id: str,
-) -> Optional[JobQueueModel]:
+) -> JobQueueModel | None:
     """
     Dequeue the next available job across all tenants in a single query.
 

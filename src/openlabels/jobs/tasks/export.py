@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -25,9 +25,9 @@ async def periodic_siem_export(
     Runs until *shutdown_event* is set.  Each cycle fetches new scan results
     since the last export cursor and pushes them to all configured SIEMs.
     """
-    from openlabels.server.config import get_settings
     from openlabels.export.engine import ExportEngine, scan_result_to_export_records
     from openlabels.export.setup import build_adapters_from_settings
+    from openlabels.server.config import get_settings
 
     settings = get_settings()
     adapters = build_adapters_from_settings(settings.siem_export)
@@ -42,13 +42,14 @@ async def periodic_siem_export(
         engine.adapter_names,
     )
 
-    from openlabels.server.advisory_lock import try_advisory_lock, AdvisoryLockID
+    from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
 
     while not shutdown_event.is_set():
         try:
+            from sqlalchemy import select
+
             from openlabels.server.db import get_session_context
             from openlabels.server.models import ScanResult
-            from sqlalchemy import select
 
             async with get_session_context() as session:
                 if not await try_advisory_lock(session, AdvisoryLockID.SIEM_EXPORT):
@@ -128,11 +129,12 @@ async def execute_export_task(
         record_types: list of record type strings (optional)
         adapter: specific adapter name (optional, exports to all if omitted)
     """
-    from openlabels.server.config import get_settings
-    from openlabels.server.models import ScanResult
+    from sqlalchemy import select
+
     from openlabels.export.engine import ExportEngine, scan_result_to_export_records
     from openlabels.export.setup import build_adapters_from_settings
-    from sqlalchemy import select
+    from openlabels.server.config import get_settings
+    from openlabels.server.models import ScanResult
 
     settings = get_settings()
     adapters = build_adapters_from_settings(settings.siem_export)

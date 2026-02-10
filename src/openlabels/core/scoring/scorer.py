@@ -18,8 +18,6 @@ Weights are on a 1-10 scale:
 """
 
 import math
-from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
 
 from ..types import RiskTier, ScoringResult, normalize_entity_type
 
@@ -54,7 +52,7 @@ EXPOSURE_MULTIPLIERS = {
 # ENTITY WEIGHTS
 # =============================================================================
 
-ENTITY_WEIGHTS: Dict[str, int] = {
+ENTITY_WEIGHTS: dict[str, int] = {
     # Critical identifiers (10)
     "SSN": 10,
     "PASSPORT": 10,
@@ -128,7 +126,7 @@ DEFAULT_WEIGHT = 5  # For unknown entity types
 # ENTITY CATEGORIES
 # =============================================================================
 
-ENTITY_CATEGORIES: Dict[str, str] = {
+ENTITY_CATEGORIES: dict[str, str] = {
     # Direct identifiers
     "SSN": "direct_identifier",
     "PASSPORT": "direct_identifier",
@@ -196,7 +194,7 @@ ENTITY_CATEGORIES: Dict[str, str] = {
 # =============================================================================
 
 # (required_categories, multiplier, rule_name)
-CO_OCCURRENCE_RULES: List[Tuple[Set[str], float, str]] = [
+CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
     # HIPAA: Direct ID + Health data
     ({'direct_identifier', 'health_info'}, 2.0, 'hipaa_phi'),
     # Identity theft: Direct ID + Financial
@@ -230,7 +228,7 @@ def get_category(entity_type: str) -> str:
     return ENTITY_CATEGORIES.get(normalized, "unknown")
 
 
-def get_categories(entities: Dict[str, int]) -> Set[str]:
+def get_categories(entities: dict[str, int]) -> set[str]:
     """Get set of categories present in entities."""
     categories = set()
     for entity_type in entities:
@@ -240,7 +238,7 @@ def get_categories(entities: Dict[str, int]) -> Set[str]:
     return categories
 
 
-def get_co_occurrence_multiplier(entities: Dict[str, int]) -> Tuple[float, List[str]]:
+def get_co_occurrence_multiplier(entities: dict[str, int]) -> tuple[float, list[str]]:
     """Get the highest applicable co-occurrence multiplier."""
     if not entities:
         return 1.0, []
@@ -261,7 +259,7 @@ def get_co_occurrence_multiplier(entities: Dict[str, int]) -> Tuple[float, List[
 
 
 def calculate_content_score(
-    entities: Dict[str, int],
+    entities: dict[str, int],
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> float:
     """
@@ -307,7 +305,7 @@ def score_to_tier(score: float) -> RiskTier:
 
 
 def score(
-    entities: Dict[str, int],
+    entities: dict[str, int],
     exposure: str = 'PRIVATE',
     confidence: float = DEFAULT_CONFIDENCE,
 ) -> ScoringResult:

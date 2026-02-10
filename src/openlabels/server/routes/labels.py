@@ -14,28 +14,26 @@ Performance:
 """
 
 import logging
-from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
+from openlabels.exceptions import InternalError, NotFoundError
+from openlabels.server.dependencies import (
+    AdminContextDep,
+    DbSessionDep,
+    LabelServiceDep,
+    TenantContextDep,
+)
+from openlabels.server.errors import ErrorCode
+from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.server.dependencies import (
-    LabelServiceDep,
-    TenantContextDep,
-    AdminContextDep,
-    DbSessionDep,
-)
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
-from openlabels.server.errors import ErrorCode
-from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +50,10 @@ class LabelResponse(BaseModel):
 
     id: str
     name: str
-    description: Optional[str]
-    priority: Optional[int]
-    color: Optional[str]
-    parent_id: Optional[str]
+    description: str | None
+    priority: int | None
+    color: str | None
+    parent_id: str | None
 
     class Config:
         from_attributes = True
@@ -77,7 +75,7 @@ class LabelRuleResponse(BaseModel):
     rule_type: str
     match_value: str
     label_id: str
-    label_name: Optional[str] = None
+    label_name: str | None = None
     priority: int
 
     class Config:
@@ -101,10 +99,10 @@ class LabelSyncRequest(BaseModel):
 class LabelMappingsResponse(BaseModel):
     """Label mappings for each risk tier."""
 
-    CRITICAL: Optional[str] = None
-    HIGH: Optional[str] = None
-    MEDIUM: Optional[str] = None
-    LOW: Optional[str] = None
+    CRITICAL: str | None = None
+    HIGH: str | None = None
+    MEDIUM: str | None = None
+    LOW: str | None = None
     labels: list[LabelResponse] = []
 
 
@@ -144,7 +142,7 @@ async def list_labels(
 async def sync_labels(
     label_service: LabelServiceDep,
     _admin: AdminContextDep,
-    request: Optional[LabelSyncRequest] = None,
+    request: LabelSyncRequest | None = None,
 ) -> dict:
     """
     Sync sensitivity labels from Microsoft 365.
@@ -165,7 +163,8 @@ async def get_sync_status(
     _tenant: TenantContextDep,
 ) -> dict:
     """Get label sync status including last sync time and counts."""
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from openlabels.server.models import SensitivityLabel
 
     db = label_service.session
@@ -185,7 +184,7 @@ async def get_sync_status(
         raise InternalError(
             message="Database error occurred while getting sync status",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
     # Get cache status
     try:
@@ -317,8 +316,8 @@ async def apply_label(
     admin: AdminContextDep,
 ) -> dict:
     """Apply a sensitivity label to a file."""
-    from openlabels.server.models import ScanResult, SensitivityLabel
     from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanResult, SensitivityLabel
 
     result = await db.get(ScanResult, request.result_id)
     if not result or result.tenant_id != admin.tenant_id:
@@ -354,7 +353,7 @@ async def apply_label(
         raise InternalError(
             message="Database error occurred while applying label",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
 
 # =============================================================================
@@ -374,9 +373,10 @@ async def get_label_mappings(
     Results are cached per tenant for improved performance.
     Cache is invalidated when mappings are updated.
     """
+    from sqlalchemy import select
+
     from openlabels.server.cache import get_cache_manager
     from openlabels.server.models import LabelRule, SensitivityLabel
-    from sqlalchemy import select
 
     tenant_id = label_service.tenant_id
     cache_key = f"label_mappings:tenant:{tenant_id}"
@@ -451,9 +451,10 @@ async def update_label_mappings(
     admin: AdminContextDep,
 ):
     """Update label mappings for risk tiers."""
+    from sqlalchemy import select
+
     from openlabels.server.cache import invalidate_cache
     from openlabels.server.models import LabelRule, SensitivityLabel
-    from sqlalchemy import select
 
     tenant_id = label_service.tenant_id
 

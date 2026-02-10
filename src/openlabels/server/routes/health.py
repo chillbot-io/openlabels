@@ -8,20 +8,20 @@ import logging
 import platform
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, text, Integer
+from pydantic import BaseModel
+from sqlalchemy import Integer, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.db import get_session
-from openlabels.server.models import ScanJob, ScanResult, JobQueue
-from openlabels.server.cache import get_cache_manager, get_cache_stats
 from openlabels.auth.dependencies import get_current_user, get_optional_user
 from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.jobs.queue import JobQueue as JobQueueService
+from openlabels.server.cache import get_cache_stats
+from openlabels.server.db import get_session
+from openlabels.server.models import JobQueue, ScanJob, ScanResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,8 +47,8 @@ class JobMetrics(BaseModel):
     completed_count: int
     stuck_jobs_count: int = 0
     stale_pending_count: int = 0
-    oldest_pending_hours: Optional[float] = None
-    oldest_running_hours: Optional[float] = None
+    oldest_pending_hours: float | None = None
+    oldest_running_hours: float | None = None
 
 
 class HealthStatus(BaseModel):
@@ -76,15 +76,15 @@ class HealthStatus(BaseModel):
     success_rate: float
 
     # Circuit breakers
-    circuit_breakers: Optional[list[CircuitBreakerStatus]] = None
+    circuit_breakers: list[CircuitBreakerStatus] | None = None
 
     # Job metrics
-    job_metrics: Optional[JobMetrics] = None
+    job_metrics: JobMetrics | None = None
 
     # Optional extended info
-    python_version: Optional[str] = None
-    platform: Optional[str] = None
-    uptime_seconds: Optional[int] = None
+    python_version: str | None = None
+    platform: str | None = None
+    uptime_seconds: int | None = None
 
 
 # Track server start time for uptime
@@ -179,7 +179,7 @@ async def get_health_status(
 
     # Check ML models
     try:
-        from openlabels.core.detectors.ml_onnx import PIIBertONNXDetector, PHIBertONNXDetector
+        from openlabels.core.detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
         # Check if models are loadable
         models_available = []
         try:

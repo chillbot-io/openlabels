@@ -20,23 +20,23 @@ ML Detectors (optional, require additional dependencies):
 
 import logging
 
+from .additional_patterns import AdditionalPatternDetector
 from .base import BaseDetector
 from .checksum import ChecksumDetector
 from .config import DetectionConfig
-from .secrets import SecretsDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
-from .patterns import PatternDetector
-from .additional_patterns import AdditionalPatternDetector
-from .orchestrator import DetectorOrchestrator, detect
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
+from .orchestrator import DetectorOrchestrator, detect
+from .patterns import PatternDetector
 from .registry import (
-    register_detector,
-    get_registered_detectors,
-    get_detector_names,
-    create_detector,
     create_all_detectors,
+    create_detector,
+    get_detector_names,
+    get_registered_detectors,
+    register_detector,
 )
+from .secrets import SecretsDetector
 
 __all__ = [
     # Base

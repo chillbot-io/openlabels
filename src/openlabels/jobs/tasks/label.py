@@ -10,16 +10,13 @@ Security: Uses defusedxml to prevent XXE (XML External Entity) attacks
 when parsing Office document XML content.
 """
 
-import asyncio
 import base64
 import json
 import logging
 import shutil
 import zipfile
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
-from typing import Optional, Dict, Tuple
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -626,7 +623,7 @@ async def _apply_label_graph(result: ScanResult, label: SensitivityLabel) -> dic
         }
 
 
-async def _get_graph_token(tenant_id: str, client_id: str, client_secret: str) -> Optional[str]:
+async def _get_graph_token(tenant_id: str, client_id: str, client_secret: str) -> str | None:
     """Get OAuth2 access token for Microsoft Graph API."""
     if not HTTPX_AVAILABLE:
         return None
@@ -655,7 +652,7 @@ async def _get_graph_token(tenant_id: str, client_id: str, client_secret: str) -
         return None
 
 
-async def _parse_sharepoint_url(url: str, token: str) -> Tuple[Optional[str], Optional[str]]:
+async def _parse_sharepoint_url(url: str, token: str) -> tuple[str | None, str | None]:
     """
     Parse SharePoint/OneDrive URL to get site and item IDs.
 

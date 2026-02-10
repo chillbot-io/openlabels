@@ -5,7 +5,8 @@ This module contains Pydantic models for error responses,
 ensuring consistent error handling across all API endpoints.
 """
 
-from typing import Optional, Any
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -33,12 +34,12 @@ class ErrorResponse(BaseModel):
         description="Human-readable error message",
         examples=["The requested resource was not found"],
     )
-    details: Optional[dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         default=None,
         description="Additional error context and details",
         examples=[{"field": "email", "reason": "Invalid format"}],
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Request correlation ID for tracing",
         examples=["abc123ef"],
@@ -69,7 +70,7 @@ class SuccessResponse(BaseModel):
         description="Human-readable success message",
         examples=["Operation completed successfully"],
     )
-    details: Optional[dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         default=None,
         description="Additional context about the operation",
     )

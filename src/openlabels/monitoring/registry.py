@@ -23,27 +23,28 @@ the in-memory cache from the database so that the registry reflects previously
 persisted state.
 """
 
+import asyncio
 import logging
 import platform
 import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 from uuid import UUID
 
+from openlabels.exceptions import MonitoringError
+
 from .base import (
-    WatchedFile,
     MonitoringResult,
+    WatchedFile,
 )
-from openlabels.exceptions import MonitoringError, SACLError, AuditRuleError
 
 logger = logging.getLogger(__name__)
 
 # In-memory registry of watched files.
 # Acts as a process-local cache; durable state lives in the database
 # (see openlabels.monitoring.db for async persistence helpers).
-_watched_files: Dict[str, WatchedFile] = {}
+_watched_files: dict[str, WatchedFile] = {}
 _watched_lock = threading.Lock()
 
 
@@ -52,7 +53,7 @@ def enable_monitoring(
     risk_tier: str = "HIGH",
     audit_read: bool = True,
     audit_write: bool = True,
-    label_id: Optional[str] = None,
+    label_id: str | None = None,
 ) -> MonitoringResult:
     """
     Enable access monitoring on a file.
@@ -153,13 +154,13 @@ def is_monitored(path: Path) -> bool:
         return str(Path(path).resolve()) in _watched_files
 
 
-def get_watched_files() -> List[WatchedFile]:
+def get_watched_files() -> list[WatchedFile]:
     """Get list of all currently monitored files."""
     with _watched_lock:
         return list(_watched_files.values())
 
 
-def get_watched_file(path: Path) -> Optional[WatchedFile]:
+def get_watched_file(path: Path) -> WatchedFile | None:
     """Get monitoring info for a specific file."""
     with _watched_lock:
         return _watched_files.get(str(Path(path).resolve()))
@@ -363,9 +364,9 @@ async def disable_monitoring_async(
 
 
 def enable_monitoring_batch(
-    paths: List[Path],
+    paths: list[Path],
     risk_tier: str = "HIGH",
-) -> List[MonitoringResult]:
+) -> list[MonitoringResult]:
     """Enable monitoring on multiple files efficiently.
 
     On Windows: generates a single PowerShell script for all files.
@@ -382,13 +383,13 @@ def enable_monitoring_batch(
 
 
 def _enable_batch_windows(
-    paths: List[Path],
+    paths: list[Path],
     risk_tier: str,
-) -> List[MonitoringResult]:
+) -> list[MonitoringResult]:
     """Single PowerShell invocation for all files."""
     _INJECTION_CHARS = set('"\'`$\n\r;&|')
-    results: List[MonitoringResult] = []
-    validated: List[tuple] = []  # (resolved_str, original_path)
+    results: list[MonitoringResult] = []
+    validated: list[tuple] = []  # (resolved_str, original_path)
 
     for p in paths:
         resolved = str(Path(p).resolve())
@@ -460,15 +461,15 @@ foreach ($p in $paths) {{
 
 
 def _enable_batch_linux(
-    paths: List[Path],
+    paths: list[Path],
     risk_tier: str,
-) -> List[MonitoringResult]:
+) -> list[MonitoringResult]:
     """Single auditctl invocation for all files."""
     import shutil
 
     _INJECTION_CHARS = set('"\'`$\n\r;&|')
-    results: List[MonitoringResult] = []
-    validated: List[Path] = []
+    results: list[MonitoringResult] = []
+    validated: list[Path] = []
 
     if not shutil.which("auditctl"):
         return [

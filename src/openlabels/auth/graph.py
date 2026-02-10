@@ -5,11 +5,10 @@ Provides server-to-server authentication using client credentials flow
 for accessing Graph API to resolve user information, including SID lookups.
 """
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Optional
 import logging
 import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from msal import ConfidentialClientApplication
@@ -97,16 +96,16 @@ class GraphUser:
     """User information from Microsoft Graph."""
 
     id: str  # Entra object ID (GUID)
-    display_name: Optional[str] = None
-    user_principal_name: Optional[str] = None  # email/UPN
-    mail: Optional[str] = None
-    given_name: Optional[str] = None
-    surname: Optional[str] = None
-    job_title: Optional[str] = None
-    department: Optional[str] = None
-    office_location: Optional[str] = None
-    on_premises_sam_account_name: Optional[str] = None  # DOMAIN\username style
-    on_premises_security_identifier: Optional[str] = None  # On-prem SID
+    display_name: str | None = None
+    user_principal_name: str | None = None  # email/UPN
+    mail: str | None = None
+    given_name: str | None = None
+    surname: str | None = None
+    job_title: str | None = None
+    department: str | None = None
+    office_location: str | None = None
+    on_premises_sam_account_name: str | None = None  # DOMAIN\username style
+    on_premises_security_identifier: str | None = None  # On-prem SID
 
     @property
     def best_display_name(self) -> str:
@@ -119,7 +118,7 @@ class GraphUser:
         )
 
     @property
-    def domain_username(self) -> Optional[str]:
+    def domain_username(self) -> str | None:
         """Get DOMAIN\\username format if available."""
         return self.on_premises_sam_account_name
 
@@ -136,9 +135,9 @@ class GraphClient:
 
     def __init__(
         self,
-        tenant_id: Optional[str] = None,
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
+        tenant_id: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
     ):
         """
         Initialize Graph client.
@@ -165,8 +164,8 @@ class GraphClient:
         )
 
         # Token cache
-        self._access_token: Optional[str] = None
-        self._token_expires: Optional[datetime] = None
+        self._access_token: str | None = None
+        self._token_expires: datetime | None = None
 
     async def _get_access_token(self) -> str:
         """Get access token, refreshing if needed."""
@@ -194,8 +193,8 @@ class GraphClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict] = None,
-        json: Optional[dict] = None,
+        params: dict | None = None,
+        json: dict | None = None,
     ) -> dict:
         """Make authenticated request to Graph API."""
         token = await self._get_access_token()
@@ -222,7 +221,7 @@ class GraphClient:
             response.raise_for_status()
             return response.json()
 
-    async def get_user_by_id(self, user_id: str) -> Optional[GraphUser]:
+    async def get_user_by_id(self, user_id: str) -> GraphUser | None:
         """
         Get user by Entra object ID.
 
@@ -254,7 +253,7 @@ class GraphClient:
             logger.error(f"Failed to get user {user_id}: {e}")
             raise
 
-    async def get_user_by_upn(self, upn: str) -> Optional[GraphUser]:
+    async def get_user_by_upn(self, upn: str) -> GraphUser | None:
         """
         Get user by User Principal Name (email).
 
@@ -286,7 +285,7 @@ class GraphClient:
             logger.error(f"Failed to get user by UPN {upn}: {e}")
             raise
 
-    async def get_user_by_on_prem_sid(self, sid: str) -> Optional[GraphUser]:
+    async def get_user_by_on_prem_sid(self, sid: str) -> GraphUser | None:
         """
         Get user by on-premises Security Identifier (SID).
 
@@ -325,7 +324,7 @@ class GraphClient:
             logger.error(f"Failed to get user by SID {sid}: {e}")
             raise
 
-    async def get_user_by_sam_account_name(self, sam_account_name: str) -> Optional[GraphUser]:
+    async def get_user_by_sam_account_name(self, sam_account_name: str) -> GraphUser | None:
         """
         Get user by on-premises SAM account name.
 
@@ -415,7 +414,7 @@ class GraphClient:
 
 
 # Singleton instance
-_graph_client: Optional[GraphClient] = None
+_graph_client: GraphClient | None = None
 
 
 def get_graph_client() -> GraphClient:

@@ -8,20 +8,19 @@ Provides a service-layer wrapper around JobQueue with:
 - Type hints and documentation
 """
 
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.services.base import BaseService, TenantContext
-from openlabels.server.config import Settings
-from openlabels.server.models import JobQueue as JobQueueModel
 from openlabels.exceptions import (
-    NotFoundError,
     BadRequestError,
+    NotFoundError,
 )
 from openlabels.jobs.queue import JobQueue
+from openlabels.server.config import Settings
+from openlabels.server.models import JobQueue as JobQueueModel
+from openlabels.server.services.base import BaseService, TenantContext
 
 
 class JobService(BaseService):
@@ -95,7 +94,7 @@ class JobService(BaseService):
 
         return job_id
 
-    async def get_job(self, job_id: UUID) -> Optional[JobQueueModel]:
+    async def get_job(self, job_id: UUID) -> JobQueueModel | None:
         """
         Get a job by ID.
 
@@ -108,24 +107,7 @@ class JobService(BaseService):
         Raises:
             NotFoundError: If job not found or belongs to another tenant
         """
-        job = await self._queue.get_job(job_id)
-
-        if not job:
-            raise NotFoundError(
-                message="Job not found",
-                resource_type="Job",
-                resource_id=str(job_id),
-            )
-
-        # Enforce tenant isolation
-        if job.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Job not found",
-                resource_type="Job",
-                resource_id=str(job_id),
-            )
-
-        return job
+        return await self.get_tenant_entity(JobQueueModel, job_id, "Job")
 
     async def cancel_job(self, job_id: UUID) -> bool:
         """
@@ -141,14 +123,7 @@ class JobService(BaseService):
             NotFoundError: If job not found
             BadRequestError: If job cannot be cancelled (already completed/failed)
         """
-        job = await self._queue.get_job(job_id)
-
-        if not job or job.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Job not found",
-                resource_type="Job",
-                resource_id=str(job_id),
-            )
+        job = await self.get_tenant_entity(JobQueueModel, job_id, "Job")
 
         if job.status not in ("pending", "running"):
             raise BadRequestError(
@@ -193,8 +168,8 @@ class JobService(BaseService):
 
     async def list_jobs(
         self,
-        status: Optional[str] = None,
-        task_type: Optional[str] = None,
+        status: str | None = None,
+        task_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[JobQueueModel], int]:
@@ -218,16 +193,6 @@ class JobService(BaseService):
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
 
-        # Get total count
-        count_query = (
-            select(func.count())
-            .select_from(JobQueueModel)
-            .where(and_(*conditions))
-        )
-        count_result = await self.session.execute(count_query)
-        total = count_result.scalar() or 0
-
-        # Get paginated jobs
         query = (
             select(JobQueueModel)
             .where(and_(*conditions))
@@ -235,11 +200,8 @@ class JobService(BaseService):
                 JobQueueModel.priority.desc(),
                 JobQueueModel.created_at.desc(),
             )
-            .offset(offset)
-            .limit(limit)
         )
-        result = await self.session.execute(query)
-        jobs = list(result.scalars().all())
+        jobs, total = await self.paginate(query, limit=limit, offset=offset)
 
         self._log_debug(
             f"Listed {len(jobs)} jobs (status={status}, task_type={task_type}, "
@@ -250,7 +212,7 @@ class JobService(BaseService):
 
     async def get_failed_jobs(
         self,
-        task_type: Optional[str] = None,
+        task_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[JobQueueModel], int]:
@@ -301,14 +263,7 @@ class JobService(BaseService):
             NotFoundError: If job not found
             BadRequestError: If job is not in failed status
         """
-        job = await self._queue.get_job(job_id)
-
-        if not job or job.tenant_id != self.tenant_id:
-            raise NotFoundError(
-                message="Job not found",
-                resource_type="Job",
-                resource_id=str(job_id),
-            )
+        job = await self.get_tenant_entity(JobQueueModel, job_id, "Job")
 
         if job.status != "failed":
             raise BadRequestError(
@@ -333,7 +288,7 @@ class JobService(BaseService):
 
     async def requeue_all_failed(
         self,
-        task_type: Optional[str] = None,
+        task_type: str | None = None,
         reset_retries: bool = True,
     ) -> int:
         """
@@ -359,8 +314,8 @@ class JobService(BaseService):
 
     async def purge_failed(
         self,
-        task_type: Optional[str] = None,
-        older_than_days: Optional[int] = None,
+        task_type: str | None = None,
+        older_than_days: int | None = None,
     ) -> int:
         """
         Delete failed jobs from the dead letter queue.
@@ -385,8 +340,8 @@ class JobService(BaseService):
 
     async def cleanup_expired(
         self,
-        completed_ttl_days: Optional[int] = None,
-        failed_ttl_days: Optional[int] = None,
+        completed_ttl_days: int | None = None,
+        failed_ttl_days: int | None = None,
     ) -> dict[str, int]:
         """
         Clean up expired jobs based on TTL.

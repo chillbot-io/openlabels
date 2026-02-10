@@ -14,6 +14,7 @@ def run_gui(server_url: str = "http://localhost:8000") -> None:
     """
     try:
         from PySide6.QtWidgets import QApplication
+
         from openlabels.gui.main_window import MainWindow
     except ImportError:
         print("Error: PySide6 is required for the GUI.")

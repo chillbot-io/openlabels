@@ -12,36 +12,36 @@ from .confidence import (
     calibrate_confidence,
     calibrate_spans,
 )
-from .span_resolver import (
-    resolve_spans,
-    OverlapStrategy,
-)
 from .context_enhancer import (
     ContextEnhancer,
-    create_enhancer,
     EnhancementResult,
-)
-from .span_validation import (
-    validate_span_positions,
-    validate_after_coref,
-    check_for_overlaps,
-    SpanValidationError,
+    create_enhancer,
 )
 from .entity_resolver import (
-    EntityResolver,
     Entity,
+    EntityResolver,
     Mention,
-    resolve_entities,
     get_entity_counts,
+    resolve_entities,
+)
+from .span_resolver import (
+    OverlapStrategy,
+    resolve_spans,
+)
+from .span_validation import (
+    SpanValidationError,
+    check_for_overlaps,
+    validate_after_coref,
+    validate_span_positions,
 )
 from .tiered import (
-    TieredPipeline,
+    ESCALATION_THRESHOLD,
     PipelineConfig,
     PipelineResult,
     PipelineStage,
+    TieredPipeline,
     create_pipeline,
     detect_tiered,
-    ESCALATION_THRESHOLD,
 )
 
 __all__ = [
@@ -81,12 +81,12 @@ __all__ = [
 #   from openlabels.core.pipeline.coref import resolve_coreferences
 try:
     from .coref import (
-        resolve_coreferences,
-        is_onnx_available,
-        is_fastcoref_available,
-        set_models_dir,
         NAME_TYPES,
         PRONOUNS,
+        is_fastcoref_available,
+        is_onnx_available,
+        resolve_coreferences,
+        set_models_dir,
     )
     __all__.extend([
         "resolve_coreferences",

@@ -23,13 +23,12 @@ Example usage in a route:
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
 
-from openlabels.jobs import JobQueue
 from openlabels.exceptions import BadRequestError, NotFoundError
+from openlabels.jobs import JobQueue
 from openlabels.server.models import ScanJob, ScanTarget
 from openlabels.server.services.base import BaseService
 
@@ -67,18 +66,7 @@ class ScanService(BaseService):
         Raises:
             NotFoundError: If target not found or belongs to different tenant
         """
-        target = await self.session.get(ScanTarget, target_id)
-        if not target or target.tenant_id != self.tenant_id:
-            self._log_warning(
-                f"Target not found: {target_id}",
-                target_id=str(target_id),
-            )
-            raise NotFoundError(
-                message="Target not found",
-                resource_type="ScanTarget",
-                resource_id=str(target_id),
-            )
-        return target
+        return await self.get_tenant_entity(ScanTarget, target_id, "ScanTarget")
 
     async def _get_scan_or_raise(self, scan_id: UUID) -> ScanJob:
         """
@@ -93,23 +81,12 @@ class ScanService(BaseService):
         Raises:
             NotFoundError: If scan not found or belongs to different tenant
         """
-        job = await self.session.get(ScanJob, scan_id)
-        if not job or job.tenant_id != self.tenant_id:
-            self._log_warning(
-                f"Scan not found: {scan_id}",
-                scan_id=str(scan_id),
-            )
-            raise NotFoundError(
-                message="Scan not found",
-                resource_type="ScanJob",
-                resource_id=str(scan_id),
-            )
-        return job
+        return await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
     async def create_scan(
         self,
         target_id: UUID,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> ScanJob:
         """
         Create a new scan job for a target.
@@ -178,7 +155,7 @@ class ScanService(BaseService):
 
     async def list_scans(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanJob], int]:
@@ -466,7 +443,7 @@ class ScanService(BaseService):
     async def cleanup_old_scans(
         self,
         days: int = 30,
-        status: Optional[str] = None,
+        status: str | None = None,
     ) -> int:
         """
         Delete scan jobs older than specified days.

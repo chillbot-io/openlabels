@@ -12,12 +12,11 @@ Requires ``azure-storage-blob``: install with ``pip install openlabels[azure]``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import AsyncIterator, Optional
-
-import asyncio
 
 from openlabels.adapters.base import (
     ExposureLevel,
@@ -27,8 +26,8 @@ from openlabels.adapters.base import (
 )
 
 try:
-    from azure.core.exceptions import AzureError
     from azure.core import MatchConditions as _MatchConditions
+    from azure.core.exceptions import AzureError
 except ImportError:
     AzureError = Exception  # type: ignore[misc,assignment]
     _MatchConditions = None  # type: ignore[assignment]
@@ -84,7 +83,7 @@ class AzureBlobAdapter:
     def supports_delta(self) -> bool:
         return False  # delta via Event Grid / Storage Queue instead
 
-    async def __aenter__(self) -> "AzureBlobAdapter":
+    async def __aenter__(self) -> AzureBlobAdapter:
         self._client = await asyncio.to_thread(self._build_client)
         self._container_client = self._client.get_container_client(self._container_name)
         return self
@@ -116,7 +115,7 @@ class AzureBlobAdapter:
         self,
         target: str,
         recursive: bool = True,
-        filter_config: Optional[FilterConfig] = None,
+        filter_config: FilterConfig | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List blobs in the Azure container under *target* prefix.
 

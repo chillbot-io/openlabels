@@ -170,7 +170,7 @@ def monitor_status(file_path: str):
     Examples:
         openlabels monitor status ./sensitive.xlsx
     """
-    from openlabels.monitoring import is_monitored, get_watched_files
+    from openlabels.monitoring import get_watched_files, is_monitored
 
     path = Path(file_path).resolve()
 
@@ -180,7 +180,7 @@ def monitor_status(file_path: str):
         entry = next((w for w in watched if w.path == path), None)
 
         click.echo(f"File: {path}")
-        click.echo(f"Status: MONITORED")
+        click.echo("Status: MONITORED")
         if entry:
             click.echo(f"  Risk tier: {entry.risk_tier}")
             click.echo(f"  Added: {entry.added_at.strftime('%Y-%m-%d %H:%M:%S') if entry.added_at else 'N/A'}")

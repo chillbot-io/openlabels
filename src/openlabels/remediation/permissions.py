@@ -13,14 +13,14 @@ import logging
 import platform
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+
+from openlabels.exceptions import RemediationPermissionError
 
 from .base import (
-    RemediationResult,
     RemediationAction,
+    RemediationResult,
     get_current_user,
 )
-from openlabels.exceptions import RemediationPermissionError
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ DEFAULT_UNIX_PRINCIPALS = ["root"]
 
 def lock_down(
     path: Path,
-    allowed_principals: Optional[List[str]] = None,
+    allowed_principals: list[str] | None = None,
     remove_inheritance: bool = True,
     backup_acl: bool = True,
     dry_run: bool = False,
@@ -112,7 +112,7 @@ def get_current_acl(path: Path) -> dict:
 
 def _lock_down_windows(
     path: Path,
-    allowed_principals: List[str],
+    allowed_principals: list[str],
     remove_inheritance: bool,
     backup_acl: bool,
     dry_run: bool,
@@ -236,7 +236,7 @@ def _lock_down_windows(
 
 def _lock_down_unix(
     path: Path,
-    allowed_principals: List[str],
+    allowed_principals: list[str],
     backup_acl: bool,
     dry_run: bool,
 ) -> RemediationResult:
@@ -343,7 +343,6 @@ def _get_acl_windows(path: Path) -> dict:
 def _get_acl_unix(path: Path) -> dict:
     """Get Unix permissions and ACLs."""
     import os
-    import stat
 
     st = os.stat(path)
 
@@ -415,7 +414,7 @@ def restore_permissions(
     except (ValueError, UnicodeDecodeError) as e:
         raise RemediationPermissionError(
             f"Invalid base64-encoded ACL data: {e}", path
-        )
+        ) from e
 
     if dry_run:
         logger.info("[DRY RUN] Would restore permissions for %s", path)

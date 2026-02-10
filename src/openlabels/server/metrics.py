@@ -8,7 +8,7 @@ Provides metrics for monitoring:
 - Detection/scan processing statistics
 """
 
-from prometheus_client import Counter, Histogram, Gauge, REGISTRY
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
 # Use the default registry
 registry = REGISTRY
@@ -219,7 +219,6 @@ def update_catalog_health(storage) -> None:
 
     Call periodically (e.g. after each flush) to keep metrics current.
     """
-    import time
     from openlabels.analytics.flush import load_flush_state
 
     try:

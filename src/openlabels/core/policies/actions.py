@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -28,8 +27,8 @@ class ActionResult:
 
     action: str  # "quarantine", "label", "monitor", "audit"
     success: bool
-    detail: Optional[str] = None
-    error: Optional[str] = None
+    detail: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -142,9 +141,10 @@ class PolicyActionExecutor:
     async def enroll_monitoring(self, ctx: PolicyActionContext) -> ActionResult:
         """Add the file to the monitoring registry."""
         try:
+            from sqlalchemy import select
+
             from openlabels.server.db import get_session_context
             from openlabels.server.models import MonitoredFile
-            from sqlalchemy import select
 
             async with get_session_context() as session:
                 # Check if already monitored

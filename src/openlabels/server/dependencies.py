@@ -32,26 +32,32 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from functools import lru_cache
-from typing import Annotated, AsyncGenerator
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.config import Settings, get_settings as _get_settings, load_yaml_config
+from openlabels.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_optional_user,
+    require_admin,
+)
+from openlabels.server.cache import CacheManager
+from openlabels.server.cache import get_cache_manager as _get_cache_manager
+from openlabels.server.config import Settings, load_yaml_config
+from openlabels.server.config import get_settings as _get_settings
 from openlabels.server.db import get_session as _get_session
-from openlabels.auth.dependencies import CurrentUser, get_current_user, get_optional_user, require_admin
-from openlabels.server.cache import CacheManager, get_cache_manager as _get_cache_manager
-from openlabels.server.middleware.rate_limit import TenantRateLimiter, get_tenant_rate_limiter
-
+from openlabels.server.middleware.rate_limit import get_tenant_rate_limiter
+from openlabels.server.services.base import TenantContext as ServiceTenantContext
+from openlabels.server.services.job_service import JobService
+from openlabels.server.services.label_service import LabelService
+from openlabels.server.services.result_service import ResultService
 
 # Import service classes
 from openlabels.server.services.scan_service import ScanService
-from openlabels.server.services.result_service import ResultService
-from openlabels.server.services.label_service import LabelService
-from openlabels.server.services.job_service import JobService
-from openlabels.server.services.base import TenantContext as ServiceTenantContext
-
 
 logger = logging.getLogger(__name__)
 

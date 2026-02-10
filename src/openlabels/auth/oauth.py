@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import jwt
@@ -31,7 +31,7 @@ class TokenClaims(BaseModel):
 
     oid: str  # Azure AD object ID
     preferred_username: str  # Email/UPN
-    name: Optional[str] = None
+    name: str | None = None
     tenant_id: str
     roles: list[str] = []
 
@@ -189,11 +189,11 @@ async def validate_token(token: str) -> TokenClaims:
     except (TokenExpiredError, TokenInvalidError):
         raise
     except ExpiredSignatureError as e:
-        raise TokenExpiredError(f"Token expired: {e}")
+        raise TokenExpiredError(f"Token expired: {e}") from e
     except InvalidSignatureError as e:
-        raise TokenInvalidError(f"Invalid signature: {e}")
+        raise TokenInvalidError(f"Invalid signature: {e}") from e
     except PyJWTError as e:
-        raise TokenInvalidError(f"Invalid token: {e}")
+        raise TokenInvalidError(f"Invalid token: {e}") from e
 
 
 def clear_jwks_cache() -> None:

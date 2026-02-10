@@ -10,9 +10,9 @@ Protection mechanisms:
 3. SameSite cookie attribute (already set in auth.py)
 """
 
-import secrets
 import logging
-from typing import Callable
+import secrets
+from collections.abc import Callable
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -34,7 +34,6 @@ PROTECTED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 EXEMPT_PATHS = {
     "/auth/callback",  # OAuth callback from Microsoft
     "/health",
-    "/api",
     "/api/docs",
     "/api/redoc",
     "/api/openapi.json",

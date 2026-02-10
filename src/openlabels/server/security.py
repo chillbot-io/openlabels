@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def log_security_event(
     event_type: str,
     user: Optional["CurrentUser"] = None,
-    details: Optional[dict] = None,
+    details: dict | None = None,
     level: str = "warning",
 ):
     """

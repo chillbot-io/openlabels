@@ -20,7 +20,6 @@ Entity Types:
 """
 
 import re
-from typing import List
 
 from ..types import Span, Tier
 from .base import BaseDetector
@@ -140,7 +139,7 @@ class GovernmentDetector(BaseDetector):
     name = "government"
     tier = Tier.PATTERN
 
-    def detect(self, text: str) -> List[Span]:
+    def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
         seen: set[tuple[int, int]] = set()
 

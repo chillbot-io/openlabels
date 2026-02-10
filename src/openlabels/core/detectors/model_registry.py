@@ -21,13 +21,11 @@ Usage:
 """
 
 import hashlib
-import json
 import logging
-import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 from ..constants import DEFAULT_MODELS_DIR
 
@@ -61,12 +59,12 @@ class ModelSpec:
     # HuggingFace repository ID (e.g. "chillbot-io/phi-bert-onnx")
     repo_id: str
     # Files to download
-    files: List[ModelFile] = field(default_factory=list)
+    files: list[ModelFile] = field(default_factory=list)
     # Where to install relative to models_dir (empty = flat in models_dir)
     install_subdir: str = ""
     # Optional: alternative file sets (e.g. INT8 preferred over FP32)
     # If the first file in an alternative group exists, skip the rest
-    alternatives: Dict[str, List[str]] = field(default_factory=dict)
+    alternatives: dict[str, list[str]] = field(default_factory=dict)
 
     def get_install_dir(self, models_dir: Path) -> Path:
         if self.install_subdir:
@@ -89,7 +87,7 @@ class ModelSpec:
                 return False
         return True
 
-    def get_missing_files(self, models_dir: Path) -> List[str]:
+    def get_missing_files(self, models_dir: Path) -> list[str]:
         """Return list of missing file names."""
         install_dir = self.get_install_dir(models_dir)
         missing = []
@@ -155,19 +153,19 @@ _OCR_SPEC = ModelSpec(
     ],
 )
 
-_REGISTRY: Dict[str, ModelSpec] = {
+_REGISTRY: dict[str, ModelSpec] = {
     spec.name: spec for spec in [_PHI_BERT_SPEC, _PII_BERT_SPEC, _OCR_SPEC]
 }
 
 # Convenience aliases
-MODEL_ALIASES: Dict[str, List[str]] = {
+MODEL_ALIASES: dict[str, list[str]] = {
     "all": list(_REGISTRY.keys()),
     "ner": ["phi_bert", "pii_bert"],
     "bert": ["phi_bert", "pii_bert"],
 }
 
 
-def get_registry() -> Dict[str, ModelSpec]:
+def get_registry() -> dict[str, ModelSpec]:
     """Return the full model registry."""
     return dict(_REGISTRY)
 
@@ -177,12 +175,12 @@ def get_model_spec(name: str) -> ModelSpec:
     return _REGISTRY[name]
 
 
-def list_models(models_dir: Optional[Path] = None) -> List[ModelSpec]:
+def list_models(models_dir: Path | None = None) -> list[ModelSpec]:
     """Return all model specs."""
     return list(_REGISTRY.values())
 
 
-def resolve_names(names: List[str]) -> List[str]:
+def resolve_names(names: list[str]) -> list[str]:
     """Resolve aliases like 'all', 'ner' to concrete model names."""
     resolved = []
     for name in names:
@@ -216,9 +214,9 @@ def _verify_sha256(path: Path, expected: str) -> bool:
 
 def download_model(
     name: str,
-    models_dir: Optional[Path] = None,
+    models_dir: Path | None = None,
     force: bool = False,
-    progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> Path:
     """Download a model from HuggingFace Hub.
 
@@ -253,7 +251,7 @@ def download_model(
         raise ImportError(
             "huggingface_hub is required for model downloads. "
             "Install it with: pip install huggingface_hub"
-        )
+        ) from None
 
     downloaded = []
     for mf in spec.files:
@@ -300,10 +298,10 @@ def download_model(
 
 
 def download_all(
-    models_dir: Optional[Path] = None,
+    models_dir: Path | None = None,
     force: bool = False,
-    progress_callback: Optional[Callable[[str, int, int], None]] = None,
-) -> Dict[str, Path]:
+    progress_callback: Callable[[str, int, int], None] | None = None,
+) -> dict[str, Path]:
     """Download all models.
 
     Returns:

@@ -10,26 +10,24 @@ Security features:
 import logging
 import os
 import re
-from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanTarget
+from openlabels.server.routes import get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
-from openlabels.auth.dependencies import get_current_user, require_admin, CurrentUser
-from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +102,8 @@ def validate_filesystem_target_config(config: dict) -> dict:
     # Normalize the path
     try:
         normalized_path = os.path.normpath(path)
-    except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid path format: {path}")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid path format: {path}") from None
 
     # Check for path traversal patterns
     for pattern in BLOCKED_SCAN_PATH_PATTERNS:
@@ -169,7 +167,7 @@ def validate_sharepoint_target_config(config: dict) -> dict:
     except (ValueError, TypeError) as url_err:
         # Log invalid URLs for security monitoring - could indicate injection attempts
         logger.warning(f"Failed to parse SharePoint URL '{site_url[:100]}...': {type(url_err).__name__}")
-        raise HTTPException(status_code=400, detail="Invalid site_url format")
+        raise HTTPException(status_code=400, detail="Invalid site_url format") from url_err
 
     # Must be HTTPS
     if parsed.scheme != "https":
@@ -380,9 +378,9 @@ class TargetCreate(BaseModel):
 class TargetUpdate(BaseModel):
     """Request to update a scan target."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    config: Optional[dict] = None
-    enabled: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=255)
+    config: dict | None = None
+    enabled: bool | None = None
 
 
 class TargetResponse(BaseModel):
@@ -400,7 +398,7 @@ class TargetResponse(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[TargetResponse])
 async def list_targets(
-    adapter: Optional[str] = Query(None, description="Filter by adapter type"),
+    adapter: str | None = Query(None, description="Filter by adapter type"),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
@@ -468,7 +466,7 @@ async def create_target(
         return target
     except SQLAlchemyError as e:
         logger.error(f"Database error creating target: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise HTTPException(status_code=500, detail="Database error occurred") from e
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -479,15 +477,13 @@ async def get_target(
 ) -> TargetResponse:
     """Get scan target details."""
     try:
-        target = await session.get(ScanTarget, target_id)
-        if not target or target.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Target not found")
+        target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
         return target
     except HTTPException:
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error getting target {target_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise HTTPException(status_code=500, detail="Database error occurred") from e
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -499,9 +495,7 @@ async def update_target(
 ) -> TargetResponse:
     """Update a scan target."""
     try:
-        target = await session.get(ScanTarget, target_id)
-        if not target or target.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Target not found")
+        target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
 
         if request.name is not None:
             target.name = request.name
@@ -517,7 +511,7 @@ async def update_target(
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error updating target {target_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise HTTPException(status_code=500, detail="Database error occurred") from e
 
 
 @router.delete("/{target_id}")
@@ -529,9 +523,7 @@ async def delete_target(
 ):
     """Delete a scan target."""
     try:
-        target = await session.get(ScanTarget, target_id)
-        if not target or target.tenant_id != user.tenant_id:
-            raise HTTPException(status_code=404, detail="Target not found")
+        target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
 
         target_name = target.name
         await session.delete(target)
@@ -546,4 +538,4 @@ async def delete_target(
         raise
     except SQLAlchemyError as e:
         logger.error(f"Database error deleting target {target_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
+        raise HTTPException(status_code=500, detail="Database error occurred") from e

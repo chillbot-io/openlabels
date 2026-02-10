@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
 
 
 class RemediationAction(str, Enum):
@@ -38,21 +37,21 @@ class RemediationResult:
     timestamp: datetime = field(default_factory=datetime.now)
 
     # Quarantine-specific
-    dest_path: Optional[Path] = None
+    dest_path: Path | None = None
 
     # Lockdown-specific
-    principals: Optional[List[str]] = None
-    previous_acl: Optional[str] = None  # Base64-encoded for audit
+    principals: list[str] | None = None
+    previous_acl: str | None = None  # Base64-encoded for audit
 
     # Error information
-    error: Optional[str] = None
-    error_code: Optional[int] = None
+    error: str | None = None
+    error_code: int | None = None
 
     # Integrity
-    file_hash: Optional[str] = None  # SHA-256 at time of operation
+    file_hash: str | None = None  # SHA-256 at time of operation
 
     # Audit
-    performed_by: Optional[str] = None
+    performed_by: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -74,7 +73,7 @@ class RemediationResult:
         cls,
         source: Path,
         dest: Path,
-        performed_by: Optional[str] = None,
+        performed_by: str | None = None,
     ) -> "RemediationResult":
         """Create a successful quarantine result."""
         return cls(
@@ -89,9 +88,9 @@ class RemediationResult:
     def success_lockdown(
         cls,
         path: Path,
-        principals: List[str],
-        previous_acl: Optional[str] = None,
-        performed_by: Optional[str] = None,
+        principals: list[str],
+        previous_acl: str | None = None,
+        performed_by: str | None = None,
     ) -> "RemediationResult":
         """Create a successful lockdown result."""
         return cls(
@@ -109,7 +108,7 @@ class RemediationResult:
         action: RemediationAction,
         source: Path,
         error: str,
-        error_code: Optional[int] = None,
+        error_code: int | None = None,
     ) -> "RemediationResult":
         """Create a failure result."""
         return cls(

@@ -8,14 +8,13 @@ Runs on a schedule or on-demand via API.
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import SensitivityLabel, Tenant
+from openlabels.server.models import SensitivityLabel
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +244,7 @@ async def _get_graph_token(
     tenant_id: str,
     client_id: str,
     client_secret: str,
-) -> Optional[str]:
+) -> str | None:
     """Get OAuth2 access token for Microsoft Graph API."""
     if not HTTPX_AVAILABLE:
         return None
@@ -287,7 +286,7 @@ async def _get_graph_token(
     return None
 
 
-async def _fetch_labels_from_graph(token: str) -> Optional[list[dict]]:
+async def _fetch_labels_from_graph(token: str) -> list[dict] | None:
     """Fetch sensitivity labels from Microsoft Graph API."""
     if not HTTPX_AVAILABLE:
         return None

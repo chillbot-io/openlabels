@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from openlabels import __version__
+from openlabels.jobs.scheduler import DatabaseScheduler, get_scheduler
+from openlabels.server.cache import close_cache, get_cache_manager
 from openlabels.server.config import get_settings
-from openlabels.server.db import init_db, close_db
-from openlabels.server.cache import get_cache_manager, close_cache
+from openlabels.server.db import close_db, init_db
 from openlabels.server.logging import setup_logging
 from openlabels.server.sentry import init_sentry
-from openlabels.jobs.scheduler import get_scheduler, DatabaseScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Purge expired sessions and stale pending-auth entries on startup
     try:
-        from openlabels.server.session import SessionStore, PendingAuthStore
         from openlabels.server.db import get_session_context
+        from openlabels.server.session import PendingAuthStore, SessionStore
 
         async with get_session_context() as db_session:
             ss = SessionStore(db_session)
@@ -71,8 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Rate limiter (Redis with in-memory fallback)
     if settings.rate_limit.enabled:
         try:
-            from openlabels.server.middleware.rate_limit import create_limiter
             import openlabels.server.app as _app_module
+            from openlabels.server.middleware.rate_limit import create_limiter
 
             configured_limiter = create_limiter()
             app.state.limiter = configured_limiter
@@ -185,6 +185,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             if settings.monitoring.tenant_id:
                 from uuid import UUID as _UUID
+
                 from openlabels.monitoring.registry import populate_cache_from_db
                 from openlabels.server.db import get_session_context
 
@@ -216,6 +217,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ):
         try:
             from uuid import UUID as _UUID
+
             from openlabels.monitoring.registry import periodic_cache_sync
 
             monitoring_sync_task = asyncio.create_task(
@@ -330,13 +332,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _fanotify_provider = None
     if settings.monitoring.enabled and settings.monitoring.stream_enabled:
         try:
-            from openlabels.monitoring.stream_manager import EventStreamManager
-            from openlabels.monitoring.scan_trigger import ScanTriggerBuffer
-            from openlabels.monitoring.registry import get_watched_file, get_watched_files
             from openlabels.core.change_providers import (
-                USNChangeProvider,
                 FanotifyChangeProvider,
+                USNChangeProvider,
             )
+            from openlabels.monitoring.registry import get_watched_file, get_watched_files
+            from openlabels.monitoring.scan_trigger import ScanTriggerBuffer
+            from openlabels.monitoring.stream_manager import EventStreamManager
 
             stream_providers = []
             change_providers = []
@@ -515,6 +517,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             if settings.monitoring.tenant_id:
                 from uuid import UUID as _UUID
+
                 from openlabels.monitoring.registry import sync_cache_to_db
                 from openlabels.server.db import get_session_context
 

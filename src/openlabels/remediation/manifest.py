@@ -7,10 +7,9 @@ operation.
 
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -27,10 +26,10 @@ class QuarantineEntry:
     reason: str
     risk_tier: str
     triggered_by: str
-    scan_job_id: Optional[str] = None
-    file_hash: Optional[str] = None  # SHA-256 before move
+    scan_job_id: str | None = None
+    file_hash: str | None = None  # SHA-256 before move
     restored: bool = False
-    restored_at: Optional[str] = None
+    restored_at: str | None = None
 
 
 class QuarantineManifest:

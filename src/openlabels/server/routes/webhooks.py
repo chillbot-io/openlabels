@@ -26,15 +26,14 @@ from __future__ import annotations
 
 import hmac
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Query, Request, Response, status
 
-from openlabels.server.config import get_settings
 from openlabels.monitoring.notification_queue import (
-    push_m365_notification,
     push_graph_notification,
+    push_m365_notification,
 )
+from openlabels.server.config import get_settings
 
 logger = logging.getLogger(__name__)
 

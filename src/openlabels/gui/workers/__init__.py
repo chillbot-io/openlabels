@@ -8,7 +8,7 @@ Workers:
 """
 
 try:
-    from .scan_worker import ScanWorker, LabelWorker, APIWorker
+    from .scan_worker import APIWorker, LabelWorker, ScanWorker
 
     __all__ = [
         "ScanWorker",

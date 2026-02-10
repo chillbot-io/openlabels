@@ -2,27 +2,26 @@
 Main window for the OpenLabels GUI.
 """
 
-from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtWidgets import (
-        QMainWindow,
-        QWidget,
-        QVBoxLayout,
-        QHBoxLayout,
-        QTabWidget,
-        QLabel,
-        QStatusBar,
-        QMenuBar,
-        QMenu,
-        QToolBar,
-        QMessageBox,
-    )
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import (
+        QHBoxLayout,
+        QLabel,
+        QMainWindow,
+        QMenu,
+        QMenuBar,
+        QMessageBox,
+        QStatusBar,
+        QTabWidget,
+        QToolBar,
+        QVBoxLayout,
+        QWidget,
+    )
 
     PYSIDE_AVAILABLE = True
 except ImportError:
@@ -33,15 +32,15 @@ except ImportError:
 
 if PYSIDE_AVAILABLE:
     from openlabels.gui.widgets.dashboard_widget import DashboardWidget
-    from openlabels.gui.widgets.scan_widget import ScanWidget
-    from openlabels.gui.widgets.results_widget import ResultsWidget
-    from openlabels.gui.widgets.targets_widget import TargetsWidget
-    from openlabels.gui.widgets.schedules_widget import SchedulesWidget
-    from openlabels.gui.widgets.labels_widget import LabelsWidget
     from openlabels.gui.widgets.file_detail_widget import FileDetailWidget
-    from openlabels.gui.widgets.settings_widget import SettingsWidget
-    from openlabels.gui.widgets.monitoring_widget import MonitoringWidget
     from openlabels.gui.widgets.health_widget import HealthWidget
+    from openlabels.gui.widgets.labels_widget import LabelsWidget
+    from openlabels.gui.widgets.monitoring_widget import MonitoringWidget
+    from openlabels.gui.widgets.results_widget import ResultsWidget
+    from openlabels.gui.widgets.scan_widget import ScanWidget
+    from openlabels.gui.widgets.schedules_widget import SchedulesWidget
+    from openlabels.gui.widgets.settings_widget import SettingsWidget
+    from openlabels.gui.widgets.targets_widget import TargetsWidget
     from openlabels.gui.workers.scan_worker import APIWorker
 
     class MainWindow(QMainWindow):
@@ -51,7 +50,7 @@ if PYSIDE_AVAILABLE:
             super().__init__()
 
             self.server_url = server_url
-            self._api_worker: Optional[APIWorker] = None
+            self._api_worker: APIWorker | None = None
 
             self.setWindowTitle("OpenLabels")
             self.setMinimumSize(1200, 800)

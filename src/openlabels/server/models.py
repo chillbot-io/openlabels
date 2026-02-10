@@ -13,6 +13,8 @@ from typing import Optional
 from uuid import UUID as PyUUID
 
 from sqlalchemy import (
+    JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -21,16 +23,14 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    BigInteger,
-    JSON,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB as PG_JSONB, ENUM
+from sqlalchemy.dialects.postgresql import ENUM, UUID
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
-
 
 # =============================================================================
 # CROSS-DATABASE JSON TYPE
@@ -177,7 +177,7 @@ class Tenant(Base):
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    azure_tenant_id: Mapped[Optional[str]] = mapped_column(String(36))
+    azure_tenant_id: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -198,9 +198,9 @@ class User(Base):
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    name: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(UserRoleEnum, default="viewer")
-    azure_oid: Mapped[Optional[str]] = mapped_column(String(36))  # Azure AD object ID
+    azure_oid: Mapped[str | None] = mapped_column(String(36))  # Azure AD object ID
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -223,7 +223,7 @@ class ScanTarget(Base):
     adapter: Mapped[str] = mapped_column(AdapterTypeEnum, nullable=False)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False)  # Adapter-specific config
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -245,11 +245,11 @@ class ScanSchedule(Base):
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
-    cron: Mapped[Optional[str]] = mapped_column(String(100))  # Cron expression
+    cron: Mapped[str | None] = mapped_column(String(100))  # Cron expression
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -269,18 +269,18 @@ class ScanJob(Base):
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    schedule_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("scan_schedules.id"))
+    schedule_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_schedules.id"))
     target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
-    target_name: Mapped[Optional[str]] = mapped_column(String(255))  # Denormalized for display/history
-    name: Mapped[Optional[str]] = mapped_column(String(255))
+    target_name: Mapped[str | None] = mapped_column(String(255))  # Denormalized for display/history
+    name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(JobStatusEnum, default="pending")
-    progress: Mapped[Optional[dict]] = mapped_column(JSONB)  # {files_scanned, files_total, current_file}
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    progress: Mapped[dict | None] = mapped_column(JSONB)  # {files_scanned, files_total, current_file}
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     files_scanned: Mapped[int] = mapped_column(Integer, default=0)
     files_with_pii: Mapped[int] = mapped_column(Integer, default=0)
-    error: Mapped[Optional[str]] = mapped_column(Text)
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -307,42 +307,42 @@ class ScanResult(Base):
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_size: Mapped[Optional[int]] = mapped_column(BigInteger)
-    file_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    content_hash: Mapped[Optional[str]] = mapped_column(String(64))  # SHA-256
-    adapter_item_id: Mapped[Optional[str]] = mapped_column(String(512))  # Original adapter file ID (e.g. Graph API drive item ID)
+    file_size: Mapped[int | None] = mapped_column(BigInteger)
+    file_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA-256
+    adapter_item_id: Mapped[str | None] = mapped_column(String(512))  # Original adapter file ID (e.g. Graph API drive item ID)
 
     # Risk scoring
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-100
     risk_tier: Mapped[str] = mapped_column(RiskTierEnum, nullable=False)
 
     # Score breakdown
-    content_score: Mapped[Optional[float]] = mapped_column(Float)
-    exposure_multiplier: Mapped[Optional[float]] = mapped_column(Float)
-    co_occurrence_rules: Mapped[Optional[list[str]]] = mapped_column(JSONB)  # List stored as JSON for cross-db compat
+    content_score: Mapped[float | None] = mapped_column(Float)
+    exposure_multiplier: Mapped[float | None] = mapped_column(Float)
+    co_occurrence_rules: Mapped[list[str] | None] = mapped_column(JSONB)  # List stored as JSON for cross-db compat
 
     # Exposure
-    exposure_level: Mapped[Optional[str]] = mapped_column(ExposureLevelEnum)
-    owner: Mapped[Optional[str]] = mapped_column(String(255))
+    exposure_level: Mapped[str | None] = mapped_column(ExposureLevelEnum)
+    owner: Mapped[str | None] = mapped_column(String(255))
 
     # Entity summary
     entity_counts: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {"SSN": 5, "CREDIT_CARD": 2}
     total_entities: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Detailed findings (optional)
-    findings: Mapped[Optional[dict]] = mapped_column(JSONB)
+    findings: Mapped[dict | None] = mapped_column(JSONB)
 
     # Policy violations (Phase J)
-    policy_violations: Mapped[Optional[list]] = mapped_column(JSONB)
+    policy_violations: Mapped[list | None] = mapped_column(JSONB)
 
     # Labeling status
-    current_label_id: Mapped[Optional[str]] = mapped_column(String(36))
-    current_label_name: Mapped[Optional[str]] = mapped_column(String(255))
-    recommended_label_id: Mapped[Optional[str]] = mapped_column(String(36))
-    recommended_label_name: Mapped[Optional[str]] = mapped_column(String(255))
+    current_label_id: Mapped[str | None] = mapped_column(String(36))
+    current_label_name: Mapped[str | None] = mapped_column(String(255))
+    recommended_label_id: Mapped[str | None] = mapped_column(String(36))
+    recommended_label_name: Mapped[str | None] = mapped_column(String(255))
     label_applied: Mapped[bool] = mapped_column(Boolean, default=False)
-    label_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    label_error: Mapped[Optional[str]] = mapped_column(Text)
+    label_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    label_error: Mapped[str | None] = mapped_column(Text)
 
     # Timestamps
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -370,10 +370,10 @@ class SensitivityLabel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # MIP label GUID
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    priority: Mapped[Optional[int]] = mapped_column(Integer)
-    color: Mapped[Optional[str]] = mapped_column(String(7))  # Hex color
-    parent_id: Mapped[Optional[str]] = mapped_column(String(36))
+    description: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[int | None] = mapped_column(Integer)
+    color: Mapped[str | None] = mapped_column(String(7))  # Hex color
+    parent_id: Mapped[str | None] = mapped_column(String(36))
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -395,7 +395,7 @@ class LabelRule(Base):
     match_value: Mapped[str] = mapped_column(String(100), nullable=False)  # 'CRITICAL' | 'SSN'
     label_id: Mapped[str] = mapped_column(ForeignKey("sensitivity_labels.id"), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0)
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -413,11 +413,11 @@ class AuditLog(Base):
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    user_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     action: Mapped[str] = mapped_column(AuditActionEnum, nullable=False)
-    resource_type: Mapped[Optional[str]] = mapped_column(String(50))
-    resource_id: Mapped[Optional[PyUUID]] = mapped_column(UUID(as_uuid=True))
-    details: Mapped[Optional[dict]] = mapped_column(JSONB)
+    resource_type: Mapped[str | None] = mapped_column(String(50))
+    resource_id: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True))
+    details: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -438,12 +438,12 @@ class JobQueue(Base):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=50)  # 0-100
     status: Mapped[str] = mapped_column(JobStatusEnum, default="pending")
-    scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    worker_id: Mapped[Optional[str]] = mapped_column(String(100))
-    result: Mapped[Optional[dict]] = mapped_column(JSONB)
-    error: Mapped[Optional[str]] = mapped_column(Text)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker_id: Mapped[str | None] = mapped_column(String(100))
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=3)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -482,16 +482,16 @@ class FolderInventory(Base):
 
     # Folder metadata
     file_count: Mapped[int] = mapped_column(Integer, default=0)
-    total_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
-    folder_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    total_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    folder_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Scan tracking
-    last_scanned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    last_scan_job_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("scan_jobs.id"))
+    last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_scan_job_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_jobs.id"))
 
     # Risk summary for folder
     has_sensitive_files: Mapped[bool] = mapped_column(Boolean, default=False)
-    highest_risk_tier: Mapped[Optional[str]] = mapped_column(RiskTierEnum)
+    highest_risk_tier: Mapped[str | None] = mapped_column(RiskTierEnum)
     total_entities_found: Mapped[int] = mapped_column(Integer, default=0)
 
     # Timestamps
@@ -521,7 +521,7 @@ class FileInventory(Base):
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
-    folder_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("folder_inventory.id"))
+    folder_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("folder_inventory.id"))
 
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -529,9 +529,9 @@ class FileInventory(Base):
     adapter: Mapped[str] = mapped_column(AdapterTypeEnum, nullable=False)
 
     # Content tracking for delta scans
-    content_hash: Mapped[Optional[str]] = mapped_column(String(64))  # SHA-256
-    file_size: Mapped[Optional[int]] = mapped_column(BigInteger)
-    file_modified: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA-256
+    file_size: Mapped[int | None] = mapped_column(BigInteger)
+    file_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Risk information
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -540,13 +540,13 @@ class FileInventory(Base):
     total_entities: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Exposure
-    exposure_level: Mapped[Optional[str]] = mapped_column(ExposureLevelEnum)
-    owner: Mapped[Optional[str]] = mapped_column(String(255))
+    exposure_level: Mapped[str | None] = mapped_column(ExposureLevelEnum)
+    owner: Mapped[str | None] = mapped_column(String(255))
 
     # Label tracking
-    current_label_id: Mapped[Optional[str]] = mapped_column(String(36))
-    current_label_name: Mapped[Optional[str]] = mapped_column(String(255))
-    label_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    current_label_id: Mapped[str | None] = mapped_column(String(36))
+    current_label_name: Mapped[str | None] = mapped_column(String(255))
+    label_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Scan tracking
     last_scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -590,7 +590,7 @@ class RemediationAction(Base):
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    file_inventory_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("file_inventory.id"))
+    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id"))
 
     # Action details
     action_type: Mapped[str] = mapped_column(RemediationActionTypeEnum, nullable=False)
@@ -598,23 +598,23 @@ class RemediationAction(Base):
 
     # File paths
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
-    dest_path: Mapped[Optional[str]] = mapped_column(Text)  # For quarantine
+    dest_path: Mapped[str | None] = mapped_column(Text)  # For quarantine
 
     # Execution details
     performed_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    principals: Mapped[Optional[dict]] = mapped_column(JSONB)  # For lockdown: allowed principals
-    previous_acl: Mapped[Optional[str]] = mapped_column(Text)  # Base64 encoded for rollback
+    principals: Mapped[dict | None] = mapped_column(JSONB)  # For lockdown: allowed principals
+    previous_acl: Mapped[str | None] = mapped_column(Text)  # Base64 encoded for rollback
 
     # Flags
     dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
-    error: Mapped[Optional[str]] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
 
     # Rollback reference
-    rollback_of_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("remediation_actions.id"))
+    rollback_of_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("remediation_actions.id"))
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Self-referential relationship for rollbacks
     rollback_of: Mapped[Optional["RemediationAction"]] = relationship(
@@ -645,7 +645,7 @@ class MonitoredFile(Base):
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    file_inventory_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("file_inventory.id"))
+    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id"))
 
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -659,11 +659,11 @@ class MonitoredFile(Base):
 
     # Statistics
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    last_event_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     access_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Who enabled monitoring
-    enabled_by: Mapped[Optional[str]] = mapped_column(String(255))
+    enabled_by: Mapped[str | None] = mapped_column(String(255))
 
     __table_args__ = (
         Index('ix_monitored_files_tenant_path', 'tenant_id', 'file_path', unique=True),
@@ -694,24 +694,24 @@ class FileAccessEvent(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # User info
-    user_sid: Mapped[Optional[str]] = mapped_column(String(100))  # Windows SID or Linux UID
-    user_name: Mapped[Optional[str]] = mapped_column(String(255))
-    user_domain: Mapped[Optional[str]] = mapped_column(String(255))
+    user_sid: Mapped[str | None] = mapped_column(String(100))  # Windows SID or Linux UID
+    user_name: Mapped[str | None] = mapped_column(String(255))
+    user_domain: Mapped[str | None] = mapped_column(String(255))
 
     # Process info
-    process_name: Mapped[Optional[str]] = mapped_column(String(255))
-    process_id: Mapped[Optional[int]] = mapped_column(Integer)
+    process_name: Mapped[str | None] = mapped_column(String(255))
+    process_id: Mapped[int | None] = mapped_column(Integer)
 
     # Event source info
-    event_id: Mapped[Optional[int]] = mapped_column(Integer)  # Windows Event ID or audit serial
-    event_source: Mapped[Optional[str]] = mapped_column(String(50))  # 'windows_sacl', 'auditd'
+    event_id: Mapped[int | None] = mapped_column(Integer)  # Windows Event ID or audit serial
+    event_source: Mapped[str | None] = mapped_column(String(50))  # 'windows_sacl', 'auditd'
 
     # Timing
     event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Raw event for debugging (optional, can be disabled for space)
-    raw_event: Mapped[Optional[dict]] = mapped_column(JSONB)
+    raw_event: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (
         # Primary query: "who accessed this file recently?"
@@ -745,8 +745,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Secure token
-    tenant_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("tenants.id"))
-    user_id: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    tenant_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("tenants.id"))
+    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
 
     # Session data (tokens, claims)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -799,8 +799,8 @@ class TenantSettings(Base):
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), unique=True, nullable=False)
 
     # Azure AD configuration
-    azure_tenant_id: Mapped[Optional[str]] = mapped_column(String(36))
-    azure_client_id: Mapped[Optional[str]] = mapped_column(String(36))
+    azure_tenant_id: Mapped[str | None] = mapped_column(String(36))
+    azure_client_id: Mapped[str | None] = mapped_column(String(36))
     azure_client_secret_set: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Scan configuration
@@ -813,7 +813,7 @@ class TenantSettings(Base):
 
     # Audit fields
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    updated_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    updated_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
 
     __table_args__ = (
         Index('ix_tenant_settings_tenant_id', 'tenant_id', unique=True),
@@ -834,7 +834,7 @@ class Policy(Base):
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
     framework: Mapped[str] = mapped_column(String(50), nullable=False)  # hipaa, gdpr, pci_dss, soc2 …
     risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="high")
     enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
@@ -844,7 +844,7 @@ class Policy(Base):
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
 
     __table_args__ = (
         Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
@@ -871,19 +871,19 @@ class Report(Base):
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)  # executive_summary, compliance_report, …
     format: Mapped[str] = mapped_column(String(10), nullable=False)  # html, pdf, csv
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")  # pending, generated, distributed, failed
-    filters: Mapped[Optional[dict]] = mapped_column(JSONB)  # Query filters used to generate
-    result_path: Mapped[Optional[str]] = mapped_column(Text)  # Storage path for generated file
-    result_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
-    error: Mapped[Optional[str]] = mapped_column(Text)
+    filters: Mapped[dict | None] = mapped_column(JSONB)  # Query filters used to generate
+    result_path: Mapped[str | None] = mapped_column(Text)  # Storage path for generated file
+    result_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    error: Mapped[str | None] = mapped_column(Text)
 
     # Distribution
-    distributed_to: Mapped[Optional[list]] = mapped_column(JSONB)  # [{"type": "email", "to": [...]}]
-    distributed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    distributed_to: Mapped[list | None] = mapped_column(JSONB)  # [{"type": "email", "to": [...]}]
+    distributed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[Optional[PyUUID]] = mapped_column(ForeignKey("users.id"))
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
 
     __table_args__ = (
         Index('ix_reports_tenant_type', 'tenant_id', 'report_type'),

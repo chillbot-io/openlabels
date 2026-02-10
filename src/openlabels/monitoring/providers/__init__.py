@@ -16,8 +16,8 @@ Providers
 """
 
 from .base import EventProvider, RawAccessEvent
-from .windows import WindowsSACLProvider
 from .linux import AuditdProvider
+from .windows import WindowsSACLProvider
 
 # M365AuditProvider and GraphWebhookProvider are imported lazily
 # (they pull in httpx and GraphClient at import time).  Use:

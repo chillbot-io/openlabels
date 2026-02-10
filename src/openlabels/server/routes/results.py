@@ -12,30 +12,30 @@ Cursor-based pagination is more efficient for large datasets as it:
 
 import logging
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.server.schemas.pagination import (
-    PaginatedResponse,
-    PaginationParams,
-    CursorPaginatedResponse,
-    CursorPaginationParams,
-    create_paginated_response,
-)
+from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
 from openlabels.server.dependencies import (
-    ResultServiceDep,
-    TenantContextDep,
     AdminContextDep,
     DbSessionDep,
+    ResultServiceDep,
+    TenantContextDep,
 )
-from openlabels.exceptions import NotFoundError, BadRequestError, InternalError
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
-from sqlalchemy.exc import SQLAlchemyError
+from openlabels.server.schemas.pagination import (
+    CursorPaginatedResponse,
+    CursorPaginationParams,
+    PaginatedResponse,
+    PaginationParams,
+    create_paginated_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +49,15 @@ class ResultResponse(BaseModel):
     job_id: UUID
     file_path: str
     file_name: str
-    file_size: Optional[int] = None
+    file_size: int | None = None
     risk_score: int
     risk_tier: str
     entity_counts: dict
     total_entities: int
-    exposure_level: Optional[str] = None
-    owner: Optional[str] = None
-    current_label_name: Optional[str] = None
-    recommended_label_name: Optional[str] = None
+    exposure_level: str | None = None
+    owner: str | None = None
+    current_label_name: str | None = None
+    recommended_label_name: str | None = None
     label_applied: bool = False
     scanned_at: datetime
 
@@ -68,13 +68,13 @@ class ResultResponse(BaseModel):
 class ResultDetailResponse(ResultResponse):
     """Detailed scan result with findings."""
 
-    content_score: Optional[float] = None
-    exposure_multiplier: Optional[float] = None
-    co_occurrence_rules: Optional[list[str]] = None
-    findings: Optional[dict] = None
-    policy_violations: Optional[list[dict]] = None
-    label_applied_at: Optional[datetime] = None
-    label_error: Optional[str] = None
+    content_score: float | None = None
+    exposure_multiplier: float | None = None
+    co_occurrence_rules: list[str] | None = None
+    findings: dict | None = None
+    policy_violations: list[dict] | None = None
+    label_applied_at: datetime | None = None
+    label_error: str | None = None
 
 
 class ResultStats(BaseModel):
@@ -96,9 +96,9 @@ class ResultStats(BaseModel):
 async def list_results(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
@@ -124,9 +124,9 @@ async def list_results(
 async def list_results_cursor(
     db: DbSessionDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_pii: Optional[bool] = Query(None, description="Filter files with PII"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
     """
@@ -136,6 +136,7 @@ async def list_results_cursor(
     stable pagination even when data changes between requests.
     """
     from sqlalchemy import select
+
     from openlabels.server.models import ScanResult
     from openlabels.server.schemas.pagination import cursor_paginate_query
 
@@ -174,7 +175,7 @@ async def list_results_cursor(
 async def get_result_stats(
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, description="Filter by job ID"),
+    job_id: UUID | None = Query(None, description="Filter by job ID"),
 ) -> ResultStats:
     """
     Get aggregated statistics for scan results using efficient SQL aggregation.
@@ -204,9 +205,9 @@ async def export_results(
     request: Request,
     result_service: ResultServiceDep,
     _tenant: TenantContextDep,
-    job_id: Optional[UUID] = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
-    risk_tier: Optional[Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]] = Query(None, description="Filter by risk tier"),
-    has_label: Optional[str] = Query(None, description="Filter by label status"),
+    job_id: UUID | None = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
+    risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    has_label: str | None = Query(None, description="Filter by label status"),
     format: str = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
     """Export scan results as CSV or JSON.
@@ -399,7 +400,6 @@ async def delete_result(
     _admin: AdminContextDep,
 ):
     """Delete a single scan result."""
-    from openlabels.server.models import ScanResult
 
     result = await result_service.get_result(result_id)
     if not result:
@@ -469,7 +469,7 @@ async def apply_recommended_label(
         raise InternalError(
             message="Database error occurred while applying label",
             details={"error_code": ErrorCode.DATABASE_ERROR},
-        )
+        ) from e
 
 
 @router.post("/{result_id}/rescan")
@@ -481,8 +481,8 @@ async def rescan_file(
     admin: AdminContextDep,
 ):
     """Rescan a specific file."""
-    from openlabels.server.models import ScanJob
     from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanJob
 
     result = await result_service.get_result(result_id)
     if not result:

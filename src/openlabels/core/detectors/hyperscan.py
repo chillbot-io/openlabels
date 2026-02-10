@@ -17,16 +17,16 @@ Performance (typical on modern CPU):
 import logging
 from collections.abc import Sequence
 
-from ..types import Span, Tier
-from .base import BaseDetector
-from .registry import register_detector
 from ..agents.hyperscan_matcher import (
-    HyperscanMatcher,
     HYPERSCAN_AVAILABLE,
     PII_PATTERNS,
+    HyperscanMatcher,
     Pattern,
     PatternFlags,
 )
+from ..types import Span, Tier
+from .base import BaseDetector
+from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 

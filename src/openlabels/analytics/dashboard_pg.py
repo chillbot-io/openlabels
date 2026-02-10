@@ -273,7 +273,9 @@ class PostgresDashboardService:
         return rows_out, total
 
     async def get_access_stats(self, tenant_id: UUID) -> AccessStats:
-        from datetime import timedelta, timezone as tz
+        from datetime import timedelta
+        from datetime import timezone as tz
+
         from openlabels.server.models import FileAccessEvent
 
         session = await self._get_session()

@@ -25,15 +25,14 @@ import logging
 import re
 import threading
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass, field
 
 import httpx
 
 from openlabels.adapters.base import FileInfo
-
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class CachedLabel:
     description: str
     color: str
     priority: int
-    parent_id: Optional[str]
+    parent_id: str | None
     cached_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
@@ -92,7 +91,7 @@ class LabelCache:
 
         self._labels: dict[str, CachedLabel] = {}
         self._labels_by_name: dict[str, str] = {}  # name -> id mapping
-        self._last_refresh: Optional[datetime] = None
+        self._last_refresh: datetime | None = None
         self._ttl_seconds = 300  # 5 minutes default
         self._max_labels = 1000
         self._cache_lock = threading.RLock()
@@ -111,14 +110,14 @@ class LabelCache:
         age = (datetime.now(timezone.utc) - self._last_refresh).total_seconds()
         return age > self._ttl_seconds
 
-    def get(self, label_id: str) -> Optional[CachedLabel]:
+    def get(self, label_id: str) -> CachedLabel | None:
         """Get a label by ID."""
         with self._cache_lock:
             if self.is_expired():
                 return None
             return self._labels.get(label_id)
 
-    def get_by_name(self, name: str) -> Optional[CachedLabel]:
+    def get_by_name(self, name: str) -> CachedLabel | None:
         """Get a label by name."""
         with self._cache_lock:
             if self.is_expired():
@@ -194,10 +193,10 @@ class LabelResult:
     """Result of a labeling operation."""
 
     success: bool
-    label_id: Optional[str] = None
-    label_name: Optional[str] = None
-    method: Optional[str] = None
-    error: Optional[str] = None
+    label_id: str | None = None
+    label_name: str | None = None
+    method: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -237,7 +236,7 @@ class LocalLabelWriter:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply a sensitivity label to an Office document via custom properties.
 
@@ -341,7 +340,7 @@ class LocalLabelWriter:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply a sensitivity label to a PDF via document metadata."""
         try:
@@ -389,7 +388,7 @@ class LocalLabelWriter:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply a sensitivity label via a ``.openlabels`` sidecar file."""
         try:
@@ -511,7 +510,7 @@ class LocalLabelWriter:
     # Read helpers
     # ------------------------------------------------------------------
 
-    def get_local_label(self, file_path: str) -> Optional[dict]:
+    def get_local_label(self, file_path: str) -> dict | None:
         """Read the current sensitivity label from a local file.
 
         Checks (in order): sidecar file, Office custom properties, PDF
@@ -697,7 +696,7 @@ class LabelingEngine:
         self,
         method: str,
         endpoint: str,
-        json_data: Optional[dict] = None,
+        json_data: dict | None = None,
     ) -> httpx.Response:
         """Make a Graph API request with retry logic and rate limiting."""
         token = await self._get_access_token()
@@ -745,7 +744,7 @@ class LabelingEngine:
         self,
         file_info: FileInfo,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """
         Apply a sensitivity label to a file.
@@ -798,7 +797,7 @@ class LabelingEngine:
                 error=f"Unknown adapter type: {file_info.adapter}",
             )
 
-    async def get_current_label(self, file_info: FileInfo) -> Optional[dict]:
+    async def get_current_label(self, file_info: FileInfo) -> dict | None:
         """
         Get the current label on a file.
 
@@ -874,7 +873,7 @@ class LabelingEngine:
     # Cache convenience methods
     # -----------------------------------------------------------------
 
-    def get_cached_label(self, label_id: str) -> Optional[dict]:
+    def get_cached_label(self, label_id: str) -> dict | None:
         """
         Get a label from cache by ID.
 
@@ -887,7 +886,7 @@ class LabelingEngine:
         cached = _label_cache.get(label_id)
         return cached.to_dict() if cached else None
 
-    def get_cached_label_by_name(self, name: str) -> Optional[dict]:
+    def get_cached_label_by_name(self, name: str) -> dict | None:
         """
         Get a label from cache by name.
 
@@ -917,7 +916,7 @@ class LabelingEngine:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply label to local file using MIP SDK or metadata fallback."""
         # Try MIP SDK first (Windows only)
@@ -963,7 +962,7 @@ class LabelingEngine:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply label via Office metadata, falling back to sidecar on failure."""
         result = await asyncio.to_thread(
@@ -979,7 +978,7 @@ class LabelingEngine:
         self,
         file_path: str,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply label via PDF metadata, falling back to sidecar on failure."""
         result = await asyncio.to_thread(
@@ -1015,7 +1014,7 @@ class LabelingEngine:
         self,
         file_info: FileInfo,
         label_id: str,
-        label_name: Optional[str] = None,
+        label_name: str | None = None,
     ) -> LabelResult:
         """Apply label using Graph API for SharePoint/OneDrive files."""
         try:
@@ -1102,7 +1101,7 @@ class LabelingEngine:
                 error=f"HTTP error {e.response.status_code}",
             )
 
-    async def _resolve_share_url(self, url: str) -> Optional[str]:
+    async def _resolve_share_url(self, url: str) -> str | None:
         """Resolve a SharePoint/OneDrive URL to a Graph API driveItem path."""
         try:
             import base64
@@ -1168,7 +1167,7 @@ class LabelingEngine:
         except httpx.HTTPStatusError as e:
             return LabelResult(success=False, error=f"HTTP error {e.response.status_code}")
 
-    async def _get_graph_label(self, file_info: FileInfo) -> Optional[dict]:
+    async def _get_graph_label(self, file_info: FileInfo) -> dict | None:
         """Get label from SharePoint/OneDrive file via Graph API."""
         try:
             item_id = file_info.item_id or ""

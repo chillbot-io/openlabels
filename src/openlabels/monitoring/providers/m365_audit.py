@@ -32,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import httpx
 
@@ -128,7 +127,7 @@ class M365AuditProvider:
         client_id: str,
         client_secret: str,
         *,
-        monitored_site_urls: Optional[list[str]] = None,
+        monitored_site_urls: list[str] | None = None,
     ) -> None:
         self._tenant_id = tenant_id
         self._client_id = client_id
@@ -138,16 +137,16 @@ class M365AuditProvider:
         self._base_url = f"{_MANAGE_API_BASE}/{tenant_id}/activity/feed"
 
         # Token management (separate from Graph API)
-        self._access_token: Optional[str] = None
-        self._token_expires_at: Optional[datetime] = None
+        self._access_token: str | None = None
+        self._token_expires_at: datetime | None = None
         self._token_lock = asyncio.Lock()
 
         # HTTP client — created lazily, shared across calls
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
         # Subscription state (re-verified every 6 hours)
         self._subscription_active = False
-        self._subscription_verified_at: Optional[datetime] = None
+        self._subscription_verified_at: datetime | None = None
         self._subscription_ttl = timedelta(hours=6)
 
     @property
@@ -158,7 +157,7 @@ class M365AuditProvider:
     # EventProvider.collect()
     # ------------------------------------------------------------------
 
-    async def collect(self, since: Optional[datetime] = None) -> list[RawAccessEvent]:
+    async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Collect audit events from M365.
 
         Steps:
@@ -345,7 +344,7 @@ class M365AuditProvider:
         start_str = start_time.strftime("%Y-%m-%dT%H:%M:%S")
         end_str = end_time.strftime("%Y-%m-%dT%H:%M:%S")
 
-        url: Optional[str] = (
+        url: str | None = (
             f"{self._base_url}/subscriptions/content"
             f"?contentType={CONTENT_TYPE}"
             f"&startTime={start_str}"
@@ -424,8 +423,8 @@ class M365AuditProvider:
 
 def _parse_audit_record(
     record: dict,
-    monitored_site_urls: Optional[list[str]] = None,
-) -> Optional[RawAccessEvent]:
+    monitored_site_urls: list[str] | None = None,
+) -> RawAccessEvent | None:
     """Parse a single M365 audit record into a RawAccessEvent.
 
     Returns ``None`` if the record should be skipped (unmapped operation,

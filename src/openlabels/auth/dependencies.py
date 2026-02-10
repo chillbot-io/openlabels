@@ -6,21 +6,20 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.auth.oauth import TokenClaims, validate_token
 from openlabels.exceptions import AuthError
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
-from openlabels.server.models import User, Tenant
-from openlabels.auth.oauth import validate_token, TokenClaims
+from openlabels.server.models import Tenant, User
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ class CurrentUser(BaseModel):
     id: UUID
     tenant_id: UUID
     email: str
-    name: Optional[str]
+    name: str | None
     role: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -98,7 +97,7 @@ async def get_or_create_user(
 
 
 async def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> CurrentUser:
     """Get the current authenticated user."""
@@ -135,16 +134,16 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=str(e),
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from e
 
     user = await get_or_create_user(session, claims)
     return CurrentUser.model_validate(user)
 
 
 async def get_optional_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
-) -> Optional[CurrentUser]:
+) -> CurrentUser | None:
     """Get the current user if authenticated, or None if not.
 
     Use this for routes where authentication is optional (e.g., pages that
