@@ -182,7 +182,7 @@ class TestCookieSecurityFlags:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # Make a request that would set cookies (like auth callback)
                 response = await client.get(
                     "/api/auth/callback",

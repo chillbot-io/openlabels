@@ -453,10 +453,21 @@ class TestWorkerConfig:
 
     async def test_requires_running_worker(self, test_client, setup_jobs_data):
         """Should fail with BAD_REQUEST if no worker is running."""
-        response = await test_client.post(
-            "/api/v1/jobs/workers/config",
-            json={"concurrency": 4},
-        )
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        # Mock the state manager to return empty workers (no Redis needed)
+        mock_state_manager = MagicMock()
+        mock_state_manager.get_all_workers = AsyncMock(return_value={})
+
+        with patch(
+            "openlabels.jobs.worker.get_worker_state_manager",
+            new_callable=AsyncMock,
+            return_value=mock_state_manager,
+        ):
+            response = await test_client.post(
+                "/api/v1/jobs/workers/config",
+                json={"concurrency": 4},
+            )
         # Expect 400 when no worker is running
         assert response.status_code == 400
         data = response.json()

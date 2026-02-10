@@ -174,7 +174,7 @@ class TestLoginEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login")
 
                     # Should redirect
@@ -210,7 +210,7 @@ class TestLoginEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login?redirect_uri=/dashboard")
 
                     assert response.status_code == 302
@@ -241,7 +241,7 @@ class TestLoginEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/login")
 
                     assert response.status_code == 403
@@ -272,7 +272,7 @@ class TestLoginEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/login")
 
                     assert response.status_code == 403
@@ -309,7 +309,7 @@ class TestLoginEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     # Send request with existing session cookie
                     response = await client.get(
                         "/api/auth/login",
@@ -360,7 +360,7 @@ class TestLoginRedirectValidation:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     # Attempt external redirect
                     response = await client.get("/api/auth/login?redirect_uri=https://evil.com/steal")
 
@@ -394,7 +394,7 @@ class TestLoginRedirectValidation:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login?redirect_uri=//evil.com/path")
 
                     assert response.status_code == 302
@@ -426,7 +426,7 @@ class TestLoginRedirectValidation:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login?redirect_uri=/dashboard/settings")
 
                     assert response.status_code == 302
@@ -458,7 +458,7 @@ class TestLoginRedirectValidation:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login?redirect_uri=https://app.example.com/dashboard")
 
                     assert response.status_code == 302
@@ -490,7 +490,7 @@ class TestLoginRedirectValidation:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login?redirect_uri=javascript:alert(1)")
 
                     assert response.status_code == 302
@@ -531,7 +531,7 @@ class TestCallbackEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/callback?state=some-state")
 
                     assert response.status_code == 400
@@ -563,7 +563,7 @@ class TestCallbackEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/callback?code=some-code")
 
                     assert response.status_code == 400
@@ -595,7 +595,7 @@ class TestCallbackEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/callback?code=test-code&state=invalid-state")
 
                     assert response.status_code == 400
@@ -627,7 +627,7 @@ class TestCallbackEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get(
                         "/api/auth/callback?error=access_denied&error_description=User%20denied%20access"
                     )
@@ -691,7 +691,7 @@ class TestCallbackEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                         response = await client.get(f"/api/auth/callback?code=test-code&state={state}")
 
                         assert response.status_code == 302
@@ -745,7 +745,7 @@ class TestCallbackEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.get(f"/api/auth/callback?code=expired-code&state={state}")
 
                         assert response.status_code == 400
@@ -779,13 +779,13 @@ class TestCallbackEndpoint:
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()
-        mock_msal_app.acquire_token_by_authorization_code.side_effect = Exception("Network error")
+        mock_msal_app.acquire_token_by_authorization_code.side_effect = ConnectionError("Network error")
 
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.get(f"/api/auth/callback?code=test-code&state={state}")
 
                         assert response.status_code == 400
@@ -814,7 +814,7 @@ class TestCallbackEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/callback")
 
                     assert response.status_code == 302
@@ -855,8 +855,8 @@ class TestLogoutEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
-                    response = await client.get(
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
+                    response = await client.post(
                         "/api/auth/logout",
                         cookies={"openlabels_session": "logout-test-session"}
                     )
@@ -894,8 +894,8 @@ class TestLogoutEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
-                    response = await client.get(
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
+                    response = await client.post(
                         "/api/auth/logout",
                         cookies={"openlabels_session": "cookie-test-session"}
                     )
@@ -926,8 +926,8 @@ class TestLogoutEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
-                    response = await client.get("/api/auth/logout")
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
+                    response = await client.post("/api/auth/logout")
 
                     assert response.status_code == 302
                     location = response.headers.get("location")
@@ -955,8 +955,8 @@ class TestLogoutEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
-                    response = await client.get("/api/auth/logout")
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
+                    response = await client.post("/api/auth/logout")
 
                     assert response.status_code == 302
         finally:
@@ -1000,7 +1000,7 @@ class TestMeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "me-test-session"}
@@ -1029,7 +1029,7 @@ class TestMeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get("/api/auth/me")
 
                 assert response.status_code == 401
@@ -1050,7 +1050,7 @@ class TestMeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "nonexistent-session"}
@@ -1093,7 +1093,7 @@ class TestMeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "expired-token-session"}
@@ -1136,7 +1136,7 @@ class TestTokenEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/token",
                     cookies={"openlabels_session": "token-test-session"}
@@ -1164,7 +1164,7 @@ class TestTokenEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post("/api/auth/token")
 
                 assert response.status_code == 401
@@ -1212,7 +1212,7 @@ class TestTokenEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.post(
                             "/api/auth/token",
                             cookies={"openlabels_session": "refresh-test-session"}
@@ -1264,7 +1264,7 @@ class TestTokenEndpoint:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.post(
                             "/api/auth/token",
                             cookies={"openlabels_session": "failed-refresh-session"}
@@ -1315,7 +1315,7 @@ class TestAuthStatusEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get(
                         "/api/auth/status",
                         cookies={"openlabels_session": "status-test-session"}
@@ -1347,7 +1347,7 @@ class TestAuthStatusEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get("/api/auth/status")
 
                     assert response.status_code == 200
@@ -1389,7 +1389,7 @@ class TestAuthStatusEndpoint:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get(
                         "/api/auth/status",
                         cookies={"openlabels_session": "expired-status-session"}
@@ -1428,7 +1428,7 @@ class TestRevokeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/revoke",
                     cookies={"openlabels_session": "revoke-test-session"}
@@ -1460,7 +1460,7 @@ class TestRevokeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post("/api/auth/revoke")
 
                 assert response.status_code == 401
@@ -1480,7 +1480,7 @@ class TestRevokeEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/revoke",
                     cookies={"openlabels_session": "nonexistent-session"}
@@ -1532,7 +1532,7 @@ class TestLogoutAllEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/logout-all",
                     cookies={"openlabels_session": "user-session-0"}
@@ -1565,7 +1565,7 @@ class TestLogoutAllEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post("/api/auth/logout-all")
 
                 assert response.status_code == 401
@@ -1596,7 +1596,7 @@ class TestLogoutAllEndpoint:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/logout-all",
                     cookies={"openlabels_session": "no-user-id-session"}
@@ -1727,7 +1727,7 @@ class TestSessionCookieSecurity:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login")
 
                     set_cookie = response.headers.get("set-cookie", "")
@@ -1759,7 +1759,7 @@ class TestSessionCookieSecurity:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login")
 
                     set_cookie = response.headers.get("set-cookie", "")
@@ -1879,7 +1879,7 @@ class TestSQLInjectionPrevention:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 for payload in sql_injection_payloads:
                     response = await client.get(
                         "/api/auth/me",
@@ -1919,7 +1919,7 @@ class TestSQLInjectionPrevention:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     for payload in sql_payloads:
                         response = await client.get(f"/api/auth/login?redirect_uri={payload}")
                         # Should not cause server error
@@ -1957,7 +1957,7 @@ class TestSQLInjectionPrevention:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     for payload in sql_payloads:
                         response = await client.get(
                             f"/api/auth/callback?code=test&state={payload}"
@@ -2010,7 +2010,7 @@ class TestTokenTampering:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # First, verify original session works
                 response = await client.get(
                     "/api/auth/me",
@@ -2066,7 +2066,7 @@ class TestTokenTampering:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 for forged_id in forged_ids:
                     if not forged_id:
                         continue
@@ -2104,7 +2104,7 @@ class TestTokenTampering:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "mixed-expiry-session"}
@@ -2146,7 +2146,7 @@ class TestMalformedRequests:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 for value in malformed_values:
                     response = await client.get(
                         "/api/auth/me",
@@ -2178,7 +2178,7 @@ class TestMalformedRequests:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     # No parameters
                     response = await client.get("/api/auth/callback")
                     assert response.status_code == 400
@@ -2224,7 +2224,7 @@ class TestMalformedRequests:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                     for uri in unicode_uris:
                         try:
                             response = await client.get(f"/api/auth/login?redirect_uri={uri}")
@@ -2264,12 +2264,12 @@ class TestMalformedRequests:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 mock_cache = MagicMock()
                 mock_cache.is_redis_connected = False
-                with patch("openlabels.server.app.init_db", new_callable=AsyncMock), \
-                     patch("openlabels.server.app.close_db", new_callable=AsyncMock), \
-                     patch("openlabels.server.app.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
-                     patch("openlabels.server.app.close_cache", new_callable=AsyncMock):
+                with patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
+                     patch("openlabels.server.lifespan.close_db", new_callable=AsyncMock), \
+                     patch("openlabels.server.lifespan.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
+                     patch("openlabels.server.lifespan.close_cache", new_callable=AsyncMock):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         try:
                             response = await client.get(
                                 f"/api/auth/callback?code=test&state={large_state}"
@@ -2339,7 +2339,7 @@ class TestMultiTenantIsolation:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # User A should see tenant A data
                 response = await client.get(
                     "/api/auth/me",
@@ -2420,7 +2420,7 @@ class TestMultiTenantIsolation:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 # User A logs out of all sessions
                 response = await client.post(
                     "/api/auth/logout-all",
@@ -2493,7 +2493,7 @@ class TestCSRFProtection:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                         # First use of state should succeed
                         response = await client.get(f"/api/auth/callback?code=test&state={state}")
                         assert response.status_code == 302
@@ -2526,7 +2526,7 @@ class TestCSRFProtection:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     # Empty state
                     response = await client.get("/api/auth/callback?code=test&state=")
                     assert response.status_code == 400
@@ -2570,7 +2570,7 @@ class TestCSRFProtection:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.get(f"/api/auth/callback?code=test&state={state}")
                         # Should fail due to redirect URI mismatch
                         assert response.status_code == 400
@@ -2667,7 +2667,7 @@ class TestSessionFixation:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                         response = await client.get(
                             f"/api/auth/callback?code=test&state={state}",
                             cookies={"openlabels_session": "existing-session-to-invalidate"}
@@ -2723,7 +2723,7 @@ class TestTokenRefreshEdgeCases:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.post(
                     "/api/auth/token",
                     cookies={"openlabels_session": "no-refresh-session"}
@@ -2761,13 +2761,13 @@ class TestTokenRefreshEdgeCases:
         mock_settings.auth.client_secret = "test-secret"
 
         mock_msal_app = MagicMock()
-        mock_msal_app.acquire_token_by_refresh_token.side_effect = Exception("Network error")
+        mock_msal_app.acquire_token_by_refresh_token.side_effect = ConnectionError("Network error")
 
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.post(
                             "/api/auth/token",
                             cookies={"openlabels_session": "exception-refresh-session"}
@@ -2819,7 +2819,7 @@ class TestTokenRefreshEdgeCases:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.post(
                             "/api/auth/token",
                             cookies={"openlabels_session": "refresh-success-session"}
@@ -2872,12 +2872,14 @@ class TestSecureCookieFlag:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
                 # Use HTTPS base URL
-                async with AsyncClient(transport=transport, base_url="https://test", follow_redirects=False) as client:
+                async with AsyncClient(transport=transport, base_url="https://localhost", follow_redirects=False) as client:
                     response = await client.get("/api/auth/login")
 
+                    assert response.status_code == 302
                     set_cookie = response.headers.get("set-cookie", "")
                     # For HTTPS, secure flag should be set
-                    assert "secure" in set_cookie.lower() or response.status_code == 302
+                    if set_cookie:
+                        assert "secure" in set_cookie.lower()
         finally:
             auth_limiter.enabled = True
             app.dependency_overrides.clear()
@@ -2921,7 +2923,7 @@ class TestAzureADLoginFlow:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                         response = await client.get("/api/auth/login")
 
                         assert response.status_code == 302
@@ -2962,7 +2964,7 @@ class TestAzureADLoginFlow:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost", follow_redirects=False) as client:
                         response = await client.get("/api/auth/login?redirect_uri=/dashboard")
                         assert response.status_code == 302
 
@@ -3004,7 +3006,7 @@ class TestErrorResponseSecurity:
         try:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                     response = await client.get(
                         "/api/auth/callback?error=access_denied&error_description=AADSTS12345_Detailed_Internal_Error"
                     )
@@ -3054,7 +3056,7 @@ class TestErrorResponseSecurity:
             with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
                 with patch('openlabels.server.routes.auth._get_msal_app', return_value=mock_msal_app):
                     transport = ASGITransport(app=app)
-                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                         response = await client.get(f"/api/auth/callback?code=test&state={state}")
                         assert response.status_code == 400
 
@@ -3100,7 +3102,7 @@ class TestSessionStoreBehavior:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "no-claims-session"}
@@ -3136,7 +3138,7 @@ class TestSessionStoreBehavior:
 
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
                 response = await client.get(
                     "/api/auth/me",
                     cookies={"openlabels_session": "no-expiry-session"}

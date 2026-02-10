@@ -387,9 +387,18 @@ class TestWebSocketOriginValidation:
 class TestWebSocketAuthentication:
     """Tests for WebSocket session-based authentication."""
 
-    async def test_authenticate_dev_mode_creates_user(self, test_db):
-        """In dev mode (auth provider=none), authentication should auto-create dev user."""
+    async def test_authenticate_dev_mode_returns_dev_user(self, test_db):
+        """In dev mode (auth provider=none), authentication should return existing dev user."""
         from openlabels.server.routes.ws import authenticate_websocket
+        from openlabels.server.models import Tenant, User
+
+        # Pre-populate the dev tenant and user that the auth bootstrapper creates at startup
+        dev_tenant = Tenant(name="Dev Tenant", azure_tenant_id="dev-tenant")
+        test_db.add(dev_tenant)
+        await test_db.flush()
+        dev_user = User(tenant_id=dev_tenant.id, email="dev@localhost", name="Dev User", role="admin")
+        test_db.add(dev_user)
+        await test_db.flush()
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "none"
@@ -400,14 +409,14 @@ class TestWebSocketAuthentication:
             with patch('openlabels.server.routes.ws.get_session_factory') as mock_factory:
                 mock_factory.return_value = _mock_session_factory(test_db)
 
-                # Call authenticate (it handles dev mode internally with its own session)
+                # Call authenticate (it queries for existing dev tenant/user)
                 result = await authenticate_websocket(mock_websocket)
 
                 # In dev mode, should return user_id and tenant_id tuple
                 assert result is not None
                 user_id, tenant_id = result
-                assert user_id is not None
-                assert tenant_id is not None
+                assert user_id == dev_user.id
+                assert tenant_id == dev_tenant.id
 
     async def test_authenticate_no_session_cookie_rejected(self, test_db, setup_ws_test_data):
         """WebSocket without session cookie should be rejected."""
@@ -1288,7 +1297,10 @@ class TestWebSocketIntegration:
 
                         client = TestClient(app)
                         # In dev mode, connection should be accepted
-                        with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                        with client.websocket_connect(
+                            f"/ws/scans/{scan_job.id}",
+                            headers={"host": "localhost"},
+                        ) as websocket:
                             # Send ping
                             websocket.send_text("ping")
                             response = websocket.receive_text()
@@ -1331,7 +1343,10 @@ class TestWebSocketIntegration:
                             mock_wait.side_effect = asyncio.TimeoutError()
 
                             client = TestClient(app)
-                            with client.websocket_connect(f"/ws/scans/{scan_job.id}") as websocket:
+                            with client.websocket_connect(
+                                f"/ws/scans/{scan_job.id}",
+                                headers={"host": "localhost"},
+                            ) as websocket:
                                 # Should receive heartbeat after timeout
                                 data = websocket.receive_json()
                                 assert data["type"] == "heartbeat"

@@ -1073,7 +1073,6 @@ async def results_list_partial(
     from openlabels.server.pagination import (
         CursorPaginationParams,
         apply_cursor_pagination,
-        build_cursor_response,
     )
 
     results = []
@@ -1108,25 +1107,17 @@ async def results_list_partial(
             pagination_params = CursorPaginationParams(
                 cursor=cursor,
                 limit=page_size,
-                include_total=False,
             )
-            query, cursor_info = apply_cursor_pagination(
+            paginated = await apply_cursor_pagination(
+                session,
                 query,
                 ScanResult,
                 pagination_params,
-                sort_column=ScanResult.scanned_at,
-                sort_desc=True,
+                timestamp_column=ScanResult.scanned_at,
             )
-            result = await session.execute(query)
-            result_rows = list(result.scalars().all())
-
-            # Build cursor response
-            pagination_meta = build_cursor_response(result_rows, cursor_info)
-            has_more = pagination_meta.has_more
-            next_cursor = pagination_meta.cursor
-
-            # Trim extra result
-            result_rows = result_rows[:page_size]
+            result_rows = paginated.items
+            has_more = paginated.has_more
+            next_cursor = paginated.next_cursor
         else:
             # Offset-based pagination
             query = (
