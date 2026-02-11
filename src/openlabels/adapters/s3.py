@@ -22,6 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    FolderInfo,
     is_label_compatible,
 )
 
@@ -156,6 +157,63 @@ class S3Adapter:
                     continue
 
                 yield file_info
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List directory prefixes in the S3 bucket.
+
+        Uses ``Delimiter='/'`` to discover ``CommonPrefixes`` — the
+        standard way S3 exposes "folder" structure from flat key space.
+        """
+        client = self._ensure_client()
+        prefix = self._resolve_prefix(target)
+        # Ensure prefix ends with / so we list its children
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+
+        # Yield the target prefix itself as a folder
+        yield FolderInfo(
+            path=f"s3://{self._bucket}/{prefix}",
+            name=prefix.rstrip("/").rsplit("/", 1)[-1] or self._bucket,
+            adapter="s3",
+        )
+
+        async for folder_info in self._list_folder_prefixes(client, prefix, recursive):
+            yield folder_info
+
+    async def _list_folder_prefixes(
+        self,
+        client,
+        prefix: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Yield FolderInfo for each common prefix under *prefix*."""
+        paginator = client.get_paginator("list_objects_v2")
+        pages = await asyncio.to_thread(
+            lambda: list(paginator.paginate(
+                Bucket=self._bucket, Prefix=prefix, Delimiter="/",
+            ))
+        )
+
+        for page in pages:
+            for cp in page.get("CommonPrefixes", []):
+                folder_prefix = cp["Prefix"]
+                name = folder_prefix.rstrip("/").rsplit("/", 1)[-1]
+
+                yield FolderInfo(
+                    path=f"s3://{self._bucket}/{folder_prefix}",
+                    name=name,
+                    adapter="s3",
+                )
+
+                if recursive:
+                    async for sub in self._list_folder_prefixes(
+                        client, folder_prefix, recursive
+                    ):
+                        yield sub
 
     async def read_file(
         self,

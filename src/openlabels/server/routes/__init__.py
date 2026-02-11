@@ -58,10 +58,10 @@ def __getattr__(name: str):
         return _module_cache[name]
 
     valid_modules = {
-        "audit", "auth", "jobs", "scans", "results", "targets",
+        "audit", "auth", "browse", "jobs", "scans", "results", "targets",
         "schedules", "labels", "dashboard", "ws", "users",
         "remediation", "monitoring", "health", "settings",
-        "policies", "export", "reporting", "v1",
+        "policies", "export", "reporting", "webhooks", "v1",
     }
 
     if name in valid_modules:
@@ -78,6 +78,7 @@ __all__ = [
     "htmx_notify",
     "audit",
     "auth",
+    "browse",
     "jobs",
     "scans",
     "results",
@@ -94,5 +95,6 @@ __all__ = [
     "policies",
     "export",
     "reporting",
+    "webhooks",
     "v1",
 ]

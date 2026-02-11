@@ -105,6 +105,7 @@ class DuckDBEngine:
         ("scan_results", "scan_results/**/*.parquet"),
         ("file_inventory", "file_inventory/**/*.parquet"),
         ("folder_inventory", "folder_inventory/**/*.parquet"),
+        ("directory_tree", "directory_tree/**/*.parquet"),
         ("access_events", "access_events/**/*.parquet"),
         ("audit_log", "audit_log/**/*.parquet"),
         ("remediation_actions", "remediation_actions/**/*.parquet"),

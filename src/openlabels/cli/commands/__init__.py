@@ -26,6 +26,9 @@ from openlabels.cli.commands.export import export
 # Find command with filtering
 from openlabels.cli.commands.find import find
 
+# Directory tree index commands
+from openlabels.cli.commands.index import index
+
 # Heatmap visualization command
 from openlabels.cli.commands.heatmap import heatmap
 
@@ -72,6 +75,7 @@ __all__ = [
     "export",
     "monitor",
     "catalog",
+    "index",
     # Standalone commands
     "classify",
     "find",

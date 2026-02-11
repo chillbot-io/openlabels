@@ -24,6 +24,7 @@ from openlabels.cli.commands import (
     find,
     gui,
     heatmap,
+    index,
     labels,
     lock_down_cmd,
     models,
@@ -63,6 +64,7 @@ cli.add_command(labels)
 cli.add_command(export)
 cli.add_command(monitor)
 cli.add_command(catalog)
+cli.add_command(index)
 cli.add_command(models)
 
 # Register standalone commands

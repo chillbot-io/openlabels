@@ -290,4 +290,5 @@ class TestRunLoop:
 
         asyncio.create_task(stop_soon())
         await trigger.run(shutdown, tick_interval=0.05)
-        # Should exit without hanging
+        # Verify the shutdown event was set and run() returned
+        assert shutdown.is_set()

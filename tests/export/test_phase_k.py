@@ -130,7 +130,9 @@ class TestModuleStructure:
         """All adapter modules parse as valid Python."""
         for name in ["base", "splunk", "sentinel", "qradar", "elastic", "syslog_cef"]:
             src = Path(f"src/openlabels/export/adapters/{name}.py").read_text()
-            ast.parse(src)  # Will raise SyntaxError if invalid
+            tree = ast.parse(src)  # Will raise SyntaxError if invalid
+            class_defs = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+            assert len(class_defs) > 0, f"{name}.py should define at least one class"
 
     def test_all_adapters_have_format_name(self):
         """Every adapter class implements format_name()."""
@@ -161,7 +163,9 @@ class TestCLIExportSIEM:
 
     def test_cli_parses(self):
         src = Path("src/openlabels/cli/commands/export.py").read_text()
-        ast.parse(src)
+        tree = ast.parse(src)
+        func_names = [n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        assert len(func_names) > 0, "CLI export module should contain at least one function"
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig
+from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig, FolderInfo
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
 
@@ -207,3 +207,68 @@ class SharePointAdapter(BaseGraphAdapter):
     async def test_connection(self, config: dict) -> bool:
         """Test if we can connect to SharePoint."""
         return await self._test_connection("/sites?$top=1")
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List folders in a SharePoint site's default drive.
+
+        Args:
+            target: Site ID or site URL
+            recursive: Whether to descend into subdirectories
+        """
+        client = await self._get_client()
+
+        site_id = target
+        if target.startswith("https://"):
+            site_info = await client.get(f"/sites/{target.replace('https://', '')}")
+            site_id = site_info["id"]
+
+        drive = await client.get(f"/sites/{site_id}/drive")
+        drive_id = drive["id"]
+
+        # Yield root as a folder
+        root = await client.get(f"/sites/{site_id}/drives/{drive_id}/root")
+        yield self._folder_from_item(root, site_id=site_id)
+
+        async for folder in self._list_drive_folders(
+            client, site_id, drive_id, "/", recursive
+        ):
+            yield folder
+
+    async def _list_drive_folders(
+        self,
+        client: GraphClient,
+        site_id: str,
+        drive_id: str,
+        path: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Recursively list folders in a drive."""
+        if path == "/":
+            endpoint = f"/sites/{site_id}/drives/{drive_id}/root/children"
+        else:
+            endpoint = f"/sites/{site_id}/drives/{drive_id}/root:{path}:/children"
+
+        try:
+            items_iter = client.iter_all_pages(endpoint)
+        except (PermissionError, ConnectionError, TimeoutError,
+                httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.debug(f"Cannot list folders at {path} for site {site_id}: {e}")
+            return
+
+        async for item in items_iter:
+            if "folder" not in item:
+                continue
+
+            folder_info = self._folder_from_item(item, site_id=site_id)
+            yield folder_info
+
+            if recursive:
+                folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
+                async for sub in self._list_drive_folders(
+                    client, site_id, drive_id, folder_path, recursive
+                ):
+                    yield sub

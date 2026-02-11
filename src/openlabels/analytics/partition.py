@@ -32,6 +32,11 @@ def folder_inventory_path(tenant_id: UUID, target_id: UUID) -> str:
     return f"folder_inventory/tenant={tenant_id}/target={target_id}/snapshot.parquet"
 
 
+def directory_tree_path(tenant_id: UUID, target_id: UUID) -> str:
+    """Return the path for a directory-tree snapshot Parquet file."""
+    return f"directory_tree/tenant={tenant_id}/target={target_id}/snapshot.parquet"
+
+
 def access_event_partition(
     tenant_id: UUID,
     event_date: date | datetime,
