@@ -401,7 +401,7 @@ async def get_label_mappings(
     query = select(LabelRule).where(
         LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
-    )
+    ).limit(500)
     result = await db.execute(query)
     rules = result.scalars().all()
 
@@ -413,7 +413,7 @@ async def get_label_mappings(
     # Get available labels
     label_query = select(SensitivityLabel).where(
         SensitivityLabel.tenant_id == tenant_id
-    ).order_by(SensitivityLabel.priority)
+    ).order_by(SensitivityLabel.priority).limit(500)
     label_result = await db.execute(label_query)
     labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
 
@@ -476,7 +476,7 @@ async def update_label_mappings(
     existing_query = select(LabelRule).where(
         LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
-    )
+    ).limit(500)
     existing_result = await db.execute(existing_query)
     for rule in existing_result.scalars().all():
         await db.delete(rule)

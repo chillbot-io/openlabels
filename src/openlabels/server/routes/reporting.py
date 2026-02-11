@@ -102,6 +102,7 @@ async def _build_report_data(
     base_query = select(ScanResult).where(ScanResult.tenant_id == tenant_id)
     if job_id:
         base_query = base_query.where(ScanResult.job_id == job_id)
+    base_query = base_query.limit(100_000)
 
     result = await session.execute(base_query)
     rows = result.scalars().all()
@@ -194,6 +195,7 @@ async def _build_report_data(
     try:
         policy_result = await session.execute(
             select(Policy).where(Policy.tenant_id == tenant_id, Policy.enabled == True)  # noqa: E712
+            .limit(1000)
         )
         policies = policy_result.scalars().all()
         total_policies = len(policies)

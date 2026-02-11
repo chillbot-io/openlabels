@@ -438,6 +438,7 @@ async def detect_access_anomalies(
         .group_by(FileAccessEvent.user_name)
         .having(func.count() > 100)
     )
+    volume_query = volume_query.limit(100)
     volume_result = await session.execute(volume_query)
     for row in volume_result.all():
         anomalies.append({
@@ -463,6 +464,7 @@ async def detect_access_anomalies(
         .group_by(FileAccessEvent.user_name, FileAccessEvent.file_path)
         .having(func.count() > 5)
     )
+    failed_query = failed_query.limit(100)
     failed_result = await session.execute(failed_query)
     for row in failed_result.all():
         anomalies.append({

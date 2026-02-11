@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -64,6 +65,8 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
             all_results = []
             for file_path in files:
                 try:
+                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
@@ -194,6 +197,8 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
             all_results = []
             for fp in files:
                 try:
+                    if os.path.getsize(fp) > 200 * 1024 * 1024:
+                        continue
                     with open(fp, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(

@@ -220,6 +220,9 @@ class S3Storage:
     def read_parquet(self, path: str) -> pa.Table:
         key = self._key(path)
         response = self._s3.get_object(Bucket=self._bucket, Key=key)
+        content_length = response.get("ContentLength", 0)
+        if content_length > 500 * 1024 * 1024:
+            raise ValueError(f"S3 object too large: {content_length // 1024 // 1024} MB (limit 500 MB)")
         data = response["Body"].read()
         return pq.read_table(io.BytesIO(data))
 
@@ -267,6 +270,9 @@ class S3Storage:
     def read_bytes(self, path: str) -> bytes:
         key = self._key(path)
         response = self._s3.get_object(Bucket=self._bucket, Key=key)
+        content_length = response.get("ContentLength", 0)
+        if content_length > 500 * 1024 * 1024:
+            raise ValueError(f"S3 object too large: {content_length // 1024 // 1024} MB (limit 500 MB)")
         return response["Body"].read()
 
     def write_bytes(self, path: str, data: bytes) -> None:

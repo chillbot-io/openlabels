@@ -98,6 +98,9 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
         all_results = []
         for file_path in files:
             try:
+                file_size = os.path.getsize(file_path)
+                if file_size > 200 * 1024 * 1024:
+                    continue
                 with open(file_path, "rb") as f:
                     content = f.read()
                 result = await processor.process_file(

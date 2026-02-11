@@ -285,6 +285,7 @@ async def new_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled == True)  # noqa: E712
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -324,6 +325,7 @@ async def edit_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id)
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -795,7 +797,7 @@ async def findings_by_type_partial(
         query = select(ScanResult.entity_counts, ScanResult.risk_tier).where(
             ScanResult.tenant_id == user.tenant_id,
             ScanResult.entity_counts.isnot(None),
-        )
+        ).limit(50_000)
         result = await session.execute(query)
         rows = result.all()
 
@@ -1290,6 +1292,7 @@ async def labels_list_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
+            .limit(500)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1325,6 +1328,7 @@ async def label_mappings_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
+            .limit(500)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1356,6 +1360,7 @@ async def target_checkboxes_partial(
                 ScanTarget.enabled == True,  # noqa: E712
             )
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for target in result.scalars().all():
@@ -1405,6 +1410,7 @@ async def schedules_list_partial(
             select(ScanSchedule)
             .where(ScanSchedule.tenant_id == user.tenant_id)
             .order_by(desc(ScanSchedule.created_at))
+            .limit(500)
         )
         result = await session.execute(query)
         schedule_rows = result.scalars().all()

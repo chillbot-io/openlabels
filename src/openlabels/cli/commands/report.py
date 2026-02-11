@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -79,6 +80,8 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             all_results = []
             for file_path in files:
                 try:
+                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(

@@ -794,6 +794,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
         .join(SensitivityLabel, LabelRule.label_id == SensitivityLabel.id)
         .where(LabelRule.tenant_id == job.tenant_id)
         .order_by(LabelRule.priority.desc())
+        .limit(500)
     )
     rules_result = await session.execute(rules_query)
     rules_data = rules_result.all()

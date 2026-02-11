@@ -5,6 +5,7 @@ Heatmap command for risk visualization by directory.
 import asyncio
 import json
 import logging
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -50,6 +51,8 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
             all_results = []
             for file_path in files:
                 try:
+                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
