@@ -1,22 +1,8 @@
 """Directory tree delta sync service.
 
-Incrementally updates the ``directory_tree`` table by detecting
-changes since the last sync checkpoint.  Three strategies:
-
-1. **Timestamp diff** (all platforms): Re-walk the filesystem and
-   compare ``dir_modified`` against stored values.  Only upsert changed
-   directories; detect and remove deleted ones.  This is O(walk) but
-   skips ~90% of DB writes on a typical delta.
-
-2. **USN journal** (Windows NTFS): Read change records from the NTFS
-   Update Sequence Number journal since the stored cursor.  True
-   O(changes) — no full walk needed.  Requires ``win32file``.
-
-3. **Graph API delta** (SharePoint/OneDrive): Use the delta endpoint
-   with a stored token to get incremental folder changes.
-
-Strategy 1 is the universal fallback.  Strategies 2 and 3 are
-activated automatically when the platform/adapter supports them.
+Incrementally updates the ``directory_tree`` table by re-walking the
+filesystem and comparing ``dir_modified`` against stored values.
+Only upserts changed directories and removes deleted ones.
 """
 
 from __future__ import annotations
@@ -38,9 +24,6 @@ from openlabels.server.models import DirectoryTree, IndexCheckpoint, generate_uu
 logger = logging.getLogger(__name__)
 
 UPSERT_BATCH_SIZE = 2000
-
-
-# ── Checkpoint helpers ──────────────────────────────────────────────
 
 
 async def get_checkpoint(
@@ -95,9 +78,6 @@ async def upsert_checkpoint(
     await session.execute(stmt)
 
 
-# ── Timestamp-based delta sync ──────────────────────────────────────
-
-
 async def delta_sync_directory_tree(
     session: AsyncSession,
     adapter,
@@ -110,36 +90,14 @@ async def delta_sync_directory_tree(
 ) -> dict:
     """Incrementally sync the directory tree from the filesystem.
 
-    Compares the live filesystem state against the database and applies
-    only the differences:
-
-    - **New** directories are inserted.
-    - **Modified** directories (mtime changed) are updated.
-    - **Deleted** directories (in DB but not on disk) are removed.
-    - Unchanged directories are skipped entirely.
-
-    After applying changes, re-resolves parent links for new dirs and
-    optionally collects security descriptors for new/changed dirs.
-
-    Args:
-        session: Active async database session.
-        adapter: Adapter instance with ``list_folders()`` method.
-        tenant_id: Tenant UUID.
-        target_id: Scan target UUID.
-        scan_path: Root path to enumerate.
-        on_progress: Optional callback with count of dirs processed.
-        collect_sd: Collect SDs for new/changed directories.
-        on_sd_progress: Optional SD progress callback.
-
-    Returns:
-        Dict with ``inserted``, ``updated``, ``deleted``, ``unchanged``,
-        ``elapsed_seconds``, and optionally ``sd_stats``.
+    Compares live filesystem state against the database and applies
+    only differences: inserts new dirs, updates modified ones, removes
+    deleted ones, and skips unchanged. Re-resolves parent links and
+    optionally collects security descriptors for changed dirs.
     """
     start = time.monotonic()
 
-    # Load existing directory state from DB
     existing = await _load_existing_dirs(session, tenant_id, target_id)
-    # existing: {dir_path: (id, dir_modified_ts)} where ts is epoch float or None
 
     seen_paths: set[str] = set()
     insert_batch: list[dict] = []
@@ -155,22 +113,18 @@ async def delta_sync_directory_tree(
         processed += 1
 
         if path in existing:
-            # Directory exists — check if modified
             existing_id, existing_mtime = existing[path]
             live_mtime = _to_epoch(folder_info.modified)
 
             if existing_mtime is not None and live_mtime is not None and abs(live_mtime - existing_mtime) < 1.0:
-                # Unchanged — skip
                 unchanged += 1
             else:
-                # Modified — queue update
                 update_batch.append(_update_row(existing_id, folder_info))
                 if len(update_batch) >= UPSERT_BATCH_SIZE:
                     await _apply_updates(session, update_batch)
                     updated += len(update_batch)
                     update_batch.clear()
         else:
-            # New directory — queue insert
             insert_batch.append(_folder_info_to_row(folder_info, tenant_id, target_id))
             if len(insert_batch) >= UPSERT_BATCH_SIZE:
                 await _upsert_batch(session, insert_batch)
@@ -188,7 +142,6 @@ async def delta_sync_directory_tree(
         await _apply_updates(session, update_batch)
         updated += len(update_batch)
 
-    # Detect deletions: paths in DB but not seen on disk
     deleted_paths = set(existing.keys()) - seen_paths
     deleted = 0
     if deleted_paths:
@@ -196,14 +149,12 @@ async def delta_sync_directory_tree(
 
     await session.flush()
 
-    # Resolve parent links for newly inserted directories
     parent_resolved = 0
     if inserted > 0:
         from openlabels.jobs.index import _resolve_parent_ids, _resolve_parent_ids_by_path
         parent_resolved = await _resolve_parent_ids(session, tenant_id, target_id)
         parent_resolved += await _resolve_parent_ids_by_path(session, tenant_id, target_id)
 
-    # Collect SDs for new/changed directories (those with NULL sd_hash)
     sd_stats: dict | None = None
     if collect_sd and (inserted > 0 or updated > 0):
         from openlabels.jobs.sd_collect import collect_security_descriptors
@@ -214,7 +165,6 @@ async def delta_sync_directory_tree(
             on_progress=on_sd_progress,
         )
 
-    # Update checkpoint
     total_dirs = len(seen_paths)
     now = datetime.now(timezone.utc)
     await upsert_checkpoint(
@@ -248,19 +198,12 @@ async def delta_sync_directory_tree(
     return result
 
 
-# ── Internal helpers ────────────────────────────────────────────────
-
-
 async def _load_existing_dirs(
     session: AsyncSession,
     tenant_id: UUID,
     target_id: UUID,
 ) -> dict[str, tuple[UUID, float | None]]:
-    """Load all existing directory paths and their mtimes from the DB.
-
-    Returns:
-        Dict mapping ``dir_path → (id, epoch_timestamp)``.
-    """
+    """Load all existing directory paths and their mtimes from the DB."""
     result = await session.execute(
         text("""
             SELECT id, dir_path, dir_modified
@@ -316,7 +259,6 @@ def _update_row(existing_id: UUID, info: FolderInfo) -> dict:
         "parent_ref": info.parent_inode,
         "child_dir_count": info.child_dir_count,
         "child_file_count": info.child_file_count,
-        # Clear sd_hash so SD collection re-processes this dir
         "sd_hash": None,
         "updated_at": datetime.now(timezone.utc),
     }
@@ -384,10 +326,7 @@ async def _delete_missing(
     target_id: UUID,
     deleted_paths: set[str],
 ) -> int:
-    """Delete directory_tree rows for paths that no longer exist.
-
-    Processes in batches to avoid overly large IN clauses.
-    """
+    """Delete directory_tree rows for paths that no longer exist."""
     total_deleted = 0
     path_list = list(deleted_paths)
 

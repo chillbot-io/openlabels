@@ -1,11 +1,4 @@
-"""Directory tree browse API.
-
-Provides tree-navigation endpoints backed by the ``directory_tree``
-table.  Each response includes child counts, permission flags (from
-``security_descriptors``), and scan-time risk state (from
-``folder_inventory``) so the UI can render a complete tree view
-without filesystem round-trips.
-"""
+"""Directory tree browse API."""
 
 from __future__ import annotations
 
@@ -22,10 +15,7 @@ from openlabels.server.models import DirectoryTree, FolderInventory, SecurityDes
 router = APIRouter()
 
 
-# ── Response models ──────────────────────────────────────────────────
-
 class BrowseFolder(BaseModel):
-    """A single directory entry in a browse response."""
 
     id: UUID
     dir_path: str
@@ -70,8 +60,6 @@ class TreeStatsResponse(BaseModel):
     last_updated: str | None = None
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
-
 @router.get("/{target_id}", response_model=BrowseResponse)
 async def browse_folders(
     target_id: UUID,
@@ -83,11 +71,8 @@ async def browse_folders(
 ) -> BrowseResponse:
     """List child directories of a given parent.
 
-    Omit ``parent_id`` to list root-level directories (those with no parent).
-    Joins to ``security_descriptors`` and ``folder_inventory`` for inline
-    permission and risk data.
+    Omit ``parent_id`` to list root-level directories.
     """
-    # Build the base query
     stmt = (
         select(
             DirectoryTree.id,
@@ -96,11 +81,9 @@ async def browse_folders(
             DirectoryTree.child_dir_count,
             DirectoryTree.child_file_count,
             DirectoryTree.dir_modified,
-            # Security descriptor flags
             SecurityDescriptor.world_accessible,
             SecurityDescriptor.authenticated_users,
             SecurityDescriptor.custom_acl,
-            # Folder inventory scan state
             FolderInventory.has_sensitive_files,
             FolderInventory.highest_risk_tier,
             FolderInventory.total_entities_found,
@@ -125,7 +108,6 @@ async def browse_folders(
     else:
         stmt = stmt.where(DirectoryTree.parent_id.is_(None))
 
-    # Count total before pagination
     count_stmt = select(func.count()).select_from(
         select(DirectoryTree.id)
         .where(DirectoryTree.tenant_id == tenant.tenant_id)
@@ -139,11 +121,9 @@ async def browse_folders(
     )
     total = (await db.execute(count_stmt)).scalar() or 0
 
-    # Fetch page
     stmt = stmt.order_by(DirectoryTree.dir_name).limit(limit).offset(offset)
     rows = (await db.execute(stmt)).all()
 
-    # Look up parent path if parent_id provided
     parent_path = None
     if parent_id is not None:
         parent_row = await db.get(DirectoryTree, parent_id)
@@ -199,7 +179,6 @@ async def tree_stats(
     )
     row = result.one()
 
-    # Count world-accessible directories
     wa_result = await db.execute(
         text("""
             SELECT count(*) AS cnt

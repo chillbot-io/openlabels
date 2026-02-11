@@ -167,6 +167,14 @@ class FilesystemAdapter:
             logger.debug(f"Cannot stat {directory}: {e}")
             st = None
 
+        # Get parent inode for tree resolution
+        parent_inode = None
+        try:
+            parent_st = directory.parent.stat()
+            parent_inode = parent_st.st_ino
+        except (PermissionError, OSError):
+            pass
+
         try:
             for entry in directory.iterdir():
                 try:
@@ -182,10 +190,11 @@ class FilesystemAdapter:
 
         info = FolderInfo(
             path=str(directory.absolute()),
-            name=directory.name or str(directory),  # root dirs have empty name
+            name=directory.name or str(directory),
             modified=datetime.fromtimestamp(st.st_mtime) if st else None,
             adapter="filesystem",
             inode=st.st_ino if st else None,
+            parent_inode=parent_inode,
             child_dir_count=dir_count,
             child_file_count=file_count,
         )

@@ -61,7 +61,7 @@ def __getattr__(name: str):
         "audit", "auth", "browse", "jobs", "scans", "results", "targets",
         "schedules", "labels", "dashboard", "ws", "users",
         "remediation", "monitoring", "health", "settings",
-        "policies", "export", "reporting", "v1",
+        "policies", "export", "reporting", "webhooks", "v1",
     }
 
     if name in valid_modules:
@@ -95,5 +95,6 @@ __all__ = [
     "policies",
     "export",
     "reporting",
+    "webhooks",
     "v1",
 ]

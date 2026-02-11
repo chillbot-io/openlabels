@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from uuid import UUID
 
-from sqlalchemy import text, update
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 

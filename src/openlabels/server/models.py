@@ -894,11 +894,6 @@ class Report(Base):
     )
 
 
-# =============================================================================
-# FILESYSTEM ENGINE v2: DIRECTORY TREE INDEX
-# =============================================================================
-
-
 class Share(Base):
     """Network share definitions (SMB, NFS, DFS).
 

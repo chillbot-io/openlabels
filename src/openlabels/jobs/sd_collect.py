@@ -1,22 +1,12 @@
-"""Security descriptor collection service.
+"""Security descriptor collection for directory trees.
 
-Walks the ``directory_tree`` table and collects filesystem permissions
-for each directory, populating the ``security_descriptors`` table and
-linking via ``directory_tree.sd_hash``.
-
-Design:
-  - **Separate pass**: SD collection runs *after* the bootstrap walk
-    so the hot path (directory enumeration) isn't burdened with per-dir
-    ``GetFileSecurity`` / ``stat`` calls.
-  - **Deduplication**: A typical volume has 3K–50K unique permission
-    sets shared across millions of directories.  We SHA-256 hash the
-    canonical form and only INSERT new hashes.
-  - **Platform support**: Linux (uid/gid/mode) first, Windows NTFS
-    (DACL/SDDL) when ``win32security`` is available.
+Collects filesystem permissions (POSIX uid/gid/mode or NTFS DACL),
+deduplicates by SHA-256 hash, and populates ``security_descriptors``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -26,23 +16,18 @@ import stat as stat_mod
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import text, update
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.models import DirectoryTree, SecurityDescriptor
+from openlabels.server.models import SecurityDescriptor
 
 logger = logging.getLogger(__name__)
 
-# Batch size for reading dir_paths from DB and for SD upserts
 _READ_BATCH = 5000
 _UPSERT_BATCH = 2000
-
-
-# ── Canonical form & hashing ────────────────────────────────────────
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,12 +43,7 @@ class SDInfo:
     custom_acl: bool
 
     def canonical_bytes(self) -> bytes:
-        """Return a deterministic byte string for hashing.
-
-        The canonical form is a JSON object with sorted keys.  Two
-        directories sharing identical permissions will produce the
-        same bytes (and therefore the same SHA-256 hash).
-        """
+        """Deterministic byte string for hashing (JSON with sorted keys)."""
         obj = {
             "owner": self.owner_sid,
             "group": self.group_sid,
@@ -76,9 +56,6 @@ class SDInfo:
     def sd_hash(self) -> bytes:
         """SHA-256 of the canonical form (32 bytes)."""
         return hashlib.sha256(self.canonical_bytes()).digest()
-
-
-# ── Platform collectors ─────────────────────────────────────────────
 
 
 def collect_posix_sd(dir_path: str) -> SDInfo | None:
@@ -247,9 +224,6 @@ def collect_sd(dir_path: str) -> SDInfo | None:
     return collect_posix_sd(dir_path)
 
 
-# ── Batch collection helpers ────────────────────────────────────────
-
-
 def _collect_batch_sync(paths: list[str]) -> list[tuple[str, SDInfo]]:
     """Collect SDs for a batch of paths (synchronous, runs in thread).
 
@@ -261,9 +235,6 @@ def _collect_batch_sync(paths: list[str]) -> list[tuple[str, SDInfo]]:
         if sd is not None:
             results.append((p, sd))
     return results
-
-
-# ── Main async entry point ──────────────────────────────────────────
 
 
 async def collect_security_descriptors(
@@ -288,8 +259,6 @@ async def collect_security_descriptors(
         Dict with ``total_dirs``, ``unique_sds``, ``world_accessible``,
         ``elapsed_seconds``.
     """
-    import asyncio
-
     start = time.monotonic()
 
     # Count dirs needing SD collection
@@ -315,16 +284,14 @@ async def collect_security_descriptors(
 
     logger.info("Collecting security descriptors for %d directories...", total_dirs)
 
-    # Track unique SDs across all batches (in-memory — typically <50K)
     seen_hashes: set[bytes] = set()
-    sd_rows: list[dict] = []  # Pending SD upserts
-    update_rows: list[dict] = []  # Pending directory_tree sd_hash updates
+    sd_rows: list[dict] = []
+    update_rows: list[dict] = []
     processed = 0
     world_accessible_count = 0
     offset = 0
 
     while True:
-        # Read a batch of dir_paths that need SD collection
         result = await session.execute(
             text("""
                 SELECT id, dir_path FROM directory_tree
@@ -348,21 +315,17 @@ async def collect_security_descriptors(
         paths = [r.dir_path for r in rows]
         id_by_path = {r.dir_path: r.id for r in rows}
 
-        # Collect SDs in a thread (blocking I/O)
         collected = await asyncio.to_thread(_collect_batch_sync, paths)
 
         for dir_path, sd_info in collected:
             h = sd_info.sd_hash()
             dir_id = id_by_path[dir_path]
 
-            # Track world-accessible
             if sd_info.world_accessible:
                 world_accessible_count += 1
 
-            # Queue directory_tree update
             update_rows.append({"dir_id": dir_id, "sd_hash": h})
 
-            # Queue new SD if not seen before
             if h not in seen_hashes:
                 seen_hashes.add(h)
                 sd_rows.append({
@@ -377,12 +340,10 @@ async def collect_security_descriptors(
                     "custom_acl": sd_info.custom_acl,
                 })
 
-            # Flush SD upserts when batch is full
             if len(sd_rows) >= _UPSERT_BATCH:
                 await _upsert_sd_batch(session, sd_rows)
                 sd_rows.clear()
 
-            # Flush directory_tree updates when batch is full
             if len(update_rows) >= _UPSERT_BATCH:
                 await _update_dirtree_hashes(session, update_rows)
                 update_rows.clear()
@@ -393,7 +354,6 @@ async def collect_security_descriptors(
         if on_progress:
             on_progress(processed, total_dirs)
 
-    # Flush remaining
     if sd_rows:
         await _upsert_sd_batch(session, sd_rows)
     if update_rows:
@@ -419,23 +379,17 @@ async def collect_security_descriptors(
 
 
 async def _upsert_sd_batch(session: AsyncSession, rows: list[dict]) -> None:
-    """Upsert security descriptors (INSERT ... ON CONFLICT skip)."""
+    """INSERT ... ON CONFLICT DO NOTHING (content-addressed by hash)."""
     stmt = pg_insert(SecurityDescriptor.__table__).values(rows)
-    # If the sd_hash already exists, do nothing (it's content-addressed)
     stmt = stmt.on_conflict_do_nothing(index_elements=["sd_hash"])
     await session.execute(stmt)
 
 
 async def _update_dirtree_hashes(session: AsyncSession, rows: list[dict]) -> None:
-    """Batch-update directory_tree.sd_hash for collected directories.
-
-    Uses a VALUES-based UPDATE join for efficiency.
-    """
+    """Batch-update directory_tree.sd_hash via VALUES join."""
     if not rows:
         return
 
-    # Build a VALUES clause and join-update
-    # This is more efficient than individual UPDATEs
     values_sql = ", ".join(
         f"(:id_{i}::uuid, :hash_{i}::bytea)"
         for i in range(len(rows))

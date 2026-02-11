@@ -1,9 +1,4 @@
-"""
-SQLAlchemy model → PyArrow Table converters.
-
-Each converter accepts an iterable of ORM model instances and returns
-a :class:`pyarrow.Table` with the schema defined in :mod:`schemas`.
-"""
+"""SQLAlchemy model to PyArrow Table converters."""
 
 from __future__ import annotations
 
@@ -60,8 +55,6 @@ def _entity_counts_to_map(ec: dict | None) -> list[tuple[str, int]] | None:
     return [(k, int(v)) for k, v in ec.items()]
 
 
-# ── Scan Results ──────────────────────────────────────────────────────
-
 def scan_results_to_arrow(rows: Iterable[ScanResult]) -> pa.Table:
     """Convert ScanResult ORM instances to a PyArrow Table."""
     records: dict[str, list] = {f.name: [] for f in SCAN_RESULTS_SCHEMA}
@@ -110,8 +103,6 @@ def scan_results_to_arrow(rows: Iterable[ScanResult]) -> pa.Table:
 
     return pa.table(records, schema=SCAN_RESULTS_SCHEMA)
 
-
-# ── File Inventory ────────────────────────────────────────────────────
 
 def file_inventory_to_arrow(rows: Iterable[FileInventory]) -> pa.Table:
     """Convert FileInventory ORM instances to a PyArrow Table."""
@@ -162,8 +153,6 @@ def file_inventory_to_arrow(rows: Iterable[FileInventory]) -> pa.Table:
     return pa.table(records, schema=FILE_INVENTORY_SCHEMA)
 
 
-# ── Folder Inventory ─────────────────────────────────────────────────
-
 def folder_inventory_to_arrow(rows: Iterable[FolderInventory]) -> pa.Table:
     """Convert FolderInventory ORM instances to a PyArrow Table."""
     records: dict[str, list] = {f.name: [] for f in FOLDER_INVENTORY_SCHEMA}
@@ -188,8 +177,6 @@ def folder_inventory_to_arrow(rows: Iterable[FolderInventory]) -> pa.Table:
 
     return pa.table(records, schema=FOLDER_INVENTORY_SCHEMA)
 
-
-# ── Directory Tree ───────────────────────────────────────────────────
 
 def directory_tree_to_arrow(rows: Iterable[DirectoryTree]) -> pa.Table:
     """Convert DirectoryTree ORM instances to a PyArrow Table."""
@@ -216,8 +203,6 @@ def directory_tree_to_arrow(rows: Iterable[DirectoryTree]) -> pa.Table:
     return pa.table(records, schema=DIRECTORY_TREE_SCHEMA)
 
 
-# ── Access Events ─────────────────────────────────────────────────────
-
 def access_events_to_arrow(rows: Iterable[FileAccessEvent]) -> pa.Table:
     """Convert FileAccessEvent ORM instances to a PyArrow Table."""
     records: dict[str, list] = {f.name: [] for f in ACCESS_EVENTS_SCHEMA}
@@ -243,8 +228,6 @@ def access_events_to_arrow(rows: Iterable[FileAccessEvent]) -> pa.Table:
     return pa.table(records, schema=ACCESS_EVENTS_SCHEMA)
 
 
-# ── Audit Log ─────────────────────────────────────────────────────────
-
 def audit_log_to_arrow(rows: Iterable[AuditLog]) -> pa.Table:
     """Convert AuditLog ORM instances to a PyArrow Table."""
     records: dict[str, list] = {f.name: [] for f in AUDIT_LOG_SCHEMA}
@@ -263,8 +246,6 @@ def audit_log_to_arrow(rows: Iterable[AuditLog]) -> pa.Table:
 
     return pa.table(records, schema=AUDIT_LOG_SCHEMA)
 
-
-# ── Remediation Actions ──────────────────────────────────────────────
 
 def remediation_actions_to_arrow(rows: Iterable[RemediationAction]) -> pa.Table:
     """Convert RemediationAction ORM instances to a PyArrow Table."""
