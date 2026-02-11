@@ -578,21 +578,20 @@ async def execute_scan_task(
                     stats["label_sync_back_error"] = str(e)
 
         # Flush scan results + inventory to Parquet data lake (non-fatal)
-        if settings.catalog.enabled:
-            try:
-                from openlabels.analytics.flush import flush_scan_to_catalog
-                from openlabels.analytics.storage import create_storage
+        try:
+            from openlabels.analytics.flush import flush_scan_to_catalog
+            from openlabels.analytics.storage import create_storage
 
-                _catalog_storage = create_storage(settings.catalog)
-                flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
-                stats["catalog_flushed"] = flushed
-            except (ImportError, OSError, RuntimeError, ValueError) as e:
-                logger.warning(
-                    "Catalog flush failed for job %s; data lake will catch up on next flush: %s",
-                    job.id,
-                    e,
-                )
-                stats["catalog_flush_error"] = str(e)
+            _catalog_storage = create_storage(settings.catalog)
+            flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
+            stats["catalog_flushed"] = flushed
+        except (ImportError, OSError, RuntimeError, ValueError) as e:
+            logger.warning(
+                "Catalog flush failed for job %s; data lake will catch up on next flush: %s",
+                job.id,
+                e,
+            )
+            stats["catalog_flush_error"] = str(e)
 
         # Post-scan SIEM export (fire-and-forget, non-fatal)
         if settings.siem_export.enabled and settings.siem_export.mode == "post_scan":

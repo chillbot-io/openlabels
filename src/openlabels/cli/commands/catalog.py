@@ -81,10 +81,6 @@ async def _run_rebuild(batch_size: int) -> None:
     )
 
     settings = get_settings()
-    if not settings.catalog.enabled:
-        click.echo("Error: catalog.enabled is false. Set OPENLABELS_CATALOG__ENABLED=true")
-        raise SystemExit(1)
-
     storage = create_storage(settings.catalog)
     await init_db(settings.database.url)
 
@@ -345,10 +341,6 @@ def compact(table: str | None, threshold: int, yes: bool) -> None:
     from openlabels.server.config import get_settings
 
     settings = get_settings()
-    if not settings.catalog.enabled:
-        click.echo("Error: catalog.enabled is false.")
-        raise SystemExit(1)
-
     storage = create_storage(settings.catalog)
     tables = [table] if table else [
         "scan_results", "file_inventory", "folder_inventory",

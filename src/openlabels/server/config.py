@@ -682,14 +682,12 @@ class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
 
-    When ``enabled`` is True, analytical queries (dashboard stats, trends,
-    heatmaps, exports) are served from DuckDB over Parquet files instead
-    of PostgreSQL.  PostgreSQL remains the source of truth — Parquet is a
-    derived, append-optimised analytical copy.
+    Analytical queries (dashboard stats, trends, heatmaps, exports) are
+    served from DuckDB over Parquet files.  PostgreSQL remains the source
+    of truth — Parquet is a derived, append-optimised analytical copy.
 
     Environment variables::
 
-        OPENLABELS_CATALOG__ENABLED=true
         OPENLABELS_CATALOG__BACKEND=local
         OPENLABELS_CATALOG__LOCAL_PATH=/data/openlabels/catalog
         OPENLABELS_CATALOG__S3__BUCKET=my-bucket
@@ -697,9 +695,8 @@ class CatalogSettings(BaseSettings):
         OPENLABELS_CATALOG__AZURE__CONTAINER=my-container
     """
 
-    enabled: bool = False
     backend: Literal["local", "s3", "azure"] = "local"
-    local_path: str = ""
+    local_path: str = "data/catalog"
 
     # Remote storage sub-configs
     s3: S3CatalogSettings = Field(default_factory=S3CatalogSettings)

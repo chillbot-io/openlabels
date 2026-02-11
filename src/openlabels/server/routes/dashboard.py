@@ -1,12 +1,9 @@
 """
 Dashboard API endpoints for statistics and visualizations.
 
-Analytical queries are served by the active :class:`DashboardQueryService`:
-
-* **DuckDB** (``catalog.enabled = true``) — reads columnar Parquet files
-  with no sampling caps or streaming workarounds.
-* **PostgreSQL** (default) — the original row-oriented queries, now
-  extracted into :class:`PostgresDashboardService`.
+Analytical queries are served by the DuckDB-backed
+:class:`DashboardQueryService`, reading columnar Parquet files with no
+sampling caps or streaming workarounds.
 
 Route handlers are backend-agnostic: they call the service, format the
 response, and manage caching.
@@ -22,7 +19,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,22 +116,20 @@ HEATMAP_MAX_DEPTH = 10
 
 # ── Service resolution ────────────────────────────────────────────────
 
-def _get_dashboard_service(
-    request: Request,
-    session: AsyncSession,
-) -> DashboardQueryService:
-    """Resolve the active dashboard query service.
+def _get_dashboard_service(request: Request) -> DashboardQueryService:
+    """Return the DuckDB-backed dashboard service.
 
-    If the DuckDB-backed service was initialised at startup it lives on
-    ``request.app.state.dashboard_service``.  Otherwise fall back to a
-    per-request PostgreSQL service wrapping the current session.
+    Raises HTTP 503 if the analytics engine failed to initialize at
+    startup — this surfaces the problem instead of silently degrading
+    to slow PostgreSQL full-table scans.
     """
     svc = getattr(request.app.state, "dashboard_service", None)
-    if svc is not None:
-        return svc
-
-    from openlabels.analytics.dashboard_pg import PostgresDashboardService
-    return PostgresDashboardService(session)
+    if svc is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Analytics engine unavailable — check server logs",
+        )
+    return svc
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -162,7 +157,7 @@ async def get_overall_stats(
     except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache read failed: {e}")
 
-    svc = _get_dashboard_service(request, session)
+    svc = _get_dashboard_service(request)
 
     # Active scans always from PostgreSQL (real-time OLTP state)
     scan_stats_query = select(
@@ -216,7 +211,7 @@ async def get_trends(
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
-    svc = _get_dashboard_service(request, session)
+    svc = _get_dashboard_service(request)
     svc_points = await svc.get_trends(user.tenant_id, start_date, end_date)
 
     # Build lookup from service results
@@ -262,7 +257,7 @@ async def get_entity_trends(
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
-    svc = _get_dashboard_service(request, session)
+    svc = _get_dashboard_service(request)
     data = await svc.get_entity_trends(
         user.tenant_id, start_date, end_date, top_n=6,
     )
@@ -288,7 +283,7 @@ async def get_access_heatmap(
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=28)
 
-    svc = _get_dashboard_service(request, session)
+    svc = _get_dashboard_service(request)
     heatmap = await svc.get_access_heatmap(user.tenant_id, cutoff)
 
     return AccessHeatmapResponse(data=heatmap)
@@ -310,7 +305,7 @@ async def get_heatmap(
     - Uses streaming to build tree incrementally
     - Returns truncation indicator if limit was hit
     """
-    svc = _get_dashboard_service(request, session)
+    svc = _get_dashboard_service(request)
     file_rows, total_files = await svc.get_heatmap_data(
         user.tenant_id, job_id=job_id, limit=limit,
     )

@@ -381,14 +381,12 @@ async def get_access_stats(
     Get access monitoring statistics.
 
     Returns summary statistics about file access events.
-    When backed by DuckDB, event aggregations run on Parquet;
-    monitored file count always comes from PostgreSQL (OLTP).
+    Event aggregations run on DuckDB/Parquet; monitored file count
+    always comes from PostgreSQL (OLTP).
     """
-    from openlabels.analytics.dashboard_pg import PostgresDashboardService
-
     svc = getattr(request.app.state, "dashboard_service", None)
     if svc is None:
-        svc = PostgresDashboardService(session)
+        raise HTTPException(status_code=503, detail="Analytics engine unavailable")
 
     access_stats = await svc.get_access_stats(user.tenant_id)
 

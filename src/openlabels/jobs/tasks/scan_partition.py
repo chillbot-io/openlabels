@@ -466,15 +466,14 @@ async def _run_post_scan_operations(
             except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                 logger.warning("Cloud label sync-back failed for job %s: %s", job.id, e)
 
-    # Catalog flush
-    if settings.catalog.enabled:
-        try:
-            from openlabels.analytics.flush import flush_scan_to_catalog
-            from openlabels.analytics.storage import create_storage
-            storage = create_storage(settings.catalog)
-            await flush_scan_to_catalog(session, job, storage)
-        except (ImportError, OSError, RuntimeError, ValueError) as e:
-            logger.warning("Catalog flush failed for job %s: %s", job.id, e)
+    # Catalog flush (non-fatal)
+    try:
+        from openlabels.analytics.flush import flush_scan_to_catalog
+        from openlabels.analytics.storage import create_storage
+        storage = create_storage(settings.catalog)
+        await flush_scan_to_catalog(session, job, storage)
+    except (ImportError, OSError, RuntimeError, ValueError) as e:
+        logger.warning("Catalog flush failed for job %s: %s", job.id, e)
 
     # SIEM export
     if settings.siem_export.enabled and settings.siem_export.mode == "post_scan":
