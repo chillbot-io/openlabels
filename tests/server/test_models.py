@@ -262,9 +262,8 @@ class TestLabelRuleModel:
         """Rules should have priority for conflict resolution."""
         from openlabels.server.models import LabelRule
 
-        col = LabelRule.__table__.c.priority
-        assert col is not None
-        assert col.default.arg == 0
+        assert 'priority' in LabelRule.__table__.c, "LabelRule must have a priority column"
+        assert LabelRule.__table__.c.priority.default.arg == 0
 
 
 class TestJobQueueModel:
@@ -422,15 +421,19 @@ class TestUUIDGeneration:
     """Tests for UUID generation."""
 
     def test_generate_uuid_returns_uuid(self):
-        """generate_uuid should return a valid UUID."""
+        """generate_uuid should return a valid UUID with correct string format."""
         from openlabels.server.models import generate_uuid
 
         result = generate_uuid()
-        # uuid_utils.uuid7 returns a compatible UUID object
-        # Check if it's a UUID instance OR can be converted to string format
-        assert isinstance(result, UUID) or (
-            hasattr(result, 'hex') and len(str(result)) == 36
-        )
+        # Verify it can be used as a UUID (the key contract)
+        uuid_str = str(result)
+        assert len(uuid_str) == 36, f"UUID string should be 36 chars, got {len(uuid_str)}"
+        # Verify the UUID string format: 8-4-4-4-12 hex groups
+        parts = uuid_str.split("-")
+        assert [len(p) for p in parts] == [8, 4, 4, 4, 12], \
+            f"UUID should have 8-4-4-4-12 format, got {uuid_str}"
+        # Ensure round-trip through standard UUID works
+        assert UUID(uuid_str) is not None
 
     def test_generate_uuid_is_unique(self):
         """Each call should generate a unique UUID."""

@@ -274,9 +274,10 @@ class TestGraphClientUserLookups:
         with patch.object(client, "_request", return_value=mock_response):
             user = await client.get_user_by_id("user-guid")
 
-            assert user is not None
             assert user.id == "user-guid"
             assert user.display_name == "John Smith"
+            assert user.user_principal_name == "jsmith@contoso.com"
+            assert user.mail == "john@contoso.com"
 
     async def test_get_user_by_id_not_found(self, client):
         """get_user_by_id should return None for unknown ID."""
@@ -307,7 +308,8 @@ class TestGraphClientUserLookups:
         with patch.object(client, "_request", return_value=mock_response):
             user = await client.get_user_by_upn("jdoe@contoso.com")
 
-            assert user is not None
+            assert user.id == "user-guid"
+            assert user.display_name == "Jane Doe"
             assert user.user_principal_name == "jdoe@contoso.com"
 
     async def test_get_user_by_on_prem_sid_success(self, client):
@@ -325,8 +327,9 @@ class TestGraphClientUserLookups:
         with patch.object(client, "_request", return_value=mock_response):
             user = await client.get_user_by_on_prem_sid("S-1-5-21-123-456-789-1001")
 
-            assert user is not None
+            assert user.id == "user-guid"
             assert user.display_name == "Hybrid User"
+            assert user.on_premises_security_identifier == "S-1-5-21-123-456-789-1001"
 
     async def test_get_user_by_on_prem_sid_not_found(self, client):
         """get_user_by_on_prem_sid should return None when not found."""
@@ -524,17 +527,20 @@ class TestGraphClientEdgeCases:
                 client._token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
                 return client
 
-    async def test_sid_with_special_characters(self, client):
-        """SID lookup should handle special characters safely."""
-        # SIDs have specific format, but test escaping
+    async def test_sid_with_single_quotes_escaped(self, client):
+        """SID lookup should escape single quotes for OData safety."""
         mock_response = {"value": []}
 
         with patch.object(client, "_request", return_value=mock_response) as mock_req:
-            await client.get_user_by_on_prem_sid("S-1-5-21-'--injection-attempt")
+            await client.get_user_by_on_prem_sid("S-1-5-21-'--test")
 
-            # Verify the SID was passed (OData filter handles escaping)
+            # Verify single quotes are doubled per OData escaping standard
             call_args = mock_req.call_args
-            assert "S-1-5-21-" in str(call_args)
+            params = call_args[1]["params"]
+            odata_filter = params["$filter"]
+            # Source code uses escape_odata_string which doubles single quotes
+            assert "S-1-5-21-''--test" in odata_filter
+            assert "onPremisesSecurityIdentifier eq" in odata_filter
 
     async def test_empty_search_query(self, client):
         """Empty search query should still work."""

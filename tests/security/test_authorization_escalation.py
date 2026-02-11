@@ -208,12 +208,17 @@ class TestRoleBasedAccessControl:
             "/api/settings/scan",
             json={"some_setting": "value"},
         )
-        # Should be 403 (admin only) or 404/405 (endpoint doesn't exist)
+        # Settings endpoints require admin role. Should return 403 for viewer.
+        # 404/405 is also acceptable if the specific endpoint doesn't exist,
+        # but it must NOT return 200/201/204 (success).
         assert response.status_code in (403, 404, 405), \
             f"Expected 403/404/405 for viewer modifying settings, got {response.status_code}"
+        # Critically: must not be a success status
+        assert response.status_code >= 400, \
+            f"Viewer was able to modify settings! Got status {response.status_code}"
 
     async def test_admin_can_create_targets(self, test_client):
-        """Admin role should be able to create targets."""
+        """Admin role should be able to create targets with correct data."""
         response = await test_client.post(
             "/api/targets",
             json={
@@ -222,9 +227,26 @@ class TestRoleBasedAccessControl:
                 "config": {"path": "/admin-path"},
             },
         )
-        # Admin should succeed (200 or 201)
+        # Admin should succeed with 201 Created
         assert response.status_code in (200, 201), \
             f"Expected 200/201 for admin creating target, got {response.status_code}"
+
+        # Verify the target was actually created with correct data
+        target_data = response.json()
+        assert target_data["name"] == "Admin Target", \
+            f"Target name mismatch: expected 'Admin Target', got {target_data['name']!r}"
+        assert target_data["adapter"] == "filesystem", \
+            f"Target adapter mismatch: expected 'filesystem', got {target_data['adapter']!r}"
+        assert target_data["enabled"] is True, \
+            "New target should be enabled by default"
+        assert "id" in target_data, "Response should include the generated ID"
+
+        # Verify the target is retrievable
+        target_id = target_data["id"]
+        get_response = await test_client.get(f"/api/targets/{target_id}")
+        assert get_response.status_code == 200, \
+            f"Created target not retrievable: status {get_response.status_code}"
+        assert get_response.json()["name"] == "Admin Target"
 
 
 class TestRoleEscalation:
@@ -374,13 +396,19 @@ class TestSessionSecurity:
     async def test_user_sees_own_context(self, test_client):
         """User should see their own context via /users/me."""
         response = await test_client.get("/api/users/me")
-        if response.status_code == 200:
-            user_data = response.json()
-            # Should be the test user created by test_client fixture
-            # Email format: test-{suffix}@localhost
-            email = user_data.get("email", "")
-            assert email.startswith("test") and "@localhost" in email, \
-                f"Expected test user email pattern, got: {email}"
+        # The /users/me endpoint should be accessible to authenticated users
+        assert response.status_code == 200, \
+            f"Expected 200 for /users/me, got {response.status_code}"
+
+        user_data = response.json()
+        # Should be the test user created by test_client fixture
+        # Email format: test-{suffix}@localhost
+        email = user_data.get("email", "")
+        assert email.startswith("test") and "@localhost" in email, \
+            f"Expected test user email pattern 'test-*@localhost', got: {email!r}"
+        assert "id" in user_data, "User context should include id"
+        assert user_data.get("role") == "admin", \
+            f"Test user should have admin role, got: {user_data.get('role')!r}"
 
 
 class TestAPIKeyAuthentication:

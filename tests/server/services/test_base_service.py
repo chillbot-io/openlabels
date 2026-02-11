@@ -23,8 +23,10 @@ class TestTenantContext:
         assert ctx.user_role is None
 
     def test_frozen(self):
+        from pydantic import ValidationError
+
         ctx = TenantContext(tenant_id=uuid4())
-        with pytest.raises(Exception):  # Pydantic frozen validation error
+        with pytest.raises(ValidationError):
             ctx.tenant_id = uuid4()
 
     def test_from_current_user(self):

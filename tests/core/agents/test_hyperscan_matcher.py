@@ -282,12 +282,11 @@ class TestHyperscanSpecific:
         """Hyperscan handles UTF-8 text correctly."""
         matcher = HyperscanMatcher()
 
-        # Text with unicode characters
-        text = "Contact: über.user@example.com for café orders"
+        # Text with unicode characters mixed with a standard ASCII email
+        text = "Contact: über.user@example.com for café orders. Also reach plain@example.org"
         matches = matcher.scan(text)
 
-        # Should still find the email
+        # The plain ASCII email should always be found regardless of unicode handling
         email_matches = [m for m in matches if m.entity_type == "EMAIL"]
-        # Note: the email with ü may or may not match depending on regex
-        # At minimum, no crash should occur
-        assert isinstance(matches, list)
+        assert len(email_matches) >= 1
+        assert any(m.matched_text == "plain@example.org" for m in email_matches)

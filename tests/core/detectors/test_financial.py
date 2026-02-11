@@ -94,9 +94,11 @@ class TestCUSIPValidation:
 
     def test_cusip_with_special_chars(self):
         """Test CUSIP with special characters (* @ #)."""
-        # CUSIP allows *, @, # as special characters with values 36, 37, 38
-        # These are rare but valid
-        assert isinstance(_validate_cusip("0378331*0"), bool)
+        # The validator strips non-alphanumeric characters, so * is removed.
+        # "0378331*0" becomes "03783310" (8 chars) which is too short -> False
+        assert _validate_cusip("0378331*0") is False
+        # A fully alphanumeric CUSIP with correct checksum should pass
+        assert _validate_cusip("037833100") is True
 
 
 # =============================================================================
@@ -452,6 +454,7 @@ class TestFinancialDetectorDetection:
 
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
         assert len(cusip_spans) >= 1
+        assert any(s.text == "037833100" for s in cusip_spans)
 
     def test_detect_isin_labeled(self, detector):
         """Test ISIN detection with label."""
@@ -469,6 +472,7 @@ class TestFinancialDetectorDetection:
 
         isin_spans = [s for s in spans if s.entity_type == "ISIN"]
         assert len(isin_spans) >= 1
+        assert any(s.text == "US0378331005" for s in isin_spans)
 
     def test_detect_sedol_labeled(self, detector):
         """Test SEDOL detection with label."""
@@ -477,6 +481,7 @@ class TestFinancialDetectorDetection:
 
         sedol_spans = [s for s in spans if s.entity_type == "SEDOL"]
         assert len(sedol_spans) >= 1
+        assert any(s.text == "0263494" for s in sedol_spans)
 
     def test_detect_swift_labeled(self, detector):
         """Test SWIFT/BIC detection with label."""
@@ -485,6 +490,7 @@ class TestFinancialDetectorDetection:
 
         swift_spans = [s for s in spans if s.entity_type == "SWIFT_BIC"]
         assert len(swift_spans) >= 1
+        assert any(s.text == "CHASUS33XXX" for s in swift_spans)
 
     def test_detect_figi_labeled(self, detector):
         """Test FIGI detection with label."""
@@ -493,6 +499,7 @@ class TestFinancialDetectorDetection:
 
         figi_spans = [s for s in spans if s.entity_type == "FIGI"]
         assert len(figi_spans) >= 1
+        assert any(s.text == "BBG000B9XRY4" for s in figi_spans)
 
     def test_detect_figi_bbg_prefix(self, detector):
         """Test FIGI detection with BBG prefix."""
@@ -501,6 +508,7 @@ class TestFinancialDetectorDetection:
 
         figi_spans = [s for s in spans if s.entity_type == "FIGI"]
         assert len(figi_spans) >= 1
+        assert any(s.text == "BBG000B9XRY4" for s in figi_spans)
 
     def test_detect_lei_labeled(self, detector):
         """Test LEI detection with label."""
@@ -509,6 +517,7 @@ class TestFinancialDetectorDetection:
 
         lei_spans = [s for s in spans if s.entity_type == "LEI"]
         assert len(lei_spans) >= 1
+        assert any(s.text == "7ZW8QJWVPR4P1J1KQY45" for s in lei_spans)
 
     def test_detect_bitcoin_legacy_address(self, detector):
         """Test Bitcoin legacy address detection."""
@@ -517,6 +526,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2" for s in btc_spans)
 
     def test_detect_bitcoin_p2sh_address(self, detector):
         """Test Bitcoin P2SH address detection."""
@@ -525,6 +535,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy" for s in btc_spans)
 
     def test_detect_bitcoin_bech32_address(self, detector):
         """Test Bitcoin SegWit Bech32 address detection."""
@@ -533,6 +544,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" for s in btc_spans)
 
     def test_detect_ethereum_address(self, detector):
         """Test Ethereum address detection."""
@@ -541,6 +553,7 @@ class TestFinancialDetectorDetection:
 
         eth_spans = [s for s in spans if s.entity_type == "ETHEREUM_ADDRESS"]
         assert len(eth_spans) >= 1
+        assert any(s.text == "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae" for s in eth_spans)
 
     def test_detect_cardano_address(self, detector):
         """Test Cardano address detection."""
@@ -549,6 +562,7 @@ class TestFinancialDetectorDetection:
 
         ada_spans = [s for s in spans if s.entity_type == "CARDANO_ADDRESS"]
         assert len(ada_spans) >= 1
+        assert any(s.text.startswith("addr1") for s in ada_spans)
 
     def test_detect_litecoin_address_legacy(self, detector):
         """Test Litecoin legacy address detection."""
@@ -557,6 +571,7 @@ class TestFinancialDetectorDetection:
 
         ltc_spans = [s for s in spans if s.entity_type == "LITECOIN_ADDRESS"]
         assert len(ltc_spans) >= 1
+        assert any(s.text.startswith("L") for s in ltc_spans)
 
     def test_detect_litecoin_address_bech32(self, detector):
         """Test Litecoin Bech32 address detection."""
@@ -565,6 +580,7 @@ class TestFinancialDetectorDetection:
 
         ltc_spans = [s for s in spans if s.entity_type == "LITECOIN_ADDRESS"]
         assert len(ltc_spans) >= 1
+        assert any(s.text.startswith("ltc1") for s in ltc_spans)
 
 
 # =============================================================================
@@ -662,12 +678,15 @@ class TestFinancialEdgeCases:
         text = '{"cusip": "037833100", "isin": "US0378331005"}'
         spans = detector.detect(text)
 
+        # The unlabeled CUSIP pattern should match 037833100 (valid checksum)
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
-        isin_spans = [s for s in spans if s.entity_type == "ISIN"]
+        assert len(cusip_spans) >= 1
+        assert any(s.text == "037833100" for s in cusip_spans)
 
-        # May or may not match depending on exact pattern
-        assert isinstance(cusip_spans, list)
-        assert isinstance(isin_spans, list)
+        # The unlabeled ISIN pattern should match US0378331005 (valid checksum)
+        isin_spans = [s for s in spans if s.entity_type == "ISIN"]
+        assert len(isin_spans) >= 1
+        assert any(s.text == "US0378331005" for s in isin_spans)
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""
@@ -686,9 +705,10 @@ class TestFinancialEdgeCases:
         spans = detector.detect(text)
 
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
-        # Validated CUSIP should have high confidence
-        if cusip_spans:
-            assert all(s.confidence >= 0.90 for s in cusip_spans)
+        assert len(cusip_spans) >= 1, "CUSIP should be detected"
+        # Labeled CUSIP pattern has confidence 0.98, validator adds +0.02 (capped at 0.99)
+        # So validated labeled CUSIP should have confidence >= 0.99
+        assert all(s.confidence >= 0.99 for s in cusip_spans)
 
 
 # =============================================================================

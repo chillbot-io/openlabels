@@ -44,7 +44,8 @@ class TestCheckModelsAvailableOnnx:
         assert not report.all_available
         for model in report.models.values():
             assert not model.available
-            assert len(model.missing_files) > 0
+            assert len(model.missing_files) == 1
+            assert "does not exist" in model.missing_files[0]
 
     def test_empty_directory(self, tmp_path):
         report = check_models_available(tmp_path, use_onnx=True)

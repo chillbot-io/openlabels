@@ -161,14 +161,21 @@ class TestEventStreamManagerStats:
 
     @pytest.mark.asyncio
     async def test_flush_calls_persist(self):
-        """Flushing should call _persist_events."""
+        """Flushing should call _persist_events with the buffer contents."""
+        event = _make_event("/test.txt")
         manager = EventStreamManager(providers=[])
-        manager._buffer = [_make_event("/test.txt")]
+        manager._buffer = [event]
 
         manager._persist_events = AsyncMock(return_value=1)
         await manager._flush_buffer()
 
         manager._persist_events.assert_called_once()
+        # Verify the correct events were passed to _persist_events
+        persisted_events = manager._persist_events.call_args[0][0]
+        assert len(persisted_events) == 1
+        assert persisted_events[0].file_path == "/test.txt"
+        # Buffer should be cleared after flush
+        assert len(manager._buffer) == 0
         assert manager.total_events_flushed == 1
         assert manager.total_flush_cycles == 1
 
@@ -215,6 +222,10 @@ class TestEventStreamManagerScanTrigger:
         await task
 
         mock_trigger.on_event.assert_called_once()
+        # Verify the correct event was passed to the scan trigger
+        passed_event = mock_trigger.on_event.call_args[0][0]
+        assert passed_event.file_path == "/important.docx"
+        assert passed_event.action == "write"
 
     @pytest.mark.asyncio
     async def test_change_providers_notified_on_events(self):

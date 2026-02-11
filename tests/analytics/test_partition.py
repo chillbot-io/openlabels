@@ -59,10 +59,18 @@ def test_part_filename_sequence():
     assert part_filename(42) == "part-00042.parquet"
 
 
-def test_timestamped_part_filename_uniqueness():
+def test_timestamped_part_filename_format_and_uniqueness():
     a = timestamped_part_filename()
+    import time
+    time.sleep(0.001)  # ensure at least 1ms gap for microsecond-based timestamps
     b = timestamped_part_filename()
-    # Two calls in quick succession should produce different names
-    # (microsecond precision makes this very likely)
     assert a.endswith(".parquet")
     assert a.startswith("part-")
+    assert b.endswith(".parquet")
+    assert b.startswith("part-")
+    # Extract the timestamp portion between "part-" and ".parquet"
+    ts_a = a[len("part-"):-len(".parquet")]
+    ts_b = b[len("part-"):-len(".parquet")]
+    assert ts_a.isdigit(), f"Timestamp portion should be numeric, got {ts_a!r}"
+    assert ts_b.isdigit(), f"Timestamp portion should be numeric, got {ts_b!r}"
+    assert a != b, "Two calls should produce different filenames"

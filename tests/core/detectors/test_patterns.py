@@ -832,18 +832,28 @@ class TestPatternRegistration:
 
     def test_pattern_definition_structure(self):
         """Test each pattern has correct PatternDefinition structure."""
+        seen_entity_types = set()
         for p in PATTERNS:
             # Pattern should be compiled regex
             assert hasattr(p.pattern, 'finditer')
-            # Entity type should be non-empty string
-            assert isinstance(p.entity_type, str)
-            assert len(p.entity_type) > 0
+            # Entity type should be non-empty string that follows naming convention
+            assert p.entity_type, f"Pattern has empty entity_type"
+            assert p.entity_type == p.entity_type.upper(), (
+                f"Entity type {p.entity_type!r} should be uppercase"
+            )
+            seen_entity_types.add(p.entity_type)
             # Confidence should be float 0-1
-            assert isinstance(p.confidence, float)
-            assert 0.0 <= p.confidence <= 1.0
+            assert 0.0 < p.confidence <= 1.0, (
+                f"Pattern {p.entity_type} has invalid confidence {p.confidence}"
+            )
             # Group index should be non-negative int
-            assert isinstance(p.group, int)
-            assert p.group >= 0
+            assert p.group >= 0, (
+                f"Pattern {p.entity_type} has negative group index {p.group}"
+            )
+        # Sanity check: pattern set covers expected core entity types
+        assert "SSN" in seen_entity_types
+        assert "EMAIL" in seen_entity_types
+        assert "PHONE" in seen_entity_types
 
 
 # =============================================================================

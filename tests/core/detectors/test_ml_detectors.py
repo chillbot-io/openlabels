@@ -227,15 +227,13 @@ class TestMLDetectorLoad:
                     # We need to patch inside the load() try block
                     pass
 
-        # Simpler approach: just verify the file check passes by mocking imports
+        # Verify the file check passes but load fails without real transformers
         detector = MLDetector(model_path=model_dir)
-        # The file checks should pass, but transformers import will determine outcome
-        # We can't easily mock the dynamic import, so just verify file validation logic
-        # by checking that it gets past file checks (will fail at import or model load)
+        # File checks pass (safetensors + config.json present), but transformers
+        # import fails in test env, so load() returns False
         result = detector.load()
-        # Without real transformers installed, this may return False from ImportError
-        # which is fine -- we're testing file validation, not model loading
-        assert detector._loaded is False or detector._loaded is True
+        assert result is False
+        assert detector._loaded is False
 
     def test_load_transformers_import_error(self, tmp_path):
         """load() returns False gracefully when transformers not installed."""
@@ -245,10 +243,11 @@ class TestMLDetectorLoad:
         (model_dir / "config.json").write_text("{}")
 
         detector = MLDetector(model_path=model_dir)
-        # In test environment, transformers may not be installed
-        # Either way, load should not raise
+        # In test environment, transformers is not installed so load will fail
+        # gracefully and return False
         result = detector.load()
-        assert isinstance(result, bool)
+        assert result is False
+        assert detector._loaded is False
 
     def test_load_oserror_corrupted_model(self, tmp_path):
         """load() returns False on OSError (corrupted model files)."""

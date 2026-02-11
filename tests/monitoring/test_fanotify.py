@@ -71,12 +71,16 @@ class TestResolvePidUser:
         assert result is None
 
     def test_current_process_resolves(self):
-        """Current process PID should resolve to a username."""
+        """Current process PID should resolve to the current user's name."""
         import os
         result = _resolve_pid_user(os.getpid())
-        assert result is not None
-        assert isinstance(result, str)
-        assert len(result) > 0
+        # Verify it matches the actual current user
+        expected_user = os.environ.get("USER") or os.environ.get("LOGNAME")
+        if expected_user:
+            assert result == expected_user
+        else:
+            # Fallback: at least verify it's a non-empty string (not just not None)
+            assert result and len(result) > 0
 
 
 class TestFanotifyProvider:
@@ -158,10 +162,16 @@ class TestFanotifyEventParsing:
         """fanotify_event_metadata should be 24 bytes on 64-bit."""
         assert _FANOTIFY_EVENT_SIZE == 24
 
-    def test_mask_combinations(self):
-        """Multiple event flags can be combined."""
-        combined = FAN_CREATE | FAN_MODIFY | FAN_CLOSE_WRITE
-        assert combined & FAN_CREATE
-        assert combined & FAN_MODIFY
-        assert combined & FAN_CLOSE_WRITE
-        assert not (combined & FAN_DELETE)
+    def test_combined_mask_action_resolution(self):
+        """When multiple flags are set, _mask_to_action follows priority order."""
+        # Write flags combined still resolve to "write"
+        combined_write = FAN_CREATE | FAN_MODIFY | FAN_CLOSE_WRITE
+        assert _mask_to_action(combined_write) == "write"
+
+        # Delete overrides write
+        combined_delete_write = FAN_DELETE | FAN_MODIFY
+        assert _mask_to_action(combined_delete_write) == "delete"
+
+        # Rename overrides write but not delete
+        combined_rename_write = FAN_MOVED_FROM | FAN_MODIFY
+        assert _mask_to_action(combined_rename_write) == "rename"

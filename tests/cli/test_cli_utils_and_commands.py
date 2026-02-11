@@ -499,13 +499,14 @@ class TestGetHttpxClient:
             client.close()
 
     def test_client_has_timeout(self):
-        """Client should have a timeout configured (30s per source)."""
+        """Client should have a 30s timeout configured."""
         from openlabels.cli.utils import get_httpx_client
 
         client = get_httpx_client()
         try:
-            # httpx.Client stores timeout as a Timeout object
-            assert client.timeout is not None
+            # Source sets timeout=30.0 in get_httpx_client
+            assert client.timeout.connect == 30.0
+            assert client.timeout.read == 30.0
         finally:
             client.close()
 

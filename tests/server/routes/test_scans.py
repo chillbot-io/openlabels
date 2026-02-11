@@ -175,7 +175,7 @@ class TestListScans:
 
     async def test_pagination_works(self, test_client, setup_scans_data):
         """Should respect pagination parameters."""
-        response = await test_client.get("/api/scans?page=1&page_size=3")
+        response = await test_client.get("/api/v1/scans?page=1&page_size=3")
         assert response.status_code == 200
         data = response.json()
 

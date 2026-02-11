@@ -61,11 +61,13 @@ def _make_fake(**overrides) -> FakeDirectoryTree:
 class TestDirectoryTreeToArrow:
 
     def test_basic_conversion(self):
-        rows = [_make_fake(), _make_fake(dir_path="/data/other", dir_name="other")]
+        rows = [_make_fake(dir_path="/data/test", dir_name="test"),
+                _make_fake(dir_path="/data/other", dir_name="other")]
         table = directory_tree_to_arrow(rows)
 
-        assert isinstance(table, pa.Table)
         assert table.num_rows == 2
+        assert table.column("dir_path").to_pylist() == ["/data/test", "/data/other"]
+        assert table.column("dir_name").to_pylist() == ["test", "other"]
 
     def test_schema_matches(self):
         table = directory_tree_to_arrow([_make_fake()])
@@ -115,6 +117,13 @@ class TestDirectoryTreeToArrow:
 
         ts = table.column("dir_modified")[0].as_py()
         assert ts.tzinfo is not None
+        # Arrow may return zoneinfo.ZoneInfo('UTC') rather than datetime.timezone.utc,
+        # so verify UTC offset semantics instead of object identity.
+        assert ts.utcoffset().total_seconds() == 0
+        assert ts.year == 2024
+        assert ts.month == 1
+        assert ts.day == 1
+        assert ts.hour == 12
 
     def test_null_timestamps(self):
         table = directory_tree_to_arrow([

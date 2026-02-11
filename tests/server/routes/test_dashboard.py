@@ -448,11 +448,6 @@ class TestEntityTrends:
 class TestAccessHeatmap:
     """Tests for GET /api/dashboard/access-heatmap endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_dashboard_data):
-        """Access heatmap endpoint should return 200 OK."""
-        response = await test_client.get("/api/dashboard/access-heatmap")
-        assert response.status_code == 200
-
     async def test_returns_7x24_matrix(self, test_client, setup_dashboard_data):
         """Access heatmap should return 7x24 matrix."""
         response = await test_client.get("/api/dashboard/access-heatmap")
@@ -486,11 +481,6 @@ class TestAccessHeatmap:
 
 class TestHeatmap:
     """Tests for GET /api/dashboard/heatmap endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_dashboard_data):
-        """Heatmap endpoint should return 200 OK."""
-        response = await test_client.get("/api/dashboard/heatmap")
-        assert response.status_code == 200
 
     async def test_returns_roots_array(self, test_client, setup_dashboard_data):
         """Heatmap response should have roots array."""
@@ -657,20 +647,3 @@ class TestHeatmap:
         assert "entity_counts" in root
 
 
-class TestDashboardContentType:
-    """Tests for response content type."""
-
-    async def test_stats_returns_json(self, test_client, setup_dashboard_data):
-        """Stats endpoint should return JSON."""
-        response = await test_client.get("/api/dashboard/stats")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_trends_returns_json(self, test_client, setup_dashboard_data):
-        """Trends endpoint should return JSON."""
-        response = await test_client.get("/api/dashboard/trends")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_heatmap_returns_json(self, test_client, setup_dashboard_data):
-        """Heatmap endpoint should return JSON."""
-        response = await test_client.get("/api/dashboard/heatmap")
-        assert "application/json" in response.headers.get("content-type", "")

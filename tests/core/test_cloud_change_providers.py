@@ -233,10 +233,17 @@ class TestSQSChangeProvider:
             files.append(fi)
 
         mock_client.delete_message_batch.assert_called_once()
-        call_kwargs = mock_client.delete_message_batch.call_args
-        entries = call_kwargs[1]["Entries"] if "Entries" in (call_kwargs[1] or {}) else call_kwargs[0][0] if call_kwargs[0] else []
-        # Verify via lambda call
-        assert mock_client.delete_message_batch.called
+        call_args = mock_client.delete_message_batch.call_args
+        # The call is delete_message_batch(QueueUrl=..., Entries=...)
+        entries = call_args[1]["Entries"] if call_args[1] and "Entries" in call_args[1] else call_args[0][1] if len(call_args[0]) > 1 else []
+        # Verify both receipt handles are included
+        receipt_handles_in_entries = {e["ReceiptHandle"] for e in entries}
+        assert receipt_handles_in_entries == {"rh-1", "rh-2"}, (
+            f"Expected receipt handles {{'rh-1', 'rh-2'}}, got {receipt_handles_in_entries}"
+        )
+        # Verify QueueUrl is passed
+        queue_url = call_args[1].get("QueueUrl") if call_args[1] else call_args[0][0] if call_args[0] else None
+        assert queue_url == "https://sqs.example.com/queue"
 
 
 class TestPubSubChangeProvider:

@@ -83,8 +83,11 @@ class TestGetResult:
         svc = _make_service(f["session"], f["tenant"].id)
 
         result = await svc.get_result(f["results"][0].id)
-        assert result is not None
+        assert result.id == f["results"][0].id
         assert result.risk_tier == "CRITICAL"
+        assert result.risk_score == 95
+        assert result.file_path == "/data/file0.txt"
+        assert result.tenant_id == f["tenant"].id
 
     @pytest.mark.asyncio
     async def test_get_result_wrong_tenant(self, result_fixtures):

@@ -34,15 +34,9 @@ from openlabels.labeling.mip import (
 class TestPythonnetAvailability:
     """Tests for pythonnet availability checks."""
 
-    def test_pythonnet_available_is_boolean(self):
-        """PYTHONNET_AVAILABLE is a boolean."""
-        assert isinstance(PYTHONNET_AVAILABLE, bool)
-
-    def test_is_mip_available_returns_boolean(self):
-        """is_mip_available returns boolean."""
-        result = is_mip_available()
-        assert isinstance(result, bool)
-        assert result == PYTHONNET_AVAILABLE
+    def test_is_mip_available_matches_pythonnet_constant(self):
+        """is_mip_available returns same value as PYTHONNET_AVAILABLE."""
+        assert is_mip_available() == PYTHONNET_AVAILABLE
 
 
 class TestLoadMipAssemblies:
@@ -441,8 +435,8 @@ class TestMIPClientGetLabel:
 
         label = await client.get_label("label-123")
 
-        assert label is not None
         assert label.id == "label-123"
+        assert label.name == "Target"
 
     async def test_get_label_returns_none_if_not_found(self):
         """get_label returns None if label not found."""
@@ -564,8 +558,7 @@ class TestMIPClientDefaultSdkPath:
             with patch.dict("os.environ", {"LOCALAPPDATA": "C:\\Users\\Test\\AppData\\Local"}):
                 path = client._default_sdk_path()
 
-        # Path should end with MIP/SDK
-        assert "MIP" in str(path) or "mip" in str(path).lower()
+        assert path == Path("C:\\Users\\Test\\AppData\\Local") / "MIP" / "SDK"
 
     def test_default_sdk_path_linux(self):
         """Default path on Linux uses home directory."""
@@ -578,5 +571,4 @@ class TestMIPClientDefaultSdkPath:
         with patch("sys.platform", "linux"):
             path = client._default_sdk_path()
 
-        # Path should be under home
-        assert ".mip" in str(path) or "mip" in str(path).lower()
+        assert path == Path.home() / ".mip" / "sdk"

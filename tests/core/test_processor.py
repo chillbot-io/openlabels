@@ -464,7 +464,12 @@ class TestProcessFile:
             exposure_level="PRIVATE",
         )
 
-        assert result.processed_at is not None
+        from datetime import datetime, timezone
+        assert isinstance(result.processed_at, datetime)
+        # Should be a recent UTC timestamp (within last 10 seconds)
+        now = datetime.now(timezone.utc)
+        delta = (now - result.processed_at).total_seconds()
+        assert 0 <= delta < 10, f"processed_at should be recent, but was {delta}s ago"
 
 
 # =============================================================================
@@ -982,30 +987,31 @@ class TestDecodeText:
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_latin1_fallback(self, mock_ocr, mock_orch_cls):
-        """Latin-1 encoded content is decoded when UTF-8 and UTF-16 fail."""
+        """Latin-1 encoded content is decoded without raising."""
         processor = FileProcessor(enable_ocr=False)
         # Create content that is valid latin-1 but invalid UTF-8.
-        # Use a longer string so UTF-16 BOM detection fails more clearly.
+        # Note: _decode_text tries utf-16 before latin-1, and utf-16
+        # will succeed (producing garbled text) for even-length byte strings.
         content = "R\xe9sum\xe9 du caf\xe9".encode("latin-1")
 
         result = await processor._decode_text(content)
-        # The decoder tries utf-8 (fails), utf-16 (fails or produces garbage),
-        # then latin-1 succeeds. In all cases, we get a valid string back.
-        assert isinstance(result, str)
-        assert len(result) > 0
+        # The decoder returns a string without raising - utf-16 may win
+        # over latin-1, producing garbled characters, but the string is non-empty
+        assert len(result) == len(content) // 2 or len(result) == len(content), (
+            f"Expected decoded length to match utf-16 ({len(content)//2}) or latin-1 ({len(content)}) length, got {len(result)}"
+        )
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
     async def test_last_resort_replace_errors(self, mock_ocr, mock_orch_cls):
-        """Truly undecodable bytes use replacement characters."""
+        """Bytes with BOM-like prefix are decoded (UTF-16 or latin-1 fallback)."""
         processor = FileProcessor(enable_ocr=False)
-        # This will work with latin-1 since latin-1 can decode any byte
-        # But we can still test the function works
-        content = b"\xff\xfe\x00\x41\x00"
+        # \xff\xfe is UTF-16 LE BOM, followed by 'A' in UTF-16 LE (\x41\x00)
+        content = b"\xff\xfe\x41\x00"
 
         result = await processor._decode_text(content)
-        assert isinstance(result, str)
-        assert len(result) > 0
+        # Should decode as UTF-16 LE: the 'A' character
+        assert "A" in result
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
@@ -1654,8 +1660,8 @@ class TestConvenienceFunction:
 
     @patch("openlabels.core.processor.DetectorOrchestrator")
     @patch("openlabels.core.processor.FileProcessor._init_ocr_engine")
-    async def test_convenience_function_passes_kwargs(self, mock_ocr, mock_orch_cls):
-        """Convenience function passes kwargs to FileProcessor."""
+    async def test_convenience_function_defaults_to_private(self, mock_ocr, mock_orch_cls):
+        """Convenience function defaults exposure_level to PRIVATE."""
         mock_orch_cls.return_value.detect = AsyncMock(return_value=_make_detection_result())
 
         result = await process_file_convenience(
@@ -1663,7 +1669,9 @@ class TestConvenienceFunction:
             content="hello",
         )
 
-        assert isinstance(result, FileClassification)
+        assert result.file_path == "test.txt"
+        assert result.exposure_level == "PRIVATE"
+        assert result.error is None
 
 
 # =============================================================================
@@ -1813,21 +1821,28 @@ class TestPipelineOrchestration:
 class TestExtensionConstants:
     """Tests for file extension constants."""
 
-    def test_text_extensions_are_frozenset(self):
-        """TEXT_EXTENSIONS is an immutable frozenset."""
+    def test_text_extensions_contain_expected(self):
+        """TEXT_EXTENSIONS is a frozenset containing common text file types."""
         assert isinstance(TEXT_EXTENSIONS, frozenset)
+        assert ".txt" in TEXT_EXTENSIONS
+        assert ".csv" in TEXT_EXTENSIONS or ".log" in TEXT_EXTENSIONS
 
-    def test_office_extensions_are_frozenset(self):
-        """OFFICE_EXTENSIONS is an immutable frozenset."""
+    def test_office_extensions_contain_expected(self):
+        """OFFICE_EXTENSIONS is a frozenset containing common office file types."""
         assert isinstance(OFFICE_EXTENSIONS, frozenset)
+        assert ".docx" in OFFICE_EXTENSIONS
+        assert ".xlsx" in OFFICE_EXTENSIONS
 
-    def test_pdf_extensions_are_frozenset(self):
-        """PDF_EXTENSIONS is an immutable frozenset."""
+    def test_pdf_extensions_contain_expected(self):
+        """PDF_EXTENSIONS is a frozenset containing .pdf."""
         assert isinstance(PDF_EXTENSIONS, frozenset)
+        assert ".pdf" in PDF_EXTENSIONS
 
-    def test_image_extensions_are_frozenset(self):
-        """IMAGE_EXTENSIONS is an immutable frozenset."""
+    def test_image_extensions_contain_expected(self):
+        """IMAGE_EXTENSIONS is a frozenset containing common image types."""
         assert isinstance(IMAGE_EXTENSIONS, frozenset)
+        assert ".png" in IMAGE_EXTENSIONS
+        assert ".jpg" in IMAGE_EXTENSIONS or ".jpeg" in IMAGE_EXTENSIONS
 
     def test_extensions_all_lowercase(self):
         """All extensions start with a dot and are lowercase."""

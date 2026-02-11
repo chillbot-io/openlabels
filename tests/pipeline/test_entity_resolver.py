@@ -180,9 +180,9 @@ class TestEntityProperties:
 
         entities = resolver.resolve(spans)
 
-        # Should be the correct type and have expected value
-        assert isinstance(entities[0], Entity)
+        assert len(entities) == 1
         assert entities[0].canonical_value == "John Smith"
+        assert entities[0].count == 1
 
     def test_entity_has_entity_type(self):
         """Entity entity_type should reflect the span type."""
@@ -191,9 +191,8 @@ class TestEntityProperties:
 
         entities = resolver.resolve(spans)
 
-        # Entity type should contain NAME (might be normalized)
-        assert isinstance(entities[0].entity_type, str)
-        assert "NAME" in entities[0].entity_type
+        assert len(entities) == 1
+        assert entities[0].entity_type == "NAME_PATIENT"
 
     def test_entity_has_mentions(self):
         """Entity mentions should contain all matching spans."""
@@ -205,11 +204,11 @@ class TestEntityProperties:
 
         entities = resolver.resolve(spans)
 
-        # Verify mentions is a list with correct count
-        assert isinstance(entities[0].mentions, list)
+        assert len(entities) == 1
         assert len(entities[0].mentions) == 2
-        # Each mention should be a Mention object
-        assert all(isinstance(m, Mention) for m in entities[0].mentions)
+        # Mentions should have correct normalized text
+        mention_texts = {m.normalized_text for m in entities[0].mentions}
+        assert "john smith" in mention_texts or "John Smith" in mention_texts
 
 
 # =============================================================================
@@ -227,6 +226,7 @@ class TestEdgeCases:
         entities = resolver.resolve(spans)
 
         assert len(entities) == 1
+        assert entities[0].canonical_value == "José García"
 
     def test_many_spans_performance(self):
         """Handles many spans without timeout."""
@@ -241,11 +241,11 @@ class TestEdgeCases:
         assert len(entities) == 100
 
     def test_preserves_confidence(self):
-        """Entity preserves span confidence."""
+        """Entity mentions preserve span confidence."""
         resolver = EntityResolver()
         spans = [make_span("John Smith", entity_type="NAME", confidence=0.95)]
 
         entities = resolver.resolve(spans)
 
-        # Entity or mention should have confidence
         assert len(entities) == 1
+        assert entities[0].mentions[0].span.confidence == 0.95

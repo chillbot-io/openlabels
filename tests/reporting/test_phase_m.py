@@ -36,34 +36,38 @@ class TestReportingSettings:
 
 
 class TestModuleStructure:
-    def test_reporting_package_importable(self):
+    def test_reporting_package_exports(self):
         from openlabels.reporting import ReportEngine, ReportRenderer
 
-        assert ReportEngine is not None
-        assert ReportRenderer is not None
+        # Verify they are the correct classes (not re-exported stubs)
+        assert callable(ReportEngine)
+        assert callable(ReportRenderer)
 
-    def test_engine_has_required_methods(self):
+    def test_engine_generate_is_coroutine(self):
+        import asyncio
         from openlabels.reporting.engine import ReportEngine
 
-        assert hasattr(ReportEngine, "generate")
-        assert hasattr(ReportEngine, "distribute_email")
+        assert asyncio.iscoroutinefunction(ReportEngine.generate)
 
-    def test_renderer_has_required_methods(self):
+    def test_renderer_methods_are_callable(self):
         from openlabels.reporting.engine import ReportRenderer
 
-        assert hasattr(ReportRenderer, "render_html")
-        assert hasattr(ReportRenderer, "render_pdf")
-        assert hasattr(ReportRenderer, "render_csv")
-        assert hasattr(ReportRenderer, "render")
+        renderer = ReportRenderer()
+        assert callable(renderer.render_html)
+        assert callable(renderer.render_pdf)
+        assert callable(renderer.render_csv)
+        assert callable(renderer.render)
 
     def test_report_types_constant(self):
         from openlabels.reporting.engine import REPORT_TYPES
 
-        assert "executive_summary" in REPORT_TYPES
-        assert "compliance_report" in REPORT_TYPES
-        assert "scan_detail" in REPORT_TYPES
-        assert "access_audit" in REPORT_TYPES
-        assert "sensitive_files" in REPORT_TYPES
+        assert REPORT_TYPES == frozenset({
+            "executive_summary", "compliance_report", "scan_detail",
+            "access_audit", "sensitive_files",
+        }) or set(REPORT_TYPES) >= {
+            "executive_summary", "compliance_report", "scan_detail",
+            "access_audit", "sensitive_files",
+        }
 
 
 # ── Templates ────────────────────────────────────────────────────────
@@ -208,16 +212,17 @@ class TestReportRenderer:
 
         renderer = ReportRenderer()
         result = renderer.render("executive_summary", self._sample_data(), "html")
-        assert isinstance(result, str)
         assert "<html" in result
+        assert "Executive Summary" in result
+        assert "Test Corp" in result
 
     def test_render_dispatches_to_csv(self):
         from openlabels.reporting.engine import ReportRenderer
 
         renderer = ReportRenderer()
         result = renderer.render("executive_summary", self._sample_data(), "csv")
-        assert isinstance(result, str)
-        assert "file_path" in result
+        assert "file_path,risk_score,risk_tier,entity_counts" in result
+        assert "/data/test.csv" in result
 
 
 # ── ReportEngine ─────────────────────────────────────────────────────
@@ -274,7 +279,8 @@ class TestOptionalDependencies:
 
     def test_all_extra_includes_reports(self):
         pyproject = Path("pyproject.toml").read_text()
-        assert "reports" in pyproject
+        # The "all" extra should include "reports" in its dependency list
+        assert "openlabels[" in pyproject and "reports]" in pyproject
 
 
 # ── DB model ─────────────────────────────────────────────────────────

@@ -100,11 +100,15 @@ class TestCursorPaginationParams:
         assert params.limit == 100
 
     def test_limit_below_minimum_rejected(self):
-        with pytest.raises(Exception):  # Pydantic ValidationError
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             CursorPaginationParams(limit=0)
 
     def test_limit_above_maximum_rejected(self):
-        with pytest.raises(Exception):  # Pydantic ValidationError
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             CursorPaginationParams(limit=101)
 
     def test_decode_with_valid_cursor(self):

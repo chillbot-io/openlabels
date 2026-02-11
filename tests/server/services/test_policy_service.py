@@ -159,10 +159,14 @@ class TestBuiltinPacks:
         svc = _make_service(f["session"], f["tenant"].id, f["user"].id)
 
         packs = await svc.list_builtin_packs()
-        assert isinstance(packs, list)
-        assert len(packs) > 0
-        assert "name" in packs[0]
-        assert "framework" in packs[0]
+        assert len(packs) >= 1, "Should have at least one built-in policy pack"
+        for pack in packs:
+            assert isinstance(pack["name"], str) and len(pack["name"]) > 0, \
+                "Each pack must have a non-empty name"
+            assert isinstance(pack["framework"], str) and len(pack["framework"]) > 0, \
+                "Each pack must have a non-empty framework"
+            assert "description" in pack, "Each pack must have a description"
+            assert "risk_level" in pack, "Each pack must have a risk_level"
 
 
 class TestComplianceStats:

@@ -261,7 +261,7 @@ class TestParseAusearchCsv:
         assert result == []
 
     def test_parse_valid_csv(self, tmp_path):
-        """Parsing valid CSV returns events."""
+        """Parsing valid CSV returns events with correct actions and user info."""
         output = """NODE,EVENT_TYPE,EVENT_TIME,AUDIT_ID,UID,AUID
 host1,OPEN,2026-01-15T10:30:00,1234,1000,1000
 host1,WRITE,2026-01-15T10:31:00,1235,1000,1000"""
@@ -272,7 +272,19 @@ host1,WRITE,2026-01-15T10:31:00,1235,1000,1000"""
             result = _parse_ausearch_csv(output, tmp_path / "file.txt", 100)
 
         assert len(result) == 2
-        assert result[0].action in (AccessAction.READ, AccessAction.WRITE)
+        # OPEN maps to READ via _parse_linux_event_type
+        assert result[0].action == AccessAction.READ
+        # WRITE maps to WRITE
+        assert result[1].action == AccessAction.WRITE
+        # Both events should have the resolved username
+        assert result[0].user_name == "testuser"
+        assert result[1].user_name == "testuser"
+        # Both events should have the UID as user_sid
+        assert result[0].user_sid == "1000"
+        assert result[1].user_sid == "1000"
+        # Path should be the file passed in
+        assert result[0].path == tmp_path / "file.txt"
+        assert result[1].path == tmp_path / "file.txt"
 
     def test_parse_csv_respects_limit(self, tmp_path):
         """Parsing respects limit parameter."""
@@ -284,7 +296,7 @@ host1,READ,2026-01-15T10:32:00,3,1000,1000"""
         with patch("openlabels.monitoring.history._resolve_linux_uid", return_value="user"):
             result = _parse_ausearch_csv(output, tmp_path / "file.txt", 2)
 
-        assert len(result) <= 2
+        assert len(result) == 2
 
     def test_parse_csv_short_line(self, tmp_path):
         """Parsing handles lines with fewer columns."""

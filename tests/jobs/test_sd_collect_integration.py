@@ -82,7 +82,8 @@ class TestCollectSecurityDescriptors:
 
             assert stats["total_dirs"] == 3  # root + a + b
             assert stats["unique_sds"] >= 1
-            assert "elapsed_seconds" in stats
+            assert isinstance(stats["elapsed_seconds"], float)
+            assert stats["elapsed_seconds"] >= 0
 
             # Verify sd_hash was set on directory_tree rows
             result = await session.execute(text(
@@ -342,9 +343,9 @@ class TestGetSDStats:
             stats = await get_sd_stats(session, tenant.id, target.id)
 
             assert stats["unique_sds"] >= 1
-            assert stats["world_accessible"] >= 1
-            assert isinstance(stats["custom_acl"], int)
-            assert isinstance(stats["authenticated_users"], int)
+            assert stats["world_accessible"] >= 1  # tmpdir and "a" are 0o755
+            assert stats["custom_acl"] >= 0
+            assert stats["authenticated_users"] >= 0
 
     async def test_returns_zeros_when_no_sds(self, target_with_real_dirs):
         """When no SDs collected, stats should be all zeros."""

@@ -184,8 +184,19 @@ class TestS3ApplyLabelAndSync:
         assert result["success"] is True
         assert result["method"] == "s3_metadata"
 
-        # Verify copy_object was called (server-side self-copy with CopySourceIfMatch)
-        assert mock_client.copy_object.called
+        # Verify copy_object was called with correct self-copy and metadata args
+        mock_client.copy_object.assert_called_once()
+        call_kwargs = mock_client.copy_object.call_args[1]
+        assert call_kwargs["Bucket"] == "my-bucket"
+        assert call_kwargs["Key"] == "doc.pdf"
+        assert call_kwargs["CopySource"] == "my-bucket/doc.pdf"
+        assert call_kwargs["CopySourceIfMatch"] == '"abc123"'
+        assert call_kwargs["MetadataDirective"] == "REPLACE"
+        assert call_kwargs["ContentType"] == "application/pdf"
+        # Verify label metadata was merged with existing metadata
+        assert call_kwargs["Metadata"]["openlabels-label-id"] == "label-uuid"
+        assert call_kwargs["Metadata"]["openlabels-label-name"] == "Confidential"
+        assert call_kwargs["Metadata"]["existing-key"] == "existing-val"
 
     @pytest.mark.asyncio
     async def test_apply_label_etag_mismatch(self):
@@ -264,15 +275,30 @@ class TestS3ETagDiff:
 
 
 class TestS3BuildClient:
-    def test_build_client_requires_boto3(self):
+    def test_ensure_client_lazy_creates_client(self):
+        """_ensure_client should build the client on first call and cache it."""
         from openlabels.adapters.s3 import S3Adapter
 
         adapter = S3Adapter(bucket="my-bucket")
+        mock_client = MagicMock()
 
-        with patch.dict("sys.modules", {"boto3": None}):
-            # If boto3 is not installed, should raise ImportError
-            # This test just verifies the method exists and has proper error handling
-            assert hasattr(adapter, "_build_client")
+        with patch.object(adapter, "_build_client", return_value=mock_client) as mock_build:
+            result = adapter._ensure_client()
+
+        assert result is mock_client
+        assert adapter._client is mock_client
+        mock_build.assert_called_once()
+
+    def test_ensure_client_reuses_existing(self):
+        """_ensure_client should return cached client on subsequent calls."""
+        from openlabels.adapters.s3 import S3Adapter
+
+        adapter = S3Adapter(bucket="my-bucket")
+        mock_client = MagicMock()
+        adapter._client = mock_client
+
+        result = adapter._ensure_client()
+        assert result is mock_client
 
     def test_resolve_prefix(self):
         from openlabels.adapters.s3 import S3Adapter

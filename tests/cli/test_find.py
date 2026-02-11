@@ -196,7 +196,7 @@ class TestFindWithFilter:
     """Tests for find with filter expressions."""
 
     def test_find_score_filter(self, runner, temp_dir, mock_file_classification):
-        """Find with score filter."""
+        """Find with score filter should show matching files."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -207,9 +207,11 @@ class TestFindWithFilter:
             result = runner.invoke(find, [temp_dir, "--where", "score > 50"])
 
         assert result.exit_code == 0
+        # mock_file_classification has risk_score=75, should match score > 50
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_tier_filter(self, runner, temp_dir, mock_file_classification):
-        """Find with tier filter."""
+        """Find with tier filter should show matching files."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -220,9 +222,11 @@ class TestFindWithFilter:
             result = runner.invoke(find, [temp_dir, "--where", "tier = HIGH"])
 
         assert result.exit_code == 0
+        # mock_file_classification has risk_tier=HIGH, should match
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_has_entity_filter(self, runner, temp_dir, mock_file_classification):
-        """Find with has() entity filter."""
+        """Find with has() entity filter should show files containing entity."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -233,9 +237,11 @@ class TestFindWithFilter:
             result = runner.invoke(find, [temp_dir, "--where", "has(SSN)"])
 
         assert result.exit_code == 0
+        # mock_file_classification has entity_counts={"SSN": 2, ...}, should match
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_count_entity_filter(self, runner, temp_dir, mock_file_classification):
-        """Find with count() entity filter."""
+        """Find with count() entity filter should show files matching count threshold."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -246,9 +252,11 @@ class TestFindWithFilter:
             result = runner.invoke(find, [temp_dir, "--where", "count(SSN) >= 2"])
 
         assert result.exit_code == 0
+        # mock_file_classification has entity_counts={"SSN": 2}, matches count(SSN) >= 2
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_compound_filter(self, runner, temp_dir, mock_file_classification):
-        """Find with compound AND/OR filter."""
+        """Find with compound AND/OR filter should match files meeting all conditions."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -259,6 +267,8 @@ class TestFindWithFilter:
             result = runner.invoke(find, [temp_dir, "--where", "score > 50 AND has(SSN)"])
 
         assert result.exit_code == 0
+        # mock_file_classification has score=75 AND SSN entity, should match
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_invalid_filter_shows_error(self, runner, temp_dir):
         """Find with invalid filter should show error."""
@@ -332,7 +342,7 @@ class TestFindOutputFormats:
         assert "risk_tier" in result.output
 
     def test_find_paths_format(self, runner, temp_dir, mock_file_classification):
-        """Find with paths-only format."""
+        """Find with paths-only format should output file paths."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -343,13 +353,15 @@ class TestFindOutputFormats:
             result = runner.invoke(find, [temp_dir, "--format", "paths"])
 
         assert result.exit_code == 0
+        # paths format should output file paths (from mock: /test/file.txt)
+        assert "/test/file.txt" in result.output or temp_dir in result.output
 
 
 class TestFindSorting:
     """Tests for find sorting options."""
 
     def test_find_sort_by_score(self, runner, temp_dir, mock_file_classification):
-        """Find sorted by score."""
+        """Find sorted by score should produce output."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -360,9 +372,10 @@ class TestFindSorting:
             result = runner.invoke(find, [temp_dir, "--sort", "score", "--desc"])
 
         assert result.exit_code == 0
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_sort_by_path(self, runner, temp_dir, mock_file_classification):
-        """Find sorted by path."""
+        """Find sorted by path should produce output."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -373,9 +386,10 @@ class TestFindSorting:
             result = runner.invoke(find, [temp_dir, "--sort", "path", "--asc"])
 
         assert result.exit_code == 0
+        assert "Found" in result.output or "matching" in result.output
 
     def test_find_sort_by_tier(self, runner, temp_dir, mock_file_classification):
-        """Find sorted by tier."""
+        """Find sorted by tier should produce output."""
         from openlabels.cli.commands.find import find
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -386,6 +400,7 @@ class TestFindSorting:
             result = runner.invoke(find, [temp_dir, "--sort", "tier"])
 
         assert result.exit_code == 0
+        assert "Found" in result.output or "matching" in result.output
 
 
 class TestFindNoResults:
@@ -474,3 +489,8 @@ class TestFindIntegration:
             ])
 
         assert result.exit_code == 0
+        # Should produce JSON output with matching results
+        json_start = result.output.find("[")
+        assert json_start >= 0, f"Expected JSON array in output: {result.output}"
+        data = json.loads(result.output[json_start:])
+        assert isinstance(data, list)

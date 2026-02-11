@@ -95,10 +95,9 @@ class TestCollectPosixSD:
             sd = collect_posix_sd(tmpdir)
 
             assert sd is not None
-            assert sd.owner_sid is not None
-            assert sd.group_sid is not None
-            assert sd.dacl_sddl is not None
-            assert sd.dacl_sddl.startswith("0o")
+            assert isinstance(sd.owner_sid, str) and len(sd.owner_sid) > 0
+            assert isinstance(sd.group_sid, str) and len(sd.group_sid) > 0
+            assert sd.dacl_sddl == "0o755"
 
     def test_world_accessible_for_other_readable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -140,7 +139,7 @@ class TestCollectPosixSD:
             sd = collect_posix_sd(tmpdir)
 
             assert sd is not None
-            assert sd.permissions_json is not None
+            assert isinstance(sd.permissions_json, dict)
             expected_keys = {
                 "uid", "gid", "mode",
                 "owner_read", "owner_write", "owner_exec",
@@ -246,8 +245,8 @@ class TestCollectSD:
     def test_returns_sdinfo_for_existing_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             sd = collect_sd(tmpdir)
-            assert sd is not None
             assert isinstance(sd, SDInfo)
+            assert len(sd.sd_hash()) == 32
 
     def test_returns_none_for_nonexistent(self):
         sd = collect_sd("/nonexistent/path/12345")
