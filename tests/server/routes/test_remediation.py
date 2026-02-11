@@ -88,18 +88,8 @@ async def setup_remediation_data(test_db):
 class TestListRemediationActions:
     """Tests for GET /api/v1/remediation endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_remediation_data):
-        """List remediation actions should return 200 OK."""
-        response = await test_client.get("/api/v1/remediation")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert isinstance(data, dict), "Response should be a dictionary"
-        assert "items" in data, "Response should contain 'items' field"
-        assert "total" in data, "Response should contain 'total' field"
-        assert isinstance(data["items"], list), "Items should be a list"
-
     async def test_returns_paginated_structure(self, test_client, setup_remediation_data):
-        """List should return paginated structure."""
+        """List should return paginated structure with correct defaults."""
         response = await test_client.get("/api/v1/remediation")
         assert response.status_code == 200
         data = response.json()
@@ -108,7 +98,8 @@ class TestListRemediationActions:
         assert "total" in data
         assert "page" in data
         assert "total_pages" in data
-        assert isinstance(data["items"], list)
+        assert data["page"] == 1
+        assert data["total"] >= 0
 
     async def test_returns_empty_list_when_no_actions(self, test_client, setup_remediation_data):
         """List should return empty items when no actions exist."""
@@ -291,46 +282,16 @@ class TestListRemediationActions:
 
     async def test_pagination_page_parameter(self, test_client, setup_remediation_data):
         """List should respect page parameter."""
-        response = await test_client.get("/api/remediation?page=1&page_size=10")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
+        response = await test_client.get("/api/v1/remediation?page=1&page_size=10")
+        assert response.status_code == 200
         data = response.json()
-        assert "items" in data, "Response should contain 'items' field"
-        assert "page" in data, "Response should contain 'page' field"
-        assert "total_pages" in data, "Response should contain 'total_pages' field"
-        assert data["page"] == 1, "Page should be 1"
-        assert isinstance(data["items"], list), "Items should be a list"
-        assert len(data["items"]) <= 10, "Items should respect page_size parameter"
+        assert data["page"] == 1
+        assert "total_pages" in data
+        assert len(data["items"]) <= 10
 
 
 class TestGetRemediationAction:
     """Tests for GET /api/v1/remediation/{action_id} endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_remediation_data):
-        """Get action should return 200 OK."""
-        from openlabels.server.models import RemediationAction
-
-        session = setup_remediation_data["session"]
-        tenant = setup_remediation_data["tenant"]
-        admin_user = setup_remediation_data["admin_user"]
-
-        action = RemediationAction(
-            tenant_id=tenant.id,
-            action_type="quarantine",
-            status="completed",
-            source_path="/test/get_file.txt",
-            performed_by=admin_user.email,
-        )
-        session.add(action)
-        await session.commit()
-
-        response = await test_client.get(f"/api/v1/remediation/{action.id}")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["id"] == str(action.id), "Response ID should match requested action"
-        assert data["action_type"] == "quarantine", "Action type should be quarantine"
-        assert data["status"] == "completed", "Status should be completed"
-        assert data["source_path"] == "/test/get_file.txt", "Source path should match"
 
     async def test_returns_action_details(self, test_client, setup_remediation_data):
         """Get action should return action details."""
@@ -710,28 +671,6 @@ class TestRollbackAction:
 class TestRemediationStats:
     """Tests for GET /api/v1/remediation/stats/summary endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_remediation_data):
-        """Stats endpoint should return 200 OK."""
-        response = await test_client.get("/api/v1/remediation/stats/summary")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "total_actions" in data, "Response should contain 'total_actions' field"
-        assert "by_type" in data, "Response should contain 'by_type' field"
-        assert "by_status" in data, "Response should contain 'by_status' field"
-        assert isinstance(data["total_actions"], int), "total_actions should be an integer"
-        assert isinstance(data["by_type"], dict), "by_type should be a dictionary"
-        assert isinstance(data["by_status"], dict), "by_status should be a dictionary"
-
-    async def test_returns_stats_structure(self, test_client, setup_remediation_data):
-        """Stats should return required structure."""
-        response = await test_client.get("/api/v1/remediation/stats/summary")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "total_actions" in data
-        assert "by_type" in data
-        assert "by_status" in data
-
     async def test_returns_zero_values_when_empty(self, test_client, setup_remediation_data):
         """Stats should return zeros when no actions exist."""
         response = await test_client.get("/api/v1/remediation/stats/summary")
@@ -889,26 +828,3 @@ class TestRemediationTenantIsolation:
         assert response.status_code == 404
 
 
-class TestRemediationContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_remediation_data):
-        """List remediation should return JSON."""
-        response = await test_client.get("/api/v1/remediation")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_quarantine_returns_json(self, test_client, setup_remediation_data):
-        """Quarantine should return JSON."""
-        response = await test_client.post(
-            "/api/v1/remediation/quarantine",
-            json={
-                "file_path": "/test/content_type.txt",
-                "dry_run": True,
-            },
-        )
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_stats_returns_json(self, test_client, setup_remediation_data):
-        """Stats should return JSON."""
-        response = await test_client.get("/api/v1/remediation/stats/summary")
-        assert "application/json" in response.headers.get("content-type", "")

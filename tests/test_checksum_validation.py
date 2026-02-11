@@ -334,12 +334,13 @@ class TestNPIValidation:
         assert is_valid is True
         assert confidence == 0.99
 
-    def test_npi_valid_starting_2(self):
-        """Test valid NPI starting with 2."""
+    def test_npi_invalid_starting_2_bad_checksum(self):
+        """Test NPI starting with 2 but failing Luhn checksum."""
         is_valid, confidence = validate_npi("2345678901")
 
-        # Must validate with 80840 prefix
-        assert is_valid is True or is_valid is False  # Depends on checksum
+        # 80840 + 2345678901 fails Luhn check
+        assert is_valid is False
+        assert confidence == 0.0
 
     def test_npi_invalid_starting_0(self):
         """Test NPI starting with 0 is invalid."""
@@ -699,37 +700,36 @@ class TestUPSTrackingValidation:
 class TestFedExTrackingValidation:
     """Test FedEx tracking number validation."""
 
-    def test_fedex_handles_12_digit_format(self):
-        """Test 12-digit FedEx tracking format is processed."""
+    def test_fedex_valid_12_digit_format(self):
+        """Test 12-digit FedEx tracking that passes checksum."""
         is_valid, confidence = validate_fedex_tracking("123456789012")
 
-        # Function should return bool and confidence
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
-        # Arbitrary sequence likely fails checksum
-        assert is_valid is False or confidence < 1.0
+        # 123456789012 passes the weighted checksum for 12-digit FedEx
+        assert is_valid is True
+        assert confidence == 0.99
 
-    def test_fedex_handles_15_digit_96_format(self):
-        """Test 15-digit FedEx tracking starting with 96 is processed."""
+    def test_fedex_invalid_15_digit_96_format(self):
+        """Test 15-digit FedEx tracking starting with 96 fails checksum."""
         is_valid, confidence = validate_fedex_tracking("961234567890123")
 
-        # Function should return bool and confidence
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # This specific sequence fails the mod-10 checksum
+        assert is_valid is False
+        assert confidence == 0.0
 
-    def test_fedex_handles_20_digit_format(self):
-        """Test 20-digit FedEx tracking format is processed."""
+    def test_fedex_valid_20_digit_format(self):
+        """Test 20-digit FedEx tracking that passes checksum."""
         is_valid, confidence = validate_fedex_tracking("12345678901234567890")
 
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        assert is_valid is True
+        assert confidence == 0.99
 
-    def test_fedex_handles_22_digit_92_format(self):
-        """Test 22-digit FedEx tracking starting with 92 is processed."""
+    def test_fedex_invalid_22_digit_92_format(self):
+        """Test 22-digit FedEx tracking starting with 92 fails checksum."""
         is_valid, confidence = validate_fedex_tracking("9212345678901234567890")
 
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # This specific sequence fails the mod-10 checksum
+        assert is_valid is False
+        assert confidence == 0.0
 
     def test_fedex_wrong_length(self):
         """Test FedEx tracking with unsupported length."""
@@ -751,35 +751,38 @@ class TestFedExTrackingValidation:
 class TestUSPSTrackingValidation:
     """Test USPS tracking number validation."""
 
-    def test_usps_handles_international_format(self):
-        """Test USPS international format is processed."""
+    def test_usps_valid_international_format(self):
+        """Test USPS international format passes checksum."""
         # Format: 2 letters + 9 digits + 2 letters
         is_valid, confidence = validate_usps_tracking("EA123456785US")
 
-        # Function should return bool and confidence
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # EA123456785US passes the weighted checksum for international format
+        assert is_valid is True
+        assert confidence == 0.99
 
-    def test_usps_handles_20_digit_format(self):
-        """Test 20-digit USPS tracking format is processed."""
+    def test_usps_invalid_20_digit_format(self):
+        """Test 20-digit USPS tracking fails checksum."""
         is_valid, confidence = validate_usps_tracking("94001234567890123456")
 
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # This specific sequence fails the mod-10 checksum
+        assert is_valid is False
+        assert confidence == 0.0
 
-    def test_usps_handles_22_digit_format(self):
-        """Test 22-digit USPS tracking format is processed."""
+    def test_usps_invalid_22_digit_format(self):
+        """Test 22-digit USPS tracking fails checksum."""
         is_valid, confidence = validate_usps_tracking("9400111899223456789012")
 
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # This specific sequence fails the mod-10 checksum
+        assert is_valid is False
+        assert confidence == 0.0
 
-    def test_usps_handles_lowercase_international(self):
-        """Test USPS international with lowercase is handled."""
+    def test_usps_valid_lowercase_international(self):
+        """Test USPS international with lowercase passes checksum."""
         is_valid, confidence = validate_usps_tracking("ea123456785us")
 
-        assert isinstance(is_valid, bool)
-        assert isinstance(confidence, float)
+        # Lowercase should be normalized to uppercase and pass
+        assert is_valid is True
+        assert confidence == 0.99
 
     def test_usps_wrong_format(self):
         """Test USPS with unsupported format."""

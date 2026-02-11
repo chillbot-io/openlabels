@@ -140,7 +140,6 @@ class TestPDFExtractor:
         extractor = PDFExtractor()
         result = extractor.extract(pdf_bytes, "test.pdf")
 
-        assert result.text is not None
         # PDF extraction should capture the text we inserted
         assert "Test content" in result.text, \
             f"Expected 'Test content' in extracted text, got: {result.text[:200]}"
@@ -160,8 +159,13 @@ class TestPDFExtractor:
         extractor = PDFExtractor()
         result = extractor.extract(pdf_bytes, "multi.pdf")
 
-        assert result.text is not None
         assert result.pages == 3
+        # PyMuPDF insert_text creates drawn text that the extractor treats as scanned.
+        # Verify the extractor correctly reports all 3 pages and warns about OCR.
+        assert len(result.warnings) == 3, \
+            f"Expected 3 OCR warnings for 3 scanned pages, got {len(result.warnings)}: {result.warnings}"
+        assert all("OCR" in w or "scanned" in w.lower() for w in result.warnings), \
+            f"Expected OCR-related warnings, got: {result.warnings}"
 
     def test_invalid_pdf_raises_error(self):
         """Test that invalid PDF raises appropriate error."""
@@ -289,7 +293,6 @@ class TestXLSXExtractor:
         extractor = XLSXExtractor()
         result = extractor.extract(xlsx_bytes, "test.xlsx")
 
-        assert result is not None
         # XLSX extraction should capture cell content
         assert "John Doe" in result.text, \
             f"Expected 'John Doe' from cell in extracted text, got: {result.text[:200]}"
@@ -351,8 +354,9 @@ class TestImageExtractor:
         extractor = ImageExtractor()  # No OCR engine
         result = extractor.extract(img_bytes, "test.png")
 
-        # Without OCR, should return empty or warning
-        assert result is not None
+        # Without OCR, should return empty text and/or needs_ocr flag
+        assert result.text == "" or result.needs_ocr is True, \
+            f"Image without OCR should return empty text or needs_ocr=True, got text={result.text!r}, needs_ocr={result.needs_ocr}"
 
 
 # =============================================================================
@@ -425,10 +429,11 @@ class TestExtractorRegistry:
 
     def test_get_extractor_pdf(self):
         """Test getting PDF extractor."""
-        from openlabels.core.extractors import get_extractor
+        from openlabels.core.extractors import get_extractor, PDFExtractor
 
         extractor = get_extractor("application/pdf", ".pdf")
-        assert extractor is not None
+        assert isinstance(extractor, PDFExtractor), \
+            f"Expected PDFExtractor for application/pdf, got {type(extractor)}"
 
     def test_get_extractor_unknown(self):
         """Test getting extractor for unknown type."""
@@ -450,9 +455,12 @@ class TestExtractorRegistry:
         from openlabels.core.extractors import extract_text
 
         result = extract_text(b"some content", "test.xyz")
-        # Should return result with warning
-        assert result is not None
-        assert len(result.warnings) > 0
+        # Should return result with warning about unsupported type
+        assert len(result.warnings) >= 1
+        # Warning should mention the unsupported type or file
+        warning_text = " ".join(result.warnings).lower()
+        assert "unsupported" in warning_text or "unknown" in warning_text or "xyz" in warning_text, \
+            f"Expected warning about unsupported type, got: {result.warnings}"
 
 
 # =============================================================================

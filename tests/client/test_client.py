@@ -65,7 +65,7 @@ class TestClientInitialization:
 
     def test_multiple_trailing_slashes_handled(self):
         client = OpenLabelsClient("https://api.example.com///")
-        assert not client.base_url.endswith("/")
+        assert client.base_url == "https://api.example.com"
 
     def test_token_stored(self):
         client = OpenLabelsClient(token="test-token")
@@ -275,6 +275,8 @@ class TestAutoPagination:
         async for item in client._iter_pages("/test"):
             items.append(item)
         assert len(items) == 2
+        assert items[0]["id"] == 1
+        assert items[1]["id"] == 2
 
     async def test_multi_page(self):
         """Multiple pages should be followed until has_more is False."""

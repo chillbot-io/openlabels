@@ -49,20 +49,25 @@ class TestClassificationLevels:
         assert any("TOP SECRET" in s.text.upper() for s in class_spans)
 
     def test_detect_top_secret_space_variation(self, detector):
-        """Test TOP SECRET with space variations."""
+        """Test TOP SECRET with space variations (TOP\\s*SECRET pattern)."""
         text = "Classified as TOPSECRET and TOP  SECRET"
         spans = detector.detect(text)
 
         class_spans = [s for s in spans if "CLASSIFICATION" in s.entity_type]
         assert len(class_spans) >= 1
+        # At least one should contain "TOP" and "SECRET"
+        assert any("TOP" in s.text.upper() and "SECRET" in s.text.upper() for s in class_spans)
 
     def test_detect_secret_with_context(self, detector):
         """Test SECRET detection with classification context."""
         text = "Classification: SECRET//NOFORN"
         spans = detector.detect(text)
 
-        # Should detect classification level or marking
+        # Should detect classification marking and/or dissemination control
         assert len(spans) >= 1
+        entity_types = {s.entity_type for s in spans}
+        # At least one classification-related entity should be found
+        assert entity_types & {"CLASSIFICATION_LEVEL", "CLASSIFICATION_MARKING", "DISSEMINATION_CONTROL"}
 
     def test_detect_confidential(self, detector):
         """Test CONFIDENTIAL detection with classification context."""
@@ -71,6 +76,7 @@ class TestClassificationLevels:
 
         class_spans = [s for s in spans if "CLASSIFICATION" in s.entity_type]
         assert len(class_spans) >= 1
+        assert any("CONFIDENTIAL" in s.text.upper() for s in class_spans)
 
     def test_detect_unclassified(self, detector):
         """Test UNCLASSIFIED detection."""
@@ -79,6 +85,8 @@ class TestClassificationLevels:
 
         class_spans = [s for s in spans if s.entity_type == "CLASSIFICATION_LEVEL"]
         assert len(class_spans) >= 1
+        assert any(s.text == "UNCLASSIFIED" for s in class_spans)
+        assert all(s.confidence >= 0.90 for s in class_spans)
 
     def test_detect_unclassified_fouo(self, detector):
         """Test UNCLASSIFIED//FOUO detection."""
@@ -95,6 +103,7 @@ class TestClassificationLevels:
 
         class_spans = [s for s in spans if s.entity_type == "CLASSIFICATION_LEVEL"]
         assert len(class_spans) >= 1
+        assert any("CONTROLLED UNCLASSIFIED INFORMATION" in s.text.upper() for s in class_spans)
 
     def test_detect_cui_abbreviation(self, detector):
         """Test CUI abbreviation with context."""
@@ -250,6 +259,7 @@ class TestSCIMarkings:
 
         sci_spans = [s for s in spans if s.entity_type == "SCI_MARKING"]
         assert len(sci_spans) >= 1
+        assert any(s.text == "//SI" for s in sci_spans)
 
     def test_detect_tk_marking(self, detector):
         """Test TALENT KEYHOLE (//TK) marking."""
@@ -258,6 +268,7 @@ class TestSCIMarkings:
 
         sci_spans = [s for s in spans if s.entity_type == "SCI_MARKING"]
         assert len(sci_spans) >= 1
+        assert any(s.text == "//TK" for s in sci_spans)
 
     def test_detect_hcs_marking(self, detector):
         """Test HUMINT Control System (//HCS) marking."""
@@ -323,6 +334,7 @@ class TestSCIMarkings:
 
         sci_spans = [s for s in spans if s.entity_type == "SCI_MARKING"]
         assert len(sci_spans) >= 1
+        assert any("SPECIAL ACCESS PROGRAM" in s.text.upper() for s in sci_spans)
 
     def test_detect_sar_marking(self, detector):
         """Test Special Access Required marking."""
@@ -331,6 +343,7 @@ class TestSCIMarkings:
 
         sci_spans = [s for s in spans if s.entity_type == "SCI_MARKING"]
         assert len(sci_spans) >= 1
+        assert any("SPECIAL ACCESS REQUIRED" in s.text.upper() for s in sci_spans)
 
 
 # =============================================================================
@@ -444,6 +457,7 @@ class TestGovernmentEntityCodes:
 
         cage_spans = [s for s in spans if s.entity_type == "CAGE_CODE"]
         assert len(cage_spans) >= 1
+        assert any(s.text == "1ABC2" for s in cage_spans)
 
     def test_detect_cage_code_lowercase_label(self, detector):
         """Test CAGE code with lowercase label."""
@@ -468,6 +482,7 @@ class TestGovernmentEntityCodes:
 
         duns_spans = [s for s in spans if s.entity_type == "DUNS_NUMBER"]
         assert len(duns_spans) >= 1
+        assert any(s.text == "123456789" for s in duns_spans)
 
     def test_detect_duns_with_dashes(self, detector):
         """Test DUNS number with dashes."""
@@ -476,6 +491,7 @@ class TestGovernmentEntityCodes:
 
         duns_spans = [s for s in spans if s.entity_type == "DUNS_NUMBER"]
         assert len(duns_spans) >= 1
+        assert any(s.text == "12-345-6789" for s in duns_spans)
 
     def test_detect_uei(self, detector):
         """Test Unique Entity Identifier (UEI) detection."""
@@ -484,6 +500,7 @@ class TestGovernmentEntityCodes:
 
         uei_spans = [s for s in spans if s.entity_type == "UEI"]
         assert len(uei_spans) >= 1
+        assert any(s.text == "ABCD12345678" for s in uei_spans)
 
     def test_detect_uei_sam_context(self, detector):
         """Test UEI with SAM.gov context."""
@@ -650,6 +667,7 @@ class TestExportControlMarkings:
 
         itar_spans = [s for s in spans if s.entity_type == "ITAR_MARKING"]
         assert len(itar_spans) >= 1
+        assert any("ITAR CONTROLLED" in s.text.upper() for s in itar_spans)
 
     def test_detect_itar_restricted(self, detector):
         """Test ITAR RESTRICTED marking."""
@@ -698,6 +716,7 @@ class TestExportControlMarkings:
 
         ear_spans = [s for s in spans if s.entity_type == "EAR_MARKING"]
         assert len(ear_spans) >= 1
+        assert any("ECCN" in s.text and "5A992" in s.text for s in ear_spans)
 
     def test_detect_ear_99(self, detector):
         """Test EAR 99 classification."""
@@ -748,23 +767,23 @@ class TestGovernmentFalsePositives:
         text = "It's a secret recipe for grandma's cookies."
         spans = detector.detect(text)
 
-        # Should not flag common usage of "secret"
+        # _is_false_positive_classification should filter out "secret" without
+        # classification context (no //, classified, clearance, etc.)
         class_spans = [s for s in spans if s.entity_type == "CLASSIFICATION_LEVEL"]
-        # If it does match, confidence should be lower
-        for span in class_spans:
-            if "secret" in span.text.lower() and "top" not in span.text.lower():
-                assert span.confidence < 0.90
+        assert len(class_spans) == 0, (
+            f"'secret recipe' should not be flagged as CLASSIFICATION_LEVEL, got: {class_spans}"
+        )
 
     def test_no_false_positive_secret_santa(self, detector):
         """Test 'secret' in Santa context is not flagged."""
         text = "We're doing a secret santa gift exchange."
         spans = detector.detect(text)
 
+        # The pattern excludes "secret" followed by "santa" via negative lookahead
         class_spans = [s for s in spans if s.entity_type == "CLASSIFICATION_LEVEL"]
-        # Should not flag or should have low confidence
-        for span in class_spans:
-            if "secret" in span.text.lower():
-                assert span.confidence < 0.90
+        assert len(class_spans) == 0, (
+            f"'secret santa' should not be flagged as CLASSIFICATION_LEVEL, got: {class_spans}"
+        )
 
     def test_no_false_positive_normal_text(self, detector):
         """Test normal text without government context."""
@@ -777,11 +796,11 @@ class TestGovernmentFalsePositives:
         text = "The secret ingredient is love."
         spans = detector.detect(text)
 
+        # The pattern excludes "secret" followed by "ingredient" via negative lookahead
         class_spans = [s for s in spans if s.entity_type == "CLASSIFICATION_LEVEL"]
-        # Should not flag or should have low confidence
-        for span in class_spans:
-            if "secret" in span.text.lower():
-                assert span.confidence < 0.90
+        assert len(class_spans) == 0, (
+            f"'secret ingredient' should not be flagged as CLASSIFICATION_LEVEL, got: {class_spans}"
+        )
 
 
 # =============================================================================
@@ -815,8 +834,19 @@ class TestGovernmentEdgeCases:
         spans = detector.detect(text)
 
         entity_types = {s.entity_type for s in spans}
-        # Should detect multiple types
-        assert len(entity_types) >= 1
+        # Should detect at least classification + contract + CAGE code
+        assert "DOD_CONTRACT" in entity_types or "CAGE_CODE" in entity_types, (
+            f"Expected contract/CAGE entity types, got: {entity_types}"
+        )
+        # Should detect classification-related types
+        assert entity_types & {"CLASSIFICATION_LEVEL", "CLASSIFICATION_MARKING",
+                               "SCI_MARKING", "DISSEMINATION_CONTROL"}, (
+            f"Expected classification entity types, got: {entity_types}"
+        )
+        # Should have found multiple distinct entity types
+        assert len(entity_types) >= 3, (
+            f"Expected >= 3 entity types in multi-marking text, got {len(entity_types)}: {entity_types}"
+        )
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""
@@ -886,11 +916,13 @@ class TestGovernmentSpanValidation:
         """Test high confidence for distinctive markings."""
         distinctive_texts = [
             "TOP SECRET//SCI",
-            "//NOFORN",
+            "SECRET//NOFORN",
             "CAGE: 1ABC2",
         ]
 
         for text in distinctive_texts:
             spans = detector.detect(text)
-            if spans:
-                assert any(s.confidence >= 0.90 for s in spans), f"Low confidence for: {text}"
+            assert len(spans) >= 1, f"Expected at least one detection for: {text!r}"
+            assert any(s.confidence >= 0.90 for s in spans), (
+                f"Low confidence for: {text!r}, got: {[(s.entity_type, s.confidence) for s in spans]}"
+            )

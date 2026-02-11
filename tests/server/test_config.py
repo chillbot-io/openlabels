@@ -248,12 +248,15 @@ class TestLabelingSettings:
                 f"Missing mapping for risk tier: {tier}"
 
     def test_critical_tier_maps_to_label(self):
-        """CRITICAL tier should map to a label (not None)."""
+        """CRITICAL tier should map to 'Highly Confidential'."""
         from openlabels.server.config import LabelingSettings
 
         settings = LabelingSettings()
-        assert settings.risk_tier_mapping["CRITICAL"] is not None
-        assert isinstance(settings.risk_tier_mapping["CRITICAL"], str)
+        assert settings.risk_tier_mapping["CRITICAL"] == "Highly Confidential"
+        assert settings.risk_tier_mapping["HIGH"] == "Confidential"
+        assert settings.risk_tier_mapping["MEDIUM"] == "Internal"
+        assert settings.risk_tier_mapping["LOW"] is None, "LOW tier should not auto-label"
+        assert settings.risk_tier_mapping["MINIMAL"] is None, "MINIMAL tier should not auto-label"
 
     def test_sync_interval_is_reasonable(self):
         """Label sync interval should be reasonable (12-48 hours)."""

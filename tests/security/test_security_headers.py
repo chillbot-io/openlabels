@@ -157,19 +157,43 @@ class TestCookieSecurityFlags:
     """Tests for cookie security configuration."""
 
     async def test_session_cookie_has_security_flags(self):
-        """Session cookie should have HttpOnly and SameSite flags."""
-        from unittest.mock import AsyncMock, MagicMock
+        """Session cookie should have HttpOnly and SameSite flags when set."""
+        from unittest.mock import AsyncMock, MagicMock, patch
         from httpx import AsyncClient, ASGITransport
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.app import limiter as app_limiter
         from openlabels.server.routes.auth import limiter as auth_limiter
 
-        # Create a mock DB session so the endpoint doesn't hit real DB
+        # Verify the cookie settings are correct in the source code by
+        # testing the dev mode login flow which sets a session cookie.
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "none"
+        mock_settings.auth.tenant_id = None
+        mock_settings.auth.client_id = None
+        mock_settings.auth.client_secret = None
+        mock_settings.server.environment = "development"
+        mock_settings.server.debug = True
+        mock_settings.server.host = "localhost"
+        mock_settings.rate_limit.enabled = False
+        mock_settings.rate_limit.auth_limit = "100/minute"
+        mock_settings.rate_limit.api_limit = "100/minute"
+        mock_settings.cors.allowed_origins = ["http://localhost:3000"]
+        mock_settings.cors.allow_credentials = True
+        mock_settings.cors.allow_methods = ["*"]
+        mock_settings.cors.allow_headers = ["*"]
+        mock_settings.security.max_request_size_mb = 10
+
+        # Create a mock DB session
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_result.scalar = MagicMock(return_value=0)
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.commit = AsyncMock()
         mock_session.flush = AsyncMock()
+        # Mock SessionStore and PendingAuthStore methods
+        mock_session.get = AsyncMock(return_value=None)
 
         async def override_get_session():
             yield mock_session
@@ -181,50 +205,55 @@ class TestCookieSecurityFlags:
         auth_limiter.enabled = False
 
         try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
-                # Make a request that would set cookies (like auth callback)
-                response = await client.get(
-                    "/api/auth/callback",
-                    params={"code": "test-code"},
-                    follow_redirects=False,
-                )
+            with patch("openlabels.server.routes.auth.get_settings", return_value=mock_settings), \
+                 patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
+                 patch("openlabels.server.lifespan.close_db", new_callable=AsyncMock), \
+                 patch("openlabels.server.lifespan.get_cache_manager", new_callable=AsyncMock, return_value=MagicMock(is_redis_connected=False)), \
+                 patch("openlabels.server.lifespan.close_cache", new_callable=AsyncMock):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                    # Use the dev mode login which sets a session cookie
+                    response = await client.get(
+                        "/api/auth/login",
+                        follow_redirects=False,
+                    )
 
-                # Check any set-cookie headers
-                set_cookie = response.headers.get("set-cookie", "")
-                if set_cookie:
-                    # HttpOnly should be present for session cookies
-                    # This prevents JavaScript from accessing the cookie
-                    if "session" in set_cookie.lower():
+                    # Check set-cookie headers
+                    set_cookie = response.headers.get("set-cookie", "")
+                    if set_cookie and "openlabels_session" in set_cookie:
                         assert "httponly" in set_cookie.lower(), \
-                            "Session cookie missing HttpOnly flag"
+                            f"Session cookie missing HttpOnly flag: {set_cookie}"
+                        assert "samesite" in set_cookie.lower(), \
+                            f"Session cookie missing SameSite flag: {set_cookie}"
         finally:
             app.dependency_overrides.pop(get_session, None)
             app_limiter.enabled = original_app
             auth_limiter.enabled = original_auth
 
     async def test_api_responses_dont_set_tracking_cookies(self, test_client):
-        """API responses should not set unnecessary cookies."""
-        # Regular API calls should not set tracking cookies
-        # Use test_client fixture which has proper DB setup
-        response = await test_client.get("/api/health/status")
+        """API responses should not set unnecessary tracking or advertising cookies."""
+        # Test multiple endpoints to ensure no tracking cookies are set anywhere
+        endpoints = ["/api/health/status", "/api/targets", "/api/dashboard/stats"]
 
-        set_cookie = response.headers.get("set-cookie", "")
-        # Should not set advertising/tracking cookies
-        assert "tracking" not in set_cookie.lower()
-        assert "_ga" not in set_cookie  # Google Analytics
-        assert "_fb" not in set_cookie  # Facebook
+        for endpoint in endpoints:
+            response = await test_client.get(endpoint)
+            set_cookie = response.headers.get("set-cookie", "")
+            # Should not set advertising/tracking cookies
+            tracking_patterns = ["tracking", "_ga", "_fb", "_gid", "analytics", "fbp"]
+            for pattern in tracking_patterns:
+                assert pattern not in set_cookie.lower(), \
+                    f"Endpoint {endpoint} set tracking cookie matching '{pattern}': {set_cookie}"
 
-    async def test_cookie_path_is_scoped(self, test_client):
-        """Cookies should be scoped to the application path."""
-        # Request that might set cookies
+    async def test_regular_api_calls_dont_set_session_cookies(self, test_client):
+        """Regular API calls (using token auth) should not set session cookies."""
+        # test_client uses dependency overrides for auth, so no session cookies needed
         response = await test_client.get("/api/dashboard/stats")
+        assert response.status_code == 200
 
-        # If cookies are set, they should have path=/
         set_cookie = response.headers.get("set-cookie", "")
-        if set_cookie and "path=" in set_cookie.lower():
-            # Path should be / or application-specific, not overly broad
-            assert "path=/" in set_cookie.lower() or "path=/api" in set_cookie.lower()
+        # Regular API calls using token/dependency auth should not set session cookies
+        assert "openlabels_session" not in set_cookie, \
+            f"Regular API call should not set session cookie: {set_cookie}"
 
 
 class TestCookieSecurityAttributes:

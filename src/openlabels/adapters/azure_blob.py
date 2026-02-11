@@ -216,6 +216,58 @@ class AzureBlobAdapter:
         keys = [b.name for b in blobs[:sample_limit] if not b.name.endswith("/") and hasattr(b, "size")]
         return len(keys), keys
 
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List directory prefixes in the Azure container.
+
+        Uses ``walk_blobs`` with ``delimiter='/'`` to discover
+        prefix-based "folders" (BlobPrefix objects).
+        """
+        container = self._ensure_container_client()
+        prefix = self._resolve_prefix(target)
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+
+        # Yield the target prefix itself
+        yield FolderInfo(
+            path=f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{prefix}",
+            name=prefix.rstrip("/").rsplit("/", 1)[-1] or self._container_name,
+            adapter="azure_blob",
+        )
+
+        async for folder in self._list_azure_prefixes(container, prefix, recursive):
+            yield folder
+
+    async def _list_azure_prefixes(
+        self,
+        container,
+        prefix: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Yield FolderInfo for each BlobPrefix under *prefix*."""
+        items = await asyncio.to_thread(
+            lambda: list(container.walk_blobs(name_starts_with=prefix, delimiter="/"))
+        )
+
+        for item in items:
+            # walk_blobs returns BlobPrefix for "directories" (no .size attr)
+            # and BlobProperties for actual blobs (has .size attr)
+            if hasattr(item, "size"):
+                continue  # skip actual blobs
+            child_prefix = item.name
+            name = child_prefix.rstrip("/").rsplit("/", 1)[-1]
+            yield FolderInfo(
+                path=f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{child_prefix}",
+                name=name,
+                adapter="azure_blob",
+            )
+            if recursive:
+                async for sub in self._list_azure_prefixes(container, child_prefix, recursive):
+                    yield sub
+
     async def read_file(
         self,
         file_info: FileInfo,

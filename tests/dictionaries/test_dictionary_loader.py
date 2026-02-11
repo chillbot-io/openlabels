@@ -31,8 +31,10 @@ class TestDictionaryLoaderInit:
         """Loader initializes with default dictionary directory."""
         loader = DictionaryLoader()
 
-        assert loader.dict_dir is not None
-        assert isinstance(loader.dict_dir, Path)
+        assert loader.dict_dir.name == "dictionaries", \
+            f"Expected default dict_dir to end with 'dictionaries', got {loader.dict_dir}"
+        assert loader.dict_dir.is_absolute(), \
+            f"Expected absolute path for default dict_dir, got {loader.dict_dir}"
         assert loader._cache == {}
         assert loader._loaded is False
 
@@ -155,8 +157,8 @@ class TestDictionaryLoading:
 class TestGetTerms:
     """Tests for get_terms method."""
 
-    def test_get_terms_returns_frozenset(self, tmp_path):
-        """get_terms returns frozenset."""
+    def test_get_terms_returns_frozenset_with_content(self, tmp_path):
+        """get_terms returns frozenset containing the expected terms."""
         dict_file = tmp_path / "diagnoses.txt"
         dict_file.write_text("Diabetes\n")
 
@@ -164,6 +166,8 @@ class TestGetTerms:
         result = loader.get_terms("diagnoses")
 
         assert isinstance(result, frozenset)
+        assert len(result) == 1
+        assert "diabetes" in result
 
     def test_get_terms_unknown_dictionary(self):
         """get_terms raises ValueError for unknown dictionary."""
@@ -443,8 +447,11 @@ class TestGetMedicalIndicators:
         loader = DictionaryLoader(dict_dir=tmp_path)
         result = loader.get_medical_indicators("taking amoxicillin and atorvastatin")
 
-        # Should identify drug patterns
-        assert len(result["drug_patterns"]) > 0
+        # Should identify drug patterns by suffix
+        assert len(result["drug_patterns"]) >= 2
+        drug_texts = " ".join(result["drug_patterns"]).lower()
+        assert "amoxicillin" in drug_texts or "cillin" in drug_texts
+        assert "atorvastatin" in drug_texts or "statin" in drug_texts
 
     def test_identifies_icd_codes(self, tmp_path):
         """Identifies ICD-10 code patterns."""

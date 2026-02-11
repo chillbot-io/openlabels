@@ -139,57 +139,11 @@ class TestSOC2PolicyPack:
 # ── Policy Violations in Scan Results ───────────────────────────────
 
 
-class TestPolicyViolationsOutput:
-    """Test that _detect_and_score produces policy_violations."""
-
-    def test_scan_result_dict_has_violations_key(self):
-        """The result dict from _detect_and_score includes policy_violations."""
-        # Build a mock policy result to simulate what the scan pipeline produces
-        violations = [
-            {
-                "policy_name": "HIPAA PHI",
-                "framework": "hipaa",
-                "severity": "critical",
-                "trigger_type": "any_of",
-                "matched_entities": ["ssn"],
-            }
-        ]
-        result = {
-            "risk_score": 90,
-            "risk_tier": "CRITICAL",
-            "entity_counts": {"SSN": 3},
-            "total_entities": 3,
-            "content_score": 90.0,
-            "exposure_multiplier": 1.0,
-            "findings": {"entities": [], "policy": {}},
-            "policy_violations": violations,
-            "processing_time_ms": 50,
-            "error": None,
-        }
-        assert result["policy_violations"] is not None
-        assert len(result["policy_violations"]) == 1
-        assert result["policy_violations"][0]["policy_name"] == "HIPAA PHI"
-
-    def test_no_violations_is_none(self):
-        result = {
-            "policy_violations": None,
-        }
-        assert result["policy_violations"] is None
-
-
 # ── PolicyActionExecutor ────────────────────────────────────────────
 
 
 class TestPolicyActionExecutor:
     """Tests for the PolicyActionExecutor."""
-
-    def test_import(self):
-        from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
-            PolicyActionContext,
-            ActionResult,
-        )
-        assert PolicyActionExecutor is not None
 
     @pytest.mark.asyncio
     async def test_log_audit_action(self):
@@ -343,14 +297,15 @@ class TestPolicyPackSerialization:
     """Test serialization for DB storage."""
 
     def test_serialize_all_builtins(self):
-        """All built-in packs can be serialized to dicts."""
+        """All built-in packs can be serialized to dicts with correct structure."""
         from openlabels.server.services.policy_service import _serialize_pack
 
         for pack in load_builtin_policies():
             d = _serialize_pack(pack)
-            assert isinstance(d, dict)
-            assert "name" in d
-            assert "triggers" in d
+            assert d["name"] == pack.name, f"Serialized name mismatch for {pack.name}"
+            assert "triggers" in d, f"Missing 'triggers' key for {pack.name}"
+            assert "category" in d, f"Missing 'category' key for {pack.name}"
+            assert "risk_level" in d, f"Missing 'risk_level' key for {pack.name}"
 
     def test_roundtrip_all_builtins(self):
         """All built-in packs survive serialize → load_policy_pack."""
@@ -369,9 +324,19 @@ class TestPolicyPackSerialization:
 class TestPolicyModel:
     """Tests for the Policy SQLAlchemy model."""
 
-    def test_model_importable(self):
+    def test_policy_model_has_required_columns(self):
         from openlabels.server.models import Policy
         assert Policy.__tablename__ == "policies"
+        # Verify the model has all Phase J columns
+        column_names = {c.name for c in Policy.__table__.columns}
+        assert "id" in column_names
+        assert "tenant_id" in column_names
+        assert "name" in column_names
+        assert "framework" in column_names
+        assert "risk_level" in column_names
+        assert "enabled" in column_names
+        assert "config" in column_names
+        assert "priority" in column_names
 
     def test_scan_result_has_policy_violations(self):
         from openlabels.server.models import ScanResult
@@ -387,10 +352,6 @@ class TestPolicyModel:
 
 class TestPolicyRoutes:
     """Basic tests for policy route module."""
-
-    def test_router_importable(self):
-        from openlabels.server.routes.policies import router
-        assert router is not None
 
     def test_router_has_expected_routes(self):
         from openlabels.server.routes.policies import router

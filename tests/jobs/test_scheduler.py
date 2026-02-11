@@ -124,11 +124,12 @@ class TestParseCronExpression:
     """Tests for parse_cron_expression function."""
 
     def test_parse_valid_cron_expression(self):
-        """Valid cron expression should return next fire time."""
+        """Valid cron expression should return next fire time in the future."""
         result = parse_cron_expression("0 * * * *")
 
         assert result is not None
         assert isinstance(result, datetime)
+        assert result >= datetime.now(timezone.utc)
 
     def test_parse_invalid_cron_expression(self):
         """Invalid cron expression should return None."""
@@ -192,25 +193,24 @@ class TestGetCronDescription:
     """Tests for get_cron_description function."""
 
     def test_description_daily_midnight(self):
-        """Daily midnight should have appropriate description."""
+        """Daily midnight should produce 'at 00:00'."""
         result = get_cron_description("0 0 * * *")
-        assert "00:00" in result
+        assert result == "at 00:00"
 
     def test_description_hourly(self):
-        """Hourly cron should mention minutes."""
+        """Hourly cron '0 * * * *' should produce 'at minute 0'."""
         result = get_cron_description("0 * * * *")
-        # Should mention "at minute 0" or similar
-        assert "0" in result or "minute" in result.lower()
+        assert result == "at minute 0"
 
     def test_description_every_minute(self):
-        """Every minute pattern should have description."""
+        """Every minute pattern should produce 'Every minute'."""
         result = get_cron_description("* * * * *")
-        assert "minute" in result.lower()
+        assert result == "Every minute"
 
     def test_description_invalid(self):
-        """Invalid expression should return error message."""
+        """Invalid expression should return 'Invalid cron expression'."""
         result = get_cron_description("invalid")
-        assert "invalid" in result.lower()
+        assert result == "Invalid cron expression"
 
 
 class TestGetSchedulerSingleton:

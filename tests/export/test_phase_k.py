@@ -1,12 +1,14 @@
-"""Phase K integration tests — config, setup, route structure, worker dispatch."""
+"""Phase K integration tests — config, setup, adapter protocol compliance."""
 
 from __future__ import annotations
 
-import ast
+import base64
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+from openlabels.export.adapters.base import SIEMAdapter
 
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -75,104 +77,84 @@ class TestBuildAdaptersFromSettings:
         from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
 
-        # Only workspace_id, no shared_key → no adapter
+        # Only workspace_id, no shared_key -> no adapter
         cfg = SIEMExportSettings(sentinel_workspace_id="ws123")
         adapters = build_adapters_from_settings(cfg)
         assert len(adapters) == 0
 
+    def test_elastic_adapter_created(self):
+        from openlabels.server.config import SIEMExportSettings
+        from openlabels.export.setup import build_adapters_from_settings
 
-# ── Route structure ──────────────────────────────────────────────────
+        cfg = SIEMExportSettings(elastic_hosts=["https://es:9200"])
+        adapters = build_adapters_from_settings(cfg)
+        assert len(adapters) == 1
+        assert adapters[0].format_name() == "elastic"
 
-class TestExportRouteStructure:
-    def test_routes_file_parses(self):
-        src = Path("src/openlabels/server/routes/export.py").read_text()
-        tree = ast.parse(src)
-        func_names = [n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-        assert "trigger_siem_export" in func_names
-        assert "test_siem_connections" in func_names
-        assert "siem_export_status" in func_names
+    def test_sentinel_created_with_both_fields(self):
+        from openlabels.server.config import SIEMExportSettings
+        from openlabels.export.setup import build_adapters_from_settings
 
-    def test_route_registered_in_app(self):
-        src = Path("src/openlabels/server/app.py").read_text()
-        assert "export" in src
-        assert '"/export"' in src or "export" in src
+        key = base64.b64encode(b"0" * 64).decode()
+        cfg = SIEMExportSettings(
+            sentinel_workspace_id="ws123",
+            sentinel_shared_key=key,
+        )
+        adapters = build_adapters_from_settings(cfg)
+        assert len(adapters) == 1
+        assert adapters[0].format_name() == "sentinel"
 
+    def test_all_five_adapters_created(self):
+        from openlabels.server.config import SIEMExportSettings
+        from openlabels.export.setup import build_adapters_from_settings
 
-# ── Worker dispatch ──────────────────────────────────────────────────
-
-class TestWorkerDispatch:
-    def test_export_task_type_handled(self):
-        """Verify worker.py handles 'export' task type."""
-        src = Path("src/openlabels/jobs/worker.py").read_text()
-        assert 'job.task_type == "export"' in src
-        assert "execute_export_task" in src
-
-
-# ── Module structure ─────────────────────────────────────────────────
-
-class TestModuleStructure:
-    def test_export_package_exists(self):
-        assert Path("src/openlabels/export/__init__.py").exists()
-        assert Path("src/openlabels/export/engine.py").exists()
-        assert Path("src/openlabels/export/setup.py").exists()
-
-    def test_adapter_files_exist(self):
-        adapters_dir = Path("src/openlabels/export/adapters")
-        assert (adapters_dir / "__init__.py").exists()
-        assert (adapters_dir / "base.py").exists()
-        assert (adapters_dir / "splunk.py").exists()
-        assert (adapters_dir / "sentinel.py").exists()
-        assert (adapters_dir / "qradar.py").exists()
-        assert (adapters_dir / "elastic.py").exists()
-        assert (adapters_dir / "syslog_cef.py").exists()
-
-    def test_all_adapters_importable(self):
-        """All adapter modules parse as valid Python."""
-        for name in ["base", "splunk", "sentinel", "qradar", "elastic", "syslog_cef"]:
-            src = Path(f"src/openlabels/export/adapters/{name}.py").read_text()
-            ast.parse(src)  # Will raise SyntaxError if invalid
-
-    def test_all_adapters_have_format_name(self):
-        """Every adapter class implements format_name()."""
-        expected = {
-            "splunk": "SplunkAdapter",
-            "sentinel": "SentinelAdapter",
-            "qradar": "QRadarAdapter",
-            "elastic": "ElasticAdapter",
-            "syslog_cef": "SyslogCEFAdapter",
-        }
-        for module_name, class_name in expected.items():
-            src = Path(f"src/openlabels/export/adapters/{module_name}.py").read_text()
-            tree = ast.parse(src)
-            classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == class_name]
-            assert len(classes) == 1, f"Missing {class_name} in {module_name}.py"
-            methods = [n.name for n in ast.walk(classes[0]) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-            assert "format_name" in methods, f"{class_name} missing format_name()"
-            assert "export_batch" in methods, f"{class_name} missing export_batch()"
-            assert "test_connection" in methods, f"{class_name} missing test_connection()"
+        key = base64.b64encode(b"0" * 64).decode()
+        cfg = SIEMExportSettings(
+            splunk_hec_url="https://splunk:8088",
+            splunk_hec_token="tok",
+            sentinel_workspace_id="ws123",
+            sentinel_shared_key=key,
+            qradar_syslog_host="qradar.local",
+            elastic_hosts=["https://es:9200"],
+            syslog_host="syslog.local",
+        )
+        adapters = build_adapters_from_settings(cfg)
+        names = {a.format_name() for a in adapters}
+        assert names == {"splunk", "sentinel", "qradar", "elastic", "syslog_cef"}
 
 
-# ── CLI ──────────────────────────────────────────────────────────────
+# ── Adapter protocol compliance ──────────────────────────────────────
 
-class TestCLIExportSIEM:
-    def test_siem_command_exists(self):
-        src = Path("src/openlabels/cli/commands/export.py").read_text()
-        assert "export_siem" in src or "def export_siem" in src or '"siem"' in src
+class TestAdapterProtocolCompliance:
+    """Verify all concrete adapters satisfy the SIEMAdapter protocol."""
 
-    def test_cli_parses(self):
-        src = Path("src/openlabels/cli/commands/export.py").read_text()
-        ast.parse(src)
+    def test_splunk_implements_protocol(self):
+        from openlabels.export.adapters.splunk import SplunkAdapter
+        adapter = SplunkAdapter(hec_url="https://splunk:8088", hec_token="tok")
+        assert isinstance(adapter, SIEMAdapter)
+        assert adapter.format_name() == "splunk"
 
+    def test_sentinel_implements_protocol(self):
+        from openlabels.export.adapters.sentinel import SentinelAdapter
+        key = base64.b64encode(b"0" * 64).decode()
+        adapter = SentinelAdapter(workspace_id="ws123", shared_key=key)
+        assert isinstance(adapter, SIEMAdapter)
+        assert adapter.format_name() == "sentinel"
 
-# ── Lifespan ─────────────────────────────────────────────────────────
+    def test_qradar_implements_protocol(self):
+        from openlabels.export.adapters.qradar import QRadarAdapter
+        adapter = QRadarAdapter(syslog_host="qradar.local")
+        assert isinstance(adapter, SIEMAdapter)
+        assert adapter.format_name() == "qradar"
 
-class TestLifespan:
-    def test_periodic_export_registered(self):
-        src = Path("src/openlabels/server/lifespan.py").read_text()
-        assert "periodic_siem_export" in src
-        assert "siem_shutdown" in src
+    def test_elastic_implements_protocol(self):
+        from openlabels.export.adapters.elastic import ElasticAdapter
+        adapter = ElasticAdapter(hosts=["https://es:9200"])
+        assert isinstance(adapter, SIEMAdapter)
+        assert adapter.format_name() == "elastic"
 
-    def test_scan_hook_registered(self):
-        src = Path("src/openlabels/jobs/tasks/scan.py").read_text()
-        assert "siem_export" in src
-        assert "post_scan" in src
+    def test_syslog_cef_implements_protocol(self):
+        from openlabels.export.adapters.syslog_cef import SyslogCEFAdapter
+        adapter = SyslogCEFAdapter(host="syslog.local")
+        assert isinstance(adapter, SIEMAdapter)
+        assert adapter.format_name() == "syslog_cef"

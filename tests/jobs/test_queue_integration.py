@@ -67,7 +67,7 @@ class TestEnqueueIntegration:
         job_id = await queue.enqueue("scan", {}, scheduled_for=future)
 
         job = await test_db.get(JobQueueModel, job_id)
-        assert job.scheduled_for is not None
+        assert isinstance(job.scheduled_for, datetime)
         # Compare with some tolerance for DB roundtrip
         assert abs((job.scheduled_for - future).total_seconds()) < 1
 
@@ -127,7 +127,7 @@ class TestDequeueIntegration:
         job = await queue.dequeue("worker-1")
         after = datetime.now(timezone.utc)
 
-        assert job.started_at is not None
+        assert isinstance(job.started_at, datetime)
         assert before <= job.started_at <= after
 
 
@@ -149,7 +149,7 @@ class TestCompleteIntegration:
         job = await test_db.get(JobQueueModel, job_id)
 
         assert job.status == "completed"
-        assert job.completed_at is not None
+        assert isinstance(job.completed_at, datetime)
         assert job.result == {"processed": 100}
 
 
@@ -177,7 +177,7 @@ class TestFailAndRetryIntegration:
 
         # Should be scheduled for future (2 seconds for first retry)
         expected_delay = calculate_retry_delay(0)  # 2 seconds
-        assert job.scheduled_for is not None
+        assert isinstance(job.scheduled_for, datetime)
         assert job.scheduled_for >= before + expected_delay
 
     async def test_fail_moves_to_dead_letter_after_max_retries(self, queue, test_db):
@@ -196,7 +196,7 @@ class TestFailAndRetryIntegration:
 
         await test_db.refresh(job)
         assert job.status == "failed"
-        assert job.completed_at is not None
+        assert isinstance(job.completed_at, datetime)
         assert job.error == "Permanent error"
 
     async def test_fail_without_retry_goes_to_dead_letter_immediately(self, queue, test_db):
@@ -258,7 +258,7 @@ class TestCancelIntegration:
         assert result is True
         job = await test_db.get(JobQueueModel, job_id)
         assert job.status == "cancelled"
-        assert job.completed_at is not None
+        assert isinstance(job.completed_at, datetime)
 
     async def test_cancel_completed_job_fails(self, queue, test_db):
         """Verify completed jobs cannot be cancelled."""

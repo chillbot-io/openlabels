@@ -31,11 +31,16 @@ from openlabels.server.middleware.csrf import (
 class TestGenerateCsrfToken:
     """Tests for CSRF token generation."""
 
-    def test_token_not_empty(self):
-        """Token should not be empty."""
+    def test_token_is_nonempty_base64_string(self):
+        """Token should be a non-empty base64 URL-safe string of expected length."""
         token = generate_csrf_token()
-        assert token is not None
-        assert len(token) > 0
+        # secrets.token_urlsafe(32) produces ~43 base64 characters
+        assert len(token) >= 40, \
+            f"Expected token of at least 40 chars (from 32 random bytes), got {len(token)}"
+        # Verify it's valid URL-safe base64
+        valid_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
+        assert all(c in valid_chars for c in token), \
+            f"Token contains non-base64-urlsafe characters: {token}"
 
     def test_token_has_minimum_length(self):
         """Token should have sufficient length for security."""

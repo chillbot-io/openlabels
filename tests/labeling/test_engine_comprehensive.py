@@ -679,7 +679,6 @@ class TestLabelingEngineGetCurrentLabel:
 
         result = await engine.get_current_label(file_info)
 
-        assert result is not None
         assert result["id"] == "label-123"
         assert result["name"] == "Confidential"
 
@@ -784,8 +783,8 @@ class TestLabelingEngineCacheHelpers:
 
         result = engine.get_cached_label("label-123")
 
-        assert result is not None
         assert result["id"] == "label-123"
+        assert result["name"] == "Test Label"
 
     def test_get_cached_label_by_name(self):
         """get_cached_label_by_name returns label from cache."""
@@ -802,8 +801,8 @@ class TestLabelingEngineCacheHelpers:
 
         result = engine.get_cached_label_by_name("Confidential")
 
-        assert result is not None
         assert result["name"] == "Confidential"
+        assert result["id"] == "label-456"
 
     def test_invalidate_label_cache(self):
         """invalidate_label_cache clears the cache."""

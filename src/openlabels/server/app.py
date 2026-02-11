@@ -30,6 +30,7 @@ from openlabels.server.middleware import register_middleware
 from openlabels.server.routes import (
     audit,
     auth,
+    browse,
     dashboard,
     export,
     health,
@@ -65,7 +66,7 @@ limiter = Limiter(key_func=get_client_ip)
 
 # Legacy API prefixes eligible for automatic redirect.
 _LEGACY_API_PREFIXES = [
-    "audit", "jobs", "scans", "results", "targets", "schedules",
+    "audit", "browse", "jobs", "scans", "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
     "health", "settings", "policies", "export", "reporting", "webhooks",
 ]
@@ -78,6 +79,7 @@ _LEGACY_API_PREFIXES = [
 _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/auth", "Authentication", auth),
     ("/audit", "Audit", audit),
+    ("/browse", "Browse", browse),
     ("/jobs", "Jobs", jobs),
     ("/scans", "Scans", scans),
     ("/results", "Results", results),

@@ -1081,12 +1081,12 @@ class TestEmailExtractor:
         assert "Body only" in result.text
 
     def test_eml_empty_message(self):
-        """Empty EML does not crash."""
+        """Empty EML produces empty or minimal text without crashing."""
         ext = EmailExtractor()
-        # Minimal valid email bytes
         result = ext.extract(b"", "empty.eml")
-        # Should return without crash
-        assert result is not None
+        # Empty bytes should produce an ExtractionResult with empty or whitespace-only text
+        assert result.text.strip() == "" or len(result.text.strip()) < 10
+        assert result.pages == 1
 
     def test_eml_unicode_subject(self):
         """EML with Unicode subject is handled correctly."""
@@ -1210,11 +1210,12 @@ class TestHTMLExtractor:
         assert "&" in result.text or "&amp;" not in result.text
 
     def test_empty_html(self):
-        """Empty HTML produces empty or minimal text."""
+        """Empty HTML produces empty text."""
         ext = HTMLExtractor()
         result = ext.extract(b"", "empty.html")
-        # Empty bytes decode to empty string
-        assert result is not None
+        # Empty bytes decode to empty string, producing no visible content
+        assert result.text.strip() == ""
+        assert result.pages == 1
 
     def test_html_latin1_encoding(self):
         """HTML with latin-1 specific bytes is decoded."""
@@ -1606,10 +1607,10 @@ class TestExtractTextFunction:
         assert result.text == "content"
 
     def test_unknown_extension_returns_warning(self):
-        """Unknown file types return a result with warning."""
+        """Unknown file types return empty text with 'No extractor' warning."""
         result = extract_text(b"content", "data.xyz123")
-        assert result is not None
-        assert len(result.warnings) > 0
+        assert result.text == ""
+        assert len(result.warnings) == 1
         assert "No extractor available" in result.warnings[0]
 
     def test_unknown_type_empty_text(self):
@@ -1810,7 +1811,8 @@ class TestDecompressionBombProtection:
             ext = XLSXExtractor()
             # Should succeed without raising
             result = ext.extract(compressed, "atboundary.xlsx")
-            assert result is not None
+            assert "[Sheet: Sheet1]" in result.text
+            assert "A" in result.text
 
 
 # =============================================================================
@@ -1835,11 +1837,15 @@ class TestEdgeCases:
         assert result.text == ""
 
     def test_csv_with_null_bytes(self):
-        """CSV with embedded null bytes does not crash."""
+        """CSV with embedded null bytes extracts readable content."""
         ext = XLSXExtractor()
         content = b"Name,Value\nJohn\x00Doe,123"
         result = ext.extract(content, "nulls.csv")
-        assert result is not None
+        # Header row should be extracted
+        assert "Name | Value" in result.text
+        # Data values should be present (null byte is valid UTF-8, embedded in string)
+        assert "123" in result.text
+        assert result.pages == 1
 
     def test_html_with_only_scripts(self):
         """HTML with only script content produces empty or minimal text."""
@@ -1849,12 +1855,13 @@ class TestEdgeCases:
         assert "var x" not in result.text
 
     def test_text_extractor_large_content(self):
-        """Large text files are handled without error."""
+        """Large text files are extracted completely."""
         ext = TextExtractor()
         # 1MB of text
         content = ("A" * 1000 + "\n") * 1000
         result = ext.extract(content.encode("utf-8"), "large.txt")
-        assert len(result.text) > 0
+        assert result.text == content
+        assert result.warnings == []
 
     def test_extraction_result_immutable_defaults(self):
         """Default lists in ExtractionResult are not shared between instances."""
@@ -1868,17 +1875,18 @@ class TestEdgeCases:
         """get_extractor expects lowercase extensions (as documented)."""
         # The function receives lowercase extension per extract_text
         ext = get_extractor("text/plain", ".txt")
-        assert ext is not None
+        assert isinstance(ext, TextExtractor)
 
     def test_legacy_doc_with_pure_binary_content(self):
-        """Legacy .doc with completely binary content still returns a result."""
+        """Legacy .doc with completely binary content returns result with warning."""
         ext = DOCXExtractor()
         content = bytes(range(256)) * 10
         result = ext.extract(content, "binary.doc")
-        assert result is not None
         assert result.pages == 1
         # Should have legacy warning
         assert any("Legacy .doc" in w for w in result.warnings)
+        # Binary content with no readable lines should produce empty or near-empty text
+        assert isinstance(result.text, str)
 
     def test_eml_with_non_utf8_charset(self):
         """EML with non-UTF-8 charset decodes body correctly."""
@@ -1932,4 +1940,6 @@ class TestEdgeCases:
     def test_extract_text_with_none_content_type_and_unknown_ext(self):
         """extract_text with None content_type and unknown extension returns warning."""
         result = extract_text(b"data", "file.zzz_unknown", content_type=None)
-        assert len(result.warnings) > 0
+        assert result.text == ""
+        assert len(result.warnings) == 1
+        assert "No extractor available" in result.warnings[0]

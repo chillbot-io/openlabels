@@ -107,7 +107,10 @@ class TestFilesystemAdapterListFiles:
             assert file_info.name == "test.txt"
             assert file_info.size == 11
             assert file_info.path.endswith("test.txt")
+            assert file_info.path == str((Path(tmpdir) / "test.txt").absolute())
             assert isinstance(file_info.modified, datetime)
+            # Verify the modified time is timezone-aware and matches actual file
+            assert file_info.modified.tzinfo is not None
             assert file_info.adapter == "filesystem"
 
     async def test_list_files_raises_on_nonexistent_path(self):
@@ -514,9 +517,12 @@ class TestFilesystemAdapterACL:
 
             assert acl is not None
             assert acl["platform"] == "posix"
-            assert "mode" in acl
-            assert "uid" in acl
-            assert "gid" in acl
+            # Verify mode is the actual stat mode (includes file type bits)
+            expected_mode = test_file.stat().st_mode
+            assert acl["mode"] == expected_mode
+            # Verify uid/gid are integers matching the actual file owner
+            assert acl["uid"] == test_file.stat().st_uid
+            assert acl["gid"] == test_file.stat().st_gid
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
     async def test_set_acl_changes_permissions(self):
@@ -578,3 +584,92 @@ class TestFilesystemAdapterACL:
             # Verify original ACL was captured for rollback
             assert original_acl["platform"] == "posix"
             assert original_acl["mode"] & 0o777 == 0o644
+
+
+class TestDirectoryExclusionPatterns:
+    """Regression tests for directory exclusion pattern matching."""
+
+    async def test_exclude_git_does_not_skip_single_char_dirs(self):
+        """Bug: `subdir.name in pattern` used substring containment,
+        so a dir named 'g' matched '.git' because 'g' in '.git' is True.
+        Fix: use exact equality after stripping glob suffixes."""
+        adapter = FilesystemAdapter()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 'g' should NOT be excluded by '.git/*' pattern
+            g_dir = Path(tmpdir) / "g"
+            g_dir.mkdir()
+            (g_dir / "file.txt").write_text("data")
+
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir()
+            (git_dir / "config").write_text("gitconfig")
+
+            filter_config = FilterConfig(
+                exclude_patterns=[".git/*"],
+                exclude_temp_files=False,
+                exclude_system_dirs=False,
+            )
+
+            files = []
+            async for f in adapter.list_files(tmpdir, filter_config=filter_config):
+                files.append(f)
+
+            names = {f.name for f in files}
+            assert "file.txt" in names, "dir 'g' should NOT be excluded by '.git/*'"
+            assert "config" not in names, "dir '.git' SHOULD be excluded"
+
+    async def test_exclude_pattern_exact_match(self):
+        """Exclusion pattern should only match the exact directory name."""
+        adapter = FilesystemAdapter()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "node_modules").mkdir()
+            (Path(tmpdir) / "node_modules" / "pkg.json").write_text("{}")
+            (Path(tmpdir) / "node").mkdir()
+            (Path(tmpdir) / "node" / "app.js").write_text("x")
+
+            filter_config = FilterConfig(
+                exclude_patterns=["node_modules/*"],
+                exclude_temp_files=False,
+                exclude_system_dirs=False,
+            )
+
+            files = []
+            async for f in adapter.list_files(tmpdir, filter_config=filter_config):
+                files.append(f)
+
+            names = {f.name for f in files}
+            assert "app.js" in names, "'node' dir must not be excluded by 'node_modules/*'"
+            assert "pkg.json" not in names, "'node_modules' should be excluded"
+
+
+class TestFilesystemTimezones:
+    """Tests that filesystem adapter produces timezone-aware datetimes."""
+
+    async def test_list_files_returns_tz_aware_modified(self):
+        """FileInfo.modified must be timezone-aware (UTC)."""
+        adapter = FilesystemAdapter()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "test.txt").write_text("tz test")
+
+            files = []
+            async for f in adapter.list_files(tmpdir):
+                files.append(f)
+
+            assert len(files) == 1
+            assert files[0].modified.tzinfo is not None
+
+    async def test_list_folders_returns_tz_aware_modified(self):
+        """FolderInfo.modified must be timezone-aware (UTC)."""
+        adapter = FilesystemAdapter()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folders = []
+            async for f in adapter.list_folders(tmpdir):
+                folders.append(f)
+
+            assert len(folders) == 1
+            assert folders[0].modified is not None
+            assert folders[0].modified.tzinfo is not None

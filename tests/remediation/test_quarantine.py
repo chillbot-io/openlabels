@@ -80,7 +80,8 @@ class TestQuarantineDryRun:
         assert result.dest_path == dest / "file.txt"
 
     def test_dry_run_sets_performed_by(self, tmp_path):
-        """Dry run sets performed_by field."""
+        """Dry run sets performed_by field to current user."""
+        import getpass
         source = tmp_path / "file.txt"
         source.write_text("test content")
         dest = tmp_path / "quarantine"
@@ -88,7 +89,7 @@ class TestQuarantineDryRun:
 
         result = quarantine(source, dest, dry_run=True)
 
-        assert result.performed_by is not None
+        assert getpass.getuser() in result.performed_by
 
 
 class TestRobocopyExitCodes:

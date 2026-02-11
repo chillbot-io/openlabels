@@ -102,6 +102,7 @@ class TestGetCurrentUser:
         """In dev mode, should create dev user without token."""
         mock_settings = MagicMock()
         mock_settings.auth.provider = "none"
+        mock_settings.server.debug = True  # Explicit: dev mode requires debug=True
 
         mock_session = AsyncMock()
         mock_user = MagicMock()
@@ -112,11 +113,34 @@ class TestGetCurrentUser:
         mock_user.role = "admin"
 
         with patch("openlabels.auth.dependencies.get_settings", return_value=mock_settings):
-            with patch("openlabels.auth.dependencies.get_or_create_user", return_value=mock_user):
+            with patch("openlabels.auth.dependencies.get_or_create_user", return_value=mock_user) as mock_get_or_create:
                 user = await get_current_user(token=None, session=mock_session)
 
                 assert user.email == "dev@localhost"
                 assert user.role == "admin"
+
+                # Verify get_or_create_user was called with correct dev claims
+                mock_get_or_create.assert_called_once()
+                claims_arg = mock_get_or_create.call_args[0][1]
+                assert claims_arg.oid == "dev-user-oid"
+                assert claims_arg.preferred_username == "dev@localhost"
+                assert claims_arg.tenant_id == "dev-tenant"
+                assert "admin" in claims_arg.roles
+
+    async def test_dev_mode_without_debug_raises_500(self):
+        """Auth provider 'none' with debug=False should raise 500."""
+        mock_settings = MagicMock()
+        mock_settings.auth.provider = "none"
+        mock_settings.server.debug = False
+
+        mock_session = AsyncMock()
+
+        with patch("openlabels.auth.dependencies.get_settings", return_value=mock_settings):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user(token=None, session=mock_session)
+
+            assert exc_info.value.status_code == 500
+            assert "Auth provider 'none' requires server.debug=True" in exc_info.value.detail
 
     async def test_no_token_returns_401(self):
         """Without token in production mode, should return 401."""
@@ -133,7 +157,7 @@ class TestGetCurrentUser:
             assert "Not authenticated" in exc_info.value.detail
 
     async def test_invalid_token_returns_401(self):
-        """Invalid token should return 401."""
+        """Invalid token should return 401 with generic message (not original error)."""
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
 
@@ -147,7 +171,9 @@ class TestGetCurrentUser:
                     await get_current_user(token="invalid-token", session=mock_session)
 
                 assert exc_info.value.status_code == 401
-                assert "Token expired" in exc_info.value.detail
+                # Source code intentionally returns generic message for security
+                # (never leaks original error to client)
+                assert exc_info.value.detail == "Authentication failed"
 
     async def test_valid_token_returns_user(self):
         """Valid token should return current user."""
@@ -210,7 +236,8 @@ class TestRequireAdmin:
             await require_admin(user=viewer_user)
 
         assert exc_info.value.status_code == 403
-        assert "admin" in exc_info.value.detail.lower()
+        # Source code returns generic "Insufficient permissions" for security
+        assert exc_info.value.detail == "Insufficient permissions"
 
     async def test_unknown_role_forbidden(self):
         """Unknown role should be treated as non-admin."""

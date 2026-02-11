@@ -82,9 +82,10 @@ class TestExportEngine:
         engine = ExportEngine([adapter])
 
         await engine.export_scan(uuid4(), tenant_id, sample_records)
-        assert "splunk" in engine.cursors
-        # Cursor should be the max timestamp
-        assert engine.cursors["splunk"] == "2026-02-08T12:04:00+00:00"
+        # Cursor should be the max timestamp, serialized as ISO string
+        assert engine.cursors == {"splunk": "2026-02-08T12:04:00+00:00"}
+        # Internal cursor should be a datetime object
+        assert engine._cursors["splunk"] == datetime(2026, 2, 8, 12, 4, 0, tzinfo=timezone.utc)
 
     @pytest.mark.asyncio
     async def test_export_since_last_filters_old(self, tenant_id, sample_records):
@@ -95,6 +96,10 @@ class TestExportEngine:
 
         results = await engine.export_since_last(tenant_id, sample_records)
         assert results["splunk"] == 2  # minutes 3 and 4
+        # Verify adapter was called with only the 2 newer records
+        called_records = adapter.export_batch.call_args[0][0]
+        assert len(called_records) == 2
+        assert all(r.timestamp > datetime(2026, 2, 8, 12, 2, 0, tzinfo=timezone.utc) for r in called_records)
 
     @pytest.mark.asyncio
     async def test_export_since_last_no_cursor(self, tenant_id, sample_records):
@@ -114,8 +119,14 @@ class TestExportEngine:
             sample_records,
             since=datetime(2026, 2, 8, 12, 3, 0, tzinfo=timezone.utc),
         )
-        # Only minutes 3 and 4
+        # Only minutes 3 and 4 (since uses >= comparison)
         assert results["splunk"] == 2
+        called_records = adapter.export_batch.call_args[0][0]
+        assert len(called_records) == 2
+        assert all(
+            r.timestamp >= datetime(2026, 2, 8, 12, 3, 0, tzinfo=timezone.utc)
+            for r in called_records
+        )
 
     @pytest.mark.asyncio
     async def test_export_full_with_record_type_filter(self, tenant_id):
@@ -140,6 +151,10 @@ class TestExportEngine:
             tenant_id, records, record_types=["scan_result"],
         )
         assert results["splunk"] == 1
+        called_records = adapter.export_batch.call_args[0][0]
+        assert len(called_records) == 1
+        assert called_records[0].record_type == "scan_result"
+        assert called_records[0].file_path == "/a.txt"
 
     @pytest.mark.asyncio
     async def test_adapter_failure_is_handled(self, tenant_id, sample_records):
@@ -164,8 +179,11 @@ class TestExportEngine:
     def test_get_status(self):
         engine = ExportEngine([_make_mock_adapter("splunk")])
         status = engine.get_status()
-        assert status["adapter_count"] == 1
-        assert "splunk" in status["adapters"]
+        assert status == {
+            "adapters": ["splunk"],
+            "cursors": {},
+            "adapter_count": 1,
+        }
 
 
 # ── Record builders ──────────────────────────────────────────────────

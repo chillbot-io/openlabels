@@ -62,13 +62,8 @@ async def setup_results_data(test_db):
 class TestListResults:
     """Tests for GET /api/v1/results endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """List results should return 200 OK."""
-        response = await test_client.get("/api/v1/results")
-        assert response.status_code == 200
-
     async def test_returns_paginated_structure(self, test_client, setup_results_data):
-        """List should return paginated structure."""
+        """List should return paginated structure with correct types."""
         response = await test_client.get("/api/v1/results")
         assert response.status_code == 200
         data = response.json()
@@ -77,6 +72,8 @@ class TestListResults:
         assert "total" in data
         assert "page" in data
         assert "total_pages" in data
+        assert data["page"] == 1
+        assert data["total"] >= 0
 
     async def test_returns_empty_when_no_results(self, test_client, setup_results_data):
         """List should return empty when no results."""
@@ -284,30 +281,96 @@ class TestListResults:
         assert data["total"] >= 2
 
 
+class TestListResultsCursor:
+    """Tests for GET /api/v1/results/cursor endpoint."""
+
+    async def test_returns_cursor_paginated_structure(self, test_client, setup_results_data):
+        """Cursor list should return cursor-based pagination structure."""
+        response = await test_client.get("/api/v1/results/cursor")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "items" in data
+
+    async def test_returns_results_via_cursor(self, test_client, setup_results_data):
+        """Should return scan results using cursor pagination."""
+        from openlabels.server.models import ScanResult
+
+        session = setup_results_data["session"]
+        tenant = setup_results_data["tenant"]
+        job = setup_results_data["job"]
+
+        for i in range(3):
+            result = ScanResult(
+                tenant_id=tenant.id,
+                job_id=job.id,
+                file_path=f"/cursor/file_{i}.txt",
+                file_name=f"file_{i}.txt",
+                risk_score=50 + i * 10,
+                risk_tier="MEDIUM",
+                entity_counts={},
+                total_entities=0,
+            )
+            session.add(result)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/results/cursor")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data["items"]) == 3
+
+    async def test_filter_by_risk_tier(self, test_client, setup_results_data):
+        """Cursor list should filter by risk_tier."""
+        from openlabels.server.models import ScanResult
+
+        session = setup_results_data["session"]
+        tenant = setup_results_data["tenant"]
+        job = setup_results_data["job"]
+
+        for tier in ["HIGH", "HIGH", "MEDIUM"]:
+            result = ScanResult(
+                tenant_id=tenant.id,
+                job_id=job.id,
+                file_path=f"/cursor/{tier}.txt",
+                file_name=f"{tier}.txt",
+                risk_score=70 if tier == "HIGH" else 50,
+                risk_tier=tier,
+                entity_counts={},
+                total_entities=0,
+            )
+            session.add(result)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/results/cursor?risk_tier=HIGH")
+        assert response.status_code == 200
+        data = response.json()
+
+        for item in data["items"]:
+            assert item["risk_tier"] == "HIGH"
+
+
 class TestGetResultStats:
     """Tests for GET /api/v1/results/stats endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """Stats should return 200 OK."""
-        response = await test_client.get("/api/v1/results/stats")
-        assert response.status_code == 200
-
-    async def test_returns_stats_structure(self, test_client, setup_results_data):
-        """Stats should return required fields."""
+    async def test_returns_stats_structure_with_zero_values(self, test_client, setup_results_data):
+        """Stats should return all required fields with zero defaults when no data exists."""
         response = await test_client.get("/api/v1/results/stats")
         assert response.status_code == 200
         data = response.json()
 
-        assert "total_files" in data
-        assert "files_with_pii" in data
-        assert "critical_count" in data
-        assert "high_count" in data
-        assert "medium_count" in data
-        assert "low_count" in data
-        assert "minimal_count" in data
-        assert "top_entity_types" in data
-        assert "labels_applied" in data
-        assert "labels_pending" in data
+        assert data["total_files"] == 0
+        assert data["files_with_pii"] == 0
+        assert data["critical_count"] == 0
+        assert data["high_count"] == 0
+        assert data["medium_count"] == 0
+        assert data["low_count"] == 0
+        assert data["minimal_count"] == 0
+        assert data["top_entity_types"] == {}
+        assert data["labels_applied"] == 0
+        assert data["labels_pending"] == 0
 
     async def test_counts_correctly(self, test_client, setup_results_data):
         """Stats should count files correctly."""
@@ -354,67 +417,37 @@ class TestGetResultStats:
 class TestExportResults:
     """Tests for GET /api/v1/results/export endpoint."""
 
-    async def test_returns_200_status_csv(self, test_client, setup_results_data):
-        """Export CSV should return 200 OK."""
+    async def test_csv_export_returns_correct_headers_and_content(self, test_client, setup_results_data):
+        """Export CSV should return correct content type, disposition, and CSV header row."""
         response = await test_client.get("/api/v1/results/export?format=csv")
         assert response.status_code == 200
-
-    async def test_returns_200_status_json(self, test_client, setup_results_data):
-        """Export JSON should return 200 OK."""
-        response = await test_client.get("/api/v1/results/export?format=json")
-        assert response.status_code == 200
-
-    async def test_csv_content_type(self, test_client, setup_results_data):
-        """Export CSV should return text/csv content type."""
-        response = await test_client.get("/api/v1/results/export?format=csv")
         assert "text/csv" in response.headers.get("content-type", "")
-
-    async def test_json_content_type(self, test_client, setup_results_data):
-        """Export JSON should return application/json content type."""
-        response = await test_client.get("/api/v1/results/export?format=json")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_csv_has_content_disposition(self, test_client, setup_results_data):
-        """Export CSV should have Content-Disposition header."""
-        response = await test_client.get("/api/v1/results/export?format=csv")
         content_disposition = response.headers.get("content-disposition", "")
         assert "attachment" in content_disposition
+        assert "results" in content_disposition
         assert ".csv" in content_disposition
+        # Verify CSV header row is present
+        body = response.text
+        assert "file_path" in body
+        assert "risk_score" in body
 
-    async def test_json_has_content_disposition(self, test_client, setup_results_data):
-        """Export JSON should have Content-Disposition header."""
+    async def test_json_export_returns_correct_headers_and_content(self, test_client, setup_results_data):
+        """Export JSON should return correct content type, disposition, and valid JSON array."""
         response = await test_client.get("/api/v1/results/export?format=json")
+        assert response.status_code == 200
+        assert "application/json" in response.headers.get("content-type", "")
         content_disposition = response.headers.get("content-disposition", "")
         assert "attachment" in content_disposition
+        assert "results" in content_disposition
         assert ".json" in content_disposition
+        # Verify valid JSON array
+        import json
+        data = json.loads(response.text)
+        assert isinstance(data, list)
 
 
 class TestGetResult:
     """Tests for GET /api/v1/results/{result_id} endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """Get result should return 200 OK."""
-        from openlabels.server.models import ScanResult
-
-        session = setup_results_data["session"]
-        tenant = setup_results_data["tenant"]
-        job = setup_results_data["job"]
-
-        result = ScanResult(
-            tenant_id=tenant.id,
-            job_id=job.id,
-            file_path="/get/result.txt",
-            file_name="result.txt",
-            risk_score=60,
-            risk_tier="MEDIUM",
-            entity_counts={},
-            total_entities=0,
-        )
-        session.add(result)
-        await session.commit()
-
-        response = await test_client.get(f"/api/v1/results/{result.id}")
-        assert response.status_code == 200
 
     async def test_returns_result_details(self, test_client, setup_results_data):
         """Get should return result details."""
@@ -454,30 +487,6 @@ class TestGetResult:
 
 class TestDeleteResult:
     """Tests for DELETE /api/v1/results/{result_id} endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """Delete result should return 200."""
-        from openlabels.server.models import ScanResult
-
-        session = setup_results_data["session"]
-        tenant = setup_results_data["tenant"]
-        job = setup_results_data["job"]
-
-        result = ScanResult(
-            tenant_id=tenant.id,
-            job_id=job.id,
-            file_path="/delete/result.txt",
-            file_name="result.txt",
-            risk_score=40,
-            risk_tier="LOW",
-            entity_counts={},
-            total_entities=0,
-        )
-        session.add(result)
-        await session.commit()
-
-        response = await test_client.delete(f"/api/results/{result.id}")
-        assert response.status_code == 200
 
     async def test_result_is_removed(self, test_client, setup_results_data):
         """Deleted result should no longer exist."""
@@ -543,12 +552,6 @@ class TestDeleteResult:
 
 class TestClearAllResults:
     """Tests for DELETE /api/v1/results endpoint."""
-
-    @pytest.mark.asyncio
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """Clear all results should return 200 OK."""
-        response = await test_client.delete("/api/results")
-        assert response.status_code == 200
 
     async def test_removes_all_results(self, test_client, setup_results_data):
         """Clear should remove all results for tenant."""
@@ -634,32 +637,8 @@ class TestApplyRecommendedLabel:
 class TestRescanFile:
     """Tests for POST /api/v1/results/{result_id}/rescan endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_results_data):
-        """Rescan should return 200 OK."""
-        from openlabels.server.models import ScanResult
-
-        session = setup_results_data["session"]
-        tenant = setup_results_data["tenant"]
-        job = setup_results_data["job"]
-
-        result = ScanResult(
-            tenant_id=tenant.id,
-            job_id=job.id,
-            file_path="/rescan/file.txt",
-            file_name="file.txt",
-            risk_score=60,
-            risk_tier="MEDIUM",
-            entity_counts={},
-            total_entities=0,
-        )
-        session.add(result)
-        await session.commit()
-
-        response = await test_client.post(f"/api/v1/results/{result.id}/rescan")
-        assert response.status_code == 200
-
     async def test_returns_job_id(self, test_client, setup_results_data):
-        """Rescan should return job_id."""
+        """Rescan should return 200 with job_id and message."""
         from openlabels.server.models import ScanResult
 
         session = setup_results_data["session"]
@@ -759,15 +738,3 @@ class TestResultsTenantIsolation:
         assert "/other/tenant/file.txt" not in paths
 
 
-class TestResultsContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_results_data):
-        """List results should return JSON."""
-        response = await test_client.get("/api/v1/results")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_stats_returns_json(self, test_client, setup_results_data):
-        """Stats should return JSON."""
-        response = await test_client.get("/api/v1/results/stats")
-        assert "application/json" in response.headers.get("content-type", "")

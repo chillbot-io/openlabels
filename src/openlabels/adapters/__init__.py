@@ -37,6 +37,7 @@ __all__ = [
     "ReadAdapter",
     "RemediationAdapter",
     "FileInfo",
+    "FolderInfo",
     "ExposureLevel",
     "FilterConfig",
     "PartitionSpec",

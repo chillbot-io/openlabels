@@ -63,14 +63,17 @@ class TestLockDownDryRun:
         assert result.principals == ["TestGroup"]
 
     def test_dry_run_captures_previous_acl(self, tmp_path):
-        """Dry run captures previous ACL."""
+        """Dry run captures previous ACL as base64."""
+        import base64
         test_file = tmp_path / "file.txt"
         test_file.write_text("test content")
 
         result = lock_down(test_file, backup_acl=True, dry_run=True)
 
-        # previous_acl should be set (base64 encoded)
+        # previous_acl should be set and valid base64
         assert result.previous_acl is not None
+        decoded = base64.b64decode(result.previous_acl)
+        assert len(decoded) > 0
 
 
 class TestGetCurrentAcl:
@@ -82,14 +85,13 @@ class TestGetCurrentAcl:
             get_current_acl(Path("/nonexistent/file.txt"))
 
     def test_returns_dict(self, tmp_path):
-        """Returns a dictionary with ACL info."""
+        """Returns a dictionary with ACL info including the file path."""
         test_file = tmp_path / "file.txt"
         test_file.write_text("test content")
 
         acl = get_current_acl(test_file)
 
-        assert isinstance(acl, dict)
-        assert "path" in acl
+        assert acl["path"] == str(test_file)
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Unix-specific")
     def test_unix_acl_includes_mode(self, tmp_path):
@@ -215,8 +217,8 @@ class TestLockDownResult:
         assert result.success is True
         assert result.action == RemediationAction.LOCKDOWN
         assert result.source_path == test_file
-        assert result.principals is not None
-        assert result.timestamp is not None
+        assert len(result.principals) > 0
+        assert result.error is None
 
     def test_captures_previous_acl(self, tmp_path):
         """Lock down captures previous ACL for rollback."""

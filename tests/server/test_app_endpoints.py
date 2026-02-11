@@ -26,12 +26,13 @@ class TestHealthCheckEndpoint:
         assert data["status"] == "healthy"
 
     async def test_includes_version(self, test_client):
-        """Health check should include version."""
+        """Health check should include the actual application version."""
+        from openlabels import __version__
+
         response = await test_client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert "version" in data
-        assert data["version"] is not None
+        assert data["version"] == __version__
 
 
 class TestApiInfoEndpoint:
@@ -43,10 +44,7 @@ class TestApiInfoEndpoint:
         assert response.status_code == 200
         data = response.json()
 
-        assert "name" in data
         assert data["name"] == "OpenLabels API"
-        assert "version" in data
-        assert "docs" in data
         assert data["docs"] == "/api/docs"
 
     async def test_returns_versioning_info(self, test_client):
@@ -55,9 +53,8 @@ class TestApiInfoEndpoint:
         assert response.status_code == 200
         data = response.json()
 
-        assert "current_api_version" in data or "current_version" in data
-        assert "supported_versions" in data
-        assert "v1" in data["supported_versions"]
+        assert data["current_api_version"] == "v1"
+        assert data["supported_versions"] == ["v1"]
 
 
 class TestApiVersionsEndpoint:
@@ -70,29 +67,34 @@ class TestApiVersionsEndpoint:
         assert response.status_code == 200
         data = response.json()
 
-        assert "versions" in data
-        assert "v1" in data["versions"]
+        assert data["versions"] == {"v1": "/api/v1"}
 
     @pytest.mark.asyncio
     async def test_v1_endpoint_returns_info(self, test_client):
         """V1 info endpoint should return version details."""
+        from openlabels import __version__
+
         response = await test_client.get("/api/v1")
         assert response.status_code == 200
         data = response.json()
 
-        assert "version" in data
-        assert data["version"] is not None
+        assert data["version"] == __version__
+        assert data["api_version"] == "v1"
+        assert data["docs"] == "/api/docs"
+        assert "endpoints" in data
+        assert isinstance(data["endpoints"], dict)
+        assert len(data["endpoints"]) > 0
 
 
 class TestRequestIdMiddleware:
     """Tests for request ID correlation middleware."""
 
     async def test_generates_request_id_when_not_provided(self, test_client):
-        """Should generate request ID if not provided."""
+        """Should generate a valid UUID-like request ID if not provided."""
         response = await test_client.get("/health")
         assert response.status_code == 200
-        assert "X-Request-ID" in response.headers
-        assert len(response.headers["X-Request-ID"]) > 0
+        request_id = response.headers["X-Request-ID"]
+        assert len(request_id) >= 8, "Generated request ID should be a meaningful identifier"
 
     async def test_uses_provided_request_id(self, test_client):
         """Should use provided X-Request-ID header."""

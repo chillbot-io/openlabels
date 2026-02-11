@@ -210,7 +210,7 @@ class TestParseAuditRecord:
         assert event is None
 
     def test_site_url_filtering_passes(self):
-        """Events from monitored sites pass the filter."""
+        """Events from monitored sites pass the filter and parse correctly."""
         record = _make_audit_record(
             site_url="https://contoso.sharepoint.com/sites/finance",
         )
@@ -218,22 +218,31 @@ class TestParseAuditRecord:
 
         event = _parse_audit_record(record, monitored_site_urls=monitored)
         assert event is not None
+        assert event.action == "read"
+        assert event.user_name == "user@contoso.com"
+        assert event.event_source == EVENT_SOURCE
 
     def test_no_site_filter_passes_all(self):
-        """Without site filtering, all events pass."""
+        """Without site filtering, all events pass and parse correctly."""
         record = _make_audit_record(
             site_url="https://contoso.sharepoint.com/sites/random",
         )
         event = _parse_audit_record(record, monitored_site_urls=None)
         assert event is not None
+        assert event.action == "read"
+        assert event.user_name == "user@contoso.com"
 
     def test_fallback_file_path(self):
-        """Falls back to SiteUrl+SourceRelativeUrl+SourceFileName."""
+        """Falls back to SiteUrl/SourceRelativeUrl/SourceFileName."""
         record = _make_audit_record(object_id="")
         event = _parse_audit_record(record)
 
         assert event is not None
-        assert "budget.xlsx" in event.file_path
+        # Fallback constructs path from SiteUrl + SourceRelativeUrl + SourceFileName
+        assert event.file_path == (
+            "https://contoso.sharepoint.com/sites/finance/"
+            "Shared Documents/budget.xlsx"
+        )
 
     def test_no_file_path_skips(self):
         """Records with no identifiable file path are skipped."""
@@ -250,7 +259,7 @@ class TestParseAuditRecord:
         event = _parse_audit_record(record)
 
         assert event is not None
-        assert event.user_sid is not None
+        assert event.user_sid == "i:0h.f|membership|100320022ec308a7@live.com"
 
     def test_raw_dict_stored(self):
         """Full audit record is stored in the raw field."""
@@ -323,7 +332,11 @@ class TestM365AuditProvider:
         events = await provider.collect()
 
         assert len(events) == 2  # 1 event per blob
-        assert all(e.event_source == "m365_audit" for e in events)
+        for e in events:
+            assert e.event_source == "m365_audit"
+            assert e.action == "read"
+            assert e.user_name == "user@contoso.com"
+            assert "budget.xlsx" in e.file_path
 
     @pytest.mark.asyncio
     async def test_collect_empty(self):

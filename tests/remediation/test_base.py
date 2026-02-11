@@ -52,14 +52,15 @@ class TestRemediationResult:
         assert result.source_path == Path("/test/file.txt")
 
     def test_timestamp_auto_generated(self):
-        """Timestamp is automatically generated."""
+        """Timestamp is automatically generated close to current time."""
+        before = datetime.now()
         result = RemediationResult(
             success=True,
             action=RemediationAction.QUARANTINE,
             source_path=Path("/test/file.txt"),
         )
-        assert result.timestamp is not None
-        assert isinstance(result.timestamp, datetime)
+        after = datetime.now()
+        assert before <= result.timestamp <= after
 
     def test_optional_fields_default_none(self):
         """Optional fields default to None."""
@@ -169,13 +170,10 @@ class TestRemediationErrors:
 class TestGetCurrentUser:
     """Tests for get_current_user utility."""
 
-    def test_returns_string(self):
-        """get_current_user returns a string."""
+    def test_returns_actual_username(self):
+        """get_current_user returns the OS username."""
+        import getpass
         user = get_current_user()
-        assert isinstance(user, str)
-        assert len(user) > 0
-
-    def test_returns_nonempty(self):
-        """get_current_user returns non-empty string."""
-        user = get_current_user()
+        # Should contain the actual system username
+        assert getpass.getuser() in user
         assert user.strip() != ""

@@ -23,7 +23,7 @@ class TestValidateFilePath:
     """Tests for the validate_file_path function."""
 
     def test_valid_path_accepted(self):
-        """Valid absolute paths should be accepted."""
+        """Valid absolute paths should be accepted and returned as canonical paths."""
         valid_paths = [
             "/home/user/data/document.docx",
             "/data/sensitive/file.pdf",
@@ -31,8 +31,10 @@ class TestValidateFilePath:
         ]
         for path in valid_paths:
             result = validate_file_path(path)
-            assert result is not None
-            assert ".." not in result
+            assert result == path, \
+                f"Valid path should be returned unchanged: expected {path!r}, got {result!r}"
+            assert ".." not in result, \
+                f"Result should not contain traversal sequences: {result!r}"
 
     def test_path_traversal_blocked(self):
         """Path traversal attempts should be blocked."""
@@ -106,20 +108,19 @@ class TestValidateFilePath:
         assert exc_info.value.status_code == 400
 
     def test_null_byte_injection_handled(self):
-        """Null byte injection attempts should be handled safely."""
-        malicious_paths = [
-            "/data/file.pdf\x00.txt",
-            "/home/user/doc\x00/../etc/passwd",
-        ]
-        for path in malicious_paths:
-            # Should either normalize or reject
-            try:
-                result = validate_file_path(path)
-                # If accepted, null bytes should be stripped
-                assert "\x00" not in result
-            except HTTPException:
-                # Rejection is also acceptable
-                pass
+        """Null byte injection attempts should strip null bytes or raise an error."""
+        # Path with null byte but no traversal -- null byte should be stripped
+        result = validate_file_path("/data/file.pdf\x00.txt")
+        assert "\x00" not in result, \
+            "Null byte was not stripped from result"
+        assert result.endswith("file.pdf.txt"), \
+            f"Expected null byte stripped path, got {result!r}"
+
+        # Path with null byte AND traversal -- traversal check should catch it
+        with pytest.raises(HTTPException) as exc_info:
+            validate_file_path("/home/user/doc\x00/../etc/passwd")
+        assert exc_info.value.status_code == 400, \
+            f"Expected 400 for null byte + traversal, got {exc_info.value.status_code}"
 
 
 class TestValidateQuarantineDir:

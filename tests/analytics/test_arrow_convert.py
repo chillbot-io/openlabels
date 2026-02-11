@@ -22,8 +22,8 @@ from openlabels.analytics.schemas import SCAN_RESULTS_SCHEMA
 def test_uuid_bytes_converts():
     u = UUID("12345678-1234-5678-1234-567812345678")
     b = _uuid_bytes(u)
-    assert isinstance(b, bytes)
     assert len(b) == 16
+    assert b == u.bytes
     assert UUID(bytes=b) == u
 
 
@@ -53,7 +53,11 @@ def test_entity_counts_to_map_dict():
 
 def test_entity_counts_to_map_empty():
     assert _entity_counts_to_map({}) == []
-    assert _entity_counts_to_map(None) == []
+
+
+def test_entity_counts_to_map_none_returns_none():
+    """None input must produce None (null in Parquet), not []."""
+    assert _entity_counts_to_map(None) is None
 
 
 # ── Integration: scan_results_to_arrow ────────────────────────────────
@@ -111,12 +115,18 @@ def _make_fake(**overrides) -> FakeScanResult:
 
 
 def test_scan_results_to_arrow_basic():
-    rows = [_make_fake(), _make_fake(risk_score=90, risk_tier="CRITICAL")]
-    table = scan_results_to_arrow(rows)
+    row1 = _make_fake(risk_score=50, risk_tier="MEDIUM", file_name="file1.txt")
+    row2 = _make_fake(risk_score=90, risk_tier="CRITICAL", file_name="file2.txt")
+    table = scan_results_to_arrow([row1, row2])
 
-    assert isinstance(table, pa.Table)
     assert table.num_rows == 2
     assert table.schema.equals(SCAN_RESULTS_SCHEMA)
+    assert table.column("risk_score").to_pylist() == [50, 90]
+    assert table.column("risk_tier").to_pylist() == ["MEDIUM", "CRITICAL"]
+    assert table.column("file_name").to_pylist() == ["file1.txt", "file2.txt"]
+    assert table.column("file_path").to_pylist() == ["/test/file.txt", "/test/file.txt"]
+    assert table.column("total_entities").to_pylist() == [3, 3]
+    assert table.column("label_applied").to_pylist() == [False, False]
 
 
 def test_scan_results_to_arrow_empty():
@@ -126,7 +136,7 @@ def test_scan_results_to_arrow_empty():
 
 
 def test_scan_results_to_arrow_nulls():
-    """All nullable fields can be None without error."""
+    """All nullable fields can be None without error and appear as null in output."""
     row = _make_fake(
         file_size=None,
         file_modified=None,
@@ -140,6 +150,18 @@ def test_scan_results_to_arrow_nulls():
     )
     table = scan_results_to_arrow([row])
     assert table.num_rows == 1
+    assert table.column("file_size")[0].as_py() is None
+    assert table.column("file_modified")[0].as_py() is None
+    assert table.column("content_hash")[0].as_py() is None
+    assert table.column("content_score")[0].as_py() is None
+    assert table.column("exposure_multiplier")[0].as_py() is None
+    assert table.column("exposure_level")[0].as_py() is None
+    assert table.column("owner")[0].as_py() is None
+    assert table.column("entity_counts")[0].as_py() is None
+    assert table.column("current_label_name")[0].as_py() is None
+    # Non-nullable fields should still be present
+    assert table.column("risk_score")[0].as_py() == 50
+    assert table.column("file_path")[0].as_py() == "/test/file.txt"
 
 
 def test_scan_results_parquet_roundtrip(tmp_path):

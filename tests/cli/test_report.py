@@ -266,7 +266,10 @@ class TestReportCsvFormat:
 
         # Count lines (should have header + data rows)
         lines = [l for l in result.output.strip().split("\n") if not l.startswith("Scanning")]
-        assert len(lines) >= 1  # At least header
+        assert len(lines) >= 2  # Header + at least one data row
+        # First non-scanning line should be the CSV header
+        assert "file_path" in lines[0]
+        assert "risk_score" in lines[0]
 
 
 class TestReportHtmlFormat:
@@ -387,7 +390,7 @@ class TestReportFiltering:
     """Tests for report with filter expressions."""
 
     def test_report_with_score_filter(self, runner, temp_dir, mock_file_classification):
-        """Report with score filter."""
+        """Report with score filter should include matching files."""
         from openlabels.cli.commands.report import report
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -398,9 +401,12 @@ class TestReportFiltering:
             result = runner.invoke(report, ["--where", "score > 50", temp_dir])
 
         assert result.exit_code == 0
+        # mock_file_classification has score=75, should match score > 50
+        assert "OpenLabels Scan Report" in result.output
+        assert "SUMMARY" in result.output
 
     def test_report_with_tier_filter(self, runner, temp_dir, mock_file_classification):
-        """Report with tier filter."""
+        """Report with tier filter should include matching files."""
         from openlabels.cli.commands.report import report
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
@@ -411,6 +417,9 @@ class TestReportFiltering:
             result = runner.invoke(report, ["--where", "tier = HIGH", temp_dir])
 
         assert result.exit_code == 0
+        # mock_file_classification has tier=HIGH, should match
+        assert "OpenLabels Scan Report" in result.output
+        assert "SUMMARY" in result.output
 
     def test_report_shows_filter_in_output(self, runner, temp_dir, mock_file_classification):
         """Report shows applied filter in output."""

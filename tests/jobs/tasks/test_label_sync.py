@@ -270,7 +270,7 @@ class TestSyncLabelsFromGraph:
                 client_secret="secret",
             )
 
-            assert len(result.errors) > 0
+            assert len(result.errors) == 1
             assert "token" in result.errors[0].lower()
 
     async def test_returns_error_when_fetch_fails(self, mock_session):
@@ -615,8 +615,9 @@ class TestLabelSyncErrorHandling:
                     client_secret="secret",
                 )
 
-                # Should have an error since execute failed
-                assert len(result.errors) > 0
+                # Should have at least one error since execute raised RuntimeError
+                assert len(result.errors) >= 1
+                assert "database error" in result.errors[0].lower() or "runtime" in result.errors[0].lower()
 
     async def test_handles_settings_exception(self, mock_session):
         """Should handle exception when getting settings."""

@@ -78,17 +78,23 @@ class TestSplitSentences:
     def test_splits_on_period(self):
         """Splits on period followed by space."""
         sentences = coref_module._split_sentences("First sentence. Second sentence.")
-        assert len(sentences) >= 2
+        assert len(sentences) == 2
+        assert "First sentence." in sentences[0][2]
+        assert "Second sentence." in sentences[1][2]
 
     def test_splits_on_question_mark(self):
         """Splits on question mark."""
         sentences = coref_module._split_sentences("Is this first? Yes this is second.")
-        assert len(sentences) >= 2
+        assert len(sentences) == 2
+        assert "Is this first?" in sentences[0][2]
+        assert "Yes this is second." in sentences[1][2]
 
     def test_splits_on_exclamation(self):
         """Splits on exclamation mark."""
         sentences = coref_module._split_sentences("Hello! How are you?")
-        assert len(sentences) >= 2
+        assert len(sentences) == 2
+        assert "Hello!" in sentences[0][2]
+        assert "How are you?" in sentences[1][2]
 
     def test_preserves_abbreviations(self):
         """Doesn't split on abbreviations like Dr. Mr. etc."""
@@ -217,9 +223,10 @@ class TestResolveWithRules:
         )
 
         # Should have original + pronoun span
-        assert len(result) >= 2
+        assert len(result) == 2
         pronoun_spans = [s for s in result if s.text.lower() == "he"]
-        assert len(pronoun_spans) >= 1
+        assert len(pronoun_spans) == 1
+        assert pronoun_spans[0].coref_anchor_value == "John Smith"
 
     def test_pronoun_inherits_type(self):
         """Pronoun span inherits entity_type from anchor."""
@@ -287,7 +294,8 @@ class TestResolveWithRules:
 
         # "she" should match female name
         pronoun_spans = [s for s in result if s.text.lower() == "she"]
-        assert len(pronoun_spans) >= 1
+        assert len(pronoun_spans) == 1
+        assert pronoun_spans[0].coref_anchor_value == "Mary Smith"
 
     def test_gender_mismatch_skipped(self):
         """Gender mismatched pronouns are skipped."""
@@ -388,7 +396,10 @@ class TestResolveCoreferences:
             result = coref_module.resolve_coreferences(text, spans)
 
             # Should still expand pronouns
-            assert len(result) >= 2
+            assert len(result) == 2
+            pronoun_spans = [s for s in result if s.text.lower() == "he"]
+            assert len(pronoun_spans) == 1
+            assert pronoun_spans[0].coref_anchor_value == "John Smith"
 
     def test_force_rules_mode(self):
         """Can force rule-based mode."""
@@ -398,7 +409,9 @@ class TestResolveCoreferences:
         result = coref_module.resolve_coreferences(text, spans, use_onnx=False)
 
         # Should expand pronouns using rules
-        assert len(result) >= 2
+        assert len(result) == 2
+        pronoun_spans = [s for s in result if s.text.lower() == "he"]
+        assert len(pronoun_spans) == 1
 
 
 # =============================================================================
@@ -462,7 +475,8 @@ class TestEdgeCases:
 
         # Should match "HE"
         pronoun_spans = [s for s in result if s.text.lower() == "he"]
-        assert len(pronoun_spans) >= 1
+        assert len(pronoun_spans) == 1
+        assert pronoun_spans[0].coref_anchor_value == "John Smith"
 
     def test_no_pronouns_in_text(self):
         """Text without pronouns returns original spans."""

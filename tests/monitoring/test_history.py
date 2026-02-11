@@ -113,8 +113,8 @@ class TestParseLinuxEventType:
 class TestGetAccessHistoryBasic:
     """Basic tests for get_access_history."""
 
-    def test_returns_list(self, tmp_path):
-        """Returns a list of AccessEvents."""
+    def test_returns_empty_list_when_no_events(self, tmp_path):
+        """Returns an empty list when platform function returns no events."""
         test_file = tmp_path / "file.txt"
         test_file.write_text("test")
 
@@ -124,7 +124,11 @@ class TestGetAccessHistoryBasic:
 
             result = get_access_history(test_file)
 
-            assert isinstance(result, list)
+            assert result == []
+            # Verify the platform-specific function was called with correct args
+            mock_history.assert_called_once()
+            called_path = mock_history.call_args[0][0]
+            assert called_path == test_file.resolve()
 
     def test_respects_limit(self, tmp_path):
         """Respects the limit parameter."""
@@ -150,7 +154,7 @@ class TestGetAccessHistoryBasic:
 
             result = get_access_history(test_file, limit=5)
 
-            assert len(result) <= 5
+            assert len(result) == 5
 
     def test_filters_system_accounts(self, tmp_path):
         """Filters out system accounts by default."""
@@ -312,7 +316,7 @@ class TestGetAccessHistoryLinux:
     """Linux-specific access history tests."""
 
     def test_uses_ausearch(self, tmp_path):
-        """Uses ausearch on Linux."""
+        """Uses ausearch on Linux with correct arguments."""
         test_file = tmp_path / "file.txt"
         test_file.write_text("test")
 
@@ -326,9 +330,11 @@ class TestGetAccessHistoryLinux:
 
                 get_access_history(test_file)
 
-                mock_run.assert_called()
+                mock_run.assert_called_once()
                 cmd = mock_run.call_args[0][0]
                 assert cmd[0] == "ausearch"
+                # Verify the file path is included in the command
+                assert str(test_file.resolve()) in " ".join(cmd)
 
     def test_ausearch_not_found(self, tmp_path):
         """Returns empty list if ausearch not found."""

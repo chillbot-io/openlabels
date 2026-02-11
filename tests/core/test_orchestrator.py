@@ -121,8 +121,11 @@ class TestOrchestratorDetect:
 
         result = orchestrator.detect_sync(text)
 
-        # Should find no or very few spans
-        assert len(result.spans) <= 3
+        # Clean English sentence should produce zero PII detections
+        assert len(result.spans) == 0, (
+            f"Expected no spans for clean text, but got {len(result.spans)}: "
+            f"{[(s.entity_type, s.text) for s in result.spans]}"
+        )
 
 
 # =============================================================================
@@ -179,15 +182,26 @@ class TestDetectionResult:
     """Tests for DetectionResult structure."""
 
     def test_entity_counts_populated(self):
-        """Test that entity counts are populated."""
+        """Test that entity counts match detected spans."""
         orchestrator = DetectorOrchestrator()
         text = "SSN: 123-45-6789"
 
         result = orchestrator.detect_sync(text)
 
-        assert isinstance(result.entity_counts, dict)
-        if result.spans:
-            assert sum(result.entity_counts.values()) >= 1
+        # SSN should be detected and counted
+        assert "SSN" in result.entity_counts, (
+            f"Expected 'SSN' in entity_counts, got: {result.entity_counts}"
+        )
+        assert result.entity_counts["SSN"] >= 1
+        # Entity counts should be consistent with spans
+        span_type_counts = {}
+        for span in result.spans:
+            from openlabels.core.types import normalize_entity_type
+            normalized = normalize_entity_type(span.entity_type)
+            span_type_counts[normalized] = span_type_counts.get(normalized, 0) + 1
+        assert result.entity_counts == span_type_counts, (
+            f"entity_counts {result.entity_counts} doesn't match span counts {span_type_counts}"
+        )
 
 
 

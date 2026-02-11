@@ -598,7 +598,6 @@ class TestInventoryServiceWithDistributedCache:
 
     def test_creates_distributed_inventory_when_enabled(self, service_with_distributed_cache):
         """Should create distributed inventory when enabled."""
-        assert service_with_distributed_cache._distributed_inventory is not None
         assert isinstance(
             service_with_distributed_cache._distributed_inventory,
             DistributedScanInventory
@@ -653,8 +652,8 @@ class TestInventoryServiceWithDistributedCache:
         await service_without_distributed_cache.clear_distributed_cache()
 
     def test_distributed_inventory_property(self, service_with_distributed_cache):
-        """Should expose distributed_inventory property."""
-        assert service_with_distributed_cache.distributed_inventory is not None
+        """Should expose distributed_inventory property pointing to internal instance."""
+        assert service_with_distributed_cache.distributed_inventory is service_with_distributed_cache._distributed_inventory
 
     async def test_sync_folder_to_distributed_cache(self, service_with_distributed_cache):
         """Should sync folder data to distributed cache."""

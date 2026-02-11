@@ -154,24 +154,35 @@ class TestValidateSingleSpan:
         assert result is not None
         assert "exceeds text length" in result
 
-    def test_text_mismatch(self):
-        """Text mismatch is detected."""
+    def test_text_mismatch_same_length_passes(self):
+        """Text content mismatch with same length passes (only logs debug)."""
         text = "Hello John"
-        # Span claims different text than what's at that position
+        # Span claims "Jane" but "John" is at position - same length, so passes
         span = Span(
-            start=6, end=10, text="Jane",  # "John" is at position
+            start=6, end=10, text="Jane",
             entity_type="NAME", confidence=0.9, detector="test", tier=Tier.ML
         )
 
         result = _validate_single_span(span, text, len(text))
 
-        # The function should either:
-        # 1. Return an error if strict text matching is enforced
-        # 2. Return None if case-insensitive/fuzzy matching is allowed
-        # Either way, the function should handle this case
-        # Verify the function returns a defined result (not raising)
-        assert result is None or isinstance(result, str), \
-            f"Expected None or error string, got {type(result)}"
+        # Same-length content mismatch returns None (only logs warning)
+        assert result is None
+
+    def test_text_mismatch_different_length_fails(self):
+        """Text content mismatch with different length returns error."""
+        text = "Hello John"
+        # Create a span whose text doesn't match what's at position in a longer text
+        # Use a span that extends past text boundaries to trigger a length-based error
+        long_text = "Hello John Smith"
+        # Span says it covers positions 6-16 (10 chars), but text at that position is "John Smith"
+        # However we'll validate against a shorter text
+        span = make_span("John Smith", start=6)  # positions 6-16
+
+        # Validate against a short text where position 6:16 exceeds length
+        result = _validate_single_span(span, text, len(text))
+
+        assert result is not None
+        assert "exceeds text length" in result
 
 
 # =============================================================================

@@ -148,7 +148,7 @@ class TestApplyLabel:
         return label
 
     async def test_routes_sharepoint_to_graph(self, mock_result, mock_label):
-        """Should route SharePoint URLs to Graph API."""
+        """Should route SharePoint URLs to Graph API and return its result."""
         mock_result.file_path = "https://contoso.sharepoint.com/sites/docs/file.docx"
 
         with patch('openlabels.jobs.tasks.label._apply_label_graph') as mock_graph:
@@ -156,10 +156,12 @@ class TestApplyLabel:
 
             result = await _apply_label(mock_result, mock_label)
 
-            mock_graph.assert_called_once()
+            mock_graph.assert_called_once_with(mock_result, mock_label)
+            assert result["success"] is True
+            assert result["method"] == "graph"
 
     async def test_routes_onedrive_to_graph(self, mock_result, mock_label):
-        """Should route OneDrive URLs to Graph API."""
+        """Should route OneDrive URLs to Graph API and return its result."""
         mock_result.file_path = "https://contoso-my.sharepoint.com/personal/user_onedrive/file.xlsx"
 
         with patch('openlabels.jobs.tasks.label._apply_label_graph') as mock_graph:
@@ -167,7 +169,9 @@ class TestApplyLabel:
 
             result = await _apply_label(mock_result, mock_label)
 
-            mock_graph.assert_called_once()
+            mock_graph.assert_called_once_with(mock_result, mock_label)
+            assert result["success"] is True
+            assert result["method"] == "graph"
 
     async def test_rejects_non_microsoft_urls(self, mock_result, mock_label):
         """Should reject non-Microsoft HTTP URLs."""
@@ -179,7 +183,7 @@ class TestApplyLabel:
         assert result["method"] == "unsupported"
 
     async def test_routes_local_files_to_local(self, mock_result, mock_label):
-        """Should route local file paths to local labeling."""
+        """Should route local file paths to local labeling and return its result."""
         mock_result.file_path = "/home/user/document.docx"
 
         with patch('openlabels.jobs.tasks.label._apply_label_local') as mock_local:
@@ -187,7 +191,9 @@ class TestApplyLabel:
 
             result = await _apply_label(mock_result, mock_label)
 
-            mock_local.assert_called_once()
+            mock_local.assert_called_once_with(mock_result, mock_label)
+            assert result["success"] is True
+            assert result["method"] == "local"
 
 
 class TestApplyLabelLocal:
@@ -278,7 +284,9 @@ class TestApplyLabelMetadata:
 
             result = await _apply_label_metadata("/path/doc.docx", mock_label)
 
-            mock_office.assert_called_once()
+            mock_office.assert_called_once_with("/path/doc.docx", mock_label)
+            assert result["success"] is True
+            assert result["method"] == "office_metadata"
 
     async def test_routes_xlsx_to_office_metadata(self, mock_label):
         """Should route .xlsx files to Office metadata labeling."""
@@ -287,7 +295,9 @@ class TestApplyLabelMetadata:
 
             result = await _apply_label_metadata("/path/sheet.xlsx", mock_label)
 
-            mock_office.assert_called_once()
+            mock_office.assert_called_once_with("/path/sheet.xlsx", mock_label)
+            assert result["success"] is True
+            assert result["method"] == "office_metadata"
 
     async def test_routes_pptx_to_office_metadata(self, mock_label):
         """Should route .pptx files to Office metadata labeling."""
@@ -296,7 +306,9 @@ class TestApplyLabelMetadata:
 
             result = await _apply_label_metadata("/path/slides.pptx", mock_label)
 
-            mock_office.assert_called_once()
+            mock_office.assert_called_once_with("/path/slides.pptx", mock_label)
+            assert result["success"] is True
+            assert result["method"] == "office_metadata"
 
     async def test_routes_pdf_to_pdf_metadata(self, mock_label):
         """Should route .pdf files to PDF metadata labeling."""
@@ -305,7 +317,9 @@ class TestApplyLabelMetadata:
 
             result = await _apply_label_metadata("/path/doc.pdf", mock_label)
 
-            mock_pdf.assert_called_once()
+            mock_pdf.assert_called_once_with("/path/doc.pdf", mock_label)
+            assert result["success"] is True
+            assert result["method"] == "pdf_metadata"
 
     async def test_routes_other_to_sidecar(self, mock_label):
         """Should route other file types to sidecar labeling."""
@@ -314,7 +328,9 @@ class TestApplyLabelMetadata:
 
             result = await _apply_label_metadata("/path/data.csv", mock_label)
 
-            mock_sidecar.assert_called_once()
+            mock_sidecar.assert_called_once_with("/path/data.csv", mock_label)
+            assert result["success"] is True
+            assert result["method"] == "sidecar"
 
 
 class TestApplyLabelSidecar:
