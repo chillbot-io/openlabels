@@ -75,13 +75,17 @@ async def get_or_create_user(
 
     if not user:
         # Determine role - first user is admin
-        # SECURITY: Use FOR UPDATE lock to prevent TOCTOU race where two concurrent
-        # requests both see zero users and both become admin
+        # SECURITY: Lock the tenant row to serialize concurrent user creation and
+        # prevent a TOCTOU race where two requests both see zero users and both
+        # become admin.  FOR UPDATE on the tenant row blocks the second request
+        # until the first commits (even when the user table is empty).
+        await session.execute(
+            select(Tenant).where(Tenant.id == tenant.id).with_for_update()
+        )
         from sqlalchemy import func as sa_func
         count_query = (
             select(sa_func.count()).select_from(User)
             .where(User.tenant_id == tenant.id)
-            .with_for_update()
         )
         count_result = await session.execute(count_query)
         is_first_user = (count_result.scalar() or 0) == 0

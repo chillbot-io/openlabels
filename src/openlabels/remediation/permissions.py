@@ -253,9 +253,12 @@ def _lock_down_unix(
     # Backup current permissions
     if backup_acl:
         try:
+            import json as _json
             acl_info = _get_acl_unix(path)
+            # Use JSON format for new backups (restore code handles both JSON
+            # and legacy Python repr format for backwards compatibility)
             previous_acl = base64.b64encode(
-                str(acl_info).encode()
+                _json.dumps(acl_info).encode()
             ).decode()
         except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning(f"Failed to backup permissions: {e}")
