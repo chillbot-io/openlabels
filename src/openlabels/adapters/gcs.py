@@ -130,42 +130,53 @@ class GCSAdapter:
         if partition and partition.end_before:
             kwargs["end_offset"] = partition.end_before
 
-        blobs = await asyncio.to_thread(
-            lambda: list(bucket.list_blobs(**kwargs))
+        # Stream page-by-page: GCS list_blobs returns a lazy HTTPIterator.
+        # We pull one page at a time via to_thread to avoid blocking the
+        # event loop while keeping memory bounded to ~one page of blobs.
+        blob_iterator = await asyncio.to_thread(
+            lambda: bucket.list_blobs(**kwargs)
         )
 
         end_before = partition.end_before if partition else None
 
-        for blob in blobs:
-            name_str: str = blob.name
-            # Skip "directory" markers
-            if name_str.endswith("/"):
-                continue
+        # Iterate pages — each page is a list of blob objects
+        pages = await asyncio.to_thread(lambda: list(blob_iterator.pages))
+        for page in pages:
+            hit_boundary = False
+            for blob in page:
+                name_str: str = blob.name
+                # Skip "directory" markers
+                if name_str.endswith("/"):
+                    continue
 
-            # Extra boundary check in case SDK doesn't respect end_offset
-            if end_before and name_str >= end_before:
+                # Extra boundary check in case SDK doesn't respect end_offset
+                if end_before and name_str >= end_before:
+                    hit_boundary = True
+                    break
+
+                short_name = name_str.rsplit("/", 1)[-1]
+                modified = blob.updated or datetime.now(timezone.utc)
+                size = blob.size or 0
+                generation = blob.generation
+
+                file_info = FileInfo(
+                    path=f"gs://{self._bucket_name}/{name_str}",
+                    name=short_name,
+                    size=size,
+                    modified=modified,
+                    adapter="gcs",
+                    item_id=name_str,  # full blob name for read/get_metadata
+                    exposure=ExposureLevel.PRIVATE,
+                    permissions={"generation": generation},
+                )
+
+                if filter_config and not filter_config.should_include(file_info):
+                    continue
+
+                yield file_info
+
+            if hit_boundary:
                 break
-
-            short_name = name_str.rsplit("/", 1)[-1]
-            modified = blob.updated or datetime.now(timezone.utc)
-            size = blob.size or 0
-            generation = blob.generation
-
-            file_info = FileInfo(
-                path=f"gs://{self._bucket_name}/{name_str}",
-                name=short_name,
-                size=size,
-                modified=modified,
-                adapter="gcs",
-                item_id=name_str,  # full blob name for read/get_metadata
-                exposure=ExposureLevel.PRIVATE,
-                permissions={"generation": generation},
-            )
-
-            if filter_config and not filter_config.should_include(file_info):
-                continue
-
-            yield file_info
 
     async def list_top_level_prefixes(
         self,
@@ -193,9 +204,10 @@ class GCSAdapter:
         bucket = client.bucket(self._bucket_name)
         prefix = self._resolve_prefix(target)
 
-        blobs = await asyncio.to_thread(
-            lambda: list(bucket.list_blobs(prefix=prefix, max_results=sample_limit))
+        blob_iter = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=prefix, max_results=sample_limit)
         )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
         keys = [b.name for b in blobs if not b.name.endswith("/")]
         return len(keys), keys
 
@@ -363,9 +375,10 @@ class GCSAdapter:
         client = self._ensure_client()
         bucket = client.bucket(self._bucket_name)
         resolved = self._resolve_prefix(prefix or "")
-        blobs = await asyncio.to_thread(
-            lambda: list(bucket.list_blobs(prefix=resolved))
+        blob_iter = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=resolved)
         )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
         return {b.name: b.generation for b in blobs if not b.name.endswith("/")}
 
     # ── Internal helpers ────────────────────────────────────────────

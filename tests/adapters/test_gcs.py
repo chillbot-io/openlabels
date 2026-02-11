@@ -67,8 +67,12 @@ class TestGCSAdapterListFiles:
         dir_blob.updated = now
         dir_blob.generation = 0
 
+        # GCS list_blobs returns an HTTPIterator with .pages attribute
+        mock_blob_iter = MagicMock()
+        mock_blob_iter.pages = [[blob1, blob2, dir_blob]]  # one page with all blobs
+
         mock_bucket = MagicMock()
-        mock_bucket.list_blobs.return_value = [blob1, blob2, dir_blob]
+        mock_bucket.list_blobs.return_value = mock_blob_iter
 
         mock_client = MagicMock()
         mock_client.bucket.return_value = mock_bucket

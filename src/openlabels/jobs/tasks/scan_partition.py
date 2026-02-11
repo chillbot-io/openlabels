@@ -18,8 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import PartitionSpec
 from openlabels.exceptions import JobError
+from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
 from openlabels.jobs.tasks.scan import (
     CANCELLATION_CHECK_INTERVAL,
+    _build_pipeline_config,
     _check_cancellation,
     _detect_and_score,
     _get_adapter,
@@ -133,161 +135,157 @@ async def execute_scan_partition_task(
         # Get target path
         target_path = target.config.get("path") or target.config.get("site_id") or ""
 
-        # Enumerate files for this partition only
-        async for file_info in adapter.list_files(
-            target_path,
-            partition=spec,
-        ):
-            try:
-                # Cancellation check
-                if stats["files_scanned"] % CANCELLATION_CHECK_INTERVAL == 0:
-                    if await _check_cancellation(session, job_id):
-                        logger.info(
-                            "Partition %d of job %s cancelled at %d files",
-                            partition.partition_index, job_id, stats["files_scanned"],
-                        )
-                        partition.status = "cancelled"
-                        partition.stats = stats
-                        await session.commit()
-                        return {**stats, "status": "cancelled"}
+        # Build per-file processing function for the pipeline
+        async def _process_one_file(file_info, ctx: PipelineContext) -> None:
+            folder_path = get_folder_path(file_info.path)
 
-                folder_path = get_folder_path(file_info.path)
+            if folder_path not in folder_stats:
+                folder_stats[folder_path] = {
+                    "file_count": 0,
+                    "total_size": 0,
+                    "has_sensitive": False,
+                    "highest_risk": None,
+                    "total_entities": 0,
+                }
+            folder_stats[folder_path]["file_count"] += 1
+            folder_stats[folder_path]["total_size"] += file_info.size
 
-                # Track folder stats
-                if folder_path not in folder_stats:
-                    folder_stats[folder_path] = {
-                        "file_count": 0,
-                        "total_size": 0,
-                        "has_sensitive": False,
-                        "highest_risk": None,
-                        "total_entities": 0,
-                    }
-                folder_stats[folder_path]["file_count"] += 1
-                folder_stats[folder_path]["total_size"] += file_info.size
+            # Skip oversized files
+            if file_info.size > max_file_size_bytes:
+                ctx.stats.files_skipped += 1
+                return
 
-                # Skip oversized files
-                if file_info.size > max_file_size_bytes:
-                    stats["files_skipped"] += 1
-                    continue
+            # Read + hash + delta check
+            content = await adapter.read_file(file_info, max_size_bytes=max_file_size_bytes)
+            content_hash = inventory.compute_content_hash(content)
 
-                # Read + hash + delta check
-                content = await adapter.read_file(file_info, max_size_bytes=max_file_size_bytes)
-                content_hash = inventory.compute_content_hash(content)
+            should_scan, scan_reason = await inventory.should_scan_file(
+                file_info, content_hash, force_full_scan
+            )
+            if not should_scan:
+                ctx.stats.files_skipped += 1
+                return
 
-                should_scan, scan_reason = await inventory.should_scan_file(
-                    file_info, content_hash, force_full_scan
-                )
-                if not should_scan:
-                    stats["files_skipped"] += 1
-                    continue
+            # Detection
+            result = await _detect_and_score(content, file_info, target.adapter)
 
-                # Detection
-                result = await _detect_and_score(content, file_info, target.adapter)
+            # Save result
+            scan_result = ScanResult(
+                tenant_id=job.tenant_id,
+                job_id=job.id,
+                file_path=file_info.path,
+                file_name=file_info.name,
+                file_size=file_info.size,
+                file_modified=file_info.modified,
+                content_hash=content_hash,
+                adapter_item_id=file_info.item_id,
+                risk_score=result["risk_score"],
+                risk_tier=result["risk_tier"],
+                entity_counts=result["entity_counts"],
+                total_entities=result["total_entities"],
+                exposure_level=file_info.exposure.value,
+                owner=file_info.owner,
+                content_score=result.get("content_score"),
+                exposure_multiplier=result.get("exposure_multiplier"),
+                co_occurrence_rules=result.get("co_occurrence_rules"),
+                findings=result.get("findings"),
+                policy_violations=result.get("policy_violations"),
+            )
+            session.add(scan_result)
 
-                # Save result
-                scan_result = ScanResult(
-                    tenant_id=job.tenant_id,
-                    job_id=job.id,
-                    file_path=file_info.path,
-                    file_name=file_info.name,
-                    file_size=file_info.size,
-                    file_modified=file_info.modified,
-                    content_hash=content_hash,
-                    adapter_item_id=file_info.item_id,
-                    risk_score=result["risk_score"],
-                    risk_tier=result["risk_tier"],
-                    entity_counts=result["entity_counts"],
-                    total_entities=result["total_entities"],
-                    exposure_level=file_info.exposure.value,
-                    owner=file_info.owner,
-                    content_score=result.get("content_score"),
-                    exposure_multiplier=result.get("exposure_multiplier"),
-                    co_occurrence_rules=result.get("co_occurrence_rules"),
-                    findings=result.get("findings"),
-                    policy_violations=result.get("policy_violations"),
-                )
-                session.add(scan_result)
+            # Policy actions
+            if result.get("policy_violations"):
+                try:
+                    from openlabels.core.policies.actions import (
+                        PolicyActionContext,
+                        PolicyActionExecutor,
+                    )
+                    await session.flush()
+                    action_ctx = PolicyActionContext(
+                        file_path=file_info.path,
+                        tenant_id=job.tenant_id,
+                        scan_result_id=scan_result.id,
+                        risk_tier=result["risk_tier"],
+                        violations=result["policy_violations"],
+                    )
+                    executor = PolicyActionExecutor()
+                    await executor.execute_all(action_ctx)
+                except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
+                    logger.error("Policy action failed for %s: %s", file_info.path, e)
 
-                # Policy actions
-                if result.get("policy_violations"):
-                    try:
-                        from openlabels.core.policies.actions import (
-                            PolicyActionContext,
-                            PolicyActionExecutor,
-                        )
-                        await session.flush()
-                        action_ctx = PolicyActionContext(
-                            file_path=file_info.path,
-                            tenant_id=job.tenant_id,
-                            scan_result_id=scan_result.id,
-                            risk_tier=result["risk_tier"],
-                            violations=result["policy_violations"],
-                        )
-                        executor = PolicyActionExecutor()
-                        await executor.execute_all(action_ctx)
-                    except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
-                        logger.error("Policy action failed for %s: %s", file_info.path, e)
+            # Update pipeline stats
+            ctx.stats.record_result(result["risk_tier"], result["total_entities"])
 
-                # Update stats
-                stats["files_scanned"] += 1
-                if result["total_entities"] > 0:
-                    stats["files_with_pii"] += 1
-                stats["total_entities"] += result["total_entities"]
-                stats[f"{result['risk_tier'].lower()}_count"] += 1
+            # Update folder stats
+            if result["total_entities"] > 0:
+                folder_stats[folder_path]["has_sensitive"] = True
+                folder_stats[folder_path]["total_entities"] += result["total_entities"]
+                risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
+                current_risk = folder_stats[folder_path]["highest_risk"]
+                new_risk = result["risk_tier"]
+                if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                    folder_stats[folder_path]["highest_risk"] = new_risk
 
-                # Update folder stats
-                if result["total_entities"] > 0:
-                    folder_stats[folder_path]["has_sensitive"] = True
-                    folder_stats[folder_path]["total_entities"] += result["total_entities"]
-                    risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
-                    current_risk = folder_stats[folder_path]["highest_risk"]
-                    new_risk = result["risk_tier"]
-                    if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
-                        folder_stats[folder_path]["highest_risk"] = new_risk
+                try:
+                    await inventory.update_file_inventory(
+                        file_info=file_info,
+                        scan_result=scan_result,
+                        content_hash=content_hash,
+                        job_id=job.id,
+                    )
+                except (OSError, RuntimeError, ValueError) as inv_err:
+                    logger.warning("Inventory update failed for %s: %s", file_info.path, inv_err)
 
-                    # Update file inventory
-                    try:
-                        await inventory.update_file_inventory(
-                            file_info=file_info,
-                            scan_result=scan_result,
-                            content_hash=content_hash,
-                            job_id=job.id,
-                        )
-                    except (OSError, RuntimeError, ValueError) as inv_err:
-                        logger.warning("Inventory update failed for %s: %s", file_info.path, inv_err)
+            # Update partition progress
+            partition.files_scanned = ctx.stats.files_scanned
+            partition.files_with_pii = ctx.stats.files_with_pii
+            partition.files_skipped = ctx.stats.files_skipped
+            partition.total_entities = ctx.stats.total_entities
+            partition.last_processed_path = file_info.path
 
-                # Update partition progress
-                partition.files_scanned = stats["files_scanned"]
-                partition.files_with_pii = stats["files_with_pii"]
-                partition.files_skipped = stats["files_skipped"]
-                partition.total_entities = stats["total_entities"]
-                partition.last_processed_path = file_info.path
+            # Stream progress via WebSocket
+            if ctx.stats.files_scanned % 10 == 0 and _ws_streaming_enabled:
+                try:
+                    await send_scan_progress(
+                        scan_id=job.id,
+                        status="running",
+                        progress={
+                            "files_scanned": ctx.stats.files_scanned,
+                            "files_with_pii": ctx.stats.files_with_pii,
+                            "files_skipped": ctx.stats.files_skipped,
+                            "current_file": file_info.name,
+                            "partition": partition.partition_index,
+                            "total_partitions": partition.total_partitions,
+                        },
+                    )
+                except (ConnectionError, OSError):
+                    pass
 
-                # Stream progress via WebSocket (using parent job ID)
-                if stats["files_scanned"] % 10 == 0 and _ws_streaming_enabled:
-                    try:
-                        await send_scan_progress(
-                            scan_id=job.id,
-                            status="running",
-                            progress={
-                                "files_scanned": stats["files_scanned"],
-                                "files_with_pii": stats["files_with_pii"],
-                                "files_skipped": stats["files_skipped"],
-                                "current_file": file_info.name,
-                                "partition": partition.partition_index,
-                                "total_partitions": partition.total_partitions,
-                            },
-                        )
-                    except (ConnectionError, OSError):
-                        pass
+        # Build pipeline config and run
+        pipeline_config = _build_pipeline_config(settings)
+        pipeline = FilePipeline(
+            config=pipeline_config,
+            process_fn=_process_one_file,
+            commit_fn=session.commit,
+            cancellation_fn=lambda: _check_cancellation(session, job_id),
+        )
+        pipeline_stats = await pipeline.run(
+            adapter.list_files(target_path, partition=spec)
+        )
 
-                # Periodic commit
-                if stats["files_scanned"] % 100 == 0:
-                    await session.commit()
+        # Merge stats from pipeline
+        stats.update(pipeline_stats.to_dict())
 
-            except (PermissionError, OSError, UnicodeDecodeError, ValueError) as e:
-                logger.warning("Error scanning file %s: %s", file_info.path, e)
-                continue
+        # Handle cancellation
+        if pipeline.cancelled:
+            logger.info(
+                "Partition %d of job %s cancelled at %d files",
+                partition.partition_index, job_id, stats["files_scanned"],
+            )
+            partition.status = "cancelled"
+            partition.stats = stats
+            await session.commit()
+            return {**stats, "status": "cancelled"}
 
         # Update folder inventory
         for folder_path, fstats in folder_stats.items():
@@ -517,3 +515,11 @@ async def _run_post_scan_operations(
                     )
         except (ImportError, ConnectionError, OSError, RuntimeError, ValueError) as e:
             logger.warning("SIEM export failed for job %s: %s", job.id, e)
+
+    # Generate pre-aggregated summary for fast dashboard queries
+    try:
+        from openlabels.jobs.summaries import generate_scan_summary
+        await generate_scan_summary(session, job)
+        await session.commit()
+    except Exception as e:  # Non-fatal: don't fail the scan if summary fails
+        logger.warning("Summary generation failed for job %s: %s", job.id, e)

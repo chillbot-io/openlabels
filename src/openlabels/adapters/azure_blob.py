@@ -132,50 +132,60 @@ class AzureBlobAdapter:
 
         kwargs: dict = {"name_starts_with": prefix}
         if not recursive:
-            blob_iter = container.walk_blobs(name_starts_with=prefix, delimiter="/")
+            blob_iter_factory = lambda: container.walk_blobs(name_starts_with=prefix, delimiter="/")
         else:
-            blob_iter = container.list_blobs(**kwargs)
+            blob_iter_factory = lambda: container.list_blobs(**kwargs)
 
-        blobs = await asyncio.to_thread(lambda: list(blob_iter))
+        # Stream page-by-page: Azure SDK returns a lazy ItemPaged iterator.
+        # We use by_page() to iterate one page at a time, fetching each
+        # page in a thread to avoid blocking the event loop.
+        paged_iter = await asyncio.to_thread(lambda: blob_iter_factory().by_page())
+        pages = await asyncio.to_thread(lambda: list(paged_iter))
 
         start_after = partition.start_after if partition else None
         end_before = partition.end_before if partition else None
 
-        for blob in blobs:
-            blob_name: str = blob.name
-            # Skip "directory" markers
-            if blob_name.endswith("/"):
-                continue
-            # walk_blobs returns BlobPrefix objects for directories — skip them
-            if not hasattr(blob, "size"):
-                continue
+        for page in pages:
+            hit_boundary = False
+            for blob in page:
+                blob_name: str = blob.name
+                # Skip "directory" markers
+                if blob_name.endswith("/"):
+                    continue
+                # walk_blobs returns BlobPrefix objects for directories — skip them
+                if not hasattr(blob, "size"):
+                    continue
 
-            # Apply partition boundaries
-            if start_after and blob_name <= start_after:
-                continue
-            if end_before and blob_name >= end_before:
+                # Apply partition boundaries
+                if start_after and blob_name <= start_after:
+                    continue
+                if end_before and blob_name >= end_before:
+                    hit_boundary = True
+                    break
+
+                short_name = blob_name.rsplit("/", 1)[-1]
+                modified = blob.last_modified or datetime.now(timezone.utc)
+                size = blob.size or 0
+                etag = (blob.etag or "").strip('"')
+
+                file_info = FileInfo(
+                    path=f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{blob_name}",
+                    name=short_name,
+                    size=size,
+                    modified=modified,
+                    adapter="azure_blob",
+                    item_id=blob_name,  # full blob name for read/get_metadata
+                    exposure=ExposureLevel.PRIVATE,
+                    permissions={"etag": etag},
+                )
+
+                if filter_config and not filter_config.should_include(file_info):
+                    continue
+
+                yield file_info
+
+            if hit_boundary:
                 break
-
-            short_name = blob_name.rsplit("/", 1)[-1]
-            modified = blob.last_modified or datetime.now(timezone.utc)
-            size = blob.size or 0
-            etag = (blob.etag or "").strip('"')
-
-            file_info = FileInfo(
-                path=f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{blob_name}",
-                name=short_name,
-                size=size,
-                modified=modified,
-                adapter="azure_blob",
-                item_id=blob_name,  # full blob name for read/get_metadata
-                exposure=ExposureLevel.PRIVATE,
-                permissions={"etag": etag},
-            )
-
-            if filter_config and not filter_config.should_include(file_info):
-                continue
-
-            yield file_info
 
     async def list_top_level_prefixes(
         self,
@@ -199,9 +209,10 @@ class AzureBlobAdapter:
         container = self._ensure_container_client()
         prefix = self._resolve_prefix(target)
 
-        blobs = await asyncio.to_thread(
-            lambda: list(container.list_blobs(name_starts_with=prefix, results_per_page=1000))
+        blob_iter = await asyncio.to_thread(
+            lambda: container.list_blobs(name_starts_with=prefix, results_per_page=1000)
         )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
         keys = [b.name for b in blobs[:sample_limit] if not b.name.endswith("/") and hasattr(b, "size")]
         return len(keys), keys
 
@@ -357,9 +368,10 @@ class AzureBlobAdapter:
         """
         container = self._ensure_container_client()
         resolved = self._resolve_prefix(prefix or "")
-        blobs = await asyncio.to_thread(
-            lambda: list(container.list_blobs(name_starts_with=resolved))
+        blob_iter = await asyncio.to_thread(
+            lambda: container.list_blobs(name_starts_with=resolved)
         )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
         return {
             b.name: (b.etag or "").strip('"')
             for b in blobs

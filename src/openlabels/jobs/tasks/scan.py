@@ -5,8 +5,9 @@ Integrates the detection engine with the job system to scan files
 for sensitive data and compute risk scores.
 
 Supports two execution modes:
-- Sequential: Traditional file-by-file processing (default)
-- Parallel: Uses agent pool for multi-core classification
+- Sequential: Traditional file-by-file processing (fallback)
+- Pipeline: Bounded-concurrency processing with overlapped I/O and compute (default)
+- Fan-out: Coordinator splits work across multiple workers (large targets)
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
 from openlabels.exceptions import AdapterError, JobError
+from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
 from openlabels.labeling.engine import LabelingEngine
 from openlabels.server.config import get_settings
 from openlabels.server.metrics import (
@@ -299,212 +301,194 @@ async def execute_scan_task(
                     )
                     # Continue to next path instead of aborting entire scan
 
-        async for file_info in _iter_all_files():
-            try:
-                # Check for cancellation periodically
-                if stats["files_scanned"] % CANCELLATION_CHECK_INTERVAL == 0:
-                    if await _check_cancellation(session, job_id):
-                        logger.info(f"Scan job {job_id} cancelled mid-scan at {stats['files_scanned']} files")
-                        job.status = "cancelled"
-                        stats["status"] = "cancelled"
-                        await session.commit()
+        # Build per-file processing function for the pipeline
+        async def _process_one_file(file_info: FileInfo, ctx: PipelineContext) -> None:
+            """Process a single file — called concurrently by the pipeline."""
+            folder_path = get_folder_path(file_info.path)
 
-                        # Stream cancellation via WebSocket
-                        if _ws_streaming_enabled:
-                            try:
-                                await send_scan_completed(
-                                    scan_id=job.id,
-                                    status="cancelled",
-                                    summary={
-                                        "files_scanned": stats["files_scanned"],
-                                        "files_with_pii": stats["files_with_pii"],
-                                        "reason": "User cancelled",
-                                    },
-                                )
-                            except (ConnectionError, OSError) as e:
-                                logger.debug(f"Failed to send scan cancelled event: {e}")
-
-                        return stats
-
-                folder_path = get_folder_path(file_info.path)
-
-                # Initialize folder stats
-                if folder_path not in folder_stats:
-                    folder_stats[folder_path] = {
-                        "file_count": 0,
-                        "total_size": 0,
-                        "has_sensitive": False,
-                        "highest_risk": None,
-                        "total_entities": 0,
-                    }
-                folder_stats[folder_path]["file_count"] += 1
-                folder_stats[folder_path]["total_size"] += file_info.size
-
-                # Security: Skip files that exceed size limit to prevent DoS
-                if file_info.size > max_file_size_bytes:
-                    logger.warning(
-                        f"Skipping file exceeding size limit: {file_info.path} "
-                        f"({file_info.size} bytes > {max_file_size_bytes} bytes)"
-                    )
-                    stats["files_skipped"] += 1
-                    if "files_too_large" not in stats:
-                        stats["files_too_large"] = 0
-                    stats["files_too_large"] += 1
-                    continue
-
-                # Read file content with size limit
-                content = await adapter.read_file(file_info, max_size_bytes=max_file_size_bytes)
-                content_hash = inventory.compute_content_hash(content)
-
-                # Check if file needs scanning (delta mode)
-                should_scan, scan_reason = await inventory.should_scan_file(
-                    file_info, content_hash, force_full_scan
-                )
-
-                if not should_scan:
-                    stats["files_skipped"] += 1
-                    logger.debug(f"Skipping unchanged file: {file_info.path}")
-                    continue
-
-                # Run detection
-                result = await _detect_and_score(content, file_info, target.adapter)
-
-                # Save result
-                scan_result = ScanResult(
-                    tenant_id=job.tenant_id,
-                    job_id=job.id,
-                    file_path=file_info.path,
-                    file_name=file_info.name,
-                    file_size=file_info.size,
-                    file_modified=file_info.modified,
-                    content_hash=content_hash,
-                    adapter_item_id=file_info.item_id,
-                    risk_score=result["risk_score"],
-                    risk_tier=result["risk_tier"],
-                    entity_counts=result["entity_counts"],
-                    total_entities=result["total_entities"],
-                    exposure_level=file_info.exposure.value,
-                    owner=file_info.owner,
-                    content_score=result.get("content_score"),
-                    exposure_multiplier=result.get("exposure_multiplier"),
-                    co_occurrence_rules=result.get("co_occurrence_rules"),
-                    findings=result.get("findings"),
-                    policy_violations=result.get("policy_violations"),
-                )
-                session.add(scan_result)
-
-                # Execute policy-triggered remediation actions
-                if result.get("policy_violations"):
-                    try:
-                        from openlabels.core.policies.actions import (
-                            PolicyActionContext,
-                            PolicyActionExecutor,
-                        )
-                        await session.flush()  # ensure scan_result.id is assigned
-                        action_ctx = PolicyActionContext(
-                            file_path=file_info.path,
-                            tenant_id=job.tenant_id,
-                            scan_result_id=scan_result.id,
-                            risk_tier=result["risk_tier"],
-                            violations=result["policy_violations"],
-                        )
-                        executor = PolicyActionExecutor()
-                        action_results = await executor.execute_all(action_ctx)
-                        for ar in action_results:
-                            if not ar.success:
-                                logger.warning(
-                                    "Policy action %s failed for %s: %s",
-                                    ar.action, file_info.path, ar.error,
-                                )
-                    except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
-                        logger.error(
-                            "Policy action execution failed for %s: %s",
-                            file_info.path, e,
-                        )
-
-                # Update stats
-                stats["files_scanned"] += 1
-                if result["total_entities"] > 0:
-                    stats["files_with_pii"] += 1
-                stats["total_entities"] += result["total_entities"]
-                stats[f"{result['risk_tier'].lower()}_count"] += 1
-
-                # Update folder stats for inventory
-                if result["total_entities"] > 0:
-                    folder_stats[folder_path]["has_sensitive"] = True
-                    folder_stats[folder_path]["total_entities"] += result["total_entities"]
-                    # Track highest risk
-                    risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
-                    current_risk = folder_stats[folder_path]["highest_risk"]
-                    new_risk = result["risk_tier"]
-                    if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
-                        folder_stats[folder_path]["highest_risk"] = new_risk
-
-                    # Update file inventory for sensitive files
-                    try:
-                        await inventory.update_file_inventory(
-                            file_info=file_info,
-                            scan_result=scan_result,
-                            content_hash=content_hash,
-                            job_id=job.id,
-                        )
-                    except (OSError, RuntimeError, ValueError) as inv_err:
-                        logger.warning("Inventory update failed for %s: %s", file_info.path, inv_err)
-
-                # Update job progress
-                job.files_scanned = stats["files_scanned"]
-                job.files_with_pii = stats["files_with_pii"]
-                job.progress = {
-                    "current_file": file_info.name,
-                    "files_scanned": stats["files_scanned"],
-                    "files_skipped": stats["files_skipped"],
+            # Track folder stats (use lock for thread safety)
+            if folder_path not in folder_stats:
+                folder_stats[folder_path] = {
+                    "file_count": 0,
+                    "total_size": 0,
+                    "has_sensitive": False,
+                    "highest_risk": None,
+                    "total_entities": 0,
                 }
+            folder_stats[folder_path]["file_count"] += 1
+            folder_stats[folder_path]["total_size"] += file_info.size
 
-                # Stream file result via WebSocket
-                if _ws_streaming_enabled:
-                    try:
-                        await send_scan_file_result(
-                            scan_id=job.id,
-                            file_path=file_info.path,
-                            risk_score=result["risk_score"],
-                            risk_tier=result["risk_tier"],
-                            entity_counts=result["entity_counts"],
-                        )
-                    except (ConnectionError, OSError) as ws_err:
-                        logger.debug(f"WebSocket broadcast failed: {ws_err}")
+            # Security: Skip files that exceed size limit to prevent DoS
+            if file_info.size > max_file_size_bytes:
+                logger.warning(
+                    "Skipping file exceeding size limit: %s (%d bytes > %d bytes)",
+                    file_info.path, file_info.size, max_file_size_bytes,
+                )
+                ctx.stats.files_skipped += 1
+                return
 
-                # Stream progress periodically (every 10 files)
-                if stats["files_scanned"] % 10 == 0 and _ws_streaming_enabled:
-                    try:
-                        await send_scan_progress(
-                            scan_id=job.id,
-                            status="running",
-                            progress={
-                                "files_scanned": stats["files_scanned"],
-                                "files_with_pii": stats["files_with_pii"],
-                                "files_skipped": stats["files_skipped"],
-                                "current_file": file_info.name,
-                            },
-                        )
-                    except (ConnectionError, OSError) as ws_err:
-                        logger.debug(f"WebSocket progress failed: {ws_err}")
+            # Read file content with size limit
+            content = await adapter.read_file(file_info, max_size_bytes=max_file_size_bytes)
+            content_hash = inventory.compute_content_hash(content)
 
-                # Commit periodically
-                if stats["files_scanned"] % 100 == 0:
-                    await session.commit()
+            # Check if file needs scanning (delta mode)
+            should_scan, scan_reason = await inventory.should_scan_file(
+                file_info, content_hash, force_full_scan
+            )
+            if not should_scan:
+                ctx.stats.files_skipped += 1
+                logger.debug("Skipping unchanged file: %s", file_info.path)
+                return
 
-            except PermissionError as e:
-                logger.warning(f"Permission denied scanning file {file_info.path}: {e}")
-                continue
-            except OSError as e:
-                logger.warning(f"OS error scanning file {file_info.path}: {e}")
-                continue
-            except UnicodeDecodeError as e:
-                logger.warning(f"Encoding error scanning file {file_info.path}: {e}")
-                continue
-            except ValueError as e:
-                logger.warning(f"Value error scanning file {file_info.path}: {e}")
-                continue
+            # Run detection
+            result = await _detect_and_score(content, file_info, target.adapter)
+
+            # Save result
+            scan_result = ScanResult(
+                tenant_id=job.tenant_id,
+                job_id=job.id,
+                file_path=file_info.path,
+                file_name=file_info.name,
+                file_size=file_info.size,
+                file_modified=file_info.modified,
+                content_hash=content_hash,
+                adapter_item_id=file_info.item_id,
+                risk_score=result["risk_score"],
+                risk_tier=result["risk_tier"],
+                entity_counts=result["entity_counts"],
+                total_entities=result["total_entities"],
+                exposure_level=file_info.exposure.value,
+                owner=file_info.owner,
+                content_score=result.get("content_score"),
+                exposure_multiplier=result.get("exposure_multiplier"),
+                co_occurrence_rules=result.get("co_occurrence_rules"),
+                findings=result.get("findings"),
+                policy_violations=result.get("policy_violations"),
+            )
+            session.add(scan_result)
+
+            # Execute policy-triggered remediation actions
+            if result.get("policy_violations"):
+                try:
+                    from openlabels.core.policies.actions import (
+                        PolicyActionContext,
+                        PolicyActionExecutor,
+                    )
+                    await session.flush()
+                    action_ctx = PolicyActionContext(
+                        file_path=file_info.path,
+                        tenant_id=job.tenant_id,
+                        scan_result_id=scan_result.id,
+                        risk_tier=result["risk_tier"],
+                        violations=result["policy_violations"],
+                    )
+                    executor = PolicyActionExecutor()
+                    action_results = await executor.execute_all(action_ctx)
+                    for ar in action_results:
+                        if not ar.success:
+                            logger.warning(
+                                "Policy action %s failed for %s: %s",
+                                ar.action, file_info.path, ar.error,
+                            )
+                except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
+                    logger.error("Policy action failed for %s: %s", file_info.path, e)
+
+            # Update pipeline stats
+            ctx.stats.record_result(result["risk_tier"], result["total_entities"])
+
+            # Update folder stats for inventory
+            if result["total_entities"] > 0:
+                folder_stats[folder_path]["has_sensitive"] = True
+                folder_stats[folder_path]["total_entities"] += result["total_entities"]
+                risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
+                current_risk = folder_stats[folder_path]["highest_risk"]
+                new_risk = result["risk_tier"]
+                if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                    folder_stats[folder_path]["highest_risk"] = new_risk
+
+                try:
+                    await inventory.update_file_inventory(
+                        file_info=file_info,
+                        scan_result=scan_result,
+                        content_hash=content_hash,
+                        job_id=job.id,
+                    )
+                except (OSError, RuntimeError, ValueError) as inv_err:
+                    logger.warning("Inventory update failed for %s: %s", file_info.path, inv_err)
+
+            # Update job progress
+            job.files_scanned = ctx.stats.files_scanned
+            job.files_with_pii = ctx.stats.files_with_pii
+            job.progress = {
+                "current_file": file_info.name,
+                "files_scanned": ctx.stats.files_scanned,
+                "files_skipped": ctx.stats.files_skipped,
+            }
+
+            # Stream file result via WebSocket
+            if _ws_streaming_enabled:
+                try:
+                    await send_scan_file_result(
+                        scan_id=job.id,
+                        file_path=file_info.path,
+                        risk_score=result["risk_score"],
+                        risk_tier=result["risk_tier"],
+                        entity_counts=result["entity_counts"],
+                    )
+                except (ConnectionError, OSError) as ws_err:
+                    logger.debug("WebSocket broadcast failed: %s", ws_err)
+
+            # Stream progress periodically
+            if ctx.stats.files_scanned % 10 == 0 and _ws_streaming_enabled:
+                try:
+                    await send_scan_progress(
+                        scan_id=job.id,
+                        status="running",
+                        progress={
+                            "files_scanned": ctx.stats.files_scanned,
+                            "files_with_pii": ctx.stats.files_with_pii,
+                            "files_skipped": ctx.stats.files_skipped,
+                            "current_file": file_info.name,
+                        },
+                    )
+                except (ConnectionError, OSError) as ws_err:
+                    logger.debug("WebSocket progress failed: %s", ws_err)
+
+        # Determine pipeline configuration
+        pipeline_config = _build_pipeline_config(settings, job.tenant_id, session)
+
+        # Run the pipeline
+        pipeline = FilePipeline(
+            config=pipeline_config,
+            process_fn=_process_one_file,
+            commit_fn=session.commit,
+            cancellation_fn=lambda: _check_cancellation(session, job_id),
+        )
+        pipeline_stats = await pipeline.run(_iter_all_files())
+
+        # Merge pipeline stats into legacy stats dict for backward compat
+        stats.update(pipeline_stats.to_dict())
+
+        # Handle cancellation detected by pipeline
+        if pipeline.cancelled:
+            logger.info("Scan job %s cancelled mid-scan at %d files", job_id, stats["files_scanned"])
+            job.status = "cancelled"
+            stats["status"] = "cancelled"
+            await session.commit()
+            if _ws_streaming_enabled:
+                try:
+                    await send_scan_completed(
+                        scan_id=job.id,
+                        status="cancelled",
+                        summary={
+                            "files_scanned": stats["files_scanned"],
+                            "files_with_pii": stats["files_with_pii"],
+                            "reason": "User cancelled",
+                        },
+                    )
+                except (ConnectionError, OSError):
+                    pass
+            return stats
 
         # Update folder inventory
         for folder_path, fstats in folder_stats.items():
@@ -662,6 +646,20 @@ async def execute_scan_task(
                     job.id, e,
                 )
                 stats["siem_export_error"] = str(e)
+
+        # Generate pre-aggregated summary for fast dashboard queries
+        try:
+            from openlabels.jobs.summaries import generate_scan_summary
+            auto_label_stats_dict = None
+            if "auto_labeled" in stats or "auto_label_errors" in stats:
+                auto_label_stats_dict = {
+                    "labeled": stats.get("auto_labeled", 0),
+                    "errors": stats.get("auto_label_errors", 0),
+                }
+            await generate_scan_summary(session, job, auto_label_stats_dict)
+            await session.commit()
+        except Exception as e:  # Non-fatal: don't fail the scan if summary fails
+            logger.warning("Summary generation failed for job %s: %s", job.id, e)
 
         return stats
 
@@ -1049,6 +1047,32 @@ async def _cloud_label_sync_back(
         sync_stats["errors"],
     )
     return sync_stats
+
+
+def _build_pipeline_config(settings, tenant_id=None, session=None) -> PipelineConfig:
+    """Build pipeline config from settings, with optional tenant overrides."""
+    jobs = getattr(settings, "jobs", None)
+
+    max_concurrent = getattr(jobs, "pipeline_max_concurrent_files", 8) if jobs else 8
+    memory_budget = getattr(jobs, "pipeline_memory_budget_mb", 512) if jobs else 512
+    pipeline_enabled = getattr(jobs, "pipeline_enabled", True) if jobs else True
+
+    # Ensure we have valid int values (guard against mock objects in tests)
+    if not isinstance(max_concurrent, int):
+        max_concurrent = 8
+    if not isinstance(memory_budget, int):
+        memory_budget = 512
+
+    config = PipelineConfig(
+        max_concurrent_files=max_concurrent,
+        memory_budget_mb=memory_budget,
+    )
+
+    # If pipeline is disabled globally, set concurrency to 1 (sequential)
+    if not pipeline_enabled:
+        config.max_concurrent_files = 1
+
+    return config
 
 
 async def _detect_and_score(content: bytes, file_info, adapter_type: str = "filesystem") -> dict:

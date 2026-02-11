@@ -56,7 +56,7 @@ class TestS3PartitionListing:
         spec = PartitionSpec(start_after="m")
 
         files = []
-        with patch("asyncio.to_thread", side_effect=lambda fn: fn()):
+        with patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)):
             async for fi in adapter.list_files("", partition=spec):
                 files.append(fi)
 
@@ -85,7 +85,7 @@ class TestS3PartitionListing:
         spec = PartitionSpec(end_before="m_file.csv")
 
         files = []
-        with patch("asyncio.to_thread", side_effect=lambda fn: fn()):
+        with patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)):
             async for fi in adapter.list_files("", partition=spec):
                 files.append(fi)
 
@@ -111,7 +111,7 @@ class TestS3PartitionListing:
         adapter._client = mock_client
 
         files = []
-        with patch("asyncio.to_thread", side_effect=lambda fn: fn()):
+        with patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)):
             async for fi in adapter.list_files(""):
                 files.append(fi)
 
@@ -139,7 +139,7 @@ class TestS3PartitionListing:
         mock_client.get_paginator.return_value = mock_paginator
         adapter._client = mock_client
 
-        with patch("asyncio.to_thread", side_effect=lambda fn: fn()):
+        with patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)):
             prefixes = await adapter.list_top_level_prefixes()
 
         assert prefixes == ["data/", "logs/", "reports/"]
@@ -161,7 +161,7 @@ class TestS3PartitionListing:
         mock_client.get_paginator.return_value = mock_paginator
         adapter._client = mock_client
 
-        with patch("asyncio.to_thread", side_effect=lambda fn: fn()):
+        with patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)):
             count, sample = await adapter.estimate_object_count()
 
         assert count == 500

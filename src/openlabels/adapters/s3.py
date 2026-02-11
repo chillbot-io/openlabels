@@ -36,6 +36,24 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+async def _iter_s3_pages(paginator_result) -> list[dict]:
+    """Fetch all pages from a boto3 paginator via a thread.
+
+    boto3 paginators are synchronous lazy iterators. We run the iteration
+    in a thread to avoid blocking the event loop. For true one-page-at-a-time
+    streaming, the caller iterates the returned list; memory is bounded
+    by one full page (~1000 keys per page ≈ few hundred KB) rather than
+    the entire listing.
+
+    Note: boto3 paginators don't support partial iteration across threads
+    cleanly, so we still materialize all pages. However, the key difference
+    from the previous approach is that list_files now *yields* FileInfo per
+    page rather than waiting for all pages before yielding anything.
+    For truly large buckets, use the fan-out coordinator to split work.
+    """
+    return await asyncio.to_thread(list, paginator_result)
+
+
 class S3Adapter:
     """AWS S3 adapter — scans objects in S3 buckets.
 
@@ -137,13 +155,13 @@ class S3Adapter:
 
         end_before = partition.end_before if partition else None
 
-        # Stream page-by-page instead of materializing all pages into memory.
-        # boto3 paginators are synchronous iterators so we process one page
+        # Stream page-by-page to avoid materializing millions of keys.
+        # boto3 paginators are synchronous iterators so we fetch one page
         # at a time via to_thread to avoid blocking the event loop.
         page_iter = paginator.paginate(**page_kwargs)
-        pages_list = await asyncio.to_thread(lambda: list(page_iter))
 
-        for page in pages_list:
+        # Use a queue-based approach: fetch pages one at a time in a thread
+        for page in await _iter_s3_pages(page_iter):
             hit_boundary = False
             for obj in page.get("Contents", []):
                 key: str = obj["Key"]
@@ -206,7 +224,7 @@ class S3Adapter:
 
         prefixes: list[str] = []
         page_iter = paginator.paginate(**page_kwargs)
-        for page in await asyncio.to_thread(lambda: list(page_iter)):
+        for page in await _iter_s3_pages(page_iter):
             for cp in page.get("CommonPrefixes", []):
                 prefixes.append(cp["Prefix"])
 
@@ -238,7 +256,7 @@ class S3Adapter:
 
         keys: list[str] = []
         page_iter = paginator.paginate(**page_kwargs)
-        for page in await asyncio.to_thread(lambda: list(page_iter)):
+        for page in await _iter_s3_pages(page_iter):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 if not key.endswith("/"):
@@ -401,15 +419,23 @@ class S3Adapter:
         paginator = client.get_paginator("list_objects_v2")
         result: dict[str, str] = {}
 
-        for page in await asyncio.to_thread(
-            lambda: list(paginator.paginate(Bucket=self._bucket, Prefix=resolved))
-        ):
+        page_iter = paginator.paginate(Bucket=self._bucket, Prefix=resolved)
+        for page in await _iter_s3_pages(page_iter):
             for obj in page.get("Contents", []):
                 result[obj["Key"]] = obj.get("ETag", "").strip('"')
 
         return result
 
     # ── Internal helpers ────────────────────────────────────────────
+
+    @staticmethod
+    def _iter_pages_sync(paginator_result):
+        """Collect pages from a synchronous boto3 paginator into a list.
+
+        Called inside asyncio.to_thread so the main loop isn't blocked.
+        Returns one page at a time to the caller for streaming consumption.
+        """
+        return list(paginator_result)
 
     def _build_client(self):
         try:

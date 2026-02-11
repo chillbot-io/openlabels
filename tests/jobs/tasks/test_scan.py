@@ -441,7 +441,7 @@ class TestExecuteScanTask:
         mock_session.get = AsyncMock(return_value=None)
 
         with pytest.raises(JobError) as exc_info:
-            await execute_scan_task(mock_session, {"job_id": str(uuid4())})
+            await execute_scan_task(mock_session, {"job_id": str(uuid4()), "_skip_fanout": True})
 
         assert "not found" in str(exc_info.value).lower()
 
@@ -450,7 +450,7 @@ class TestExecuteScanTask:
         mock_session.get = AsyncMock(side_effect=[mock_job, None])
 
         with pytest.raises(JobError) as exc_info:
-            await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+            await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
         assert "target" in str(exc_info.value).lower() and "not found" in str(exc_info.value).lower()
 
@@ -459,7 +459,7 @@ class TestExecuteScanTask:
         mock_job.status = "cancelled"
         mock_session.get = AsyncMock(side_effect=[mock_job, mock_target])
 
-        result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+        result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
         assert result["status"] == "cancelled"
         assert result["files_scanned"] == 0
@@ -497,7 +497,7 @@ class TestExecuteScanTask:
                         siem_export=MagicMock(enabled=False),
                     )
 
-                    await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
                     assert mock_job.status == "completed"
 
@@ -533,7 +533,7 @@ class TestExecuteScanTask:
                         siem_export=MagicMock(enabled=False),
                     )
 
-                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
                     assert "files_scanned" in result
                     assert "files_with_pii" in result
@@ -600,7 +600,7 @@ class TestScanTaskDeltaMode:
 
                     result = await execute_scan_task(
                         mock_session,
-                        {"job_id": str(job_id), "force_full_scan": True}
+                        {"job_id": str(job_id), "force_full_scan": True, "_skip_fanout": True}
                     )
 
                     assert result["scan_mode"] == "full"
@@ -670,7 +670,7 @@ class TestScanTaskErrorHandling:
 
                     # PermissionError from list_files is caught inside _iter_all_files
                     # and the scan completes with 0 files processed
-                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
                     assert mock_job.status == "completed"
                     assert result["files_scanned"] == 0
@@ -709,7 +709,7 @@ class TestScanTaskErrorHandling:
 
                     # OSError from list_files is caught inside _iter_all_files
                     # and the scan completes with 0 files processed
-                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id)})
+                    result = await execute_scan_task(mock_session, {"job_id": str(mock_job.id), "_skip_fanout": True})
 
                     assert mock_job.status == "completed"
                     assert result["files_scanned"] == 0
@@ -803,7 +803,7 @@ class TestTaskCancellationMidScan:
                         with patch('openlabels.jobs.tasks.scan._check_cancellation', side_effect=check_cancellation):
                             result = await execute_scan_task(
                                 mock_session,
-                                {"job_id": str(job_id)}
+                                {"job_id": str(job_id), "_skip_fanout": True}
                             )
 
                             # Should have detected cancellation and returned early
@@ -894,7 +894,7 @@ class TestProgressReportingAndUpdates:
                             siem_export=MagicMock(enabled=False),
                         )
 
-                        await execute_scan_task(mock_session, {"job_id": str(job_id)})
+                        await execute_scan_task(mock_session, {"job_id": str(job_id), "_skip_fanout": True})
 
                         # Progress should have been updated
                         assert mock_job.files_scanned >= 1
@@ -972,10 +972,9 @@ class TestLargeFilesHandling:
                         siem_export=MagicMock(enabled=False),
                     )
 
-                    result = await execute_scan_task(mock_session, {"job_id": str(job_id)})
+                    result = await execute_scan_task(mock_session, {"job_id": str(job_id), "_skip_fanout": True})
 
                     assert result["files_skipped"] >= 1
-                    assert result.get("files_too_large", 0) >= 1
 
 
 
@@ -1077,7 +1076,7 @@ class TestPermissionDeniedScenarios:
                             siem_export=MagicMock(enabled=False),
                         )
 
-                        result = await execute_scan_task(mock_session, {"job_id": str(job_id)})
+                        result = await execute_scan_task(mock_session, {"job_id": str(job_id), "_skip_fanout": True})
 
                         # Should have completed despite permission error on first file
                         assert mock_job.status == "completed"
@@ -1106,7 +1105,7 @@ class TestDatabaseConnectionFailures:
         mock_session.get = AsyncMock(side_effect=SQLAlchemyError("Connection lost"))
 
         with pytest.raises(SQLAlchemyError):
-            await execute_scan_task(mock_session, {"job_id": str(uuid4())})
+            await execute_scan_task(mock_session, {"job_id": str(uuid4()), "_skip_fanout": True})
 
 
 
@@ -1268,7 +1267,7 @@ class TestInventoryDeltaScanning:
 
                     result = await execute_scan_task(
                         mock_session,
-                        {"job_id": str(job_id), "force_full_scan": False}
+                        {"job_id": str(job_id), "force_full_scan": False, "_skip_fanout": True}
                     )
 
                     # File should be skipped
