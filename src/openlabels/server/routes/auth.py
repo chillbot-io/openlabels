@@ -242,13 +242,14 @@ async def login(
         safe_redirect = validate_redirect_uri(redirect_uri, request)
 
         response = RedirectResponse(url=safe_redirect, status_code=302)
+        is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
         response.set_cookie(
             SESSION_COOKIE_NAME,
             session_id,
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
-            samesite="strict",
-            secure=request.url.scheme == "https",
+            samesite="lax",
+            secure=is_secure,
         )
         return response
 
@@ -430,13 +431,14 @@ async def auth_callback(
 
     # Redirect with session cookie
     response = RedirectResponse(url=final_redirect, status_code=302)
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.set_cookie(
         SESSION_COOKIE_NAME,
         session_id,
         max_age=SESSION_COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=is_secure,
     )
 
     return response
@@ -462,10 +464,11 @@ async def logout(
 
     # Create response that clears cookie
     response = RedirectResponse(url="/", status_code=302)
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.delete_cookie(
         SESSION_COOKIE_NAME,
-        samesite="strict",
-        secure=request.url.scheme == "https",
+        samesite="lax",
+        secure=is_secure,
     )
 
     # Optionally redirect to Microsoft logout

@@ -253,9 +253,12 @@ def _lock_down_unix(
     # Backup current permissions
     if backup_acl:
         try:
+            import json as _json
             acl_info = _get_acl_unix(path)
+            # Use JSON format for new backups (restore code handles both JSON
+            # and legacy Python repr format for backwards compatibility)
             previous_acl = base64.b64encode(
-                str(acl_info).encode()
+                _json.dumps(acl_info).encode()
             ).decode()
         except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning(f"Failed to backup permissions: {e}")
@@ -509,13 +512,25 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
     The backup is a ``repr(dict)`` containing ``mode``, ``uid``, ``gid``,
     and optionally ``acl`` (getfacl output).
     """
-    import ast
+    import json
     import os
 
-    try:
-        acl_dict = ast.literal_eval(acl_data)
-    except (ValueError, SyntaxError):
+    # SECURITY: Use json.loads instead of ast.literal_eval to avoid parsing
+    # arbitrarily complex Python literals from potentially-tampered backup data.
+    # Limit input size to prevent memory exhaustion from crafted payloads.
+    if len(acl_data) > 1_000_000:
+        logger.warning("ACL backup data exceeds 1MB limit, treating as raw ACL")
         acl_dict = {"acl": acl_data}
+    else:
+        try:
+            acl_dict = json.loads(acl_data)
+        except (json.JSONDecodeError, ValueError):
+            # Fall back: legacy backups may use Python repr() format
+            try:
+                import ast
+                acl_dict = ast.literal_eval(acl_data)
+            except (ValueError, SyntaxError):
+                acl_dict = {"acl": acl_data}
 
     # Validate that parsed data is a dict (not a list, string, etc.)
     if not isinstance(acl_dict, dict):

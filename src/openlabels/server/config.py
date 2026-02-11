@@ -636,7 +636,7 @@ class SIEMExportSettings(BaseSettings):
     qradar_syslog_host: str = ""
     qradar_syslog_port: int = 514
     qradar_protocol: str = "tcp"
-    qradar_use_tls: bool = False
+    qradar_use_tls: bool = True
     qradar_format: str = "leef"
 
     # Elastic
@@ -651,7 +651,7 @@ class SIEMExportSettings(BaseSettings):
     syslog_host: str = ""
     syslog_port: int = 514
     syslog_protocol: str = "tcp"
-    syslog_use_tls: bool = False
+    syslog_use_tls: bool = True
 
     # Record types to export
     export_record_types: list[str] = ["scan_result", "policy_violation"]

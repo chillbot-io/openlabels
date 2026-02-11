@@ -254,7 +254,9 @@ async def list_access_events(
     if file_path:
         query = query.where(FileAccessEvent.file_path == file_path)
     if user_name:
-        query = query.where(FileAccessEvent.user_name.ilike(f"%{user_name}%"))
+        # SECURITY: Escape LIKE wildcards to prevent data enumeration
+        safe_name = user_name.replace("%", r"\%").replace("_", r"\_")
+        query = query.where(FileAccessEvent.user_name.ilike(f"%{safe_name}%"))
     if action:
         query = query.where(FileAccessEvent.action == action)
     if since:
@@ -332,9 +334,11 @@ async def get_user_access_history(
 
     Returns all access events performed by the given user.
     """
+    # SECURITY: Escape LIKE wildcards to prevent data enumeration
+    safe_name = user_name.replace("%", r"\%").replace("_", r"\_")
     conditions = [
         FileAccessEvent.tenant_id == user.tenant_id,
-        FileAccessEvent.user_name.ilike(f"%{user_name}%"),
+        FileAccessEvent.user_name.ilike(f"%{safe_name}%"),
     ]
     if since:
         conditions.append(FileAccessEvent.event_time >= since)

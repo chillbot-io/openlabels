@@ -82,6 +82,10 @@ async def update_scan_settings(
     session: AsyncSession = Depends(get_session),
 ):
     """Update scan configuration and persist to tenant settings."""
+    # SECURITY: Validate bounds to prevent resource exhaustion
+    max_file_size_mb = max(1, min(max_file_size_mb, 10_000))
+    concurrent_files = max(1, min(concurrent_files, 100))
+
     ocr_enabled = enable_ocr == "on"
 
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)

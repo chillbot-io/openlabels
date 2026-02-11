@@ -434,7 +434,8 @@ async def generate_report(
     except Exception as exc:
         logger.error("Report generation failed: %s", exc, exc_info=True)
         report.status = "failed"
-        report.error = str(exc)
+        # SECURITY: Store sanitized error message; full details are in server logs
+        report.error = f"Report generation failed ({type(exc).__name__})"
 
     await session.commit()
     await session.refresh(report)
@@ -578,7 +579,10 @@ async def distribute_report(
         report.distributed_at = datetime.now(timezone.utc)
     except Exception as exc:
         logger.error("Report distribution failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Distribution failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Report distribution failed. Check server logs for details.",
+        ) from exc
 
     await session.commit()
     await session.refresh(report)

@@ -78,11 +78,16 @@ async def m365_webhook(
     """Receive M365 Management Activity API audit notifications."""
     # --- Case 1: Subscription validation handshake ---
     if validationToken is not None:
+        # SECURITY: Validate token format to prevent reflection of arbitrary content
+        if len(validationToken) > 1024 or not validationToken.isprintable():
+            logger.warning("M365 webhook: suspicious validationToken rejected")
+            return Response(status_code=status.HTTP_400_BAD_REQUEST)
         logger.info("M365 webhook: validation handshake received")
         return Response(
             content=validationToken,
             media_type="text/plain",
             status_code=status.HTTP_200_OK,
+            headers={"X-Content-Type-Options": "nosniff"},
         )
 
     # --- Case 2: Content available notification ---
@@ -131,11 +136,16 @@ async def graph_webhook(
     """Receive Microsoft Graph change notifications (drive item changes)."""
     # --- Validation handshake ---
     if validationToken is not None:
+        # SECURITY: Validate token format to prevent reflection of arbitrary content
+        if len(validationToken) > 1024 or not validationToken.isprintable():
+            logger.warning("Graph webhook: suspicious validationToken rejected")
+            return Response(status_code=status.HTTP_400_BAD_REQUEST)
         logger.info("Graph webhook: validation handshake received")
         return Response(
             content=validationToken,
             media_type="text/plain",
             status_code=status.HTTP_200_OK,
+            headers={"X-Content-Type-Options": "nosniff"},
         )
 
     # --- Change notification ---
