@@ -484,6 +484,39 @@ class TestHealthStatusValues:
         assert uptime2 >= uptime1
 
 
+class TestHealthCacheEndpoint:
+    """Tests for GET /api/health/cache endpoint."""
+
+    async def test_returns_cache_stats_structure(self, test_client, setup_health_test_data):
+        """Cache stats should return all required fields."""
+        response = await test_client.get("/api/health/cache")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "enabled" in data
+        assert "backend" in data
+        assert "default_ttl" in data
+        assert "key_prefix" in data
+
+    async def test_backend_is_dict(self, test_client, setup_health_test_data):
+        """Backend field should be a dictionary with backend details."""
+        response = await test_client.get("/api/health/cache")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data["backend"], dict)
+
+    async def test_returns_valid_types(self, test_client, setup_health_test_data):
+        """Fields should have valid types."""
+        response = await test_client.get("/api/health/cache")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data["enabled"], bool)
+        assert isinstance(data["default_ttl"], int)
+        assert isinstance(data["key_prefix"], str)
+
+
 class TestHealthEndpointAuthentication:
     """Tests for health endpoint authentication."""
 

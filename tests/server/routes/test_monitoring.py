@@ -449,6 +449,136 @@ class TestListAccessEvents:
         assert data["total"] == 2
 
 
+class TestGetFileAccessHistory:
+    """Tests for GET /api/v1/monitoring/events/file/{file_path} endpoint."""
+
+    async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
+        """File access history should return paginated structure."""
+        response = await test_client.get("/api/v1/monitoring/events/file/test/file.txt")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+        assert "total_pages" in data
+
+    async def test_returns_empty_for_unknown_file(self, test_client, setup_monitoring_data):
+        """Should return empty list for file with no events."""
+        response = await test_client.get("/api/v1/monitoring/events/file/nonexistent/file.txt")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 0
+        assert data["items"] == []
+
+    async def test_returns_events_for_specific_file(self, test_client, setup_monitoring_data):
+        """Should return events only for the specified file."""
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+        from datetime import datetime, timezone
+
+        session = setup_monitoring_data["session"]
+        tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        # Create monitored files (use paths without leading / to match URL capture)
+        monitored_a = MonitoredFile(
+            tenant_id=tenant.id, file_path="history/a.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored_a)
+        await session.flush()
+        monitored_b = MonitoredFile(
+            tenant_id=tenant.id, file_path="history/b.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored_b)
+        await session.flush()
+
+        # Create events for both files
+        for path, mid in [("history/a.txt", monitored_a.id), ("history/a.txt", monitored_a.id), ("history/b.txt", monitored_b.id)]:
+            event = FileAccessEvent(
+                tenant_id=tenant.id,
+                monitored_file_id=mid,
+                file_path=path,
+                action="read",
+                success=True,
+                user_name="testuser",
+                event_time=datetime.now(timezone.utc),
+            )
+            session.add(event)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/monitoring/events/file/history/a.txt")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 2
+        for item in data["items"]:
+            assert item["file_path"] == "history/a.txt"
+
+
+class TestGetUserAccessHistory:
+    """Tests for GET /api/v1/monitoring/events/user/{user_name} endpoint."""
+
+    async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
+        """User access history should return paginated structure."""
+        response = await test_client.get("/api/v1/monitoring/events/user/testuser")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+        assert "total_pages" in data
+
+    async def test_returns_empty_for_unknown_user(self, test_client, setup_monitoring_data):
+        """Should return empty list for user with no events."""
+        response = await test_client.get("/api/v1/monitoring/events/user/unknownuser")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 0
+        assert data["items"] == []
+
+    async def test_returns_events_for_specific_user(self, test_client, setup_monitoring_data):
+        """Should return events only for the specified user."""
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+        from datetime import datetime, timezone
+
+        session = setup_monitoring_data["session"]
+        tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/user_history/file.txt",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
+
+        for user in ["alice", "alice", "bob"]:
+            event = FileAccessEvent(
+                tenant_id=tenant.id,
+                monitored_file_id=monitored.id,
+                file_path="/user_history/file.txt",
+                action="read",
+                success=True,
+                user_name=user,
+                event_time=datetime.now(timezone.utc),
+            )
+            session.add(event)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/monitoring/events/user/alice")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 2
+
+
 class TestGetAccessStats:
     """Tests for GET /api/v1/monitoring/stats endpoint."""
 
