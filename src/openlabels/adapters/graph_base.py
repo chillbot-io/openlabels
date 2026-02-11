@@ -17,7 +17,7 @@ from types import TracebackType
 
 import httpx
 
-from openlabels.adapters.base import ExposureLevel
+from openlabels.adapters.base import ExposureLevel, FolderInfo
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,23 @@ class BaseGraphAdapter:
             "adapter": self.adapter_type,
             "item_id": item["id"],
         }
+
+    def _folder_from_item(self, item: dict, **extra) -> FolderInfo:
+        """Build a FolderInfo from a Graph API folder item."""
+        parent_path = item.get("parentReference", {}).get("path", "")
+        parent_path = parent_path.replace("/drive/root:", "")
+        folder_meta = item.get("folder", {})
+
+        return FolderInfo(
+            path=f"{parent_path}/{item['name']}",
+            name=item["name"],
+            modified=self._parse_modified(item),
+            adapter=self.adapter_type,
+            item_id=item["id"],
+            child_dir_count=None,  # Graph doesn't separate dir/file counts
+            child_file_count=folder_meta.get("childCount"),
+            **extra,
+        )
 
     async def _test_connection(self, test_endpoint: str) -> bool:
         """Test if we can connect via Graph API."""

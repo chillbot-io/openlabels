@@ -24,7 +24,7 @@ from types import TracebackType
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig
+from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig, FolderInfo
 from openlabels.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
@@ -109,6 +109,104 @@ class FilesystemAdapter:
 
         async for file_info in self._walk_directory(target_path, recursive, filter_config):
             yield file_info
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List directories under *target*.
+
+        Yields one :class:`FolderInfo` per directory, including the
+        target directory itself.
+        """
+        target_path = Path(target)
+
+        exists, is_dir = await asyncio.to_thread(
+            lambda: (target_path.exists(), target_path.is_dir()),
+        )
+
+        if not exists:
+            raise FilesystemError(
+                "Target path does not exist",
+                path=target,
+                operation="list_folders",
+                context="ensure the path exists and is accessible",
+            )
+
+        if not is_dir:
+            raise FilesystemError(
+                "Target path is not a directory",
+                path=target,
+                operation="list_folders",
+                context="provide a directory path, not a file path",
+            )
+
+        async for folder_info in self._walk_folders(target_path, recursive):
+            yield folder_info
+
+    def _collect_folder_info(
+        self,
+        directory: Path,
+    ) -> tuple[FolderInfo, list[Path]]:
+        """Collect FolderInfo for *directory* and its direct child directories.
+
+        All blocking I/O in a single synchronous call so it can be
+        dispatched once via ``asyncio.to_thread``.
+
+        Returns:
+            A ``(folder_info, child_dirs)`` tuple.
+        """
+        child_dirs: list[Path] = []
+        file_count = 0
+        dir_count = 0
+
+        try:
+            st = directory.stat()
+        except (PermissionError, OSError) as e:
+            logger.debug(f"Cannot stat {directory}: {e}")
+            st = None
+
+        try:
+            for entry in directory.iterdir():
+                try:
+                    if entry.is_dir():
+                        child_dirs.append(entry)
+                        dir_count += 1
+                    elif entry.is_file():
+                        file_count += 1
+                except (PermissionError, OSError):
+                    pass
+        except PermissionError:
+            logger.debug(f"Permission denied: {directory}")
+
+        info = FolderInfo(
+            path=str(directory.absolute()),
+            name=directory.name or str(directory),  # root dirs have empty name
+            modified=datetime.fromtimestamp(st.st_mtime) if st else None,
+            adapter="filesystem",
+            inode=st.st_ino if st else None,
+            child_dir_count=dir_count,
+            child_file_count=file_count,
+        )
+
+        return info, child_dirs
+
+    async def _walk_folders(
+        self,
+        directory: Path,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Recursively yield FolderInfo for *directory* and its descendants."""
+        folder_info, child_dirs = await asyncio.to_thread(
+            self._collect_folder_info, directory,
+        )
+        yield folder_info
+
+        if recursive:
+            for child in child_dirs:
+                async for sub_info in self._walk_folders(child, recursive):
+                    yield sub_info
 
     def _collect_entries(
         self,

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig
+from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig, FolderInfo
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
 
@@ -223,3 +223,70 @@ class OneDriveAdapter(BaseGraphAdapter):
     async def test_connection(self, config: dict) -> bool:
         """Test if we can connect to OneDrive."""
         return await self._test_connection("/users?$top=1")
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List folders in a user's OneDrive.
+
+        Args:
+            target: User ID or user principal name (email)
+            recursive: Whether to descend into subdirectories
+        """
+        client = await self._get_client()
+
+        user_id = target
+
+        try:
+            drive = await client.get(f"/users/{user_id}/drive")
+        except (ConnectionError, TimeoutError, PermissionError,
+                httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.warning(f"Cannot access OneDrive for {user_id}: {e}")
+            return
+
+        drive_id = drive["id"]
+
+        # Yield root as a folder
+        root = await client.get(f"/users/{user_id}/drive/root")
+        yield self._folder_from_item(root, user_id=user_id)
+
+        async for folder in self._list_drive_folders(
+            client, user_id, "/", recursive
+        ):
+            yield folder
+
+    async def _list_drive_folders(
+        self,
+        client: GraphClient,
+        user_id: str,
+        path: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Recursively list folders in a user's drive."""
+        if path == "/":
+            endpoint = f"/users/{user_id}/drive/root/children"
+        else:
+            endpoint = f"/users/{user_id}/drive/root:{path}:/children"
+
+        try:
+            items_iter = client.iter_all_pages(endpoint)
+        except (PermissionError, ConnectionError, TimeoutError,
+                httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.debug(f"Cannot list folders at {path} for {user_id}: {e}")
+            return
+
+        async for item in items_iter:
+            if "folder" not in item:
+                continue
+
+            folder_info = self._folder_from_item(item, user_id=user_id)
+            yield folder_info
+
+            if recursive:
+                folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
+                async for sub in self._list_drive_folders(
+                    client, user_id, folder_path, recursive
+                ):
+                    yield sub

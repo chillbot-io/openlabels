@@ -22,6 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    FolderInfo,
     is_label_compatible,
 )
 
@@ -151,6 +152,57 @@ class GCSAdapter:
                 continue
 
             yield file_info
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List directory prefixes in the GCS bucket.
+
+        Uses ``delimiter='/'`` to discover prefix-based "folders".
+        """
+        client = self._ensure_client()
+        bucket = client.bucket(self._bucket_name)
+        prefix = self._resolve_prefix(target)
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+
+        # Yield the target prefix itself
+        yield FolderInfo(
+            path=f"gs://{self._bucket_name}/{prefix}",
+            name=prefix.rstrip("/").rsplit("/", 1)[-1] or self._bucket_name,
+            adapter="gcs",
+        )
+
+        async for folder in self._list_gcs_prefixes(bucket, prefix, recursive):
+            yield folder
+
+    async def _list_gcs_prefixes(
+        self,
+        bucket,
+        prefix: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Yield FolderInfo for each prefix under *prefix*."""
+        # list_blobs with delimiter returns an iterator whose .prefixes
+        # property contains the "subdirectory" prefixes.
+        blob_iter = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=prefix, delimiter="/")
+        )
+        # Consume the iterator to populate .prefixes
+        await asyncio.to_thread(lambda: list(blob_iter))
+
+        for child_prefix in blob_iter.prefixes:
+            name = child_prefix.rstrip("/").rsplit("/", 1)[-1]
+            yield FolderInfo(
+                path=f"gs://{self._bucket_name}/{child_prefix}",
+                name=name,
+                adapter="gcs",
+            )
+            if recursive:
+                async for sub in self._list_gcs_prefixes(bucket, child_prefix, recursive):
+                    yield sub
 
     async def read_file(
         self,

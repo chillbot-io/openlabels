@@ -213,6 +213,34 @@ class FileInfo:
     change_type: str | None = None  # 'created', 'modified', 'deleted' for delta queries
 
 
+@dataclass
+class FolderInfo:
+    """Normalized folder information from any adapter.
+
+    Used by the directory tree bootstrap pipeline to populate
+    the ``directory_tree`` table.  Deliberately lightweight —
+    security descriptors are collected in a separate pass.
+    """
+
+    path: str
+    name: str  # basename only
+    modified: datetime | None = None
+    adapter: str = ""
+
+    # Filesystem-native identifiers (MFT ref / inode)
+    inode: int | None = None
+    parent_inode: int | None = None
+
+    # Child counts (when available from stat / iterdir)
+    child_dir_count: int | None = None
+    child_file_count: int | None = None
+
+    # Adapter-specific identifiers
+    item_id: str | None = None  # For Graph API items
+    site_id: str | None = None  # For SharePoint
+    user_id: str | None = None  # For OneDrive
+
+
 class ReadAdapter(Protocol):
     """Protocol for storage adapters (read/scan operations).
 
@@ -244,6 +272,25 @@ class ReadAdapter(Protocol):
 
         Yields:
             FileInfo objects for each file found (after filtering)
+        """
+        ...
+
+    async def list_folders(
+        self,
+        target: str,
+        recursive: bool = True,
+    ) -> AsyncIterator[FolderInfo]:
+        """List directories in the target location.
+
+        Used by the directory tree bootstrap pipeline.  Implementations
+        should yield one :class:`FolderInfo` per directory found.
+
+        Args:
+            target: Path, URL, or identifier of the location to scan
+            recursive: Whether to descend into subdirectories
+
+        Yields:
+            FolderInfo objects for each directory found
         """
         ...
 
