@@ -90,7 +90,7 @@ class TestUpdateRow:
         assert row["parent_ref"] == 5
         assert row["child_dir_count"] == 2
         assert row["child_file_count"] == 8
-        assert row["updated_at"] is not None
+        assert isinstance(row["updated_at"], datetime)
 
 
 class TestFolderInfoToRowDelta:
@@ -372,14 +372,16 @@ class TestDeltaSync:
             collect_sd=False,
         )
 
-        assert result["parent_links_resolved"] >= 1
+        assert result["parent_links_resolved"] == 1
 
-        row = (await test_db.execute(text(
-            "SELECT parent_id FROM directory_tree "
-            "WHERE tenant_id = :tid AND target_id = :tgt AND dir_path = '/d/child'"
-        ), {"tid": tenant.id, "tgt": target.id})).one()
+        rows = (await test_db.execute(text(
+            "SELECT id, dir_path, parent_id FROM directory_tree "
+            "WHERE tenant_id = :tid AND target_id = :tgt ORDER BY dir_path"
+        ), {"tid": tenant.id, "tgt": target.id})).all()
 
-        assert row.parent_id is not None
+        by_path = {r.dir_path: r for r in rows}
+        # Child's parent_id should point to the root's id
+        assert by_path["/d/child"].parent_id == by_path["/d"].id
 
     async def test_creates_checkpoint_after_sync(self, test_db, tenant_and_target):
         from openlabels.jobs.delta_sync import (

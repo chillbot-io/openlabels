@@ -326,16 +326,15 @@ class TestOneDriveAdapterStats:
         assert stats["adapter"] == "onedrive"
 
     def test_stats_without_client(self):
-        """Stats should work even without client initialized."""
+        """Stats should return dict with adapter type when client is not initialized."""
         from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"
         )
 
-        # Should not raise
         stats = adapter.get_stats()
 
-        assert isinstance(stats, dict)
+        assert stats == {"adapter": "onedrive"}
 
 

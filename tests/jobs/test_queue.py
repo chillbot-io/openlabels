@@ -262,25 +262,23 @@ class TestJobQueueComplete:
         queue.session.execute.assert_called_once()
 
     async def test_complete_accepts_result_data(self, queue):
-        """Complete should accept optional result data."""
+        """Complete should store result data via session.execute update."""
         job_id = uuid4()
-        result = {"files_processed": 100}
+        result_data = {"files_processed": 100}
 
-        # Complete should execute without raising
-        await queue.complete(job_id, result=result)
+        await queue.complete(job_id, result=result_data)
 
-        # Verify database session was used to update the job
-        queue.session.execute.assert_called()
+        # session.get is called first, then session.execute for the UPDATE
+        assert queue.session.execute.await_count >= 1
 
     async def test_complete_without_result(self, queue):
-        """Complete should work without result data."""
+        """Complete without result should still execute the update."""
         job_id = uuid4()
 
-        # Complete should execute without raising
         await queue.complete(job_id)
 
-        # Verify database session was used
-        queue.session.execute.assert_called()
+        # session.get is called first, then session.execute for the UPDATE
+        assert queue.session.execute.await_count >= 1
 
 
 class TestJobQueueFail:
@@ -526,13 +524,15 @@ class TestDeadLetterQueue:
         assert len(jobs) == 2
 
     async def test_get_failed_jobs_with_task_type_filter(self, queue):
-        """get_failed_jobs should accept task_type filter."""
+        """get_failed_jobs should accept task_type filter and return results."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
         queue.session.execute = AsyncMock(return_value=mock_result)
 
-        # Should not raise
-        await queue.get_failed_jobs(task_type="scan")
+        jobs = await queue.get_failed_jobs(task_type="scan")
+
+        assert jobs == []
+        queue.session.execute.assert_awaited_once()
 
     async def test_get_failed_count_returns_integer(self, queue):
         """get_failed_count should return count."""

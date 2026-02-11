@@ -51,24 +51,44 @@ class TestQRadarFormatting:
         adapter = QRadarAdapter(syslog_host="qradar.local", fmt="leef")
         record = _make_record()
         leef = adapter._to_leef(record)
-        assert "LEEF:" in leef
-        assert "OpenLabels" in leef
+        assert leef.startswith("LEEF:2.0|OpenLabels|OpenLabels|2.0|scanresult|")
+        assert "filePath=/data/secret.txt" in leef
+        assert "riskScore=85" in leef
+        assert "riskTier=HIGH" in leef
+        assert "entityTypes=SSN" in leef
+        assert "userName=alice@example.com" in leef
+        assert "sourceAdapter=filesystem" in leef
 
     def test_cef_format(self):
         adapter = QRadarAdapter(syslog_host="qradar.local", fmt="cef")
         record = _make_record()
         cef = adapter._to_cef(record)
-        assert "CEF:" in cef
-        assert "OpenLabels" in cef
+        assert cef.startswith("CEF:0|OpenLabels|OpenLabels|2.0|scanresult|")
+        assert "|7|" in cef  # HIGH severity maps to 7
+        assert "filePath=/data/secret.txt" in cef
+        assert "riskScore=85" in cef
+        assert "riskTier=HIGH" in cef
+        assert "suser=alice@example.com" in cef
+
+    def test_cef_severity_mapping(self):
+        for tier, expected_sev in [("CRITICAL", 10), ("HIGH", 7), ("MEDIUM", 5), ("LOW", 3), ("MINIMAL", 1)]:
+            record = _make_record(risk_tier=tier)
+            adapter = QRadarAdapter(syslog_host="qradar.local", fmt="cef")
+            cef = adapter._to_cef(record)
+            assert f"|{expected_sev}|" in cef, f"Expected severity {expected_sev} for tier {tier}"
+
+    def test_cef_escape_special_chars(self):
+        assert QRadarAdapter._cef_escape("a=b|c\\d") == "a\\=b\\|c\\\\d"
 
 
 class TestQRadarExportBatch:
     @pytest.mark.asyncio
     async def test_export_tcp(self):
-        adapter = QRadarAdapter(syslog_host="qradar.local", protocol="tcp")
+        adapter = QRadarAdapter(syslog_host="qradar.local", protocol="tcp", fmt="leef")
         records = [_make_record()]
 
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
@@ -78,6 +98,31 @@ class TestQRadarExportBatch:
             sent = await adapter.export_batch(records)
 
         assert sent == 1
+        # Verify writer.write was called with a LEEF-formatted syslog message
+        mock_writer.write.assert_called_once()
+        written = mock_writer.write.call_args[0][0].decode("utf-8")
+        assert written.startswith("<14>LEEF:2.0|OpenLabels|")
+        assert written.endswith("\n")
+        assert "filePath=/data/secret.txt" in written
+
+    @pytest.mark.asyncio
+    async def test_export_tcp_cef_format(self):
+        adapter = QRadarAdapter(syslog_host="qradar.local", protocol="tcp", fmt="cef")
+        records = [_make_record()]
+
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.close = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+
+        with patch.object(adapter, "_open_tcp_connection",
+                          return_value=(AsyncMock(), mock_writer)):
+            sent = await adapter.export_batch(records)
+
+        assert sent == 1
+        written = mock_writer.write.call_args[0][0].decode("utf-8")
+        assert written.startswith("<14>CEF:0|OpenLabels|")
 
     @pytest.mark.asyncio
     async def test_export_udp(self):
@@ -89,7 +134,7 @@ class TestQRadarExportBatch:
         mock_sock.close = MagicMock()
 
         with patch("socket.socket", return_value=mock_sock), \
-             patch("asyncio.get_event_loop") as mock_loop:
+             patch("asyncio.get_running_loop") as mock_loop:
             mock_loop.return_value.run_in_executor = AsyncMock(return_value=100)
             sent = await adapter.export_batch(records)
 
@@ -107,7 +152,8 @@ class TestQRadarTestConnection:
     async def test_tcp_connection_success(self):
         adapter = QRadarAdapter(syslog_host="qradar.local", protocol="tcp")
 
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
@@ -137,10 +183,38 @@ class TestSyslogCEFInit:
         adapter = SyslogCEFAdapter(host="syslog.local")
         assert adapter._port == 514
 
+    def test_custom_port(self):
+        adapter = SyslogCEFAdapter(host="syslog.local", port=1514)
+        assert adapter._port == 1514
+
     def test_format_name(self):
         adapter = SyslogCEFAdapter(host="syslog.local")
-        name = adapter.format_name()
-        assert name in ("syslog_cef", "syslog-cef", "cef")
+        assert adapter.format_name() == "syslog_cef"
+
+    def test_default_protocol(self):
+        adapter = SyslogCEFAdapter(host="syslog.local")
+        assert adapter._protocol == "tcp"
+
+
+class TestSyslogCEFFormatting:
+    def test_cef_format_content(self):
+        adapter = SyslogCEFAdapter(host="syslog.local")
+        record = _make_record()
+        cef = adapter._to_cef(record)
+        # SyslogCEF uses "Scanner" as product (vs QRadar which uses "OpenLabels")
+        assert cef.startswith("CEF:0|OpenLabels|Scanner|2.0|scanresult|")
+        assert "|7|" in cef  # HIGH severity maps to 7
+        assert "filePath=/data/secret.txt" in cef
+        assert "riskScore=85" in cef
+        assert "riskTier=HIGH" in cef
+        assert "suser=alice@example.com" in cef
+        assert "src=filesystem" in cef
+
+    def test_cef_with_policy_violations(self):
+        adapter = SyslogCEFAdapter(host="syslog.local")
+        record = _make_record(policy_violations=["HIPAA PHI", "PCI-DSS"])
+        cef = adapter._to_cef(record)
+        assert "policyViolations=HIPAA PHI,PCI-DSS" in cef
 
 
 class TestSyslogCEFExportBatch:
@@ -159,6 +233,11 @@ class TestSyslogCEFExportBatch:
             sent = await adapter.export_batch(records)
 
         assert sent == 2
+        # Verify writer.write was called with CEF-formatted syslog messages
+        assert mock_writer.write.call_count == 2
+        first_msg = mock_writer.write.call_args_list[0][0][0].decode("utf-8")
+        assert first_msg.startswith("<14>CEF:0|OpenLabels|Scanner|")
+        assert first_msg.endswith("\n")
 
     @pytest.mark.asyncio
     async def test_export_empty(self):

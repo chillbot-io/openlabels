@@ -116,8 +116,13 @@ class TestDirectoryTreeToArrow:
         table = directory_tree_to_arrow([_make_fake(dir_modified=naive)])
 
         ts = table.column("dir_modified")[0].as_py()
-        assert ts.tzinfo == timezone.utc
+        assert ts.tzinfo is not None
+        # Arrow may return zoneinfo.ZoneInfo('UTC') rather than datetime.timezone.utc,
+        # so verify UTC offset semantics instead of object identity.
+        assert ts.utcoffset().total_seconds() == 0
         assert ts.year == 2024
+        assert ts.month == 1
+        assert ts.day == 1
         assert ts.hour == 12
 
     def test_null_timestamps(self):

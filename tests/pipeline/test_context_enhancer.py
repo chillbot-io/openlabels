@@ -224,24 +224,24 @@ class TestHotwordRules:
     """Tests for hotword rules."""
 
     def test_positive_name_hotwords_defined(self):
-        """Positive NAME hotwords are defined with expected structure."""
+        """Positive NAME hotwords are defined with correct deltas and patterns."""
         from openlabels.core.pipeline.context_enhancer import NAME_POSITIVE_HOTWORDS, HotwordRule
 
         assert len(NAME_POSITIVE_HOTWORDS) >= 1, "Should have at least one positive hotword"
-        # Verify structure of first hotword
-        first_rule = NAME_POSITIVE_HOTWORDS[0]
-        assert isinstance(first_rule, HotwordRule), "Hotwords should be HotwordRule instances"
-        assert first_rule.confidence_delta > 0, "Positive hotwords should have positive delta"
+        for rule in NAME_POSITIVE_HOTWORDS:
+            assert isinstance(rule, HotwordRule), "Hotwords should be HotwordRule instances"
+            assert rule.confidence_delta > 0, f"Positive hotword '{rule.pattern}' should have positive delta, got {rule.confidence_delta}"
+            assert rule.pattern is not None, "Every hotword rule must have a pattern"
 
     def test_negative_name_hotwords_defined(self):
-        """Negative NAME hotwords are defined with expected structure."""
+        """Negative NAME hotwords are defined with correct deltas and patterns."""
         from openlabels.core.pipeline.context_enhancer import NAME_NEGATIVE_HOTWORDS, HotwordRule
 
         assert len(NAME_NEGATIVE_HOTWORDS) >= 1, "Should have at least one negative hotword"
-        # Verify structure of first hotword
-        first_rule = NAME_NEGATIVE_HOTWORDS[0]
-        assert isinstance(first_rule, HotwordRule), "Hotwords should be HotwordRule instances"
-        assert first_rule.confidence_delta < 0, "Negative hotwords should have negative delta"
+        for rule in NAME_NEGATIVE_HOTWORDS:
+            assert isinstance(rule, HotwordRule), "Hotwords should be HotwordRule instances"
+            assert rule.confidence_delta < 0, f"Negative hotword '{rule.pattern}' should have negative delta, got {rule.confidence_delta}"
+            assert rule.pattern is not None, "Every hotword rule must have a pattern"
 
 
 
@@ -516,25 +516,24 @@ class TestContextEnhancerEdgeCases:
     """Edge case tests for ContextEnhancer."""
 
     def test_unicode_text(self, enhancer, make_span):
-        """Handles Unicode text without errors."""
+        """Handles Unicode text: valid NAME passes through as non-enhanced type."""
         span = make_span("José García", entity_type="NAME")
 
         result = enhancer.enhance_span("Hello José García!", span)
 
-        # Should return valid result with an action
-        assert result.action in ("keep", "reject", "verify"), \
-            f"Expected valid action, got: {result.action}"
+        # NAME is not in enhanced_types, so it should be kept
+        assert result.action == "keep"
+        assert "non_enhanced_type" in result.reasons
 
     def test_span_at_text_boundary(self, enhancer, make_span):
-        """Handles span at text boundaries."""
+        """Handles span at text boundaries: valid NAME passes through."""
         text = "John"
         span = make_span("John", start=0, entity_type="NAME")
 
         result = enhancer.enhance_span(text, span)
 
-        # Should return valid result with an action
-        assert result.action in ("keep", "reject", "verify"), \
-            f"Expected valid action, got: {result.action}"
+        # NAME is not in enhanced_types, so it should be kept
+        assert result.action == "keep"
 
     def test_case_insensitive_deny_list(self, enhancer, make_span):
         """Deny list check is case insensitive."""
@@ -566,11 +565,10 @@ class TestContextEnhancerPerformance:
         long_text = "Word " * 10000
         span = make_span("John", start=50, entity_type="NAME")
 
-        # Should not timeout and return valid result
+        # Should not timeout; NAME is non-enhanced type, so passes through
         result = enhancer.enhance_span(long_text, span)
 
-        assert result.action in ("keep", "reject", "verify"), \
-            f"Expected valid action for long text, got: {result.action}"
+        assert result.action == "keep"
 
     def test_handles_many_spans(self, enhancer, make_span):
         """Handles many spans efficiently."""

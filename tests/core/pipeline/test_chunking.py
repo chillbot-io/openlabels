@@ -12,11 +12,6 @@ class TestTextChunker:
         chunker = TextChunker()
         assert chunker.chunk("") == []
 
-    def test_none_like_empty(self):
-        chunker = TextChunker()
-        # Empty string is the only documented empty input
-        assert chunker.chunk("") == []
-
     def test_short_text_returns_single_chunk(self):
         chunker = TextChunker(max_chunk_size=100)
         text = "Hello world"
@@ -40,10 +35,16 @@ class TestTextChunker:
         text = "word " * 20  # 100 chars
         chunks = chunker.chunk(text)
 
-        assert len(chunks) > 1
-        # All chunks should be TextChunk instances
+        assert len(chunks) >= 4, f"100 chars with max_chunk_size=20 should produce at least 4 chunks, got {len(chunks)}"
+        # Each chunk has correct offsets and text content
         for chunk in chunks:
-            assert isinstance(chunk, TextChunk)
+            assert chunk.text == text[chunk.start:chunk.end], (
+                f"Chunk text does not match offset slice: '{chunk.text}' vs '{text[chunk.start:chunk.end]}'"
+            )
+            assert len(chunk.text) <= 20, f"Chunk exceeds max_chunk_size: {len(chunk.text)}"
+        # First chunk starts at 0, last chunk covers end of text
+        assert chunks[0].start == 0
+        assert chunks[-1].end == len(text)
 
     def test_chunks_cover_full_text(self):
         """Every character in the original text appears in at least one chunk."""

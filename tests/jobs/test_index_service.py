@@ -60,8 +60,8 @@ class TestFolderInfoToRow:
         assert row["dir_modified"] == datetime(2024, 1, 15, tzinfo=timezone.utc)
         assert row["flags"] == 0
         assert isinstance(row["id"], UUID)
-        assert row["discovered_at"] is not None
-        assert row["updated_at"] is not None
+        assert isinstance(row["discovered_at"], datetime)
+        assert isinstance(row["updated_at"], datetime)
 
     def test_name_derived_from_path_when_empty(self):
         from openlabels.server.models import generate_uuid
@@ -237,10 +237,10 @@ class TestBootstrapDirectoryTree:
             test_db, adapter, tenant.id, target.id, "/root",
         )
 
-        assert result["parent_links_resolved"] >= 2
+        assert result["parent_links_resolved"] == 2
 
         rows = (await test_db.execute(text(
-            "SELECT dir_path, parent_id FROM directory_tree "
+            "SELECT id, dir_path, parent_id FROM directory_tree "
             "WHERE tenant_id = :tid AND target_id = :tgt ORDER BY dir_path"
         ), {"tid": tenant.id, "tgt": target.id})).all()
 
@@ -249,10 +249,9 @@ class TestBootstrapDirectoryTree:
         # Root has no parent
         assert by_path["/root"].parent_id is None
         # Child's parent_id points to root's id
-        assert by_path["/root/child"].parent_id is not None
+        assert by_path["/root/child"].parent_id == by_path["/root"].id
         # Grandchild's parent_id points to child's id
-        assert by_path["/root/child/grandchild"].parent_id is not None
-        assert by_path["/root/child/grandchild"].parent_id != by_path["/root/child"].parent_id
+        assert by_path["/root/child/grandchild"].parent_id == by_path["/root/child"].id
 
     async def test_parent_resolution_by_path(self, test_db, tenant_and_target):
         """Path-based parent resolution for cloud adapters (no inodes)."""
@@ -270,15 +269,15 @@ class TestBootstrapDirectoryTree:
             test_db, adapter, tenant.id, target.id, "/bucket/prefix",
         )
 
-        assert result["parent_links_resolved"] >= 1
+        assert result["parent_links_resolved"] == 1
 
         rows = (await test_db.execute(text(
-            "SELECT dir_path, parent_id FROM directory_tree "
+            "SELECT id, dir_path, parent_id FROM directory_tree "
             "WHERE tenant_id = :tid AND target_id = :tgt ORDER BY dir_path"
         ), {"tid": tenant.id, "tgt": target.id})).all()
 
         by_path = {r.dir_path: r for r in rows}
-        assert by_path["/bucket/prefix/subdir"].parent_id is not None
+        assert by_path["/bucket/prefix/subdir"].parent_id == by_path["/bucket/prefix"].id
 
     async def test_progress_callback_fires(self, test_db, tenant_and_target):
         from openlabels.jobs.index import bootstrap_directory_tree
@@ -338,7 +337,7 @@ class TestBootstrapDirectoryTree:
 
         assert stats["total_dirs"] == 3
         assert stats["with_parent_link"] == 2  # a and b linked to s
-        assert stats["last_updated"] is not None
+        assert isinstance(stats["last_updated"], datetime)
 
     async def test_self_referencing_inode_does_not_create_parent_link(
         self, test_db, tenant_and_target,

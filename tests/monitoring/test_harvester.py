@@ -225,7 +225,11 @@ class TestAccessEventConversion:
         assert raw.process_name == "excel.exe"
         assert raw.process_id == 5678
         assert raw.event_id == 4663
-        assert raw.raw is not None  # includes to_dict()
+        # raw should contain the to_dict() output of the original event
+        assert isinstance(raw.raw, dict)
+        assert raw.raw["path"] == "/data/secret.xlsx"
+        assert raw.raw["action"] == "write"
+        assert raw.raw["user_name"] == "jsmith"
 
     def test_linux_conversion(self):
         """AuditdProvider converts AccessEvent correctly."""
@@ -516,16 +520,18 @@ class TestEventHarvester:
         provider = FakeProvider(name="test", events=events)
         harvester = EventHarvester([provider])
 
+        before = datetime.now(timezone.utc)
         with patch.object(
             EventHarvester,
             "_resolve_monitored_files",
             return_value={"/data/secret.xlsx": _mock_monitored_file},
         ):
             await harvester.harvest_once(_mock_session)
+        after = datetime.now(timezone.utc)
 
         assert harvester.total_events_persisted == 1
         assert harvester.total_cycles == 1
-        assert harvester.last_cycle_at is not None
+        assert before <= harvester.last_cycle_at <= after
 
     @pytest.mark.asyncio
     async def test_monitored_file_stats_updated(self, _mock_session, _mock_monitored_file):

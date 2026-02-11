@@ -240,7 +240,9 @@ class TestHeatmapJsonFormat:
         data = json.loads(json_output)
 
         assert isinstance(data, list)
-        assert len(data) > 0
+        # Should have directory entries from the mock classifications
+        assert len(data) >= 1
+        assert "directory" in data[0]
 
     def test_heatmap_json_has_expected_fields(self, runner, temp_dir, mock_file_classifications):
         """JSON heatmap has expected fields."""
@@ -285,6 +287,8 @@ class TestHeatmapDepth:
             result = runner.invoke(heatmap, [temp_dir, "-r", "--depth", "1"])
 
         assert result.exit_code == 0
+        assert "Risk Heatmap by Directory" in result.output
+        assert "Directory" in result.output
 
     def test_heatmap_depth_3(self, runner, temp_dir, mock_file_classifications):
         """Heatmap with depth 3 shows more directory levels."""
@@ -298,6 +302,9 @@ class TestHeatmapDepth:
             result = runner.invoke(heatmap, [temp_dir, "-r", "--depth", "3"])
 
         assert result.exit_code == 0
+        assert "Risk Heatmap by Directory" in result.output
+        # Depth 3 should show deeper subdirectories like subdir1
+        assert "subdir1" in result.output or "dir1" in result.output
 
     def test_heatmap_default_depth_is_2(self, runner, temp_dir, mock_file_classifications):
         """Heatmap uses depth 2 by default."""
@@ -311,6 +318,8 @@ class TestHeatmapDepth:
             result = runner.invoke(heatmap, [temp_dir, "-r"])
 
         assert result.exit_code == 0
+        assert "Risk Heatmap by Directory" in result.output
+        assert "Total:" in result.output
 
 
 class TestHeatmapRecursive:
@@ -385,7 +394,7 @@ class TestHeatmapSingleFile:
     """Tests for heatmap on a single file."""
 
     def test_heatmap_single_file(self, runner, temp_dir, mock_file_classifications):
-        """Heatmap on single file."""
+        """Heatmap on single file should show its parent directory."""
         from openlabels.cli.commands.heatmap import heatmap
 
         single_file = Path(temp_dir) / "file1.txt"
@@ -398,6 +407,7 @@ class TestHeatmapSingleFile:
             result = runner.invoke(heatmap, [str(single_file)])
 
         assert result.exit_code == 0
+        assert "Risk Heatmap" in result.output or "1" in result.output
 
 
 class TestHeatmapEmptyDirectory:

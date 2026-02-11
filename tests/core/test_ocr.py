@@ -256,8 +256,8 @@ class TestOCREngineIntegration:
         result = ocr_engine.extract_text(blank)
         assert result == ""
 
-    def test_extract_with_confidence(self, ocr_engine):
-        """extract_text_with_confidence returns tuple."""
+    def test_extract_with_confidence_blank_image(self, ocr_engine):
+        """extract_text_with_confidence on blank image returns empty text and valid confidence."""
         try:
             import numpy as np
         except ImportError:
@@ -267,8 +267,10 @@ class TestOCREngineIntegration:
         blank = np.ones((100, 100, 3), dtype=np.uint8) * 255
 
         text, confidence = ocr_engine.extract_text_with_confidence(blank)
-        assert isinstance(text, str)
-        assert isinstance(confidence, float)
+        # Blank image should produce empty or whitespace-only text
+        assert text.strip() == ""
+        # Confidence should be between 0.0 and 1.0
+        assert 0.0 <= confidence <= 1.0
 
     def test_extract_with_coordinates_empty(self, ocr_engine):
         """extract_with_coordinates returns OCRResult."""

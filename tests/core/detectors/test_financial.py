@@ -94,12 +94,11 @@ class TestCUSIPValidation:
 
     def test_cusip_with_special_chars(self):
         """Test CUSIP with special characters (* @ #)."""
-        # CUSIP allows *, @, # as special characters with values 36, 37, 38
-        # These are rare but valid - the function should return a definitive True or False
-        result = _validate_cusip("0378331*0")
-        assert result is True or result is False
-        # A mangled checksum should definitely fail
-        assert _validate_cusip("0378331*9") is False
+        # The validator strips non-alphanumeric characters, so * is removed.
+        # "0378331*0" becomes "03783310" (8 chars) which is too short -> False
+        assert _validate_cusip("0378331*0") is False
+        # A fully alphanumeric CUSIP with correct checksum should pass
+        assert _validate_cusip("037833100") is True
 
 
 # =============================================================================
@@ -563,6 +562,7 @@ class TestFinancialDetectorDetection:
 
         ada_spans = [s for s in spans if s.entity_type == "CARDANO_ADDRESS"]
         assert len(ada_spans) >= 1
+        assert any(s.text.startswith("addr1") for s in ada_spans)
 
     def test_detect_litecoin_address_legacy(self, detector):
         """Test Litecoin legacy address detection."""
@@ -571,6 +571,7 @@ class TestFinancialDetectorDetection:
 
         ltc_spans = [s for s in spans if s.entity_type == "LITECOIN_ADDRESS"]
         assert len(ltc_spans) >= 1
+        assert any(s.text.startswith("L") for s in ltc_spans)
 
     def test_detect_litecoin_address_bech32(self, detector):
         """Test Litecoin Bech32 address detection."""
@@ -579,6 +580,7 @@ class TestFinancialDetectorDetection:
 
         ltc_spans = [s for s in spans if s.entity_type == "LITECOIN_ADDRESS"]
         assert len(ltc_spans) >= 1
+        assert any(s.text.startswith("ltc1") for s in ltc_spans)
 
 
 # =============================================================================

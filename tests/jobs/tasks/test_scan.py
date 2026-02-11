@@ -70,11 +70,12 @@ class TestGetProcessor:
                     confidence_threshold=0.70,
                 )
                 with patch('openlabels.jobs.tasks.scan.FileProcessor') as MockProcessor:
-                    MockProcessor.return_value = MagicMock()
+                    mock_proc_instance = MagicMock()
+                    MockProcessor.return_value = mock_proc_instance
                     result = get_processor()
 
                     MockProcessor.assert_called_once()
-                    assert result is not None
+                    assert result is mock_proc_instance
         finally:
             scan_module._processor = original
 
@@ -160,11 +161,12 @@ class TestGetAdapter:
         with patch('openlabels.jobs.tasks.scan.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock()
             with patch('openlabels.jobs.tasks.scan.FilesystemAdapter') as MockAdapter:
-                MockAdapter.return_value = MagicMock()
+                mock_adapter_instance = MagicMock()
+                MockAdapter.return_value = mock_adapter_instance
                 result = _get_adapter("filesystem", {})
 
                 MockAdapter.assert_called_once()
-                assert result is not None
+                assert result is mock_adapter_instance
 
     def test_returns_sharepoint_adapter(self):
         """Should return SharePointAdapter for 'sharepoint' type."""
@@ -896,9 +898,9 @@ class TestProgressReportingAndUpdates:
 
                         await execute_scan_task(mock_session, {"job_id": str(job_id)})
 
-                        # Progress should have been updated
-                        assert mock_job.files_scanned >= 1
-                        assert mock_job.progress is not None
+                        # Progress should have been updated for the single file scanned
+                        assert mock_job.files_scanned == 1
+                        assert mock_job.files_with_pii == 1  # risk_score 50 > 0
 
 
 
@@ -1081,7 +1083,8 @@ class TestPermissionDeniedScenarios:
 
                         # Should have completed despite permission error on first file
                         assert mock_job.status == "completed"
-                        assert result["files_scanned"] >= 1
+                        # Second file should have been scanned successfully
+                        assert result["files_scanned"] == 1
 
 
 

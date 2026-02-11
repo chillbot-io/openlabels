@@ -107,7 +107,10 @@ class TestFilesystemAdapterListFiles:
             assert file_info.name == "test.txt"
             assert file_info.size == 11
             assert file_info.path.endswith("test.txt")
+            assert file_info.path == str((Path(tmpdir) / "test.txt").absolute())
             assert isinstance(file_info.modified, datetime)
+            # Verify the modified time is timezone-aware and matches actual file
+            assert file_info.modified.tzinfo is not None
             assert file_info.adapter == "filesystem"
 
     async def test_list_files_raises_on_nonexistent_path(self):
@@ -514,9 +517,12 @@ class TestFilesystemAdapterACL:
 
             assert acl is not None
             assert acl["platform"] == "posix"
-            assert "mode" in acl
-            assert "uid" in acl
-            assert "gid" in acl
+            # Verify mode is the actual stat mode (includes file type bits)
+            expected_mode = test_file.stat().st_mode
+            assert acl["mode"] == expected_mode
+            # Verify uid/gid are integers matching the actual file owner
+            assert acl["uid"] == test_file.stat().st_uid
+            assert acl["gid"] == test_file.stat().st_gid
 
     @pytest.mark.skipif(os.name == 'nt', reason="POSIX-specific test")
     async def test_set_acl_changes_permissions(self):

@@ -19,8 +19,10 @@ class TestListFolders:
             async for f in adapter.list_folders(tmpdir):
                 folders.append(f)
 
-            assert len(folders) >= 1
+            # Empty dir should yield exactly one folder (the root itself)
+            assert len(folders) == 1
             assert folders[0].path == str(Path(tmpdir).absolute())
+            assert folders[0].adapter == "filesystem"
 
     async def test_yields_all_subdirectories_recursively(self):
         adapter = FilesystemAdapter()
@@ -122,7 +124,7 @@ class TestListFolders:
             assert folders["empty"].child_dir_count == 0
             assert folders["empty"].child_file_count == 0
 
-    async def test_modified_timestamp_is_set(self):
+    async def test_modified_timestamp_matches_stat(self):
         adapter = FilesystemAdapter()
         with tempfile.TemporaryDirectory() as tmpdir:
             folders = []
@@ -130,6 +132,12 @@ class TestListFolders:
                 folders.append(f)
 
             assert folders[0].modified is not None
+            # Verify modified time is close to the actual stat mtime
+            from datetime import datetime, timezone
+            actual_mtime = datetime.fromtimestamp(
+                Path(tmpdir).stat().st_mtime, tz=timezone.utc
+            )
+            assert folders[0].modified == actual_mtime
 
     async def test_name_is_basename(self):
         adapter = FilesystemAdapter()

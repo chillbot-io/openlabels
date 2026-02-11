@@ -590,8 +590,12 @@ class TestEdgeCases:
         spans = detector.detect(text)
 
         age_spans = [s for s in spans if s.entity_type == "AGE"]
-        # May or may not match depending on pattern requirements
-        assert isinstance(age_spans, list)
+        # Age at the very start of text may or may not be detected
+        # depending on whether the pattern requires preceding context.
+        # Either way, if detected, the span must contain "45".
+        if len(age_spans) > 0:
+            assert any("45" in s.text for s in age_spans), \
+                f"Detected age span should contain '45', got: {[s.text for s in age_spans]}"
 
     def test_age_at_document_end(self, detector):
         """Test age detection at end of document."""

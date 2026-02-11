@@ -35,7 +35,7 @@ class TestRemoteStorageConfig:
         engine.close()
 
     def test_s3_config_calls_httpfs(self, tmp_path: Path):
-        """S3 backend should attempt to install and load httpfs extension."""
+        """S3 backend should execute httpfs install/load and SET s3_* config."""
         config = MagicMock()
         config.backend = "s3"
         config.s3.region = "us-west-2"
@@ -43,51 +43,89 @@ class TestRemoteStorageConfig:
         config.s3.secret_key = "SECRET"
         config.s3.endpoint_url = None
 
-        with patch.object(duckdb.DuckDBPyConnection, "execute", wraps=None) as mock_exec:
-            # Allow real connection creation but track execute calls
-            try:
-                engine = DuckDBEngine(
-                    str(tmp_path),
-                    memory_limit="256MB",
-                    threads=1,
-                    storage_config=config,
-                )
-                engine.close()
-            except (duckdb.IOException, duckdb.HTTPException, duckdb.CatalogException):
-                # Extension may not be available in test env -- verify SQL was attempted
-                pass
+        engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
+        mock_db = MagicMock()
+        engine._db = mock_db
 
-        # Verify that httpfs installation and S3 config were attempted
-        executed_sql = [str(call) for call in mock_exec.call_args_list]
-        sql_text = " ".join(executed_sql)
-        assert "httpfs" in sql_text, "Should attempt to install/load httpfs for S3 backend"
+        engine._configure_remote_storage(config)
+
+        executed_stmts = [str(call.args[0]) for call in mock_db.execute.call_args_list]
+        sql_text = " ".join(executed_stmts)
+        assert "INSTALL httpfs" in sql_text, "Should install httpfs extension"
+        assert "LOAD httpfs" in sql_text, "Should load httpfs extension"
         assert "s3_region" in sql_text, "Should configure s3_region"
+        assert "us-west-2" in sql_text, "Should set s3_region to the provided value"
         assert "s3_access_key_id" in sql_text, "Should configure s3_access_key_id"
+        assert "AKID" in sql_text, "Should set access key to the provided value"
+        assert "s3_secret_access_key" in sql_text, "Should configure s3_secret_access_key"
+        engine.close()
+
+    def test_s3_config_with_endpoint_url(self, tmp_path: Path):
+        """S3 backend with custom endpoint should configure endpoint and path style."""
+        config = MagicMock()
+        config.backend = "s3"
+        config.s3.region = "us-east-1"
+        config.s3.access_key = "KEY"
+        config.s3.secret_key = "SECRET"
+        config.s3.endpoint_url = "http://localhost:9000"
+
+        engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
+        mock_db = MagicMock()
+        engine._db = mock_db
+
+        engine._configure_remote_storage(config)
+
+        executed_stmts = [str(call.args[0]) for call in mock_db.execute.call_args_list]
+        sql_text = " ".join(executed_stmts)
+        assert "s3_endpoint" in sql_text, "Should configure s3_endpoint"
+        assert "localhost:9000" in sql_text, "Should strip protocol from endpoint"
+        assert "s3_use_ssl = false" in sql_text, "Should disable SSL for http endpoint"
+        assert "s3_url_style" in sql_text, "Should set path-style for custom endpoint"
+        engine.close()
 
     def test_azure_config_calls_azure_extension(self, tmp_path: Path):
-        """Azure backend should attempt to install and load azure extension."""
+        """Azure backend should execute azure install/load and SET connection string."""
         config = MagicMock()
         config.backend = "azure"
         config.azure.connection_string = "DefaultEndpointsProtocol=https;AccountName=test"
         config.azure.account_name = None
         config.azure.account_key = None
 
-        with patch.object(duckdb.DuckDBPyConnection, "execute", wraps=None) as mock_exec:
-            try:
-                engine = DuckDBEngine(
-                    str(tmp_path),
-                    memory_limit="256MB",
-                    threads=1,
-                    storage_config=config,
-                )
-                engine.close()
-            except (duckdb.IOException, duckdb.HTTPException, duckdb.CatalogException):
-                pass
+        engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
+        mock_db = MagicMock()
+        engine._db = mock_db
 
-        executed_sql = [str(call) for call in mock_exec.call_args_list]
-        sql_text = " ".join(executed_sql)
-        assert "azure" in sql_text.lower(), "Should attempt to install/load azure extension"
-        assert "azure_storage_connection_string" in sql_text, "Should configure azure connection string"
+        engine._configure_remote_storage(config)
+
+        executed_stmts = [str(call.args[0]) for call in mock_db.execute.call_args_list]
+        sql_text = " ".join(executed_stmts)
+        assert "INSTALL azure" in sql_text, "Should install azure extension"
+        assert "LOAD azure" in sql_text, "Should load azure extension"
+        assert "azure_storage_connection_string" in sql_text, "Should configure connection string"
+        assert "AccountName=test" in sql_text, "Should use the provided connection string"
+        engine.close()
+
+    def test_azure_config_with_account_key(self, tmp_path: Path):
+        """Azure backend with account_name + account_key should set those instead."""
+        config = MagicMock()
+        config.backend = "azure"
+        config.azure.connection_string = None
+        config.azure.account_name = "myaccount"
+        config.azure.account_key = "mykey123"
+
+        engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
+        mock_db = MagicMock()
+        engine._db = mock_db
+
+        engine._configure_remote_storage(config)
+
+        executed_stmts = [str(call.args[0]) for call in mock_db.execute.call_args_list]
+        sql_text = " ".join(executed_stmts)
+        assert "azure_account_name" in sql_text, "Should set azure_account_name"
+        assert "myaccount" in sql_text, "Should use the provided account name"
+        assert "azure_account_key" in sql_text, "Should set azure_account_key"
+        assert "mykey123" in sql_text, "Should use the provided account key"
+        engine.close()
 
     def test_local_config_skips_extensions(self, tmp_path: Path):
         """Local backend config should skip extension loading."""

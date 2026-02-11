@@ -56,8 +56,8 @@ class TestLocalStorage:
     def test_list_partitions_empty(self, storage: LocalStorage):
         assert storage.list_partitions("nonexistent") == []
 
-    def test_root_property(self, storage: LocalStorage):
-        assert storage.root  # non-empty string
+    def test_root_property(self, storage: LocalStorage, catalog_dir):
+        assert storage.root == str(catalog_dir)
 
     def test_compression_zstd(self, storage: LocalStorage):
         table = pa.table({"v": list(range(1000))})

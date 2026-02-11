@@ -585,7 +585,9 @@ class TestRegressionPrevention:
         text = "Contact phone number: 555-123-4567 for assistance."
         result = pipeline.detect(text)
 
-        # Phone detection may vary based on patterns; check detection occurred
+        # Phone detection may vary based on patterns and context.
+        # If detected, verify the span contains the expected phone number.
         phone_spans = [s for s in result.spans if "PHONE" in s.entity_type.upper()]
-        # Phone patterns may need specific context; if not detected, that's acceptable
-        assert isinstance(phone_spans, list)
+        if len(phone_spans) > 0:
+            assert any("555-123-4567" in s.text or "5551234567" in s.text for s in phone_spans), \
+                f"Detected phone span should contain '555-123-4567', got: {[s.text for s in phone_spans]}"

@@ -146,13 +146,13 @@ class TestRenderDispatch:
     def test_dispatch_html(self, tmp_path):
         renderer = ReportRenderer(template_dir=_make_template_dir(tmp_path))
         result = renderer.render("executive_summary", {"findings": []}, fmt="html")
-        assert isinstance(result, str)
         assert "<html>" in result
+        assert "UTC" in result  # generated_at timestamp
 
     def test_dispatch_csv(self):
         renderer = ReportRenderer()
         result = renderer.render("access_audit", {"events": []}, fmt="csv")
-        assert isinstance(result, str)
+        assert "timestamp,user,action,file_path" in result
 
 
 # ---------------------------------------------------------------------------

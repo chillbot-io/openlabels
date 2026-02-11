@@ -67,9 +67,9 @@ class TestLabelCache:
 
         result = cache.get("label-123")
 
-        assert result is not None
         assert result.id == "label-123"
         assert result.name == "Confidential"
+        assert result.description == "Secret stuff"
 
     def test_get_by_name_returns_cached_label(self):
         """Get by name should return cached label."""
@@ -82,8 +82,8 @@ class TestLabelCache:
 
         result = cache.get_by_name("Public")
 
-        assert result is not None
         assert result.id == "label-abc"
+        assert result.name == "Public"
 
     def test_get_all_returns_empty_when_expired(self):
         """Get all should return empty list when expired."""
@@ -264,7 +264,8 @@ class TestLabelingEngineRouting:
 
             await engine.apply_label(file_info, "label-123")
 
-            mock_local.assert_called_once()
+            # _apply_local_label receives (file_path_str, label_id, label_name)
+            mock_local.assert_called_once_with("/test/file.txt", "label-123", None)
 
     async def test_apply_label_routes_sharepoint_to_graph(self):
         """SharePoint files should route to Graph API."""
@@ -290,7 +291,8 @@ class TestLabelingEngineRouting:
 
             await engine.apply_label(file_info, "label-123")
 
-            mock_graph.assert_called_once()
+            # _apply_graph_label receives (file_info, label_id, label_name)
+            mock_graph.assert_called_once_with(file_info, "label-123", None)
 
     async def test_apply_label_routes_onedrive_to_graph(self):
         """OneDrive files should route to Graph API."""
@@ -316,7 +318,8 @@ class TestLabelingEngineRouting:
 
             await engine.apply_label(file_info, "label-123")
 
-            mock_graph.assert_called_once()
+            # _apply_graph_label receives (file_info, label_id, label_name)
+            mock_graph.assert_called_once_with(file_info, "label-123", None)
 
     async def test_apply_label_fails_for_unknown_adapter(self):
         """Unknown adapter should return failure."""
