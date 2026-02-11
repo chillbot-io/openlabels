@@ -23,6 +23,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     func,
@@ -890,4 +891,140 @@ class Report(Base):
     __table_args__ = (
         Index('ix_reports_tenant_type', 'tenant_id', 'report_type'),
         Index('ix_reports_tenant_created', 'tenant_id', 'created_at'),
+    )
+
+
+# =============================================================================
+# FILESYSTEM ENGINE v2: DIRECTORY TREE INDEX
+# =============================================================================
+
+
+class Share(Base):
+    """Network share definitions (SMB, NFS, DFS).
+
+    Populated by NetShareEnum (Windows), /etc/exports + smb.conf parsing
+    (Linux), or cloud adapter config. Share-level permissions are separate
+    from filesystem ACLs tracked in SecurityDescriptor.
+    """
+
+    __tablename__ = "shares"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+
+    # Share identification
+    share_name: Mapped[str] = mapped_column(String(255), nullable=False)  # e.g. "Finance$"
+    share_path: Mapped[str] = mapped_column(Text, nullable=False)  # Local path the share exposes
+    unc_path: Mapped[str | None] = mapped_column(Text)  # \\server\share
+    protocol: Mapped[str] = mapped_column(String(10), nullable=False, server_default="smb")  # smb, nfs, dfs
+    share_type: Mapped[str | None] = mapped_column(String(20))  # DISK, PRINT, IPC, etc.
+
+    # Share-level permissions (separate from NTFS/POSIX ACLs)
+    share_permissions: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Flags
+    is_hidden: Mapped[bool] = mapped_column(Boolean, server_default="false")  # trailing $ in name
+    is_admin_share: Mapped[bool] = mapped_column(Boolean, server_default="false")  # C$, ADMIN$, IPC$
+
+    # Timestamps
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_shares_tenant_target_name', 'tenant_id', 'target_id', 'share_name', unique=True),
+    )
+
+
+class SecurityDescriptor(Base):
+    """Deduplicated security descriptor storage.
+
+    A typical NTFS volume has 3,000-50,000 unique security descriptors
+    shared across millions of directories. On Linux, the equivalent is
+    unique (uid, gid, mode) tuples plus ACL entries. Keyed by SHA-256
+    hash of the canonical form.
+    """
+
+    __tablename__ = "security_descriptors"
+
+    sd_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)  # SHA-256
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+
+    # Parsed fields (platform-dependent)
+    owner_sid: Mapped[str | None] = mapped_column(String(255))  # Windows SID or Linux uid
+    group_sid: Mapped[str | None] = mapped_column(String(255))  # Windows SID or Linux gid
+    dacl_sddl: Mapped[str | None] = mapped_column(Text)  # SDDL string (Windows) or POSIX ACL text
+    permissions_json: Mapped[dict | None] = mapped_column(JSONB)  # { principal: [permissions] }
+
+    # Derived flags for fast filtering
+    world_accessible: Mapped[bool] = mapped_column(Boolean, server_default="false")  # Everyone/world
+    authenticated_users: Mapped[bool] = mapped_column(Boolean, server_default="false")  # Authenticated Users group
+    custom_acl: Mapped[bool] = mapped_column(Boolean, server_default="false")  # Non-inherited explicit ACE
+
+    # Timestamps
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index('ix_security_descriptors_tenant', 'tenant_id'),
+        Index('ix_security_descriptors_world', 'tenant_id',
+              postgresql_where='world_accessible = true'),
+    )
+
+
+class DirectoryTree(Base):
+    """Filesystem directory tree index.
+
+    One row per directory per volume. Populated by bootstrap (MFT/inode
+    enumeration or adapter.list_folders()) and maintained by delta sync.
+    This is the raw filesystem topology — distinct from FolderInventory
+    which tracks scan-time state (risk, entity counts).
+    """
+
+    __tablename__ = "directory_tree"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+
+    # Filesystem-native identifiers
+    dir_ref: Mapped[int | None] = mapped_column(BigInteger)  # MFT ref (Windows) or inode (Linux)
+    parent_ref: Mapped[int | None] = mapped_column(BigInteger)  # Parent MFT ref / inode
+    parent_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("directory_tree.id"))  # Self-FK for SQL tree queries
+
+    # Path (denormalized for fast lookups)
+    dir_path: Mapped[str] = mapped_column(Text, nullable=False)
+    dir_name: Mapped[str] = mapped_column(String(255), nullable=False)  # Basename only
+
+    # Security
+    sd_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))  # FK-like ref to security_descriptors
+    share_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("shares.id"))
+
+    # Metadata
+    dir_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    child_dir_count: Mapped[int | None] = mapped_column(Integer)  # Direct subdirectory count
+    child_file_count: Mapped[int | None] = mapped_column(Integer)  # Direct file count
+    flags: Mapped[int] = mapped_column(Integer, server_default="0")  # Bitfield: hidden, system, reparse, etc.
+
+    # Timestamps
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    parent: Mapped[Optional[DirectoryTree]] = relationship(
+        remote_side=[id], foreign_keys=[parent_id]
+    )
+
+    __table_args__ = (
+        # Unique path per target
+        Index('ix_dirtree_tenant_target_path', 'tenant_id', 'target_id', 'dir_path', unique=True),
+        # Tree navigation: list children of a directory
+        Index('ix_dirtree_parent', 'tenant_id', 'parent_id'),
+        # Filesystem-native lookups (delta sync resolves parent_ref → rows)
+        Index('ix_dirtree_ref', 'tenant_id', 'target_id', 'dir_ref'),
+        # Security analysis: directories sharing a permission set
+        Index('ix_dirtree_sd', 'tenant_id', 'sd_hash',
+              postgresql_where='sd_hash IS NOT NULL'),
+        # Share scoping: all directories under a share
+        Index('ix_dirtree_share', 'share_id',
+              postgresql_where='share_id IS NOT NULL'),
     )
