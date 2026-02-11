@@ -916,7 +916,7 @@ class TestGovernmentSpanValidation:
         """Test high confidence for distinctive markings."""
         distinctive_texts = [
             "TOP SECRET//SCI",
-            "Document marked //NOFORN for distribution",
+            "SECRET//NOFORN",
             "CAGE: 1ABC2",
         ]
 

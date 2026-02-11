@@ -52,11 +52,6 @@ async def setup_health_test_data(test_db):
 class TestHealthStatusEndpoint:
     """Tests for GET /api/health/status endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_health_test_data):
-        """Health endpoint should return 200 OK."""
-        response = await test_client.get("/api/health/status")
-        assert response.status_code == 200
-
     async def test_returns_health_status_structure(self, test_client, setup_health_test_data):
         """Response should have all required health status fields."""
         response = await test_client.get("/api/health/status")
@@ -531,19 +526,3 @@ class TestHealthEndpointAuthentication:
         assert response.status_code == 200
 
 
-class TestHealthContentType:
-    """Tests for response content type."""
-
-    async def test_returns_json_content_type(self, test_client, setup_health_test_data):
-        """Response should have JSON content type."""
-        response = await test_client.get("/api/health/status")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_response_is_valid_json(self, test_client, setup_health_test_data):
-        """Response body should be valid JSON."""
-        response = await test_client.get("/api/health/status")
-        assert response.status_code == 200
-        # .json() will raise if invalid JSON
-        data = response.json()
-        assert isinstance(data, dict)

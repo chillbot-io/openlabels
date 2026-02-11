@@ -223,7 +223,8 @@ class TestSyslogCEFExportBatch:
         adapter = SyslogCEFAdapter(host="syslog.local", protocol="tcp")
         records = [_make_record(), _make_record()]
 
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()

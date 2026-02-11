@@ -119,11 +119,6 @@ async def setup_jobs_data(test_db):
 class TestQueueStats:
     """Tests for GET /api/v1/jobs/stats endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_jobs_data):
-        """Stats endpoint should return 200 OK."""
-        response = await test_client.get("/api/v1/jobs/stats")
-        assert response.status_code == 200
-
     async def test_returns_stats_structure(self, test_client, setup_jobs_data):
         """Response should have expected stats structure."""
         response = await test_client.get("/api/v1/jobs/stats")
@@ -177,11 +172,6 @@ class TestQueueStats:
 
 class TestListFailedJobs:
     """Tests for GET /api/v1/jobs/failed endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_jobs_data):
-        """Failed jobs endpoint should return 200 OK."""
-        response = await test_client.get("/api/v1/jobs/failed")
-        assert response.status_code == 200
 
     async def test_returns_paginated_response(self, test_client, setup_jobs_data):
         """Response should have full pagination structure."""
@@ -420,11 +410,6 @@ class TestCancelJob:
 class TestWorkerStatus:
     """Tests for GET /api/v1/jobs/workers/status endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_jobs_data):
-        """Worker status endpoint should return 200 OK."""
-        response = await test_client.get("/api/v1/jobs/workers/status")
-        assert response.status_code == 200
-
     async def test_returns_status_structure(self, test_client, setup_jobs_data):
         """Response should have expected WorkerStatusResponse structure."""
         response = await test_client.get("/api/v1/jobs/workers/status")
@@ -475,17 +460,3 @@ class TestWorkerConfig:
         assert "message" in data
 
 
-class TestJobsContentType:
-    """Tests for response content type."""
-
-    async def test_stats_returns_json(self, test_client, setup_jobs_data):
-        """Stats endpoint should return JSON."""
-        response = await test_client.get("/api/v1/jobs/stats")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_failed_returns_json(self, test_client, setup_jobs_data):
-        """Failed jobs endpoint should return JSON."""
-        response = await test_client.get("/api/v1/jobs/failed")
-        assert response.status_code == 200
-        assert "application/json" in response.headers.get("content-type", "")

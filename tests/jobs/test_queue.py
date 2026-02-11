@@ -316,7 +316,7 @@ class TestJobQueueFail:
         assert mock_job.retry_count == 1
         assert mock_job.worker_id is None
         assert mock_job.started_at is None
-        assert mock_job.scheduled_for is not None
+        assert isinstance(mock_job.scheduled_for, datetime)
 
     async def test_fail_calculates_retry_delay(self, queue):
         """Fail should calculate proper exponential backoff delay."""

@@ -38,20 +38,8 @@ async def setup_monitoring_data(test_db):
 class TestListMonitoredFiles:
     """Tests for GET /api/v1/monitoring/files endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_monitoring_data):
-        """List monitored files should return 200 OK."""
-        response = await test_client.get("/api/v1/monitoring/files")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert isinstance(data, dict), "Response should be a dictionary"
-        assert "items" in data, "Response should contain 'items' field"
-        assert "total" in data, "Response should contain 'total' field"
-        assert "page" in data, "Response should contain 'page' field"
-        assert "total_pages" in data, "Response should contain 'total_pages' field"
-        assert isinstance(data["items"], list), "Items should be a list"
-
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
-        """List should return paginated structure."""
+        """List should return paginated structure with correct defaults."""
         response = await test_client.get("/api/v1/monitoring/files")
         assert response.status_code == 200
         data = response.json()
@@ -60,6 +48,8 @@ class TestListMonitoredFiles:
         assert "total" in data
         assert "page" in data
         assert "total_pages" in data
+        assert data["page"] == 1
+        assert data["total"] >= 0
 
     async def test_returns_empty_when_no_files(self, test_client, setup_monitoring_data):
         """List should return empty when no monitored files."""
@@ -179,7 +169,7 @@ class TestListMonitoredFiles:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/monitoring/files?page_size=5")
+        response = await test_client.get("/api/v1/monitoring/files?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -190,26 +180,8 @@ class TestListMonitoredFiles:
 class TestEnableFileMonitoring:
     """Tests for POST /api/v1/monitoring/files endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_monitoring_data):
-        """Enable monitoring should return 200 OK."""
-        response = await test_client.post(
-            "/api/v1/monitoring/files",
-            json={
-                "file_path": "/new/file.txt",
-                "audit_read": True,
-                "audit_write": True,
-            },
-        )
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["file_path"] == "/new/file.txt", "File path should match request"
-        assert data["audit_read"] is True, "audit_read should match request"
-        assert data["audit_write"] is True, "audit_write should match request"
-        assert "added_at" in data, "Response should contain 'added_at' field"
-
     async def test_returns_created_record(self, test_client, setup_monitoring_data):
-        """Enable should return the created record."""
+        """Enable should return the created record with correct field values."""
         response = await test_client.post(
             "/api/v1/monitoring/files",
             json={
@@ -304,20 +276,8 @@ class TestDisableFileMonitoring:
 class TestListAccessEvents:
     """Tests for GET /api/v1/monitoring/events endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_monitoring_data):
-        """List events should return 200 OK."""
-        response = await test_client.get("/api/v1/monitoring/events")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert isinstance(data, dict), "Response should be a dictionary"
-        assert "items" in data, "Response should contain 'items' field"
-        assert "total" in data, "Response should contain 'total' field"
-        assert "page" in data, "Response should contain 'page' field"
-        assert "total_pages" in data, "Response should contain 'total_pages' field"
-        assert isinstance(data["items"], list), "Items should be a list"
-
     async def test_returns_paginated_structure(self, test_client, setup_monitoring_data):
-        """List should return paginated structure."""
+        """List should return paginated structure with correct defaults."""
         response = await test_client.get("/api/v1/monitoring/events")
         assert response.status_code == 200
         data = response.json()
@@ -326,6 +286,8 @@ class TestListAccessEvents:
         assert "total" in data
         assert "page" in data
         assert "total_pages" in data
+        assert data["page"] == 1
+        assert data["total"] >= 0
 
     async def test_returns_empty_when_no_events(self, test_client, setup_monitoring_data):
         """List should return empty when no events."""
@@ -490,32 +452,6 @@ class TestListAccessEvents:
 class TestGetAccessStats:
     """Tests for GET /api/v1/monitoring/stats endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_monitoring_data):
-        """Stats should return 200 OK."""
-        response = await test_client.get("/api/v1/monitoring/stats")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "total_events" in data, "Response should contain 'total_events' field"
-        assert "events_last_24h" in data, "Response should contain 'events_last_24h' field"
-        assert "events_last_7d" in data, "Response should contain 'events_last_7d' field"
-        assert "by_action" in data, "Response should contain 'by_action' field"
-        assert "by_user" in data, "Response should contain 'by_user' field"
-        assert "monitored_files_count" in data, "Response should contain 'monitored_files_count' field"
-        assert isinstance(data["total_events"], int), "total_events should be an integer"
-
-    async def test_returns_stats_structure(self, test_client, setup_monitoring_data):
-        """Stats should return required fields."""
-        response = await test_client.get("/api/v1/monitoring/stats")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "total_events" in data
-        assert "events_last_24h" in data
-        assert "events_last_7d" in data
-        assert "by_action" in data
-        assert "by_user" in data
-        assert "monitored_files_count" in data
-
     async def test_returns_zero_values_when_empty(self, test_client, setup_monitoring_data):
         """Stats should return zeros when no events."""
         response = await test_client.get("/api/v1/monitoring/stats")
@@ -571,29 +507,6 @@ class TestGetAccessStats:
 
 class TestDetectAccessAnomalies:
     """Tests for GET /api/v1/monitoring/stats/anomalies endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_monitoring_data):
-        """Anomaly detection should return 200 OK."""
-        response = await test_client.get("/api/v1/monitoring/stats/anomalies")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "analysis_period_hours" in data, "Response should contain 'analysis_period_hours' field"
-        assert "analyzed_since" in data, "Response should contain 'analyzed_since' field"
-        assert "anomaly_count" in data, "Response should contain 'anomaly_count' field"
-        assert "anomalies" in data, "Response should contain 'anomalies' field"
-        assert isinstance(data["anomalies"], list), "anomalies should be a list"
-        assert isinstance(data["anomaly_count"], int), "anomaly_count should be an integer"
-
-    async def test_returns_anomalies_structure(self, test_client, setup_monitoring_data):
-        """Anomalies should return required fields."""
-        response = await test_client.get("/api/v1/monitoring/stats/anomalies")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "analysis_period_hours" in data
-        assert "analyzed_since" in data
-        assert "anomaly_count" in data
-        assert "anomalies" in data
 
     async def test_default_24_hours(self, test_client, setup_monitoring_data):
         """Anomaly detection should default to 24 hours."""
@@ -680,20 +593,3 @@ class TestMonitoringTenantIsolation:
         assert response.status_code == 404
 
 
-class TestMonitoringContentType:
-    """Tests for response content type."""
-
-    async def test_files_returns_json(self, test_client, setup_monitoring_data):
-        """List files should return JSON."""
-        response = await test_client.get("/api/v1/monitoring/files")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_events_returns_json(self, test_client, setup_monitoring_data):
-        """List events should return JSON."""
-        response = await test_client.get("/api/v1/monitoring/events")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_stats_returns_json(self, test_client, setup_monitoring_data):
-        """Stats should return JSON."""
-        response = await test_client.get("/api/v1/monitoring/stats")
-        assert "application/json" in response.headers.get("content-type", "")

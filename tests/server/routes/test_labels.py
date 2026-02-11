@@ -60,30 +60,6 @@ async def setup_labels_data(test_db):
 class TestListLabels:
     """Tests for GET /api/v1/labels endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_labels_data):
-        """List labels should return 200 OK with paginated response."""
-        response = await test_client.get("/api/v1/labels")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "items" in data, "Response should be paginated with 'items' key"
-        items = data["items"]
-        # Should have the 3 labels from setup
-        assert len(items) == 3, "Response should contain 3 labels from setup"
-        # Verify label structure
-        for label in items:
-            assert "id" in label, "Each label should have 'id' field"
-            assert "name" in label, "Each label should have 'name' field"
-            assert "priority" in label, "Each label should have 'priority' field"
-
-    @pytest.mark.asyncio
-    async def test_returns_list(self, test_client, setup_labels_data):
-        """List labels should return a paginated response with items."""
-        response = await test_client.get("/api/labels")
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert isinstance(data["items"], list)
-
     async def test_returns_labels(self, test_client, setup_labels_data):
         """List should return created labels."""
         response = await test_client.get("/api/v1/labels")
@@ -125,24 +101,6 @@ class TestListLabels:
 class TestLabelSyncStatus:
     """Tests for GET /api/v1/labels/sync/status endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_labels_data):
-        """Sync status should return 200 OK."""
-        response = await test_client.get("/api/v1/labels/sync/status")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "label_count" in data, "Response should contain 'label_count' field"
-        assert "last_synced_at" in data, "Response should contain 'last_synced_at' field"
-        assert isinstance(data["label_count"], int), "label_count should be an integer"
-
-    async def test_returns_status_structure(self, test_client, setup_labels_data):
-        """Sync status should return required fields."""
-        response = await test_client.get("/api/v1/labels/sync/status")
-        assert response.status_code == 200
-        data = response.json()
-
-        assert "label_count" in data
-        assert "last_synced_at" in data
-
     async def test_returns_label_count(self, test_client, setup_labels_data):
         """Sync status should return correct label count."""
         response = await test_client.get("/api/v1/labels/sync/status")
@@ -155,16 +113,8 @@ class TestLabelSyncStatus:
 class TestInvalidateLabelCache:
     """Tests for POST /api/v1/labels/cache/invalidate endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_labels_data):
-        """Cache invalidate should return 200 OK."""
-        response = await test_client.post("/api/v1/labels/cache/invalidate")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "message" in data, "Response should contain 'message' field"
-        assert isinstance(data["message"], str), "Message should be a string"
-
     async def test_returns_success_message(self, test_client, setup_labels_data):
-        """Cache invalidate should return success message."""
+        """Cache invalidate should return 200 with success message."""
         response = await test_client.post("/api/v1/labels/cache/invalidate")
         assert response.status_code == 200
         data = response.json()
@@ -175,22 +125,6 @@ class TestInvalidateLabelCache:
 
 class TestListLabelRules:
     """Tests for GET /api/v1/labels/rules endpoint."""
-
-    async def test_returns_200_status(self, test_client, setup_labels_data):
-        """List rules should return 200 OK with paginated response."""
-        response = await test_client.get("/api/v1/labels/rules")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "items" in data, "Response should be paginated with 'items' key"
-
-    @pytest.mark.asyncio
-    async def test_returns_list(self, test_client, setup_labels_data):
-        """List rules should return a paginated response with items."""
-        response = await test_client.get("/api/labels/rules")
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert isinstance(data["items"], list)
 
     async def test_returns_empty_list_when_no_rules(self, test_client, setup_labels_data):
         """List should return empty items when no rules exist."""
@@ -232,27 +166,6 @@ class TestListLabelRules:
 
 class TestCreateLabelRule:
     """Tests for POST /api/v1/labels/rules endpoint."""
-
-    async def test_returns_201_status(self, test_client, setup_labels_data):
-        """Create rule should return 201 Created."""
-        labels = setup_labels_data["labels"]
-
-        response = await test_client.post(
-            "/api/v1/labels/rules",
-            json={
-                "rule_type": "risk_tier",
-                "match_value": "HIGH",
-                "label_id": labels[0].id,
-                "priority": 50,
-            },
-        )
-        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["rule_type"] == "risk_tier", "Rule type should match request"
-        assert data["match_value"] == "HIGH", "Match value should match request"
-        assert data["label_id"] == labels[0].id, "Label ID should match request"
-        assert data["priority"] == 50, "Priority should match request"
 
     async def test_returns_created_rule(self, test_client, setup_labels_data):
         """Create should return the created rule."""

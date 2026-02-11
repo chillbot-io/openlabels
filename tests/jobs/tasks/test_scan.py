@@ -976,8 +976,9 @@ class TestLargeFilesHandling:
 
                     result = await execute_scan_task(mock_session, {"job_id": str(job_id)})
 
-                    assert result["files_skipped"] >= 1
-                    assert result.get("files_too_large", 0) >= 1
+                    # One file that exceeds the 100MB limit was yielded
+                    assert result["files_skipped"] == 1
+                    assert result.get("files_too_large", 0) == 1
 
 
 
@@ -1274,6 +1275,6 @@ class TestInventoryDeltaScanning:
                         {"job_id": str(job_id), "force_full_scan": False}
                     )
 
-                    # File should be skipped
-                    assert result["files_skipped"] >= 1
+                    # One file yielded, but delta says unchanged: exactly 1 skipped
+                    assert result["files_skipped"] == 1
                     assert result["scan_mode"] == "delta"
