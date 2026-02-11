@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
 import click
 
-from openlabels.cli.utils import validate_where_filter
+from openlabels.cli.utils import collect_files, validate_where_filter
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +55,7 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
         from openlabels.cli.filter_executor import filter_scan_results
         from openlabels.core.processor import FileProcessor
 
-        target_path = Path(scan_path)
-        if target_path.is_dir():
-            if recursive:
-                files = list(target_path.rglob("*"))
-            else:
-                files = list(target_path.glob("*"))
-            files = [f for f in files if f.is_file()]
-        else:
-            files = [target_path]
+        files = collect_files(scan_path, recursive)
 
         click.echo(f"Scanning {len(files)} files...", err=True)
 
@@ -72,6 +65,8 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
             all_results = []
             for file_path in files:
                 try:
+                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
@@ -192,15 +187,7 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
         from openlabels.cli.filter_executor import filter_scan_results
         from openlabels.core.processor import FileProcessor
 
-        target_path = Path(scan_path)
-        if target_path.is_dir():
-            if recursive:
-                files = list(target_path.rglob("*"))
-            else:
-                files = list(target_path.glob("*"))
-            files = [f for f in files if f.is_file()]
-        else:
-            files = [target_path]
+        files = collect_files(scan_path, recursive)
 
         click.echo(f"Scanning {len(files)} files...", err=True)
 
@@ -210,6 +197,8 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
             all_results = []
             for fp in files:
                 try:
+                    if os.path.getsize(fp) > 200 * 1024 * 1024:
+                        continue
                     with open(fp, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(

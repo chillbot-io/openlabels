@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 # In-memory registry of watched files.
 # Acts as a process-local cache; durable state lives in the database
 # (see openlabels.monitoring.db for async persistence helpers).
+_MAX_WATCHED_FILES = 100_000
 _watched_files: dict[str, WatchedFile] = {}
 _watched_lock = threading.Lock()
 
@@ -100,14 +101,17 @@ def enable_monitoring(
     # Track in registry if successful (lock protects the dict write)
     if result.success:
         with _watched_lock:
-            _watched_files[path_str] = WatchedFile(
-                path=path,
-                risk_tier=risk_tier,
-                added_at=datetime.now(),
-                sacl_enabled=result.sacl_enabled,
-                audit_rule_enabled=result.audit_rule_enabled,
-                label_id=label_id,
-            )
+            if len(_watched_files) >= _MAX_WATCHED_FILES and path_str not in _watched_files:
+                logger.warning("Monitoring cache full (%d entries), skipping cache for %s", _MAX_WATCHED_FILES, path_str)
+            else:
+                _watched_files[path_str] = WatchedFile(
+                    path=path,
+                    risk_tier=risk_tier,
+                    added_at=datetime.now(),
+                    sacl_enabled=result.sacl_enabled,
+                    audit_rule_enabled=result.audit_rule_enabled,
+                    label_id=label_id,
+                )
 
     return result
 
@@ -197,6 +201,9 @@ async def populate_cache_from_db(
     added = 0
     with _watched_lock:
         for file_path, fields in db_entries.items():
+            if len(_watched_files) >= _MAX_WATCHED_FILES:
+                logger.warning("Monitoring cache full (%d entries), stopping DB populate", _MAX_WATCHED_FILES)
+                break
             if file_path not in _watched_files:
                 _watched_files[file_path] = WatchedFile(
                     path=fields["path"],
@@ -448,10 +455,11 @@ foreach ($p in $paths) {{
             )
             if success:
                 with _watched_lock:
-                    _watched_files[resolved_str] = WatchedFile(
-                        path=resolved_path, risk_tier=risk_tier,
-                        added_at=datetime.now(), sacl_enabled=True,
-                    )
+                    if len(_watched_files) < _MAX_WATCHED_FILES or resolved_str in _watched_files:
+                        _watched_files[resolved_str] = WatchedFile(
+                            path=resolved_path, risk_tier=risk_tier,
+                            added_at=datetime.now(), sacl_enabled=True,
+                        )
             results.append(r)
     except (subprocess.TimeoutExpired, OSError) as e:
         for _, resolved_path in validated:
@@ -522,10 +530,11 @@ def _enable_batch_linux(
             )
             if success:
                 with _watched_lock:
-                    _watched_files[str(p)] = WatchedFile(
-                        path=p, risk_tier=risk_tier,
-                        added_at=datetime.now(), audit_rule_enabled=True,
-                    )
+                    if len(_watched_files) < _MAX_WATCHED_FILES or str(p) in _watched_files:
+                        _watched_files[str(p)] = WatchedFile(
+                            path=p, risk_tier=risk_tier,
+                            added_at=datetime.now(), audit_rule_enabled=True,
+                        )
             results.append(r)
     except (subprocess.TimeoutExpired, OSError) as e:
         for p in validated:

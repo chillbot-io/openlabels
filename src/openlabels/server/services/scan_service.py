@@ -267,6 +267,7 @@ class ScanService(BaseService):
                 ScanJob.status.in_(["pending", "running"]),
             )
             .order_by(ScanJob.created_at.desc())
+            .limit(1000)
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())

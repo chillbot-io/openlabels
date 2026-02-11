@@ -24,6 +24,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re
 import threading
 import zipfile
@@ -37,6 +38,8 @@ import httpx
 from openlabels.adapters.base import FileInfo
 
 logger = logging.getLogger(__name__)
+
+_MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
 
 
 # =============================================================================
@@ -247,6 +250,13 @@ class LocalLabelWriter:
         writes the modified package back to *file_path*.
         """
         try:
+            file_size = os.path.getsize(file_path)
+            if file_size > _MAX_FILE_BYTES:
+                return LabelResult(
+                    success=False,
+                    error=f"File too large ({file_size / 1024 / 1024:.0f} MB, limit {_MAX_FILE_BYTES // 1024 // 1024} MB)",
+                )
+
             with open(file_path, "rb") as f:
                 content = f.read()
 
@@ -432,6 +442,13 @@ class LocalLabelWriter:
     def remove_office_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from an Office document's custom properties."""
         try:
+            file_size = os.path.getsize(file_path)
+            if file_size > _MAX_FILE_BYTES:
+                return LabelResult(
+                    success=False,
+                    error=f"File too large ({file_size / 1024 / 1024:.0f} MB, limit {_MAX_FILE_BYTES // 1024 // 1024} MB)",
+                )
+
             with open(file_path, "rb") as f:
                 content = f.read()
 

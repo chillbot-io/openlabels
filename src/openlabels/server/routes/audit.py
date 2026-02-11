@@ -129,6 +129,7 @@ async def get_audit_filters(
         select(AuditLog.action)
         .where(AuditLog.tenant_id == user.tenant_id)
         .distinct()
+        .limit(500)
     )
     actions_result = await session.execute(actions_query)
     actions = [row[0] for row in actions_result.all()]
@@ -141,6 +142,7 @@ async def get_audit_filters(
             AuditLog.resource_type.isnot(None),
         )
         .distinct()
+        .limit(500)
     )
     types_result = await session.execute(types_query)
     resource_types = [row[0] for row in types_result.all()]

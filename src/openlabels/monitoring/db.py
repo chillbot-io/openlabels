@@ -61,6 +61,7 @@ async def load_monitored_files(
         select(MonitoredFile)
         .where(MonitoredFile.tenant_id == tenant_id)
         .order_by(MonitoredFile.added_at)
+        .limit(100_000)
     )
     files = list(result.scalars().all())
     logger.info(
@@ -224,7 +225,7 @@ async def sync_to_db(
     result = await session.execute(
         select(MonitoredFile.file_path).where(
             MonitoredFile.tenant_id == tenant_id,
-        )
+        ).limit(100_000)
     )
     db_paths = {row[0] for row in result.all()}
     stale_paths = db_paths - set(watched_files.keys())

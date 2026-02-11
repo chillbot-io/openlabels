@@ -475,7 +475,7 @@ class Worker:
 
                         from openlabels.server.models import Tenant
 
-                        result = await session.execute(select(Tenant))
+                        result = await session.execute(select(Tenant).limit(10_000))
                         tenants = result.scalars().all()
 
                         total_reclaimed = 0
@@ -515,7 +515,7 @@ class Worker:
 
                         from openlabels.server.models import Tenant
 
-                        result = await session.execute(select(Tenant))
+                        result = await session.execute(select(Tenant).limit(10_000))
                         tenants = result.scalars().all()
 
                         total_cleaned = 0

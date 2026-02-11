@@ -7,12 +7,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
-from pathlib import Path
 
 import click
 
-from openlabels.cli.utils import validate_where_filter
+from openlabels.cli.utils import collect_files, validate_where_filter
 
 logger = logging.getLogger(__name__)
 
@@ -54,17 +54,7 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
     """
     from openlabels.cli.filter_executor import filter_scan_results
 
-    target_path = Path(path)
-
-    # Collect files to scan
-    if target_path.is_dir():
-        if recursive:
-            files = list(target_path.rglob("*"))
-        else:
-            files = list(target_path.glob("*"))
-        files = [f for f in files if f.is_file()]
-    else:
-        files = [target_path]
+    files = collect_files(path, recursive)
 
     if not files:
         click.echo("No files found")
@@ -82,6 +72,8 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
                 task = progress.add_task("Scanning files", total=len(files))
                 for file_path in files:
                     try:
+                        if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                            continue
                         with open(file_path, "rb") as f:
                             content = f.read()
 

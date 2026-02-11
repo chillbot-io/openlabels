@@ -84,7 +84,6 @@ _DEFAULT_STATS = {
 # Page routes
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Redirect to dashboard."""
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -101,7 +100,6 @@ async def home(request: Request):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Dashboard page."""
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -118,7 +116,6 @@ async def dashboard(request: Request):
 
 @router.get("/targets", response_class=HTMLResponse)
 async def targets_page(request: Request):
-    """Targets management page."""
     return templates.TemplateResponse(
         "targets.html",
         {"request": request, "active_page": "targets"},
@@ -127,7 +124,6 @@ async def targets_page(request: Request):
 
 @router.get("/targets/new", response_class=HTMLResponse)
 async def new_target_page(request: Request):
-    """New target form page."""
     return templates.TemplateResponse(
         "targets_form.html",
         {"request": request, "active_page": "targets", "target": None, "mode": "create"},
@@ -136,7 +132,6 @@ async def new_target_page(request: Request):
 
 @router.get("/scans", response_class=HTMLResponse)
 async def scans_page(request: Request):
-    """Scans page."""
     return templates.TemplateResponse(
         "scans.html",
         {"request": request, "active_page": "scans"},
@@ -145,7 +140,6 @@ async def scans_page(request: Request):
 
 @router.get("/scans/new", response_class=HTMLResponse)
 async def new_scan_page(request: Request):
-    """New scan form page."""
     return templates.TemplateResponse(
         "scans_form.html",
         {"request": request, "active_page": "scans"},
@@ -166,7 +160,6 @@ async def results_page(
 
 @router.get("/labels", response_class=HTMLResponse)
 async def labels_page(request: Request):
-    """Labels management page."""
     return templates.TemplateResponse(
         "labels.html",
         {"request": request, "active_page": "labels"},
@@ -175,7 +168,6 @@ async def labels_page(request: Request):
 
 @router.get("/labels/sync", response_class=HTMLResponse)
 async def labels_sync_page(request: Request):
-    """Labels sync page."""
     return templates.TemplateResponse(
         "labels_sync.html",
         {"request": request, "active_page": "labels"},
@@ -184,7 +176,6 @@ async def labels_sync_page(request: Request):
 
 @router.get("/monitoring", response_class=HTMLResponse)
 async def monitoring_page(request: Request):
-    """Monitoring page."""
     return templates.TemplateResponse(
         "monitoring.html",
         {
@@ -275,7 +266,6 @@ async def settings_page(
 
 @router.get("/schedules", response_class=HTMLResponse)
 async def schedules_page(request: Request):
-    """Schedules page."""
     return templates.TemplateResponse(
         "schedules.html",
         {"request": request, "active_page": "schedules"},
@@ -295,6 +285,7 @@ async def new_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled == True)  # noqa: E712
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -334,6 +325,7 @@ async def edit_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id)
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -486,7 +478,6 @@ async def result_detail_page(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """Login page."""
     return templates.TemplateResponse(
         "login.html",
         {"request": request},
@@ -806,7 +797,7 @@ async def findings_by_type_partial(
         query = select(ScanResult.entity_counts, ScanResult.risk_tier).where(
             ScanResult.tenant_id == user.tenant_id,
             ScanResult.entity_counts.isnot(None),
-        )
+        ).limit(50_000)
         result = await session.execute(query)
         rows = result.all()
 
@@ -1301,6 +1292,7 @@ async def labels_list_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
+            .limit(500)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1336,6 +1328,7 @@ async def label_mappings_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
+            .limit(500)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1367,6 +1360,7 @@ async def target_checkboxes_partial(
                 ScanTarget.enabled == True,  # noqa: E712
             )
             .order_by(ScanTarget.name)
+            .limit(500)
         )
         result = await session.execute(query)
         for target in result.scalars().all():
@@ -1416,6 +1410,7 @@ async def schedules_list_partial(
             select(ScanSchedule)
             .where(ScanSchedule.tenant_id == user.tenant_id)
             .order_by(desc(ScanSchedule.created_at))
+            .limit(500)
         )
         result = await session.execute(query)
         schedule_rows = result.scalars().all()

@@ -14,6 +14,8 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
+import httpx
+
 from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
@@ -128,7 +130,28 @@ class SharePointAdapter(BaseGraphAdapter):
         else:
             endpoint = f"/sites/{site_id}/drives/{drive_id}/root:{path}:/children"
 
-        async for item in client.iter_all_pages(endpoint):
+        try:
+            items_iter = client.iter_all_pages(endpoint)
+        except PermissionError as e:
+            logger.debug(
+                f"Cannot access {path} for site {site_id} - permission denied: {e}",
+                exc_info=True,
+            )
+            return
+        except (ConnectionError, TimeoutError) as e:
+            logger.debug(
+                f"Cannot access {path} for site {site_id} - network error: {e}",
+                exc_info=True,
+            )
+            return
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.debug(
+                f"Cannot access {path} for site {site_id} - unexpected error ({type(e).__name__}): {e}",
+                exc_info=True,
+            )
+            return
+
+        async for item in items_iter:
             if "folder" in item:
                 if recursive:
                     folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"

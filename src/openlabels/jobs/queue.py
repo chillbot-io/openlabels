@@ -534,6 +534,7 @@ class JobQueue:
                 JobQueueModel.started_at < cutoff,
             )
             .with_for_update(skip_locked=True)
+            .limit(1000)
         )
 
         result = await self.session.execute(query)
@@ -702,6 +703,7 @@ class JobQueue:
                 JobQueueModel.created_at < cutoff,
             )
             .order_by(JobQueueModel.created_at.asc())
+            .limit(10_000)
         )
 
         result = await self.session.execute(query)
