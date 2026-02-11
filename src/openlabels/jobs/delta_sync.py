@@ -288,8 +288,8 @@ async def _apply_updates(session: AsyncSession, rows: list[dict]) -> None:
         return
 
     values_sql = ", ".join(
-        f"(:id_{i}::uuid, :mod_{i}::timestamptz, :ref_{i}::bigint, "
-        f":pref_{i}::bigint, :dcount_{i}::int, :fcount_{i}::int)"
+        f"(CAST(:id_{i} AS uuid), CAST(:mod_{i} AS timestamptz), CAST(:ref_{i} AS bigint), "
+        f"CAST(:pref_{i} AS bigint), CAST(:dcount_{i} AS int), CAST(:fcount_{i} AS int))"
         for i in range(len(rows))
     )
     params: dict = {}
