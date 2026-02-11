@@ -287,32 +287,31 @@ async def get_health_status(
         except (SQLAlchemyError, ConnectionError, OSError) as e:
             logger.warning(f"Stats query failed: {e}")
 
-    # Add circuit breaker status
-    try:
-        cb_statuses = []
-        for name, cb in CircuitBreaker._registry.items():
-            cb_status = cb.get_status()
-            cb_statuses.append(CircuitBreakerStatus(
-                name=cb_status["name"],
-                state=cb_status["state"],
-                failure_count=cb_status["failure_count"],
-                success_count=cb_status["success_count"],
-                time_until_recovery=cb_status["time_until_recovery"],
-                stats=cb_status["stats"],
-            ))
-        status["circuit_breakers"] = cb_statuses
-    except (RuntimeError, KeyError, AttributeError) as e:
-        # Circuit breaker status is informational - log at debug level
-        logger.debug(f"Could not retrieve circuit breaker status: {type(e).__name__}: {e}")
-
-    # Add job metrics (tenant-specific, requires authentication)
+    # SECURITY: Detailed system info only for authenticated users
     if user is not None:
+        # Add circuit breaker status
+        try:
+            cb_statuses = []
+            for name, cb in CircuitBreaker._registry.items():
+                cb_status = cb.get_status()
+                cb_statuses.append(CircuitBreakerStatus(
+                    name=cb_status["name"],
+                    state=cb_status["state"],
+                    failure_count=cb_status["failure_count"],
+                    success_count=cb_status["success_count"],
+                    time_until_recovery=cb_status["time_until_recovery"],
+                    stats=cb_status["stats"],
+                ))
+            status["circuit_breakers"] = cb_statuses
+        except (RuntimeError, KeyError, AttributeError) as e:
+            logger.debug(f"Could not retrieve circuit breaker status: {type(e).__name__}: {e}")
+
+        # Add job metrics (tenant-specific)
         try:
             job_queue = JobQueueService(session, user.tenant_id)
             age_stats = await job_queue.get_job_age_stats()
             stale_jobs = await job_queue.get_stale_pending_jobs()
 
-            # Query tenant-scoped pending/failed counts (not the global ones)
             tenant_pending_query = select(func.count()).select_from(JobQueue).where(
                 JobQueue.status == "pending",
                 JobQueue.tenant_id == user.tenant_id,
@@ -336,13 +335,12 @@ async def get_health_status(
                 oldest_running_hours=age_stats.get("oldest_running_hours"),
             )
         except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
-            # Job metrics failure may indicate queue issues
             logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
-    # Add system info
-    status["python_version"] = platform.python_version()
-    status["platform"] = platform.system()
-    status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
+        # System info — only for authenticated users
+        status["python_version"] = platform.python_version()
+        status["platform"] = platform.system()
+        status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
 

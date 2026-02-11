@@ -568,6 +568,20 @@ async def update_target_form(
             if value:
                 config[config_key] = value
 
+    # SECURITY: Validate target config (same as API endpoint)
+    from openlabels.server.routes.targets import validate_target_config
+    try:
+        config = validate_target_config(adapter, config)
+    except ValueError as e:
+        return templates.TemplateResponse(
+            "targets_form.html",
+            {"request": request, "active_page": "targets", "target": {
+                "id": str(target_id), "name": name, "adapter": adapter,
+                "config": config, "enabled": enabled == "on",
+            }, "mode": "edit", "error": str(e)},
+            status_code=400,
+        )
+
     target.name = name
     target.adapter = adapter
     target.config = config

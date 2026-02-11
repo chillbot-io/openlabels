@@ -75,9 +75,16 @@ async def get_or_create_user(
 
     if not user:
         # Determine role - first user is admin
-        count_query = select(User.id).where(User.tenant_id == tenant.id)
+        # SECURITY: Use FOR UPDATE lock to prevent TOCTOU race where two concurrent
+        # requests both see zero users and both become admin
+        from sqlalchemy import func as sa_func
+        count_query = (
+            select(sa_func.count()).select_from(User)
+            .where(User.tenant_id == tenant.id)
+            .with_for_update()
+        )
         count_result = await session.execute(count_query)
-        is_first_user = len(count_result.all()) == 0
+        is_first_user = (count_result.scalar() or 0) == 0
 
         user = User(
             tenant_id=tenant.id,
@@ -130,9 +137,11 @@ async def get_current_user(
         try:
             claims = await validate_token(token)
         except (ValueError, AuthError) as e:
+            # SECURITY: Log specific error server-side; return generic message to client
+            logger.debug("Token validation failed: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=str(e),
+                detail="Authentication failed",
                 headers={"WWW-Authenticate": "Bearer"},
             ) from e
 
@@ -204,10 +213,14 @@ def require_role(*allowed_roles: str) -> _RoleDep:
         user: CurrentUser = Depends(get_current_user),
     ) -> CurrentUser:
         if user.role not in allowed_roles:
+            # SECURITY: Log specifics server-side; return generic message to client
+            logger.debug(
+                "RBAC denied: user %s (role=%s) needs one of %s",
+                user.email, user.role, allowed_roles,
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Requires one of roles: {', '.join(allowed_roles)}. "
-                f"User has: {user.role}",
+                detail="Insufficient permissions",
             )
         return user
 

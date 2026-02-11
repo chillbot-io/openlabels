@@ -509,13 +509,25 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
     The backup is a ``repr(dict)`` containing ``mode``, ``uid``, ``gid``,
     and optionally ``acl`` (getfacl output).
     """
-    import ast
+    import json
     import os
 
-    try:
-        acl_dict = ast.literal_eval(acl_data)
-    except (ValueError, SyntaxError):
+    # SECURITY: Use json.loads instead of ast.literal_eval to avoid parsing
+    # arbitrarily complex Python literals from potentially-tampered backup data.
+    # Limit input size to prevent memory exhaustion from crafted payloads.
+    if len(acl_data) > 1_000_000:
+        logger.warning("ACL backup data exceeds 1MB limit, treating as raw ACL")
         acl_dict = {"acl": acl_data}
+    else:
+        try:
+            acl_dict = json.loads(acl_data)
+        except (json.JSONDecodeError, ValueError):
+            # Fall back: legacy backups may use Python repr() format
+            try:
+                import ast
+                acl_dict = ast.literal_eval(acl_data)
+            except (ValueError, SyntaxError):
+                acl_dict = {"acl": acl_data}
 
     # Validate that parsed data is a dict (not a list, string, etc.)
     if not isinstance(acl_dict, dict):

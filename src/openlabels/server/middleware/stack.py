@@ -96,7 +96,7 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     response = await call_next(request)
     settings = get_settings()
 
-    if settings.server.environment == "production":
+    if settings.server.environment in ("production", "staging"):
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains"
         )
@@ -106,6 +106,8 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
+    # NOTE: 'unsafe-inline' for styles is required by HTMX/Tailwind inline styles.
+    # Migrate to nonce-based CSP when feasible to eliminate this exception.
     csp_directives = [
         "default-src 'self'",
         "script-src 'self'",

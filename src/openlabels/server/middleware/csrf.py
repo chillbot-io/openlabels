@@ -173,12 +173,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def _set_csrf_cookie(self, request: Request, response: Response) -> None:
         """Set CSRF token cookie."""
         token = generate_csrf_token()
+        # SECURITY: Detect HTTPS via X-Forwarded-Proto for TLS-terminating reverse proxies
+        is_secure = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
+        )
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
             value=token,
             max_age=60 * 60 * 24 * 7,  # 7 days (match session)
             httponly=False,  # Must be readable by JavaScript
             samesite="lax",
-            secure=request.url.scheme == "https",
+            secure=is_secure,
             path="/",
         )
