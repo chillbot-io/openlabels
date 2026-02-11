@@ -391,7 +391,7 @@ async def _update_dirtree_hashes(session: AsyncSession, rows: list[dict]) -> Non
         return
 
     values_sql = ", ".join(
-        f"(:id_{i}::uuid, :hash_{i}::bytea)"
+        f"(CAST(:id_{i} AS uuid), CAST(:hash_{i} AS bytea))"
         for i in range(len(rows))
     )
     params = {}
