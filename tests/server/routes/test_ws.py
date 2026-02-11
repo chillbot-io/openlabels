@@ -704,8 +704,9 @@ class TestConnectionManager:
         scan_id = uuid4()
 
         message = {"type": "test", "data": "hello"}
-        # Should not raise exception
+        # Should not raise exception and scan should remain absent
         await manager.deliver_local(scan_id, message)
+        assert scan_id not in manager.active_connections
 
 
 # =============================================================================
@@ -1116,8 +1117,9 @@ class TestEdgeCases:
 
         conn = AuthenticatedConnection(mock_websocket, uuid4(), uuid4())
 
-        # Should not raise
+        # Should not raise and scan should remain absent
         manager.disconnect(scan_id, conn)
+        assert scan_id not in manager.active_connections
 
     async def test_disconnect_already_removed_connection(self):
         """Disconnect should handle already-removed connection gracefully."""
@@ -1131,9 +1133,11 @@ class TestEdgeCases:
         mock_websocket = AsyncMock()
         conn = await manager.connect(scan_id, mock_websocket, user_id, tenant_id)
 
-        # Disconnect twice
+        # Disconnect twice - should not raise
         manager.disconnect(scan_id, conn)
+        assert scan_id not in manager.active_connections
         manager.disconnect(scan_id, conn)  # Should not raise
+        assert scan_id not in manager.active_connections
 
     async def test_broadcast_empty_message(self):
         """Broadcast should handle empty message dict."""
