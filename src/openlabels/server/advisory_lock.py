@@ -44,6 +44,7 @@ class AdvisoryLockID(enum.IntEnum):
     LABEL_SYNC = 100_006
     STUCK_JOB_RECLAIM = 100_007
     JOB_CLEANUP = 100_008
+    PARTITION_MAINTENANCE = 100_009
 
 
 async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID | int) -> bool:

@@ -429,6 +429,11 @@ class ScanResult(Base):
         Index('ix_scan_results_tenant_label', 'tenant_id', 'label_applied', 'scanned_at'),
         # GIN index for JSONB queries on entity_counts
         Index('ix_scan_results_entities', 'entity_counts', postgresql_using='gin'),
+        # Range-partitioned by scanned_at (monthly).  The actual DB primary
+        # key is (id, scanned_at) — required by PostgreSQL for partitioned
+        # tables.  SQLAlchemy keeps id as the sole ORM identity key so that
+        # session.get(ScanResult, uuid) still works (scans all partitions).
+        {"postgresql_partition_by": "RANGE (scanned_at)"},
     )
 
 
@@ -746,8 +751,8 @@ class FileAccessEvent(Base):
     """
     File access events collected from SACL (Windows) or auditd (Linux).
 
-    This is a high-volume table - consider partitioning by event_time
-    in production for efficient retention management.
+    Range-partitioned by event_time (monthly) for efficient retention
+    management and query performance at scale.
     """
 
     __tablename__ = "file_access_events"
@@ -792,8 +797,8 @@ class FileAccessEvent(Base):
         Index('ix_access_events_monitored', 'monitored_file_id', 'event_time'),
         # For dashboard: recent events by action type
         Index('ix_access_events_tenant_action', 'tenant_id', 'action', 'event_time'),
-        # Note: For production with high volume, add:
-        # {'postgresql_partition_by': 'RANGE (event_time)'},
+        # Range-partitioned by event_time (monthly).
+        {"postgresql_partition_by": "RANGE (event_time)"},
     )
 
 
