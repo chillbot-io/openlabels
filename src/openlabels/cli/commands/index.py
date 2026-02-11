@@ -70,6 +70,29 @@ def index_rebuild(
     asyncio.run(_run_bootstrap(target_name, path, rebuild=True, collect_sd=collect_sd))
 
 
+@index.command("sync")
+@click.argument("target_name")
+@click.option("--path", default=None, help="Override scan path from target config")
+@click.option("--collect-sd/--no-collect-sd", default=True,
+              help="Collect security descriptors for changed dirs (default: on)")
+@server_options
+def index_sync(
+    target_name: str,
+    path: str | None,
+    collect_sd: bool,
+    server: str,
+    token: str | None,
+) -> None:
+    """Incrementally sync the directory tree index.
+
+    Re-walks the filesystem and applies only changes since the last
+    sync: inserts new directories, updates modified ones, and removes
+    deleted ones.  Much faster than a full rebuild when few directories
+    have changed.
+    """
+    asyncio.run(_run_sync(target_name, path, collect_sd=collect_sd))
+
+
 @index.command("collect-sd")
 @click.argument("target_name")
 @server_options
@@ -147,6 +170,7 @@ async def _run_bootstrap(
     collect_sd: bool = True,
 ) -> None:
     """Core bootstrap logic shared by build and rebuild commands."""
+    from openlabels.jobs.delta_sync import upsert_checkpoint
     from openlabels.jobs.index import (
         bootstrap_directory_tree,
         clear_directory_tree,
@@ -199,6 +223,17 @@ async def _run_bootstrap(
                     on_sd_progress=on_sd_progress,
                 )
 
+            # Save checkpoint so delta sync knows when the last full build was
+            from datetime import datetime as dt, timezone as tz
+            await upsert_checkpoint(
+                session,
+                target.tenant_id,
+                target.id,
+                last_full_sync=dt.now(tz.utc),
+                dirs_at_last_sync=stats["total_dirs"],
+            )
+            await session.flush()
+
         click.echo("")
         click.echo("Index complete:")
         click.echo(f"  Directories indexed:     {stats['total_dirs']:,}")
@@ -210,6 +245,88 @@ async def _run_bootstrap(
             click.echo(f"  World-accessible dirs:   {sd_stats['world_accessible']:,}")
 
         click.echo(f"  Elapsed:                 {stats['elapsed_seconds']:.1f}s")
+
+    finally:
+        await close_db()
+
+
+async def _run_sync(
+    target_name: str,
+    path_override: str | None,
+    collect_sd: bool = True,
+) -> None:
+    """Delta sync logic for the sync command."""
+    from openlabels.jobs.delta_sync import delta_sync_directory_tree, get_checkpoint
+    from openlabels.server.db import close_db, get_session_context
+
+    await _init_db()
+
+    try:
+        async with get_session_context() as session:
+            target, err = await _resolve_target(session, target_name)
+            if err:
+                click.echo(f"Error: {err}", err=True)
+                sys.exit(1)
+
+            scan_path = _get_scan_path(target, path_override)
+            adapter = _get_adapter(target.adapter.value, target.config or {})
+
+            # Show checkpoint info
+            checkpoint = await get_checkpoint(
+                session, target.tenant_id, target.id
+            )
+            if checkpoint and checkpoint.last_full_sync:
+                click.echo(
+                    f"Last full sync: {checkpoint.last_full_sync.isoformat()}"
+                )
+            if checkpoint and checkpoint.last_delta_sync:
+                click.echo(
+                    f"Last delta sync: {checkpoint.last_delta_sync.isoformat()}"
+                )
+
+            click.echo(
+                f"Delta sync for '{target.name}' "
+                f"({target.adapter.value}) at {scan_path}..."
+            )
+
+            def on_progress(count: int) -> None:
+                click.echo(f"  {count:,} directories scanned...", nl=True)
+
+            def on_sd_progress(processed: int, total: int) -> None:
+                click.echo(
+                    f"  SD collection: {processed:,}/{total:,} directories...",
+                    nl=True,
+                )
+
+            async with adapter:
+                stats = await delta_sync_directory_tree(
+                    session=session,
+                    adapter=adapter,
+                    tenant_id=target.tenant_id,
+                    target_id=target.id,
+                    scan_path=scan_path,
+                    on_progress=on_progress,
+                    collect_sd=collect_sd,
+                    on_sd_progress=on_sd_progress,
+                )
+
+        click.echo("")
+        click.echo("Delta sync complete:")
+        click.echo(f"  Inserted:    {stats['inserted']:,}")
+        click.echo(f"  Updated:     {stats['updated']:,}")
+        click.echo(f"  Deleted:     {stats['deleted']:,}")
+        click.echo(f"  Unchanged:   {stats['unchanged']:,}")
+        click.echo(f"  Total dirs:  {stats['total_dirs']:,}")
+
+        if stats.get("parent_links_resolved"):
+            click.echo(f"  Parent links resolved: {stats['parent_links_resolved']:,}")
+
+        sd_stats = stats.get("sd_stats")
+        if sd_stats:
+            click.echo(f"  Unique security descs:   {sd_stats['unique_sds']:,}")
+            click.echo(f"  World-accessible dirs:   {sd_stats['world_accessible']:,}")
+
+        click.echo(f"  Elapsed:     {stats['elapsed_seconds']:.1f}s")
 
     finally:
         await close_db()
@@ -258,6 +375,7 @@ async def _run_collect_sd(target_name: str) -> None:
 
 async def _run_status(target_name: str) -> None:
     """Show index stats for a target."""
+    from openlabels.jobs.delta_sync import get_checkpoint
     from openlabels.jobs.index import get_index_stats
     from openlabels.jobs.sd_collect import get_sd_stats
     from openlabels.server.db import close_db, get_session_context
@@ -273,6 +391,9 @@ async def _run_status(target_name: str) -> None:
 
             stats = await get_index_stats(session, target.tenant_id, target.id)
             sd_stats = await get_sd_stats(session, target.tenant_id, target.id)
+            checkpoint = await get_checkpoint(
+                session, target.tenant_id, target.id
+            )
 
         click.echo(f"Directory tree index: {target.name}")
         click.echo(f"  Adapter:             {target.adapter.value}")
@@ -286,7 +407,12 @@ async def _run_status(target_name: str) -> None:
             click.echo(f"  World-accessible:    {sd_stats['world_accessible']:,}")
             click.echo(f"  Custom ACL:          {sd_stats['custom_acl']:,}")
 
-        if stats["last_updated"]:
+        if checkpoint:
+            if checkpoint.last_full_sync:
+                click.echo(f"  Last full sync:      {checkpoint.last_full_sync.isoformat()}")
+            if checkpoint.last_delta_sync:
+                click.echo(f"  Last delta sync:     {checkpoint.last_delta_sync.isoformat()}")
+        elif stats["last_updated"]:
             click.echo(f"  Last updated:        {stats['last_updated'].isoformat()}")
         else:
             click.echo(f"  Last updated:        never")

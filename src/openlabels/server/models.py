@@ -1028,3 +1028,34 @@ class DirectoryTree(Base):
         Index('ix_dirtree_share', 'share_id',
               postgresql_where='share_id IS NOT NULL'),
     )
+
+
+class IndexCheckpoint(Base):
+    """Delta sync checkpoint for a scan target's directory tree.
+
+    Tracks the last successful sync so subsequent runs can detect
+    and apply only changes (new/modified/deleted directories).
+    """
+
+    __tablename__ = "index_checkpoints"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+
+    # Sync state
+    last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_delta_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dirs_at_last_sync: Mapped[int] = mapped_column(Integer, server_default="0")
+
+    # Platform-specific cursors
+    delta_token: Mapped[str | None] = mapped_column(Text)  # Graph API delta link
+    usn_journal_cursor: Mapped[int | None] = mapped_column(BigInteger)  # NTFS USN journal offset
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_checkpoint_tenant_target', 'tenant_id', 'target_id', unique=True),
+    )
