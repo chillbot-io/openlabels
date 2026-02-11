@@ -52,7 +52,9 @@ class TestToEpoch:
 
 class TestUpdateRow:
 
-    def test_clears_sd_hash(self):
+    def test_sd_hash_not_in_update_row(self):
+        """_update_row should NOT include sd_hash — _apply_updates SQL
+        sets sd_hash = NULL directly, so the dict must not carry it."""
         from openlabels.server.models import generate_uuid
 
         info = FolderInfo(
@@ -62,7 +64,7 @@ class TestUpdateRow:
         )
         row = _update_row(generate_uuid(), info)
 
-        assert row["sd_hash"] is None
+        assert "sd_hash" not in row
 
     def test_preserves_existing_id(self):
         from openlabels.server.models import generate_uuid

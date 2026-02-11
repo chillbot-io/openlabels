@@ -1019,6 +1019,9 @@ class DirectoryTree(Base):
         # Security analysis: directories sharing a permission set
         Index('ix_dirtree_sd', 'tenant_id', 'sd_hash',
               postgresql_where='sd_hash IS NOT NULL'),
+        # SD collection: efficiently find directories needing collection
+        Index('ix_dirtree_sd_pending', 'tenant_id', 'target_id', 'dir_path',
+              postgresql_where='sd_hash IS NULL'),
         # Share scoping: all directories under a share
         Index('ix_dirtree_share', 'share_id',
               postgresql_where='share_id IS NOT NULL'),

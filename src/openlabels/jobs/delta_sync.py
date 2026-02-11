@@ -251,7 +251,11 @@ def _folder_info_to_row(info: FolderInfo, tenant_id: UUID, target_id: UUID) -> d
 
 
 def _update_row(existing_id: UUID, info: FolderInfo) -> dict:
-    """Build an update dict for a modified directory."""
+    """Build an update dict for a modified directory.
+
+    Note: sd_hash is cleared to NULL by _apply_updates SQL directly,
+    so it is not included here.
+    """
     return {
         "id": existing_id,
         "dir_modified": info.modified,
@@ -259,7 +263,6 @@ def _update_row(existing_id: UUID, info: FolderInfo) -> dict:
         "parent_ref": info.parent_inode,
         "child_dir_count": info.child_dir_count,
         "child_file_count": info.child_file_count,
-        "sd_hash": None,
         "updated_at": datetime.now(timezone.utc),
     }
 

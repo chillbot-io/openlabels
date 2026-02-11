@@ -223,6 +223,93 @@ class TestCollectSecurityDescriptors:
             assert calls[-1][0] == calls[-1][1]
 
 
+class TestPaginationEdgeCases:
+
+    async def test_all_dirs_get_sd_hash_with_many_dirs(self, target_with_real_dirs):
+        """Regression: OFFSET pagination skipped rows when sd_hash was
+        updated mid-loop (the WHERE sd_hash IS NULL result set shrank).
+        Keyset pagination must process every directory."""
+        import os
+        from sqlalchemy import text
+
+        from openlabels.jobs.index import bootstrap_directory_tree
+        from openlabels.jobs.sd_collect import collect_security_descriptors
+
+        tenant, target, session = target_with_real_dirs
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create enough directories that batching is exercised
+            for i in range(20):
+                d = Path(tmpdir) / f"dir_{i:03d}"
+                d.mkdir()
+                os.chmod(str(d), 0o755)
+            os.chmod(tmpdir, 0o755)
+
+            from openlabels.adapters.filesystem import FilesystemAdapter
+            adapter = FilesystemAdapter()
+
+            await bootstrap_directory_tree(
+                session=session, adapter=adapter,
+                tenant_id=tenant.id, target_id=target.id, scan_path=tmpdir,
+            )
+
+            stats = await collect_security_descriptors(
+                session=session, tenant_id=tenant.id, target_id=target.id,
+            )
+
+            # Must have processed ALL 21 dirs (root + 20 children)
+            assert stats["total_dirs"] == 21
+
+            # Verify zero directories are left without sd_hash
+            missing = (await session.execute(text(
+                "SELECT count(*) FROM directory_tree "
+                "WHERE tenant_id = :tid AND target_id = :tgt AND sd_hash IS NULL"
+            ), {"tid": tenant.id, "tgt": target.id})).scalar()
+            assert missing == 0
+
+    async def test_no_dirs_skipped_after_partial_batch_flush(self, target_with_real_dirs):
+        """Even when _update_dirtree_hashes flushes mid-batch (every 2000 rows),
+        subsequent reads must not skip any directories."""
+        import os
+        from sqlalchemy import text
+
+        from openlabels.jobs.index import bootstrap_directory_tree
+        from openlabels.jobs.sd_collect import collect_security_descriptors
+
+        tenant, target, session = target_with_real_dirs
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for i in range(10):
+                (Path(tmpdir) / f"sub_{i:02d}").mkdir()
+
+            from openlabels.adapters.filesystem import FilesystemAdapter
+            adapter = FilesystemAdapter()
+
+            await bootstrap_directory_tree(
+                session=session, adapter=adapter,
+                tenant_id=tenant.id, target_id=target.id, scan_path=tmpdir,
+            )
+
+            stats = await collect_security_descriptors(
+                session=session, tenant_id=tenant.id, target_id=target.id,
+            )
+
+            total_in_db = (await session.execute(text(
+                "SELECT count(*) FROM directory_tree "
+                "WHERE tenant_id = :tid AND target_id = :tgt"
+            ), {"tid": tenant.id, "tgt": target.id})).scalar()
+
+            # Every indexed directory must have been processed
+            assert stats["total_dirs"] == total_in_db
+
+            # And every one must have sd_hash set
+            with_hash = (await session.execute(text(
+                "SELECT count(*) FROM directory_tree "
+                "WHERE tenant_id = :tid AND target_id = :tgt AND sd_hash IS NOT NULL"
+            ), {"tid": tenant.id, "tgt": target.id})).scalar()
+            assert with_hash == total_in_db
+
+
 class TestGetSDStats:
 
     async def test_returns_correct_counts(self, target_with_real_dirs):

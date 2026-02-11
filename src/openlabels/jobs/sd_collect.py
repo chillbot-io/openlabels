@@ -289,29 +289,35 @@ async def collect_security_descriptors(
     update_rows: list[dict] = []
     processed = 0
     world_accessible_count = 0
-    offset = 0
+    last_path = ""
 
     while True:
+        # Keyset pagination: always read the next batch after last_path.
+        # OFFSET-based pagination is wrong here because mid-loop updates
+        # to sd_hash shrink the WHERE sd_hash IS NULL result set, causing
+        # rows to be skipped.
         result = await session.execute(
             text("""
                 SELECT id, dir_path FROM directory_tree
                  WHERE tenant_id = :tenant_id
                    AND target_id = :target_id
                    AND sd_hash IS NULL
+                   AND dir_path > :last_path
                  ORDER BY dir_path
-                 LIMIT :limit OFFSET :offset
+                 LIMIT :limit
             """),
             {
                 "tenant_id": tenant_id,
                 "target_id": target_id,
                 "limit": _READ_BATCH,
-                "offset": offset,
+                "last_path": last_path,
             },
         )
         rows = result.all()
         if not rows:
             break
 
+        last_path = rows[-1].dir_path
         paths = [r.dir_path for r in rows]
         id_by_path = {r.dir_path: r.id for r in rows}
 
@@ -349,7 +355,6 @@ async def collect_security_descriptors(
                 update_rows.clear()
 
         processed += len(rows)
-        offset += len(rows)
 
         if on_progress:
             on_progress(processed, total_dirs)
