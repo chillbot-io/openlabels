@@ -95,8 +95,11 @@ class TestCUSIPValidation:
     def test_cusip_with_special_chars(self):
         """Test CUSIP with special characters (* @ #)."""
         # CUSIP allows *, @, # as special characters with values 36, 37, 38
-        # These are rare but valid
-        assert isinstance(_validate_cusip("0378331*0"), bool)
+        # These are rare but valid - the function should return a definitive True or False
+        result = _validate_cusip("0378331*0")
+        assert result is True or result is False
+        # A mangled checksum should definitely fail
+        assert _validate_cusip("0378331*9") is False
 
 
 # =============================================================================
@@ -452,6 +455,7 @@ class TestFinancialDetectorDetection:
 
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
         assert len(cusip_spans) >= 1
+        assert any(s.text == "037833100" for s in cusip_spans)
 
     def test_detect_isin_labeled(self, detector):
         """Test ISIN detection with label."""
@@ -469,6 +473,7 @@ class TestFinancialDetectorDetection:
 
         isin_spans = [s for s in spans if s.entity_type == "ISIN"]
         assert len(isin_spans) >= 1
+        assert any(s.text == "US0378331005" for s in isin_spans)
 
     def test_detect_sedol_labeled(self, detector):
         """Test SEDOL detection with label."""
@@ -662,12 +667,15 @@ class TestFinancialEdgeCases:
         text = '{"cusip": "037833100", "isin": "US0378331005"}'
         spans = detector.detect(text)
 
+        # The unlabeled CUSIP pattern should match 037833100 (valid checksum)
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
-        isin_spans = [s for s in spans if s.entity_type == "ISIN"]
+        assert len(cusip_spans) >= 1
+        assert any(s.text == "037833100" for s in cusip_spans)
 
-        # May or may not match depending on exact pattern
-        assert isinstance(cusip_spans, list)
-        assert isinstance(isin_spans, list)
+        # The unlabeled ISIN pattern should match US0378331005 (valid checksum)
+        isin_spans = [s for s in spans if s.entity_type == "ISIN"]
+        assert len(isin_spans) >= 1
+        assert any(s.text == "US0378331005" for s in isin_spans)
 
     def test_span_positions_valid(self, detector):
         """Test that span positions are correct."""
@@ -686,9 +694,10 @@ class TestFinancialEdgeCases:
         spans = detector.detect(text)
 
         cusip_spans = [s for s in spans if s.entity_type == "CUSIP"]
-        # Validated CUSIP should have high confidence
-        if cusip_spans:
-            assert all(s.confidence >= 0.90 for s in cusip_spans)
+        assert len(cusip_spans) >= 1, "CUSIP should be detected"
+        # Labeled CUSIP pattern has confidence 0.98, validator adds +0.02 (capped at 0.99)
+        # So validated labeled CUSIP should have confidence >= 0.99
+        assert all(s.confidence >= 0.99 for s in cusip_spans)
 
 
 # =============================================================================
