@@ -146,26 +146,8 @@ class TestListUsers:
 class TestCreateUser:
     """Tests for POST /api/users endpoint."""
 
-    async def test_returns_201_status(self, test_client, setup_users_data):
-        """Create user should return 201 Created."""
-        response = await test_client.post(
-            "/api/users",
-            json={
-                "email": "newuser@test.com",
-                "name": "New User",
-                "role": "viewer",
-            },
-        )
-        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["email"] == "newuser@test.com", "Email should match request"
-        assert data["name"] == "New User", "Name should match request"
-        assert data["role"] == "viewer", "Role should match request"
-        assert "created_at" in data, "Response should contain 'created_at' field"
-
     async def test_returns_created_user(self, test_client, setup_users_data):
-        """Create user should return the created user."""
+        """Create user should return 201 with the created user details."""
         response = await test_client.post(
             "/api/users",
             json={
@@ -277,21 +259,8 @@ class TestCreateUser:
 class TestGetUser:
     """Tests for GET /api/users/{user_id} endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_users_data):
-        """Get user should return 200 OK."""
-        admin_user = setup_users_data["admin_user"]
-
-        response = await test_client.get(f"/api/users/{admin_user.id}")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["id"] == str(admin_user.id), "User ID should match requested ID"
-        assert "email" in data, "Response should contain 'email' field"
-        assert "name" in data, "Response should contain 'name' field"
-        assert "role" in data, "Response should contain 'role' field"
-
     async def test_returns_user_details(self, test_client, setup_users_data):
-        """Get user should return user details."""
+        """Get user should return 200 with all user fields."""
         admin_user = setup_users_data["admin_user"]
 
         response = await test_client.get(f"/api/users/{admin_user.id}")
@@ -300,6 +269,9 @@ class TestGetUser:
 
         assert data["id"] == str(admin_user.id)
         assert data["email"] == admin_user.email
+        assert "name" in data
+        assert "role" in data
+        assert "created_at" in data
 
     async def test_returns_404_for_nonexistent_user(self, test_client, setup_users_data):
         """Get nonexistent user should return 404."""
@@ -316,37 +288,8 @@ class TestGetUser:
 class TestUpdateUser:
     """Tests for PUT /api/users/{user_id} endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_users_data):
-        """Update user should return 200 OK."""
-        from openlabels.server.models import User
-
-        session = setup_users_data["session"]
-        tenant = setup_users_data["tenant"]
-
-        # Create a user to update
-        user = User(
-            tenant_id=tenant.id,
-            email="toupdate@test.com",
-            name="Original Name",
-            role="viewer",
-        )
-        session.add(user)
-        await session.commit()
-
-        response = await test_client.put(
-            f"/api/users/{user.id}",
-            json={"name": "Updated Name"},
-        )
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["id"] == str(user.id), "User ID should match"
-        assert data["name"] == "Updated Name", "Name should be updated"
-        assert data["email"] == "toupdate@test.com", "Email should remain unchanged"
-        assert data["role"] == "viewer", "Role should remain unchanged"
-
     async def test_updates_name(self, test_client, setup_users_data):
-        """Update user should update name."""
+        """Update user should return 200 and update name."""
         from openlabels.server.models import User
 
         session = setup_users_data["session"]

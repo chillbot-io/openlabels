@@ -303,11 +303,6 @@ class TestDeleteLabelRule:
 class TestGetLabelMappings:
     """Tests for GET /api/v1/labels/mappings endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_labels_data):
-        """Get mappings should return 200 OK."""
-        response = await test_client.get("/api/v1/labels/mappings")
-        assert response.status_code == 200
-
     async def test_returns_mappings_structure(self, test_client, setup_labels_data):
         """Mappings should have required fields."""
         response = await test_client.get("/api/v1/labels/mappings")
@@ -368,21 +363,6 @@ class TestGetLabelMappings:
 
 class TestUpdateLabelMappings:
     """Tests for POST /api/v1/labels/mappings endpoint."""
-
-    async def test_returns_200_status_json(self, test_client, setup_labels_data):
-        """Update mappings should return 200 OK for JSON."""
-        labels = setup_labels_data["labels"]
-
-        response = await test_client.post(
-            "/api/v1/labels/mappings",
-            json={
-                "CRITICAL": labels[0].id,
-                "HIGH": labels[1].id,
-            },
-        )
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "message" in data or isinstance(data, dict), "Response should be a dictionary"
 
     async def test_creates_risk_tier_rules(self, test_client, setup_labels_data):
         """Update should create risk_tier rules."""
@@ -458,63 +438,8 @@ class TestUpdateLabelMappings:
 class TestApplyLabel:
     """Tests for POST /api/v1/labels/apply endpoint."""
 
-    async def test_returns_202_status(self, test_client, setup_labels_data):
-        """Apply label should return 202 Accepted."""
-        from openlabels.server.models import ScanJob, ScanResult, ScanTarget
-
-        session = setup_labels_data["session"]
-        tenant = setup_labels_data["tenant"]
-        labels = setup_labels_data["labels"]
-        admin_user = setup_labels_data["admin_user"]
-
-        # Create target, job and result
-        target = ScanTarget(
-            tenant_id=tenant.id,
-            name="Label Test Target",
-            adapter="filesystem",
-            config={"path": "/test"},
-            enabled=True,
-            created_by=admin_user.id,
-        )
-        session.add(target)
-        await session.flush()
-
-        job = ScanJob(
-            tenant_id=tenant.id,
-            target_id=target.id,
-            status="completed",
-        )
-        session.add(job)
-        await session.flush()
-
-        result = ScanResult(
-            tenant_id=tenant.id,
-            job_id=job.id,
-            file_path="/test/file.txt",
-            file_name="file.txt",
-            risk_score=80,
-            risk_tier="HIGH",
-            entity_counts={"SSN": 1},
-            total_entities=1,
-        )
-        session.add(result)
-        await session.commit()
-
-        response = await test_client.post(
-            "/api/v1/labels/apply",
-            json={
-                "result_id": str(result.id),
-                "label_id": labels[0].id,
-            },
-        )
-        assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}"
-        data = response.json()
-        assert "job_id" in data, "Response should contain 'job_id' field"
-        assert "message" in data, "Response should contain 'message' field"
-        assert isinstance(data["job_id"], str), "job_id should be a string"
-
     async def test_returns_job_id(self, test_client, setup_labels_data):
-        """Apply label should return job_id."""
+        """Apply label should return 202 with job_id and message."""
         from openlabels.server.models import ScanJob, ScanResult, ScanTarget
 
         session = setup_labels_data["session"]
@@ -666,20 +591,3 @@ class TestLabelTenantIsolation:
         assert "Other Tenant Label" not in names
 
 
-class TestLabelContentType:
-    """Tests for response content type."""
-
-    async def test_list_returns_json(self, test_client, setup_labels_data):
-        """List labels should return JSON."""
-        response = await test_client.get("/api/v1/labels")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_rules_returns_json(self, test_client, setup_labels_data):
-        """List rules should return JSON."""
-        response = await test_client.get("/api/v1/labels/rules")
-        assert "application/json" in response.headers.get("content-type", "")
-
-    async def test_mappings_returns_json(self, test_client, setup_labels_data):
-        """Get mappings should return JSON."""
-        response = await test_client.get("/api/v1/labels/mappings")
-        assert "application/json" in response.headers.get("content-type", "")

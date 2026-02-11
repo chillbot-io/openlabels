@@ -409,7 +409,7 @@ class TestDeltaSync:
 
         cp = await get_checkpoint(test_db, tenant.id, target.id)
         assert cp is not None
-        assert cp.last_delta_sync is not None
+        assert isinstance(cp.last_delta_sync, datetime)
         assert cp.dirs_at_last_sync == 1
 
     async def test_combined_insert_update_delete(self, test_db, tenant_and_target):

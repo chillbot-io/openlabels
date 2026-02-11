@@ -361,7 +361,7 @@ class TestJobQueueFail:
         await queue.fail(uuid4(), "Permanent failure")
 
         assert mock_job.status == "failed"
-        assert mock_job.completed_at is not None
+        assert isinstance(mock_job.completed_at, datetime)
 
     async def test_fail_with_retry_false_moves_to_dead_letter(self, queue):
         """Fail with retry=False should move to dead letter immediately."""

@@ -94,27 +94,8 @@ class TestListSchedules:
 class TestCreateSchedule:
     """Tests for POST /api/schedules endpoint."""
 
-    async def test_returns_201_status(self, test_client, setup_schedules_data):
-        """Create schedule should return 201 Created."""
-        target = setup_schedules_data["target"]
-
-        response = await test_client.post(
-            "/api/schedules",
-            json={
-                "name": "New Schedule",
-                "target_id": str(target.id),
-            },
-        )
-        assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["name"] == "New Schedule", "Schedule name should match request"
-        assert data["target_id"] == str(target.id), "Target ID should match request"
-        assert "enabled" in data, "Response should contain 'enabled' field"
-        assert isinstance(data["enabled"], bool), "Enabled should be a boolean"
-
     async def test_returns_created_schedule(self, test_client, setup_schedules_data):
-        """Create schedule should return the created schedule."""
+        """Create schedule should return 201 with the created schedule details."""
         target = setup_schedules_data["target"]
 
         response = await test_client.post(
@@ -204,36 +185,8 @@ class TestCreateSchedule:
 class TestGetSchedule:
     """Tests for GET /api/schedules/{schedule_id} endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_schedules_data):
-        """Get schedule should return 200 OK."""
-        from openlabels.server.models import ScanSchedule
-
-        session = setup_schedules_data["session"]
-        tenant = setup_schedules_data["tenant"]
-        target = setup_schedules_data["target"]
-        admin_user = setup_schedules_data["admin_user"]
-
-        schedule = ScanSchedule(
-            tenant_id=tenant.id,
-            name="Get Test",
-            target_id=target.id,
-            created_by=admin_user.id,
-        )
-        session.add(schedule)
-        await session.commit()
-
-        response = await test_client.get(f"/api/schedules/{schedule.id}")
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["id"] == str(schedule.id), "Schedule ID should match requested ID"
-        assert data["name"] == "Get Test", "Schedule name should match"
-        assert data["target_id"] == str(target.id), "Target ID should match"
-        assert "enabled" in data, "Response should contain 'enabled' field"
-        assert "cron" in data, "Response should contain 'cron' field"
-
     async def test_returns_schedule_details(self, test_client, setup_schedules_data):
-        """Get schedule should return schedule details."""
+        """Get schedule should return 200 with all schedule details."""
         from openlabels.server.models import ScanSchedule
 
         session = setup_schedules_data["session"]
@@ -274,38 +227,8 @@ class TestGetSchedule:
 class TestUpdateSchedule:
     """Tests for PUT /api/schedules/{schedule_id} endpoint."""
 
-    async def test_returns_200_status(self, test_client, setup_schedules_data):
-        """Update schedule should return 200 OK."""
-        from openlabels.server.models import ScanSchedule
-
-        session = setup_schedules_data["session"]
-        tenant = setup_schedules_data["tenant"]
-        target = setup_schedules_data["target"]
-        admin_user = setup_schedules_data["admin_user"]
-
-        schedule = ScanSchedule(
-            tenant_id=tenant.id,
-            name="Update Test",
-            target_id=target.id,
-            created_by=admin_user.id,
-        )
-        session.add(schedule)
-        await session.commit()
-
-        response = await test_client.put(
-            f"/api/schedules/{schedule.id}",
-            json={"name": "Updated Name"},
-        )
-        assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}"
-        data = response.json()
-        assert "id" in data, "Response should contain 'id' field"
-        assert data["id"] == str(schedule.id), "Schedule ID should match"
-        assert data["name"] == "Updated Name", "Schedule name should be updated"
-        assert "target_id" in data, "Response should contain 'target_id' field"
-        assert "enabled" in data, "Response should contain 'enabled' field"
-
     async def test_updates_name(self, test_client, setup_schedules_data):
-        """Update should change schedule name."""
+        """Update should return 200 and change schedule name."""
         from openlabels.server.models import ScanSchedule
 
         session = setup_schedules_data["session"]
@@ -514,34 +437,8 @@ class TestDeleteSchedule:
 class TestTriggerSchedule:
     """Tests for POST /api/schedules/{schedule_id}/run endpoint."""
 
-    async def test_returns_202_status(self, test_client, setup_schedules_data):
-        """Trigger schedule should return 202 Accepted."""
-        from openlabels.server.models import ScanSchedule
-
-        session = setup_schedules_data["session"]
-        tenant = setup_schedules_data["tenant"]
-        target = setup_schedules_data["target"]
-        admin_user = setup_schedules_data["admin_user"]
-
-        schedule = ScanSchedule(
-            tenant_id=tenant.id,
-            name="Trigger Test",
-            target_id=target.id,
-            created_by=admin_user.id,
-        )
-        session.add(schedule)
-        await session.commit()
-
-        response = await test_client.post(f"/api/schedules/{schedule.id}/run")
-        assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}"
-        data = response.json()
-        assert "message" in data, "Response should contain 'message' field"
-        assert "schedule_id" in data, "Response should contain 'schedule_id' field"
-        assert "job_id" in data, "Response should contain 'job_id' field"
-        assert data["schedule_id"] == str(schedule.id), "Schedule ID should match request"
-
     async def test_returns_job_info(self, test_client, setup_schedules_data):
-        """Trigger should return job info."""
+        """Trigger should return 202 with job info including schedule_id and job_id."""
         from openlabels.server.models import ScanSchedule
 
         session = setup_schedules_data["session"]
