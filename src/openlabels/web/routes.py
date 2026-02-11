@@ -84,7 +84,6 @@ _DEFAULT_STATS = {
 # Page routes
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Redirect to dashboard."""
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -101,7 +100,6 @@ async def home(request: Request):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Dashboard page."""
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -118,7 +116,6 @@ async def dashboard(request: Request):
 
 @router.get("/targets", response_class=HTMLResponse)
 async def targets_page(request: Request):
-    """Targets management page."""
     return templates.TemplateResponse(
         "targets.html",
         {"request": request, "active_page": "targets"},
@@ -127,7 +124,6 @@ async def targets_page(request: Request):
 
 @router.get("/targets/new", response_class=HTMLResponse)
 async def new_target_page(request: Request):
-    """New target form page."""
     return templates.TemplateResponse(
         "targets_form.html",
         {"request": request, "active_page": "targets", "target": None, "mode": "create"},
@@ -136,7 +132,6 @@ async def new_target_page(request: Request):
 
 @router.get("/scans", response_class=HTMLResponse)
 async def scans_page(request: Request):
-    """Scans page."""
     return templates.TemplateResponse(
         "scans.html",
         {"request": request, "active_page": "scans"},
@@ -145,7 +140,6 @@ async def scans_page(request: Request):
 
 @router.get("/scans/new", response_class=HTMLResponse)
 async def new_scan_page(request: Request):
-    """New scan form page."""
     return templates.TemplateResponse(
         "scans_form.html",
         {"request": request, "active_page": "scans"},
@@ -166,7 +160,6 @@ async def results_page(
 
 @router.get("/labels", response_class=HTMLResponse)
 async def labels_page(request: Request):
-    """Labels management page."""
     return templates.TemplateResponse(
         "labels.html",
         {"request": request, "active_page": "labels"},
@@ -175,7 +168,6 @@ async def labels_page(request: Request):
 
 @router.get("/labels/sync", response_class=HTMLResponse)
 async def labels_sync_page(request: Request):
-    """Labels sync page."""
     return templates.TemplateResponse(
         "labels_sync.html",
         {"request": request, "active_page": "labels"},
@@ -184,7 +176,6 @@ async def labels_sync_page(request: Request):
 
 @router.get("/monitoring", response_class=HTMLResponse)
 async def monitoring_page(request: Request):
-    """Monitoring page."""
     return templates.TemplateResponse(
         "monitoring.html",
         {
@@ -275,7 +266,6 @@ async def settings_page(
 
 @router.get("/schedules", response_class=HTMLResponse)
 async def schedules_page(request: Request):
-    """Schedules page."""
     return templates.TemplateResponse(
         "schedules.html",
         {"request": request, "active_page": "schedules"},
@@ -486,7 +476,6 @@ async def result_detail_page(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """Login page."""
     return templates.TemplateResponse(
         "login.html",
         {"request": request},

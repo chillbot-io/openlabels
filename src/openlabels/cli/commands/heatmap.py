@@ -11,6 +11,8 @@ from pathlib import Path
 
 import click
 
+from openlabels.cli.utils import collect_files
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,15 +33,7 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
     """
     target_path = Path(path).resolve()
 
-    # Collect files
-    if target_path.is_dir():
-        if recursive:
-            files = list(target_path.rglob("*"))
-        else:
-            files = list(target_path.glob("*"))
-        files = [f for f in files if f.is_file()]
-    else:
-        files = [target_path]
+    files = collect_files(target_path, recursive)
 
     if not files:
         click.echo("No files found", err=True)
