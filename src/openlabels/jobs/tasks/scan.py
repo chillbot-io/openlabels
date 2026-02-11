@@ -455,7 +455,7 @@ async def execute_scan_task(
                     logger.debug("WebSocket progress failed: %s", ws_err)
 
         # Determine pipeline configuration
-        pipeline_config = _build_pipeline_config(settings, job.tenant_id, session)
+        pipeline_config = await _build_pipeline_config(settings, job.tenant_id, session)
 
         # Run the pipeline
         pipeline = FilePipeline(
@@ -1049,8 +1049,14 @@ async def _cloud_label_sync_back(
     return sync_stats
 
 
-def _build_pipeline_config(settings, tenant_id=None, session=None) -> PipelineConfig:
-    """Build pipeline config from settings, with optional tenant overrides."""
+async def _build_pipeline_config(settings, tenant_id=None, session=None) -> PipelineConfig:
+    """Build pipeline config from settings, with optional tenant overrides.
+
+    If *tenant_id* and *session* are provided, per-tenant overrides from
+    ``TenantSettings.pipeline_max_concurrent_files`` and
+    ``TenantSettings.pipeline_memory_budget_mb`` take precedence over the
+    global configuration.
+    """
     jobs = getattr(settings, "jobs", None)
 
     max_concurrent = getattr(jobs, "pipeline_max_concurrent_files", 8) if jobs else 8
@@ -1062,6 +1068,29 @@ def _build_pipeline_config(settings, tenant_id=None, session=None) -> PipelineCo
         max_concurrent = 8
     if not isinstance(memory_budget, int):
         memory_budget = 512
+
+    # Per-tenant overrides from TenantSettings
+    if tenant_id is not None and session is not None:
+        try:
+            from sqlalchemy import select as sa_select
+
+            from openlabels.server.models import TenantSettings
+
+            result = await session.execute(
+                sa_select(TenantSettings).where(
+                    TenantSettings.tenant_id == tenant_id
+                )
+            )
+            tenant_settings = result.scalar_one_or_none()
+            if tenant_settings is not None:
+                ts_concurrent = getattr(tenant_settings, "pipeline_max_concurrent_files", None)
+                if isinstance(ts_concurrent, int) and ts_concurrent > 0:
+                    max_concurrent = ts_concurrent
+                ts_memory = getattr(tenant_settings, "pipeline_memory_budget_mb", None)
+                if isinstance(ts_memory, int) and ts_memory > 0:
+                    memory_budget = ts_memory
+        except Exception:
+            logger.debug("Could not load tenant pipeline overrides for %s", tenant_id)
 
     config = PipelineConfig(
         max_concurrent_files=max_concurrent,

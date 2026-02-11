@@ -47,9 +47,37 @@ class PostgresDashboardService:
     # -- protocol methods --------------------------------------------------
 
     async def get_file_stats(self, tenant_id: UUID) -> FileStats:
+        session = await self._get_session()
+
+        # Try pre-aggregated scan_summaries first (O(jobs) rows vs O(files))
+        try:
+            from openlabels.server.models import ScanSummary
+
+            q = select(
+                func.coalesce(func.sum(ScanSummary.files_scanned), 0).label("total_files"),
+                func.coalesce(func.sum(ScanSummary.files_with_pii), 0).label("files_with_pii"),
+                func.coalesce(func.sum(ScanSummary.files_labeled), 0).label("labels_applied"),
+                func.coalesce(func.sum(ScanSummary.critical_count), 0).label("critical_files"),
+                func.coalesce(func.sum(ScanSummary.high_count), 0).label("high_files"),
+            ).where(ScanSummary.tenant_id == tenant_id)
+
+            result = await session.execute(q)
+            row = result.one()
+            total = row.total_files or 0
+            if total > 0:
+                return FileStats(
+                    total_files=total,
+                    files_with_pii=row.files_with_pii or 0,
+                    labels_applied=row.labels_applied or 0,
+                    critical_files=row.critical_files or 0,
+                    high_files=row.high_files or 0,
+                )
+        except Exception:
+            logger.debug("scan_summaries query failed, falling back to scan_results", exc_info=True)
+
+        # Fallback: aggregate from scan_results directly
         from openlabels.server.models import ScanResult
 
-        session = await self._get_session()
         q = select(
             func.count().label("total_files"),
             func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),

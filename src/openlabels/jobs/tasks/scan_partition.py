@@ -262,7 +262,7 @@ async def execute_scan_partition_task(
                     pass
 
         # Build pipeline config and run
-        pipeline_config = _build_pipeline_config(settings)
+        pipeline_config = await _build_pipeline_config(settings, job.tenant_id, session)
         pipeline = FilePipeline(
             config=pipeline_config,
             process_fn=_process_one_file,
