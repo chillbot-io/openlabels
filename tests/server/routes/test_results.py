@@ -281,6 +281,77 @@ class TestListResults:
         assert data["total"] >= 2
 
 
+class TestListResultsCursor:
+    """Tests for GET /api/v1/results/cursor endpoint."""
+
+    async def test_returns_cursor_paginated_structure(self, test_client, setup_results_data):
+        """Cursor list should return cursor-based pagination structure."""
+        response = await test_client.get("/api/v1/results/cursor")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "items" in data
+
+    async def test_returns_results_via_cursor(self, test_client, setup_results_data):
+        """Should return scan results using cursor pagination."""
+        from openlabels.server.models import ScanResult
+
+        session = setup_results_data["session"]
+        tenant = setup_results_data["tenant"]
+        job = setup_results_data["job"]
+
+        for i in range(3):
+            result = ScanResult(
+                tenant_id=tenant.id,
+                job_id=job.id,
+                file_path=f"/cursor/file_{i}.txt",
+                file_name=f"file_{i}.txt",
+                risk_score=50 + i * 10,
+                risk_tier="MEDIUM",
+                entity_counts={},
+                total_entities=0,
+            )
+            session.add(result)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/results/cursor")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data["items"]) == 3
+
+    async def test_filter_by_risk_tier(self, test_client, setup_results_data):
+        """Cursor list should filter by risk_tier."""
+        from openlabels.server.models import ScanResult
+
+        session = setup_results_data["session"]
+        tenant = setup_results_data["tenant"]
+        job = setup_results_data["job"]
+
+        for tier in ["HIGH", "HIGH", "MEDIUM"]:
+            result = ScanResult(
+                tenant_id=tenant.id,
+                job_id=job.id,
+                file_path=f"/cursor/{tier}.txt",
+                file_name=f"{tier}.txt",
+                risk_score=70 if tier == "HIGH" else 50,
+                risk_tier=tier,
+                entity_counts={},
+                total_entities=0,
+            )
+            session.add(result)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/results/cursor?risk_tier=HIGH")
+        assert response.status_code == 200
+        data = response.json()
+
+        for item in data["items"]:
+            assert item["risk_tier"] == "HIGH"
+
+
 class TestGetResultStats:
     """Tests for GET /api/v1/results/stats endpoint."""
 

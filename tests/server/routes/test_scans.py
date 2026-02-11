@@ -250,3 +250,64 @@ class TestCancelScan:
         assert response.status_code == 404
 
 
+class TestCancelScanPost:
+    """Tests for POST /api/v1/scans/{scan_id}/cancel endpoint."""
+
+    async def test_cancels_pending_scan(self, test_client, setup_scans_data):
+        """Should cancel a pending scan via POST."""
+        pending_scans = [s for s in setup_scans_data["scans"] if s.status == "pending"]
+        if pending_scans:
+            scan = pending_scans[0]
+            response = await test_client.post(f"/api/v1/scans/{scan.id}/cancel")
+            assert response.status_code == 200
+
+    async def test_htmx_cancel_returns_trigger(self, test_client, setup_scans_data):
+        """HTMX cancel should return HX-Trigger header."""
+        running_scan = setup_scans_data["running_scan"]
+        response = await test_client.post(
+            f"/api/v1/scans/{running_scan.id}/cancel",
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+        assert "hx-trigger" in response.headers
+
+    async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
+        """Should return 404 for non-existent scan."""
+        fake_id = uuid4()
+        response = await test_client.post(f"/api/v1/scans/{fake_id}/cancel")
+        assert response.status_code == 404
+
+
+class TestRetryScan:
+    """Tests for POST /api/v1/scans/{scan_id}/retry endpoint."""
+
+    async def test_retries_failed_scan(self, test_client, setup_scans_data):
+        """Should create a new scan job from a failed scan."""
+        failed_scans = [s for s in setup_scans_data["scans"] if s.status == "failed"]
+        if failed_scans:
+            scan = failed_scans[0]
+            response = await test_client.post(f"/api/v1/scans/{scan.id}/retry")
+            assert response.status_code == 200
+            data = response.json()
+            assert "new_job_id" in data
+            assert "message" in data
+
+    async def test_htmx_retry_returns_trigger(self, test_client, setup_scans_data):
+        """HTMX retry should return HX-Trigger header."""
+        failed_scans = [s for s in setup_scans_data["scans"] if s.status == "failed"]
+        if failed_scans:
+            scan = failed_scans[0]
+            response = await test_client.post(
+                f"/api/v1/scans/{scan.id}/retry",
+                headers={"HX-Request": "true"},
+            )
+            assert response.status_code == 200
+            assert "hx-trigger" in response.headers
+
+    async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
+        """Should return 404 for non-existent scan."""
+        fake_id = uuid4()
+        response = await test_client.post(f"/api/v1/scans/{fake_id}/retry")
+        assert response.status_code == 404
+
+
