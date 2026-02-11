@@ -96,7 +96,9 @@ class TestAzureBlobAdapterListFiles:
             files.append(fi)
 
         assert len(files) == 1
-        mock_container.walk_blobs.assert_called_once()
+        assert files[0].name == "file.txt"
+        assert files[0].adapter == "azure_blob"
+        mock_container.walk_blobs.assert_called_once_with(name_starts_with="", delimiter="/")
 
     @pytest.mark.asyncio
     async def test_list_files_skips_blob_prefix_objects(self):
@@ -249,7 +251,15 @@ class TestAzureBlobApplyLabelAndSync:
 
         assert result["success"] is True
         assert result["method"] == "azure_metadata"
-        assert mock_blob_client.set_blob_metadata.called
+
+        # Verify set_blob_metadata was called with correct merged metadata
+        mock_blob_client.set_blob_metadata.assert_called_once()
+        call_kwargs = mock_blob_client.set_blob_metadata.call_args[1]
+        metadata = call_kwargs["metadata"]
+        assert metadata["openlabels_label_id"] == "label-uuid"
+        assert metadata["openlabels_label_name"] == "Confidential"
+        # Existing metadata should be preserved
+        assert metadata["existing-key"] == "existing-val"
 
     @pytest.mark.asyncio
     async def test_apply_label_etag_mismatch(self):
@@ -404,21 +414,35 @@ class TestAzureBlobHelpers:
 
 
 class TestAzureBlobBuildClient:
-    def test_build_client_requires_azure_sdk(self):
+    def test_ensure_container_client_lazy_creates_client(self):
+        """_ensure_container_client should build the client on first call."""
         from openlabels.adapters.azure_blob import AzureBlobAdapter
 
         adapter = AzureBlobAdapter(
             storage_account="acct", container="c"
         )
-        # Verify the method exists
-        assert hasattr(adapter, "_build_client")
 
-    def test_ensure_container_client_lazy_init(self):
+        mock_service_client = MagicMock()
+        mock_container = MagicMock()
+        mock_service_client.get_container_client.return_value = mock_container
+
+        with patch.object(adapter, "_build_client", return_value=mock_service_client):
+            result = adapter._ensure_container_client()
+
+        assert result is mock_container
+        assert adapter._client is mock_service_client
+        mock_service_client.get_container_client.assert_called_once_with("c")
+
+    def test_ensure_container_client_reuses_existing(self):
+        """_ensure_container_client should return cached client on subsequent calls."""
         from openlabels.adapters.azure_blob import AzureBlobAdapter
 
         adapter = AzureBlobAdapter(
             storage_account="acct", container="c"
         )
-        # Both should be None before connection
-        assert adapter._client is None
-        assert adapter._container_client is None
+
+        mock_container = MagicMock()
+        adapter._container_client = mock_container
+
+        result = adapter._ensure_container_client()
+        assert result is mock_container

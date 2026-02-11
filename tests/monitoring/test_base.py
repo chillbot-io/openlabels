@@ -105,20 +105,31 @@ class TestAccessEvent:
 
     def test_to_dict(self):
         """to_dict produces correct dictionary."""
+        ts = datetime(2026, 1, 15, 10, 30, 0)
         event = AccessEvent(
             path=Path("/test/file.txt"),
-            timestamp=datetime(2026, 1, 15, 10, 30, 0),
+            timestamp=ts,
             action=AccessAction.READ,
             user_name="jsmith",
             process_name="notepad.exe",
+            user_sid="S-1-5-21-123",
+            user_domain="CORP",
+            process_id=1234,
+            event_id=4663,
+            success=True,
         )
         d = event.to_dict()
 
         assert d["path"] == "/test/file.txt"
+        assert d["timestamp"] == ts.isoformat()
         assert d["action"] == "read"
         assert d["user_name"] == "jsmith"
+        assert d["user_sid"] == "S-1-5-21-123"
+        assert d["user_domain"] == "CORP"
         assert d["process_name"] == "notepad.exe"
-        assert "timestamp" in d
+        assert d["process_id"] == 1234
+        assert d["event_id"] == 4663
+        assert d["success"] is True
 
 
 class TestWatchedFile:
@@ -134,13 +145,14 @@ class TestWatchedFile:
         assert wf.risk_tier == "HIGH"
 
     def test_added_at_auto_generated(self):
-        """added_at is automatically set."""
+        """added_at is automatically set to approximately now."""
+        before = datetime.now()
         wf = WatchedFile(
             path=Path("/test/file.txt"),
             risk_tier="HIGH",
         )
-        assert wf.added_at is not None
-        assert isinstance(wf.added_at, datetime)
+        after = datetime.now()
+        assert before <= wf.added_at <= after
 
     def test_monitoring_status_defaults(self):
         """Monitoring status fields default to False/None."""
@@ -154,18 +166,38 @@ class TestWatchedFile:
         assert wf.access_count == 0
 
     def test_to_dict(self):
-        """to_dict produces correct dictionary."""
+        """to_dict produces correct dictionary with all fields."""
+        added = datetime(2026, 1, 15, 10, 0, 0)
+        last_event = datetime(2026, 1, 15, 12, 0, 0)
         wf = WatchedFile(
             path=Path("/test/file.txt"),
             risk_tier="CRITICAL",
+            added_at=added,
+            sacl_enabled=True,
+            audit_rule_enabled=False,
+            last_event_at=last_event,
+            access_count=42,
             label_id="ol_abc123def456",
         )
         d = wf.to_dict()
 
         assert d["path"] == "/test/file.txt"
         assert d["risk_tier"] == "CRITICAL"
+        assert d["added_at"] == added.isoformat()
+        assert d["sacl_enabled"] is True
+        assert d["audit_rule_enabled"] is False
+        assert d["last_event_at"] == last_event.isoformat()
+        assert d["access_count"] == 42
         assert d["label_id"] == "ol_abc123def456"
-        assert "added_at" in d
+
+    def test_to_dict_last_event_at_none(self):
+        """to_dict handles None last_event_at correctly."""
+        wf = WatchedFile(
+            path=Path("/test/file.txt"),
+            risk_tier="HIGH",
+        )
+        d = wf.to_dict()
+        assert d["last_event_at"] is None
 
 
 class TestMonitoringResult:
@@ -201,17 +233,23 @@ class TestMonitoringResult:
         assert result.sacl_enabled is True
 
     def test_to_dict(self):
-        """to_dict produces correct dictionary."""
+        """to_dict produces correct dictionary with all fields."""
         result = MonitoringResult(
             success=True,
             path=Path("/test/file.txt"),
+            message="SACL audit rule added",
+            error=None,
             sacl_enabled=True,
+            audit_rule_enabled=False,
         )
         d = result.to_dict()
 
         assert d["success"] is True
         assert d["path"] == "/test/file.txt"
+        assert d["message"] == "SACL audit rule added"
+        assert d["error"] is None
         assert d["sacl_enabled"] is True
+        assert d["audit_rule_enabled"] is False
 
 
 class TestMonitoringErrors:

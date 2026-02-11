@@ -34,8 +34,8 @@ class TestRemoteStorageConfig:
         assert result == [{"answer": 42}]
         engine.close()
 
-    def test_s3_config_detected(self, tmp_path: Path):
-        """S3 backend should attempt to install httpfs extension."""
+    def test_s3_config_calls_httpfs(self, tmp_path: Path):
+        """S3 backend should attempt to install and load httpfs extension."""
         config = MagicMock()
         config.backend = "s3"
         config.s3.region = "us-west-2"
@@ -43,41 +43,51 @@ class TestRemoteStorageConfig:
         config.s3.secret_key = "SECRET"
         config.s3.endpoint_url = None
 
-        # This may raise if httpfs isn't available in test env,
-        # but the config path should still be attempted
-        try:
-            engine = DuckDBEngine(
-                str(tmp_path),
-                memory_limit="256MB",
-                threads=1,
-                storage_config=config,
-            )
-            engine.close()
-        except duckdb.IOException:
-            # Extension not available in test env — that's OK
-            pass
-        except duckdb.HTTPException:
-            pass
+        with patch.object(duckdb.DuckDBPyConnection, "execute", wraps=None) as mock_exec:
+            # Allow real connection creation but track execute calls
+            try:
+                engine = DuckDBEngine(
+                    str(tmp_path),
+                    memory_limit="256MB",
+                    threads=1,
+                    storage_config=config,
+                )
+                engine.close()
+            except (duckdb.IOException, duckdb.HTTPException, duckdb.CatalogException):
+                # Extension may not be available in test env -- verify SQL was attempted
+                pass
 
-    def test_azure_config_detected(self, tmp_path: Path):
-        """Azure backend should attempt to install azure extension."""
+        # Verify that httpfs installation and S3 config were attempted
+        executed_sql = [str(call) for call in mock_exec.call_args_list]
+        sql_text = " ".join(executed_sql)
+        assert "httpfs" in sql_text, "Should attempt to install/load httpfs for S3 backend"
+        assert "s3_region" in sql_text, "Should configure s3_region"
+        assert "s3_access_key_id" in sql_text, "Should configure s3_access_key_id"
+
+    def test_azure_config_calls_azure_extension(self, tmp_path: Path):
+        """Azure backend should attempt to install and load azure extension."""
         config = MagicMock()
         config.backend = "azure"
         config.azure.connection_string = "DefaultEndpointsProtocol=https;AccountName=test"
         config.azure.account_name = None
         config.azure.account_key = None
 
-        try:
-            engine = DuckDBEngine(
-                str(tmp_path),
-                memory_limit="256MB",
-                threads=1,
-                storage_config=config,
-            )
-            engine.close()
-        except (duckdb.IOException, duckdb.HTTPException, duckdb.CatalogException):
-            # Extension not available in test env — that's OK
-            pass
+        with patch.object(duckdb.DuckDBPyConnection, "execute", wraps=None) as mock_exec:
+            try:
+                engine = DuckDBEngine(
+                    str(tmp_path),
+                    memory_limit="256MB",
+                    threads=1,
+                    storage_config=config,
+                )
+                engine.close()
+            except (duckdb.IOException, duckdb.HTTPException, duckdb.CatalogException):
+                pass
+
+        executed_sql = [str(call) for call in mock_exec.call_args_list]
+        sql_text = " ".join(executed_sql)
+        assert "azure" in sql_text.lower(), "Should attempt to install/load azure extension"
+        assert "azure_storage_connection_string" in sql_text, "Should configure azure connection string"
 
     def test_local_config_skips_extensions(self, tmp_path: Path):
         """Local backend config should skip extension loading."""

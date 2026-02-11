@@ -482,6 +482,7 @@ class TestFinancialDetectorDetection:
 
         sedol_spans = [s for s in spans if s.entity_type == "SEDOL"]
         assert len(sedol_spans) >= 1
+        assert any(s.text == "0263494" for s in sedol_spans)
 
     def test_detect_swift_labeled(self, detector):
         """Test SWIFT/BIC detection with label."""
@@ -490,6 +491,7 @@ class TestFinancialDetectorDetection:
 
         swift_spans = [s for s in spans if s.entity_type == "SWIFT_BIC"]
         assert len(swift_spans) >= 1
+        assert any(s.text == "CHASUS33XXX" for s in swift_spans)
 
     def test_detect_figi_labeled(self, detector):
         """Test FIGI detection with label."""
@@ -498,6 +500,7 @@ class TestFinancialDetectorDetection:
 
         figi_spans = [s for s in spans if s.entity_type == "FIGI"]
         assert len(figi_spans) >= 1
+        assert any(s.text == "BBG000B9XRY4" for s in figi_spans)
 
     def test_detect_figi_bbg_prefix(self, detector):
         """Test FIGI detection with BBG prefix."""
@@ -506,6 +509,7 @@ class TestFinancialDetectorDetection:
 
         figi_spans = [s for s in spans if s.entity_type == "FIGI"]
         assert len(figi_spans) >= 1
+        assert any(s.text == "BBG000B9XRY4" for s in figi_spans)
 
     def test_detect_lei_labeled(self, detector):
         """Test LEI detection with label."""
@@ -514,6 +518,7 @@ class TestFinancialDetectorDetection:
 
         lei_spans = [s for s in spans if s.entity_type == "LEI"]
         assert len(lei_spans) >= 1
+        assert any(s.text == "7ZW8QJWVPR4P1J1KQY45" for s in lei_spans)
 
     def test_detect_bitcoin_legacy_address(self, detector):
         """Test Bitcoin legacy address detection."""
@@ -522,6 +527,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2" for s in btc_spans)
 
     def test_detect_bitcoin_p2sh_address(self, detector):
         """Test Bitcoin P2SH address detection."""
@@ -530,6 +536,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy" for s in btc_spans)
 
     def test_detect_bitcoin_bech32_address(self, detector):
         """Test Bitcoin SegWit Bech32 address detection."""
@@ -538,6 +545,7 @@ class TestFinancialDetectorDetection:
 
         btc_spans = [s for s in spans if s.entity_type == "BITCOIN_ADDRESS"]
         assert len(btc_spans) >= 1
+        assert any(s.text == "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" for s in btc_spans)
 
     def test_detect_ethereum_address(self, detector):
         """Test Ethereum address detection."""
@@ -546,6 +554,7 @@ class TestFinancialDetectorDetection:
 
         eth_spans = [s for s in spans if s.entity_type == "ETHEREUM_ADDRESS"]
         assert len(eth_spans) >= 1
+        assert any(s.text == "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae" for s in eth_spans)
 
     def test_detect_cardano_address(self, detector):
         """Test Cardano address detection."""

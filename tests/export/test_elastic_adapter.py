@@ -1,5 +1,6 @@
 """Tests for ElasticSearch SIEM adapter."""
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,7 +38,7 @@ class TestElasticAdapterInit:
     def test_api_key_auth(self):
         adapter = ElasticAdapter(hosts=["https://es:9200"], api_key="my-key")
         client = adapter._make_client()
-        assert client is not None
+        assert client.headers["Authorization"] == "ApiKey my-key"
 
 
 class TestBuildBulkBody:
@@ -50,11 +51,24 @@ class TestBuildBulkBody:
         # Each record produces 2 lines: index action + document
         assert len(lines) == 4
 
+        # Verify first pair: action line has correct index name
+        action_0 = json.loads(lines[0])
+        assert action_0 == {"index": {"_index": "openlabels-scan_result-2025.06.15"}}
+        # Verify document line has ECS fields
+        doc_0 = json.loads(lines[1])
+        assert doc_0["@timestamp"] == "2025-06-15T12:00:00+00:00"
+        assert doc_0["event"]["risk_score"] == 85
+        assert doc_0["file"]["path"] == "/data/secret.txt"
+
+        # Verify second pair has CRITICAL severity
+        doc_1 = json.loads(lines[3])
+        assert doc_1["event"]["severity_name"] == "CRITICAL"
+
     def test_index_name_contains_prefix(self):
         adapter = ElasticAdapter(hosts=["https://es:9200"], index_prefix="myindex")
         record = _make_record()
         idx = adapter._index_name(record)
-        assert idx.startswith("myindex-")
+        assert idx == "myindex-scan_result-2025.06.15"
 
 
 class TestExportBatch:
@@ -77,6 +91,15 @@ class TestExportBatch:
             sent = await adapter.export_batch(records)
 
         assert sent == 3
+        # Verify the POST was made to the correct bulk endpoint with correct content type
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://es:9200/_bulk"
+        assert call_args[1]["headers"] == {"Content-Type": "application/x-ndjson"}
+        # Verify the body is valid NDJSON with 3 record pairs (6 lines)
+        body = call_args[1]["content"]
+        lines = body.strip().split("\n")
+        assert len(lines) == 6
 
     @pytest.mark.asyncio
     async def test_export_batch_empty(self):

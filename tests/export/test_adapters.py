@@ -68,10 +68,16 @@ class TestExportRecord:
         assert d["user"] == "jdoe"
 
     def test_to_dict_serializable(self, sample_record: ExportRecord):
-        """to_dict() output must be JSON-serializable."""
+        """to_dict() output must be JSON-serializable and round-trip correctly."""
         d = sample_record.to_dict()
         serialized = json.dumps(d)
-        assert len(serialized) > 0
+        deserialized = json.loads(serialized)
+        assert deserialized["record_type"] == "scan_result"
+        assert deserialized["file_path"] == "/data/reports/q4-financials.xlsx"
+        assert deserialized["risk_score"] == 85
+        assert deserialized["entity_types"] == ["SSN", "CREDIT_CARD"]
+        assert deserialized["tenant_id"] == "12345678-1234-1234-1234-123456789abc"
+        assert deserialized["timestamp"] == "2026-02-08T12:00:00+00:00"
 
     def test_defaults(self):
         r = ExportRecord(
@@ -111,7 +117,8 @@ class TestSplunkAdapter:
         assert event["source"] == "openlabels:scan_result"
         assert event["event"]["file_path"] == "/data/reports/q4-financials.xlsx"
         assert event["event"]["risk_score"] == 85
-        assert isinstance(event["time"], float)
+        # 2026-02-08T12:00:00 UTC as Unix epoch
+        assert event["time"] == datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc).timestamp()
 
     @pytest.mark.asyncio
     async def test_export_batch_success(self, sample_batch: list[ExportRecord]):
@@ -165,13 +172,23 @@ class TestSentinelAdapter:
     def test_build_signature(self):
         from openlabels.export.adapters.sentinel import SentinelAdapter
         import base64
+        import hashlib
+        import hmac
 
         # Use a known key
-        key = base64.b64encode(b"test-key-1234567890123456").decode()
+        raw_key = b"test-key-1234567890123456"
+        key = base64.b64encode(raw_key).decode()
         adapter = SentinelAdapter(workspace_id="ws-test", shared_key=key)
-        sig = adapter._build_signature("Mon, 08 Feb 2026 12:00:00 GMT", 100)
+        date_str = "Mon, 08 Feb 2026 12:00:00 GMT"
+        sig = adapter._build_signature(date_str, 100)
         assert sig.startswith("SharedKey ws-test:")
-        assert len(sig) > 30
+
+        # Verify the HMAC value matches what we compute independently
+        string_to_sign = f"POST\n100\napplication/json\nx-ms-date:{date_str}\n/api/logs"
+        expected_hash = base64.b64encode(
+            hmac.new(raw_key, string_to_sign.encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+        assert sig == f"SharedKey ws-test:{expected_hash}"
 
 
 # ── QRadar Adapter ───────────────────────────────────────────────────
