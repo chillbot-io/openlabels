@@ -47,12 +47,22 @@ class PostgresDashboardService:
     # -- protocol methods --------------------------------------------------
 
     async def get_file_stats(self, tenant_id: UUID) -> FileStats:
-        from openlabels.server.models import ScanResult
+        from openlabels.server.models import ScanJob, ScanResult
 
         session = await self._get_session()
+
+        # ScanResult now only contains sensitive files (total_entities > 0),
+        # so count(ScanResult) == files_with_pii.  For total_files we
+        # aggregate from ScanJob.files_scanned which tracks every file
+        # processed regardless of sensitivity.
+        total_q = select(
+            func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files"),
+        ).where(ScanJob.tenant_id == tenant_id)
+        total_result = await session.execute(total_q)
+        total_files = total_result.scalar() or 0
+
         q = select(
-            func.count().label("total_files"),
-            func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+            func.count().label("files_with_pii"),
             func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
             func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
             func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label("high_files"),
@@ -61,7 +71,7 @@ class PostgresDashboardService:
         result = await session.execute(q)
         row = result.one()
         return FileStats(
-            total_files=row.total_files or 0,
+            total_files=total_files,
             files_with_pii=row.files_with_pii or 0,
             labels_applied=row.labels_applied or 0,
             critical_files=row.critical_files or 0,
@@ -71,16 +81,37 @@ class PostgresDashboardService:
     async def get_trends(
         self, tenant_id: UUID, start_date: datetime, end_date: datetime,
     ) -> list[TrendPoint]:
-        from openlabels.server.models import ScanResult
+        from openlabels.server.models import ScanJob, ScanResult
 
         session = await self._get_session()
-        scan_date = cast(ScanResult.scanned_at, Date)
 
+        # ScanResult only contains sensitive files now.  For the
+        # ``files_scanned`` trend we aggregate from ScanJob which
+        # stores the total count of files processed per job.
+        job_date = cast(ScanJob.completed_at, Date)
+        job_q = (
+            select(
+                job_date.label("scan_date"),
+                func.sum(ScanJob.files_scanned).label("files_scanned"),
+            )
+            .where(and_(
+                ScanJob.tenant_id == tenant_id,
+                ScanJob.completed_at >= start_date,
+                ScanJob.completed_at.isnot(None),
+            ))
+            .group_by(job_date)
+        )
+        job_result = await session.execute(job_q)
+        scanned_by_date = {
+            row.scan_date.strftime("%Y-%m-%d"): row.files_scanned or 0
+            for row in job_result.all()
+        }
+
+        scan_date = cast(ScanResult.scanned_at, Date)
         q = (
             select(
                 scan_date.label("scan_date"),
-                func.count().label("files_scanned"),
-                func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label("files_with_pii"),
+                func.count().label("files_with_pii"),
                 func.sum(case((ScanResult.label_applied == True, 1), else_=0)).label("labels_applied"),  # noqa: E712
             )
             .where(and_(
@@ -95,7 +126,7 @@ class PostgresDashboardService:
         return [
             TrendPoint(
                 date=row.scan_date.strftime("%Y-%m-%d"),
-                files_scanned=row.files_scanned or 0,
+                files_scanned=scanned_by_date.get(row.scan_date.strftime("%Y-%m-%d"), 0),
                 files_with_pii=row.files_with_pii or 0,
                 labels_applied=row.labels_applied or 0,
             )
@@ -356,6 +387,8 @@ class PostgresDashboardService:
 
         session = await self._get_session()
 
+        # ScanResult now only holds sensitive files — compliance is
+        # measured against files that actually contain entities.
         total_q = select(func.count()).select_from(
             select(ScanResult).where(ScanResult.tenant_id == tenant_id).subquery()
         )

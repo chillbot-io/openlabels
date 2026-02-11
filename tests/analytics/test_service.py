@@ -41,7 +41,7 @@ class TestAnalyticsService:
         analytics.refresh_views()
 
         rows = await analytics.query("SELECT count(*) AS cnt FROM scan_results")
-        assert rows[0]["cnt"] == 3
+        assert rows[0]["cnt"] == 2  # sensitive files only
 
     async def test_query_arrow(
         self, storage: LocalStorage, analytics: AnalyticsService,
@@ -50,7 +50,7 @@ class TestAnalyticsService:
         analytics.refresh_views()
 
         table = await analytics.query_arrow("SELECT * FROM scan_results")
-        assert table.num_rows == 3
+        assert table.num_rows == 2  # sensitive files only
 
 
 # ── DuckDBDashboardService ──────────────────────────────────────────
@@ -74,8 +74,9 @@ class TestDuckDBDashboardService:
         analytics.refresh_views()
 
         stats = await dashboard_service.get_file_stats(TENANT_A)
-        assert stats.total_files == 3
-        assert stats.files_with_pii == 2  # report.pdf + payroll.xlsx
+        # total_files is 0 from DuckDB — callers overlay from ScanJob
+        assert stats.total_files == 0
+        assert stats.files_with_pii == 2  # report.pdf + payroll.xlsx (sensitive only)
         assert stats.labels_applied == 1  # report.pdf
         assert stats.critical_files == 1
         assert stats.high_files == 1
@@ -95,8 +96,9 @@ class TestDuckDBDashboardService:
         points = await dashboard_service.get_trends(TENANT_A, start, end)
         assert isinstance(points, list)
         assert len(points) >= 1  # At least the scan_date=2026-02-01 partition
-        total_scanned = sum(p.files_scanned for p in points)
-        assert total_scanned == 3
+        # files_scanned is 0 from DuckDB — callers overlay from ScanJob
+        total_pii = sum(p.files_with_pii for p in points)
+        assert total_pii == 2  # report.pdf + payroll.xlsx (sensitive only)
 
     async def test_get_entity_trends(
         self,
@@ -146,8 +148,8 @@ class TestDuckDBDashboardService:
         analytics.refresh_views()
 
         rows, total = await dashboard_service.get_heatmap_data(TENANT_A, limit=100)
-        assert total == 3
-        assert len(rows) == 3
+        assert total == 2  # sensitive files only
+        assert len(rows) == 2
         assert all(isinstance(r, HeatmapFileRow) for r in rows)
         # Sorted by risk_score desc
         assert rows[0].risk_score >= rows[-1].risk_score
@@ -162,7 +164,7 @@ class TestDuckDBDashboardService:
         analytics.refresh_views()
 
         rows, total = await dashboard_service.get_heatmap_data(TENANT_A, limit=1)
-        assert total == 3
+        assert total == 2  # sensitive files only
         assert len(rows) == 1
         assert rows[0].risk_score == 85  # highest risk file
 
@@ -185,8 +187,11 @@ class TestDuckDBDashboardService:
 
         stats_a = await dashboard_service.get_file_stats(TENANT_A)
         stats_b = await dashboard_service.get_file_stats(TENANT_B)
-        assert stats_a.total_files == 3
-        assert stats_b.total_files == 3  # same shape, but distinct
+        # total_files is 0 from DuckDB — callers overlay from ScanJob
+        assert stats_a.total_files == 0
+        assert stats_b.total_files == 0
+        assert stats_a.files_with_pii == 2  # sensitive files only
+        assert stats_b.files_with_pii == 2
 
     async def test_get_access_stats_empty(
         self, dashboard_service: DuckDBDashboardService,
@@ -227,7 +232,7 @@ class TestExportScanResults:
         analytics.refresh_views()
 
         rows = await analytics.export_scan_results(TENANT_A)
-        assert len(rows) == 3
+        assert len(rows) == 2  # sensitive files only
         assert all("file_path" in r for r in rows)
         assert all("risk_score" in r for r in rows)
         # Ordered by risk_score DESC
@@ -260,7 +265,7 @@ class TestExportScanResults:
         unlabeled = await analytics.export_scan_results(
             TENANT_A, has_label=False,
         )
-        assert len(unlabeled) == 2
+        assert len(unlabeled) == 1  # payroll.xlsx (sensitive, no label)
 
     async def test_export_tenant_isolation(
         self, storage: LocalStorage, analytics: AnalyticsService,
@@ -273,8 +278,8 @@ class TestExportScanResults:
 
         rows_a = await analytics.export_scan_results(TENANT_A)
         rows_b = await analytics.export_scan_results(TENANT_B)
-        assert len(rows_a) == 3
-        assert len(rows_b) == 3
+        assert len(rows_a) == 2  # sensitive files only
+        assert len(rows_b) == 2
 
 
 @pytest.mark.asyncio

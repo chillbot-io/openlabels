@@ -126,11 +126,10 @@ async def list_results_cursor(
         conditions.append(ScanResult.job_id == job_id)
     if risk_tier:
         conditions.append(ScanResult.risk_tier == risk_tier)
-    if has_pii is not None:
-        if has_pii:
-            conditions.append(ScanResult.total_entities > 0)
-        else:
-            conditions.append(ScanResult.total_entities == 0)
+    # ScanResult only contains sensitive files (total_entities > 0),
+    # so has_pii=False would always return 0 rows.
+    if has_pii is False:
+        return CursorPaginatedResponse[ResultResponse](items=[], next_cursor=None, has_more=False)
 
     query = (
         select(ScanResult)

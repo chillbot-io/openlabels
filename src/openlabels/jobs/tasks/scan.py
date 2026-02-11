@@ -338,68 +338,68 @@ async def execute_scan_task(
                 # Run detection
                 result = await _detect_and_score(content, file_info, target.adapter)
 
-                # Save result
-                scan_result = ScanResult(
-                    tenant_id=job.tenant_id,
-                    job_id=job.id,
-                    file_path=file_info.path,
-                    file_name=file_info.name,
-                    file_size=file_info.size,
-                    file_modified=file_info.modified,
-                    content_hash=content_hash,
-                    adapter_item_id=file_info.item_id,
-                    risk_score=result["risk_score"],
-                    risk_tier=result["risk_tier"],
-                    entity_counts=result["entity_counts"],
-                    total_entities=result["total_entities"],
-                    exposure_level=file_info.exposure.value,
-                    owner=file_info.owner,
-                    content_score=result.get("content_score"),
-                    exposure_multiplier=result.get("exposure_multiplier"),
-                    co_occurrence_rules=result.get("co_occurrence_rules"),
-                    findings=result.get("findings"),
-                    policy_violations=result.get("policy_violations"),
-                )
-                session.add(scan_result)
-
-                # Execute policy-triggered remediation actions
-                if result.get("policy_violations"):
-                    try:
-                        from openlabels.core.policies.actions import (
-                            PolicyActionContext,
-                            PolicyActionExecutor,
-                        )
-                        await session.flush()  # ensure scan_result.id is assigned
-                        action_ctx = PolicyActionContext(
-                            file_path=file_info.path,
-                            tenant_id=job.tenant_id,
-                            scan_result_id=scan_result.id,
-                            risk_tier=result["risk_tier"],
-                            violations=result["policy_violations"],
-                        )
-                        executor = PolicyActionExecutor()
-                        action_results = await executor.execute_all(action_ctx)
-                        for ar in action_results:
-                            if not ar.success:
-                                logger.warning(
-                                    "Policy action %s failed for %s: %s",
-                                    ar.action, file_info.path, ar.error,
-                                )
-                    except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
-                        logger.error(
-                            "Policy action execution failed for %s: %s",
-                            file_info.path, e,
-                        )
-
-                # Update stats
+                # Update stats (all files, regardless of sensitivity)
                 stats["files_scanned"] += 1
-                if result["total_entities"] > 0:
-                    stats["files_with_pii"] += 1
                 stats["total_entities"] += result["total_entities"]
                 stats[f"{result['risk_tier'].lower()}_count"] += 1
 
-                # Update folder stats for inventory
+                # Only persist ScanResult + inventory for sensitive files
                 if result["total_entities"] > 0:
+                    stats["files_with_pii"] += 1
+
+                    scan_result = ScanResult(
+                        tenant_id=job.tenant_id,
+                        job_id=job.id,
+                        file_path=file_info.path,
+                        file_name=file_info.name,
+                        file_size=file_info.size,
+                        file_modified=file_info.modified,
+                        content_hash=content_hash,
+                        adapter_item_id=file_info.item_id,
+                        risk_score=result["risk_score"],
+                        risk_tier=result["risk_tier"],
+                        entity_counts=result["entity_counts"],
+                        total_entities=result["total_entities"],
+                        exposure_level=file_info.exposure.value,
+                        owner=file_info.owner,
+                        content_score=result.get("content_score"),
+                        exposure_multiplier=result.get("exposure_multiplier"),
+                        co_occurrence_rules=result.get("co_occurrence_rules"),
+                        findings=result.get("findings"),
+                        policy_violations=result.get("policy_violations"),
+                    )
+                    session.add(scan_result)
+
+                    # Execute policy-triggered remediation actions
+                    if result.get("policy_violations"):
+                        try:
+                            from openlabels.core.policies.actions import (
+                                PolicyActionContext,
+                                PolicyActionExecutor,
+                            )
+                            await session.flush()  # ensure scan_result.id is assigned
+                            action_ctx = PolicyActionContext(
+                                file_path=file_info.path,
+                                tenant_id=job.tenant_id,
+                                scan_result_id=scan_result.id,
+                                risk_tier=result["risk_tier"],
+                                violations=result["policy_violations"],
+                            )
+                            executor = PolicyActionExecutor()
+                            action_results = await executor.execute_all(action_ctx)
+                            for ar in action_results:
+                                if not ar.success:
+                                    logger.warning(
+                                        "Policy action %s failed for %s: %s",
+                                        ar.action, file_info.path, ar.error,
+                                    )
+                        except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
+                            logger.error(
+                                "Policy action execution failed for %s: %s",
+                                file_info.path, e,
+                            )
+
+                    # Update folder stats for inventory
                     folder_stats[folder_path]["has_sensitive"] = True
                     folder_stats[folder_path]["total_entities"] += result["total_entities"]
                     # Track highest risk

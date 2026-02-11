@@ -143,14 +143,15 @@ async def _build_report_data(
             unlabeled += 1
 
     findings.sort(key=lambda x: x["risk_score"], reverse=True)
-    total_files = len(findings)
-    files_with_findings = sum(1 for f in findings if f["total_entities"] > 0)
-    avg_risk = round(total_score / total_files) if total_files else 0
+    # ScanResult only contains sensitive files now, so len(findings)
+    # == files_with_pii.  total_files comes from ScanJob.files_scanned.
+    files_with_findings = len(findings)
+    avg_risk = round(total_score / files_with_findings) if files_with_findings else 0
 
-    # Job metadata
+    # Job metadata — total_files comes from ScanJob
     job_name = None
     target_name = None
-    files_scanned = total_files
+    files_scanned = files_with_findings
     files_with_pii = files_with_findings
     scan_duration = "-"
     if job_id:
@@ -159,7 +160,7 @@ async def _build_report_data(
         if job:
             job_name = job.name or str(job.id)
             target_name = getattr(job, "target_name", None) or "-"
-            files_scanned = job.files_scanned or total_files
+            files_scanned = job.files_scanned or files_with_findings
             files_with_pii = job.files_with_pii or files_with_findings
             if job.started_at and job.completed_at:
                 delta = job.completed_at - job.started_at
@@ -245,6 +246,7 @@ async def _build_report_data(
     except Exception:
         logger.debug("Could not load compliance data", exc_info=True)
 
+    total_files = files_scanned  # total files processed (from ScanJob or fallback)
     compliance_rate = round(
         ((total_files - total_violations) / total_files * 100) if total_files else 100.0,
         1,
