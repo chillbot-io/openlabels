@@ -17,7 +17,7 @@ import platform
 import stat
 import sys
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
 
@@ -191,7 +191,7 @@ class FilesystemAdapter:
         info = FolderInfo(
             path=str(directory.absolute()),
             name=directory.name or str(directory),
-            modified=datetime.fromtimestamp(st.st_mtime) if st else None,
+            modified=datetime.fromtimestamp(st.st_mtime, tz=timezone.utc) if st else None,
             adapter="filesystem",
             inode=st.st_ino if st else None,
             parent_inode=parent_inode,
@@ -250,7 +250,7 @@ class FilesystemAdapter:
                         path=str(entry.absolute()),
                         name=entry.name,
                         size=stat_info.st_size,
-                        modified=datetime.fromtimestamp(stat_info.st_mtime),
+                        modified=datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc),
                         owner=self._get_owner(entry),
                         permissions=self._get_permissions(entry),
                         exposure=self._calculate_exposure(entry),
@@ -288,8 +288,9 @@ class FilesystemAdapter:
                 # Check if directory should be skipped by pattern
                 skip_dir = False
                 for pattern in filter_config.exclude_patterns:
-                    # Check if directory name matches exclusion pattern
-                    if subdir.name in pattern.replace("/*", "").replace("*", ""):
+                    # Strip glob suffixes to get the directory name to exclude
+                    bare = pattern.replace("/*", "").replace("*", "")
+                    if subdir.name == bare:
                         skip_dir = True
                         break
 
@@ -346,7 +347,7 @@ class FilesystemAdapter:
             path=str(path.absolute()),
             name=path.name,
             size=stat_info.st_size,
-            modified=datetime.fromtimestamp(stat_info.st_mtime),
+            modified=datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc),
             owner=self._get_owner(path),
             permissions=self._get_permissions(path),
             exposure=self._calculate_exposure(path),

@@ -126,9 +126,14 @@ async def browse_folders(
 
     parent_path = None
     if parent_id is not None:
-        parent_row = await db.get(DirectoryTree, parent_id)
+        parent_row = (await db.execute(
+            select(DirectoryTree.dir_path).where(
+                DirectoryTree.id == parent_id,
+                DirectoryTree.tenant_id == tenant.tenant_id,
+            )
+        )).scalar_one_or_none()
         if parent_row:
-            parent_path = parent_row.dir_path
+            parent_path = parent_row
 
     folders = []
     for row in rows:

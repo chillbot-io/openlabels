@@ -53,7 +53,11 @@ def test_entity_counts_to_map_dict():
 
 def test_entity_counts_to_map_empty():
     assert _entity_counts_to_map({}) == []
-    assert _entity_counts_to_map(None) == []
+
+
+def test_entity_counts_to_map_none_returns_none():
+    """None input must produce None (null in Parquet), not []."""
+    assert _entity_counts_to_map(None) is None
 
 
 # ── Integration: scan_results_to_arrow ────────────────────────────────

@@ -50,6 +50,8 @@ def _ts(val: datetime | None) -> datetime | None:
 
 def _entity_counts_to_map(ec: dict | None) -> list[tuple[str, int]] | None:
     """Convert entity_counts dict to Arrow MAP-compatible list of tuples."""
+    if ec is None:
+        return None
     if not ec:
         return []
     return [(k, int(v)) for k, v in ec.items()]

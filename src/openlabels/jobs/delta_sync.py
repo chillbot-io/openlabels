@@ -279,6 +279,7 @@ async def _upsert_batch(session: AsyncSession, rows: list[dict]) -> None:
             "dir_modified": stmt.excluded.dir_modified,
             "child_dir_count": stmt.excluded.child_dir_count,
             "child_file_count": stmt.excluded.child_file_count,
+            "sd_hash": None,  # Clear stale SD hash on re-insert
             "updated_at": stmt.excluded.updated_at,
         },
     )

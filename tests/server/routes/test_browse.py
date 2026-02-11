@@ -190,6 +190,60 @@ class TestBrowseFolders:
         assert names == sorted(names)
 
 
+class TestBrowseTenantIsolation:
+
+    async def test_parent_id_from_other_tenant_returns_no_parent_path(
+        self, test_client, test_db, populated_target,
+    ):
+        """parent_id belonging to another tenant must NOT leak that
+        tenant's dir_path.  The fix filters db.get() by tenant_id."""
+        from openlabels.server.models import ScanTarget, Tenant, generate_uuid
+
+        # Create a directory belonging to a DIFFERENT tenant
+        other_tenant = Tenant(name="other-tenant-isolation-test")
+        test_db.add(other_tenant)
+        await test_db.flush()
+
+        other_target = ScanTarget(
+            tenant_id=other_tenant.id,
+            name="other-target",
+            adapter="filesystem",
+            config={"path": "/secret"},
+        )
+        test_db.add(other_target)
+        await test_db.flush()
+
+        from openlabels.jobs.index import bootstrap_directory_tree
+
+        adapter = MockAdapter([
+            FolderInfo(path="/secret", name="secret", inode=100),
+        ])
+        await bootstrap_directory_tree(
+            session=test_db, adapter=adapter,
+            tenant_id=other_tenant.id, target_id=other_target.id,
+            scan_path="/secret",
+        )
+        await test_db.flush()
+
+        # Get the other tenant's directory ID
+        other_dir = (await test_db.execute(text(
+            "SELECT id FROM directory_tree "
+            "WHERE tenant_id = :tid AND dir_path = '/secret'"
+        ), {"tid": other_tenant.id})).one()
+
+        # Now browse OUR target with the OTHER tenant's parent_id
+        _, target = populated_target
+        resp = await test_client.get(
+            f"/api/v1/browse/{target.id}",
+            params={"parent_id": str(other_dir.id)},
+        )
+
+        body = resp.json()
+        # parent_path must be None — we must NOT see "/secret"
+        assert body["parent_path"] is None
+        assert body["folders"] == []
+
+
 class TestTreeStats:
 
     async def test_returns_correct_counts(self, test_client, test_db, populated_target):
