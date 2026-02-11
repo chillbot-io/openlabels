@@ -33,6 +33,8 @@ async def bootstrap_directory_tree(
     target_id: UUID,
     scan_path: str,
     on_progress: Callable[[int], None] | None = None,
+    collect_sd: bool = False,
+    on_sd_progress: Callable[[int, int], None] | None = None,
 ) -> dict:
     """Enumerate directories via adapter and populate directory_tree.
 
@@ -44,9 +46,13 @@ async def bootstrap_directory_tree(
         scan_path: Root path to enumerate.
         on_progress: Optional callback invoked with folder count after
             each batch insert.
+        collect_sd: If True, collect security descriptors after indexing.
+        on_sd_progress: Optional ``(processed, total)`` callback for SD
+            collection progress.
 
     Returns:
-        Dict with ``total_dirs``, ``elapsed_seconds``.
+        Dict with ``total_dirs``, ``elapsed_seconds``, and optionally
+        ``sd_stats`` if ``collect_sd=True``.
     """
     start = time.monotonic()
     total = 0
@@ -79,6 +85,18 @@ async def bootstrap_directory_tree(
     # that don't provide inode data (cloud adapters)
     resolved += await _resolve_parent_ids_by_path(session, tenant_id, target_id)
 
+    # Collect security descriptors (filesystem targets only)
+    sd_stats: dict | None = None
+    if collect_sd:
+        from openlabels.jobs.sd_collect import collect_security_descriptors
+
+        sd_stats = await collect_security_descriptors(
+            session=session,
+            tenant_id=tenant_id,
+            target_id=target_id,
+            on_progress=on_sd_progress,
+        )
+
     elapsed = time.monotonic() - start
 
     logger.info(
@@ -86,11 +104,15 @@ async def bootstrap_directory_tree(
         total, resolved, elapsed,
     )
 
-    return {
+    result = {
         "total_dirs": total,
         "parent_links_resolved": resolved,
         "elapsed_seconds": round(elapsed, 2),
     }
+    if sd_stats:
+        result["sd_stats"] = sd_stats
+
+    return result
 
 
 def _folder_info_to_row(info: FolderInfo, tenant_id: UUID, target_id: UUID) -> dict:
