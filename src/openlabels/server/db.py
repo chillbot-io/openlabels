@@ -56,17 +56,34 @@ async def init_db(
         f"pool_size={db_settings.pool_size}, "
         f"max_overflow={db_settings.max_overflow}, "
         f"pool_recycle={db_settings.pool_recycle}s, "
-        f"pool_pre_ping={db_settings.pool_pre_ping}"
+        f"pool_pre_ping={db_settings.pool_pre_ping}, "
+        f"pgbouncer_mode={db_settings.pgbouncer_mode}"
     )
 
-    _engine = create_async_engine(
-        database_url,
-        echo=False,
-        pool_size=db_settings.pool_size,
-        max_overflow=db_settings.max_overflow,
-        pool_recycle=db_settings.pool_recycle,
-        pool_pre_ping=db_settings.pool_pre_ping,
-    )
+    engine_kwargs: dict = {
+        "echo": False,
+        "pool_size": db_settings.pool_size,
+        "max_overflow": db_settings.max_overflow,
+        "pool_recycle": db_settings.pool_recycle,
+        "pool_pre_ping": db_settings.pool_pre_ping,
+        "pool_timeout": db_settings.pool_timeout,
+    }
+
+    # PgBouncer compatibility: disable prepared statements which don't
+    # work with transaction-level pooling. Also set
+    # statement_cache_size=0 in the asyncpg connect_args.
+    if db_settings.pgbouncer_mode:
+        engine_kwargs["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
+        logger.info("PgBouncer mode enabled: prepared statements disabled")
+    elif db_settings.statement_cache_size != 100:
+        engine_kwargs["connect_args"] = {
+            "statement_cache_size": db_settings.statement_cache_size,
+        }
+
+    _engine = create_async_engine(database_url, **engine_kwargs)
 
     _session_factory = async_sessionmaker(
         bind=_engine,

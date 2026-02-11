@@ -2,8 +2,7 @@
 OLAP analytics layer for OpenLabels.
 
 Provides columnar analytics via DuckDB + Parquet, offloading heavy
-aggregation queries from PostgreSQL. When ``catalog.enabled`` is False
-(the default), all analytics still flow through PostgreSQL.
+aggregation queries from PostgreSQL.  DuckDB is always active.
 
 Public API::
 

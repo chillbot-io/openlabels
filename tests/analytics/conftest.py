@@ -1,9 +1,8 @@
 """
 Shared fixtures for the analytics test suite.
 
-All tests in this directory run with ``catalog.enabled = True`` by
-design — the user explicitly asked for the full test suite to work
-with the catalog turned on.
+DuckDB analytics is always active — these fixtures provide a
+temporary catalog directory and DuckDB engine for test isolation.
 """
 
 from __future__ import annotations

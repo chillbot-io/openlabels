@@ -410,10 +410,14 @@ class Worker:
         # Start job cleanup task (TTL expiration)
         cleanup_task = asyncio.create_task(self._job_cleanup_task())
 
+        # Start partition maintenance (creates future monthly partitions)
+        partition_task = asyncio.create_task(self._partition_maintenance_task())
+
         try:
             # Wait for all workers
             await asyncio.gather(
                 *self._worker_tasks, monitor_task, reclaimer_task, cleanup_task,
+                partition_task,
                 return_exceptions=True
             )
         finally:
@@ -531,6 +535,42 @@ class Worker:
                 logger.warning(f"Job cleanup task error - expired jobs may accumulate: {type(e).__name__}: {e}")
 
             await asyncio.sleep(cleanup_interval)
+
+    async def _partition_maintenance_task(self) -> None:
+        """
+        Ensure future monthly partitions exist for scan_results and
+        file_access_events.
+
+        Runs once per day.  Calls the ``create_monthly_partitions()``
+        PostgreSQL function (created by migration a1b2c3d4e5f6) which
+        idempotently creates partitions for the next 3 months.
+
+        Uses an advisory lock so only one worker instance runs this per cycle.
+        """
+        from sqlalchemy import text
+
+        from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
+
+        maintenance_interval = 86400  # Once per day
+
+        while self.running:
+            try:
+                async with get_session_context() as session:
+                    if not await try_advisory_lock(session, AdvisoryLockID.PARTITION_MAINTENANCE):
+                        logger.debug("Partition maintenance: another instance is running, skipping")
+                    else:
+                        await session.execute(
+                            text("SELECT create_monthly_partitions('scan_results', 'scanned_at', 3)")
+                        )
+                        await session.execute(
+                            text("SELECT create_monthly_partitions('file_access_events', 'event_time', 3)")
+                        )
+                        logger.info("Partition maintenance: ensured monthly partitions exist")
+
+            except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
+                logger.warning(f"Partition maintenance error: {type(e).__name__}: {e}")
+
+            await asyncio.sleep(maintenance_interval)
 
     async def _concurrency_monitor(self) -> None:
         """
@@ -657,6 +697,9 @@ class Worker:
         try:
             if job.task_type == "scan":
                 result = await execute_scan_task(session, job.payload)
+            elif job.task_type == "scan_partition":
+                from openlabels.jobs.tasks.scan_partition import execute_scan_partition_task
+                result = await execute_scan_partition_task(session, job.payload)
             elif job.task_type == "label":
                 result = await execute_label_task(session, job.payload)
             elif job.task_type == "label_sync":

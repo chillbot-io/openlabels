@@ -5,11 +5,7 @@ DuckDB is not async-native, so every query is dispatched to a small
 :class:`~concurrent.futures.ThreadPoolExecutor`.
 
 This module also defines the :class:`DashboardQueryService` protocol
-used by route handlers.  Two implementations exist:
-
-* :class:`DuckDBDashboardService` — reads from Parquet via DuckDB
-* :class:`PostgresDashboardService` (in ``dashboard_pg.py``) — the
-  existing PostgreSQL implementation, extracted for parity.
+used by route handlers, implemented by :class:`DuckDBDashboardService`.
 """
 
 from __future__ import annotations

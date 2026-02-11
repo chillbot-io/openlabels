@@ -31,13 +31,29 @@ class ServerSettings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    """Database configuration."""
+    """Database configuration.
+
+    When using PgBouncer in transaction pooling mode, set
+    ``pgbouncer_mode=true`` to disable features that are incompatible
+    with connection-level pooling (prepared statements, LISTEN/NOTIFY).
+
+    Pool sizing for scaled workers:
+    - Each worker process opens ``pool_size`` persistent connections
+    - Total DB connections = num_workers × pool_size + max_overflow headroom
+    - For 8 workers with default settings: 8 × 20 + 10 = 170 connections
+    - Adjust ``pool_size`` down or use PgBouncer to keep within pg max_connections
+    """
 
     url: str = "postgresql+asyncpg://localhost/openlabels"
     pool_size: int = 20
     max_overflow: int = 10
     pool_recycle: int = 1800  # Recycle connections every 30 min to prevent stale connections
     pool_pre_ping: bool = True  # Enable connection health checks before use
+
+    # PgBouncer / connection pooler support
+    pgbouncer_mode: bool = False  # Disable prepared statements for PgBouncer compat
+    pool_timeout: int = 30  # Seconds to wait for a pool connection before erroring
+    statement_cache_size: int = 100  # asyncpg prepared statement cache (0 for PgBouncer)
 
 
 class AuthSettings(BaseSettings):
@@ -459,6 +475,11 @@ class JobSettings(BaseSettings):
     default_worker_concurrency: int = 4
     max_worker_concurrency: int = 32
 
+    # Pipeline parallelism (within a single worker)
+    pipeline_enabled: bool = True  # Enable concurrent file processing
+    pipeline_max_concurrent_files: int = 8  # Max files in flight per worker
+    pipeline_memory_budget_mb: int = 512  # Max cumulative in-flight content
+
 
 class SchedulerSettings(BaseSettings):
     """
@@ -661,14 +682,12 @@ class CatalogSettings(BaseSettings):
     """
     Data lake / Parquet catalog configuration.
 
-    When ``enabled`` is True, analytical queries (dashboard stats, trends,
-    heatmaps, exports) are served from DuckDB over Parquet files instead
-    of PostgreSQL.  PostgreSQL remains the source of truth — Parquet is a
-    derived, append-optimised analytical copy.
+    Analytical queries (dashboard stats, trends, heatmaps, exports) are
+    served from DuckDB over Parquet files.  PostgreSQL remains the source
+    of truth — Parquet is a derived, append-optimised analytical copy.
 
     Environment variables::
 
-        OPENLABELS_CATALOG__ENABLED=true
         OPENLABELS_CATALOG__BACKEND=local
         OPENLABELS_CATALOG__LOCAL_PATH=/data/openlabels/catalog
         OPENLABELS_CATALOG__S3__BUCKET=my-bucket
@@ -676,9 +695,8 @@ class CatalogSettings(BaseSettings):
         OPENLABELS_CATALOG__AZURE__CONTAINER=my-container
     """
 
-    enabled: bool = False
     backend: Literal["local", "s3", "azure"] = "local"
-    local_path: str = ""
+    local_path: str = "data/catalog"
 
     # Remote storage sub-configs
     s3: S3CatalogSettings = Field(default_factory=S3CatalogSettings)

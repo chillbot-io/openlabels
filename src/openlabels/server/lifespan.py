@@ -101,35 +101,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("Scheduler disabled by configuration")
 
-    # Analytics engine (DuckDB + Parquet data lake)
-    if settings.catalog.enabled:
-        try:
-            from openlabels.analytics.engine import DuckDBEngine
-            from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
-            from openlabels.analytics.storage import create_storage
+    # Analytics engine (DuckDB + Parquet data lake) — always active
+    try:
+        from openlabels.analytics.engine import DuckDBEngine
+        from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
+        from openlabels.analytics.storage import create_storage
 
-            catalog_storage = create_storage(settings.catalog)
-            engine = DuckDBEngine(
-                catalog_storage.root,
-                memory_limit=settings.catalog.duckdb_memory_limit,
-                threads=settings.catalog.duckdb_threads,
-                storage_config=settings.catalog,
-            )
-            analytics_svc = AnalyticsService(engine)
-            app.state.analytics = analytics_svc
-            app.state.catalog_storage = catalog_storage
-            app.state.dashboard_service = DuckDBDashboardService(analytics_svc)
-            logger.info("Analytics engine initialized (DuckDB + Parquet)")
-        except Exception as e:
-            logger.error(
-                "Analytics engine initialization failed (%s: %s) — "
-                "falling back to PostgreSQL for dashboard queries",
-                type(e).__name__, e,
-            )
-            app.state.analytics = None
-            app.state.catalog_storage = None
-            app.state.dashboard_service = None
-    else:
+        catalog_storage = create_storage(settings.catalog)
+        engine = DuckDBEngine(
+            catalog_storage.root,
+            memory_limit=settings.catalog.duckdb_memory_limit,
+            threads=settings.catalog.duckdb_threads,
+            storage_config=settings.catalog,
+        )
+        analytics_svc = AnalyticsService(engine)
+        app.state.analytics = analytics_svc
+        app.state.catalog_storage = catalog_storage
+        app.state.dashboard_service = DuckDBDashboardService(analytics_svc)
+        logger.info("Analytics engine initialized (DuckDB + Parquet)")
+    except Exception as e:
+        logger.error(
+            "Analytics engine initialization failed (%s: %s) — "
+            "dashboard endpoints will return 503 until resolved",
+            type(e).__name__, e,
+        )
         app.state.analytics = None
         app.state.catalog_storage = None
         app.state.dashboard_service = None
@@ -137,25 +132,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Periodic event flush background task (Parquet data lake)
     flush_shutdown = asyncio.Event()
     flush_task: asyncio.Task | None = None
-    if settings.catalog.enabled:
-        try:
-            from openlabels.jobs.tasks.flush import periodic_event_flush
+    try:
+        from openlabels.jobs.tasks.flush import periodic_event_flush
 
-            flush_task = asyncio.create_task(
-                periodic_event_flush(
-                    interval_seconds=settings.catalog.event_flush_interval_seconds,
-                    shutdown_event=flush_shutdown,
-                )
+        flush_task = asyncio.create_task(
+            periodic_event_flush(
+                interval_seconds=settings.catalog.event_flush_interval_seconds,
+                shutdown_event=flush_shutdown,
             )
-            logger.info(
-                "Periodic event flush task started (interval=%ds)",
-                settings.catalog.event_flush_interval_seconds,
-            )
-        except Exception as e:
-            logger.warning(
-                "Failed to start periodic event flush: %s: %s",
-                type(e).__name__, e,
-            )
+        )
+        logger.info(
+            "Periodic event flush task started (interval=%ds)",
+            settings.catalog.event_flush_interval_seconds,
+        )
+    except Exception as e:
+        logger.warning(
+            "Failed to start periodic event flush: %s: %s",
+            type(e).__name__, e,
+        )
 
     # Periodic SIEM export background task
     siem_shutdown = asyncio.Event()

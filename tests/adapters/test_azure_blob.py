@@ -10,6 +10,20 @@ import pytest
 from openlabels.adapters.base import FileInfo, ExposureLevel
 
 
+def _mock_paged_iterator(items):
+    """Create a mock that behaves like Azure SDK's ItemPaged.
+
+    Returns an object whose by_page() returns an iterator of pages,
+    where each page is the full list of items (single page).
+    """
+    result = MagicMock()
+    result.__iter__ = MagicMock(return_value=iter(items))
+    paged = MagicMock()
+    paged.__iter__ = MagicMock(return_value=iter([items]))  # one page with all items
+    result.by_page.return_value = paged
+    return result
+
+
 # ── AzureBlobAdapter unit tests ─────────────────────────────────────
 
 
@@ -53,7 +67,7 @@ class TestAzureBlobAdapterListFiles:
         dir_blob.etag = '""'
 
         mock_container = MagicMock()
-        mock_container.list_blobs.return_value = [blob1, blob2, dir_blob]
+        mock_container.list_blobs.return_value = _mock_paged_iterator([blob1, blob2, dir_blob])
 
         adapter = AzureBlobAdapter(
             storage_account="myaccount", container="mycontainer", prefix="data"
@@ -86,7 +100,7 @@ class TestAzureBlobAdapterListFiles:
         blob1.etag = '"e1"'
 
         mock_container = MagicMock()
-        mock_container.walk_blobs.return_value = [blob1]
+        mock_container.walk_blobs.return_value = _mock_paged_iterator([blob1])
 
         adapter = AzureBlobAdapter(storage_account="myaccount", container="mycontainer")
         adapter._container_client = mock_container
@@ -116,7 +130,7 @@ class TestAzureBlobAdapterListFiles:
         blob.etag = '"e1"'
 
         mock_container = MagicMock()
-        mock_container.list_blobs.return_value = [prefix_obj, blob]
+        mock_container.list_blobs.return_value = _mock_paged_iterator([prefix_obj, blob])
 
         adapter = AzureBlobAdapter(storage_account="myaccount", container="mycontainer")
         adapter._container_client = mock_container

@@ -22,7 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
-    FolderInfo,
+    PartitionSpec,
     is_label_compatible,
 )
 
@@ -105,6 +105,7 @@ class GCSAdapter:
         target: str,
         recursive: bool = True,
         filter_config: FilterConfig | None = None,
+        partition: PartitionSpec | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List blobs in the GCS bucket under *target* prefix.
 
@@ -112,6 +113,7 @@ class GCSAdapter:
             target: Blob prefix (appended to adapter prefix).
             recursive: If False, use ``/`` delimiter for single-level listing.
             filter_config: Optional filter for extensions, size, etc.
+            partition: Optional partition spec for key-range scanning.
         """
         client = self._ensure_client()
         bucket = client.bucket(self._bucket_name)
@@ -122,36 +124,92 @@ class GCSAdapter:
         if delimiter:
             kwargs["delimiter"] = delimiter
 
-        blobs = await asyncio.to_thread(
-            lambda: list(bucket.list_blobs(**kwargs))
+        # GCS list_blobs supports start_offset and end_offset for range scans
+        if partition and partition.start_after:
+            kwargs["start_offset"] = partition.start_after
+        if partition and partition.end_before:
+            kwargs["end_offset"] = partition.end_before
+
+        # Stream page-by-page: GCS list_blobs returns a lazy HTTPIterator.
+        # We pull one page at a time via to_thread to avoid blocking the
+        # event loop while keeping memory bounded to ~one page of blobs.
+        blob_iterator = await asyncio.to_thread(
+            lambda: bucket.list_blobs(**kwargs)
         )
 
-        for blob in blobs:
-            name_str: str = blob.name
-            # Skip "directory" markers
-            if name_str.endswith("/"):
-                continue
+        end_before = partition.end_before if partition else None
 
-            short_name = name_str.rsplit("/", 1)[-1]
-            modified = blob.updated or datetime.now(timezone.utc)
-            size = blob.size or 0
-            generation = blob.generation
+        # Iterate pages — each page is a list of blob objects
+        pages = await asyncio.to_thread(lambda: list(blob_iterator.pages))
+        for page in pages:
+            hit_boundary = False
+            for blob in page:
+                name_str: str = blob.name
+                # Skip "directory" markers
+                if name_str.endswith("/"):
+                    continue
 
-            file_info = FileInfo(
-                path=f"gs://{self._bucket_name}/{name_str}",
-                name=short_name,
-                size=size,
-                modified=modified,
-                adapter="gcs",
-                item_id=name_str,  # full blob name for read/get_metadata
-                exposure=ExposureLevel.PRIVATE,
-                permissions={"generation": generation},
-            )
+                # Extra boundary check in case SDK doesn't respect end_offset
+                if end_before and name_str >= end_before:
+                    hit_boundary = True
+                    break
 
-            if filter_config and not filter_config.should_include(file_info):
-                continue
+                short_name = name_str.rsplit("/", 1)[-1]
+                modified = blob.updated or datetime.now(timezone.utc)
+                size = blob.size or 0
+                generation = blob.generation
 
-            yield file_info
+                file_info = FileInfo(
+                    path=f"gs://{self._bucket_name}/{name_str}",
+                    name=short_name,
+                    size=size,
+                    modified=modified,
+                    adapter="gcs",
+                    item_id=name_str,  # full blob name for read/get_metadata
+                    exposure=ExposureLevel.PRIVATE,
+                    permissions={"generation": generation},
+                )
+
+                if filter_config and not filter_config.should_include(file_info):
+                    continue
+
+                yield file_info
+
+            if hit_boundary:
+                break
+
+    async def list_top_level_prefixes(
+        self,
+        target: str = "",
+    ) -> list[str]:
+        """List top-level prefixes (virtual directories) under *target*."""
+        client = self._ensure_client()
+        bucket = client.bucket(self._bucket_name)
+        prefix = self._resolve_prefix(target)
+
+        iterator = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=prefix, delimiter="/")
+        )
+        # Accessing .prefixes triggers the API call
+        prefixes = await asyncio.to_thread(lambda: list(iterator.prefixes))
+        return prefixes
+
+    async def estimate_object_count(
+        self,
+        target: str = "",
+        sample_limit: int = 10000,
+    ) -> tuple[int, list[str]]:
+        """Quick estimate of object count and sample keys for partitioning."""
+        client = self._ensure_client()
+        bucket = client.bucket(self._bucket_name)
+        prefix = self._resolve_prefix(target)
+
+        blob_iter = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=prefix, max_results=sample_limit)
+        )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
+        keys = [b.name for b in blobs if not b.name.endswith("/")]
+        return len(keys), keys
 
     async def list_folders(
         self,
@@ -368,9 +426,10 @@ class GCSAdapter:
         client = self._ensure_client()
         bucket = client.bucket(self._bucket_name)
         resolved = self._resolve_prefix(prefix or "")
-        blobs = await asyncio.to_thread(
-            lambda: list(bucket.list_blobs(prefix=resolved))
+        blob_iter = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=resolved)
         )
+        blobs = await asyncio.to_thread(lambda: list(blob_iter))
         return {b.name: b.generation for b in blobs if not b.name.endswith("/")}
 
     # ── Internal helpers ────────────────────────────────────────────

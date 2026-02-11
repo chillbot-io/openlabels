@@ -192,6 +192,55 @@ def is_label_compatible(name: str) -> bool:
 
 
 @dataclass
+class PartitionSpec:
+    """
+    Defines a key-range partition for parallel scanning.
+
+    Used by the coordinator to tell each worker which slice of the
+    keyspace to enumerate.  Adapter-specific interpretation:
+    - S3/GCS/Azure Blob: lexicographic key range within the bucket
+    - Filesystem: a specific subdirectory path
+    - SharePoint: a specific site ID
+    - OneDrive: a specific user ID
+    """
+
+    # Lexicographic key boundaries (inclusive start, exclusive end)
+    start_after: str | None = None  # List keys > this value
+    end_before: str | None = None   # Stop when key >= this value
+
+    # Prefix scope (combined with adapter prefix)
+    prefix: str | None = None
+
+    # Direct path for filesystem/SharePoint/OneDrive partitioning
+    directory: str | None = None
+    site_id: str | None = None
+    user_id: str | None = None
+
+    def to_dict(self) -> dict:
+        """Serialize for JSONB storage."""
+        return {k: v for k, v in {
+            "start_after": self.start_after,
+            "end_before": self.end_before,
+            "prefix": self.prefix,
+            "directory": self.directory,
+            "site_id": self.site_id,
+            "user_id": self.user_id,
+        }.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> PartitionSpec:
+        """Deserialize from JSONB."""
+        return cls(
+            start_after=data.get("start_after"),
+            end_before=data.get("end_before"),
+            prefix=data.get("prefix"),
+            directory=data.get("directory"),
+            site_id=data.get("site_id"),
+            user_id=data.get("user_id"),
+        )
+
+
+@dataclass
 class FileInfo:
     """Normalized file information from any adapter."""
 

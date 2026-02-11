@@ -600,14 +600,11 @@ async def get_remediation_stats(
 ):
     """Get summary statistics for remediation actions.
 
-    When backed by DuckDB, aggregations run on Parquet for faster
-    full-table scans.  Otherwise falls back to PostgreSQL.
+    Aggregations run on DuckDB/Parquet for fast full-table scans.
     """
-    from openlabels.analytics.dashboard_pg import PostgresDashboardService
-
     svc = getattr(request.app.state, "dashboard_service", None)
     if svc is None:
-        svc = PostgresDashboardService(session)
+        raise HTTPException(status_code=503, detail="Analytics engine unavailable")
 
     stats = await svc.get_remediation_stats(user.tenant_id)
 

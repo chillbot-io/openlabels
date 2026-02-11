@@ -35,9 +35,6 @@ async def periodic_event_flush(
     from openlabels.server.db import get_session_context
 
     settings = get_settings()
-    if not settings.catalog.enabled:
-        return
-
     storage = create_storage(settings.catalog)
     _stop = shutdown_event or asyncio.Event()
 
