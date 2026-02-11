@@ -200,6 +200,37 @@ async def execute_scan_task(
             context=f"target_id={job.target_id} may have been deleted",
         )
 
+    # Check if this scan should be split into partitions (fan-out)
+    if not payload.get("_skip_fanout"):
+        try:
+            from openlabels.jobs.coordinator import ScanCoordinator
+            coordinator = ScanCoordinator(session, job.tenant_id)
+            temp_adapter = _get_adapter(target.adapter, target.config)
+            await temp_adapter.__aenter__()
+            try:
+                decision = await coordinator.evaluate(job, target, temp_adapter)
+                if decision.should_fanout:
+                    logger.info(
+                        "Fan-out scan for job %s: %d estimated files → %d partitions (%s)",
+                        job_id, decision.estimated_files, decision.num_partitions, decision.reason,
+                    )
+                    await coordinator.create_partitions(
+                        job, target, temp_adapter,
+                        num_partitions=decision.num_partitions,
+                        estimated_files=decision.estimated_files,
+                    )
+                    return {
+                        "status": "fanout",
+                        "partitions": decision.num_partitions,
+                        "estimated_files": decision.estimated_files,
+                    }
+                else:
+                    logger.debug("Single-worker scan for job %s: %s", job_id, decision.reason)
+            finally:
+                await temp_adapter.__aexit__(None, None, None)
+        except (ImportError, RuntimeError, ValueError, OSError, ConnectionError) as e:
+            logger.warning("Fan-out evaluation failed, falling back to single-worker: %s", e)
+
     # Update job status
     job.status = "running"
     await session.flush()

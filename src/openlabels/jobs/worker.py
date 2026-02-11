@@ -657,6 +657,9 @@ class Worker:
         try:
             if job.task_type == "scan":
                 result = await execute_scan_task(session, job.payload)
+            elif job.task_type == "scan_partition":
+                from openlabels.jobs.tasks.scan_partition import execute_scan_partition_task
+                result = await execute_scan_partition_task(session, job.payload)
             elif job.task_type == "label":
                 result = await execute_label_task(session, job.payload)
             elif job.task_type == "label_sync":

@@ -285,15 +285,83 @@ class ScanJob(Base):
     created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # Fan-out columns for horizontal scaling
+    scan_mode: Mapped[str | None] = mapped_column(String(20))  # 'single' or 'fanout'; NULL = single
+    total_partitions: Mapped[int | None] = mapped_column(Integer)  # Number of partitions created
+    partitions_completed: Mapped[int | None] = mapped_column(Integer)  # Completed partition count
+    partitions_failed: Mapped[int | None] = mapped_column(Integer)  # Failed partition count
+    total_files_estimated: Mapped[int | None] = mapped_column(Integer)  # Pre-scan estimate
+
     # Relationships
     tenant: Mapped[Tenant] = relationship(back_populates="scan_jobs")
     schedule: Mapped[Optional[ScanSchedule]] = relationship(back_populates="jobs")
     results: Mapped[list[ScanResult]] = relationship(back_populates="job")
+    partitions: Mapped[list[ScanPartition]] = relationship(back_populates="job")
 
     __table_args__ = (
         Index('ix_scan_jobs_tenant_status', 'tenant_id', 'status'),
         Index('ix_scan_jobs_tenant_created', 'tenant_id', 'created_at'),
         Index('ix_scan_jobs_target_created', 'target_id', 'created_at'),
+    )
+
+
+class ScanPartition(Base):
+    """
+    A partition of work within a fan-out scan job.
+
+    When a scan target is large enough to benefit from horizontal scaling,
+    the coordinator splits it into N partitions. Each partition is an
+    independent unit of work that a worker can claim and execute.
+    """
+
+    __tablename__ = "scan_partitions"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False)
+
+    # Partition identity
+    partition_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-based
+    total_partitions: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # What to scan — adapter-specific partition boundaries
+    # S3/GCS/Azure: {"start_after": "m", "end_before": "t", "prefix": "data/"}
+    # Filesystem: {"directory": "/mnt/share/finance"}
+    # SharePoint: {"site_id": "abc123"}
+    partition_spec: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Execution state
+    status: Mapped[str] = mapped_column(JobStatusEnum, default="pending")
+    worker_id: Mapped[str | None] = mapped_column(String(100))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Progress
+    files_scanned: Mapped[int] = mapped_column(Integer, default=0)
+    files_with_pii: Mapped[int] = mapped_column(Integer, default=0)
+    files_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    total_entities: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Full stats from scan (risk breakdown, inventory, etc.)
+    stats: Mapped[dict | None] = mapped_column(JSONB)
+
+    # Error tracking
+    error: Mapped[str | None] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Checkpoint for resume on failure
+    last_processed_path: Mapped[str | None] = mapped_column(Text)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    job: Mapped[ScanJob] = relationship(back_populates="partitions")
+
+    __table_args__ = (
+        Index('ix_scan_partitions_job_status', 'job_id', 'status'),
+        Index('ix_scan_partitions_job_index', 'job_id', 'partition_index', unique=True),
+        Index('ix_scan_partitions_tenant_status', 'tenant_id', 'status'),
     )
 
 
@@ -812,6 +880,11 @@ class TenantSettings(Base):
 
     # Entity detection configuration
     enabled_entities: Mapped[list] = mapped_column(JSONB, default=list)
+
+    # Horizontal scaling / fan-out configuration
+    fanout_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    fanout_threshold: Mapped[int] = mapped_column(Integer, default=10000)  # Min files to trigger fan-out
+    fanout_max_partitions: Mapped[int] = mapped_column(Integer, default=16)  # Max partitions per scan
 
     # Audit fields
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

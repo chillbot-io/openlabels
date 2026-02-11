@@ -22,6 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    PartitionSpec,
     is_label_compatible,
 )
 
@@ -104,6 +105,7 @@ class GCSAdapter:
         target: str,
         recursive: bool = True,
         filter_config: FilterConfig | None = None,
+        partition: PartitionSpec | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List blobs in the GCS bucket under *target* prefix.
 
@@ -111,6 +113,7 @@ class GCSAdapter:
             target: Blob prefix (appended to adapter prefix).
             recursive: If False, use ``/`` delimiter for single-level listing.
             filter_config: Optional filter for extensions, size, etc.
+            partition: Optional partition spec for key-range scanning.
         """
         client = self._ensure_client()
         bucket = client.bucket(self._bucket_name)
@@ -121,15 +124,27 @@ class GCSAdapter:
         if delimiter:
             kwargs["delimiter"] = delimiter
 
+        # GCS list_blobs supports start_offset and end_offset for range scans
+        if partition and partition.start_after:
+            kwargs["start_offset"] = partition.start_after
+        if partition and partition.end_before:
+            kwargs["end_offset"] = partition.end_before
+
         blobs = await asyncio.to_thread(
             lambda: list(bucket.list_blobs(**kwargs))
         )
+
+        end_before = partition.end_before if partition else None
 
         for blob in blobs:
             name_str: str = blob.name
             # Skip "directory" markers
             if name_str.endswith("/"):
                 continue
+
+            # Extra boundary check in case SDK doesn't respect end_offset
+            if end_before and name_str >= end_before:
+                break
 
             short_name = name_str.rsplit("/", 1)[-1]
             modified = blob.updated or datetime.now(timezone.utc)
@@ -151,6 +166,38 @@ class GCSAdapter:
                 continue
 
             yield file_info
+
+    async def list_top_level_prefixes(
+        self,
+        target: str = "",
+    ) -> list[str]:
+        """List top-level prefixes (virtual directories) under *target*."""
+        client = self._ensure_client()
+        bucket = client.bucket(self._bucket_name)
+        prefix = self._resolve_prefix(target)
+
+        iterator = await asyncio.to_thread(
+            lambda: bucket.list_blobs(prefix=prefix, delimiter="/")
+        )
+        # Accessing .prefixes triggers the API call
+        prefixes = await asyncio.to_thread(lambda: list(iterator.prefixes))
+        return prefixes
+
+    async def estimate_object_count(
+        self,
+        target: str = "",
+        sample_limit: int = 10000,
+    ) -> tuple[int, list[str]]:
+        """Quick estimate of object count and sample keys for partitioning."""
+        client = self._ensure_client()
+        bucket = client.bucket(self._bucket_name)
+        prefix = self._resolve_prefix(target)
+
+        blobs = await asyncio.to_thread(
+            lambda: list(bucket.list_blobs(prefix=prefix, max_results=sample_limit))
+        )
+        keys = [b.name for b in blobs if not b.name.endswith("/")]
+        return len(keys), keys
 
     async def read_file(
         self,

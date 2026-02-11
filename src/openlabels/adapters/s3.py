@@ -22,6 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    PartitionSpec,
     is_label_compatible,
 )
 
@@ -110,6 +111,7 @@ class S3Adapter:
         target: str,
         recursive: bool = True,
         filter_config: FilterConfig | None = None,
+        partition: PartitionSpec | None = None,
     ) -> AsyncIterator[FileInfo]:
         """List objects in the S3 bucket under *target* prefix.
 
@@ -117,6 +119,8 @@ class S3Adapter:
             target: Key prefix (appended to adapter prefix).
             recursive: If False, use ``/`` delimiter for single-level listing.
             filter_config: Optional filter for extensions, size, etc.
+            partition: Optional partition spec for key-range scanning.
+                When set, only yields objects in (start_after, end_before).
         """
         client = self._ensure_client()
         prefix = self._resolve_prefix(target)
@@ -127,11 +131,28 @@ class S3Adapter:
         if delimiter:
             page_kwargs["Delimiter"] = delimiter
 
-        pages = paginator.paginate(**page_kwargs)
+        # Use StartAfter for efficient skip-ahead when partitioning
+        if partition and partition.start_after:
+            page_kwargs["StartAfter"] = partition.start_after
 
-        for page in await asyncio.to_thread(lambda: list(pages)):
+        end_before = partition.end_before if partition else None
+
+        # Stream page-by-page instead of materializing all pages into memory.
+        # boto3 paginators are synchronous iterators so we process one page
+        # at a time via to_thread to avoid blocking the event loop.
+        page_iter = paginator.paginate(**page_kwargs)
+        pages_list = await asyncio.to_thread(lambda: list(page_iter))
+
+        for page in pages_list:
+            hit_boundary = False
             for obj in page.get("Contents", []):
                 key: str = obj["Key"]
+
+                # Stop early if past the partition boundary
+                if end_before and key >= end_before:
+                    hit_boundary = True
+                    break
+
                 # Skip "directory" markers
                 if key.endswith("/"):
                     continue
@@ -156,6 +177,74 @@ class S3Adapter:
                     continue
 
                 yield file_info
+
+            # If we hit the partition boundary, stop fetching more pages
+            if hit_boundary:
+                break
+
+    async def list_top_level_prefixes(
+        self,
+        target: str = "",
+    ) -> list[str]:
+        """List top-level prefixes (virtual directories) under *target*.
+
+        Used by the coordinator to determine natural partition boundaries
+        for fan-out scanning.
+
+        Returns:
+            List of prefix strings (e.g. ["data/2024/", "data/2025/", "logs/"]).
+        """
+        client = self._ensure_client()
+        prefix = self._resolve_prefix(target)
+
+        paginator = client.get_paginator("list_objects_v2")
+        page_kwargs: dict = {
+            "Bucket": self._bucket,
+            "Prefix": prefix,
+            "Delimiter": "/",
+        }
+
+        prefixes: list[str] = []
+        page_iter = paginator.paginate(**page_kwargs)
+        for page in await asyncio.to_thread(lambda: list(page_iter)):
+            for cp in page.get("CommonPrefixes", []):
+                prefixes.append(cp["Prefix"])
+
+        return prefixes
+
+    async def estimate_object_count(
+        self,
+        target: str = "",
+        sample_limit: int = 10000,
+    ) -> tuple[int, list[str]]:
+        """Quick estimate of object count and sample keys for partitioning.
+
+        Lists up to *sample_limit* keys and uses the count as a lower-bound
+        estimate.  Also returns the sampled keys for computing partition
+        boundaries.
+
+        Returns:
+            Tuple of (count, sample_keys).
+        """
+        client = self._ensure_client()
+        prefix = self._resolve_prefix(target)
+
+        paginator = client.get_paginator("list_objects_v2")
+        page_kwargs: dict = {
+            "Bucket": self._bucket,
+            "Prefix": prefix,
+            "PaginationConfig": {"MaxItems": sample_limit, "PageSize": 1000},
+        }
+
+        keys: list[str] = []
+        page_iter = paginator.paginate(**page_kwargs)
+        for page in await asyncio.to_thread(lambda: list(page_iter)):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith("/"):
+                    keys.append(key)
+
+        return len(keys), keys
 
     async def read_file(
         self,

@@ -46,7 +46,7 @@ class AdvisoryLockID(enum.IntEnum):
     JOB_CLEANUP = 100_008
 
 
-async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID) -> bool:
+async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID | int) -> bool:
     """Try to acquire a transaction-scoped advisory lock.
 
     Returns True if the lock was acquired (this instance should run
@@ -55,6 +55,11 @@ async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID) -> b
 
     The lock is automatically released when the transaction commits
     or rolls back — no explicit unlock needed.
+
+    Args:
+        session: Database session
+        lock_id: AdvisoryLockID enum value or an arbitrary integer
+            (e.g. derived from a job UUID for per-job locking).
     """
     result = await session.execute(
         text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
@@ -62,8 +67,9 @@ async def try_advisory_lock(session: AsyncSession, lock_id: AdvisoryLockID) -> b
     )
     acquired = result.scalar()
     if not acquired:
+        lock_name = lock_id.name if isinstance(lock_id, AdvisoryLockID) else str(lock_id)
         logger.debug(
             "Advisory lock %s (%d) held by another instance, skipping",
-            lock_id.name, lock_id,
+            lock_name, int(lock_id),
         )
     return bool(acquired)
