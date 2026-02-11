@@ -18,6 +18,7 @@ import pyarrow as pa
 from openlabels.analytics.schemas import (
     ACCESS_EVENTS_SCHEMA,
     AUDIT_LOG_SCHEMA,
+    DIRECTORY_TREE_SCHEMA,
     FILE_INVENTORY_SCHEMA,
     FOLDER_INVENTORY_SCHEMA,
     REMEDIATION_ACTIONS_SCHEMA,
@@ -27,6 +28,7 @@ from openlabels.analytics.schemas import (
 if TYPE_CHECKING:
     from openlabels.server.models import (
         AuditLog,
+        DirectoryTree,
         FileAccessEvent,
         FileInventory,
         FolderInventory,
@@ -185,6 +187,33 @@ def folder_inventory_to_arrow(rows: Iterable[FolderInventory]) -> pa.Table:
         records["updated_at"].append(_ts(r.updated_at))
 
     return pa.table(records, schema=FOLDER_INVENTORY_SCHEMA)
+
+
+# ── Directory Tree ───────────────────────────────────────────────────
+
+def directory_tree_to_arrow(rows: Iterable[DirectoryTree]) -> pa.Table:
+    """Convert DirectoryTree ORM instances to a PyArrow Table."""
+    records: dict[str, list] = {f.name: [] for f in DIRECTORY_TREE_SCHEMA}
+
+    for r in rows:
+        records["id"].append(_uuid_bytes(r.id))
+        records["tenant_id"].append(_uuid_bytes(r.tenant_id))
+        records["target_id"].append(_uuid_bytes(r.target_id))
+        records["dir_path"].append(r.dir_path)
+        records["dir_name"].append(r.dir_name)
+        records["parent_id"].append(_uuid_bytes(r.parent_id))
+        records["dir_ref"].append(r.dir_ref)
+        records["parent_ref"].append(r.parent_ref)
+        records["sd_hash"].append(r.sd_hash)
+        records["share_id"].append(_uuid_bytes(r.share_id))
+        records["dir_modified"].append(_ts(r.dir_modified))
+        records["child_dir_count"].append(r.child_dir_count)
+        records["child_file_count"].append(r.child_file_count)
+        records["flags"].append(r.flags)
+        records["discovered_at"].append(_ts(r.discovered_at))
+        records["updated_at"].append(_ts(r.updated_at))
+
+    return pa.table(records, schema=DIRECTORY_TREE_SCHEMA)
 
 
 # ── Access Events ─────────────────────────────────────────────────────

@@ -112,6 +112,25 @@ AUDIT_LOG_SCHEMA = pa.schema([
     pa.field("created_at", pa.timestamp("ms", tz="UTC")),
 ])
 
+DIRECTORY_TREE_SCHEMA = pa.schema([
+    pa.field("id", pa.binary(16)),
+    pa.field("tenant_id", pa.binary(16)),
+    pa.field("target_id", pa.binary(16)),
+    pa.field("dir_path", pa.utf8()),
+    pa.field("dir_name", pa.utf8()),
+    pa.field("parent_id", pa.binary(16)),
+    pa.field("dir_ref", pa.int64()),
+    pa.field("parent_ref", pa.int64()),
+    pa.field("sd_hash", pa.binary(32)),
+    pa.field("share_id", pa.binary(16)),
+    pa.field("dir_modified", pa.timestamp("ms", tz="UTC")),
+    pa.field("child_dir_count", pa.int32()),
+    pa.field("child_file_count", pa.int32()),
+    pa.field("flags", pa.int32()),
+    pa.field("discovered_at", pa.timestamp("ms", tz="UTC")),
+    pa.field("updated_at", pa.timestamp("ms", tz="UTC")),
+])
+
 REMEDIATION_ACTIONS_SCHEMA = pa.schema([
     pa.field("id", pa.binary(16)),
     pa.field("tenant_id", pa.binary(16)),
