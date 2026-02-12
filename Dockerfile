@@ -32,7 +32,16 @@ RUN useradd -m -u 1000 openlabels && \
     chown -R openlabels:openlabels /app
 USER openlabels
 
-# Run database migrations and start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn openlabels.server.app:app --host 0.0.0.0 --port 8000"]
+# Database migrations should be run as a separate pre-deploy step or
+# init container, NOT combined with the app server startup.  This
+# prevents races when multiple replicas start simultaneously.
+#
+# Run migrations:  docker run --rm <image> alembic upgrade head
+# Start server:    docker run <image>  (uses CMD below)
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "openlabels.server.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from ..constants import DETECTOR_TIMEOUT
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch, PolicyResult
 from ..types import DetectionResult, Span, normalize_entity_type
@@ -60,10 +61,6 @@ OCR_FILE_EXTENSIONS: set[str] = frozenset([
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
     ".webp", ".heic", ".heif",
 ])
-
-# Default detector timeout
-DETECTOR_TIMEOUT = 30.0
-
 
 class PipelineStage(Enum):
     """Pipeline execution stages."""
@@ -526,18 +523,19 @@ class TieredPipeline:
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures = []
 
+            active_detectors = []
             if self._phi_bert:
                 futures.append(
                     executor.submit(self._run_detector, self._phi_bert, text)
                 )
+                active_detectors.append(self._phi_bert)
             if self._pii_bert:
                 futures.append(
                     executor.submit(self._run_detector, self._pii_bert, text)
                 )
+                active_detectors.append(self._pii_bert)
 
-            for future, detector in zip(futures, [self._phi_bert, self._pii_bert]):
-                if detector is None:
-                    continue
+            for future, detector in zip(futures, active_detectors):
                 try:
                     spans = future.result()
                     all_spans.extend(spans)

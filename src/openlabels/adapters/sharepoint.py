@@ -130,42 +130,39 @@ class SharePointAdapter(BaseGraphAdapter):
         else:
             endpoint = f"/sites/{site_id}/drives/{drive_id}/root:{path}:/children"
 
+        items_iter = client.iter_all_pages(endpoint)
+
         try:
-            items_iter = client.iter_all_pages(endpoint)
+            async for item in items_iter:
+                if "folder" in item:
+                    if recursive:
+                        folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
+                        async for file_info in self._list_drive_items(
+                            client, site_id, drive_id, folder_path, recursive, filter_config
+                        ):
+                            yield file_info
+
+                elif "file" in item:
+                    file_info = self._item_to_file_info(item, site_id)
+
+                    # Apply filter
+                    if filter_config.should_include(file_info):
+                        yield file_info
         except PermissionError as e:
             logger.debug(
                 f"Cannot access {path} for site {site_id} - permission denied: {e}",
                 exc_info=True,
             )
-            return
         except (ConnectionError, TimeoutError) as e:
             logger.debug(
                 f"Cannot access {path} for site {site_id} - network error: {e}",
                 exc_info=True,
             )
-            return
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.debug(
-                f"Cannot access {path} for site {site_id} - unexpected error ({type(e).__name__}): {e}",
+                f"Cannot access {path} for site {site_id} - HTTP error ({type(e).__name__}): {e}",
                 exc_info=True,
             )
-            return
-
-        async for item in items_iter:
-            if "folder" in item:
-                if recursive:
-                    folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
-                    async for file_info in self._list_drive_items(
-                        client, site_id, drive_id, folder_path, recursive, filter_config
-                    ):
-                        yield file_info
-
-            elif "file" in item:
-                file_info = self._item_to_file_info(item, site_id)
-
-                # Apply filter
-                if filter_config.should_include(file_info):
-                    yield file_info
 
     def _item_to_file_info(self, item: dict, site_id: str) -> FileInfo:
         """Convert Graph API item to FileInfo."""

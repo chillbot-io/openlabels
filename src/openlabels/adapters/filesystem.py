@@ -268,13 +268,33 @@ class FilesystemAdapter:
         directory: Path,
         recursive: bool,
         filter_config: FilterConfig,
+        _scan_root: Path | None = None,
     ) -> AsyncIterator[FileInfo]:
         """Recursively walk a directory with filtering.
 
         All blocking I/O for each directory level is batched into a
         single ``asyncio.to_thread(_collect_entries, ...)`` call to
         minimise thread-pool overhead.
+
+        Security: Symlinks are resolved and validated against the scan
+        root to prevent path traversal attacks where a symlink inside
+        the target tree points outside it.
         """
+        scan_root = _scan_root or directory
+
+        # Security: skip symlinks that resolve outside the scan root
+        if directory.is_symlink():
+            try:
+                resolved = directory.resolve(strict=True)
+                if not str(resolved).startswith(str(scan_root.resolve())):
+                    logger.warning(
+                        "Skipping symlink escaping scan root: %s -> %s",
+                        directory, resolved,
+                    )
+                    return
+            except OSError:
+                return
+
         files, subdirs = await asyncio.to_thread(
             self._collect_entries, directory,
         )
@@ -295,7 +315,9 @@ class FilesystemAdapter:
                         break
 
                 if not skip_dir:
-                    async for file_info in self._walk_directory(subdir, recursive, filter_config):
+                    async for file_info in self._walk_directory(
+                        subdir, recursive, filter_config, _scan_root=scan_root
+                    ):
                         yield file_info
 
     async def read_file(
@@ -580,12 +602,27 @@ class FilesystemAdapter:
             logger.debug(f"OS error getting POSIX exposure for {path}: {e}")
             return ExposureLevel.PRIVATE
 
+    @staticmethod
+    def _validate_no_traversal(path: str, label: str = "path") -> Path:
+        """Resolve a path and reject directory traversal sequences."""
+        p = Path(path)
+        resolved = p.resolve()
+        # Reject if the raw path contains traversal but resolves elsewhere
+        if ".." in Path(path).parts:
+            raise FilesystemError(
+                f"Path traversal detected in {label}",
+                path=path,
+                operation="validate_path",
+                context="paths must not contain '..' components",
+            )
+        return resolved
+
     def _move_file_sync(self, source_path: str, dest_path: str) -> bool:
         """Synchronous file move -- all blocking I/O in one call."""
         import shutil
 
-        source = Path(source_path)
-        dest = Path(dest_path)
+        source = self._validate_no_traversal(source_path, "source_path")
+        dest = self._validate_no_traversal(dest_path, "dest_path")
 
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -701,6 +738,7 @@ class FilesystemAdapter:
         Returns:
             True if successful
         """
+        self._validate_no_traversal(file_info.path, "file_path")
         path = Path(file_info.path)
         platform = acl.get("platform", "")
 

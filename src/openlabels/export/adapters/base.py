@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import socket
+import ssl
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -71,3 +74,95 @@ class SIEMAdapter(Protocol):
     def format_name(self) -> str:
         """Return adapter name: 'splunk', 'sentinel', 'qradar', etc."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# Shared syslog transport mixin
+# ---------------------------------------------------------------------------
+
+
+def risk_tier_to_cef_severity(tier: str | None) -> int:
+    """Map risk tier to CEF numeric severity."""
+    return {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 5, "LOW": 3, "MINIMAL": 1}.get(
+        (tier or "").upper(), 1
+    )
+
+
+def cef_escape(value: str) -> str:
+    """Escape CEF special characters: backslash, equals, pipe."""
+    return value.replace("\\", "\\\\").replace("=", "\\=").replace("|", "\\|")
+
+
+class SyslogTransportMixin:
+    """Shared syslog transport (UDP/TCP/TLS) for CEF and LEEF adapters.
+
+    Subclasses must set ``_host``, ``_port``, ``_protocol``, and
+    ``_use_tls`` attributes before calling these methods.
+    """
+
+    _host: str
+    _port: int
+    _protocol: str
+    _use_tls: bool
+
+    async def _send_syslog(
+        self, messages: list[str], *, max_retries: int = 3,
+    ) -> int:
+        """Send syslog messages over the configured transport with retry."""
+        for attempt in range(max_retries + 1):
+            try:
+                if self._protocol == "udp":
+                    return await self._send_udp(messages)
+                else:
+                    return await self._send_tcp(messages)
+            except (OSError, asyncio.TimeoutError) as exc:
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "%s syslog send attempt %d/%d failed, retrying in %ds: %s",
+                        type(self).__name__, attempt + 1, max_retries + 1,
+                        wait, exc,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        "%s syslog send failed after %d attempts: %s",
+                        type(self).__name__, max_retries + 1, exc,
+                    )
+        return 0
+
+    async def _send_udp(self, messages: list[str]) -> int:
+        loop = asyncio.get_running_loop()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            for msg in messages:
+                payload = f"<14>{msg}\n"
+                await loop.run_in_executor(
+                    None, sock.sendto, payload.encode("utf-8"),
+                    (self._host, self._port),
+                )
+        finally:
+            sock.close()
+        return len(messages)
+
+    async def _send_tcp(self, messages: list[str]) -> int:
+        reader, writer = await asyncio.wait_for(
+            self._open_tcp_connection(), timeout=30,
+        )
+        try:
+            for msg in messages:
+                payload = f"<14>{msg}\n"
+                writer.write(payload.encode("utf-8"))
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        return len(messages)
+
+    async def _open_tcp_connection(self):
+        if self._use_tls:
+            ctx = ssl.create_default_context()
+            return await asyncio.open_connection(
+                self._host, self._port, ssl=ctx,
+            )
+        return await asyncio.open_connection(self._host, self._port)

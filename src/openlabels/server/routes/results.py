@@ -21,6 +21,9 @@ from openlabels.server.dependencies import (
 )
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
+from openlabels.server.utils import get_client_ip
+
+from slowapi import Limiter
 from openlabels.server.schemas.pagination import (
     CursorPaginatedResponse,
     CursorPaginationParams,
@@ -32,6 +35,7 @@ from openlabels.server.schemas.pagination import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_limiter = Limiter(key_func=get_client_ip)
 
 
 class ResultResponse(BaseModel):
@@ -83,14 +87,12 @@ async def list_results(
     _tenant: TenantContextDep,
     job_id: UUID | None = Query(None, description="Filter by job ID"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
-    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
     results, total = await result_service.list_results(
         job_id=job_id,
         risk_tier=risk_tier,
-        has_pii=has_pii,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -111,7 +113,6 @@ async def list_results_cursor(
     _tenant: TenantContextDep,
     job_id: UUID | None = Query(None, description="Filter by job ID"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
-    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
     """List scan results using cursor-based pagination."""
@@ -126,11 +127,6 @@ async def list_results_cursor(
         conditions.append(ScanResult.job_id == job_id)
     if risk_tier:
         conditions.append(ScanResult.risk_tier == risk_tier)
-    if has_pii is not None:
-        if has_pii:
-            conditions.append(ScanResult.total_entities > 0)
-        else:
-            conditions.append(ScanResult.total_entities == 0)
 
     query = (
         select(ScanResult)
@@ -342,6 +338,7 @@ async def get_result(
 
 
 @router.delete("")
+@_limiter.limit("5/minute")
 async def clear_all_results(
     request: Request,
     result_service: ResultServiceDep,
@@ -357,6 +354,7 @@ async def clear_all_results(
 
 
 @router.delete("/{result_id}")
+@_limiter.limit("20/minute")
 async def delete_result(
     result_id: UUID,
     request: Request,

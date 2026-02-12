@@ -19,7 +19,7 @@ class TestDuckDBEngine:
         engine.refresh_views()
 
         rows = engine.fetch_all("SELECT count(*) AS cnt FROM scan_results")
-        assert rows[0]["cnt"] == 3  # 3 default rows
+        assert rows[0]["cnt"] == 2  # sensitive files only
 
     def test_fetch_all_columns(self, storage: LocalStorage, engine: DuckDBEngine):
         write_scan_results(storage)
@@ -28,7 +28,7 @@ class TestDuckDBEngine:
         rows = engine.fetch_all(
             "SELECT file_name, risk_score FROM scan_results ORDER BY risk_score DESC"
         )
-        assert len(rows) == 3
+        assert len(rows) == 2
         assert rows[0]["risk_score"] == 85  # CRITICAL file first
         assert all("file_name" in r for r in rows)
 
@@ -46,7 +46,7 @@ class TestDuckDBEngine:
         engine.refresh_views()
 
         table = engine.fetch_arrow("SELECT * FROM scan_results")
-        assert table.num_rows == 3
+        assert table.num_rows == 2
         assert "file_path" in table.column_names
 
     def test_partition_pruning(self, storage: LocalStorage, engine: DuckDBEngine):
@@ -63,13 +63,13 @@ class TestDuckDBEngine:
         engine.refresh_views()
 
         all_rows = engine.fetch_all("SELECT count(*) AS cnt FROM scan_results")
-        assert all_rows[0]["cnt"] == 6  # 3 per tenant
+        assert all_rows[0]["cnt"] == 4  # 2 per tenant (sensitive only)
 
         filtered = engine.fetch_all(
             "SELECT count(*) AS cnt FROM scan_results WHERE tenant = ?",
             [str(TENANT_A)],
         )
-        assert filtered[0]["cnt"] == 3
+        assert filtered[0]["cnt"] == 2
 
     def test_refresh_views_picks_up_new_data(
         self, storage: LocalStorage, engine: DuckDBEngine,
@@ -81,7 +81,7 @@ class TestDuckDBEngine:
         engine.refresh_views()
 
         rows = engine.fetch_all("SELECT count(*) AS cnt FROM scan_results")
-        assert rows[0]["cnt"] == 3
+        assert rows[0]["cnt"] == 2
 
     def test_close_and_reuse_raises(self, catalog_dir):
         e = DuckDBEngine(str(catalog_dir), memory_limit="128MB", threads=1)
@@ -103,7 +103,6 @@ class TestDuckDBEngine:
         tiers = {r["risk_tier"]: r["cnt"] for r in rows}
         assert tiers["CRITICAL"] == 1
         assert tiers["HIGH"] == 1
-        assert tiers["MINIMAL"] == 1
 
     def test_invalid_memory_limit_raises(self, catalog_dir):
         with pytest.raises(ValueError, match="Invalid duckdb_memory_limit"):

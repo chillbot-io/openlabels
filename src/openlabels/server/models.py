@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, UUID
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
@@ -199,7 +200,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(UserRoleEnum, default="viewer")
@@ -221,12 +222,12 @@ class ScanTarget(Base):
     __tablename__ = "scan_targets"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     adapter: Mapped[str] = mapped_column(AdapterTypeEnum, nullable=False)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False)  # Adapter-specific config
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -245,14 +246,14 @@ class ScanSchedule(Base):
     __tablename__ = "scan_schedules"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
     cron: Mapped[str | None] = mapped_column(String(100))  # Cron expression
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -271,9 +272,9 @@ class ScanJob(Base):
     __tablename__ = "scan_jobs"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    schedule_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_schedules.id"))
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    schedule_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_schedules.id", ondelete="SET NULL"))
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
     target_name: Mapped[str | None] = mapped_column(String(255))  # Denormalized for display/history
     name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(JobStatusEnum, default="pending")
@@ -283,7 +284,7 @@ class ScanJob(Base):
     files_scanned: Mapped[int] = mapped_column(Integer, default=0)
     files_with_pii: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Fan-out columns for horizontal scaling
@@ -318,8 +319,8 @@ class ScanPartition(Base):
     __tablename__ = "scan_partitions"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id", ondelete="CASCADE"), nullable=False)
 
     # Partition identity
     partition_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-based
@@ -372,8 +373,8 @@ class ScanResult(Base):
     __tablename__ = "scan_results"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id", ondelete="CASCADE"), nullable=False)
 
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -430,6 +431,10 @@ class ScanResult(Base):
         Index('ix_scan_results_tenant_label', 'tenant_id', 'label_applied', 'scanned_at'),
         # GIN index for JSONB queries on entity_counts
         Index('ix_scan_results_entities', 'entity_counts', postgresql_using='gin'),
+        # GIN index for JSONB queries on policy_violations
+        Index('ix_scan_results_policy_violations', 'policy_violations',
+              postgresql_using='gin',
+              postgresql_where=text('policy_violations IS NOT NULL')),
         # Range-partitioned by scanned_at (monthly).  The actual DB primary
         # key is (id, scanned_at) — required by PostgreSQL for partitioned
         # tables.  SQLAlchemy keeps id as the sole ORM identity key so that
@@ -444,7 +449,7 @@ class SensitivityLabel(Base):
     __tablename__ = "sensitivity_labels"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # MIP label GUID
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[int | None] = mapped_column(Integer)
@@ -466,12 +471,12 @@ class LabelRule(Base):
     __tablename__ = "label_rules"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     rule_type: Mapped[str] = mapped_column(LabelRuleTypeEnum, nullable=False)
     match_value: Mapped[str] = mapped_column(String(100), nullable=False)  # 'CRITICAL' | 'SSN'
-    label_id: Mapped[str] = mapped_column(ForeignKey("sensitivity_labels.id"), nullable=False)
+    label_id: Mapped[str] = mapped_column(ForeignKey("sensitivity_labels.id", ondelete="CASCADE"), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0)
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -488,8 +493,8 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str] = mapped_column(AuditActionEnum, nullable=False)
     resource_type: Mapped[str | None] = mapped_column(String(50))
     resource_id: Mapped[PyUUID | None] = mapped_column(UUID(as_uuid=True))
@@ -509,7 +514,7 @@ class JobQueue(Base):
     __tablename__ = "job_queue"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     task_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'scan', 'label', 'export'
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=50)  # 0-100
@@ -549,8 +554,8 @@ class FolderInventory(Base):
     __tablename__ = "folder_inventory"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
 
     # Folder identification
     folder_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -563,7 +568,7 @@ class FolderInventory(Base):
 
     # Scan tracking
     last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_scan_job_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_jobs.id"))
+    last_scan_job_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_jobs.id", ondelete="SET NULL"))
 
     # Risk summary for folder
     has_sensitive_files: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -595,9 +600,9 @@ class FileInventory(Base):
     __tablename__ = "file_inventory"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
-    folder_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("folder_inventory.id"))
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
+    folder_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("folder_inventory.id", ondelete="SET NULL"))
 
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -626,7 +631,7 @@ class FileInventory(Base):
 
     # Scan tracking
     last_scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_scan_job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False)
+    last_scan_job_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_jobs.id", ondelete="SET NULL"))
     scan_count: Mapped[int] = mapped_column(Integer, default=1)
     content_changed_count: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -665,8 +670,8 @@ class RemediationAction(Base):
     __tablename__ = "remediation_actions"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id"))
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id", ondelete="SET NULL"))
 
     # Action details
     action_type: Mapped[str] = mapped_column(RemediationActionTypeEnum, nullable=False)
@@ -686,7 +691,7 @@ class RemediationAction(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
     # Rollback reference
-    rollback_of_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("remediation_actions.id"))
+    rollback_of_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("remediation_actions.id", ondelete="SET NULL"))
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -720,8 +725,8 @@ class MonitoredFile(Base):
     __tablename__ = "monitored_files"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id"))
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    file_inventory_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("file_inventory.id", ondelete="SET NULL"))
 
     # File identification
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -759,8 +764,8 @@ class FileAccessEvent(Base):
     __tablename__ = "file_access_events"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    monitored_file_id: Mapped[PyUUID] = mapped_column(ForeignKey("monitored_files.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    monitored_file_id: Mapped[PyUUID] = mapped_column(ForeignKey("monitored_files.id", ondelete="CASCADE"), nullable=False)
 
     # File info (denormalized for query performance)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -821,8 +826,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Secure token
-    tenant_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("tenants.id"))
-    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    tenant_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
+    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
     # Session data (tokens, claims)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -872,7 +877,7 @@ class TenantSettings(Base):
     __tablename__ = "tenant_settings"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), unique=True, nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, nullable=False)
 
     # Azure AD configuration
     azure_tenant_id: Mapped[str | None] = mapped_column(String(36))
@@ -898,7 +903,7 @@ class TenantSettings(Base):
 
     # Audit fields
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    updated_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    updated_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     __table_args__ = (
         Index('ix_tenant_settings_tenant_id', 'tenant_id', unique=True),
@@ -917,7 +922,7 @@ class Policy(Base):
     __tablename__ = "policies"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     framework: Mapped[str] = mapped_column(String(50), nullable=False)  # hipaa, gdpr, pci_dss, soc2 …
@@ -929,7 +934,7 @@ class Policy(Base):
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     __table_args__ = (
         Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
@@ -953,9 +958,9 @@ class ScanSummary(Base):
     __tablename__ = "scan_summaries"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id"), nullable=False, unique=True)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
 
     # Aggregate counts
     files_scanned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -1003,7 +1008,7 @@ class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)  # executive_summary, compliance_report, …
     format: Mapped[str] = mapped_column(String(10), nullable=False)  # html, pdf, csv
@@ -1020,7 +1025,7 @@ class Report(Base):
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     __table_args__ = (
         Index('ix_reports_tenant_type', 'tenant_id', 'report_type'),
@@ -1039,8 +1044,8 @@ class Share(Base):
     __tablename__ = "shares"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
 
     # Share identification
     share_name: Mapped[str] = mapped_column(String(255), nullable=False)  # e.g. "Finance$"
@@ -1077,7 +1082,7 @@ class SecurityDescriptor(Base):
     __tablename__ = "security_descriptors"
 
     sd_hash: Mapped[bytes] = mapped_column(LargeBinary(32), primary_key=True)  # SHA-256
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # Parsed fields (platform-dependent)
     owner_sid: Mapped[str | None] = mapped_column(String(255))  # Windows SID or Linux uid
@@ -1112,13 +1117,13 @@ class DirectoryTree(Base):
     __tablename__ = "directory_tree"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
 
     # Filesystem-native identifiers
     dir_ref: Mapped[int | None] = mapped_column(BigInteger)  # MFT ref (Windows) or inode (Linux)
     parent_ref: Mapped[int | None] = mapped_column(BigInteger)  # Parent MFT ref / inode
-    parent_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("directory_tree.id"))  # Self-FK for SQL tree queries
+    parent_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("directory_tree.id", ondelete="CASCADE"))  # Self-FK for SQL tree queries
 
     # Path (denormalized for fast lookups)
     dir_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1126,7 +1131,7 @@ class DirectoryTree(Base):
 
     # Security
     sd_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))  # FK-like ref to security_descriptors
-    share_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("shares.id"))
+    share_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("shares.id", ondelete="SET NULL"))
 
     # Metadata
     dir_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1172,8 +1177,8 @@ class IndexCheckpoint(Base):
     __tablename__ = "index_checkpoints"
 
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id"), nullable=False)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
 
     # Sync state
     last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -279,22 +279,28 @@ class FileProcessor:
         Yields:
             FileClassification for each processed file
         """
-        semaphore = asyncio.Semaphore(concurrency)
+        # Process in chunks to avoid holding all file content in memory
+        # simultaneously. Each chunk has at most `concurrency` files in-flight.
+        chunk_size = concurrency * 2
 
-        async def process_one(file_info: dict) -> FileClassification:
-            async with semaphore:
-                return await self.process_file(
-                    file_path=file_info["path"],
-                    content=file_info["content"],
-                    exposure_level=file_info.get("exposure", "PRIVATE"),
-                    file_size=file_info.get("size"),
-                )
+        for i in range(0, len(files), chunk_size):
+            chunk = files[i : i + chunk_size]
+            semaphore = asyncio.Semaphore(concurrency)
 
-        tasks = [process_one(f) for f in files]
+            async def process_one(file_info: dict) -> FileClassification:
+                async with semaphore:
+                    return await self.process_file(
+                        file_path=file_info["path"],
+                        content=file_info["content"],
+                        exposure_level=file_info.get("exposure", "PRIVATE"),
+                        file_size=file_info.get("size"),
+                    )
 
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            yield result
+            tasks = [process_one(f) for f in chunk]
+
+            for coro in asyncio.as_completed(tasks):
+                result = await coro
+                yield result
 
     async def _extract_text(self, content: bytes, file_path: str) -> str:
         """

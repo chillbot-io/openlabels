@@ -159,24 +159,28 @@ async def get_overall_stats(
 
     svc = _get_dashboard_service(request)
 
-    # Active scans always from PostgreSQL (real-time OLTP state)
+    # Active scans + total files always from PostgreSQL (real-time OLTP state)
     scan_stats_query = select(
         func.count().label("total"),
         func.sum(
             case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
         ).label("active"),
+        func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
     ).where(ScanJob.tenant_id == user.tenant_id)
     result = await session.execute(scan_stats_query)
     scan_row = result.one()
     total_scans = scan_row.total or 0
     active_scans = scan_row.active or 0
+    total_files_scanned = scan_row.total_files_scanned or 0
 
     # File aggregation from the active service (DuckDB or PG)
     file_stats = await svc.get_file_stats(user.tenant_id)
 
+    # total_files comes from ScanJob (counts every file processed),
+    # not from ScanResult/parquet which only holds sensitive files.
     response = OverallStats(
         total_scans=total_scans,
-        total_files_scanned=file_stats.total_files,
+        total_files_scanned=file_stats.total_files or total_files_scanned,
         files_with_pii=file_stats.files_with_pii,
         labels_applied=file_stats.labels_applied,
         critical_files=file_stats.critical_files,

@@ -248,17 +248,17 @@ class ResultService(BaseService):
         self,
         job_id: UUID | None = None,
         risk_tier: str | None = None,
-        has_pii: bool | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanResult], int]:
         """
         List scan results with filtering and pagination.
 
+        ScanResult only contains sensitive files (total_entities > 0).
+
         Args:
             job_id: Optional job ID to filter results
             risk_tier: Optional risk tier filter
-            has_pii: Optional filter for files with/without PII detections
             limit: Maximum number of results to return (default: 50)
             offset: Number of results to skip (default: 0)
 
@@ -280,11 +280,6 @@ class ResultService(BaseService):
             conditions.append(ScanResult.job_id == job_id)
         if risk_tier:
             conditions.append(ScanResult.risk_tier == risk_tier)
-        if has_pii is not None:
-            if has_pii:
-                conditions.append(ScanResult.total_entities > 0)
-            else:
-                conditions.append(ScanResult.total_entities == 0)
 
         # Get total count
         count_query = select(func.count()).where(*conditions).select_from(ScanResult)
@@ -358,15 +353,17 @@ class ResultService(BaseService):
         """
         Get aggregated statistics for scan results.
 
-        Uses a single SQL query with CASE expressions for efficient
-        aggregation without multiple round-trips to the database.
+        ``total_files`` is derived from ``ScanJob.files_scanned`` (which
+        counts every file processed).  All other stats come from
+        ``ScanResult`` which only contains sensitive files
+        (``total_entities > 0``).
 
         Args:
             job_id: Optional job ID to filter statistics
 
         Returns:
             Dictionary containing:
-            - total_files: Total number of scanned files
+            - total_files: Total number of scanned files (all files)
             - files_with_pii: Files containing at least one entity
             - critical_count: Files with CRITICAL risk tier
             - high_count: Files with HIGH risk tier
@@ -379,17 +376,24 @@ class ResultService(BaseService):
             stats = await service.get_stats(job_id=job_id)
             print(f"Found {stats['files_with_pii']} files with PII")
         """
-        # Build filter conditions
+        from openlabels.server.models import ScanJob
+
+        # total_files from ScanJob (counts every file, sensitive or not)
+        job_conditions: list = [ScanJob.tenant_id == self.tenant_id]
+        if job_id:
+            job_conditions.append(ScanJob.id == job_id)
+        total_q = select(
+            func.coalesce(func.sum(ScanJob.files_scanned), 0),
+        ).where(*job_conditions)
+        total_files = (await self.session.execute(total_q)).scalar() or 0
+
+        # ScanResult only holds sensitive files now
         conditions = [ScanResult.tenant_id == self.tenant_id]
         if job_id:
             conditions.append(ScanResult.job_id == job_id)
 
-        # Single aggregation query with CASE expressions
         stats_query = select(
-            func.count().label("total_files"),
-            func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label(
-                "files_with_pii"
-            ),
+            func.count().label("files_with_pii"),
             func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label(
                 "critical_count"
             ),
@@ -414,7 +418,7 @@ class ResultService(BaseService):
         row = result.one()
 
         stats = {
-            "total_files": row.total_files or 0,
+            "total_files": total_files,
             "files_with_pii": row.files_with_pii or 0,
             "critical_count": row.critical_count or 0,
             "high_count": row.high_count or 0,
@@ -456,46 +460,41 @@ class ResultService(BaseService):
             entity_stats = await service.get_entity_type_stats(job_id=job_id)
             # {"SSN": 150, "CREDIT_CARD": 85, "EMAIL": 42}
         """
-        # Build filter conditions
-        conditions = [
-            ScanResult.tenant_id == self.tenant_id,
-            ScanResult.entity_counts.isnot(None),
-            ScanResult.total_entities > 0,
-        ]
+        # Push JSONB aggregation to PostgreSQL using jsonb_each_text()
+        # instead of loading thousands of JSONB blobs into Python.
+        from sqlalchemy import text as sa_text
+
+        job_filter = "AND r.job_id = :job_id" if job_id else ""
+        agg_sql = sa_text(f"""
+            SELECT kv.key AS entity_type,
+                   SUM(kv.value::int) AS total_count
+            FROM (
+                SELECT entity_counts
+                FROM scan_results r
+                WHERE r.tenant_id = :tid
+                  AND r.entity_counts IS NOT NULL
+                  AND r.total_entities > 0
+                  {job_filter}
+                ORDER BY r.scanned_at DESC
+                LIMIT :sample_size
+            ) sub,
+            LATERAL jsonb_each_text(sub.entity_counts) AS kv(key, value)
+            GROUP BY kv.key
+            ORDER BY total_count DESC
+            LIMIT :lim
+        """)
+
+        params: dict = {"tid": self.tenant_id, "sample_size": sample_size, "lim": limit}
         if job_id:
-            conditions.append(ScanResult.job_id == job_id)
+            params["job_id"] = job_id
 
-        # Query only entity_counts with sample limit
-        query = (
-            select(ScanResult.entity_counts)
-            .where(*conditions)
-            .order_by(ScanResult.scanned_at.desc())
-            .limit(sample_size)
-        )
-
-        result = await self.session.execute(query)
-        entity_counts_list = result.scalars().all()
-
-        # Aggregate entity counts in Python
-        # (JSON aggregation varies by database, this is more portable)
-        entity_totals: dict[str, int] = {}
-        for entity_counts in entity_counts_list:
-            if entity_counts:
-                for entity_type, count in entity_counts.items():
-                    entity_totals[entity_type] = entity_totals.get(entity_type, 0) + count
-
-        # Sort by count and limit to top N
-        sorted_entities = sorted(
-            entity_totals.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )[:limit]
-
-        top_entities = dict(sorted_entities)
+        result = await self.session.execute(agg_sql, params)
+        rows = result.all()
+        top_entities = {row.entity_type: row.total_count for row in rows}
 
         self._log_debug(
-            f"Computed entity type statistics job_id={job_id} sample_size={len(entity_counts_list)} "
-            f"unique_types={len(entity_totals)} returned_types={len(top_entities)}"
+            f"Computed entity type statistics job_id={job_id} "
+            f"returned_types={len(top_entities)}"
         )
 
         return top_entities

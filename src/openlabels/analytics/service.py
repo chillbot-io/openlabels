@@ -230,11 +230,13 @@ class DuckDBDashboardService:
             raise
 
     async def get_file_stats(self, tenant_id: UUID) -> FileStats:
+        # scan_results parquet only contains sensitive files now, so
+        # count(*) == files_with_pii.  total_files is set to 0 here;
+        # callers that need the true total should overlay from ScanJob.
         rows = await self._safe_query(
             """
             SELECT
-                count(*)                                        AS total_files,
-                count(*) FILTER (WHERE total_entities > 0)      AS files_with_pii,
+                count(*)                                        AS files_with_pii,
                 count(*) FILTER (WHERE label_applied)           AS labels_applied,
                 count(*) FILTER (WHERE risk_tier = 'CRITICAL')  AS critical_files,
                 count(*) FILTER (WHERE risk_tier = 'HIGH')      AS high_files
@@ -247,7 +249,7 @@ class DuckDBDashboardService:
             return FileStats()
         r = rows[0]
         return FileStats(
-            total_files=r["total_files"],
+            total_files=0,  # must be overlaid from ScanJob by caller
             files_with_pii=r["files_with_pii"],
             labels_applied=r["labels_applied"],
             critical_files=r["critical_files"],
@@ -260,12 +262,14 @@ class DuckDBDashboardService:
         start_date: datetime,
         end_date: datetime,
     ) -> list[TrendPoint]:
+        # scan_results parquet only holds sensitive files now, so
+        # count(*) == files_with_pii.  files_scanned is set to 0;
+        # callers that need the true total should overlay from ScanJob.
         rows = await self._safe_query(
             """
             SELECT
                 scan_date,
-                count(*)                                       AS files_scanned,
-                count(*) FILTER (WHERE total_entities > 0)     AS files_with_pii,
+                count(*)                                       AS files_with_pii,
                 count(*) FILTER (WHERE label_applied)          AS labels_applied
             FROM scan_results
             WHERE tenant = ? AND scan_date >= ? AND scan_date <= ?
@@ -277,7 +281,7 @@ class DuckDBDashboardService:
         return [
             TrendPoint(
                 date=str(r["scan_date"]),
-                files_scanned=r["files_scanned"],
+                files_scanned=0,  # must be overlaid from ScanJob by caller
                 files_with_pii=r["files_with_pii"],
                 labels_applied=r["labels_applied"],
             )

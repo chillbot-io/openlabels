@@ -774,20 +774,29 @@ async def recent_scans_partial(
         result = await session.execute(query)
         scans = result.scalars().all()
 
-        for scan in scans:
-            # Get findings count for this scan
-            findings_query = select(func.sum(ScanResult.total_entities)).where(
-                ScanResult.job_id == scan.id
+        # Batch-fetch findings counts to avoid N+1 queries
+        scan_ids = [scan.id for scan in scans]
+        if scan_ids:
+            findings_query = (
+                select(
+                    ScanResult.job_id,
+                    func.coalesce(func.sum(ScanResult.total_entities), 0).label("total"),
+                )
+                .where(ScanResult.job_id.in_(scan_ids))
+                .group_by(ScanResult.job_id)
             )
             findings_result = await session.execute(findings_query)
-            findings_count = findings_result.scalar() or 0
+            findings_map = {row.job_id: row.total for row in findings_result.all()}
+        else:
+            findings_map = {}
 
+        for scan in scans:
             recent_scans.append({
                 "id": str(scan.id),
                 "target_name": scan.target_name or "Unknown",
                 "status": scan.status,
                 "files_scanned": scan.files_scanned or 0,
-                "findings_count": findings_count,
+                "findings_count": findings_map.get(scan.id, 0),
                 "created_at": scan.created_at,
                 "started_at": scan.started_at,
                 "completed_at": scan.completed_at,
@@ -809,38 +818,39 @@ async def findings_by_type_partial(
     findings_by_type = []
 
     if user:
-        # Get all results with entity counts
-        query = select(ScanResult.entity_counts, ScanResult.risk_tier).where(
-            ScanResult.tenant_id == user.tenant_id,
-            ScanResult.entity_counts.isnot(None),
-        ).limit(50_000)
-        result = await session.execute(query)
+        # Push JSONB aggregation to PostgreSQL instead of loading 50k rows
+        # into Python. Uses jsonb_each_text() to expand the JSONB map and
+        # GROUP BY to aggregate counts server-side.
+        from sqlalchemy import text as sa_text
+
+        agg_query = sa_text("""
+            SELECT kv.key AS entity_type,
+                   SUM(kv.value::int) AS total_count,
+                   MAX(CASE r.risk_tier
+                       WHEN 'CRITICAL' THEN 4
+                       WHEN 'HIGH' THEN 3
+                       WHEN 'MEDIUM' THEN 2
+                       ELSE 1
+                   END) AS max_risk_ord
+            FROM scan_results r,
+                 LATERAL jsonb_each_text(r.entity_counts) AS kv(key, value)
+            WHERE r.tenant_id = :tid
+              AND r.entity_counts IS NOT NULL
+            GROUP BY kv.key
+            ORDER BY total_count DESC
+            LIMIT 10
+        """)
+        result = await session.execute(agg_query, {"tid": user.tenant_id})
         rows = result.all()
 
-        # Aggregate by entity type
-        type_counts: dict[str, dict] = {}
+        risk_map = {4: "CRITICAL", 3: "HIGH", 2: "MEDIUM", 1: "LOW"}
+        grand_total = sum(row.total_count for row in rows) or 1
         for row in rows:
-            entity_counts = row.entity_counts or {}
-            risk = row.risk_tier or "LOW"
-            for entity_type, count in entity_counts.items():
-                if entity_type not in type_counts:
-                    type_counts[entity_type] = {"count": 0, "risk": risk}
-                type_counts[entity_type]["count"] += count
-                # Keep highest risk
-                risk_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
-                if risk_order.get(risk, 0) > risk_order.get(type_counts[entity_type]["risk"], 0):
-                    type_counts[entity_type]["risk"] = risk
-
-        # Sort by count and calculate percentages
-        total = sum(tc["count"] for tc in type_counts.values()) or 1
-        sorted_types = sorted(type_counts.items(), key=lambda x: x[1]["count"], reverse=True)[:10]
-
-        for entity_type, data in sorted_types:
             findings_by_type.append({
-                "entity_type": entity_type,
-                "count": data["count"],
-                "risk": data["risk"],
-                "percentage": round(data["count"] / total * 100, 1),
+                "entity_type": row.entity_type,
+                "count": row.total_count,
+                "risk": risk_map.get(row.max_risk_ord, "LOW"),
+                "percentage": round(row.total_count / grand_total * 100, 1),
             })
 
     return templates.TemplateResponse(

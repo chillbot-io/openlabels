@@ -357,23 +357,38 @@ async def _apply_label_office_metadata(file_path: str, label: SensitivityLabel) 
 
 
 def _create_custom_props_xml(label: SensitivityLabel) -> bytes:
-    """Create custom properties XML with label info."""
+    """Create custom properties XML with label info.
+
+    Uses xml.etree.ElementTree to safely construct XML, preventing
+    injection via label names containing XML metacharacters.
+    """
+    import xml.etree.ElementTree as ET
+
     ns_props = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
     ns_vt = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"
 
-    xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="{ns_props}" xmlns:vt="{ns_vt}">
-    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="OpenLabels_LabelId">
-        <vt:lpwstr>{label.id}</vt:lpwstr>
-    </property>
-    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="3" name="OpenLabels_LabelName">
-        <vt:lpwstr>{label.name}</vt:lpwstr>
-    </property>
-    <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="4" name="Classification">
-        <vt:lpwstr>{label.name}</vt:lpwstr>
-    </property>
-</Properties>"""
-    return xml.encode("utf-8")
+    ET.register_namespace("", ns_props)
+    ET.register_namespace("vt", ns_vt)
+
+    root = ET.Element(f"{{{ns_props}}}Properties")
+
+    _FMTID = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"
+    for pid, name, value in [
+        ("2", "OpenLabels_LabelId", str(label.id)),
+        ("3", "OpenLabels_LabelName", str(label.name)),
+        ("4", "Classification", str(label.name)),
+    ]:
+        prop = ET.SubElement(root, f"{{{ns_props}}}property")
+        prop.set("fmtid", _FMTID)
+        prop.set("pid", pid)
+        prop.set("name", name)
+        val_el = ET.SubElement(prop, f"{{{ns_vt}}}lpwstr")
+        val_el.text = value
+
+    return (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + ET.tostring(root, encoding="unicode").encode("utf-8")
+    )
 
 
 def _update_custom_props_xml(content: bytes, label: SensitivityLabel) -> bytes:

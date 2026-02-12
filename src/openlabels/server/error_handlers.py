@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 from slowapi.errors import RateLimitExceeded
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from openlabels.exceptions import (
     AdapterUnavailableError,
     APIError,
@@ -220,6 +222,28 @@ def register_error_handlers(app: FastAPI) -> None:
         if request_id:
             body["request_id"] = request_id
         return JSONResponse(status_code=422, content=body)
+
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_error_handler(
+        request: Request, exc: SQLAlchemyError,
+    ) -> JSONResponse:
+        request_id = get_request_id()
+        logger.error(
+            "Database error: %s: %s",
+            type(exc).__name__,
+            exc,
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+            },
+        )
+        body: dict[str, Any] = {
+            "error": "INTERNAL_ERROR",
+            "message": "A database error occurred",
+        }
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(status_code=500, content=body)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(

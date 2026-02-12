@@ -188,10 +188,6 @@ async def get_optional_user(
     except (ValueError, AuthError):
         # Invalid or expired token — user is not authenticated
         return None
-    except Exception as e:
-        # Log unexpected errors in authentication (e.g. DB issues)
-        logger.debug(f"Authentication check failed: {type(e).__name__}: {e}")
-        return None
 
 
 # ---------------------------------------------------------------------------

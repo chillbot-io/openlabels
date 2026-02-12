@@ -229,58 +229,6 @@ class TestListResults:
 
         assert data["total"] == 2
 
-    async def test_filter_by_has_pii(self, test_client, setup_results_data):
-        """List should filter by has_pii."""
-        from openlabels.server.models import ScanResult
-
-        session = setup_results_data["session"]
-        tenant = setup_results_data["tenant"]
-        job = setup_results_data["job"]
-
-        # Files with PII (flush after each to avoid asyncpg sentinel issues)
-        for i in range(3):
-            result = ScanResult(
-                tenant_id=tenant.id,
-                job_id=job.id,
-                file_path=f"/pii/file_{i}.txt",
-                file_name=f"file_{i}.txt",
-                risk_score=80,
-                risk_tier="HIGH",
-                entity_counts={"SSN": 1},
-                total_entities=1,
-            )
-            session.add(result)
-            await session.flush()
-
-        # Files without PII
-        for i in range(2):
-            result = ScanResult(
-                tenant_id=tenant.id,
-                job_id=job.id,
-                file_path=f"/clean/file_{i}.txt",
-                file_name=f"file_{i}.txt",
-                risk_score=0,
-                risk_tier="MINIMAL",
-                entity_counts={},
-                total_entities=0,
-            )
-            session.add(result)
-            await session.flush()
-        await session.commit()
-
-        # Filter has_pii=true
-        response = await test_client.get("/api/v1/results?has_pii=true")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total"] >= 3
-
-        # Filter has_pii=false
-        response = await test_client.get("/api/v1/results?has_pii=false")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total"] >= 2
-
-
 class TestListResultsCursor:
     """Tests for GET /api/v1/results/cursor endpoint."""
 

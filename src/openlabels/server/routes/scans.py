@@ -108,6 +108,7 @@ async def get_scan(
 
 
 @router.delete("/{scan_id}", status_code=204)
+@limiter.limit("10/minute")
 async def delete_scan(
     scan_id: UUID,
     scan_service: ScanServiceDep,
@@ -118,6 +119,7 @@ async def delete_scan(
 
 
 @router.post("/{scan_id}/cancel")
+@limiter.limit("10/minute")
 async def cancel_scan(
     scan_id: UUID,
     request: Request,

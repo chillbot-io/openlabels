@@ -108,13 +108,10 @@ def _include_routes(app: FastAPI) -> None:
         api_v1_router.include_router(module.router, prefix=prefix, tags=[tag])
     app.include_router(api_v1_router)
 
-    # --- Legacy API (deprecated, emits warning headers via middleware) ---
-    api_legacy_router = APIRouter(prefix="/api", deprecated=True)
-    for prefix, tag, module in _ROUTE_MODULES:
-        api_legacy_router.include_router(
-            module.router, prefix=prefix, tags=[f"{tag} (Deprecated)"],
-        )
-    app.include_router(api_legacy_router)
+    # Legacy /api/* routes are handled by _register_legacy_redirects() which
+    # issues 307 redirects to /api/v1/*. We no longer double-register every
+    # route handler under /api/ — that duplicated memory, OpenAPI schema
+    # entries, and middleware invocations.
 
     # --- WebSocket (not versioned) ---
     app.include_router(ws.router, tags=["WebSocket"])

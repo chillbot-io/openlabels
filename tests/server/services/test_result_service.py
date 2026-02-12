@@ -134,22 +134,6 @@ class TestListResults:
         assert results[0].risk_tier == "CRITICAL"
 
     @pytest.mark.asyncio
-    async def test_list_has_pii(self, result_fixtures):
-        f = result_fixtures
-        svc = _make_service(f["session"], f["tenant"].id)
-
-        results, total = await svc.list_results(has_pii=True)
-        assert total == 3  # CRITICAL, HIGH, MEDIUM have entities
-
-    @pytest.mark.asyncio
-    async def test_list_no_pii(self, result_fixtures):
-        f = result_fixtures
-        svc = _make_service(f["session"], f["tenant"].id)
-
-        results, total = await svc.list_results(has_pii=False)
-        assert total == 2  # LOW, MINIMAL
-
-    @pytest.mark.asyncio
     async def test_list_pagination(self, result_fixtures):
         f = result_fixtures
         svc = _make_service(f["session"], f["tenant"].id)
