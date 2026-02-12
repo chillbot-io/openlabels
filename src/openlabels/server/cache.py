@@ -95,10 +95,19 @@ class InMemoryCache:
     async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set value in cache with optional TTL."""
         async with self._lock:
-            # Calculate expiration time
             expires_at = time.time() + ttl if ttl else None
 
-            # Remove oldest items if at capacity
+            # Evict expired entries first before removing valid ones
+            if len(self._cache) >= self._max_size:
+                now = time.time()
+                expired_keys = [
+                    k for k, (_, exp) in self._cache.items()
+                    if exp and now > exp
+                ]
+                for k in expired_keys:
+                    del self._cache[k]
+
+            # If still at capacity, remove oldest (LRU) items
             while len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
 

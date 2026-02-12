@@ -14,7 +14,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,12 @@ def _sanitize_color(color: str | None) -> str:
 
 
 router = APIRouter()
+
+
+def _login_redirect(request: Request) -> RedirectResponse:
+    """Build a redirect response to the login page, preserving the intended destination."""
+    return RedirectResponse(url=f"/ui/login?next={request.url.path}", status_code=302)
+
 
 # Set up templates directory
 templates_dir = Path(__file__).parent / "templates"
@@ -99,7 +105,7 @@ def truncate_string(s: str, length: int = 50, suffix: str = "...") -> str:
 
 # Register template filters
 templates.env.filters["relative_time"] = format_relative_time
-templates.env.filters["truncate"] = truncate_string
+templates.env.filters["truncate_path"] = truncate_string
 
 
 # Default empty values for dashboard partials (HTMX will load actual data)
@@ -114,12 +120,13 @@ _DEFAULT_STATS = {
 # Page routes
 @router.get("/")
 async def home(request: Request):
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/ui/dashboard", status_code=302)
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -135,7 +142,9 @@ async def dashboard(request: Request):
 
 
 @router.get("/targets", response_class=HTMLResponse)
-async def targets_page(request: Request):
+async def targets_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "targets.html",
         {"request": request, "active_page": "targets"},
@@ -143,7 +152,9 @@ async def targets_page(request: Request):
 
 
 @router.get("/targets/new", response_class=HTMLResponse)
-async def new_target_page(request: Request):
+async def new_target_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "targets_form.html",
         {"request": request, "active_page": "targets", "target": None, "mode": "create"},
@@ -151,7 +162,9 @@ async def new_target_page(request: Request):
 
 
 @router.get("/scans", response_class=HTMLResponse)
-async def scans_page(request: Request):
+async def scans_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "scans.html",
         {"request": request, "active_page": "scans"},
@@ -159,7 +172,9 @@ async def scans_page(request: Request):
 
 
 @router.get("/scans/new", response_class=HTMLResponse)
-async def new_scan_page(request: Request):
+async def new_scan_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "scans_form.html",
         {"request": request, "active_page": "scans"},
@@ -170,8 +185,11 @@ async def new_scan_page(request: Request):
 async def results_page(
     request: Request,
     scan_id: str | None = None,
+    user=Depends(get_optional_user),
 ):
     """Results page with optional scan_id filter."""
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "results.html",
         {"request": request, "active_page": "results", "scan_id": scan_id},
@@ -179,7 +197,9 @@ async def results_page(
 
 
 @router.get("/labels", response_class=HTMLResponse)
-async def labels_page(request: Request):
+async def labels_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "labels.html",
         {"request": request, "active_page": "labels"},
@@ -187,7 +207,9 @@ async def labels_page(request: Request):
 
 
 @router.get("/labels/sync", response_class=HTMLResponse)
-async def labels_sync_page(request: Request):
+async def labels_sync_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "labels_sync.html",
         {"request": request, "active_page": "labels"},
@@ -195,7 +217,9 @@ async def labels_sync_page(request: Request):
 
 
 @router.get("/monitoring", response_class=HTMLResponse)
-async def monitoring_page(request: Request):
+async def monitoring_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "monitoring.html",
         {
@@ -474,7 +498,9 @@ async def settings_page(
 
 
 @router.get("/schedules", response_class=HTMLResponse)
-async def schedules_page(request: Request):
+async def schedules_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "schedules.html",
         {"request": request, "active_page": "schedules"},
@@ -488,6 +514,8 @@ async def new_schedule_page(
     user=Depends(get_optional_user),
 ):
     """New schedule form page."""
+    if not user:
+        return _login_redirect(request)
     targets = []
     if user:
         query = (
@@ -1696,21 +1724,31 @@ async def system_health_partial(
 @router.get("/partials/labels-list", response_class=HTMLResponse)
 async def labels_list_partial(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
     """Labels list partial for HTMX updates."""
     labels = []
+    total = 0
 
     if user:
         from openlabels.server.models import SensitivityLabel
 
-        query = (
-            select(SensitivityLabel)
-            .where(SensitivityLabel.tenant_id == user.tenant_id)
-            .order_by(SensitivityLabel.priority)
-            .limit(500)
+        base_query = select(SensitivityLabel).where(
+            SensitivityLabel.tenant_id == user.tenant_id
         )
+
+        # Count total
+        count_query = select(func.count()).select_from(base_query.subquery())
+        result = await session.execute(count_query)
+        total = result.scalar() or 0
+
+        # Get page
+        query = base_query.order_by(SensitivityLabel.priority).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
         result = await session.execute(query)
         for label in result.scalars().all():
             labels.append({
@@ -1722,9 +1760,18 @@ async def labels_list_partial(
                 "synced_at": label.synced_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/labels_list.html",
-        {"request": request, "labels": labels},
+        {
+            "request": request,
+            "labels": labels,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
+        },
     )
 
 
@@ -1832,19 +1879,29 @@ async def target_checkboxes_partial(
 @router.get("/partials/schedules-list", response_class=HTMLResponse)
 async def schedules_list_partial(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
     """Schedules list partial for HTMX updates."""
     schedules = []
+    total = 0
 
     if user:
-        query = (
-            select(ScanSchedule)
-            .where(ScanSchedule.tenant_id == user.tenant_id)
-            .order_by(desc(ScanSchedule.created_at))
-            .limit(500)
+        base_query = select(ScanSchedule).where(
+            ScanSchedule.tenant_id == user.tenant_id
         )
+
+        # Count total
+        count_query = select(func.count()).select_from(base_query.subquery())
+        result = await session.execute(count_query)
+        total = result.scalar() or 0
+
+        # Get page
+        query = base_query.order_by(desc(ScanSchedule.created_at)).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
         result = await session.execute(query)
         schedule_rows = result.scalars().all()
 
@@ -1869,7 +1926,16 @@ async def schedules_list_partial(
                 "next_run_at": schedule.next_run_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/schedules_list.html",
-        {"request": request, "schedules": schedules},
+        {
+            "request": request,
+            "schedules": schedules,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
+        },
     )
