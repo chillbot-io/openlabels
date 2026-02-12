@@ -1,20 +1,21 @@
 """
 SQL query and AI assistant API endpoints.
 
-Provides:
-- POST /query         — Execute read-only SQL against the DuckDB analytics layer
-- GET  /query/schema  — Introspect available tables and columns for autocomplete
-- POST /query/ai      — Natural language → SQL translation via LLM, then execute
+Provides (router-local paths, mounted at ``/api/v1/query``):
+- POST /              — Execute read-only SQL against the DuckDB analytics layer
+- GET  /schema        — Introspect available tables and columns for autocomplete
+- POST /ai            — Natural language → SQL translation via LLM, then execute
 
 Security:
 - All queries are validated as read-only (SELECT/WITH only)
 - Tenant isolation is enforced by exposing a ``$tenant_id`` parameter
-- Query execution time is bounded
+- Query execution is bounded to 30 seconds
 - Result sets are size-limited
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -67,6 +68,7 @@ _BLOCKED_FUNCTIONS = re.compile(
 
 MAX_RESULT_ROWS = 10_000
 MAX_QUERY_LENGTH = 10_000
+QUERY_TIMEOUT_SECONDS = 30
 
 
 def validate_sql(sql: str) -> str:
@@ -92,20 +94,82 @@ def validate_sql(sql: str) -> str:
         raise ValueError("Query contains blocked functions")
 
     # Check for multiple statements (semicolons within the query)
-    # Allow semicolons inside string literals but block bare ones
+    # Allow semicolons inside string literals but block bare ones.
+    # SQL uses doubled quotes ('' or "") for escaping, not backslash.
     in_string = False
-    quote_char = None
-    for i, ch in enumerate(sql):
-        if ch in ("'", '"') and (i == 0 or sql[i - 1] != "\\"):
-            if not in_string:
+    quote_char: str | None = None
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+        if in_string:
+            if ch == quote_char:
+                # Doubled quote = escape, stay in string
+                if i + 1 < length and sql[i + 1] == quote_char:
+                    i += 2  # skip both quotes
+                    continue
+                # Single quote = end of string
+                in_string = False
+        else:
+            if ch in ("'", '"'):
                 in_string = True
                 quote_char = ch
-            elif ch == quote_char:
-                in_string = False
-        elif ch == ";" and not in_string:
-            raise ValueError("Multiple statements are not allowed")
+            elif ch == ";":
+                raise ValueError("Multiple statements are not allowed")
+        i += 1
 
     return sql
+
+
+def _replace_param_placeholders(sql: str) -> tuple[str, int]:
+    """Replace ``$1`` placeholders with ``?`` only outside SQL string literals.
+
+    Returns the rewritten SQL and the number of replacements made.
+    SQL uses doubled quotes (``''`` / ``""``) for escaping, not backslash.
+    """
+    result: list[str] = []
+    count = 0
+    i = 0
+    length = len(sql)
+
+    while i < length:
+        ch = sql[i]
+
+        # Enter string literal
+        if ch in ("'", '"'):
+            quote = ch
+            result.append(ch)
+            i += 1
+            # Consume until closing quote (handling doubled-quote escapes)
+            while i < length:
+                if sql[i] == quote:
+                    result.append(sql[i])
+                    i += 1
+                    # Doubled quote = escape, stay in string
+                    if i < length and sql[i] == quote:
+                        result.append(sql[i])
+                        i += 1
+                        continue
+                    # Single quote = end of string
+                    break
+                else:
+                    result.append(sql[i])
+                    i += 1
+            continue
+
+        # Outside string: check for $1
+        if ch == "$" and i + 1 < length and sql[i + 1] == "1":
+            # Make sure it's not $10, $11, etc.
+            if i + 2 >= length or not sql[i + 2].isdigit():
+                result.append("?")
+                count += 1
+                i += 2
+                continue
+
+        result.append(ch)
+        i += 1
+
+    return "".join(result), count
 
 
 # ---------------------------------------------------------------------------
@@ -145,18 +209,18 @@ class QueryResponse(BaseModel):
     sql: str  # The actual SQL that was executed
 
 
-class SchemaTable(BaseModel):
-    """Metadata for one analytics table/view."""
-
-    name: str
-    columns: list[SchemaColumn]
-
-
 class SchemaColumn(BaseModel):
     """Column metadata."""
 
     name: str
     type: str
+
+
+class SchemaTable(BaseModel):
+    """Metadata for one analytics table/view."""
+
+    name: str
+    columns: list[SchemaColumn]
 
 
 class SchemaResponse(BaseModel):
@@ -378,21 +442,25 @@ async def execute_query(
     # Inject tenant_id as a parameter — replace $1 with positional ?.
     # DuckDB uses positional parameters (?), and each ? consumes one param,
     # so we must append one copy of tenant_id per occurrence.
+    # Replacement is string-literal-aware to avoid mangling $1 inside quotes.
     tenant_str = str(tenant.tenant_id)
-    execution_sql = clean_sql
-    occurrence_count = execution_sql.count("$1")
-    params: list[Any] = []
-
-    if occurrence_count > 0:
-        execution_sql = execution_sql.replace("$1", "?")
-        params.extend([tenant_str] * occurrence_count)
+    execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
+    params: list[Any] = [tenant_str] * occurrence_count
 
     # Enforce row limit via wrapping
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
 
     start = time.monotonic()
     try:
-        rows = await analytics.query(limited_sql, params or None)
+        rows = await asyncio.wait_for(
+            analytics.query(limited_sql, params or None),
+            timeout=QUERY_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=408,
+            detail=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
+        )
     except Exception as e:
         error_msg = str(e)
         # Don't leak internal details
@@ -450,7 +518,6 @@ async def ai_query(
         generated_sql, explanation = await _generate_sql(
             question=body.question,
             schema=schema_text,
-            tenant_id=tenant_str,
         )
     except Exception as e:
         logger.error("AI SQL generation failed: %s", e)
@@ -487,18 +554,24 @@ async def ai_query(
             error="Analytics engine unavailable",
         )
 
-    execution_sql = clean_sql
-    occurrence_count = execution_sql.count("$1")
-    params: list[Any] = []
-    if occurrence_count > 0:
-        execution_sql = execution_sql.replace("$1", "?")
-        params.extend([tenant_str] * occurrence_count)
+    execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
+    params: list[Any] = [tenant_str] * occurrence_count
 
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
 
     start = time.monotonic()
     try:
-        rows = await analytics.query(limited_sql, params or None)
+        rows = await asyncio.wait_for(
+            analytics.query(limited_sql, params or None),
+            timeout=QUERY_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return AIQueryResponse(
+            question=body.question,
+            generated_sql=clean_sql,
+            explanation=explanation,
+            error=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
+        )
     except Exception as e:
         return AIQueryResponse(
             question=body.question,
@@ -575,7 +648,6 @@ def _build_schema_prompt() -> str:
 async def _generate_sql(
     question: str,
     schema: str,
-    tenant_id: str,
 ) -> tuple[str, str]:
     """Generate SQL from a natural language question using an LLM.
 
@@ -591,13 +663,12 @@ Generate DuckDB-compatible SQL queries based on user questions.
 {schema}
 
 Rules:
-- ALWAYS include WHERE tenant = $1 for tenant isolation
+- ALWAYS include WHERE tenant = $1 for tenant isolation ($1 is a parameter placeholder — do NOT substitute it with a real value)
 - Only generate SELECT queries (no INSERT, UPDATE, DELETE, DDL)
 - Use DuckDB SQL syntax (not PostgreSQL-specific features)
 - For entity_counts MAP column, use unnest(map_keys(...)) and unnest(map_values(...))
 - Return ONLY the SQL query on the first line, followed by a blank line, then an explanation
-- Keep queries efficient — use LIMIT when appropriate
-- Current tenant_id: {tenant_id}"""
+- Keep queries efficient — use LIMIT when appropriate"""
 
     user_prompt = f"Question: {question}\n\nGenerate a DuckDB SQL query to answer this question."
 
@@ -620,8 +691,6 @@ async def _call_anthropic(
     system: str, user: str, api_key: str
 ) -> tuple[str, str]:
     """Call Anthropic Claude API for SQL generation."""
-    import asyncio
-
     try:
         import anthropic
     except ImportError:
@@ -649,8 +718,6 @@ async def _call_openai(
     system: str, user: str, api_key: str
 ) -> tuple[str, str]:
     """Call OpenAI API for SQL generation."""
-    import asyncio
-
     try:
         import openai
     except ImportError:
