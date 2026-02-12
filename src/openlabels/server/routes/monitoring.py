@@ -28,9 +28,12 @@ from openlabels.server.models import (
 )
 from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
+    CursorPaginatedResponse,
+    CursorPaginationParams,
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
+    cursor_paginate_query,
     paginate_query,
 )
 
@@ -281,6 +284,54 @@ async def list_access_events(
             page_size=pagination.page_size,
         )
     )
+
+
+@router.get("/events/cursor", response_model=CursorPaginatedResponse[AccessEventResponse])
+async def list_access_events_cursor(
+    file_path: str | None = Query(None, description="Filter by file path"),
+    user_name: str | None = Query(None, description="Filter by user name"),
+    action: str | None = Query(None, description="Filter by action type"),
+    since: datetime | None = Query(None, description="Filter events after this time"),
+    pagination: CursorPaginationParams = Depends(),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> CursorPaginatedResponse[AccessEventResponse]:
+    """
+    List file access events using cursor-based pagination.
+
+    Designed for large event datasets and infinite-scroll UIs.
+    Cursors are HMAC-signed and based on (event_time, id) for stable ordering.
+    """
+    conditions = [FileAccessEvent.tenant_id == user.tenant_id]
+
+    if file_path:
+        conditions.append(FileAccessEvent.file_path == file_path)
+    if user_name:
+        safe_name = user_name.replace("%", r"\%").replace("_", r"\_")
+        conditions.append(FileAccessEvent.user_name.ilike(f"%{safe_name}%"))
+    if action:
+        conditions.append(FileAccessEvent.action == action)
+    if since:
+        conditions.append(FileAccessEvent.event_time >= since)
+
+    query = (
+        select(FileAccessEvent)
+        .where(*conditions)
+        .order_by(FileAccessEvent.event_time.desc(), FileAccessEvent.id.desc())
+    )
+
+    result = await cursor_paginate_query(
+        session,
+        query,
+        pagination,
+        cursor_columns=[
+            (FileAccessEvent.event_time, "event_time"),
+            (FileAccessEvent.id, "id"),
+        ],
+        transformer=lambda e: AccessEventResponse.model_validate(e),
+    )
+
+    return CursorPaginatedResponse[AccessEventResponse](**result)
 
 
 @router.get("/events/file/{file_path:path}", response_model=PaginatedResponse[AccessEventResponse])

@@ -430,6 +430,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             type(e).__name__, e,
         )
 
+    # Global WebSocket event bus for frontend (/ws/events)
+    try:
+        from openlabels.server.routes.ws_events import global_broadcaster
+
+        global_pubsub_active = await global_broadcaster.start()
+        if global_pubsub_active:
+            logger.info("Global WS pub/sub: distributed mode (Redis)")
+        else:
+            logger.info("Global WS pub/sub: local-only mode")
+    except Exception as e:
+        logger.warning(
+            "Global WS pub/sub initialization failed: %s: %s",
+            type(e).__name__, e,
+        )
+
     logger.info(f"OpenLabels v{__version__} starting up")
     yield
 
@@ -442,6 +457,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await ws_broadcaster.stop()
     except Exception as e:
         logger.warning("WebSocket pub/sub shutdown error: %s: %s", type(e).__name__, e)
+
+    # Stop global WebSocket pub/sub
+    try:
+        from openlabels.server.routes.ws_events import global_broadcaster
+
+        await global_broadcaster.stop()
+    except Exception as e:
+        logger.warning("Global WS pub/sub shutdown error: %s: %s", type(e).__name__, e)
 
     # Stop real-time event streams and scan trigger
     if stream_task and not stream_task.done():

@@ -30,7 +30,7 @@ REPORT_TYPES = (
     "sensitive_files",
 )
 
-FormatType = Literal["html", "pdf", "csv"]
+FormatType = Literal["html", "pdf", "csv", "xml"]
 
 
 class ReportRenderer:
@@ -134,6 +134,49 @@ class ReportRenderer:
 
         return buf.getvalue()
 
+    def render_xml(self, report_type: str, data: dict[str, Any]) -> str:
+        """Render a structured XML export appropriate for the report type."""
+        from xml.etree.ElementTree import Element, SubElement, tostring
+
+        self._validate_report_type(report_type)
+        root = Element("report", type=report_type)
+
+        meta = SubElement(root, "metadata")
+        SubElement(meta, "generated_at").text = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        SubElement(meta, "report_type").text = report_type
+
+        if report_type == "access_audit":
+            events_el = SubElement(root, "events")
+            for e in data.get("events", []):
+                ev = SubElement(events_el, "event")
+                SubElement(ev, "timestamp").text = str(e.get("timestamp", ""))
+                SubElement(ev, "user").text = str(e.get("user", ""))
+                SubElement(ev, "action").text = str(e.get("action", ""))
+                SubElement(ev, "file_path").text = str(e.get("file_path", ""))
+        elif report_type == "compliance_report":
+            policies_el = SubElement(root, "violations")
+            for v in data.get("violations_by_policy", []):
+                pol = SubElement(policies_el, "policy")
+                SubElement(pol, "name").text = str(v.get("name", ""))
+                SubElement(pol, "count").text = str(v.get("count", ""))
+                SubElement(pol, "severity").text = str(v.get("severity", ""))
+        else:
+            # Default: findings-based XML
+            findings_el = SubElement(root, "findings")
+            for f in data.get("findings", []):
+                finding = SubElement(findings_el, "finding")
+                SubElement(finding, "file_path").text = str(f.get("file_path", ""))
+                SubElement(finding, "risk_score").text = str(f.get("risk_score", ""))
+                SubElement(finding, "risk_tier").text = str(f.get("risk_tier", ""))
+                entities = SubElement(finding, "entity_counts")
+                for k, v in (f.get("entity_counts") or {}).items():
+                    SubElement(entities, "entity", type=str(k)).text = str(v)
+
+        xml_declaration = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        return xml_declaration + tostring(root, encoding="unicode")
+
     def render(
         self, report_type: str, data: dict[str, Any], fmt: FormatType = "html"
     ) -> str | bytes:
@@ -142,6 +185,8 @@ class ReportRenderer:
             return self.render_pdf(report_type, data)
         if fmt == "csv":
             return self.render_csv(report_type, data)
+        if fmt == "xml":
+            return self.render_xml(report_type, data)
         return self.render_html(report_type, data)
 
 
