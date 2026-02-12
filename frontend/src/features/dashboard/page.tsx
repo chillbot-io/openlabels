@@ -6,6 +6,7 @@ import { RiskDistributionChart } from './risk-distribution-chart.tsx';
 import { FindingsByTypeChart } from './findings-by-type-chart.tsx';
 import { RecentScansTable } from './recent-scans-table.tsx';
 import { ActivityFeed } from './activity-feed.tsx';
+import { SystemStatus } from './system-status.tsx';
 import { ErrorBoundary } from '@/components/layout/error-boundary.tsx';
 
 export function Component() {
@@ -30,12 +31,15 @@ export function Component() {
         </ErrorBoundary>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <ErrorBoundary>
           <RecentScansTable scans={scans.data?.items ?? []} isLoading={scans.isLoading} />
         </ErrorBoundary>
         <ErrorBoundary>
           <ActivityFeed entries={activity.data?.items ?? []} isLoading={activity.isLoading} />
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <SystemStatus />
         </ErrorBoundary>
       </div>
     </div>

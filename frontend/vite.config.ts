@@ -16,12 +16,15 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          router: ['react-router'],
-          query: ['@tanstack/react-query'],
-          charts: ['recharts'],
-          table: ['@tanstack/react-table', '@tanstack/react-virtual'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('/react-dom/') || id.includes('/react/') || id.includes('/scheduler/')) return 'vendor';
+            if (id.includes('/react-router')) return 'router';
+            if (id.includes('/@tanstack/react-query')) return 'query';
+            if (id.includes('/recharts/') || id.includes('/d3-')) return 'charts';
+            if (id.includes('/@tanstack/react-table') || id.includes('/@tanstack/react-virtual')) return 'table';
+            if (id.includes('/@radix-ui/')) return 'ui';
+          }
         },
       },
     },

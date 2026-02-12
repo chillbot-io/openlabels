@@ -58,7 +58,7 @@ export function Component() {
 
   const handleExport = async (format: 'csv' | 'xlsx') => {
     try {
-      const blob = await exportApi.results({ format, risk_tier: riskTier });
+      const blob = await exportApi.results({ format, risk_tier: riskTier, entity_type: entityType, search: debouncedSearch || undefined });
       downloadBlob(blob, `results-${Date.now()}.${format}`);
     } catch (err) {
       addToast({ level: 'error', message: `Export failed: ${err instanceof Error ? err.message : 'Unknown error'}` });

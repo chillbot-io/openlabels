@@ -214,6 +214,7 @@ export interface DirectoryEntry {
   file_size: number | null;
   risk_score: number | null;
   risk_tier: string | null;
+  exposure_level: string | null;
   children_count: number;
   entity_count: number;
 }

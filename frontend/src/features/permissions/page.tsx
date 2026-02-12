@@ -91,8 +91,8 @@ export function Component() {
                   onClick={() => setSelectedDirId(dir.id)}
                 >
                   <span className="font-mono">{dir.path}</span>
-                  {dir.risk_tier && (
-                    <Badge className={EXPOSURE_COLORS[dir.risk_tier] ?? ''}>{dir.risk_tier}</Badge>
+                  {dir.exposure_level && (
+                    <Badge className={EXPOSURE_COLORS[dir.exposure_level] ?? ''}>{dir.exposure_level}</Badge>
                   )}
                 </button>
               ))}
@@ -135,7 +135,7 @@ export function Component() {
                   {principalLookup.data!.map((dir) => (
                     <div key={dir.id} className="flex items-center justify-between px-4 py-3 text-sm">
                       <span className="font-mono">{dir.path}</span>
-                      {dir.risk_tier && <Badge className={EXPOSURE_COLORS[dir.risk_tier] ?? ''}>{dir.risk_tier}</Badge>}
+                      {dir.exposure_level && <Badge className={EXPOSURE_COLORS[dir.exposure_level] ?? ''}>{dir.exposure_level}</Badge>}
                     </div>
                   ))}
                 </div>
