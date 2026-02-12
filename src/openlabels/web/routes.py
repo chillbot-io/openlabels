@@ -225,11 +225,159 @@ async def settings_page(
         )
         tenant_settings = result.scalar_one_or_none()
 
-    all_entities = [
-        "SSN", "CREDIT_CARD", "EMAIL", "PHONE", "PERSON",
-        "ADDRESS", "DATE_OF_BIRTH", "PASSPORT", "DRIVER_LICENSE",
-        "BANK_ACCOUNT", "IP_ADDRESS", "MEDICAL_RECORD",
+    # Entity categories for the detection tab — canonical types only (aliases
+    # are resolved automatically by the detection pipeline).
+    entity_categories = [
+        ("Names", [
+            ("NAME", "Name (General)"), ("NAME_PATIENT", "Patient Name"),
+            ("NAME_PROVIDER", "Provider Name"), ("NAME_RELATIVE", "Relative Name"),
+            ("FIRSTNAME", "First Name"), ("LASTNAME", "Last Name"),
+            ("MIDDLENAME", "Middle Name"), ("FULLNAME", "Full Name"),
+            ("NURSE", "Nurse"), ("STAFF", "Staff"),
+        ]),
+        ("Dates & Time", [
+            ("DATE", "Date (General)"), ("DATE_DOB", "Date of Birth"),
+            ("DATE_TIME", "Date & Time"), ("TIME", "Time"),
+            ("BIRTH_YEAR", "Birth Year"), ("DATE_RANGE", "Date Range"),
+        ]),
+        ("Age", [("AGE", "Age")]),
+        ("Locations", [
+            ("ADDRESS", "Address"), ("ZIP", "ZIP / Postal Code"),
+            ("CITY", "City"), ("STATE", "State / Province"),
+            ("COUNTRY", "Country"), ("COUNTY", "County"),
+            ("GPS_COORDINATE", "GPS Coordinate"), ("LOC", "Location (General)"),
+            ("GPE", "Geo-Political Entity"), ("ROOM", "Room Number"),
+        ]),
+        ("Government IDs", [
+            ("SSN", "Social Security Number"), ("SSN_PARTIAL", "Partial SSN"),
+            ("UKNINUMBER", "UK National Insurance"), ("SIN", "Canadian SIN"),
+            ("DRIVER_LICENSE", "Driver's License"), ("STATE_ID", "State ID"),
+            ("PASSPORT", "Passport"), ("MILITARY_ID", "Military ID"),
+            ("TAX_ID", "Tax ID"), ("TIN", "Taxpayer ID Number"),
+            ("EIN", "Employer ID Number"), ("ITIN", "Individual Tax ID"),
+        ]),
+        ("Medical IDs", [
+            ("MRN", "Medical Record Number"), ("NPI", "NPI Number"),
+            ("DEA", "DEA Number"), ("MEDICAL_LICENSE", "Medical License"),
+            ("ENCOUNTER_ID", "Encounter ID"), ("HEALTH_PLAN_ID", "Health Plan ID"),
+            ("MEMBER_ID", "Member ID"), ("MEDICARE_ID", "Medicare ID"),
+            ("PHARMACY_ID", "Pharmacy ID"), ("NDC", "National Drug Code"),
+        ]),
+        ("Vehicle IDs", [
+            ("VIN", "Vehicle Identification Number"),
+            ("LICENSE_PLATE", "License Plate"),
+        ]),
+        ("Contact Info", [
+            ("PHONE", "Phone Number"), ("EMAIL", "Email Address"),
+            ("FAX", "Fax Number"), ("PAGER", "Pager Number"),
+            ("URL", "URL"), ("USERNAME", "Username"),
+        ]),
+        ("Network & Device", [
+            ("IP_ADDRESS", "IP Address"), ("MAC_ADDRESS", "MAC Address"),
+            ("DEVICE_ID", "Device ID"), ("IMEI", "IMEI Number"),
+            ("BIOMETRIC_ID", "Biometric ID"), ("DICOM_UID", "DICOM UID"),
+            ("CERTIFICATE_NUMBER", "Certificate Number"),
+            ("CLAIM_NUMBER", "Claim Number"),
+        ]),
+        ("Financial", [
+            ("CREDIT_CARD", "Credit Card"),
+            ("CREDIT_CARD_PARTIAL", "Partial Credit Card"),
+            ("BANK_ACCOUNT", "Bank Account"),
+            ("ACCOUNT_NUMBER", "Account Number"),
+            ("IBAN", "IBAN"), ("ABA_ROUTING", "ABA Routing Number"),
+            ("SWIFT", "SWIFT / BIC Code"),
+        ]),
+        ("Securities", [
+            ("CUSIP", "CUSIP"), ("ISIN", "ISIN"), ("SEDOL", "SEDOL"),
+            ("FIGI", "FIGI"), ("LEI", "LEI"),
+        ]),
+        ("Cryptocurrency", [
+            ("BITCOIN_ADDRESS", "Bitcoin Address"),
+            ("ETHEREUM_ADDRESS", "Ethereum Address"),
+            ("CRYPTO_SEED_PHRASE", "Crypto Seed Phrase"),
+            ("SOLANA_ADDRESS", "Solana Address"),
+            ("CARDANO_ADDRESS", "Cardano Address"),
+            ("LITECOIN_ADDRESS", "Litecoin Address"),
+            ("DOGECOIN_ADDRESS", "Dogecoin Address"),
+            ("XRP_ADDRESS", "XRP Address"),
+        ]),
+        ("Secrets - Cloud Providers", [
+            ("AWS_ACCESS_KEY", "AWS Access Key"),
+            ("AWS_SECRET_KEY", "AWS Secret Key"),
+            ("AWS_SESSION_TOKEN", "AWS Session Token"),
+            ("AZURE_STORAGE_KEY", "Azure Storage Key"),
+            ("AZURE_CONNECTION_STRING", "Azure Connection String"),
+            ("AZURE_SAS_TOKEN", "Azure SAS Token"),
+            ("GOOGLE_API_KEY", "Google API Key"), ("FIREBASE_KEY", "Firebase Key"),
+        ]),
+        ("Secrets - Code & CI", [
+            ("GITHUB_TOKEN", "GitHub Token"), ("GITLAB_TOKEN", "GitLab Token"),
+            ("NPM_TOKEN", "NPM Token"), ("PYPI_TOKEN", "PyPI Token"),
+            ("NUGET_KEY", "NuGet Key"),
+        ]),
+        ("Secrets - Communication", [
+            ("SLACK_TOKEN", "Slack Token"), ("SLACK_WEBHOOK", "Slack Webhook"),
+            ("DISCORD_TOKEN", "Discord Token"),
+            ("TWILIO_ACCOUNT_SID", "Twilio Account SID"),
+            ("SENDGRID_KEY", "SendGrid Key"), ("MAILCHIMP_KEY", "Mailchimp Key"),
+        ]),
+        ("Secrets - Payment", [
+            ("STRIPE_KEY", "Stripe Key"), ("SQUARE_TOKEN", "Square Token"),
+            ("SHOPIFY_TOKEN", "Shopify Token"),
+        ]),
+        ("Secrets - Infrastructure", [
+            ("HEROKU_KEY", "Heroku Key"), ("DATADOG_KEY", "Datadog Key"),
+            ("NEWRELIC_KEY", "New Relic Key"), ("DATABASE_URL", "Database URL"),
+        ]),
+        ("Secrets - Authentication", [
+            ("PRIVATE_KEY", "Private Key"), ("JWT", "JWT Token"),
+            ("BASIC_AUTH", "Basic Auth Credentials"),
+            ("BEARER_TOKEN", "Bearer Token"), ("PASSWORD", "Password"),
+            ("API_KEY", "API Key"), ("SECRET", "Secret (General)"),
+        ]),
+        ("Government - Classification", [
+            ("CLASSIFICATION_LEVEL", "Classification Level"),
+            ("CLASSIFICATION_MARKING", "Classification Marking"),
+            ("SCI_MARKING", "SCI Marking"),
+            ("DISSEMINATION_CONTROL", "Dissemination Control"),
+        ]),
+        ("Government - Contracts", [
+            ("CAGE_CODE", "CAGE Code"), ("DUNS_NUMBER", "DUNS Number"),
+            ("UEI", "Unique Entity ID"), ("DOD_CONTRACT", "DoD Contract"),
+            ("GSA_CONTRACT", "GSA Contract"), ("CLEARANCE_LEVEL", "Clearance Level"),
+            ("ITAR_MARKING", "ITAR Marking"), ("EAR_MARKING", "EAR Marking"),
+        ]),
+        ("Professional", [
+            ("PROFESSION", "Profession"), ("OCCUPATION", "Occupation"),
+            ("JOB_TITLE", "Job Title"),
+        ]),
+        ("Medical Context", [
+            ("DRUG", "Drug"), ("MEDICATION", "Medication"),
+            ("LAB_TEST", "Lab Test"), ("DIAGNOSIS", "Diagnosis"),
+            ("PROCEDURE", "Procedure"), ("RX_NUMBER", "Prescription Number"),
+            ("BLOOD_TYPE", "Blood Type"),
+        ]),
+        ("Organization & Facility", [
+            ("FACILITY", "Facility"), ("HOSPITAL", "Hospital"),
+            ("ORG", "Organization"), ("COMPANY", "Company"),
+            ("EMPLOYER", "Employer"), ("VENDOR", "Vendor"),
+        ]),
+        ("Document & Tracking", [
+            ("DOCUMENT_ID", "Document ID"), ("ID_NUMBER", "ID Number"),
+            ("TRACKING_NUMBER", "Tracking Number"),
+            ("SHIPMENT_ID", "Shipment ID"),
+        ]),
     ]
+
+    # Flatten all entity IDs for the default "all enabled" list
+    all_entity_ids = [eid for _, types in entity_categories for eid, _ in types]
+
+    # Adapter defaults
+    adapter_defs = (
+        tenant_settings.adapter_defaults
+        if tenant_settings and tenant_settings.adapter_defaults
+        else {}
+    )
 
     # Build settings object merging DB overrides with system defaults
     settings = {
@@ -262,18 +410,59 @@ async def settings_page(
                 else config.detection.enable_ocr
             ),
         },
+        "fanout": {
+            "fanout_enabled": (
+                tenant_settings.fanout_enabled
+                if tenant_settings
+                else True
+            ),
+            "fanout_threshold": (
+                tenant_settings.fanout_threshold
+                if tenant_settings
+                else 10000
+            ),
+            "fanout_max_partitions": (
+                tenant_settings.fanout_max_partitions
+                if tenant_settings
+                else 16
+            ),
+            "pipeline_max_concurrent_files": (
+                tenant_settings.pipeline_max_concurrent_files
+                if tenant_settings
+                else 8
+            ),
+            "pipeline_memory_budget_mb": (
+                tenant_settings.pipeline_memory_budget_mb
+                if tenant_settings
+                else 512
+            ),
+        },
         "entities": {
             "enabled": (
                 tenant_settings.enabled_entities
                 if tenant_settings and tenant_settings.enabled_entities
-                else all_entities
+                else all_entity_ids
             ),
+        },
+        "adapters": {
+            "exclude_extensions": ", ".join(adapter_defs.get("exclude_extensions", [])),
+            "exclude_patterns": ", ".join(adapter_defs.get("exclude_patterns", [])),
+            "exclude_accounts": ", ".join(adapter_defs.get("exclude_accounts", [])),
+            "min_size_bytes": adapter_defs.get("min_size_bytes") or 0,
+            "max_size_bytes": adapter_defs.get("max_size_bytes") or 0,
+            "exclude_temp_files": adapter_defs.get("exclude_temp_files", True),
+            "exclude_system_dirs": adapter_defs.get("exclude_system_dirs", True),
         },
     }
 
     return templates.TemplateResponse(
         "settings.html",
-        {"request": request, "active_page": "settings", "settings": settings},
+        {
+            "request": request,
+            "active_page": "settings",
+            "settings": settings,
+            "entity_categories": entity_categories,
+        },
     )
 
 

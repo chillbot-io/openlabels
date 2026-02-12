@@ -4,226 +4,893 @@
 {% block page_title %}Settings{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Azure AD Configuration -->
-    <div class="bg-white rounded-lg shadow">
-        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
-            <h3 class="text-lg font-medium text-gray-900">Azure AD Configuration</h3>
-            <p class="mt-1 text-sm text-gray-500">Configure Microsoft Azure AD authentication</p>
-        </div>
-        <div class="p-6">
-            <form
-                hx-post="/api/settings/azure"
-                hx-swap="none"
-                class="space-y-4"
-                x-data="{ saving: false }"
-                @htmx:before-request="saving = true"
-                @htmx:after-request="saving = false"
+<div x-data="{ activeTab: 'azure' }">
+    <!-- Tab Navigation -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
+            {% set tabs = [
+                ('azure', 'Azure AD'),
+                ('scan', 'Scan & Performance'),
+                ('entities', 'Entity Detection'),
+                ('adapters', 'Adapter Defaults'),
+                ('users', 'User Management'),
+                ('danger', 'Danger Zone'),
+            ] %}
+            {% for tab_id, tab_label in tabs %}
+            <button
+                @click="activeTab = '{{ tab_id }}'"
+                :class="activeTab === '{{ tab_id }}'
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                class="whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors"
             >
-                <div>
-                    <label for="azure_tenant_id" class="block text-sm font-medium text-gray-700">Tenant ID</label>
-                    <input
-                        type="text"
-                        name="tenant_id"
-                        id="azure_tenant_id"
-                        value="{{ settings.azure.tenant_id if settings else '' }}"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    >
-                </div>
-                <div>
-                    <label for="azure_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
-                    <input
-                        type="text"
-                        name="client_id"
-                        id="azure_client_id"
-                        value="{{ settings.azure.client_id if settings else '' }}"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    >
-                </div>
-                <div>
-                    <label for="azure_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
-                    <input
-                        type="password"
-                        name="client_secret"
-                        id="azure_client_secret"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                        placeholder="Enter new secret to update"
-                    >
-                    <p class="mt-1 text-xs text-gray-500">Leave blank to keep existing secret</p>
-                </div>
-                <div class="pt-4">
-                    <button
-                        type="submit"
-                        :disabled="saving"
-                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
-                    >
-                        <span x-show="!saving">Save Azure Settings</span>
-                        <span x-show="saving">Saving...</span>
-                    </button>
-                </div>
-            </form>
-        </div>
+                {{ tab_label }}
+            </button>
+            {% endfor %}
+        </nav>
     </div>
 
-    <!-- Scan Configuration -->
-    <div class="bg-white rounded-lg shadow">
-        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
-            <h3 class="text-lg font-medium text-gray-900">Scan Configuration</h3>
-            <p class="mt-1 text-sm text-gray-500">Configure default scan behavior</p>
-        </div>
-        <div class="p-6">
-            <form
-                hx-post="/api/settings/scan"
-                hx-swap="none"
-                class="space-y-4"
-            >
-                <div>
-                    <label for="max_file_size" class="block text-sm font-medium text-gray-700">Max File Size (MB)</label>
-                    <input
-                        type="number"
-                        name="max_file_size_mb"
-                        id="max_file_size"
-                        value="{{ settings.scan.max_file_size_mb if settings else 100 }}"
-                        min="1"
-                        max="1000"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                    >
-                </div>
-                <div>
-                    <label for="concurrent_files" class="block text-sm font-medium text-gray-700">Concurrent Files</label>
-                    <input
-                        type="number"
-                        name="concurrent_files"
-                        id="concurrent_files"
-                        value="{{ settings.scan.concurrent_files if settings else 10 }}"
-                        min="1"
-                        max="50"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                    >
-                    <p class="mt-1 text-xs text-gray-500">Number of files to process simultaneously</p>
-                </div>
-                <div class="flex items-start">
-                    <div class="flex items-center h-5">
+    <!-- ================================================================== -->
+    <!-- Azure AD Tab                                                       -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'azure'" x-cloak>
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <h3 class="text-lg font-medium text-gray-900">Azure AD Configuration</h3>
+                <p class="mt-1 text-sm text-gray-500">Configure Microsoft Azure AD authentication</p>
+            </div>
+            <div class="p-6">
+                <form
+                    hx-post="/api/v1/settings/azure"
+                    hx-swap="none"
+                    class="space-y-4"
+                    x-data="{ saving: false }"
+                    @htmx:before-request="saving = true"
+                    @htmx:after-request="saving = false"
+                >
+                    <div>
+                        <label for="azure_tenant_id" class="block text-sm font-medium text-gray-700">Tenant ID</label>
                         <input
-                            type="checkbox"
-                            name="enable_ocr"
-                            id="enable_ocr"
-                            {% if settings and settings.scan.enable_ocr %}checked{% endif %}
-                            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                            type="text"
+                            name="tenant_id"
+                            id="azure_tenant_id"
+                            value="{{ settings.azure.tenant_id if settings else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                         >
                     </div>
-                    <div class="ml-3 text-sm">
-                        <label for="enable_ocr" class="font-medium text-gray-700">Enable OCR by default</label>
-                        <p class="text-gray-500">Extract text from images during scans</p>
+                    <div>
+                        <label for="azure_client_id" class="block text-sm font-medium text-gray-700">Client ID</label>
+                        <input
+                            type="text"
+                            name="client_id"
+                            id="azure_client_id"
+                            value="{{ settings.azure.client_id if settings else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        >
                     </div>
-                </div>
-                <div class="pt-4">
-                    <button
-                        type="submit"
-                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
-                    >
-                        Save Scan Settings
-                    </button>
-                </div>
-            </form>
+                    <div>
+                        <label for="azure_client_secret" class="block text-sm font-medium text-gray-700">Client Secret</label>
+                        <input
+                            type="password"
+                            name="client_secret"
+                            id="azure_client_secret"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="Enter new secret to update"
+                        >
+                        <p class="mt-1 text-xs text-gray-500">Leave blank to keep existing secret</p>
+                    </div>
+                    <div class="pt-4">
+                        <button
+                            type="submit"
+                            :disabled="saving"
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                        >
+                            <span x-show="!saving">Save Azure Settings</span>
+                            <span x-show="saving">Saving...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
-    <!-- Entity Detection -->
-    <div class="bg-white rounded-lg shadow">
-        <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
-            <h3 class="text-lg font-medium text-gray-900">Entity Detection</h3>
-            <p class="mt-1 text-sm text-gray-500">Configure which entity types to detect</p>
+    <!-- ================================================================== -->
+    <!-- Scan & Performance Tab                                             -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'scan'" x-cloak>
+        <div class="space-y-6">
+            <!-- Scan Configuration -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                    <h3 class="text-lg font-medium text-gray-900">Scan Configuration</h3>
+                    <p class="mt-1 text-sm text-gray-500">Configure default scan behavior</p>
+                </div>
+                <div class="p-6">
+                    <form
+                        hx-post="/api/v1/settings/scan"
+                        hx-swap="none"
+                        class="space-y-4"
+                        x-data="{ saving: false }"
+                        @htmx:before-request="saving = true"
+                        @htmx:after-request="saving = false"
+                    >
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="max_file_size" class="block text-sm font-medium text-gray-700">Max File Size (MB)</label>
+                                <input
+                                    type="number"
+                                    name="max_file_size_mb"
+                                    id="max_file_size"
+                                    value="{{ settings.scan.max_file_size_mb if settings else 100 }}"
+                                    min="1"
+                                    max="10000"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">1 &ndash; 10,000 MB</p>
+                            </div>
+                            <div>
+                                <label for="concurrent_files" class="block text-sm font-medium text-gray-700">Concurrent Files</label>
+                                <input
+                                    type="number"
+                                    name="concurrent_files"
+                                    id="concurrent_files"
+                                    value="{{ settings.scan.concurrent_files if settings else 10 }}"
+                                    min="1"
+                                    max="100"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Number of files to process simultaneously (1 &ndash; 100)</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex items-center h-5">
+                                <input
+                                    type="checkbox"
+                                    name="enable_ocr"
+                                    id="enable_ocr"
+                                    {% if settings and settings.scan.enable_ocr %}checked{% endif %}
+                                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                >
+                            </div>
+                            <div class="ml-3 text-sm">
+                                <label for="enable_ocr" class="font-medium text-gray-700">Enable OCR by default</label>
+                                <p class="text-gray-500">Extract text from images during scans</p>
+                            </div>
+                        </div>
+                        <div class="pt-4">
+                            <button
+                                type="submit"
+                                :disabled="saving"
+                                class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                            >
+                                <span x-show="!saving">Save Scan Settings</span>
+                                <span x-show="saving">Saving...</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Fan-out Configuration -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                    <h3 class="text-lg font-medium text-gray-900">Fan-out & Pipeline Performance</h3>
+                    <p class="mt-1 text-sm text-gray-500">Tune horizontal scaling and per-worker parallelism</p>
+                </div>
+                <div class="p-6">
+                    <form
+                        hx-post="/api/v1/settings/fanout"
+                        hx-swap="none"
+                        class="space-y-4"
+                        x-data="{ saving: false }"
+                        @htmx:before-request="saving = true"
+                        @htmx:after-request="saving = false"
+                    >
+                        <h4 class="text-sm font-semibold text-gray-800">Horizontal Fan-out</h4>
+                        <div class="flex items-start mb-4">
+                            <div class="flex items-center h-5">
+                                <input
+                                    type="checkbox"
+                                    name="fanout_enabled"
+                                    id="fanout_enabled"
+                                    {% if settings and settings.fanout.fanout_enabled %}checked{% endif %}
+                                    class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                >
+                            </div>
+                            <div class="ml-3 text-sm">
+                                <label for="fanout_enabled" class="font-medium text-gray-700">Enable fan-out</label>
+                                <p class="text-gray-500">Partition large scans across multiple workers</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="fanout_threshold" class="block text-sm font-medium text-gray-700">Fan-out Threshold (files)</label>
+                                <input
+                                    type="number"
+                                    name="fanout_threshold"
+                                    id="fanout_threshold"
+                                    value="{{ settings.fanout.fanout_threshold if settings else 10000 }}"
+                                    min="100"
+                                    max="1000000"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Minimum files to trigger fan-out (100 &ndash; 1,000,000)</p>
+                            </div>
+                            <div>
+                                <label for="fanout_max_partitions" class="block text-sm font-medium text-gray-700">Max Partitions</label>
+                                <input
+                                    type="number"
+                                    name="fanout_max_partitions"
+                                    id="fanout_max_partitions"
+                                    value="{{ settings.fanout.fanout_max_partitions if settings else 16 }}"
+                                    min="1"
+                                    max="128"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Maximum parallel partitions per scan (1 &ndash; 128)</p>
+                            </div>
+                        </div>
+
+                        <h4 class="text-sm font-semibold text-gray-800 pt-4">Pipeline Parallelism (per worker)</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="pipeline_max_concurrent_files" class="block text-sm font-medium text-gray-700">Max Concurrent Files</label>
+                                <input
+                                    type="number"
+                                    name="pipeline_max_concurrent_files"
+                                    id="pipeline_max_concurrent_files"
+                                    value="{{ settings.fanout.pipeline_max_concurrent_files if settings else 8 }}"
+                                    min="1"
+                                    max="64"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Max files in flight per worker (1 &ndash; 64)</p>
+                            </div>
+                            <div>
+                                <label for="pipeline_memory_budget_mb" class="block text-sm font-medium text-gray-700">Memory Budget (MB)</label>
+                                <input
+                                    type="number"
+                                    name="pipeline_memory_budget_mb"
+                                    id="pipeline_memory_budget_mb"
+                                    value="{{ settings.fanout.pipeline_memory_budget_mb if settings else 512 }}"
+                                    min="64"
+                                    max="8192"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Max in-flight content memory per worker (64 &ndash; 8,192 MB)</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-4">
+                            <button
+                                type="submit"
+                                :disabled="saving"
+                                class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                            >
+                                <span x-show="!saving">Save Performance Settings</span>
+                                <span x-show="saving">Saving...</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
-        <div class="p-6">
-            <form
-                hx-post="/api/settings/entities"
-                hx-swap="none"
-                class="space-y-4"
-            >
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {% set entity_types = [
-                        ('SSN', 'Social Security Number'),
-                        ('CREDIT_CARD', 'Credit Card Number'),
-                        ('EMAIL', 'Email Address'),
-                        ('PHONE', 'Phone Number'),
-                        ('PERSON', 'Person Name'),
-                        ('ADDRESS', 'Physical Address'),
-                        ('DATE_OF_BIRTH', 'Date of Birth'),
-                        ('PASSPORT', 'Passport Number'),
-                        ('DRIVER_LICENSE', 'Driver License'),
-                        ('BANK_ACCOUNT', 'Bank Account'),
-                        ('IP_ADDRESS', 'IP Address'),
-                        ('MEDICAL_RECORD', 'Medical Record Number')
-                    ] %}
-                    {% for entity_id, entity_name in entity_types %}
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- Entity Detection Tab                                               -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'entities'" x-cloak>
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6 flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900">Entity Detection</h3>
+                    <p class="mt-1 text-sm text-gray-500">Configure which entity types to detect during scans</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button
+                        type="button"
+                        onclick="document.querySelectorAll('#entity-form input[type=checkbox]').forEach(c => c.checked = true)"
+                        class="text-xs px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    >Select All</button>
+                    <button
+                        type="button"
+                        onclick="document.querySelectorAll('#entity-form input[type=checkbox]').forEach(c => c.checked = false)"
+                        class="text-xs px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    >Deselect All</button>
+                </div>
+            </div>
+            <div class="p-6">
+                <form
+                    id="entity-form"
+                    hx-post="/api/v1/settings/entities"
+                    hx-swap="none"
+                    class="space-y-2"
+                    x-data="{ saving: false }"
+                    @htmx:before-request="saving = true"
+                    @htmx:after-request="saving = false"
+                >
+                    {% for category_name, category_types in entity_categories %}
+                    <div x-data="{ open: false }" class="border border-gray-200 rounded-md">
+                        <button
+                            type="button"
+                            @click="open = !open"
+                            class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                        >
+                            <span>{{ category_name }} <span class="text-gray-400 font-normal">({{ category_types|length }})</span></span>
+                            <svg
+                                class="w-4 h-4 text-gray-400 transform transition-transform"
+                                :class="open ? 'rotate-180' : ''"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" x-cloak class="px-4 pb-3">
+                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {% for entity_id, entity_name in category_types %}
+                                <label class="flex items-center space-x-2 text-sm cursor-pointer py-1">
+                                    <input
+                                        type="checkbox"
+                                        name="entities"
+                                        value="{{ entity_id }}"
+                                        {% if not settings or entity_id in (settings.entities.enabled or []) %}checked{% endif %}
+                                        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                    >
+                                    <span class="text-gray-700">{{ entity_name }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <div class="pt-4">
+                        <button
+                            type="submit"
+                            :disabled="saving"
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                        >
+                            <span x-show="!saving">Save Entity Settings</span>
+                            <span x-show="saving">Saving...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- Adapter Defaults Tab                                               -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'adapters'" x-cloak>
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
+                <h3 class="text-lg font-medium text-gray-900">Global Adapter Defaults</h3>
+                <p class="mt-1 text-sm text-gray-500">Default filter settings applied to all adapter types (Filesystem, SharePoint, OneDrive, S3, GCS, Azure Blob). Per-target overrides take precedence.</p>
+            </div>
+            <div class="p-6">
+                <form
+                    hx-post="/api/v1/settings/adapters"
+                    hx-swap="none"
+                    class="space-y-4"
+                    x-data="{ saving: false }"
+                    @htmx:before-request="saving = true"
+                    @htmx:after-request="saving = false"
+                >
+                    <div>
+                        <label for="exclude_extensions" class="block text-sm font-medium text-gray-700">Excluded File Extensions</label>
+                        <input
+                            type="text"
+                            name="exclude_extensions"
+                            id="exclude_extensions"
+                            value="{{ settings.adapters.exclude_extensions if settings else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder=".tmp, .log, .bak, .cache"
+                        >
+                        <p class="mt-1 text-xs text-gray-500">Comma-separated list of file extensions to skip during scans</p>
+                    </div>
+                    <div>
+                        <label for="exclude_patterns" class="block text-sm font-medium text-gray-700">Excluded Path Patterns</label>
+                        <input
+                            type="text"
+                            name="exclude_patterns"
+                            id="exclude_patterns"
+                            value="{{ settings.adapters.exclude_patterns if settings else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="node_modules, __pycache__, .git, .svn"
+                        >
+                        <p class="mt-1 text-xs text-gray-500">Comma-separated path patterns to exclude</p>
+                    </div>
+                    <div>
+                        <label for="exclude_accounts" class="block text-sm font-medium text-gray-700">Excluded Accounts</label>
+                        <input
+                            type="text"
+                            name="exclude_accounts"
+                            id="exclude_accounts"
+                            value="{{ settings.adapters.exclude_accounts if settings else '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="service-account@domain.com, backup-bot"
+                        >
+                        <p class="mt-1 text-xs text-gray-500">Comma-separated service or system accounts whose files should be skipped</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="min_size_bytes" class="block text-sm font-medium text-gray-700">Min File Size (bytes)</label>
+                            <input
+                                type="number"
+                                name="min_size_bytes"
+                                id="min_size_bytes"
+                                value="{{ settings.adapters.min_size_bytes if settings else 0 }}"
+                                min="0"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            >
+                            <p class="mt-1 text-xs text-gray-500">Skip files smaller than this (0 = no minimum)</p>
+                        </div>
+                        <div>
+                            <label for="max_size_bytes" class="block text-sm font-medium text-gray-700">Max File Size (bytes)</label>
+                            <input
+                                type="number"
+                                name="max_size_bytes"
+                                id="max_size_bytes"
+                                value="{{ settings.adapters.max_size_bytes if settings else 0 }}"
+                                min="0"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            >
+                            <p class="mt-1 text-xs text-gray-500">Skip files larger than this (0 = no maximum)</p>
+                        </div>
+                    </div>
+
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
                             <input
                                 type="checkbox"
-                                name="entities[]"
-                                value="{{ entity_id }}"
-                                id="entity_{{ entity_id }}"
-                                {% if not settings or entity_id in (settings.entities.enabled or []) %}checked{% endif %}
+                                name="exclude_temp_files"
+                                id="exclude_temp_files"
+                                {% if not settings or settings.adapters.exclude_temp_files %}checked{% endif %}
                                 class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                             >
                         </div>
                         <div class="ml-3 text-sm">
-                            <label for="entity_{{ entity_id }}" class="font-medium text-gray-700">{{ entity_name }}</label>
+                            <label for="exclude_temp_files" class="font-medium text-gray-700">Exclude temporary files</label>
+                            <p class="text-gray-500">Skip files matching common temp-file patterns (~$*, *.swp, etc.)</p>
                         </div>
                     </div>
-                    {% endfor %}
-                </div>
-                <div class="pt-4">
-                    <button
-                        type="submit"
-                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
-                    >
-                        Save Entity Settings
-                    </button>
-                </div>
-            </form>
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input
+                                type="checkbox"
+                                name="exclude_system_dirs"
+                                id="exclude_system_dirs"
+                                {% if not settings or settings.adapters.exclude_system_dirs %}checked{% endif %}
+                                class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                            >
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="exclude_system_dirs" class="font-medium text-gray-700">Exclude system directories</label>
+                            <p class="text-gray-500">Skip OS and application system directories ($Recycle.Bin, System Volume Information, etc.)</p>
+                        </div>
+                    </div>
+
+                    <div class="pt-4">
+                        <button
+                            type="submit"
+                            :disabled="saving"
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                        >
+                            <span x-show="!saving">Save Adapter Defaults</span>
+                            <span x-show="saving">Saving...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
-    <!-- Danger Zone -->
-    <div class="bg-white rounded-lg shadow border-2 border-red-200">
-        <div class="px-4 py-5 border-b border-red-200 sm:px-6">
-            <h3 class="text-lg font-medium text-red-900">Danger Zone</h3>
-            <p class="mt-1 text-sm text-red-600">Irreversible actions</p>
-        </div>
-        <div class="p-6 space-y-4">
-            <div class="flex items-center justify-between">
+    <!-- ================================================================== -->
+    <!-- User Management Tab                                                -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'users'" x-cloak>
+        <div
+            class="bg-white rounded-lg shadow"
+            x-data="userManagement()"
+            x-init="loadUsers()"
+        >
+            <div class="px-4 py-5 border-b border-gray-200 sm:px-6 flex items-center justify-between">
                 <div>
-                    <h4 class="text-sm font-medium text-gray-900">Clear All Results</h4>
-                    <p class="text-sm text-gray-500">Delete all scan results. This cannot be undone.</p>
+                    <h3 class="text-lg font-medium text-gray-900">User Management</h3>
+                    <p class="mt-1 text-sm text-gray-500">Manage users and their application permissions</p>
                 </div>
                 <button
-                    type="button"
-                    class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
-                    hx-delete="/api/results"
-                    hx-confirm="Are you sure you want to delete ALL scan results? This cannot be undone."
+                    @click="showAddForm = true"
+                    class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
                 >
-                    Clear Results
+                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                    </svg>
+                    Add User
                 </button>
             </div>
-            <div class="flex items-center justify-between pt-4 border-t border-gray-200">
-                <div>
-                    <h4 class="text-sm font-medium text-gray-900">Reset Configuration</h4>
-                    <p class="text-sm text-gray-500">Reset all settings to defaults.</p>
+
+            <!-- Add User Form (inline, shown/hidden) -->
+            <div x-show="showAddForm" x-cloak class="border-b border-gray-200 bg-gray-50 p-6">
+                <h4 class="text-sm font-semibold text-gray-800 mb-3">Add New User</h4>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Email</label>
+                        <input
+                            type="email"
+                            x-model="addForm.email"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="user@company.com"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Name</label>
+                        <input
+                            type="text"
+                            x-model="addForm.name"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                            placeholder="Full name"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Role</label>
+                        <select
+                            x-model="addForm.role"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        >
+                            <option value="viewer">Viewer</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button
+                            @click="addUser()"
+                            :disabled="saving || !addForm.email"
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                        >
+                            <span x-show="!saving">Add</span>
+                            <span x-show="saving">Adding...</span>
+                        </button>
+                        <button
+                            @click="showAddForm = false"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                        >Cancel</button>
+                    </div>
                 </div>
-                <button
-                    type="button"
-                    class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
-                    hx-post="/api/settings/reset"
-                    hx-confirm="Are you sure you want to reset all settings to defaults?"
-                >
-                    Reset Settings
-                </button>
+            </div>
+
+            <div class="flex" style="min-height: 400px;">
+                <!-- Left panel: User list -->
+                <div class="w-1/2 border-r border-gray-200 overflow-y-auto" style="max-height: 600px;">
+                    <!-- Loading state -->
+                    <div x-show="loading" class="p-6 text-center text-gray-500">
+                        <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Loading users...
+                    </div>
+
+                    <!-- Empty state -->
+                    <div x-show="!loading && users.length === 0" class="p-6 text-center text-gray-500">
+                        No users found.
+                    </div>
+
+                    <!-- User list -->
+                    <template x-for="u in users" :key="u.id">
+                        <div
+                            @click="selectUser(u)"
+                            :class="selectedUser && selectedUser.id === u.id
+                                ? 'bg-primary-50 border-l-4 border-primary-500'
+                                : 'border-l-4 border-transparent hover:bg-gray-50'"
+                            class="px-4 py-3 cursor-pointer transition-colors border-b border-gray-100"
+                        >
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900" x-text="u.name || u.email"></p>
+                                    <p class="text-xs text-gray-500" x-text="u.email"></p>
+                                </div>
+                                <span
+                                    :class="u.role === 'admin'
+                                        ? 'bg-purple-100 text-purple-800'
+                                        : 'bg-gray-100 text-gray-800'"
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                    x-text="u.role"
+                                ></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Right panel: Permissions -->
+                <div class="w-1/2 overflow-y-auto" style="max-height: 600px;">
+                    <!-- No user selected -->
+                    <div x-show="!selectedUser" class="flex items-center justify-center h-full text-gray-400 text-sm">
+                        <div class="text-center">
+                            <svg class="w-10 h-10 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                            Select a user to view permissions
+                        </div>
+                    </div>
+
+                    <!-- User permissions -->
+                    <div x-show="selectedUser" class="p-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h4 class="text-sm font-semibold text-gray-900" x-text="selectedUser ? (selectedUser.name || selectedUser.email) : ''"></h4>
+                                <p class="text-xs text-gray-500" x-text="selectedUser ? selectedUser.email : ''"></p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button
+                                    @click="deleteUser(selectedUser.id)"
+                                    class="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50"
+                                >Delete</button>
+                            </div>
+                        </div>
+
+                        <div class="mb-3 pb-3 border-b border-gray-200">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
+                            <div class="flex space-x-2">
+                                <button
+                                    @click="setRole('viewer')"
+                                    :class="selectedUser && selectedUser.role === 'viewer'
+                                        ? 'bg-primary-100 text-primary-800 border-primary-300'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+                                    class="px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+                                >Viewer</button>
+                                <button
+                                    @click="setRole('admin')"
+                                    :class="selectedUser && selectedUser.role === 'admin'
+                                        ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+                                    class="px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+                                >Admin</button>
+                            </div>
+                        </div>
+
+                        <label class="block text-xs font-medium text-gray-500 mb-2">Permissions</label>
+                        <div class="space-y-1">
+                            <template x-for="perm in permissions" :key="perm.id">
+                                <label
+                                    class="flex items-center space-x-2 py-1.5 px-2 rounded text-sm cursor-pointer hover:bg-gray-50"
+                                    :class="!hasPermission(perm.id) ? 'opacity-60' : ''"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        :checked="hasPermission(perm.id)"
+                                        @change="togglePermission(perm.id)"
+                                        class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                                    >
+                                    <span class="text-gray-700" x-text="perm.label"></span>
+                                    <span
+                                        x-show="perm.adminOnly"
+                                        class="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded"
+                                    >admin</span>
+                                </label>
+                            </template>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-gray-200">
+                            <p class="text-xs text-gray-400">
+                                Permissions are derived from the user's role. Toggling an
+                                admin-only permission will change the role accordingly.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- Danger Zone Tab                                                    -->
+    <!-- ================================================================== -->
+    <div x-show="activeTab === 'danger'" x-cloak>
+        <div class="bg-white rounded-lg shadow border-2 border-red-200">
+            <div class="px-4 py-5 border-b border-red-200 sm:px-6">
+                <h3 class="text-lg font-medium text-red-900">Danger Zone</h3>
+                <p class="mt-1 text-sm text-red-600">Irreversible actions</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-900">Clear All Results</h4>
+                        <p class="text-sm text-gray-500">Delete all scan results. This cannot be undone.</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                        hx-delete="/api/v1/results"
+                        hx-confirm="Are you sure you want to delete ALL scan results? This cannot be undone."
+                    >
+                        Clear Results
+                    </button>
+                </div>
+                <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-900">Reset Configuration</h4>
+                        <p class="text-sm text-gray-500">Reset all settings to defaults.</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                        hx-post="/api/v1/settings/reset"
+                        hx-confirm="Are you sure you want to reset all settings to defaults?"
+                    >
+                        Reset Settings
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function userManagement() {
+    return {
+        users: [],
+        selectedUser: null,
+        showAddForm: false,
+        addForm: { email: '', name: '', role: 'viewer' },
+        saving: false,
+        loading: true,
+
+        permissions: [
+            { id: 'view_dashboard', label: 'View Dashboard', adminOnly: false },
+            { id: 'view_results', label: 'View Scan Results', adminOnly: false },
+            { id: 'export_data', label: 'Export Data', adminOnly: false },
+            { id: 'start_scans', label: 'Start New Scans', adminOnly: true },
+            { id: 'manage_targets', label: 'Manage Scan Targets', adminOnly: true },
+            { id: 'manage_schedules', label: 'Manage Schedules', adminOnly: true },
+            { id: 'manage_labels', label: 'Apply & Manage Labels', adminOnly: true },
+            { id: 'manage_settings', label: 'Manage Settings', adminOnly: true },
+            { id: 'manage_users', label: 'Manage Users', adminOnly: true },
+            { id: 'delete_results', label: 'Delete Results', adminOnly: true },
+            { id: 'manage_policies', label: 'Manage Policies', adminOnly: true },
+            { id: 'manage_remediation', label: 'Manage Remediation', adminOnly: true },
+        ],
+
+        async loadUsers() {
+            this.loading = true;
+            try {
+                const resp = await fetch('/api/v1/users?page_size=100', {
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRF-Token': getCsrfToken() },
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.users = data.items || [];
+                }
+            } catch (e) {
+                console.error('Failed to load users', e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        selectUser(u) {
+            this.selectedUser = { ...u };
+        },
+
+        hasPermission(permId) {
+            if (!this.selectedUser) return false;
+            const perm = this.permissions.find(p => p.id === permId);
+            if (!perm) return false;
+            if (this.selectedUser.role === 'admin') return true;
+            return !perm.adminOnly;
+        },
+
+        async togglePermission(permId) {
+            if (!this.selectedUser) return;
+            const perm = this.permissions.find(p => p.id === permId);
+            if (!perm) return;
+
+            if (perm.adminOnly) {
+                // Toggling an admin-only permission switches the role
+                this.selectedUser.role = this.selectedUser.role === 'admin' ? 'viewer' : 'admin';
+            }
+            // Viewer-level permissions cannot be removed
+
+            await this.saveUserRole();
+        },
+
+        async setRole(role) {
+            if (!this.selectedUser || this.selectedUser.role === role) return;
+            this.selectedUser.role = role;
+            await this.saveUserRole();
+        },
+
+        async saveUserRole() {
+            this.saving = true;
+            try {
+                const resp = await fetch('/api/v1/users/' + this.selectedUser.id, {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCsrfToken(),
+                    },
+                    body: JSON.stringify({ role: this.selectedUser.role }),
+                });
+                if (resp.ok) {
+                    const idx = this.users.findIndex(u => u.id === this.selectedUser.id);
+                    if (idx >= 0) this.users[idx].role = this.selectedUser.role;
+                    this.notify('User permissions updated', 'success');
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    this.notify(err.message || 'Failed to update user', 'error');
+                }
+            } catch (e) {
+                this.notify('Failed to update user', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async addUser() {
+            if (!this.addForm.email) return;
+            this.saving = true;
+            try {
+                const resp = await fetch('/api/v1/users', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCsrfToken(),
+                    },
+                    body: JSON.stringify(this.addForm),
+                });
+                if (resp.ok) {
+                    await this.loadUsers();
+                    this.showAddForm = false;
+                    this.addForm = { email: '', name: '', role: 'viewer' };
+                    this.notify('User added successfully', 'success');
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    this.notify(err.message || 'Failed to add user', 'error');
+                }
+            } catch (e) {
+                this.notify('Failed to add user', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async deleteUser(userId) {
+            if (!confirm('Are you sure you want to delete this user?')) return;
+            try {
+                const resp = await fetch('/api/v1/users/' + userId, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRF-Token': getCsrfToken() },
+                });
+                if (resp.ok || resp.status === 204) {
+                    if (this.selectedUser && this.selectedUser.id === userId) {
+                        this.selectedUser = null;
+                    }
+                    await this.loadUsers();
+                    this.notify('User deleted', 'success');
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    this.notify(err.message || 'Failed to delete user', 'error');
+                }
+            } catch (e) {
+                this.notify('Failed to delete user', 'error');
+            }
+        },
+
+        notify(message, type) {
+            window.dispatchEvent(new CustomEvent('notify', { detail: { message, type } }));
+        },
+    };
+}
+</script>
 {% endblock %}
