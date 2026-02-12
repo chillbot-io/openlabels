@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useDashboardStats } from '@/api/hooks/use-dashboard.ts';
 import { useScans } from '@/api/hooks/use-scans.ts';
 import { useActivityLog } from '@/api/hooks/use-monitoring.ts';
@@ -14,6 +15,17 @@ export function Component() {
   const scans = useScans({ page_size: 5 });
   const activity = useActivityLog({ page_size: 10 });
 
+  const riskBreakdown = useMemo(() => {
+    if (!stats.data) return undefined;
+    return {
+      CRITICAL: stats.data.critical_files,
+      HIGH: stats.data.high_files,
+      MEDIUM: stats.data.medium_files,
+      LOW: stats.data.low_files,
+      MINIMAL: stats.data.minimal_files,
+    };
+  }, [stats.data]);
+
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
@@ -24,10 +36,10 @@ export function Component() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <ErrorBoundary>
-          <RiskDistributionChart data={stats.data?.risk_breakdown} isLoading={stats.isLoading} />
+          <RiskDistributionChart data={riskBreakdown} isLoading={stats.isLoading} />
         </ErrorBoundary>
         <ErrorBoundary>
-          <FindingsByTypeChart data={stats.data?.entity_type_counts} isLoading={stats.isLoading} />
+          <FindingsByTypeChart data={undefined} isLoading={stats.isLoading} />
         </ErrorBoundary>
       </div>
 

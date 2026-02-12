@@ -17,9 +17,9 @@ export function Header() {
     <header className="flex h-14 items-center justify-between border-b px-6">
       <div className="flex items-center gap-2">
         {wsConnected ? (
-          <Wifi className="h-4 w-4 text-green-500" />
+          <Wifi className="h-4 w-4 text-green-500" aria-label="WebSocket connected" />
         ) : (
-          <WifiOff className="h-4 w-4 text-red-500" />
+          <WifiOff className="h-4 w-4 text-red-500" aria-label="WebSocket disconnected" />
         )}
         {!wsConnected && (
           <span className="text-xs text-red-500">Reconnecting...</span>

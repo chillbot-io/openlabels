@@ -44,16 +44,27 @@ export function Component() {
   const rollback = useRollback();
   const addToast = useUIStore((s) => s.addToast);
 
+  const resetForm = () => {
+    setFilePath('');
+    setPrincipals('');
+    setDryRun(false);
+  };
+
+  const closeDialog = () => {
+    setDialog(null);
+    resetForm();
+  };
+
   const handleQuarantine = () => {
     quarantine.mutate({ file_path: filePath, dry_run: dryRun }, {
-      onSuccess: () => { addToast({ level: 'success', message: 'Quarantine initiated' }); setDialog(null); },
+      onSuccess: () => { addToast({ level: 'success', message: 'Quarantine initiated' }); closeDialog(); },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
   };
 
   const handleLockdown = () => {
     lockdown.mutate({ file_path: filePath, principals: principals.split(',').map((p) => p.trim()).filter(Boolean), dry_run: dryRun }, {
-      onSuccess: () => { addToast({ level: 'success', message: 'Lockdown initiated' }); setDialog(null); },
+      onSuccess: () => { addToast({ level: 'success', message: 'Lockdown initiated' }); closeDialog(); },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
   };
@@ -72,7 +83,7 @@ export function Component() {
       header: '',
       cell: ({ row }) =>
         (row.original.status === 'completed' && row.original.action_type !== 'rollback') ? (
-          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRollback(row.original.id); }}>
+          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRollback(row.original.id); }} aria-label={`Rollback action on ${row.original.file_path}`}>
             Rollback
           </Button>
         ) : null,
@@ -100,7 +111,7 @@ export function Component() {
         emptyDescription="Use quarantine or lockdown to protect sensitive files"
       />
 
-      <Dialog open={dialog !== null} onOpenChange={() => setDialog(null)}>
+      <Dialog open={dialog !== null} onOpenChange={closeDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="capitalize">{dialog}</DialogTitle>
@@ -112,13 +123,13 @@ export function Component() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>File Path</Label>
-              <Input value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder="C:\Shares\sensitive-file.xlsx" />
+              <Label htmlFor="rem-file-path">File Path</Label>
+              <Input id="rem-file-path" value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder="C:\Shares\sensitive-file.xlsx" />
             </div>
             {dialog === 'lockdown' && (
               <div>
-                <Label>Principals (comma-separated)</Label>
-                <Input value={principals} onChange={(e) => setPrincipals(e.target.value)} placeholder="DOMAIN\admin,DOMAIN\security-team" />
+                <Label htmlFor="rem-principals">Principals (comma-separated)</Label>
+                <Input id="rem-principals" value={principals} onChange={(e) => setPrincipals(e.target.value)} placeholder="DOMAIN\admin,DOMAIN\security-team" />
               </div>
             )}
             <label className="flex items-center gap-2">

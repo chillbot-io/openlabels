@@ -46,6 +46,7 @@ export function ToastContainer() {
             <button
               onClick={() => removeToast(toast.id)}
               className="shrink-0 opacity-60 hover:opacity-100"
+              aria-label="Dismiss notification"
             >
               <X className="h-4 w-4" />
             </button>

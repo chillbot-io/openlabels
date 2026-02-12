@@ -7,6 +7,7 @@ import { useTargets } from '@/api/hooks/use-targets.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
 import { LoadingSkeleton } from '@/components/loading-skeleton.tsx';
 import { describeCron } from '@/lib/date.ts';
@@ -14,8 +15,8 @@ import { useUIStore } from '@/stores/ui-store.ts';
 
 const scheduleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  cron_expression: z.string().min(1, 'Cron expression is required'),
-  target_ids: z.array(z.string()).min(1, 'Select at least one target'),
+  cron: z.string().min(1, 'Cron expression is required'),
+  target_id: z.string().min(1, 'Select a target'),
   enabled: z.boolean(),
 });
 
@@ -33,20 +34,19 @@ export function Component() {
 
   const form = useForm<FormData>({
     resolver: zodResolver(scheduleSchema),
-    defaultValues: { name: '', cron_expression: '0 2 * * 1', target_ids: [], enabled: true },
+    defaultValues: { name: '', cron: '0 2 * * 1', target_id: '', enabled: true },
     values: schedule.data ? {
       name: schedule.data.name,
-      cron_expression: schedule.data.cron_expression,
-      target_ids: schedule.data.target_ids,
+      cron: schedule.data.cron ?? '',
+      target_id: schedule.data.target_id,
       enabled: schedule.data.enabled,
     } : undefined,
   });
 
   if (isEdit && schedule.isLoading) return <LoadingSkeleton />;
 
-  const cron = form.watch('cron_expression');
-  const cronDescription = describeCron(cron);
-  const selectedTargets = form.watch('target_ids');
+  const cronValue = form.watch('cron');
+  const cronDescription = describeCron(cronValue);
 
   const onSubmit = (data: FormData) => {
     if (isEdit) {
@@ -80,10 +80,10 @@ export function Component() {
 
             <div>
               <Label htmlFor="cron">Cron Expression</Label>
-              <Input id="cron" {...form.register('cron_expression')} placeholder="0 2 * * 1" />
+              <Input id="cron" {...form.register('cron')} placeholder="0 2 * * 1" />
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">{cronDescription.join(' | ')}</p>
-              {form.formState.errors.cron_expression && (
-                <p className="mt-1 text-xs text-red-500">{form.formState.errors.cron_expression.message}</p>
+              {form.formState.errors.cron && (
+                <p className="mt-1 text-xs text-red-500">{form.formState.errors.cron.message}</p>
               )}
             </div>
 
@@ -95,26 +95,21 @@ export function Component() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Targets</CardTitle></CardHeader>
-          <CardContent className="space-y-2 max-h-64 overflow-y-auto">
-            {(targets.data?.items ?? []).map((target) => (
-              <label key={target.id} className="flex items-center gap-2 rounded-md p-2 hover:bg-[var(--muted)]">
-                <input
-                  type="checkbox"
-                  checked={selectedTargets.includes(target.id)}
-                  onChange={(e) => {
-                    const next = e.target.checked
-                      ? [...selectedTargets, target.id]
-                      : selectedTargets.filter((id) => id !== target.id);
-                    form.setValue('target_ids', next, { shouldValidate: true });
-                  }}
-                  className="rounded"
-                />
-                <span className="text-sm">{target.name}</span>
-              </label>
-            ))}
-            {form.formState.errors.target_ids && (
-              <p className="text-xs text-red-500">{form.formState.errors.target_ids.message}</p>
+          <CardHeader><CardTitle>Target</CardTitle></CardHeader>
+          <CardContent>
+            <Select
+              value={form.watch('target_id')}
+              onValueChange={(v) => form.setValue('target_id', v, { shouldValidate: true })}
+            >
+              <SelectTrigger><SelectValue placeholder="Select a target" /></SelectTrigger>
+              <SelectContent>
+                {(targets.data?.items ?? []).map((target) => (
+                  <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.target_id && (
+              <p className="mt-1 text-xs text-red-500">{form.formState.errors.target_id.message}</p>
             )}
           </CardContent>
         </Card>

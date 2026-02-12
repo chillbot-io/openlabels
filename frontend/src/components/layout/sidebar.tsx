@@ -32,7 +32,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4">
+      <nav className="flex-1 overflow-y-auto py-4" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => (
           <div key={group.label} className="mb-4">
             {!collapsed && (

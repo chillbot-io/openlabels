@@ -1,6 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { settingsApi } from '@/api/endpoints/settings.ts';
-import { usersApi } from '@/api/endpoints/users.ts';
+import { useSettings, useUpdateSettings } from '@/api/hooks/use-settings.ts';
+import { useUsers } from '@/api/hooks/use-users.ts';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Card, CardContent } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
@@ -8,20 +7,11 @@ import { Label } from '@/components/ui/label.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { useAuthStore } from '@/stores/auth-store.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
-import type { Setting, User, PaginatedResponse } from '@/api/types.ts';
+import type { Setting } from '@/api/types.ts';
 
 function SettingsTab({ category }: { category: string }) {
-  const settings = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => settingsApi.list(),
-    staleTime: 10 * 60_000,
-  });
-
-  const queryClient = useQueryClient();
-  const updateSetting = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: unknown }) => settingsApi.update(key, value),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
-  });
+  const settings = useSettings();
+  const updateSettings = useUpdateSettings();
   const addToast = useUIStore((s) => s.addToast);
 
   const filtered = (settings.data ?? []).filter((s: Setting) => s.category === category);
@@ -36,15 +26,17 @@ function SettingsTab({ category }: { category: string }) {
         ) : (
           filtered.map((setting: Setting) => (
             <div key={setting.key} className="space-y-1">
-              <Label>{setting.key}</Label>
-              <p className="text-xs text-[var(--muted-foreground)]">{setting.description}</p>
+              <Label htmlFor={`setting-${setting.key}`}>{setting.key}</Label>
+              <p className="text-xs text-[var(--muted-foreground)]" id={`setting-desc-${setting.key}`}>{setting.description}</p>
               <div className="flex gap-2">
                 <Input
+                  id={`setting-${setting.key}`}
+                  aria-describedby={`setting-desc-${setting.key}`}
                   defaultValue={String(setting.value ?? '')}
                   onBlur={(e) => {
                     if (e.target.value !== String(setting.value ?? '')) {
-                      updateSetting.mutate(
-                        { key: setting.key, value: e.target.value },
+                      updateSettings.mutate(
+                        { category, settings: { [setting.key]: e.target.value } },
                         {
                           onSuccess: () => addToast({ level: 'success', message: `${setting.key} updated` }),
                           onError: (err) => addToast({ level: 'error', message: err.message }),
@@ -63,19 +55,16 @@ function SettingsTab({ category }: { category: string }) {
 }
 
 function UsersTab() {
-  const users = useQuery({
-    queryKey: ['users'],
-    queryFn: () => usersApi.list(),
-  });
+  const users = useUsers();
 
   if (users.isLoading) return <Skeleton className="h-48" />;
 
   return (
     <Card>
       <CardContent className="p-0">
-        <div className="divide-y">
-          {((users.data as PaginatedResponse<User>)?.items ?? []).map((user: User) => (
-            <div key={user.id} className="flex items-center justify-between px-4 py-3">
+        <div className="divide-y" role="list" aria-label="Users">
+          {(users.data?.items ?? []).map((user) => (
+            <div key={user.id} className="flex items-center justify-between px-4 py-3" role="listitem">
               <div>
                 <p className="text-sm font-medium">{user.name}</p>
                 <p className="text-xs text-[var(--muted-foreground)]">{user.email}</p>
@@ -98,10 +87,10 @@ export function Component() {
       <h1 className="text-2xl font-bold">Settings</h1>
 
       {!isAdmin ? (
-        <p className="text-[var(--muted-foreground)]">Settings are only accessible to administrators.</p>
+        <p className="text-[var(--muted-foreground)]" role="alert">Settings are only accessible to administrators.</p>
       ) : (
         <Tabs defaultValue="general">
-          <TabsList>
+          <TabsList aria-label="Settings categories">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="azure">Azure AD</TabsTrigger>
             <TabsTrigger value="detection">Detection</TabsTrigger>

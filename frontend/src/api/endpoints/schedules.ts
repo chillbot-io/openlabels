@@ -8,7 +8,7 @@ export const schedulesApi = {
   get: (id: string) =>
     apiFetch<Schedule>(`/schedules/${id}`),
 
-  create: (payload: Omit<Schedule, 'id' | 'tenant_id' | 'created_at' | 'updated_at' | 'last_run_at' | 'next_run_at'>) =>
+  create: (payload: { name: string; cron: string; target_id: string; enabled: boolean }) =>
     apiFetch<Schedule>('/schedules', { method: 'POST', body: payload }),
 
   update: (id: string, payload: Partial<Schedule>) =>

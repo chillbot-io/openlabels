@@ -64,13 +64,13 @@ export function Component() {
         onRowClick={(scan) => navigate(`/scans/${scan.id}`)}
       />
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setSelectedTargets([]); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Scan</DialogTitle>
             <DialogDescription>Select targets to scan for sensitive data.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-2 max-h-64 overflow-y-auto" role="group" aria-label="Select scan targets">
             {(targets.data?.items ?? []).map((target: Target) => (
               <label key={target.id} className="flex items-center gap-2 rounded-md p-2 hover:bg-[var(--muted)]">
                 <input
@@ -84,7 +84,7 @@ export function Component() {
                   className="rounded"
                 />
                 <span className="text-sm">{target.name}</span>
-                <span className="text-xs text-[var(--muted-foreground)]">{target.adapter_type}</span>
+                <span className="text-xs text-[var(--muted-foreground)]">{target.adapter}</span>
               </label>
             ))}
           </div>

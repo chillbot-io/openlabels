@@ -17,6 +17,17 @@ export function Component() {
   if (!result.data) return <p className="p-6">Result not found</p>;
 
   const r = result.data;
+  const findings = r.findings as Record<string, unknown[]> | null;
+  const entityList = findings
+    ? Object.entries(findings).flatMap(([type, items]) =>
+        (items as Array<{ value?: string; confidence?: number; context?: string }>).map((item) => ({
+          entity_type: type,
+          value: item.value ?? '',
+          confidence: item.confidence ?? 0,
+          context: item.context ?? '',
+        })),
+      )
+    : [];
 
   return (
     <div className="space-y-6 p-6">
@@ -46,8 +57,8 @@ export function Component() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-[var(--muted-foreground)]">Target</p>
-            <p className="text-sm font-medium mt-1">{r.target_name ?? '—'}</p>
+            <p className="text-xs text-[var(--muted-foreground)]">Owner</p>
+            <p className="text-sm font-medium mt-1">{r.owner ?? '—'}</p>
           </CardContent>
         </Card>
         <Card>
@@ -58,13 +69,14 @@ export function Component() {
         </Card>
       </div>
 
-      {r.labels.length > 0 && (
+      {r.current_label_name && (
         <Card>
-          <CardHeader><CardTitle>Labels</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Label</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            {r.labels.map((label) => (
-              <Badge key={label} variant="secondary">{label}</Badge>
-            ))}
+            <Badge variant="secondary">{r.current_label_name}</Badge>
+            {r.label_applied_at && (
+              <span className="text-xs text-[var(--muted-foreground)]">Applied {formatDateTime(r.label_applied_at)}</span>
+            )}
           </CardContent>
         </Card>
       )}
@@ -78,33 +90,50 @@ export function Component() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Detected Entities ({r.entities.length})</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[var(--muted)]">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Type</th>
-                  <th className="px-4 py-2 text-left font-medium">Value</th>
-                  <th className="px-4 py-2 text-left font-medium">Confidence</th>
-                  <th className="px-4 py-2 text-left font-medium">Context</th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.entities.map((entity, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-4 py-2"><EntityTag type={entity.entity_type} /></td>
-                    <td className="px-4 py-2 font-mono text-xs">{entity.value}</td>
-                    <td className="px-4 py-2">{(entity.confidence * 100).toFixed(0)}%</td>
-                    <td className="px-4 py-2 text-xs text-[var(--muted-foreground)] max-w-md truncate">{entity.context}</td>
+      {entityList.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Detected Entities ({entityList.length})</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" aria-label="Detected entities">
+                <thead className="bg-[var(--muted)]">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Type</th>
+                    <th className="px-4 py-2 text-left font-medium">Value</th>
+                    <th className="px-4 py-2 text-left font-medium">Confidence</th>
+                    <th className="px-4 py-2 text-left font-medium">Context</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+                </thead>
+                <tbody>
+                  {entityList.map((entity, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-4 py-2"><EntityTag type={entity.entity_type} /></td>
+                      <td className="px-4 py-2 font-mono text-xs">{entity.value}</td>
+                      <td className="px-4 py-2">{(entity.confidence * 100).toFixed(0)}%</td>
+                      <td className="px-4 py-2 text-xs text-[var(--muted-foreground)] max-w-md truncate">{entity.context}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {r.policy_violations && r.policy_violations.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Policy Violations</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {r.policy_violations.map((violation, i) => (
+                <div key={i} className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-800">
+                  {JSON.stringify(violation)}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

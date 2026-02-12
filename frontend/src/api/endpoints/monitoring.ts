@@ -3,10 +3,10 @@ import type { HealthStatus, JobQueueStats, AuditLogEntry, PaginatedResponse } fr
 
 export const monitoringApi = {
   health: () =>
-    apiFetch<HealthStatus>('/health'),
+    apiFetch<HealthStatus>('/health/status'),
 
   jobQueue: () =>
-    apiFetch<JobQueueStats>('/monitoring/jobs'),
+    apiFetch<JobQueueStats>('/jobs/stats'),
 
   activityLog: (params?: { page?: number; page_size?: number; action?: string }) =>
     apiFetch<PaginatedResponse<AuditLogEntry>>('/audit', { params }),

@@ -24,7 +24,7 @@ export function Component() {
       <h1 className="text-2xl font-bold">Monitoring</h1>
 
       <Tabs defaultValue="health">
-        <TabsList>
+        <TabsList aria-label="Monitoring views">
           <TabsTrigger value="health">System Health</TabsTrigger>
           <TabsTrigger value="jobs">Job Queue</TabsTrigger>
           <TabsTrigger value="activity">Activity Log</TabsTrigger>
@@ -37,7 +37,7 @@ export function Component() {
             <>
               <Card>
                 <CardContent className="flex items-center gap-4 p-6">
-                  <span className={`h-4 w-4 rounded-full ${healthColor[health.data.status]}`} />
+                  <span className={`h-4 w-4 rounded-full ${healthColor[health.data.status]}`} role="img" aria-label={`System status: ${health.data.status}`} />
                   <div>
                     <p className="text-lg font-semibold capitalize">{health.data.status}</p>
                     <p className="text-sm text-[var(--muted-foreground)]">
@@ -52,7 +52,7 @@ export function Component() {
                   <Card key={name}>
                     <CardContent className="p-4">
                       <div className="flex items-center gap-2">
-                        <span className={`h-2.5 w-2.5 rounded-full ${healthColor[comp.status]}`} />
+                        <span className={`h-2.5 w-2.5 rounded-full ${healthColor[comp.status]}`} role="img" aria-label={`${name} status: ${comp.status}`} />
                         <p className="text-sm font-medium capitalize">{name}</p>
                       </div>
                       {comp.latency_ms !== undefined && (
@@ -85,26 +85,21 @@ export function Component() {
                 ))}
               </div>
 
-              <Card>
-                <CardHeader><CardTitle>Active Jobs</CardTitle></CardHeader>
-                <CardContent>
-                  {jobQueue.data.jobs.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-[var(--muted-foreground)]">No active jobs</p>
-                  ) : (
+              {Object.keys(jobQueue.data.failed_by_type ?? {}).length > 0 && (
+                <Card>
+                  <CardHeader><CardTitle>Failed Jobs by Type</CardTitle></CardHeader>
+                  <CardContent>
                     <div className="space-y-2">
-                      {jobQueue.data.jobs.map((job) => (
-                        <div key={job.id} className="flex items-center justify-between rounded-md bg-[var(--muted)] p-3">
-                          <div>
-                            <p className="text-sm font-medium">{job.type}</p>
-                            <p className="text-xs text-[var(--muted-foreground)]">{job.id}</p>
-                          </div>
-                          <StatusBadge status={job.status as ScanStatus} />
+                      {Object.entries(jobQueue.data.failed_by_type).map(([type, count]) => (
+                        <div key={type} className="flex items-center justify-between rounded-md bg-[var(--muted)] p-3">
+                          <p className="text-sm font-medium">{type}</p>
+                          <span className="text-sm font-bold text-red-600">{count}</span>
                         </div>
                       ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
             </>
           ) : null}
         </TabsContent>
@@ -117,9 +112,9 @@ export function Component() {
                   {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
                 </div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y" role="list" aria-label="Activity log entries">
                   {(activity.data?.items ?? []).map((entry) => (
-                    <div key={entry.id} className="flex items-center justify-between px-4 py-3">
+                    <div key={entry.id} className="flex items-center justify-between px-4 py-3" role="listitem">
                       <div>
                         <p className="text-sm font-medium">{entry.action}</p>
                         <p className="text-xs text-[var(--muted-foreground)]">

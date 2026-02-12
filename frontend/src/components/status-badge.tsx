@@ -14,7 +14,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       status === 'running' && 'animate-pulse',
       className,
     )}>
-      {status === 'running' && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+      {status === 'running' && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" aria-hidden="true" />}
       {status}
     </span>
   );
