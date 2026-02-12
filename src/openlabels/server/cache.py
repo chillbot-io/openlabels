@@ -352,6 +352,20 @@ class RedisCache:
         """Check if Redis is connected."""
         return self._connected
 
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """Redact password from Redis URL to prevent credential leakage."""
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        if parsed.password:
+            replaced = parsed._replace(
+                netloc=f"{parsed.username or ''}:***@{parsed.hostname}"
+                + (f":{parsed.port}" if parsed.port else "")
+            )
+            return urlunparse(replaced)
+        return url
+
     @property
     def stats(self) -> dict:
         """Get cache statistics."""
@@ -360,7 +374,7 @@ class RedisCache:
         return {
             "type": "redis",
             "connected": self._connected,
-            "url": self._url,
+            "url": self._sanitize_url(self._url),
             "hits": self._hits,
             "misses": self._misses,
             "hit_rate": f"{hit_rate:.1f}%",

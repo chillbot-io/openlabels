@@ -1,0 +1,68 @@
+const BASE_URL = import.meta.env.VITE_API_URL ?? '';
+
+export class ApiError extends Error {
+  status: number;
+  body: { error?: string; message?: string; detail?: string };
+
+  constructor(
+    status: number,
+    body: { error?: string; message?: string; detail?: string },
+  ) {
+    super(body.message ?? body.detail ?? body.error ?? `HTTP ${status}`);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
+  params?: Record<string, string | number | boolean | undefined>;
+  body?: unknown;
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options?: ApiFetchOptions,
+): Promise<T> {
+  let url = `${BASE_URL}/api/v1${path}`;
+
+  if (options?.params) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value));
+      }
+    }
+    const qs = searchParams.toString();
+    if (qs) url += `?${qs}`;
+  }
+
+  const { params: _params, body, ...fetchOptions } = options ?? {};
+
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...fetchOptions.headers,
+    },
+    ...fetchOptions,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (response.status === 401) {
+    window.location.href = '/api/v1/auth/login';
+    throw new ApiError(401, { message: 'Unauthorized' });
+  }
+
+  if (!response.ok) {
+    let errorBody: Record<string, string>;
+    try {
+      errorBody = await response.json();
+    } catch {
+      errorBody = { message: response.statusText };
+    }
+    throw new ApiError(response.status, errorBody);
+  }
+
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
