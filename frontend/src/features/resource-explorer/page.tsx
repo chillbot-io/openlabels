@@ -30,7 +30,7 @@ function FolderTreeItem({ entry, targetId, onSelect, selectedId }: {
   const isSelected = selectedId === entry.id;
 
   return (
-    <div>
+    <div role="treeitem" aria-expanded={entry.is_directory ? expanded : undefined} aria-selected={isSelected}>
       <button
         className={cn(
           'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-[var(--muted)]',
@@ -40,16 +40,17 @@ function FolderTreeItem({ entry, targetId, onSelect, selectedId }: {
           if (entry.is_directory) setExpanded(!expanded);
           onSelect(entry);
         }}
+        aria-label={`${entry.name}${entry.is_directory ? ', folder' : ', file'}${entry.risk_tier ? `, risk: ${entry.risk_tier}` : ''}`}
       >
         {entry.is_directory ? (
-          expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-        ) : <span className="w-3.5" />}
-        {entry.is_directory ? <FolderOpen className="h-4 w-4 text-yellow-500" /> : <File className="h-4 w-4 text-gray-400" />}
+          expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        ) : <span className="w-3.5" aria-hidden="true" />}
+        {entry.is_directory ? <FolderOpen className="h-4 w-4 text-yellow-500" aria-hidden="true" /> : <File className="h-4 w-4 text-gray-400" aria-hidden="true" />}
         <span className="truncate">{entry.name}</span>
         {entry.risk_tier && <RiskBadge tier={entry.risk_tier as RiskTier} className="ml-auto text-[10px]" />}
       </button>
       {expanded && dirs.length > 0 && (
-        <div className="ml-4 border-l pl-1">
+        <div className="ml-4 border-l pl-1" role="group">
           {dirs.map((child) => (
             <FolderTreeItem key={child.id} entry={child} targetId={targetId} onSelect={onSelect} selectedId={selectedId} />
           ))}
@@ -76,7 +77,7 @@ export function Component() {
       <div className="flex w-72 flex-col border-r">
         <div className="border-b p-3">
           <Select value={targetId} onValueChange={setTargetId}>
-            <SelectTrigger><SelectValue placeholder="Select target" /></SelectTrigger>
+            <SelectTrigger aria-label="Select target"><SelectValue placeholder="Select target" /></SelectTrigger>
             <SelectContent>
               {(targets.data?.items ?? []).map((t) => (
                 <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -84,7 +85,7 @@ export function Component() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto p-2" role="tree" aria-label="File explorer">
           {rootEntries.isLoading ? (
             <div className="space-y-1">
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}

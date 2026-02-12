@@ -27,7 +27,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
-        <Shield className="h-6 w-6 shrink-0 text-primary-400" />
+        <Shield className="h-6 w-6 shrink-0 text-primary-400" aria-hidden="true" />
         {!collapsed && <span className="text-lg font-bold">OpenLabels</span>}
       </div>
 
@@ -46,6 +46,8 @@ export function Sidebar() {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  title={collapsed ? item.label : undefined}
+                  aria-label={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-sidebar-hover',
@@ -54,7 +56,7 @@ export function Sidebar() {
                     )
                   }
                 >
-                  {Icon && <Icon className="h-4 w-4 shrink-0" />}
+                  {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
                   {!collapsed && <span>{item.label}</span>}
                 </NavLink>
               );

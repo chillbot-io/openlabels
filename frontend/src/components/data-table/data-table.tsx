@@ -89,13 +89,25 @@ export function DataTable<TData>({
                       header.column.getCanSort() && 'cursor-pointer select-none',
                     )}
                     onClick={header.column.getToggleSortingHandler()}
+                    onKeyDown={header.column.getCanSort() ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        header.column.getToggleSortingHandler()?.(e);
+                      }
+                    } : undefined}
+                    tabIndex={header.column.getCanSort() ? 0 : undefined}
+                    aria-sort={
+                      header.column.getIsSorted() === 'asc' ? 'ascending' :
+                      header.column.getIsSorted() === 'desc' ? 'descending' :
+                      header.column.getCanSort() ? 'none' : undefined
+                    }
                   >
                     <div className="flex items-center gap-1">
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanSort() && (
-                        header.column.getIsSorted() === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> :
-                        header.column.getIsSorted() === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> :
-                        <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+                        header.column.getIsSorted() === 'asc' ? <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" /> :
+                        header.column.getIsSorted() === 'desc' ? <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" /> :
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-40" aria-hidden="true" />
                       )}
                     </div>
                   </th>
@@ -112,6 +124,14 @@ export function DataTable<TData>({
                   onRowClick && 'cursor-pointer',
                 )}
                 onClick={() => onRowClick?.(row.original)}
+                onKeyDown={onRowClick ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onRowClick(row.original);
+                  }
+                } : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? 'link' : undefined}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-4 py-3">
@@ -125,7 +145,7 @@ export function DataTable<TData>({
       </div>
 
       {pagination && onPaginationChange && totalRows !== undefined && (
-        <div className="flex items-center justify-between">
+        <nav className="flex items-center justify-between" aria-label="Table pagination">
           <p className="text-sm text-[var(--muted-foreground)]">
             {totalRows.toLocaleString()} total results
           </p>
@@ -150,7 +170,7 @@ export function DataTable<TData>({
               Next
             </Button>
           </div>
-        </div>
+        </nav>
       )}
     </div>
   );

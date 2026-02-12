@@ -29,7 +29,7 @@ export function FindingsByTypeChart({ data, isLoading }: Props) {
           </p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 80 }}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 80 }} role="img" aria-label={`Top entity types: ${chartData.map((d) => `${d.name} ${d.count}`).join(', ')}`}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" />
               <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />

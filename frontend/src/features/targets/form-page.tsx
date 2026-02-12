@@ -98,9 +98,9 @@ export function Component() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="name">Name</Label>
-              <Input id="name" {...form.register('name')} />
+              <Input id="name" aria-describedby={form.formState.errors.name ? 'name-error' : undefined} aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
               {form.formState.errors.name && (
-                <p className="mt-1 text-xs text-red-500">{form.formState.errors.name.message}</p>
+                <p id="name-error" role="alert" className="mt-1 text-xs text-red-500">{form.formState.errors.name.message}</p>
               )}
             </div>
 

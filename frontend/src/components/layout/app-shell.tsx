@@ -22,11 +22,17 @@ export function AppShell() {
     <AuthGuard>
       <WebSocketProvider>
         <div className="flex h-screen overflow-hidden">
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-white focus:outline-none"
+          >
+            Skip to main content
+          </a>
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
             <Header />
             <Breadcrumbs />
-            <main className="flex-1 overflow-y-auto">
+            <main id="main-content" className="flex-1 overflow-y-auto" tabIndex={-1}>
               <ErrorBoundary>
                 <Suspense fallback={<LoadingSkeleton />}>
                   <Outlet />

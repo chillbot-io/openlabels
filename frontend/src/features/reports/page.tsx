@@ -13,7 +13,7 @@ import type { QueryResult } from '@/api/types.ts';
 function ResultsGrid({ result }: { result: QueryResult }) {
   return (
     <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm" aria-label="Query results">
         <thead className="bg-[var(--muted)]">
           <tr>
             {result.columns.map((col) => (
@@ -64,10 +64,12 @@ function SQLEditor() {
     <div className="space-y-4">
       <div className="flex gap-4">
         <div className="flex-1 space-y-2">
+          <label htmlFor="sql-editor" className="sr-only">SQL Query</label>
           <textarea
+            id="sql-editor"
             value={sql}
             onChange={(e) => setSql(e.target.value)}
-            className="h-40 w-full rounded-md border bg-[var(--muted)] p-3 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
+            className="h-40 w-full rounded-md border bg-[var(--muted)] p-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
             placeholder="Enter SQL query..."
           />
           <Button onClick={handleExecute} disabled={executeQuery.isPending || !sql.trim()}>
@@ -122,6 +124,7 @@ function AIAssistant() {
           placeholder="Show me all files with SSN in the Finance share from last week"
           className="flex-1"
           onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
+          aria-label="Ask a question about your data"
         />
         <Button onClick={handleAsk} disabled={aiQuery.isPending || !question.trim()}>
           {aiQuery.isPending ? 'Thinking...' : 'Ask'}

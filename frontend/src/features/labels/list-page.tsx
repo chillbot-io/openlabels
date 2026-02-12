@@ -15,6 +15,7 @@ const columns: ColumnDef<Label, unknown>[] = [
       <span
         className="h-3 w-3 rounded-full"
         style={{ backgroundColor: row.original.color }}
+        aria-hidden="true"
       />
       <span className="font-medium">{row.original.name}</span>
     </div>
