@@ -38,9 +38,9 @@
                     </p>
                     <p class="text-sm text-gray-500 truncate">
                         {% if log.details %}
-                            {{ log.details.name or log.details.file_path or log.details | string | truncate(60) }}
+                            {{ log.details.name or log.details.file_path or log.details | string | truncate_path(60) }}
                         {% else %}
-                            {{ log.resource_type | title }} {{ log.resource_id | string | truncate(8) }}
+                            {{ log.resource_type | title }} {{ log.resource_id | string | truncate_path(8) }}
                         {% endif %}
                     </p>
                 </div>

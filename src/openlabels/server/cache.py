@@ -95,10 +95,19 @@ class InMemoryCache:
     async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set value in cache with optional TTL."""
         async with self._lock:
-            # Calculate expiration time
             expires_at = time.time() + ttl if ttl else None
 
-            # Remove oldest items if at capacity
+            # Evict expired entries first before removing valid ones
+            if len(self._cache) >= self._max_size:
+                now = time.time()
+                expired_keys = [
+                    k for k, (_, exp) in self._cache.items()
+                    if exp and now > exp
+                ]
+                for k in expired_keys:
+                    del self._cache[k]
+
+            # If still at capacity, remove oldest (LRU) items
             while len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
 
@@ -343,6 +352,20 @@ class RedisCache:
         """Check if Redis is connected."""
         return self._connected
 
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """Redact password from Redis URL to prevent credential leakage."""
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        if parsed.password:
+            replaced = parsed._replace(
+                netloc=f"{parsed.username or ''}:***@{parsed.hostname}"
+                + (f":{parsed.port}" if parsed.port else "")
+            )
+            return urlunparse(replaced)
+        return url
+
     @property
     def stats(self) -> dict:
         """Get cache statistics."""
@@ -351,7 +374,7 @@ class RedisCache:
         return {
             "type": "redis",
             "connected": self._connected,
-            "url": self._url,
+            "url": self._sanitize_url(self._url),
             "hits": self._hits,
             "misses": self._misses,
             "hit_rate": f"{hit_rate:.1f}%",

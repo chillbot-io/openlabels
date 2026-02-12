@@ -40,6 +40,11 @@
                         <div class="flex-1 mr-4">
                             <div class="w-full bg-gray-200 rounded-full h-2">
                                 <div
+                                    role="progressbar"
+                                    aria-valuenow="{{ scan.progress | default(0) }}"
+                                    aria-valuemin="0"
+                                    aria-valuemax="100"
+                                    aria-label="Scan progress: {{ scan.progress | default(0) }}%"
                                     class="h-2 rounded-full {% if scan.status == 'completed' %}bg-green-500{% else %}bg-primary-500{% endif %}"
                                     style="width: {{ scan.progress | default(0) }}%"
                                 ></div>
@@ -62,7 +67,7 @@
                         <button
                             type="button"
                             class="text-yellow-600 hover:text-yellow-900"
-                            hx-post="/api/scans/{{ scan.id }}/cancel"
+                            hx-post="/api/v1/scans/{{ scan.id }}/cancel"
                             hx-target="#scans-list"
                             hx-swap="innerHTML"
                         >
@@ -72,7 +77,7 @@
                         <button
                             type="button"
                             class="text-primary-600 hover:text-primary-900"
-                            hx-post="/api/scans/{{ scan.id }}/retry"
+                            hx-post="/api/v1/scans/{{ scan.id }}/retry"
                             hx-target="#scans-list"
                             hx-swap="innerHTML"
                         >
@@ -103,6 +108,7 @@
                     <button
                         hx-get="/ui/partials/scans-list?page={{ page - 1 }}"
                         hx-target="#scans-list"
+                        hx-include="[name='status']"
                         class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     >
                         Previous
@@ -112,6 +118,7 @@
                     <button
                         hx-get="/ui/partials/scans-list?page={{ page + 1 }}"
                         hx-target="#scans-list"
+                        hx-include="[name='status']"
                         class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     >
                         Next

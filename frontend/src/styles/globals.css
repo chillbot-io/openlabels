@@ -1,0 +1,105 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+
+  --color-risk-critical: #dc2626;
+  --color-risk-high: #f97316;
+  --color-risk-medium: #eab308;
+  --color-risk-low: #22c55e;
+  --color-risk-minimal: #6b7280;
+
+  --color-status-pending: #6b7280;
+  --color-status-running: #3b82f6;
+  --color-status-completed: #22c55e;
+  --color-status-failed: #dc2626;
+  --color-status-cancelled: #9ca3af;
+
+  --color-sidebar: #111827;
+  --color-sidebar-foreground: #f9fafb;
+  --color-sidebar-hover: #1f2937;
+  --color-sidebar-active: #374151;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --border: #e5e7eb;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --accent: #eff6ff;
+  --accent-foreground: #1d4ed8;
+  --destructive: #dc2626;
+  --ring: #3b82f6;
+  --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: #0a0a0a;
+    --foreground: #fafafa;
+    --card: #141414;
+    --card-foreground: #fafafa;
+    --border: #262626;
+    --muted: #1c1c1c;
+    --muted-foreground: #a1a1aa;
+    --accent: #172554;
+    --accent-foreground: #93c5fd;
+    --destructive: #ef4444;
+    --ring: #3b82f6;
+  }
+}
+
+[data-theme='dark'] {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #141414;
+  --card-foreground: #fafafa;
+  --border: #262626;
+  --muted: #1c1c1c;
+  --muted-foreground: #a1a1aa;
+  --accent: #172554;
+  --accent-foreground: #93c5fd;
+  --destructive: #ef4444;
+  --ring: #3b82f6;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
+}

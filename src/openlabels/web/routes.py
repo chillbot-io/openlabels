@@ -14,7 +14,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,12 @@ def _sanitize_color(color: str | None) -> str:
 
 router = APIRouter()
 
+
+def _login_redirect(request: Request) -> RedirectResponse:
+    """Build a redirect response to the login page, preserving the intended destination."""
+    return RedirectResponse(url=f"/ui/login?next={request.url.path}", status_code=302)
+
+
 # Set up templates directory
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
@@ -55,6 +61,23 @@ def format_relative_time(dt: datetime | None) -> str:
 
     diff = now - dt
     seconds = diff.total_seconds()
+
+    if seconds < 0:
+        # Future date
+        abs_seconds = abs(seconds)
+        if abs_seconds < 60:
+            return "In a moment"
+        elif abs_seconds < 3600:
+            minutes = int(abs_seconds / 60)
+            return f"In {minutes}m"
+        elif abs_seconds < 86400:
+            hours = int(abs_seconds / 3600)
+            return f"In {hours}h"
+        elif abs_seconds < 604800:
+            days = int(abs_seconds / 86400)
+            return f"In {days}d"
+        else:
+            return dt.strftime("%Y-%m-%d")
 
     if seconds < 60:
         return "Just now"
@@ -82,7 +105,7 @@ def truncate_string(s: str, length: int = 50, suffix: str = "...") -> str:
 
 # Register template filters
 templates.env.filters["relative_time"] = format_relative_time
-templates.env.filters["truncate"] = truncate_string
+templates.env.filters["truncate_path"] = truncate_string
 
 
 # Default empty values for dashboard partials (HTMX will load actual data)
@@ -95,24 +118,15 @@ _DEFAULT_STATS = {
 
 
 # Page routes
-@router.get("/", response_class=HTMLResponse)
+@router.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "active_page": "dashboard",
-            "stats": _DEFAULT_STATS,
-            "recent_scans": [],
-            "findings": [],
-            "risk_distribution": [],
-            "activity": [],
-        },
-    )
+    return RedirectResponse(url="/ui/dashboard", status_code=302)
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -128,7 +142,9 @@ async def dashboard(request: Request):
 
 
 @router.get("/targets", response_class=HTMLResponse)
-async def targets_page(request: Request):
+async def targets_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "targets.html",
         {"request": request, "active_page": "targets"},
@@ -136,7 +152,9 @@ async def targets_page(request: Request):
 
 
 @router.get("/targets/new", response_class=HTMLResponse)
-async def new_target_page(request: Request):
+async def new_target_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "targets_form.html",
         {"request": request, "active_page": "targets", "target": None, "mode": "create"},
@@ -144,7 +162,9 @@ async def new_target_page(request: Request):
 
 
 @router.get("/scans", response_class=HTMLResponse)
-async def scans_page(request: Request):
+async def scans_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "scans.html",
         {"request": request, "active_page": "scans"},
@@ -152,7 +172,9 @@ async def scans_page(request: Request):
 
 
 @router.get("/scans/new", response_class=HTMLResponse)
-async def new_scan_page(request: Request):
+async def new_scan_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "scans_form.html",
         {"request": request, "active_page": "scans"},
@@ -163,8 +185,11 @@ async def new_scan_page(request: Request):
 async def results_page(
     request: Request,
     scan_id: str | None = None,
+    user=Depends(get_optional_user),
 ):
     """Results page with optional scan_id filter."""
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "results.html",
         {"request": request, "active_page": "results", "scan_id": scan_id},
@@ -172,7 +197,9 @@ async def results_page(
 
 
 @router.get("/labels", response_class=HTMLResponse)
-async def labels_page(request: Request):
+async def labels_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "labels.html",
         {"request": request, "active_page": "labels"},
@@ -180,7 +207,9 @@ async def labels_page(request: Request):
 
 
 @router.get("/labels/sync", response_class=HTMLResponse)
-async def labels_sync_page(request: Request):
+async def labels_sync_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "labels_sync.html",
         {"request": request, "active_page": "labels"},
@@ -188,7 +217,9 @@ async def labels_sync_page(request: Request):
 
 
 @router.get("/monitoring", response_class=HTMLResponse)
-async def monitoring_page(request: Request):
+async def monitoring_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "monitoring.html",
         {
@@ -413,27 +444,27 @@ async def settings_page(
         "fanout": {
             "fanout_enabled": (
                 tenant_settings.fanout_enabled
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_enabled is not None
                 else True
             ),
             "fanout_threshold": (
                 tenant_settings.fanout_threshold
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_threshold is not None
                 else 10000
             ),
             "fanout_max_partitions": (
                 tenant_settings.fanout_max_partitions
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_max_partitions is not None
                 else 16
             ),
             "pipeline_max_concurrent_files": (
                 tenant_settings.pipeline_max_concurrent_files
-                if tenant_settings
+                if tenant_settings and tenant_settings.pipeline_max_concurrent_files is not None
                 else 8
             ),
             "pipeline_memory_budget_mb": (
                 tenant_settings.pipeline_memory_budget_mb
-                if tenant_settings
+                if tenant_settings and tenant_settings.pipeline_memory_budget_mb is not None
                 else 512
             ),
         },
@@ -467,7 +498,9 @@ async def settings_page(
 
 
 @router.get("/schedules", response_class=HTMLResponse)
-async def schedules_page(request: Request):
+async def schedules_page(request: Request, user=Depends(get_optional_user)):
+    if not user:
+        return _login_redirect(request)
     return templates.TemplateResponse(
         "schedules.html",
         {"request": request, "active_page": "schedules"},
@@ -481,6 +514,8 @@ async def new_schedule_page(
     user=Depends(get_optional_user),
 ):
     """New schedule form page."""
+    if not user:
+        return _login_redirect(request)
     targets = []
     if user:
         query = (
@@ -603,7 +638,7 @@ async def scan_detail_page(
 
             progress_pct = 0
             if total_files > 0:
-                progress_pct = int((scan_obj.files_scanned or 0) / total_files * 100)
+                progress_pct = min(100, int((scan_obj.files_scanned or 0) / total_files * 100))
             elif scan_obj.status == "completed":
                 progress_pct = 100
 
@@ -731,20 +766,32 @@ async def create_target_form(
             status_code=400,
         )
 
-    target = ScanTarget(
-        tenant_id=user.tenant_id,
-        name=name,
-        adapter=adapter,
-        config=config,
-        enabled=enabled == "on",
-        created_by=user.id,
-    )
-    session.add(target)
-    await session.flush()
+    try:
+        target = ScanTarget(
+            tenant_id=user.tenant_id,
+            name=name,
+            adapter=adapter,
+            config=config,
+            enabled=enabled == "on",
+            created_by=user.id,
+        )
+        session.add(target)
+        await session.flush()
+    except Exception as e:
+        logger.warning("Failed to create target: %s", e)
+        return templates.TemplateResponse(
+            "targets_form.html",
+            {"request": request, "active_page": "targets", "target": None,
+             "mode": "create", "error": "Failed to create target. Name may already exist."},
+            status_code=400,
+        )
 
-    # Return redirect with success notification
-    response = RedirectResponse(url="/ui/targets", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/targets"
+    # Return redirect — use HX-Redirect for HTMX, 303 as fallback for non-HTMX
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/targets"
+    else:
+        response = RedirectResponse(url="/ui/targets", status_code=303)
     return response
 
 
@@ -798,8 +845,11 @@ async def update_target_form(
     target.config = config
     target.enabled = enabled == "on"
 
-    response = RedirectResponse(url="/ui/targets", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/targets"
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/targets"
+    else:
+        response = RedirectResponse(url="/ui/targets", status_code=303)
     return response
 
 
@@ -816,24 +866,45 @@ async def create_schedule_form(
     """Handle schedule creation form submission."""
     from openlabels.jobs import parse_cron_expression
 
-    schedule = ScanSchedule(
-        tenant_id=user.tenant_id,
-        name=name,
-        target_id=UUID(target_id),
-        cron=cron if cron else None,
-        enabled=enabled == "on",
-        created_by=user.id,
-    )
+    try:
+        parsed_target_id = UUID(target_id)
+    except (ValueError, AttributeError):
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400, "error_message": "Invalid target ID"},
+            status_code=400,
+        )
 
-    # Calculate next run time if cron is set
-    if cron:
-        schedule.next_run_at = parse_cron_expression(cron)
+    try:
+        schedule = ScanSchedule(
+            tenant_id=user.tenant_id,
+            name=name,
+            target_id=parsed_target_id,
+            cron=cron if cron else None,
+            enabled=enabled == "on",
+            created_by=user.id,
+        )
 
-    session.add(schedule)
-    await session.flush()
+        # Calculate next run time if cron is set
+        if cron:
+            schedule.next_run_at = parse_cron_expression(cron)
 
-    response = RedirectResponse(url="/ui/schedules", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/schedules"
+        session.add(schedule)
+        await session.flush()
+    except Exception as e:
+        logger.warning("Failed to create schedule: %s", e)
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400,
+             "error_message": "Failed to create schedule. Check your cron expression."},
+            status_code=400,
+        )
+
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/schedules"
+    else:
+        response = RedirectResponse(url="/ui/schedules", status_code=303)
     return response
 
 
@@ -859,16 +930,39 @@ async def update_schedule_form(
             status_code=404,
         )
 
+    try:
+        parsed_target_id = UUID(target_id)
+    except (ValueError, AttributeError):
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400, "error_message": "Invalid target ID"},
+            status_code=400,
+        )
+
     schedule.name = name
-    schedule.target_id = UUID(target_id)
+    schedule.target_id = parsed_target_id
     schedule.cron = cron if cron else None
     schedule.enabled = enabled == "on"
 
     if cron:
-        schedule.next_run_at = parse_cron_expression(cron)
+        try:
+            schedule.next_run_at = parse_cron_expression(cron)
+        except Exception as e:
+            logger.warning("Invalid cron expression %r: %s", cron, e)
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error_code": 400,
+                 "error_message": f"Invalid cron expression: {cron}"},
+                status_code=400,
+            )
+    else:
+        schedule.next_run_at = None
 
-    response = RedirectResponse(url="/ui/schedules", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/schedules"
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/schedules"
+    else:
+        response = RedirectResponse(url="/ui/schedules", status_code=303)
     return response
 
 
@@ -903,34 +997,52 @@ async def create_scan_form(
     job_ids = []
     queue = JobQueue(session, user.tenant_id)
 
-    for target_id in target_ids:
-        target = await session.get(ScanTarget, UUID(target_id))
-        if target and target.tenant_id == user.tenant_id:
-            job = ScanJob(
-                tenant_id=user.tenant_id,
-                target_id=target.id,
-                target_name=target.name,
-                status="pending",
-                created_by=user.id,
-            )
-            session.add(job)
-            await session.flush()
+    try:
+        for tid in target_ids:
+            try:
+                parsed_tid = UUID(tid)
+            except (ValueError, AttributeError):
+                logger.warning("Skipping invalid target ID: %r", tid)
+                continue
 
-            # Enqueue the scan job with options in payload
-            await queue.enqueue(
-                task_type="scan",
-                payload={
-                    "job_id": str(job.id),
-                    "force_full_scan": not incremental,
-                    "apply_labels": apply_labels,
-                    "deep_scan": deep_scan,
-                },
-                priority=priority,
-            )
-            job_ids.append(str(job.id))
+            target = await session.get(ScanTarget, parsed_tid)
+            if target and target.tenant_id == user.tenant_id:
+                job = ScanJob(
+                    tenant_id=user.tenant_id,
+                    target_id=target.id,
+                    target_name=target.name,
+                    status="pending",
+                    created_by=user.id,
+                )
+                session.add(job)
+                await session.flush()
 
-    response = RedirectResponse(url="/ui/scans", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/scans"
+                # Enqueue the scan job with options in payload
+                await queue.enqueue(
+                    task_type="scan",
+                    payload={
+                        "job_id": str(job.id),
+                        "force_full_scan": not incremental,
+                        "apply_labels": apply_labels,
+                        "deep_scan": deep_scan,
+                    },
+                    priority=priority,
+                )
+                job_ids.append(str(job.id))
+    except Exception as e:
+        logger.error("Failed to create scan jobs: %s", e)
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 500,
+             "error_message": "Failed to create scan. Please try again."},
+            status_code=500,
+        )
+
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/scans"
+    else:
+        response = RedirectResponse(url="/ui/scans", status_code=303)
     return response
 
 
@@ -1057,7 +1169,12 @@ async def findings_by_type_partial(
 
         agg_query = sa_text("""
             SELECT kv.key AS entity_type,
-                   SUM(kv.value::int) AS total_count,
+                   SUM(
+                       CASE WHEN kv.value ~ '^[0-9]+$'
+                            THEN kv.value::int
+                            ELSE 0
+                       END
+                   ) AS total_count,
                    MAX(CASE r.risk_tier
                        WHEN 'CRITICAL' THEN 4
                        WHEN 'HIGH' THEN 3
@@ -1176,12 +1293,19 @@ async def recent_activity_partial(
 async def health_status_partial(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
 ):
     """Health status partial for HTMX updates."""
+    health = {"status": "healthy"}
+
+    if not user:
+        return templates.TemplateResponse(
+            "partials/health_status.html",
+            {"request": request, "health": health},
+        )
+
     from openlabels.server.models import JobQueue as JobQueueModel
     from sqlalchemy import text as sa_text
-
-    health = {"status": "healthy"}
 
     # Check database connectivity
     try:
@@ -1303,7 +1427,7 @@ async def scans_list_partial(
 
             progress_pct = 0
             if total_files > 0:
-                progress_pct = int((scan.files_scanned or 0) / total_files * 100)
+                progress_pct = min(100, int((scan.files_scanned or 0) / total_files * 100))
             elif scan.status == "completed":
                 progress_pct = 100
 
@@ -1546,11 +1670,9 @@ async def job_queue_partial(
 async def system_health_partial(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
 ):
     """System health partial for HTMX updates."""
-    from openlabels.server.models import JobQueue as JobQueueModel
-    from sqlalchemy import text as sa_text
-
     health = {
         "status": "healthy",
         "components": {
@@ -1559,11 +1681,20 @@ async def system_health_partial(
         },
     }
 
+    if not user:
+        return templates.TemplateResponse(
+            "partials/system_health.html",
+            {"request": request, "health": health},
+        )
+
+    from openlabels.server.models import JobQueue as JobQueueModel
+    from sqlalchemy import text as sa_text
+
     # Check database
     try:
         await session.execute(sa_text("SELECT 1"))
     except Exception as db_err:
-        logger.error(f"Database health check failed: {type(db_err).__name__}: {db_err}")
+        logger.error("Database health check failed: %s: %s", type(db_err).__name__, db_err)
         health["status"] = "unhealthy"
         health["components"]["database"] = "error"
 
@@ -1579,7 +1710,7 @@ async def system_health_partial(
             if health["status"] == "healthy":
                 health["status"] = "degraded"
     except Exception as queue_err:
-        logger.warning(f"Queue health check failed: {type(queue_err).__name__}: {queue_err}")
+        logger.warning("Queue health check failed: %s: %s", type(queue_err).__name__, queue_err)
         health["components"]["queue"] = "warning"
         if health["status"] == "healthy":
             health["status"] = "degraded"
@@ -1593,21 +1724,31 @@ async def system_health_partial(
 @router.get("/partials/labels-list", response_class=HTMLResponse)
 async def labels_list_partial(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
     """Labels list partial for HTMX updates."""
     labels = []
+    total = 0
 
     if user:
         from openlabels.server.models import SensitivityLabel
 
-        query = (
-            select(SensitivityLabel)
-            .where(SensitivityLabel.tenant_id == user.tenant_id)
-            .order_by(SensitivityLabel.priority)
-            .limit(500)
+        base_query = select(SensitivityLabel).where(
+            SensitivityLabel.tenant_id == user.tenant_id
         )
+
+        # Count total
+        count_query = select(func.count()).select_from(base_query.subquery())
+        result = await session.execute(count_query)
+        total = result.scalar() or 0
+
+        # Get page
+        query = base_query.order_by(SensitivityLabel.priority).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
         result = await session.execute(query)
         for label in result.scalars().all():
             labels.append({
@@ -1619,9 +1760,18 @@ async def labels_list_partial(
                 "synced_at": label.synced_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/labels_list.html",
-        {"request": request, "labels": labels},
+        {
+            "request": request,
+            "labels": labels,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
+        },
     )
 
 
@@ -1729,19 +1879,29 @@ async def target_checkboxes_partial(
 @router.get("/partials/schedules-list", response_class=HTMLResponse)
 async def schedules_list_partial(
     request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
     """Schedules list partial for HTMX updates."""
     schedules = []
+    total = 0
 
     if user:
-        query = (
-            select(ScanSchedule)
-            .where(ScanSchedule.tenant_id == user.tenant_id)
-            .order_by(desc(ScanSchedule.created_at))
-            .limit(500)
+        base_query = select(ScanSchedule).where(
+            ScanSchedule.tenant_id == user.tenant_id
         )
+
+        # Count total
+        count_query = select(func.count()).select_from(base_query.subquery())
+        result = await session.execute(count_query)
+        total = result.scalar() or 0
+
+        # Get page
+        query = base_query.order_by(desc(ScanSchedule.created_at)).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
         result = await session.execute(query)
         schedule_rows = result.scalars().all()
 
@@ -1766,7 +1926,16 @@ async def schedules_list_partial(
                 "next_run_at": schedule.next_run_at,
             })
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
     return templates.TemplateResponse(
         "partials/schedules_list.html",
-        {"request": request, "schedules": schedules},
+        {
+            "request": request,
+            "schedules": schedules,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
+        },
     )

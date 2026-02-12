@@ -100,9 +100,9 @@ def register_error_handlers(app: FastAPI) -> None:
         request_id = get_request_id()
         error_response = exc.to_dict(request_id=request_id)
 
-        log = logger.warning if exc.status_code >= 500 else logger.debug
+        log = logger.warning if exc.status_code >= 500 else logger.info
         log(
-            f"API error: {exc.error_code} - {exc.message}",
+            "API error: %s - %s", exc.error_code, exc.message,
             extra={
                 "path": request.url.path,
                 "method": request.method,
@@ -134,8 +134,8 @@ def register_error_handlers(app: FastAPI) -> None:
         if request_id:
             body["request_id"] = request_id
 
-        log = logger.warning if status_code >= 500 else logger.debug
-        log(f"Domain error: {error_code} - {exc.message}")
+        log = logger.warning if status_code >= 500 else logger.info
+        log("Domain error: %s - %s", error_code, exc.message)
         return JSONResponse(status_code=status_code, content=body)
 
     @app.exception_handler(HTTPException)
@@ -154,7 +154,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
         if exc.status_code >= 500:
             logger.warning(
-                f"HTTP exception: {exc.status_code} - {exc.detail}",
+                "HTTP exception: %s - %s", exc.status_code, exc.detail,
                 extra={
                     "path": request.url.path,
                     "method": request.method,
@@ -192,8 +192,8 @@ def register_error_handlers(app: FastAPI) -> None:
         if request_id:
             body["request_id"] = request_id
 
-        logger.debug(
-            f"Validation error: {len(validation_errors)} field(s) failed validation",
+        logger.info(
+            "Validation error: %d field(s) failed validation", len(validation_errors),
             extra={
                 "path": request.url.path,
                 "method": request.method,
@@ -256,7 +256,7 @@ def register_error_handlers(app: FastAPI) -> None:
         settings = get_settings()
 
         logger.exception(
-            f"Unhandled exception: {exc}",
+            "Unhandled exception: %s", exc,
             extra={
                 "path": request.url.path,
                 "method": request.method,

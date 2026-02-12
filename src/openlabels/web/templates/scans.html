@@ -139,13 +139,20 @@ function scansPage() {
             completed: 0,
             failed: 0
         },
+        _statsTimer: null,
         init() {
             this.fetchStats();
-            setInterval(() => this.fetchStats(), 10000);
+            this._statsTimer = setInterval(() => this.fetchStats(), 10000);
+        },
+        destroy() {
+            if (this._statsTimer) {
+                clearInterval(this._statsTimer);
+                this._statsTimer = null;
+            }
         },
         async fetchStats() {
             try {
-                const response = await fetch('/api/jobs/stats');
+                const response = await fetch('/api/v1/jobs/stats');
                 if (response.ok) {
                     const data = await response.json();
                     this.stats = {

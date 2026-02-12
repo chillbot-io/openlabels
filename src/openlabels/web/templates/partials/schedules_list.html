@@ -56,7 +56,7 @@
                         <button
                             type="button"
                             class="text-primary-600 hover:text-primary-900"
-                            hx-post="/api/schedules/{{ schedule.id }}/run"
+                            hx-post="/api/v1/schedules/{{ schedule.id }}/run"
                             hx-swap="none"
                             title="Run now"
                         >
@@ -69,7 +69,7 @@
                         <button
                             type="button"
                             class="text-red-600 hover:text-red-900"
-                            hx-delete="/api/schedules/{{ schedule.id }}"
+                            hx-delete="/api/v1/schedules/{{ schedule.id }}"
                             hx-confirm="Are you sure you want to delete this schedule?"
                             hx-target="#schedules-list"
                             hx-swap="innerHTML"
@@ -82,6 +82,43 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <!-- Pagination -->
+    {% if total_pages is defined and total_pages > 1 %}
+    <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm text-gray-700">
+                    Showing <span class="font-medium">{{ (page - 1) * page_size + 1 }}</span> to
+                    <span class="font-medium">{{ [page * page_size, total] | min }}</span> of
+                    <span class="font-medium">{{ total }}</span> schedules
+                </p>
+            </div>
+            <div>
+                <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    {% if page > 1 %}
+                    <button
+                        hx-get="/ui/partials/schedules-list?page={{ page - 1 }}"
+                        hx-target="#schedules-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        Previous
+                    </button>
+                    {% endif %}
+                    {% if page < total_pages %}
+                    <button
+                        hx-get="/ui/partials/schedules-list?page={{ page + 1 }}"
+                        hx-target="#schedules-list"
+                        class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        Next
+                    </button>
+                    {% endif %}
+                </nav>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% else %}
 <div class="text-center py-12">
