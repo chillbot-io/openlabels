@@ -10,7 +10,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span className={cn(
       'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold',
-      STATUS_COLORS[status],
+      STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600 border-gray-300',
       status === 'running' && 'animate-pulse',
       className,
     )}>

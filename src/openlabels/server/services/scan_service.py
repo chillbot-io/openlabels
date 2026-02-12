@@ -142,19 +142,16 @@ class ScanService(BaseService):
                 },
             )
 
-        # Verify target still exists
-        target = await self.session.get(ScanTarget, job.target_id)
-        if not target:
+        # Verify target still exists and belongs to this tenant
+        try:
+            target = await self.get_tenant_entity(ScanTarget, job.target_id, "ScanTarget")
+        except NotFoundError:
             self._log_warning(
                 f"Cannot retry scan {scan_id}: target {job.target_id} no longer exists",
                 scan_id=str(scan_id),
                 target_id=str(job.target_id),
             )
-            raise NotFoundError(
-                message="Target no longer exists",
-                resource_type="ScanTarget",
-                resource_id=str(job.target_id),
-            )
+            raise
 
         new_job = ScanJob(
             tenant_id=self.tenant_id,
@@ -203,7 +200,7 @@ class ScanService(BaseService):
                 },
             )
 
-        self.session.delete(job)  # delete() is synchronous
+        await self.session.delete(job)
         await self.flush()
 
         self._log_info(

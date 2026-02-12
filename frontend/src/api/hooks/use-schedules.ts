@@ -14,6 +14,7 @@ export function useSchedule(id: string) {
   return useQuery({
     queryKey: ['schedules', id],
     queryFn: () => schedulesApi.get(id),
+    enabled: !!id,
     staleTime: 5 * 60_000,
   });
 }

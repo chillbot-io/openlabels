@@ -100,7 +100,7 @@ export function Component() {
         emptyDescription="Use quarantine or lockdown to protect sensitive files"
       />
 
-      <Dialog open={dialog !== null} onOpenChange={() => setDialog(null)}>
+      <Dialog open={dialog !== null} onOpenChange={() => { setDialog(null); setFilePath(''); setPrincipals(''); setDryRun(false); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="capitalize">{dialog}</DialogTitle>

@@ -10,10 +10,10 @@ const ICONS = {
 };
 
 const COLORS = {
-  success: 'border-green-500 bg-green-50 text-green-800',
-  error: 'border-red-500 bg-red-50 text-red-800',
-  warning: 'border-yellow-500 bg-yellow-50 text-yellow-800',
-  info: 'border-blue-500 bg-blue-50 text-blue-800',
+  success: 'border-green-500 bg-[var(--card)] text-green-700 dark:text-green-400',
+  error: 'border-red-500 bg-[var(--card)] text-red-700 dark:text-red-400',
+  warning: 'border-yellow-500 bg-[var(--card)] text-yellow-700 dark:text-yellow-400',
+  info: 'border-blue-500 bg-[var(--card)] text-blue-700 dark:text-blue-400',
 };
 
 export function ToastContainer() {
@@ -46,6 +46,7 @@ export function ToastContainer() {
             <button
               onClick={() => removeToast(toast.id)}
               className="shrink-0 opacity-60 hover:opacity-100"
+              aria-label="Dismiss notification"
             >
               <X className="h-4 w-4" />
             </button>

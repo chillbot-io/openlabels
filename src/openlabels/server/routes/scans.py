@@ -133,6 +133,8 @@ async def cancel_scan(
     if request.headers.get("HX-Request"):
         return htmx_notify("Scan cancelled", refreshScans=True)
 
+    return {"message": "Scan cancelled", "scan_id": str(scan_id)}
+
 
 @router.post("/{scan_id}/retry")
 async def retry_scan(

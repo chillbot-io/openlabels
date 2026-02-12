@@ -14,6 +14,7 @@ export function useTarget(id: string) {
   return useQuery({
     queryKey: ['targets', id],
     queryFn: () => targetsApi.get(id),
+    enabled: !!id,
     staleTime: 5 * 60_000,
   });
 }

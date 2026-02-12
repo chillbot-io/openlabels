@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import TenantSettings
+from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -326,11 +328,12 @@ async def update_adapter_defaults(
     return htmx_notify("Adapter defaults updated")
 
 
-@router.post("/reset", response_class=HTMLResponse)
+@router.post("/reset")
 async def reset_settings(
+    request: Request,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-) -> SettingsUpdateResponse:
+):
     """
     Reset all settings to defaults.
 
@@ -345,5 +348,8 @@ async def reset_settings(
         "Settings reset to defaults by user %s",
         user.email,
     )
+
+    if request.headers.get("HX-Request"):
+        return htmx_notify("Settings reset to defaults")
 
     return SettingsUpdateResponse(message="Settings reset to defaults")
