@@ -87,14 +87,12 @@ async def list_results(
     _tenant: TenantContextDep,
     job_id: UUID | None = Query(None, description="Filter by job ID"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
-    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ResultResponse]:
     """List scan results with filtering and pagination."""
     results, total = await result_service.list_results(
         job_id=job_id,
         risk_tier=risk_tier,
-        has_pii=has_pii,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -115,7 +113,6 @@ async def list_results_cursor(
     _tenant: TenantContextDep,
     job_id: UUID | None = Query(None, description="Filter by job ID"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
-    has_pii: bool | None = Query(None, description="Filter files with PII"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
     """List scan results using cursor-based pagination."""
@@ -130,11 +127,6 @@ async def list_results_cursor(
         conditions.append(ScanResult.job_id == job_id)
     if risk_tier:
         conditions.append(ScanResult.risk_tier == risk_tier)
-    if has_pii is not None:
-        if has_pii:
-            conditions.append(ScanResult.total_entities > 0)
-        else:
-            conditions.append(ScanResult.total_entities == 0)
 
     query = (
         select(ScanResult)

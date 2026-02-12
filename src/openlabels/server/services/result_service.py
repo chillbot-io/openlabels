@@ -248,17 +248,17 @@ class ResultService(BaseService):
         self,
         job_id: UUID | None = None,
         risk_tier: str | None = None,
-        has_pii: bool | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanResult], int]:
         """
         List scan results with filtering and pagination.
 
+        ScanResult only contains sensitive files (total_entities > 0).
+
         Args:
             job_id: Optional job ID to filter results
             risk_tier: Optional risk tier filter
-            has_pii: Optional filter for files with/without PII detections
             limit: Maximum number of results to return (default: 50)
             offset: Number of results to skip (default: 0)
 
@@ -280,11 +280,6 @@ class ResultService(BaseService):
             conditions.append(ScanResult.job_id == job_id)
         if risk_tier:
             conditions.append(ScanResult.risk_tier == risk_tier)
-        if has_pii is not None:
-            if has_pii:
-                conditions.append(ScanResult.total_entities > 0)
-            else:
-                conditions.append(ScanResult.total_entities == 0)
 
         # Get total count
         count_query = select(func.count()).where(*conditions).select_from(ScanResult)
@@ -358,15 +353,17 @@ class ResultService(BaseService):
         """
         Get aggregated statistics for scan results.
 
-        Uses a single SQL query with CASE expressions for efficient
-        aggregation without multiple round-trips to the database.
+        ``total_files`` is derived from ``ScanJob.files_scanned`` (which
+        counts every file processed).  All other stats come from
+        ``ScanResult`` which only contains sensitive files
+        (``total_entities > 0``).
 
         Args:
             job_id: Optional job ID to filter statistics
 
         Returns:
             Dictionary containing:
-            - total_files: Total number of scanned files
+            - total_files: Total number of scanned files (all files)
             - files_with_pii: Files containing at least one entity
             - critical_count: Files with CRITICAL risk tier
             - high_count: Files with HIGH risk tier
@@ -379,17 +376,24 @@ class ResultService(BaseService):
             stats = await service.get_stats(job_id=job_id)
             print(f"Found {stats['files_with_pii']} files with PII")
         """
-        # Build filter conditions
+        from openlabels.server.models import ScanJob
+
+        # total_files from ScanJob (counts every file, sensitive or not)
+        job_conditions: list = [ScanJob.tenant_id == self.tenant_id]
+        if job_id:
+            job_conditions.append(ScanJob.id == job_id)
+        total_q = select(
+            func.coalesce(func.sum(ScanJob.files_scanned), 0),
+        ).where(*job_conditions)
+        total_files = (await self.session.execute(total_q)).scalar() or 0
+
+        # ScanResult only holds sensitive files now
         conditions = [ScanResult.tenant_id == self.tenant_id]
         if job_id:
             conditions.append(ScanResult.job_id == job_id)
 
-        # Single aggregation query with CASE expressions
         stats_query = select(
-            func.count().label("total_files"),
-            func.sum(case((ScanResult.total_entities > 0, 1), else_=0)).label(
-                "files_with_pii"
-            ),
+            func.count().label("files_with_pii"),
             func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label(
                 "critical_count"
             ),
@@ -414,7 +418,7 @@ class ResultService(BaseService):
         row = result.one()
 
         stats = {
-            "total_files": row.total_files or 0,
+            "total_files": total_files,
             "files_with_pii": row.files_with_pii or 0,
             "critical_count": row.critical_count or 0,
             "high_count": row.high_count or 0,

@@ -117,7 +117,7 @@ class TestExportParity:
             [str(TENANT_A)],
         )
 
-        assert len(rows) == 3
+        assert len(rows) == 2  # sensitive files only
         # Check expected columns present in each row
         expected_keys = {
             "file_path", "file_name", "risk_score", "risk_tier",
