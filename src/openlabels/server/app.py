@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import logging
 import types
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import Limiter
 
@@ -37,7 +39,9 @@ from openlabels.server.routes import (
     jobs,
     labels,
     monitoring,
+    permissions,
     policies,
+    query,
     remediation,
     reporting,
     results,
@@ -48,6 +52,7 @@ from openlabels.server.routes import (
     users,
     webhooks,
     ws,
+    ws_events,
 )
 from openlabels.server.utils import get_client_ip
 from openlabels.web import router as web_router
@@ -69,6 +74,7 @@ _LEGACY_API_PREFIXES = [
     "audit", "browse", "jobs", "scans", "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
     "health", "settings", "policies", "export", "reporting", "webhooks",
+    "permissions", "query",
 ]
 
 
@@ -96,6 +102,8 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/export", "Export", export),
     ("/reporting", "Reporting", reporting),
     ("/webhooks", "Webhooks", webhooks),
+    ("/permissions", "Permissions", permissions),
+    ("/query", "Query", query),
 ]
 
 
@@ -115,6 +123,7 @@ def _include_routes(app: FastAPI) -> None:
 
     # --- WebSocket (not versioned) ---
     app.include_router(ws.router, tags=["WebSocket"])
+    app.include_router(ws_events.router, tags=["WebSocket"])
 
     # --- Web UI ---
     app.include_router(web_router, prefix="/ui", tags=["Web UI"])
@@ -213,6 +222,51 @@ def _register_legacy_redirects(app: FastAPI) -> None:
         )
 
 
+def _register_spa_serving(app: FastAPI) -> None:
+    """Serve the React SPA frontend from ``frontend/dist``.
+
+    If the frontend build directory exists, mounts it as static files
+    under ``/assets`` and adds a catch-all that serves ``index.html``
+    for client-side routing.
+
+    If the directory does not exist (e.g. backend-only dev), this is
+    a no-op and no static routes are added.
+    """
+    # Look for the frontend dist directory relative to the project root.
+    # The project root is four levels up from this file:
+    #   src/openlabels/server/app.py -> ../../.. -> project root
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    dist_dir = project_root / "frontend" / "dist"
+
+    if not dist_dir.is_dir():
+        logger.info(
+            "SPA frontend not found at %s — skipping static file serving. "
+            "Run 'npm run build' in frontend/ to enable.",
+            dist_dir,
+        )
+        return
+
+    index_html = dist_dir / "index.html"
+    if not index_html.is_file():
+        logger.warning("frontend/dist exists but index.html is missing — skipping SPA serving")
+        return
+
+    # Mount static assets (JS, CSS, images) under /assets
+    assets_dir = dist_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="spa_assets")
+        logger.info("Mounted SPA assets from %s", assets_dir)
+
+    # Catch-all: serve index.html for any path not matched by API or static files.
+    # This enables client-side routing (React Router, etc.)
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_fallback(request: Request, path: str) -> Response:
+        # Don't intercept API, WebSocket, metrics, health, or HTMX UI routes
+        if path.startswith(("api/", "ws/", "ws_events/", "metrics", "health", "ui/")):
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+        return FileResponse(str(index_html), media_type="text/html")
+
+
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
@@ -244,6 +298,8 @@ def create_app() -> FastAPI:
     _include_routes(application)
     _register_root_endpoints(application)
     _register_legacy_redirects(application)
+    # SPA serving must be registered LAST so the catch-all doesn't shadow API routes
+    _register_spa_serving(application)
 
     return application
 

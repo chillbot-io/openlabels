@@ -52,6 +52,9 @@ class OverallStats(BaseModel):
     labels_applied: int
     critical_files: int
     high_files: int
+    medium_files: int
+    low_files: int
+    minimal_files: int
     active_scans: int
 
 
@@ -96,6 +99,47 @@ class EntityTrendsResponse(BaseModel):
     series: dict[str, list[tuple[str, int]]]  # entity_type -> [(date, count), ...]
     truncated: bool = False
     total_records: int = 0
+
+
+class HeatmapCell(BaseModel):
+    """A single cell in the entity-type × risk-tier heatmap."""
+
+    file_count: int = 0
+    entity_count: int = 0
+    pct_of_total: float = 0.0
+
+
+class HeatmapTierMeta(BaseModel):
+    """Color and label metadata for a risk tier column."""
+
+    tier: str
+    color: str
+    total_files: int = 0
+    total_entities: int = 0
+
+
+class EntityHeatmapRow(BaseModel):
+    """One row in the heatmap — a single entity type across all risk tiers."""
+
+    entity_type: str
+    total_count: int
+    file_count: int
+    cells: dict[str, HeatmapCell]  # tier -> cell stats
+
+
+class EntityDistributionResponse(BaseModel):
+    """Entity-type × risk-tier heatmap with colors and per-cell stats.
+
+    Rows   = entity types (SSN, CREDIT_CARD, EMAIL, …)
+    Columns = risk tiers  (CRITICAL → MINIMAL)
+    Each cell contains file_count, entity_count, and pct_of_total.
+    ``tiers`` provides the ordered column list with hex colors.
+    """
+
+    tiers: list[HeatmapTierMeta]
+    rows: list[EntityHeatmapRow]
+    total_entities: int
+    total_files_with_entities: int
 
 
 class AccessHeatmapResponse(BaseModel):
@@ -185,6 +229,9 @@ async def get_overall_stats(
         labels_applied=file_stats.labels_applied,
         critical_files=file_stats.critical_files,
         high_files=file_stats.high_files,
+        medium_files=file_stats.medium_files,
+        low_files=file_stats.low_files,
+        minimal_files=file_stats.minimal_files,
         active_scans=active_scans,
     )
 
@@ -270,6 +317,136 @@ async def get_entity_trends(
         series=data.series,
         truncated=data.truncated,
         total_records=data.total_records,
+    )
+
+
+# Risk-tier column order and colors:
+#   red=CRITICAL, orange=HIGH, yellow=MEDIUM, green=LOW, blue=MINIMAL
+_TIER_META = [
+    ("CRITICAL", "#EF4444"),   # red
+    ("HIGH",     "#F97316"),   # orange
+    ("MEDIUM",   "#EAB308"),   # yellow
+    ("LOW",      "#22C55E"),   # green
+    ("MINIMAL",  "#3B82F6"),   # blue
+]
+
+
+@router.get("/entity-distribution", response_model=EntityDistributionResponse)
+async def get_entity_distribution(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Sensitive-data-type heatmap: entity_type (rows) × risk_tier (columns).
+
+    Each cell contains:
+    - ``file_count``: number of files with that entity type at that risk tier
+    - ``entity_count``: total occurrences of that entity type at that tier
+    - ``pct_of_total``: percentage of all entities this cell represents
+
+    ``tiers`` provides the ordered column list with display colors
+    (red / orange / yellow / green / blue).
+    """
+    svc = _get_dashboard_service(request)
+
+    # Cross-tab: entity_type × risk_tier
+    rows = await svc._safe_query(
+        """
+        WITH expanded AS (
+            SELECT
+                unnest(map_keys(entity_counts))   AS entity_type,
+                unnest(map_values(entity_counts))  AS entity_count,
+                risk_tier,
+                file_path
+            FROM scan_results
+            WHERE tenant = ?
+              AND total_entities > 0
+        )
+        SELECT
+            entity_type,
+            risk_tier,
+            sum(entity_count)          AS entity_count,
+            count(DISTINCT file_path)  AS file_count
+        FROM expanded
+        GROUP BY entity_type, risk_tier
+        ORDER BY entity_type, risk_tier
+        """,
+        [str(user.tenant_id)],
+    )
+
+    # Aggregate into row objects
+    grand_total = 0
+    entity_map: dict[str, dict] = {}  # entity_type -> {tier -> (entity_count, file_count)}
+    tier_totals: dict[str, dict] = {t: {"files": 0, "entities": 0} for t, _ in _TIER_META}
+
+    for r in rows:
+        et = r["entity_type"]
+        tier = r["risk_tier"]
+        ec = r["entity_count"]
+        fc = r["file_count"]
+        grand_total += ec
+
+        if et not in entity_map:
+            entity_map[et] = {}
+        entity_map[et][tier] = {"entity_count": ec, "file_count": fc}
+
+        if tier in tier_totals:
+            tier_totals[tier]["files"] += fc
+            tier_totals[tier]["entities"] += ec
+
+    # Build response rows, sorted by total count descending
+    heatmap_rows: list[EntityHeatmapRow] = []
+    all_file_paths: set[str] = set()
+
+    for et, tier_data in entity_map.items():
+        total_count = sum(v["entity_count"] for v in tier_data.values())
+        file_count = sum(v["file_count"] for v in tier_data.values())
+        cells: dict[str, HeatmapCell] = {}
+        for tier, _ in _TIER_META:
+            cell_data = tier_data.get(tier, {})
+            ec = cell_data.get("entity_count", 0)
+            fc = cell_data.get("file_count", 0)
+            cells[tier] = HeatmapCell(
+                file_count=fc,
+                entity_count=ec,
+                pct_of_total=round((ec / grand_total * 100), 2) if grand_total else 0.0,
+            )
+        heatmap_rows.append(EntityHeatmapRow(
+            entity_type=et,
+            total_count=total_count,
+            file_count=file_count,
+            cells=cells,
+        ))
+
+    heatmap_rows.sort(key=lambda r: r.total_count, reverse=True)
+
+    # Also fetch distinct file count with entities for the summary
+    file_count_rows = await svc._safe_query(
+        """
+        SELECT count(DISTINCT file_path) AS cnt
+        FROM scan_results
+        WHERE tenant = ? AND total_entities > 0
+        """,
+        [str(user.tenant_id)],
+    )
+    total_files_with_entities = file_count_rows[0]["cnt"] if file_count_rows else 0
+
+    tiers = [
+        HeatmapTierMeta(
+            tier=tier,
+            color=color,
+            total_files=tier_totals[tier]["files"],
+            total_entities=tier_totals[tier]["entities"],
+        )
+        for tier, color in _TIER_META
+    ]
+
+    return EntityDistributionResponse(
+        tiers=tiers,
+        rows=heatmap_rows,
+        total_entities=grand_total,
+        total_files_with_entities=total_files_with_entities,
     )
 
 

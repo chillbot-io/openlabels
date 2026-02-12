@@ -133,7 +133,7 @@ frontend/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
-├── tailwind.config.ts
+├── tailwind.config.ts            # May not be needed with Tailwind CSS 4 (@theme in CSS)
 ├── .env.development              # Dev proxy config (VITE_API_URL=http://localhost:8000)
 ├── .env.production               # Prod config (API is same-origin, no URL needed)
 │
@@ -159,6 +159,9 @@ frontend/
 │   │   │   ├── monitoring.ts
 │   │   │   ├── policies.ts
 │   │   │   ├── reporting.ts
+│   │   │   ├── permissions.ts
+│   │   │   ├── query.ts
+│   │   │   ├── export.ts
 │   │   │   ├── users.ts
 │   │   │   ├── settings.ts
 │   │   │   ├── browse.ts
@@ -172,6 +175,8 @@ frontend/
 │   │       ├── use-dashboard.ts
 │   │       ├── use-remediation.ts
 │   │       ├── use-monitoring.ts
+│   │       ├── use-permissions.ts
+│   │       ├── use-query.ts
 │   │       └── ...
 │   │
 │   ├── components/               # Shared UI components
@@ -326,18 +331,38 @@ The frontend communicates exclusively through the versioned REST API (`/api/v1/*
 // src/api/client.ts
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+interface ApiFetchOptions extends RequestInit {
+  params?: Record<string, string | number | boolean | undefined>;
+}
+
 async function apiFetch<T>(
   path: string,
-  options?: RequestInit,
+  options?: ApiFetchOptions,
 ): Promise<T> {
-  const url = `${BASE_URL}/api/v1${path}`;
+  let url = `${BASE_URL}/api/v1${path}`;
+
+  // Build query string from params
+  if (options?.params) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value));
+      }
+    }
+    const qs = searchParams.toString();
+    if (qs) url += `?${qs}`;
+  }
+
+  // Separate params from RequestInit (params is not a valid fetch option)
+  const { params: _, ...fetchOptions } = options ?? {};
+
   const response = await fetch(url, {
     credentials: 'include',  // Send session cookie
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...fetchOptions.headers,
     },
-    ...options,
+    ...fetchOptions,
   });
 
   if (!response.ok) {
@@ -622,7 +647,7 @@ OpenLabels uses Azure AD OAuth. The frontend delegates authentication entirely t
 7. React picks up session, loads data
 ```
 
-The SPA never handles tokens directly. The session cookie is HttpOnly and Secure, managed entirely by the FastAPI backend.
+The SPA never handles tokens directly. The session cookie (`openlabels_session`) is HttpOnly and Secure, managed entirely by the FastAPI backend. All HTTP requests use `credentials: 'include'` and all WebSocket connections inherit the same session cookie for authentication. The backend also supports Bearer tokens via the `Authorization` header for API clients, but the frontend should always use cookies.
 
 ```typescript
 // src/stores/auth-store.ts
@@ -691,7 +716,12 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
 
 ### WebSocket Architecture
 
-The backend already has a Redis-backed WebSocket pub/sub system at `/ws/`. The frontend maintains a persistent connection:
+The backend provides two WebSocket endpoints:
+
+1. **`/ws/scans/{scan_id}`** — Per-scan progress updates (original, pre-existing)
+2. **`/ws/events`** — Global event bus for all tenant events (new, multiplexed)
+
+The frontend uses the global `/ws/events` endpoint for a single persistent connection that delivers all event types for the authenticated user's tenant. Authentication uses the same session cookie as HTTP requests.
 
 ```typescript
 // src/lib/websocket.ts
@@ -805,8 +835,8 @@ Mapping from the PowerPoint layout mockups (`docs/layout.pptx`) and existing tem
 | Section | Component | Data Source |
 |---------|-----------|-------------|
 | Stats cards (files scanned, findings, critical, active scans) | `stats-cards.tsx` | `GET /api/v1/dashboard/stats` |
-| Risk distribution donut chart | `risk-distribution-chart.tsx` | `GET /api/v1/dashboard/risk-distribution` |
-| Findings by entity type bar chart | `findings-by-type-chart.tsx` | `GET /api/v1/dashboard/findings-by-type` |
+| Risk distribution donut chart | `risk-distribution-chart.tsx` | `GET /api/v1/dashboard/stats` (risk breakdown in response) |
+| Findings by entity type bar chart | `findings-by-type-chart.tsx` | `GET /api/v1/dashboard/entity-trends?days=30` |
 | Recent scans table | `recent-scans-table.tsx` | `GET /api/v1/scans?limit=5` |
 | Activity feed | `activity-feed.tsx` | `GET /api/v1/audit?limit=10` |
 | System status indicators | `system-status.tsx` | `GET /api/v1/health` + WebSocket |
@@ -835,9 +865,15 @@ Timeline view of file access events from `file_access_events` table:
 
 **File:** `features/permissions/page.tsx`
 
+**Backend endpoints (new — `/api/v1/permissions/`):**
+- `GET /permissions/exposure` — Tenant-wide exposure summary (counts by level)
+- `GET /permissions/{target_id}/directories` — Paginated directory list with ACL flags, filterable by exposure level
+- `GET /permissions/{target_id}/acl/{dir_id}` — Full ACL detail for a directory (owner, group, DACL SDDL, permissions JSON)
+- `GET /permissions/principal/{principal}` — Find all directories accessible by a principal (SID or name)
+
 - ACL viewer showing NTFS/POSIX permissions per directory
 - Exposure level summary (PRIVATE/INTERNAL/ORG_WIDE/PUBLIC)
-- Effective permissions calculator
+- Principal lookup — search by SID/name to find all accessible directories
 - "World accessible" and "Authenticated Users" quick filters
 
 #### Slide 5: Remediation
@@ -857,6 +893,13 @@ Table of remediation actions with columns: file path, action type, status, perfo
 Two-mode report builder:
 1. **SQL mode:** Monaco-based SQL editor querying the DuckDB analytics layer. Syntax highlighting, autocomplete for table/column names, results grid below.
 2. **AI mode:** Natural language query box. User types "Show me all files with SSN in the Finance share from last week." Backend translates to SQL via Anthropic/OpenAI, shows results.
+
+**Backend endpoints (new — `/api/v1/query/`):**
+- `GET /query/schema` — Returns all analytics tables and their columns for Monaco autocomplete
+- `POST /query` — Execute read-only SQL (SELECT/WITH only) against DuckDB. Uses `$1` parameter for tenant isolation. Row-limited, time-bounded.
+- `POST /query/ai` — Natural language → SQL via Anthropic Claude (or OpenAI fallback). Validates generated SQL, optionally executes it. Requires `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` env var.
+
+Available analytics tables: `scan_results`, `file_inventory`, `folder_inventory`, `directory_tree`, `access_events`, `audit_log`, `remediation_actions`.
 
 Shared features: export to PDF/Excel/CSV, chart builder for visualizations, save/load report templates.
 
@@ -913,21 +956,33 @@ Reusable table built on TanStack Table with:
 
 ### Pagination Strategy
 
-The backend supports both offset-based and cursor-based pagination. The frontend uses:
+The backend supports both offset-based and cursor-based pagination:
 
-- **Cursor-based** (default) for results, events, and audit logs — large datasets where offset counting is expensive.
-- **Offset-based** for targets, schedules, labels — small datasets where page numbers are useful.
+- **Offset-based** (`PaginatedResponse`): Returns `{ items, total, page, page_size, total_pages, has_next, has_previous }`. Used by most endpoints. Query params: `page=1&page_size=50`.
+- **Cursor-based** (`CursorPaginatedResponse`): Returns `{ items, next_cursor, previous_cursor, has_next, has_previous, page_size }`. Available for large datasets (results, events). Uses HMAC-signed opaque cursors.
+
+The frontend uses:
+- **Cursor-based** for results and events — large datasets where offset counting is expensive. Uses `useInfiniteQuery`.
+- **Offset-based** for targets, schedules, labels, permissions — smaller datasets where page numbers are useful.
 
 ```typescript
-// Cursor-based pagination hook
+// Cursor-based pagination hook (for results, events)
 export function useResultsCursor(filters: ResultFilters) {
   return useInfiniteQuery({
     queryKey: ['results', filters],
     queryFn: ({ pageParam }) =>
       resultsApi.list({ ...filters, cursor: pageParam }),
     getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.next_cursor : undefined,
+      lastPage.has_next ? lastPage.next_cursor : undefined,
     initialPageParam: undefined as string | undefined,
+  });
+}
+
+// Offset-based pagination hook (for targets, permissions, etc.)
+export function useTargets(page: number = 1) {
+  return useQuery({
+    queryKey: ['targets', { page }],
+    queryFn: () => targetsApi.list({ page, page_size: 50 }),
   });
 }
 ```
@@ -1351,6 +1406,46 @@ WCAG 2.1 Level AA compliance. shadcn/ui components (built on Radix UI) provide a
 | Scan progress | `aria-valuenow` / `aria-valuemax` on progress bar |
 | Folder tree | `role="tree"` / `role="treeitem"` with expand/collapse states |
 | Toast notifications | `role="alert"` with `aria-live="polite"` |
+
+---
+
+## New Backend Endpoints (Added for Frontend)
+
+The following API endpoints were added to support features described in this architecture doc:
+
+### Global WebSocket Event Bus — `/ws/events`
+
+Single multiplexed WebSocket connection for all tenant events. Replaces the need to open per-scan connections from the frontend.
+
+| Event Type | Payload | Published When |
+|-----------|---------|----------------|
+| `scan_progress` | `{ scan_id, status, progress: { files_scanned, files_with_pii, files_skipped, current_file } }` | Every 10 files during scan |
+| `scan_completed` | `{ scan_id, status, summary: { files_scanned, risk_breakdown, ... } }` | Scan finishes |
+| `scan_failed` | `{ scan_id, error }` | Scan errors out |
+| `label_applied` | `{ result_id, label_name }` | Label applied to a file |
+| `remediation_completed` | `{ action_id, action_type, status }` | Quarantine/lockdown/rollback finishes |
+| `job_status` | `{ job_id, status }` | Job queue status change |
+| `file_access` | `{ file_path, user_name, action, event_time }` | File access event detected |
+| `health_update` | `{ component, status }` | System component health change (broadcast to all tenants) |
+
+Publishing helpers: `ws_events.publish_scan_progress()`, `ws_events.publish_label_applied()`, etc.
+
+### Permissions Explorer — `/api/v1/permissions/`
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /permissions/exposure` | Tenant-wide exposure summary (counts of PUBLIC, ORG_WIDE, INTERNAL, PRIVATE dirs) |
+| `GET /permissions/{target_id}/directories` | Paginated directory list with ACL flags, filterable by `exposure` and `parent_id` |
+| `GET /permissions/{target_id}/acl/{dir_id}` | Full ACL detail (owner_sid, group_sid, dacl_sddl, permissions_json) |
+| `GET /permissions/principal/{principal}` | All directories accessible by a principal (SID or name) |
+
+### SQL Query & AI Assistant — `/api/v1/query/`
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /query/schema` | Analytics table metadata for Monaco autocomplete |
+| `POST /query` | Execute read-only SQL against DuckDB. Uses `$1` for tenant_id param. Max 10K rows. |
+| `POST /query/ai` | NL → SQL via Anthropic Claude (or OpenAI fallback). Validates + optionally executes. |
 
 ---
 
