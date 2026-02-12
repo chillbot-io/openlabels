@@ -37,7 +37,9 @@ from openlabels.server.routes import (
     jobs,
     labels,
     monitoring,
+    permissions,
     policies,
+    query,
     remediation,
     reporting,
     results,
@@ -48,6 +50,7 @@ from openlabels.server.routes import (
     users,
     webhooks,
     ws,
+    ws_events,
 )
 from openlabels.server.utils import get_client_ip
 from openlabels.web import router as web_router
@@ -69,6 +72,7 @@ _LEGACY_API_PREFIXES = [
     "audit", "browse", "jobs", "scans", "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
     "health", "settings", "policies", "export", "reporting", "webhooks",
+    "permissions", "query",
 ]
 
 
@@ -96,6 +100,8 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/export", "Export", export),
     ("/reporting", "Reporting", reporting),
     ("/webhooks", "Webhooks", webhooks),
+    ("/permissions", "Permissions", permissions),
+    ("/query", "Query", query),
 ]
 
 
@@ -115,6 +121,7 @@ def _include_routes(app: FastAPI) -> None:
 
     # --- WebSocket (not versioned) ---
     app.include_router(ws.router, tags=["WebSocket"])
+    app.include_router(ws_events.router, tags=["WebSocket"])
 
     # --- Web UI ---
     app.include_router(web_router, prefix="/ui", tags=["Web UI"])
