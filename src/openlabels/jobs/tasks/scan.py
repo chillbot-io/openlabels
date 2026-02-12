@@ -82,17 +82,26 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
     Call cleanup_processor() during worker shutdown to release resources.
     """
     global _processor
-    if _processor is None:
-        settings = get_settings()
-        from openlabels.core.detectors.config import DetectionConfig
-        _processor = FileProcessor(
-            config=DetectionConfig(
-                enable_ml=enable_ml,
-                ml_model_dir=getattr(settings, 'ml_model_dir', None),
-                confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
-            ),
-        )
-        logger.debug("Created ML processor instance")
+    if _processor is not None:
+        # If the caller requests ML but the cached processor doesn't have it,
+        # recreate with ML enabled.
+        if enable_ml and not getattr(_processor.config, "enable_ml", False):
+            logger.info("Recreating processor with enable_ml=True")
+            _processor.cleanup()
+            _processor = None
+        else:
+            return _processor
+
+    settings = get_settings()
+    from openlabels.core.detectors.config import DetectionConfig
+    _processor = FileProcessor(
+        config=DetectionConfig(
+            enable_ml=enable_ml,
+            ml_model_dir=getattr(settings, 'ml_model_dir', None),
+            confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
+        ),
+    )
+    logger.debug("Created ML processor instance (enable_ml=%s)", enable_ml)
     return _processor
 
 
@@ -306,17 +315,17 @@ async def execute_scan_task(
             """Process a single file — called concurrently by the pipeline."""
             folder_path = get_folder_path(file_info.path)
 
-            # Track folder stats
-            if folder_path not in folder_stats:
-                folder_stats[folder_path] = {
-                    "file_count": 0,
-                    "total_size": 0,
-                    "has_sensitive": False,
-                    "highest_risk": None,
-                    "total_entities": 0,
-                }
-            folder_stats[folder_path]["file_count"] += 1
-            folder_stats[folder_path]["total_size"] += file_info.size
+            # Track folder stats — use setdefault for atomic init to avoid
+            # a race where two concurrent tasks both see the key missing.
+            fs = folder_stats.setdefault(folder_path, {
+                "file_count": 0,
+                "total_size": 0,
+                "has_sensitive": False,
+                "highest_risk": None,
+                "total_entities": 0,
+            })
+            fs["file_count"] += 1
+            fs["total_size"] += file_info.size
 
             # Security: Skip files that exceed size limit to prevent DoS
             if file_info.size > max_file_size_bytes:
@@ -657,7 +666,7 @@ async def execute_scan_task(
                 }
             await generate_scan_summary(session, job, auto_label_stats_dict)
             await session.commit()
-        except Exception as e:  # Non-fatal: don't fail the scan if summary fails
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as e:  # Non-fatal: don't fail the scan if summary fails
             logger.warning("Summary generation failed for job %s: %s", job.id, e)
 
         return stats
@@ -1088,7 +1097,7 @@ async def _build_pipeline_config(settings, tenant_id=None, session=None) -> Pipe
                 ts_memory = getattr(tenant_settings, "pipeline_memory_budget_mb", None)
                 if isinstance(ts_memory, int) and ts_memory > 0:
                     memory_budget = ts_memory
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             logger.debug("Could not load tenant pipeline overrides for %s", tenant_id)
 
     config = PipelineConfig(

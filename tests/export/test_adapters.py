@@ -220,9 +220,9 @@ class TestQRadarAdapter:
         assert "filePath=/data/reports/q4-financials.xlsx" in msg
 
     def test_cef_escape(self):
-        from openlabels.export.adapters.qradar import QRadarAdapter
+        from openlabels.export.adapters.base import cef_escape
 
-        assert QRadarAdapter._cef_escape("a=b|c\\d") == "a\\=b\\|c\\\\d"
+        assert cef_escape("a=b|c\\d") == "a\\=b\\|c\\\\d"
 
 
 # ── Elastic Adapter ──────────────────────────────────────────────────

@@ -95,9 +95,10 @@ class ResultService(BaseService):
 
             # Apply cursor filter for keyset pagination
             if last_scanned_at is not None and last_id is not None:
-                # Use tuple comparison for stable ordering
+                # Use SQLAlchemy tuple_ for proper SQL tuple comparison
+                from sqlalchemy import tuple_
                 conditions.append(
-                    (ScanResult.scanned_at, ScanResult.id) < (last_scanned_at, last_id)
+                    tuple_(ScanResult.scanned_at, ScanResult.id) < tuple_(last_scanned_at, last_id)
                 )
 
             # Build and execute query
@@ -186,8 +187,9 @@ class ResultService(BaseService):
 
             # Apply cursor filter for keyset pagination
             if last_scanned_at is not None and last_id is not None:
+                from sqlalchemy import tuple_
                 conditions.append(
-                    (ScanResult.scanned_at, ScanResult.id) < (last_scanned_at, last_id)
+                    tuple_(ScanResult.scanned_at, ScanResult.id) < tuple_(last_scanned_at, last_id)
                 )
 
             # Build and execute query

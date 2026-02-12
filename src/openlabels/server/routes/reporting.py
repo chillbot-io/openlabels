@@ -520,7 +520,7 @@ async def download_report(
     settings = get_settings()
     storage_root = Path(settings.reporting.storage_path).resolve()
     report_file = Path(report.result_path).resolve()
-    if not str(report_file).startswith(str(storage_root)):
+    if not report_file.is_relative_to(storage_root):
         logger.warning(
             "Report %s has result_path outside storage directory: %s",
             report_id, report.result_path,

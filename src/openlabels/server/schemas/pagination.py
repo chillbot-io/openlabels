@@ -251,6 +251,12 @@ def _get_cursor_secret() -> bytes:
         "OPENLABELS_SECRET_KEY", ""
     )
     if not key:
+        import warnings
+        warnings.warn(
+            "No OPENLABELS_SECRET_KEY configured; cursor signatures use an insecure default key. "
+            "Set OPENLABELS_SECRET_KEY or settings.server.secret_key for production.",
+            stacklevel=2,
+        )
         key = "openlabels-cursor-default-key"
     return key.encode() if isinstance(key, str) else key
 

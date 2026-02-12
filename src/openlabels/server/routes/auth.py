@@ -572,63 +572,66 @@ async def get_token(
         # refresh races (multiple requests for the same user arriving
         # simultaneously could all attempt to refresh the same token).
         lock = _refresh_locks.setdefault(session_id, asyncio.Lock())
-        async with lock:
-            # Re-read session after acquiring lock; another request may
-            # have already refreshed it.
-            session_data = await session_store.get(session_id)
-            if session_data is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Session expired, please login again",
-                )
-            expires_at_str = session_data.get("expires_at")
-            expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
-
-            if expires_at < datetime.now(timezone.utc):
-                refresh_token = session_data.get("refresh_token")
-                if refresh_token:
-                    try:
-                        msal_app = _get_msal_app()
-                        result = msal_app.acquire_token_by_refresh_token(
-                            refresh_token,
-                            scopes=["User.Read", "openid", "profile", "email"],
-                        )
-
-                        if "access_token" in result:
-                            new_expires_in = result.get("expires_in", 3600)
-                            session_data["access_token"] = result["access_token"]
-                            session_data["expires_at"] = (
-                                datetime.now(timezone.utc) + timedelta(seconds=new_expires_in)
-                            ).isoformat()
-                            if "refresh_token" in result:
-                                session_data["refresh_token"] = result["refresh_token"]
-
-                            await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
-                            expires_at = datetime.fromisoformat(session_data["expires_at"])
-                        else:
-                            await session_store.delete(session_id)
-                            raise HTTPException(
-                                status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="Session expired, please login again",
-                            )
-                    except HTTPException:
-                        raise
-                    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-                        # SECURITY: Log token refresh failures for security monitoring
-                        logger.warning(f"Token refresh failed during session validation: {type(e).__name__}: {e}")
-                        await session_store.delete(session_id)
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Session expired, please login again",
-                        ) from e
-                else:
-                    await session_store.delete(session_id)
+        try:
+            async with lock:
+                # Re-read session after acquiring lock; another request may
+                # have already refreshed it.
+                session_data = await session_store.get(session_id)
+                if session_data is None:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Session expired, please login again",
                     )
-        # Clean up lock entry to prevent unbounded growth
-        _refresh_locks.pop(session_id, None)
+                expires_at_str = session_data.get("expires_at")
+                expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
+
+                if expires_at < datetime.now(timezone.utc):
+                    refresh_token = session_data.get("refresh_token")
+                    if refresh_token:
+                        try:
+                            msal_app = _get_msal_app()
+                            result = msal_app.acquire_token_by_refresh_token(
+                                refresh_token,
+                                scopes=["User.Read", "openid", "profile", "email"],
+                            )
+
+                            if "access_token" in result:
+                                new_expires_in = result.get("expires_in", 3600)
+                                session_data["access_token"] = result["access_token"]
+                                session_data["expires_at"] = (
+                                    datetime.now(timezone.utc) + timedelta(seconds=new_expires_in)
+                                ).isoformat()
+                                if "refresh_token" in result:
+                                    session_data["refresh_token"] = result["refresh_token"]
+
+                                await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+                                expires_at = datetime.fromisoformat(session_data["expires_at"])
+                            else:
+                                await session_store.delete(session_id)
+                                raise HTTPException(
+                                    status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Session expired, please login again",
+                                )
+                        except HTTPException:
+                            raise
+                        except (ConnectionError, OSError, RuntimeError, ValueError) as e:
+                            # SECURITY: Log token refresh failures for security monitoring
+                            logger.warning(f"Token refresh failed during session validation: {type(e).__name__}: {e}")
+                            await session_store.delete(session_id)
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Session expired, please login again",
+                            ) from e
+                    else:
+                        await session_store.delete(session_id)
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Session expired, please login again",
+                        )
+        finally:
+            # Clean up lock entry to prevent unbounded growth (runs on both
+            # success and exception paths).
+            _refresh_locks.pop(session_id, None)
 
     expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
 

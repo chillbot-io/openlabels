@@ -36,7 +36,13 @@ _CallNext = Callable[[Request], Coroutine[Any, Any, Response]]
 
 async def add_request_id(request: Request, call_next: _CallNext) -> Response:
     """Attach a correlation ID to every request/response."""
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    raw_id = request.headers.get("X-Request-ID")
+    if raw_id:
+        # Sanitize: alphanumeric, hyphens, underscores only; max 64 chars
+        import re as _re
+        request_id = _re.sub(r"[^a-zA-Z0-9_-]", "", raw_id)[:64] or str(uuid.uuid4())[:8]
+    else:
+        request_id = str(uuid.uuid4())[:8]
     set_request_id(request_id)
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
@@ -78,7 +84,11 @@ async def limit_request_size(request: Request, call_next: _CallNext) -> Response
     settings = get_settings()
     max_size = settings.security.max_request_size_mb * 1024 * 1024
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > max_size:
+    try:
+        parsed_length = int(content_length) if content_length else 0
+    except (ValueError, TypeError):
+        parsed_length = 0
+    if parsed_length > max_size:
         request_id = get_request_id()
         body: dict[str, Any] = {
             "error": "REQUEST_TOO_LARGE",

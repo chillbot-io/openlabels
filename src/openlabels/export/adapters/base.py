@@ -37,9 +37,15 @@ class ExportRecord:
     source_adapter: str = "filesystem"
     metadata: dict = field(default_factory=dict)
 
+    _STANDARD_KEYS = frozenset({
+        "record_type", "timestamp", "tenant_id", "file_path", "risk_score",
+        "risk_tier", "entity_types", "entity_counts", "policy_violations",
+        "action_taken", "user", "source_adapter",
+    })
+
     def to_dict(self) -> dict:
         """Serialize to a plain dict for JSON-based adapters."""
-        return {
+        base = {
             "record_type": self.record_type,
             "timestamp": self.timestamp.isoformat(),
             "tenant_id": str(self.tenant_id),
@@ -52,8 +58,12 @@ class ExportRecord:
             "action_taken": self.action_taken,
             "user": self.user,
             "source_adapter": self.source_adapter,
-            **self.metadata,
         }
+        # Only merge metadata keys that don't collide with standard fields
+        for k, v in self.metadata.items():
+            if k not in self._STANDARD_KEYS:
+                base[k] = v
+        return base
 
 
 @runtime_checkable

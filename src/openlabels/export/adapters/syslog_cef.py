@@ -55,13 +55,12 @@ class SyslogCEFAdapter(SyslogTransportMixin):
     async def test_connection(self) -> bool:
         try:
             if self._protocol == "udp":
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.settimeout(5)
-                sock.sendto(
-                    b"<14>CEF:0|OpenLabels|Scanner|2.0|test|Connection Test|1|\n",
-                    (self._host, self._port),
-                )
-                sock.close()
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.settimeout(5)
+                    sock.sendto(
+                        b"<14>CEF:0|OpenLabels|Scanner|2.0|test|Connection Test|1|\n",
+                        (self._host, self._port),
+                    )
             else:
                 reader, writer = await asyncio.wait_for(
                     self._open_tcp_connection(), timeout=10,

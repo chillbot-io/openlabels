@@ -491,8 +491,10 @@ class CacheManager:
             value = await factory() if asyncio.iscoroutinefunction(factory) else factory()
             await self.set(key, value, ttl)
 
-        # Cleanup lock entry to prevent unbounded growth
-        self._key_locks.pop(key, None)
+        # Cleanup: only remove if the lock in the dict is still the same
+        # object we used (prevents removing a lock a new waiter created).
+        if self._key_locks.get(key) is lock:
+            self._key_locks.pop(key, None)
         return value
 
     @property
