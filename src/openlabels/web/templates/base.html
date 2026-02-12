@@ -240,8 +240,24 @@
         </template>
     </div>
 
-    <!-- HTMX to Alpine.js event bridge for notifications -->
+    <!-- CSRF token and HTMX to Alpine.js event bridge -->
     <script>
+        // Read CSRF token from cookie (set by CSRFMiddleware on GET requests)
+        function getCsrfToken() {
+            const match = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('openlabels_csrf='));
+            return match ? match.split('=')[1] : '';
+        }
+
+        // Configure HTMX to send CSRF token header on all requests
+        document.addEventListener('htmx:configRequest', function(evt) {
+            const token = getCsrfToken();
+            if (token) {
+                evt.detail.headers['X-CSRF-Token'] = token;
+            }
+        });
+
         // Listen for HTMX HX-Trigger events and dispatch Alpine.js events
         document.body.addEventListener('notify', function(evt) {
             // HX-Trigger sends detail as the event data

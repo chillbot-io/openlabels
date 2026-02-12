@@ -205,20 +205,36 @@ function scanDetail(scanId, initialStatus) {
         error: {{ scan.error | tojson if scan.error else 'null' }},
         logs: [],
         ws: null,
+        wsConnected: false,
+        wsReconnectDelay: 1000,
+        pollTimer: null,
 
         init() {
             if (this.status === 'running' || this.status === 'pending') {
                 this.connectWebSocket();
-                this.pollStatus();
             }
         },
 
+        _isActive() {
+            return this.status === 'running' || this.status === 'pending';
+        },
+
         connectWebSocket() {
+            if (!this._isActive()) return;
+
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/scans/${scanId}`;
 
             try {
                 this.ws = new WebSocket(wsUrl);
+
+                this.ws.onopen = () => {
+                    this.wsConnected = true;
+                    this.wsReconnectDelay = 1000;  // Reset backoff on successful connection
+                    // Stop polling fallback since WS is connected
+                    this.stopPolling();
+                };
+
                 this.ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
                     if (data.type === 'progress') {
@@ -236,21 +252,40 @@ function scanDetail(scanId, initialStatus) {
                         if (this.logs.length > 100) this.logs.shift();
                     }
                 };
+
                 this.ws.onclose = () => {
-                    // Reconnect after 5 seconds if still running
-                    if (this.status === 'running') {
-                        setTimeout(() => this.connectWebSocket(), 5000);
+                    this.wsConnected = false;
+                    if (this._isActive()) {
+                        // Start polling fallback while WS is disconnected
+                        this.startPolling();
+                        // Reconnect with exponential backoff (1s → 2s → 4s → ... → 30s max)
+                        const delay = this.wsReconnectDelay;
+                        this.wsReconnectDelay = Math.min(delay * 2, 30000);
+                        setTimeout(() => this.connectWebSocket(), delay);
                     }
+                };
+
+                this.ws.onerror = () => {
+                    // onclose will fire after onerror, which handles reconnection
+                    this.wsConnected = false;
                 };
             } catch (e) {
                 console.error('WebSocket connection failed:', e);
+                this.wsConnected = false;
+                // Fall back to polling
+                this.startPolling();
             }
         },
 
-        async pollStatus() {
-            // Fallback polling if WebSocket fails
+        startPolling() {
+            if (this.pollTimer) return;  // Already polling
             const poll = async () => {
-                if (this.status !== 'running' && this.status !== 'pending') return;
+                if (!this._isActive()) {
+                    this.stopPolling();
+                    return;
+                }
+                // Skip poll if WebSocket is connected (avoid duplicate updates)
+                if (this.wsConnected) return;
 
                 try {
                     const response = await fetch(`/api/scans/${scanId}`);
@@ -258,7 +293,8 @@ function scanDetail(scanId, initialStatus) {
                         const data = await response.json();
                         this.status = data.status;
                         this.filesScanned = data.files_scanned || 0;
-                        this.totalFiles = data.total_files || 0;
+                        const progressData = data.progress || {};
+                        this.totalFiles = progressData.files_total || data.total_files_estimated || 0;
                         if (this.totalFiles > 0) {
                             this.progress = Math.round((this.filesScanned / this.totalFiles) * 100);
                         }
@@ -267,15 +303,21 @@ function scanDetail(scanId, initialStatus) {
                 } catch (e) {
                     console.error('Status poll failed:', e);
                 }
-
-                if (this.status === 'running' || this.status === 'pending') {
-                    setTimeout(poll, 5000);
-                }
             };
-            setTimeout(poll, 5000);
+            this.pollTimer = setInterval(poll, 5000);
+            // Run first poll immediately
+            poll();
+        },
+
+        stopPolling() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
         },
 
         destroy() {
+            this.stopPolling();
             if (this.ws) this.ws.close();
         }
     };
