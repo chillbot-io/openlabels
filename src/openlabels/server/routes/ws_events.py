@@ -209,27 +209,27 @@ class GlobalPubSubBroadcaster:
 
     async def publish(self, tenant_id: UUID, message: dict) -> None:
         """Publish a global event. Uses Redis if available, else local-only."""
-        # Ensure tenant_id is in the payload for routing
-        message["tenant_id"] = str(tenant_id)
+        # Create a copy with routing metadata — don't mutate the caller's dict
+        routed = {**message, "tenant_id": str(tenant_id)}
 
         if self._publisher and self._running:
             try:
-                payload = json.dumps(message, default=str)
+                payload = json.dumps(routed, default=str)
                 await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, payload)
                 return
             except Exception as e:
                 logger.warning("Global WS publish failed (%s), falling back to local", e)
 
-        # Local fallback
+        # Local fallback — deliver original message (no routing metadata)
         await self._local.deliver_local(tenant_id, message)
 
     async def publish_to_all(self, message: dict) -> None:
         """Publish an event to ALL tenants (e.g. health_update)."""
-        message["tenant_id"] = "__all__"
+        routed = {**message, "tenant_id": "__all__"}
 
         if self._publisher and self._running:
             try:
-                payload = json.dumps(message, default=str)
+                payload = json.dumps(routed, default=str)
                 await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, payload)
                 return
             except Exception as e:
@@ -250,7 +250,7 @@ class GlobalPubSubBroadcaster:
                     continue
 
                 data = json.loads(msg["data"])
-                tid_str = data.get("tenant_id")
+                tid_str = data.pop("tenant_id", None)
 
                 if tid_str == "__all__":
                     await self._local.broadcast_all(data)
@@ -325,7 +325,7 @@ async def websocket_global_events(websocket: WebSocket) -> None:
                     continue
 
                 # Enforce rate limit
-                now = asyncio.get_event_loop().time()
+                now = asyncio.get_running_loop().time()
                 message_timestamps[:] = [
                     ts for ts in message_timestamps
                     if now - ts < WS_RATE_WINDOW_SECONDS
@@ -344,9 +344,17 @@ async def websocket_global_events(websocket: WebSocket) -> None:
 
             except asyncio.TimeoutError:
                 # Send heartbeat on idle
-                await websocket.send_json({"type": "heartbeat"})
+                try:
+                    await websocket.send_json({"type": "heartbeat"})
+                except (ConnectionError, OSError, RuntimeError):
+                    break  # Connection dead, exit loop
 
     except WebSocketDisconnect:
+        pass
+    except (ConnectionError, OSError, RuntimeError):
+        # Connection died during receive/send — not a clean disconnect
+        logger.debug("Global WS connection lost: user=%s tenant=%s", user_id, tenant_id)
+    finally:
         global_manager.disconnect(conn)
 
 

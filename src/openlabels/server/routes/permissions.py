@@ -13,13 +13,14 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.dependencies import DbSessionDep, TenantContextDep
 from openlabels.server.models import DirectoryTree, SecurityDescriptor
@@ -188,11 +189,11 @@ async def list_directory_permissions(
     db: DbSessionDep,
     tenant: TenantContextDep,
     parent_id: UUID | None = Query(None, description="Parent directory ID (omit for roots)"),
-    exposure: str | None = Query(
+    exposure: Literal["PUBLIC", "ORG_WIDE", "INTERNAL", "PRIVATE", "UNKNOWN"] | None = Query(
         None,
-        description="Filter by exposure level: PUBLIC, ORG_WIDE, INTERNAL, PRIVATE, UNKNOWN",
+        description="Filter by exposure level",
     ),
-    pagination: PaginationParams = PaginationParams(),
+    pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[DirectoryPermissions]:
     """
     List directories with their security descriptor flags for a target.
@@ -344,7 +345,7 @@ async def lookup_principal_access(
     db: DbSessionDep,
     tenant: TenantContextDep,
     target_id: UUID | None = Query(None, description="Scope to a specific target"),
-    pagination: PaginationParams = PaginationParams(),
+    pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[PrincipalAccess]:
     """
     Find all directories accessible by a given principal (SID or name).
@@ -407,7 +408,6 @@ async def lookup_principal_access(
     for row in rows:
         perms = row.principal_perms
         if isinstance(perms, str):
-            import json
             perms = json.loads(perms)
         if isinstance(perms, list):
             perm_list = perms

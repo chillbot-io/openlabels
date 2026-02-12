@@ -19,16 +19,18 @@ import logging
 import re
 import time
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
 
-from openlabels.server.dependencies import AdminContextDep, TenantContextDep
+from openlabels.server.dependencies import TenantContextDep
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_client_ip)
 
 # ---------------------------------------------------------------------------
 # Safety: SQL validation
@@ -53,9 +55,13 @@ _ALLOWED_START = re.compile(
     re.IGNORECASE,
 )
 
-# Block attempts to use system functions that could leak info
+# Block attempts to use system functions that could read filesystem or leak info
 _BLOCKED_FUNCTIONS = re.compile(
-    r"\b(pg_read_file|pg_read_binary_file|read_text|read_blob)\b",
+    r"\b(pg_read_file|pg_read_binary_file|read_text|read_blob|"
+    r"read_csv|read_csv_auto|read_json|read_json_auto|read_parquet|"
+    r"read_ndjson|read_ndjson_auto|"
+    r"glob|scan_parquet|scan_csv|scan_json|"
+    r"httpfs|http_get|http_post)\b",
     re.IGNORECASE,
 )
 
@@ -282,7 +288,7 @@ def _build_schema() -> list[SchemaTable]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/query/schema", response_model=SchemaResponse)
+@router.get("/schema", response_model=SchemaResponse)
 async def get_query_schema(
     request: Request,
     tenant: TenantContextDep,
@@ -341,7 +347,8 @@ async def get_query_schema(
     return SchemaResponse(tables=_build_schema())
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post("", response_model=QueryResponse)
+@limiter.limit("30/minute")
 async def execute_query(
     body: QueryRequest,
     request: Request,
@@ -368,15 +375,17 @@ async def execute_query(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Inject tenant_id as a parameter — replace $1 with the actual value.
-    # DuckDB uses positional parameters (?) so we substitute.
+    # Inject tenant_id as a parameter — replace $1 with positional ?.
+    # DuckDB uses positional parameters (?), and each ? consumes one param,
+    # so we must append one copy of tenant_id per occurrence.
     tenant_str = str(tenant.tenant_id)
     execution_sql = clean_sql
+    occurrence_count = execution_sql.count("$1")
     params: list[Any] = []
 
-    if "$1" in execution_sql:
+    if occurrence_count > 0:
         execution_sql = execution_sql.replace("$1", "?")
-        params.append(tenant_str)
+        params.extend([tenant_str] * occurrence_count)
 
     # Enforce row limit via wrapping
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
@@ -416,7 +425,8 @@ async def execute_query(
     )
 
 
-@router.post("/query/ai", response_model=AIQueryResponse)
+@router.post("/ai", response_model=AIQueryResponse)
+@limiter.limit("10/minute")
 async def ai_query(
     body: AIQueryRequest,
     request: Request,
@@ -478,10 +488,11 @@ async def ai_query(
         )
 
     execution_sql = clean_sql
+    occurrence_count = execution_sql.count("$1")
     params: list[Any] = []
-    if "$1" in execution_sql:
+    if occurrence_count > 0:
         execution_sql = execution_sql.replace("$1", "?")
-        params.append(tenant_str)
+        params.extend([tenant_str] * occurrence_count)
 
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
 
