@@ -10,5 +10,5 @@ export const eventsApi = {
     action?: string;
     start_date?: string;
     end_date?: string;
-  }) => apiFetch<CursorPaginatedResponse<FileAccessEvent>>('/audit/events', { params }),
+  }) => apiFetch<CursorPaginatedResponse<FileAccessEvent>>('/monitoring/events/cursor', { params }),
 };

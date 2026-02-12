@@ -8,7 +8,7 @@ export const targetsApi = {
   get: (id: string) =>
     apiFetch<Target>(`/targets/${id}`),
 
-  create: (payload: Omit<Target, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>) =>
+  create: (payload: { name: string; adapter: string; enabled: boolean; config: Record<string, unknown> }) =>
     apiFetch<Target>('/targets', { method: 'POST', body: payload }),
 
   update: (id: string, payload: Partial<Target>) =>

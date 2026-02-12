@@ -20,18 +20,19 @@ export function Component() {
 
   const columns: ColumnDef<Target, unknown>[] = [
     { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'adapter_type', header: 'Adapter', cell: ({ row }) =>
-      ADAPTER_LABELS[row.original.adapter_type as AdapterType] ?? row.original.adapter_type },
+    { accessorKey: 'adapter', header: 'Adapter', cell: ({ row }) =>
+      ADAPTER_LABELS[row.original.adapter as AdapterType] ?? row.original.adapter },
     { accessorKey: 'enabled', header: 'Status', cell: ({ row }) => (
       <Badge variant={row.original.enabled ? 'default' : 'secondary'}>
         {row.original.enabled ? 'Enabled' : 'Disabled'}
       </Badge>
     )},
-    { accessorKey: 'updated_at', header: 'Updated', cell: ({ row }) => formatRelativeTime(row.original.updated_at) },
+    { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => formatRelativeTime(row.original.created_at) },
     { id: 'actions', header: '', cell: ({ row }) => (
       <Button
         variant="ghost"
         size="icon"
+        aria-label={`Delete target ${row.original.name}`}
         onClick={(e) => {
           e.stopPropagation();
           if (confirm('Delete this target?')) {

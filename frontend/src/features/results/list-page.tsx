@@ -34,7 +34,7 @@ const columns: ColumnDef<ScanResult, unknown>[] = [
       ))}
     </div>
   )},
-  { accessorKey: 'target_name', header: 'Target', cell: ({ row }) => row.original.target_name ?? '—' },
+  { accessorKey: 'owner', header: 'Owner', cell: ({ row }) => row.original.owner ?? '—' },
 ];
 
 export function Component() {
@@ -80,6 +80,7 @@ export function Component() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-64"
+          aria-label="Search files"
         />
         <Select
           value={riskTier ?? 'all'}
@@ -90,7 +91,7 @@ export function Component() {
             setSearchParams(next);
           }}
         >
-          <SelectTrigger className="w-36"><SelectValue placeholder="Risk tier" /></SelectTrigger>
+          <SelectTrigger className="w-36" aria-label="Filter by risk tier"><SelectValue placeholder="Risk tier" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All tiers</SelectItem>
             {RISK_TIERS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}

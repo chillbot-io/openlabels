@@ -5,9 +5,9 @@ export const settingsApi = {
   list: () =>
     apiFetch<Setting[]>('/settings'),
 
-  get: (key: string) =>
-    apiFetch<Setting>(`/settings/${key}`),
+  update: (category: string, settings: Record<string, unknown>) =>
+    apiFetch<Setting[]>(`/settings/${category}`, { method: 'POST', body: settings }),
 
-  update: (key: string, value: unknown) =>
-    apiFetch<Setting>(`/settings/${key}`, { method: 'PUT', body: { value } }),
+  reset: () =>
+    apiFetch<Setting[]>('/settings/reset', { method: 'POST' }),
 };

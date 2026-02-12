@@ -15,5 +15,5 @@ export const remediationApi = {
     apiFetch<RemediationAction>('/remediation/lockdown', { method: 'POST', body: payload }),
 
   rollback: (actionId: string) =>
-    apiFetch<RemediationAction>(`/remediation/${actionId}/rollback`, { method: 'POST' }),
+    apiFetch<RemediationAction>('/remediation/rollback', { method: 'POST', body: { action_id: actionId } }),
 };

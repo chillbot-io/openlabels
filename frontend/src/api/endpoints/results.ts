@@ -1,5 +1,5 @@
 import { apiFetch } from '../client.ts';
-import type { ScanResult, CursorPaginatedResponse } from '../types.ts';
+import type { ScanResult, ScanResultDetail, CursorPaginatedResponse } from '../types.ts';
 
 export const resultsApi = {
   list: (params?: {
@@ -9,8 +9,8 @@ export const resultsApi = {
     entity_type?: string;
     scan_id?: string;
     search?: string;
-  }) => apiFetch<CursorPaginatedResponse<ScanResult>>('/results', { params }),
+  }) => apiFetch<CursorPaginatedResponse<ScanResult>>('/results/cursor', { params }),
 
   get: (id: string) =>
-    apiFetch<ScanResult>(`/results/${id}`),
+    apiFetch<ScanResultDetail>(`/results/${id}`),
 };

@@ -101,11 +101,11 @@ export function Component() {
         </Card>
       </div>
 
-      {s.error_message && (
-        <Card className="border-red-200 bg-red-50">
+      {s.error && (
+        <Card className="border-red-200 bg-red-50" role="alert">
           <CardContent className="p-6">
             <p className="text-sm font-medium text-red-800">Error</p>
-            <p className="mt-1 text-sm text-red-600">{s.error_message}</p>
+            <p className="mt-1 text-sm text-red-600">{s.error}</p>
           </CardContent>
         </Card>
       )}

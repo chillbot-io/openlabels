@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useState, useEffect, useMemo } from 'react';
 import { Activity } from 'lucide-react';
-import { eventsApi } from '@/api/endpoints/events.ts';
+import { useEvents } from '@/api/hooks/use-events.ts';
 import { Input } from '@/components/ui/input.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Card, CardContent } from '@/components/ui/card.tsx';
@@ -19,36 +18,42 @@ export function Component() {
   const debouncedUser = useDebounce(userFilter);
   const [liveEvents, setLiveEvents] = useState<FileAccessEvent[]>([]);
 
-  const events = useInfiniteQuery({
-    queryKey: ['events', { file_path: debouncedFile || undefined, user_name: debouncedUser || undefined }],
-    queryFn: ({ pageParam }) =>
-      eventsApi.list({
-        cursor: pageParam,
-        page_size: 50,
-        file_path: debouncedFile || undefined,
-        user_name: debouncedUser || undefined,
-      }),
-    getNextPageParam: (lastPage) => lastPage.has_next ? lastPage.next_cursor : undefined,
-    initialPageParam: undefined as string | undefined,
+  const events = useEvents({
+    file_path: debouncedFile || undefined,
+    user_name: debouncedUser || undefined,
+    page_size: 50,
   });
 
   useEffect(() => {
     return wsClient.subscribe('file_access', (raw) => {
       const data = raw as WSFileAccess;
       setLiveEvents((prev) => [{
-        id: `live-${Date.now()}`,
+        id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         file_path: data.file_path,
         user_name: data.user_name,
         action: data.action,
         event_time: data.event_time,
         details: {},
-      }, ...prev].slice(0, 20));
+      }, ...prev].slice(0, 50));
     });
   }, []);
 
+  // Clear live events when filters change to avoid stale mixed results
+  useEffect(() => {
+    setLiveEvents([]);
+  }, [debouncedFile, debouncedUser]);
+
+  const historicalEvents = events.data?.pages.flatMap((p) => p.items) ?? [];
+
+  // Deduplicate: live events that match historical events by id get filtered out
+  const historicalIds = useMemo(
+    () => new Set(historicalEvents.map((e) => e.id)),
+    [historicalEvents],
+  );
+
   const allEvents = [
-    ...liveEvents,
-    ...(events.data?.pages.flatMap((p) => p.items) ?? []),
+    ...liveEvents.filter((e) => !historicalIds.has(e.id)),
+    ...historicalEvents,
   ];
 
   return (
@@ -56,10 +61,22 @@ export function Component() {
       <h1 className="text-2xl font-bold">Sensitive Data Events</h1>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Input placeholder="Filter by file path..." value={fileFilter} onChange={(e) => setFileFilter(e.target.value)} className="w-64" />
-        <Input placeholder="Filter by user..." value={userFilter} onChange={(e) => setUserFilter(e.target.value)} className="w-48" />
+        <Input
+          placeholder="Filter by file path..."
+          value={fileFilter}
+          onChange={(e) => setFileFilter(e.target.value)}
+          className="w-64"
+          aria-label="Filter by file path"
+        />
+        <Input
+          placeholder="Filter by user..."
+          value={userFilter}
+          onChange={(e) => setUserFilter(e.target.value)}
+          className="w-48"
+          aria-label="Filter by user"
+        />
         {liveEvents.length > 0 && (
-          <span className="flex items-center gap-1.5 text-xs text-green-600">
+          <span className="flex items-center gap-1.5 text-xs text-green-600" aria-live="polite">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
             {liveEvents.length} live events
           </span>
@@ -73,9 +90,9 @@ export function Component() {
       ) : allEvents.length === 0 ? (
         <EmptyState icon={Activity} title="No events" description="File access events will appear here in real-time" />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2" role="list" aria-label="File access events">
           {allEvents.map((event) => (
-            <Card key={event.id}>
+            <Card key={event.id} role="listitem">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-sm font-medium">{event.file_path}</p>

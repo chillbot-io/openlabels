@@ -30,10 +30,10 @@ async function fetchBlob(path: string, params?: Record<string, string | undefine
 
 export const exportApi = {
   results: (params?: { format?: 'csv' | 'xlsx' | 'pdf'; scan_id?: string; risk_tier?: string; entity_type?: string; search?: string }) =>
-    fetchBlob('/export/results', params),
+    fetchBlob('/results/export', params),
 
   report: (reportId: string, format: 'pdf' | 'xlsx' | 'csv') =>
-    fetchBlob(`/reporting/${reportId}/export`, { format }),
+    fetchBlob(`/reporting/${reportId}/download`, { format }),
 };
 
 /** Trigger browser download for a blob */

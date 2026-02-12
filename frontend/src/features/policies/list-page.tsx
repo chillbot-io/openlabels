@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Trash2 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { policiesApi } from '@/api/endpoints/policies.ts';
+import { usePolicies, useCreatePolicy, useDeletePolicy } from '@/api/hooks/use-policies.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -18,31 +17,25 @@ export function Component() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const addToast = useUIStore((s) => s.addToast);
-  const queryClient = useQueryClient();
 
-  const policies = useQuery({
-    queryKey: ['policies', { page: page + 1 }],
-    queryFn: () => policiesApi.list({ page: page + 1, page_size: 50 }),
-  });
+  const policies = usePolicies(page + 1);
+  const createPolicy = useCreatePolicy();
+  const deletePolicy = useDeletePolicy();
 
-  const createPolicy = useMutation({
-    mutationFn: policiesApi.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['policies'] });
-      setDialogOpen(false);
-      setName('');
-      setDescription('');
-      addToast({ level: 'success', message: 'Policy created' });
-    },
-  });
-
-  const deletePolicy = useMutation({
-    mutationFn: policiesApi.delete,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['policies'] });
-      addToast({ level: 'success', message: 'Policy deleted' });
-    },
-  });
+  const handleCreate = () => {
+    createPolicy.mutate(
+      { name, description, enabled: true, rules: [], framework: '', risk_level: '', priority: 0, config: {} },
+      {
+        onSuccess: () => {
+          setDialogOpen(false);
+          setName('');
+          setDescription('');
+          addToast({ level: 'success', message: 'Policy created' });
+        },
+        onError: (err) => addToast({ level: 'error', message: err.message }),
+      },
+    );
+  };
 
   const columns: ColumnDef<Policy, unknown>[] = [
     { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
@@ -52,11 +45,15 @@ export function Component() {
         {row.original.enabled ? 'Active' : 'Disabled'}
       </Badge>
     )},
-    { accessorKey: 'rules', header: 'Rules', cell: ({ row }) => `${row.original.rules.length} rules` },
+    { accessorKey: 'rules', header: 'Rules', cell: ({ row }) => `${row.original.rules?.length ?? 0} rules` },
     { id: 'actions', header: '', cell: ({ row }) => (
-      <Button variant="ghost" size="icon" onClick={(e) => {
+      <Button variant="ghost" size="icon" aria-label={`Delete policy ${row.original.name}`} onClick={(e) => {
         e.stopPropagation();
-        if (confirm('Delete this policy?')) deletePolicy.mutate(row.original.id);
+        if (confirm('Delete this policy?')) {
+          deletePolicy.mutate(row.original.id, {
+            onSuccess: () => addToast({ level: 'success', message: 'Policy deleted' }),
+          });
+        }
       }}>
         <Trash2 className="h-4 w-4 text-red-500" />
       </Button>
@@ -83,7 +80,7 @@ export function Component() {
         emptyDescription="Create a policy to define automated data protection rules"
       />
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setName(''); setDescription(''); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Policy</DialogTitle>
@@ -91,17 +88,14 @@ export function Component() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="PCI-DSS Compliance" />
+              <Label htmlFor="policy-name">Name</Label>
+              <Input id="policy-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="PCI-DSS Compliance" />
             </div>
             <div>
-              <Label>Description</Label>
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Quarantine files with credit card numbers" />
+              <Label htmlFor="policy-description">Description</Label>
+              <Input id="policy-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Quarantine files with credit card numbers" />
             </div>
-            <Button
-              onClick={() => createPolicy.mutate({ name, description, enabled: true, rules: [] })}
-              disabled={!name || createPolicy.isPending}
-            >
+            <Button onClick={handleCreate} disabled={!name || createPolicy.isPending}>
               Create Policy
             </Button>
           </div>

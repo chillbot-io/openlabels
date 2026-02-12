@@ -11,8 +11,8 @@ interface StatsCardsProps {
 
 const STAT_CARDS = [
   { key: 'total_files_scanned', label: 'Files Scanned', icon: FileSearch, color: 'text-blue-600' },
-  { key: 'total_findings', label: 'Total Findings', icon: AlertTriangle, color: 'text-orange-600' },
-  { key: 'critical_findings', label: 'Critical Findings', icon: ShieldAlert, color: 'text-red-600' },
+  { key: 'files_with_pii', label: 'Files with PII', icon: AlertTriangle, color: 'text-orange-600' },
+  { key: 'critical_files', label: 'Critical Files', icon: ShieldAlert, color: 'text-red-600' },
   { key: 'active_scans', label: 'Active Scans', icon: Scan, color: 'text-green-600' },
 ] as const;
 

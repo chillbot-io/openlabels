@@ -14,7 +14,7 @@ import { useUIStore } from '@/stores/ui-store.ts';
 
 const targetSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
-  adapter_type: z.enum(ADAPTER_TYPES),
+  adapter: z.enum(ADAPTER_TYPES),
   enabled: z.boolean(),
   config: z.record(z.string(), z.unknown()),
 });
@@ -58,9 +58,9 @@ export function Component() {
   const updateTarget = useUpdateTarget();
   const addToast = useUIStore((s) => s.addToast);
 
-  const defaultVals: TargetFormData = { name: '', adapter_type: 'filesystem', enabled: true, config: {} };
+  const defaultVals: TargetFormData = { name: '', adapter: 'filesystem', enabled: true, config: {} };
   const targetValues: TargetFormData | undefined = target.data
-    ? { name: target.data.name, adapter_type: target.data.adapter_type as TargetFormData['adapter_type'], enabled: target.data.enabled, config: target.data.config as Record<string, unknown> }
+    ? { name: target.data.name, adapter: target.data.adapter as TargetFormData['adapter'], enabled: target.data.enabled, config: target.data.config as Record<string, unknown> }
     : undefined;
 
   const form = useForm<TargetFormData>({
@@ -71,7 +71,7 @@ export function Component() {
 
   if (isEdit && target.isLoading) return <LoadingSkeleton />;
 
-  const adapterType = form.watch('adapter_type');
+  const adapterType = form.watch('adapter');
   const fields = ADAPTER_FIELDS[adapterType] ?? [];
 
   const onSubmit = (data: TargetFormData) => {
@@ -105,9 +105,9 @@ export function Component() {
             </div>
 
             <div>
-              <Label htmlFor="adapter_type">Adapter</Label>
-              <Select value={adapterType} onValueChange={(v) => form.setValue('adapter_type', v as typeof adapterType)}>
-                <SelectTrigger id="adapter_type"><SelectValue /></SelectTrigger>
+              <Label htmlFor="adapter">Adapter</Label>
+              <Select value={adapterType} onValueChange={(v) => form.setValue('adapter', v as typeof adapterType)}>
+                <SelectTrigger id="adapter"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {ADAPTER_TYPES.map((t) => (
                     <SelectItem key={t} value={t}>{ADAPTER_LABELS[t]}</SelectItem>

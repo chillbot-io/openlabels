@@ -1,4 +1,4 @@
-// API Types — matches FastAPI backend models
+// API Types — matches FastAPI backend response schemas
 // In production, generate from OpenAPI spec with `npx openapi-typescript`
 
 export interface User {
@@ -31,19 +31,17 @@ export interface CursorPaginatedResponse<T> {
 
 export interface ScanJob {
   id: string;
-  tenant_id: string;
   target_id: string | null;
   target_name: string | null;
+  name: string | null;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   files_scanned: number;
   files_with_pii: number;
-  files_skipped: number;
-  error_message: string | null;
+  error: string | null;
   progress: ScanProgress | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
-  created_by: string | null;
 }
 
 export interface ScanProgress {
@@ -56,19 +54,30 @@ export interface ScanProgress {
 
 export interface ScanResult {
   id: string;
-  scan_id: string;
-  tenant_id: string;
+  job_id: string;
   file_path: string;
   file_name: string;
-  file_size: number;
+  file_size: number | null;
   risk_score: number;
   risk_tier: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'MINIMAL';
   entity_counts: Record<string, number>;
-  entities: DetectedEntity[];
-  labels: string[];
-  adapter_type: string;
-  target_name: string | null;
+  total_entities: number;
+  exposure_level: string | null;
+  owner: string | null;
+  current_label_name: string | null;
+  recommended_label_name: string | null;
+  label_applied: boolean;
   scanned_at: string;
+}
+
+export interface ScanResultDetail extends ScanResult {
+  content_score: number | null;
+  exposure_multiplier: number | null;
+  co_occurrence_rules: string[] | null;
+  findings: Record<string, unknown> | null;
+  policy_violations: Record<string, unknown>[] | null;
+  label_applied_at: string | null;
+  label_error: string | null;
 }
 
 export interface DetectedEntity {
@@ -82,26 +91,21 @@ export interface DetectedEntity {
 
 export interface Target {
   id: string;
-  tenant_id: string;
   name: string;
-  adapter_type: string;
+  adapter: string;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Schedule {
   id: string;
-  tenant_id: string;
   name: string;
-  cron_expression: string;
-  target_ids: string[];
+  cron: string | null;
+  target_id: string;
   enabled: boolean;
   last_run_at: string | null;
   next_run_at: string | null;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Label {
@@ -110,8 +114,10 @@ export interface Label {
   name: string;
   color: string;
   description: string;
+  priority: number | null;
   auto_apply: boolean;
   risk_tier_mapping: string | null;
+  synced_at: string | null;
   created_at: string;
 }
 
@@ -125,12 +131,16 @@ export interface LabelSync {
 }
 
 export interface DashboardStats {
+  total_scans: number;
   total_files_scanned: number;
-  total_findings: number;
-  critical_findings: number;
+  files_with_pii: number;
+  labels_applied: number;
+  critical_files: number;
+  high_files: number;
+  medium_files: number;
+  low_files: number;
+  minimal_files: number;
   active_scans: number;
-  risk_breakdown: Record<string, number>;
-  entity_type_counts: Record<string, number>;
 }
 
 export interface AuditLogEntry {
@@ -163,14 +173,18 @@ export interface JobQueueStats {
   running: number;
   completed: number;
   failed: number;
-  jobs: JobInfo[];
+  cancelled: number;
+  failed_by_type: Record<string, number>;
 }
 
 export interface JobInfo {
   id: string;
-  type: string;
+  task_type: string;
   status: string;
-  progress: number;
+  priority: number;
+  worker_id: string | null;
+  error: string | null;
+  retry_count: number;
   created_at: string;
   started_at: string | null;
 }
@@ -180,7 +194,7 @@ export interface RemediationAction {
   tenant_id: string;
   file_path: string;
   action_type: 'quarantine' | 'lockdown' | 'rollback';
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'rolled_back';
+  status: 'pending' | 'completed' | 'failed' | 'rolled_back';
   performed_by: string;
   dry_run: boolean;
   details: Record<string, unknown>;
@@ -194,6 +208,10 @@ export interface Policy {
   name: string;
   description: string;
   enabled: boolean;
+  framework: string;
+  risk_level: string;
+  priority: number;
+  config: Record<string, unknown>;
   rules: PolicyRule[];
   created_at: string;
   updated_at: string;

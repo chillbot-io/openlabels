@@ -19,8 +19,8 @@ export function Component() {
 
   const columns: ColumnDef<Schedule, unknown>[] = [
     { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'cron_expression', header: 'Schedule', cell: ({ row }) => (
-      <code className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-xs">{row.original.cron_expression}</code>
+    { accessorKey: 'cron', header: 'Schedule', cell: ({ row }) => (
+      <code className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-xs">{row.original.cron}</code>
     )},
     { accessorKey: 'enabled', header: 'Status', cell: ({ row }) => (
       <Badge variant={row.original.enabled ? 'default' : 'secondary'}>
@@ -33,6 +33,7 @@ export function Component() {
       <Button
         variant="ghost"
         size="icon"
+        aria-label={`Delete schedule ${row.original.name}`}
         onClick={(e) => {
           e.stopPropagation();
           if (confirm('Delete this schedule?')) {
