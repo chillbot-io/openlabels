@@ -45,7 +45,7 @@ dependencies = [
     "python-multipart>=0.0.6",  # Form handling for FastAPI
 
     # Database
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy>=2.0.0,<3",
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
     "uuid-utils>=0.6.0",  # Fast UUIDv7 generation (Rust)
@@ -91,10 +91,10 @@ dependencies = [
     "pyarrow>=15.0.0",  # Arrow tables, Parquet read/write
 
     # ML Inference (core)
-    "onnxruntime>=1.17.0",  # ONNX model inference
-    "transformers>=4.36.0",  # NER models
+    "onnxruntime>=1.17.0,<2",  # ONNX model inference
+    "transformers>=4.36.0,<5",  # NER models
     "tokenizers>=0.15.0",  # Fast tokenization
-    "numpy>=1.24.0",
+    "numpy>=1.24.0,<2",
 ]
 
 [project.optional-dependencies]

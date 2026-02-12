@@ -11,6 +11,8 @@ Provides:
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 from collections.abc import Sequence
 from datetime import datetime
@@ -238,19 +240,39 @@ class CursorPaginationParams:
         return self.page_size + 1
 
 
+def _get_cursor_secret() -> bytes:
+    """Return the secret key used to sign pagination cursors."""
+    import os
+
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    key = getattr(settings.server, "secret_key", None) or os.environ.get(
+        "OPENLABELS_SECRET_KEY", ""
+    )
+    if not key:
+        key = "openlabels-cursor-default-key"
+    return key.encode() if isinstance(key, str) else key
+
+
+def _sign_cursor(payload: bytes) -> str:
+    """Return HMAC-SHA256 signature for *payload*."""
+    return hmac.new(_get_cursor_secret(), payload, hashlib.sha256).hexdigest()
+
+
 def encode_cursor(
     values: dict[str, Any],
     direction: str = "forward",
 ) -> str:
     """
-    Encode cursor values to an opaque string.
+    Encode cursor values to an opaque, HMAC-signed string.
 
     Args:
         values: Dictionary of column values to encode (e.g., {"id": "uuid", "created_at": "2024-01-01T00:00:00"})
         direction: Pagination direction
 
     Returns:
-        Base64 encoded cursor string
+        Base64 encoded cursor string with HMAC signature
     """
     # Convert UUID and datetime to strings for JSON serialization
     serializable = {}
@@ -263,12 +285,15 @@ def encode_cursor(
             serializable[key] = value
 
     cursor_data = {"v": serializable, "d": direction}
-    return base64.urlsafe_b64encode(json.dumps(cursor_data).encode()).decode()
+    payload = json.dumps(cursor_data, separators=(",", ":"), sort_keys=True).encode()
+    sig = _sign_cursor(payload)
+    signed = {"p": base64.urlsafe_b64encode(payload).decode(), "s": sig}
+    return base64.urlsafe_b64encode(json.dumps(signed, separators=(",", ":")).encode()).decode()
 
 
 def decode_cursor(cursor: str) -> tuple[dict[str, Any], str]:
     """
-    Decode a cursor string to its values.
+    Decode and verify an HMAC-signed cursor string.
 
     Args:
         cursor: Base64 encoded cursor string
@@ -277,10 +302,19 @@ def decode_cursor(cursor: str) -> tuple[dict[str, Any], str]:
         Tuple of (values dict, direction)
 
     Raises:
-        ValueError: If cursor is invalid
+        ValueError: If cursor is invalid or signature doesn't match
     """
     try:
-        cursor_data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+        outer = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+        payload = base64.urlsafe_b64decode(outer["p"].encode())
+        sig = outer["s"]
+
+        # Verify HMAC signature
+        expected_sig = _sign_cursor(payload)
+        if not hmac.compare_digest(sig, expected_sig):
+            raise ValueError("Cursor signature verification failed")
+
+        cursor_data = json.loads(payload.decode())
         return cursor_data["v"], cursor_data.get("d", "forward")
     except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError) as e:
         raise ValueError(f"Invalid cursor: {e}") from e

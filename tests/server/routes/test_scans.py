@@ -224,10 +224,10 @@ class TestCancelScan:
         """Should cancel a pending scan."""
         # Find a pending scan
         pending_scans = [s for s in setup_scans_data["scans"] if s.status == "pending"]
-        if pending_scans:
-            scan = pending_scans[0]
-            response = await test_client.delete(f"/api/v1/scans/{scan.id}")
-            assert response.status_code == 204
+        assert pending_scans, "Fixture must include at least one pending scan"
+        scan = pending_scans[0]
+        response = await test_client.delete(f"/api/v1/scans/{scan.id}")
+        assert response.status_code == 204
 
     async def test_cancels_running_scan(self, test_client, setup_scans_data):
         """Should cancel a running scan."""
@@ -238,10 +238,10 @@ class TestCancelScan:
     async def test_returns_400_for_completed_scan(self, test_client, setup_scans_data):
         """Should return 400 for completed scan."""
         completed_scans = [s for s in setup_scans_data["scans"] if s.status == "completed"]
-        if completed_scans:
-            scan = completed_scans[0]
-            response = await test_client.delete(f"/api/v1/scans/{scan.id}")
-            assert response.status_code == 400
+        assert completed_scans, "Fixture must include at least one completed scan"
+        scan = completed_scans[0]
+        response = await test_client.delete(f"/api/v1/scans/{scan.id}")
+        assert response.status_code == 400
 
     async def test_returns_404_for_nonexistent(self, test_client, setup_scans_data):
         """Should return 404 for non-existent scan."""
@@ -256,10 +256,10 @@ class TestCancelScanPost:
     async def test_cancels_pending_scan(self, test_client, setup_scans_data):
         """Should cancel a pending scan via POST."""
         pending_scans = [s for s in setup_scans_data["scans"] if s.status == "pending"]
-        if pending_scans:
-            scan = pending_scans[0]
-            response = await test_client.post(f"/api/v1/scans/{scan.id}/cancel")
-            assert response.status_code == 200
+        assert pending_scans, "Fixture must include at least one pending scan"
+        scan = pending_scans[0]
+        response = await test_client.post(f"/api/v1/scans/{scan.id}/cancel")
+        assert response.status_code == 200
 
     async def test_htmx_cancel_returns_trigger(self, test_client, setup_scans_data):
         """HTMX cancel should return HX-Trigger header."""

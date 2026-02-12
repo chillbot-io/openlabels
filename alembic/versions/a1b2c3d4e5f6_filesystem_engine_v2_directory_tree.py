@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, Sequence[str]] = '5f934314bd30'
+down_revision: Union[str, Sequence[str]] = 'e6f7a8b9c1d2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -145,6 +145,12 @@ def upgrade() -> None:
         'ix_dirtree_share',
         'directory_tree', ['share_id'],
         postgresql_where=sa.text('share_id IS NOT NULL'),
+    )
+    # SD collection: efficiently find directories needing collection
+    op.create_index(
+        'ix_dirtree_sd_pending',
+        'directory_tree', ['tenant_id', 'target_id', 'dir_path'],
+        postgresql_where=sa.text('sd_hash IS NULL'),
     )
 
 

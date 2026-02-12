@@ -13,7 +13,7 @@ from openlabels import __version__
 from openlabels.jobs.scheduler import DatabaseScheduler, get_scheduler
 from openlabels.server.cache import close_cache, get_cache_manager
 from openlabels.server.config import get_settings
-from openlabels.server.db import close_db, init_db
+from openlabels.server.db import close_db, ensure_partitions, init_db
 from openlabels.server.logging import setup_logging
 from openlabels.server.sentry import init_sentry
 
@@ -37,6 +37,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Database
     await init_db(settings.database.url)
+
+    # Ensure monthly partitions exist for partitioned tables
+    try:
+        await ensure_partitions(months_ahead=3)
+    except Exception as e:
+        logger.warning("Partition maintenance failed: %s: %s", type(e).__name__, e)
 
     # Purge expired sessions and stale pending-auth entries on startup
     try:

@@ -148,13 +148,13 @@ async def add_deprecation_warning(request: Request, call_next: _CallNext) -> Res
         and not path.startswith("/api/openapi")
     ):
         response.headers["X-API-Deprecation"] = "true"
-        response.headers["X-API-Deprecation-Date"] = "2025-06-01"
+        response.headers["X-API-Deprecation-Date"] = "2026-12-01"
         response.headers["X-API-Deprecation-Info"] = (
             "This API endpoint is deprecated. Please migrate to /api/v1/. "
             "See /api for version information."
         )
         response.headers["Deprecation"] = "true"
-        response.headers["Sunset"] = "2025-06-01T00:00:00Z"
+        response.headers["Sunset"] = "2026-12-01T00:00:00Z"
         response.headers["Link"] = f'</api/v1{path[4:]}>; rel="successor-version"'
         logger.debug(
             f"Deprecated API call: {request.method} {path} — "

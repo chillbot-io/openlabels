@@ -133,8 +133,19 @@ class InMemoryCache:
             self._cache.clear()
 
     async def exists(self, key: str) -> bool:
-        """Check if key exists and is not expired."""
-        return await self.get(key) is not None
+        """Check if key exists and is not expired.
+
+        Does NOT update LRU ordering (unlike get()), so health checks
+        and existence probes don't artificially keep keys hot.
+        """
+        async with self._lock:
+            if key not in self._cache:
+                return False
+            _, expires_at = self._cache[key]
+            if expires_at and time.time() > expires_at:
+                del self._cache[key]
+                return False
+            return True
 
     @property
     def stats(self) -> dict:
@@ -374,6 +385,7 @@ class CacheManager:
         # Initialize backends
         self._redis: RedisCache | None = None
         self._memory = InMemoryCache(max_size=memory_cache_max_size)
+        self._key_locks: dict[str, asyncio.Lock] = {}
 
         if redis_url and enabled:
             self._redis = RedisCache(
@@ -453,7 +465,13 @@ class CacheManager:
         factory: Callable[[], Any],
         ttl: int | None = None,
     ) -> Any:
-        """Get value from cache or compute and store it."""
+        """Get value from cache or compute and store it.
+
+        Uses a per-key lock to prevent cache stampede: when many
+        concurrent coroutines miss the same key simultaneously, only one
+        executes the factory while the others wait and then read the
+        cached result.
+        """
         if not self._enabled:
             return await factory() if asyncio.iscoroutinefunction(factory) else factory()
 
@@ -461,9 +479,20 @@ class CacheManager:
         if value is not None:
             return value
 
-        # Compute value
-        value = await factory() if asyncio.iscoroutinefunction(factory) else factory()
-        await self.set(key, value, ttl)
+        # Acquire per-key lock to prevent stampede
+        lock = self._key_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            # Double-check after acquiring lock
+            value = await self.get(key)
+            if value is not None:
+                return value
+
+            # Compute value
+            value = await factory() if asyncio.iscoroutinefunction(factory) else factory()
+            await self.set(key, value, ttl)
+
+        # Cleanup lock entry to prevent unbounded growth
+        self._key_locks.pop(key, None)
         return value
 
     @property

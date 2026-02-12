@@ -21,6 +21,9 @@ from openlabels.server.dependencies import (
 )
 from openlabels.server.errors import ErrorCode
 from openlabels.server.routes import htmx_notify
+from openlabels.server.utils import get_client_ip
+
+from slowapi import Limiter
 from openlabels.server.schemas.pagination import (
     CursorPaginatedResponse,
     CursorPaginationParams,
@@ -32,6 +35,7 @@ from openlabels.server.schemas.pagination import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_limiter = Limiter(key_func=get_client_ip)
 
 
 class ResultResponse(BaseModel):
@@ -342,6 +346,7 @@ async def get_result(
 
 
 @router.delete("")
+@_limiter.limit("5/minute")
 async def clear_all_results(
     request: Request,
     result_service: ResultServiceDep,
@@ -357,6 +362,7 @@ async def clear_all_results(
 
 
 @router.delete("/{result_id}")
+@_limiter.limit("20/minute")
 async def delete_result(
     result_id: UUID,
     request: Request,

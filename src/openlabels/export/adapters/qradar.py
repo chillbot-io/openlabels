@@ -13,9 +13,13 @@ import asyncio
 import json
 import logging
 import socket
-import ssl
 
-from openlabels.export.adapters.base import ExportRecord
+from openlabels.export.adapters.base import (
+    ExportRecord,
+    SyslogTransportMixin,
+    cef_escape,
+    risk_tier_to_cef_severity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ _VENDOR = "OpenLabels"
 _LEEF_VERSION = "2.0"
 
 
-class QRadarAdapter:
+class QRadarAdapter(SyslogTransportMixin):
     """Export to IBM QRadar via syslog using LEEF or CEF format."""
 
     def __init__(
@@ -107,83 +111,20 @@ class QRadarAdapter:
 
     def _to_cef(self, record: ExportRecord) -> str:
         """Convert ExportRecord to CEF format string."""
-        severity = self._risk_tier_to_cef_severity(record.risk_tier)
+        severity = risk_tier_to_cef_severity(record.risk_tier)
         event_id = record.record_type.replace("_", "")
         name = f"OpenLabels {record.record_type}"
         extensions = (
-            f"filePath={self._cef_escape(record.file_path)} "
+            f"filePath={cef_escape(record.file_path)} "
             f"riskScore={record.risk_score or 0} "
             f"riskTier={record.risk_tier or 'MINIMAL'} "
             f"entityTypes={','.join(record.entity_types)} "
             f"policyViolations={','.join(record.policy_violations)} "
-            f"suser={self._cef_escape(record.user or '')} "
-            f"act={self._cef_escape(record.action_taken or '')} "
+            f"suser={cef_escape(record.user or '')} "
+            f"act={cef_escape(record.action_taken or '')} "
             f"rt={record.timestamp.strftime('%b %d %Y %H:%M:%S')}"
         )
         return (
             f"CEF:0|{_VENDOR}|{_PRODUCT}|{_PRODUCT_VERSION}|"
             f"{event_id}|{name}|{severity}|{extensions}"
         )
-
-    # ── transport ────────────────────────────────────────────────────
-
-    async def _send_syslog(self, messages: list[str]) -> int:
-        """Send syslog messages over configured transport."""
-        sent = 0
-        try:
-            if self._protocol == "udp":
-                sent = await self._send_udp(messages)
-            else:
-                sent = await self._send_tcp(messages)
-        except (OSError, asyncio.TimeoutError) as exc:
-            logger.error("QRadar syslog send failed: %s", exc)
-        return sent
-
-    async def _send_udp(self, messages: list[str]) -> int:
-        loop = asyncio.get_running_loop()
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            for msg in messages:
-                syslog_msg = f"<14>{msg}\n"
-                await loop.run_in_executor(
-                    None, sock.sendto, syslog_msg.encode("utf-8"),
-                    (self._host, self._port),
-                )
-        finally:
-            sock.close()
-        return len(messages)
-
-    async def _send_tcp(self, messages: list[str]) -> int:
-        reader, writer = await asyncio.wait_for(
-            self._open_tcp_connection(), timeout=30,
-        )
-        try:
-            for msg in messages:
-                syslog_msg = f"<14>{msg}\n"
-                writer.write(syslog_msg.encode("utf-8"))
-            await writer.drain()
-        finally:
-            writer.close()
-            await writer.wait_closed()
-        return len(messages)
-
-    async def _open_tcp_connection(self):
-        if self._use_tls:
-            ctx = ssl.create_default_context()
-            return await asyncio.open_connection(
-                self._host, self._port, ssl=ctx,
-            )
-        return await asyncio.open_connection(self._host, self._port)
-
-    # ── helpers ──────────────────────────────────────────────────────
-
-    @staticmethod
-    def _risk_tier_to_cef_severity(tier: str | None) -> int:
-        return {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 5, "LOW": 3, "MINIMAL": 1}.get(
-            (tier or "").upper(), 1
-        )
-
-    @staticmethod
-    def _cef_escape(value: str) -> str:
-        """Escape CEF special characters: backslash, equals, pipe."""
-        return value.replace("\\", "\\\\").replace("=", "\\=").replace("|", "\\|")

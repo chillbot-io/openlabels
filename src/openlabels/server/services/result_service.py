@@ -456,46 +456,41 @@ class ResultService(BaseService):
             entity_stats = await service.get_entity_type_stats(job_id=job_id)
             # {"SSN": 150, "CREDIT_CARD": 85, "EMAIL": 42}
         """
-        # Build filter conditions
-        conditions = [
-            ScanResult.tenant_id == self.tenant_id,
-            ScanResult.entity_counts.isnot(None),
-            ScanResult.total_entities > 0,
-        ]
+        # Push JSONB aggregation to PostgreSQL using jsonb_each_text()
+        # instead of loading thousands of JSONB blobs into Python.
+        from sqlalchemy import text as sa_text
+
+        job_filter = "AND r.job_id = :job_id" if job_id else ""
+        agg_sql = sa_text(f"""
+            SELECT kv.key AS entity_type,
+                   SUM(kv.value::int) AS total_count
+            FROM (
+                SELECT entity_counts
+                FROM scan_results r
+                WHERE r.tenant_id = :tid
+                  AND r.entity_counts IS NOT NULL
+                  AND r.total_entities > 0
+                  {job_filter}
+                ORDER BY r.scanned_at DESC
+                LIMIT :sample_size
+            ) sub,
+            LATERAL jsonb_each_text(sub.entity_counts) AS kv(key, value)
+            GROUP BY kv.key
+            ORDER BY total_count DESC
+            LIMIT :lim
+        """)
+
+        params: dict = {"tid": self.tenant_id, "sample_size": sample_size, "lim": limit}
         if job_id:
-            conditions.append(ScanResult.job_id == job_id)
+            params["job_id"] = job_id
 
-        # Query only entity_counts with sample limit
-        query = (
-            select(ScanResult.entity_counts)
-            .where(*conditions)
-            .order_by(ScanResult.scanned_at.desc())
-            .limit(sample_size)
-        )
-
-        result = await self.session.execute(query)
-        entity_counts_list = result.scalars().all()
-
-        # Aggregate entity counts in Python
-        # (JSON aggregation varies by database, this is more portable)
-        entity_totals: dict[str, int] = {}
-        for entity_counts in entity_counts_list:
-            if entity_counts:
-                for entity_type, count in entity_counts.items():
-                    entity_totals[entity_type] = entity_totals.get(entity_type, 0) + count
-
-        # Sort by count and limit to top N
-        sorted_entities = sorted(
-            entity_totals.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )[:limit]
-
-        top_entities = dict(sorted_entities)
+        result = await self.session.execute(agg_sql, params)
+        rows = result.all()
+        top_entities = {row.entity_type: row.total_count for row in rows}
 
         self._log_debug(
-            f"Computed entity type statistics job_id={job_id} sample_size={len(entity_counts_list)} "
-            f"unique_types={len(entity_totals)} returned_types={len(top_entities)}"
+            f"Computed entity type statistics job_id={job_id} "
+            f"returned_types={len(top_entities)}"
         )
 
         return top_entities

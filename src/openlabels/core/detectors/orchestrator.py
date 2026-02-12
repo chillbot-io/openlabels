@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from openlabels.core.constants import DETECTOR_TIMEOUT
 from openlabels.exceptions import DetectionError
 
 from ..pipeline.confidence import calibrate_spans
@@ -23,9 +24,6 @@ from .registry import create_detector
 
 logger = logging.getLogger(__name__)
 
-# Default detector timeout in seconds
-DETECTOR_TIMEOUT = 30.0
-
 # Default confidence threshold for filtering
 DEFAULT_CONFIDENCE_THRESHOLD = 0.70
 
@@ -38,6 +36,7 @@ class DetectorOrchestrator:
         self.confidence_threshold = self.config.confidence_threshold
         self.max_workers = self.config.max_workers
         self.detectors: list[BaseDetector] = []
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
         self._using_hyperscan = False
 
         if self.config.enable_hyperscan:
@@ -197,21 +196,20 @@ class DetectorOrchestrator:
         all_spans: list[Span] = []
         detectors_used: list[str] = []
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_detector = {
-                executor.submit(self._run_detector, detector, text): detector
-                for detector in self.detectors
-            }
+        future_to_detector = {
+            self._executor.submit(self._run_detector, detector, text): detector
+            for detector in self.detectors
+        }
 
-            for future in as_completed(future_to_detector, timeout=DETECTOR_TIMEOUT):
-                detector = future_to_detector[future]
-                try:
-                    spans = future.result()
-                    all_spans.extend(spans)
-                    if spans:
-                        detectors_used.append(detector.name)
-                except (DetectionError, RuntimeError, ValueError, OSError) as e:
-                    logger.error(f"Detector {detector.name} failed: {e}")
+        for future in as_completed(future_to_detector, timeout=DETECTOR_TIMEOUT):
+            detector = future_to_detector[future]
+            try:
+                spans = future.result()
+                all_spans.extend(spans)
+                if spans:
+                    detectors_used.append(detector.name)
+            except (DetectionError, RuntimeError, ValueError, OSError) as e:
+                logger.error(f"Detector {detector.name} failed: {e}")
 
         processed_spans = self._post_process(all_spans)
 
@@ -271,6 +269,10 @@ class DetectorOrchestrator:
         except (DetectionError, RuntimeError, ValueError, OSError) as e:
             logger.error(f"Error in detector {detector.name}: {e}")
             return []
+
+    def shutdown(self) -> None:
+        """Shut down the persistent thread pool."""
+        self._executor.shutdown(wait=False)
 
     def _post_process(self, spans: list[Span]) -> list[Span]:
         """Post-process: calibrate confidence, filter, deduplicate, sort."""

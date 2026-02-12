@@ -111,6 +111,11 @@ class S3Adapter:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        if self._client is not None:
+            try:
+                await asyncio.to_thread(self._client.close)
+            except Exception:
+                pass
         self._client = None
 
     async def test_connection(self, config: dict) -> bool:
@@ -282,7 +287,10 @@ class S3Adapter:
             client.get_object, Bucket=self._bucket, Key=key
         )
         body = response["Body"]
-        content = await asyncio.to_thread(body.read)
+        try:
+            content = await asyncio.to_thread(body.read)
+        finally:
+            body.close()
         if len(content) > max_size_bytes:
             raise ValueError(
                 f"File content exceeds limit: {len(content)} bytes "

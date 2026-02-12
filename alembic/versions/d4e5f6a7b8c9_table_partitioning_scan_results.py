@@ -17,14 +17,14 @@ NOTE: This migration copies data from the old unpartitioned table
 to the new partitioned table.  On tables with hundreds of millions
 of rows this may take significant time.  Plan accordingly.
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: d4e5f6a7b8c9
 Revises: f8a9b0c1d2e3
 Create Date: 2026-02-11 22:00:00.000000
 """
 
 from alembic import op
 
-revision = "a1b2c3d4e5f6"
+revision = "d4e5f6a7b8c9"
 down_revision = "f8a9b0c1d2e3"
 branch_labels = None
 depends_on = None
