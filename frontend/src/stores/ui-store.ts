@@ -39,7 +39,9 @@ export const useUIStore = create<UIState>()(
 
       addToast: (toast) => {
         const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
+        set((s) => ({
+          toasts: [...s.toasts, { ...toast, id }].slice(-5),
+        }));
         setTimeout(() => {
           set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
         }, 5000);

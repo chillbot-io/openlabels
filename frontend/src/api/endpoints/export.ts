@@ -16,6 +16,11 @@ async function fetchBlob(path: string, params?: Record<string, string | undefine
     headers: { Accept: 'application/octet-stream' },
   });
 
+  if (response.status === 401) {
+    window.location.href = '/api/v1/auth/login';
+    throw new Error('Unauthorized');
+  }
+
   if (!response.ok) {
     throw new Error(`Export failed: ${response.statusText}`);
   }

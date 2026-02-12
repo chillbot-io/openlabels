@@ -30,7 +30,7 @@ export function Header() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => queryClient.invalidateQueries()}
+          onClick={() => queryClient.invalidateQueries({ type: 'active' })}
           aria-label="Refresh data"
         >
           <RefreshCw className="h-4 w-4" />

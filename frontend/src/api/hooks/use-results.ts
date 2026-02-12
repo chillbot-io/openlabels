@@ -27,6 +27,7 @@ export function useResult(id: string) {
   return useQuery({
     queryKey: ['results', id],
     queryFn: () => resultsApi.get(id),
+    enabled: !!id,
     staleTime: 60_000,
   });
 }
