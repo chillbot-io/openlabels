@@ -102,10 +102,10 @@ export function Component() {
       </div>
 
       {s.error && (
-        <Card className="border-red-200 bg-red-50" role="alert">
+        <Card className="border-[var(--destructive)]/30 bg-[var(--destructive)]/10" role="alert">
           <CardContent className="p-6">
-            <p className="text-sm font-medium text-red-800">Error</p>
-            <p className="mt-1 text-sm text-red-600">{s.error}</p>
+            <p className="text-sm font-medium text-[var(--destructive)]">Error</p>
+            <p className="mt-1 text-sm text-[var(--destructive)]/80">{s.error}</p>
           </CardContent>
         </Card>
       )}

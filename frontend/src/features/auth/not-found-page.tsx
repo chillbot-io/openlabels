@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.tsx';
 export function NotFoundPage() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <FileQuestion className="mb-4 h-16 w-16 text-[var(--muted-foreground)]" />
+      <FileQuestion className="mb-4 h-16 w-16 text-[var(--muted-foreground)]" aria-hidden="true" />
       <h1 className="text-2xl font-bold">Page not found</h1>
       <p className="mt-2 text-[var(--muted-foreground)]">
         The page you're looking for doesn't exist or has been moved.

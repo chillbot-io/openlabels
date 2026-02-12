@@ -131,7 +131,6 @@ export function DataTable<TData>({
                   }
                 } : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
-                role={onRowClick ? 'link' : undefined}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-4 py-3">

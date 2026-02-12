@@ -23,7 +23,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         <Card key={key}>
           <CardContent className="flex items-center gap-4 p-6">
             <div className={`rounded-lg bg-[var(--muted)] p-3 ${color}`}>
-              <Icon className="h-5 w-5" />
+              <Icon className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
               {isLoading ? (
