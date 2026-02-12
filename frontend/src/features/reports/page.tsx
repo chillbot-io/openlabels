@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Download } from 'lucide-react';
 import { useQuerySchema, useExecuteQuery, useAIQuery } from '@/api/hooks/use-query.ts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -6,6 +7,7 @@ import { Input } from '@/components/ui/input.tsx';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
+import { downloadBlob } from '@/api/endpoints/export.ts';
 import type { QueryResult } from '@/api/types.ts';
 
 function ResultsGrid({ result }: { result: QueryResult }) {
@@ -29,8 +31,18 @@ function ResultsGrid({ result }: { result: QueryResult }) {
           ))}
         </tbody>
       </table>
-      <div className="border-t px-4 py-2 text-xs text-[var(--muted-foreground)]">
-        {result.row_count} rows &middot; {result.execution_time_ms}ms
+      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-[var(--muted-foreground)]">
+        <span>{result.row_count} rows &middot; {result.execution_time_ms}ms</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            const csv = [result.columns.join(','), ...result.rows.map((r) => r.map((c) => JSON.stringify(c ?? '')).join(','))].join('\n');
+            downloadBlob(new Blob([csv], { type: 'text/csv' }), `query-results-${Date.now()}.csv`);
+          }}
+        >
+          <Download className="mr-1 h-3.5 w-3.5" /> Export CSV
+        </Button>
       </div>
     </div>
   );

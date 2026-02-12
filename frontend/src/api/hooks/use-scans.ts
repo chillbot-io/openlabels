@@ -5,6 +5,7 @@ export function useScans(params?: { status?: string; page?: number; page_size?: 
   return useQuery({
     queryKey: ['scans', params],
     queryFn: () => scansApi.list(params),
+    staleTime: 10_000,
     refetchInterval: 10_000,
   });
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
+import { Download } from 'lucide-react';
 import { useResultsCursor } from '@/api/hooks/use-results.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { RiskBadge } from '@/components/risk-badge.tsx';
@@ -10,6 +11,9 @@ import { Input } from '@/components/ui/input.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { useDebounce } from '@/hooks/use-debounce.ts';
 import { truncatePath } from '@/lib/utils.ts';
+import { exportApi } from '@/api/endpoints/export.ts';
+import { downloadBlob } from '@/api/endpoints/export.ts';
+import { useUIStore } from '@/stores/ui-store.ts';
 import type { ScanResult } from '@/api/types.ts';
 import type { RiskTier } from '@/lib/constants.ts';
 import { RISK_TIERS } from '@/lib/constants.ts';
@@ -50,10 +54,25 @@ export function Component() {
   });
 
   const allResults = results.data?.pages.flatMap((p) => p.items) ?? [];
+  const addToast = useUIStore((s) => s.addToast);
+
+  const handleExport = async (format: 'csv' | 'xlsx') => {
+    try {
+      const blob = await exportApi.results({ format, risk_tier: riskTier });
+      downloadBlob(blob, `results-${Date.now()}.${format}`);
+    } catch (err) {
+      addToast({ level: 'error', message: `Export failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Scan Results</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Scan Results</h1>
+        <Button variant="outline" size="sm" onClick={() => handleExport('csv')}>
+          <Download className="mr-2 h-4 w-4" /> Export CSV
+        </Button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <Input

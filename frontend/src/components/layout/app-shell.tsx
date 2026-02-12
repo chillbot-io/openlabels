@@ -2,6 +2,7 @@ import { Suspense, useEffect } from 'react';
 import { Outlet } from 'react-router';
 import { Sidebar } from './sidebar.tsx';
 import { Header } from './header.tsx';
+import { Breadcrumbs } from './breadcrumbs.tsx';
 import { AuthGuard } from './auth-guard.tsx';
 import { ErrorBoundary } from './error-boundary.tsx';
 import { ToastContainer } from './toast-container.tsx';
@@ -24,6 +25,7 @@ export function AppShell() {
           <Sidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
             <Header />
+            <Breadcrumbs />
             <main className="flex-1 overflow-y-auto">
               <ErrorBoundary>
                 <Suspense fallback={<LoadingSkeleton />}>

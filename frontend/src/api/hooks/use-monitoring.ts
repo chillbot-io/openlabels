@@ -21,7 +21,7 @@ export function useJobQueue() {
 
 export function useActivityLog(params?: { page?: number; page_size?: number; action?: string }) {
   return useQuery({
-    queryKey: ['audit', params],
+    queryKey: ['monitoring', 'activity', params],
     queryFn: () => monitoringApi.activityLog(params),
     staleTime: 30_000,
   });

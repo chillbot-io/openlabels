@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AppShell } from '@/components/layout/app-shell.tsx';
+import { NotFoundPage } from '@/features/auth/not-found-page.tsx';
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: 'monitoring', lazy: () => import('@/features/monitoring/page.tsx') },
       { path: 'reports', lazy: () => import('@/features/reports/page.tsx') },
       { path: 'settings', lazy: () => import('@/features/settings/page.tsx') },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
   { path: 'login', lazy: () => import('@/features/auth/login-page.tsx') },

@@ -18,8 +18,6 @@ interface UIState {
   removeToast: (id: string) => void;
 }
 
-let toastCounter = 0;
-
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
@@ -40,7 +38,7 @@ export const useUIStore = create<UIState>()(
       },
 
       addToast: (toast) => {
-        const id = `toast-${++toastCounter}`;
+        const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
         setTimeout(() => {
           set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
