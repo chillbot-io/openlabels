@@ -93,7 +93,10 @@ function labelSync() {
             this.syncing = true;
             this.result = null;
             try {
-                const response = await fetch('/api/labels/sync', { method: 'POST' });
+                const response = await fetch('/api/labels/sync', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': getCsrfToken() },
+                });
                 const data = await response.json();
                 this.result = response.ok
                     ? { success: true, labels_synced: data.labels_synced || 0 }

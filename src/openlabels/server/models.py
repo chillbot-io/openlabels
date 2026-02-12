@@ -901,6 +901,9 @@ class TenantSettings(Base):
     pipeline_max_concurrent_files: Mapped[int] = mapped_column(Integer, default=8)  # Max files in flight
     pipeline_memory_budget_mb: Mapped[int] = mapped_column(Integer, default=512)  # Max in-flight content MB
 
+    # Global adapter filter defaults (stored as JSON)
+    adapter_defaults: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+
     # Audit fields
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     updated_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

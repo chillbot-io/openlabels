@@ -242,7 +242,91 @@ async def update_entity_settings(
     return SettingsUpdateResponse(message="Entity detection settings updated")
 
 
-@router.post("/reset", response_model=SettingsUpdateResponse)
+@router.post("/fanout", response_class=HTMLResponse)
+async def update_fanout_settings(
+    fanout_enabled: str | None = Form(None),
+    fanout_threshold: int = Form(10000),
+    fanout_max_partitions: int = Form(16),
+    pipeline_max_concurrent_files: int = Form(8),
+    pipeline_memory_budget_mb: int = Form(512),
+    user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update fan-out and pipeline parallelism configuration."""
+    # Validate bounds
+    fanout_threshold = max(100, min(fanout_threshold, 1_000_000))
+    fanout_max_partitions = max(1, min(fanout_max_partitions, 128))
+    pipeline_max_concurrent_files = max(1, min(pipeline_max_concurrent_files, 64))
+    pipeline_memory_budget_mb = max(64, min(pipeline_memory_budget_mb, 8192))
+
+    settings = await _get_or_create_settings(session, user.tenant_id, user.id)
+
+    settings.fanout_enabled = fanout_enabled == "on"
+    settings.fanout_threshold = fanout_threshold
+    settings.fanout_max_partitions = fanout_max_partitions
+    settings.pipeline_max_concurrent_files = pipeline_max_concurrent_files
+    settings.pipeline_memory_budget_mb = pipeline_memory_budget_mb
+    settings.updated_by = user.id
+
+    logger.info(
+        f"Fan-out/pipeline settings updated by user {user.email}",
+        extra={
+            "fanout_enabled": settings.fanout_enabled,
+            "fanout_threshold": fanout_threshold,
+            "fanout_max_partitions": fanout_max_partitions,
+            "pipeline_max_concurrent_files": pipeline_max_concurrent_files,
+            "pipeline_memory_budget_mb": pipeline_memory_budget_mb,
+        },
+    )
+
+    return htmx_notify("Performance settings updated")
+
+
+@router.post("/adapters", response_class=HTMLResponse)
+async def update_adapter_defaults(
+    exclude_extensions: str = Form(""),
+    exclude_patterns: str = Form(""),
+    exclude_accounts: str = Form(""),
+    min_size_bytes: int = Form(0),
+    max_size_bytes: int = Form(0),
+    exclude_temp_files: str | None = Form(None),
+    exclude_system_dirs: str | None = Form(None),
+    user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update global adapter filter defaults."""
+    # Validate bounds
+    min_size_bytes = max(0, min(min_size_bytes, 1_073_741_824))  # 0 – 1 GB
+    max_size_bytes = max(0, min(max_size_bytes, 10_737_418_240))  # 0 – 10 GB
+
+    settings = await _get_or_create_settings(session, user.tenant_id, user.id)
+
+    settings.adapter_defaults = {
+        "exclude_extensions": [
+            e.strip() for e in exclude_extensions.split(",") if e.strip()
+        ],
+        "exclude_patterns": [
+            p.strip() for p in exclude_patterns.split(",") if p.strip()
+        ],
+        "exclude_accounts": [
+            a.strip() for a in exclude_accounts.split(",") if a.strip()
+        ],
+        "min_size_bytes": min_size_bytes if min_size_bytes > 0 else None,
+        "max_size_bytes": max_size_bytes if max_size_bytes > 0 else None,
+        "exclude_temp_files": exclude_temp_files == "on",
+        "exclude_system_dirs": exclude_system_dirs == "on",
+    }
+    settings.updated_by = user.id
+
+    logger.info(
+        f"Adapter defaults updated by user {user.email}",
+        extra={"adapter_defaults": settings.adapter_defaults},
+    )
+
+    return htmx_notify("Adapter defaults updated")
+
+
+@router.post("/reset", response_class=HTMLResponse)
 async def reset_settings(
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),

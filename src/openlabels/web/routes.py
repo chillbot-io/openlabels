@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -23,6 +24,18 @@ from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
 logger = logging.getLogger(__name__)
+
+# Matches valid CSS hex colors: #RGB, #RRGGBB, #RRGGBBAA
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+_DEFAULT_LABEL_COLOR = "#6B7280"
+
+
+def _sanitize_color(color: str | None) -> str:
+    """Validate hex color to prevent CSS injection via style attributes."""
+    if color and _HEX_COLOR_RE.match(color):
+        return color
+    return _DEFAULT_LABEL_COLOR
+
 
 router = APIRouter()
 
@@ -212,11 +225,159 @@ async def settings_page(
         )
         tenant_settings = result.scalar_one_or_none()
 
-    all_entities = [
-        "SSN", "CREDIT_CARD", "EMAIL", "PHONE", "PERSON",
-        "ADDRESS", "DATE_OF_BIRTH", "PASSPORT", "DRIVER_LICENSE",
-        "BANK_ACCOUNT", "IP_ADDRESS", "MEDICAL_RECORD",
+    # Entity categories for the detection tab — canonical types only (aliases
+    # are resolved automatically by the detection pipeline).
+    entity_categories = [
+        ("Names", [
+            ("NAME", "Name (General)"), ("NAME_PATIENT", "Patient Name"),
+            ("NAME_PROVIDER", "Provider Name"), ("NAME_RELATIVE", "Relative Name"),
+            ("FIRSTNAME", "First Name"), ("LASTNAME", "Last Name"),
+            ("MIDDLENAME", "Middle Name"), ("FULLNAME", "Full Name"),
+            ("NURSE", "Nurse"), ("STAFF", "Staff"),
+        ]),
+        ("Dates & Time", [
+            ("DATE", "Date (General)"), ("DATE_DOB", "Date of Birth"),
+            ("DATE_TIME", "Date & Time"), ("TIME", "Time"),
+            ("BIRTH_YEAR", "Birth Year"), ("DATE_RANGE", "Date Range"),
+        ]),
+        ("Age", [("AGE", "Age")]),
+        ("Locations", [
+            ("ADDRESS", "Address"), ("ZIP", "ZIP / Postal Code"),
+            ("CITY", "City"), ("STATE", "State / Province"),
+            ("COUNTRY", "Country"), ("COUNTY", "County"),
+            ("GPS_COORDINATE", "GPS Coordinate"), ("LOC", "Location (General)"),
+            ("GPE", "Geo-Political Entity"), ("ROOM", "Room Number"),
+        ]),
+        ("Government IDs", [
+            ("SSN", "Social Security Number"), ("SSN_PARTIAL", "Partial SSN"),
+            ("UKNINUMBER", "UK National Insurance"), ("SIN", "Canadian SIN"),
+            ("DRIVER_LICENSE", "Driver's License"), ("STATE_ID", "State ID"),
+            ("PASSPORT", "Passport"), ("MILITARY_ID", "Military ID"),
+            ("TAX_ID", "Tax ID"), ("TIN", "Taxpayer ID Number"),
+            ("EIN", "Employer ID Number"), ("ITIN", "Individual Tax ID"),
+        ]),
+        ("Medical IDs", [
+            ("MRN", "Medical Record Number"), ("NPI", "NPI Number"),
+            ("DEA", "DEA Number"), ("MEDICAL_LICENSE", "Medical License"),
+            ("ENCOUNTER_ID", "Encounter ID"), ("HEALTH_PLAN_ID", "Health Plan ID"),
+            ("MEMBER_ID", "Member ID"), ("MEDICARE_ID", "Medicare ID"),
+            ("PHARMACY_ID", "Pharmacy ID"), ("NDC", "National Drug Code"),
+        ]),
+        ("Vehicle IDs", [
+            ("VIN", "Vehicle Identification Number"),
+            ("LICENSE_PLATE", "License Plate"),
+        ]),
+        ("Contact Info", [
+            ("PHONE", "Phone Number"), ("EMAIL", "Email Address"),
+            ("FAX", "Fax Number"), ("PAGER", "Pager Number"),
+            ("URL", "URL"), ("USERNAME", "Username"),
+        ]),
+        ("Network & Device", [
+            ("IP_ADDRESS", "IP Address"), ("MAC_ADDRESS", "MAC Address"),
+            ("DEVICE_ID", "Device ID"), ("IMEI", "IMEI Number"),
+            ("BIOMETRIC_ID", "Biometric ID"), ("DICOM_UID", "DICOM UID"),
+            ("CERTIFICATE_NUMBER", "Certificate Number"),
+            ("CLAIM_NUMBER", "Claim Number"),
+        ]),
+        ("Financial", [
+            ("CREDIT_CARD", "Credit Card"),
+            ("CREDIT_CARD_PARTIAL", "Partial Credit Card"),
+            ("BANK_ACCOUNT", "Bank Account"),
+            ("ACCOUNT_NUMBER", "Account Number"),
+            ("IBAN", "IBAN"), ("ABA_ROUTING", "ABA Routing Number"),
+            ("SWIFT", "SWIFT / BIC Code"),
+        ]),
+        ("Securities", [
+            ("CUSIP", "CUSIP"), ("ISIN", "ISIN"), ("SEDOL", "SEDOL"),
+            ("FIGI", "FIGI"), ("LEI", "LEI"),
+        ]),
+        ("Cryptocurrency", [
+            ("BITCOIN_ADDRESS", "Bitcoin Address"),
+            ("ETHEREUM_ADDRESS", "Ethereum Address"),
+            ("CRYPTO_SEED_PHRASE", "Crypto Seed Phrase"),
+            ("SOLANA_ADDRESS", "Solana Address"),
+            ("CARDANO_ADDRESS", "Cardano Address"),
+            ("LITECOIN_ADDRESS", "Litecoin Address"),
+            ("DOGECOIN_ADDRESS", "Dogecoin Address"),
+            ("XRP_ADDRESS", "XRP Address"),
+        ]),
+        ("Secrets - Cloud Providers", [
+            ("AWS_ACCESS_KEY", "AWS Access Key"),
+            ("AWS_SECRET_KEY", "AWS Secret Key"),
+            ("AWS_SESSION_TOKEN", "AWS Session Token"),
+            ("AZURE_STORAGE_KEY", "Azure Storage Key"),
+            ("AZURE_CONNECTION_STRING", "Azure Connection String"),
+            ("AZURE_SAS_TOKEN", "Azure SAS Token"),
+            ("GOOGLE_API_KEY", "Google API Key"), ("FIREBASE_KEY", "Firebase Key"),
+        ]),
+        ("Secrets - Code & CI", [
+            ("GITHUB_TOKEN", "GitHub Token"), ("GITLAB_TOKEN", "GitLab Token"),
+            ("NPM_TOKEN", "NPM Token"), ("PYPI_TOKEN", "PyPI Token"),
+            ("NUGET_KEY", "NuGet Key"),
+        ]),
+        ("Secrets - Communication", [
+            ("SLACK_TOKEN", "Slack Token"), ("SLACK_WEBHOOK", "Slack Webhook"),
+            ("DISCORD_TOKEN", "Discord Token"),
+            ("TWILIO_ACCOUNT_SID", "Twilio Account SID"),
+            ("SENDGRID_KEY", "SendGrid Key"), ("MAILCHIMP_KEY", "Mailchimp Key"),
+        ]),
+        ("Secrets - Payment", [
+            ("STRIPE_KEY", "Stripe Key"), ("SQUARE_TOKEN", "Square Token"),
+            ("SHOPIFY_TOKEN", "Shopify Token"),
+        ]),
+        ("Secrets - Infrastructure", [
+            ("HEROKU_KEY", "Heroku Key"), ("DATADOG_KEY", "Datadog Key"),
+            ("NEWRELIC_KEY", "New Relic Key"), ("DATABASE_URL", "Database URL"),
+        ]),
+        ("Secrets - Authentication", [
+            ("PRIVATE_KEY", "Private Key"), ("JWT", "JWT Token"),
+            ("BASIC_AUTH", "Basic Auth Credentials"),
+            ("BEARER_TOKEN", "Bearer Token"), ("PASSWORD", "Password"),
+            ("API_KEY", "API Key"), ("SECRET", "Secret (General)"),
+        ]),
+        ("Government - Classification", [
+            ("CLASSIFICATION_LEVEL", "Classification Level"),
+            ("CLASSIFICATION_MARKING", "Classification Marking"),
+            ("SCI_MARKING", "SCI Marking"),
+            ("DISSEMINATION_CONTROL", "Dissemination Control"),
+        ]),
+        ("Government - Contracts", [
+            ("CAGE_CODE", "CAGE Code"), ("DUNS_NUMBER", "DUNS Number"),
+            ("UEI", "Unique Entity ID"), ("DOD_CONTRACT", "DoD Contract"),
+            ("GSA_CONTRACT", "GSA Contract"), ("CLEARANCE_LEVEL", "Clearance Level"),
+            ("ITAR_MARKING", "ITAR Marking"), ("EAR_MARKING", "EAR Marking"),
+        ]),
+        ("Professional", [
+            ("PROFESSION", "Profession"), ("OCCUPATION", "Occupation"),
+            ("JOB_TITLE", "Job Title"),
+        ]),
+        ("Medical Context", [
+            ("DRUG", "Drug"), ("MEDICATION", "Medication"),
+            ("LAB_TEST", "Lab Test"), ("DIAGNOSIS", "Diagnosis"),
+            ("PROCEDURE", "Procedure"), ("RX_NUMBER", "Prescription Number"),
+            ("BLOOD_TYPE", "Blood Type"),
+        ]),
+        ("Organization & Facility", [
+            ("FACILITY", "Facility"), ("HOSPITAL", "Hospital"),
+            ("ORG", "Organization"), ("COMPANY", "Company"),
+            ("EMPLOYER", "Employer"), ("VENDOR", "Vendor"),
+        ]),
+        ("Document & Tracking", [
+            ("DOCUMENT_ID", "Document ID"), ("ID_NUMBER", "ID Number"),
+            ("TRACKING_NUMBER", "Tracking Number"),
+            ("SHIPMENT_ID", "Shipment ID"),
+        ]),
     ]
+
+    # Flatten all entity IDs for the default "all enabled" list
+    all_entity_ids = [eid for _, types in entity_categories for eid, _ in types]
+
+    # Adapter defaults
+    adapter_defs = (
+        tenant_settings.adapter_defaults
+        if tenant_settings and tenant_settings.adapter_defaults
+        else {}
+    )
 
     # Build settings object merging DB overrides with system defaults
     settings = {
@@ -249,18 +410,59 @@ async def settings_page(
                 else config.detection.enable_ocr
             ),
         },
+        "fanout": {
+            "fanout_enabled": (
+                tenant_settings.fanout_enabled
+                if tenant_settings
+                else True
+            ),
+            "fanout_threshold": (
+                tenant_settings.fanout_threshold
+                if tenant_settings
+                else 10000
+            ),
+            "fanout_max_partitions": (
+                tenant_settings.fanout_max_partitions
+                if tenant_settings
+                else 16
+            ),
+            "pipeline_max_concurrent_files": (
+                tenant_settings.pipeline_max_concurrent_files
+                if tenant_settings
+                else 8
+            ),
+            "pipeline_memory_budget_mb": (
+                tenant_settings.pipeline_memory_budget_mb
+                if tenant_settings
+                else 512
+            ),
+        },
         "entities": {
             "enabled": (
                 tenant_settings.enabled_entities
                 if tenant_settings and tenant_settings.enabled_entities
-                else all_entities
+                else all_entity_ids
             ),
+        },
+        "adapters": {
+            "exclude_extensions": ", ".join(adapter_defs.get("exclude_extensions", [])),
+            "exclude_patterns": ", ".join(adapter_defs.get("exclude_patterns", [])),
+            "exclude_accounts": ", ".join(adapter_defs.get("exclude_accounts", [])),
+            "min_size_bytes": adapter_defs.get("min_size_bytes") or 0,
+            "max_size_bytes": adapter_defs.get("max_size_bytes") or 0,
+            "exclude_temp_files": adapter_defs.get("exclude_temp_files", True),
+            "exclude_system_dirs": adapter_defs.get("exclude_system_dirs", True),
         },
     }
 
     return templates.TemplateResponse(
         "settings.html",
-        {"request": request, "active_page": "settings", "settings": settings},
+        {
+            "request": request,
+            "active_page": "settings",
+            "settings": settings,
+            "entity_categories": entity_categories,
+        },
     )
 
 
@@ -391,12 +593,16 @@ async def scan_detail_page(
     if user:
         scan_obj = await session.get(ScanJob, scan_id)
         if scan_obj and scan_obj.tenant_id == user.tenant_id:
-            # Get total_files from progress JSONB column
+            # Get total_files from progress JSONB column, fall back to estimate
             progress_data = scan_obj.progress or {}
-            total_files = progress_data.get("files_total", 0)
+            total_files = (
+                progress_data.get("files_total")
+                or scan_obj.total_files_estimated
+                or 0
+            )
 
             progress_pct = 0
-            if total_files and total_files > 0:
+            if total_files > 0:
                 progress_pct = int((scan_obj.files_scanned or 0) / total_files * 100)
             elif scan_obj.status == "completed":
                 progress_pct = 100
@@ -478,9 +684,12 @@ async def result_detail_page(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
+    from openlabels.server.config import get_settings
+
+    config = get_settings()
     return templates.TemplateResponse(
         "login.html",
-        {"request": request},
+        {"request": request, "dev_mode": config.server.environment == "development"},
     )
 
 
@@ -682,6 +891,14 @@ async def create_scan_form(
             status_code=400,
         )
 
+    # Read scan options from form
+    apply_labels = form_data.get("apply_labels") == "on"
+    deep_scan = form_data.get("deep_scan") == "on"
+    incremental = form_data.get("incremental") == "on"
+    priority_str = form_data.get("priority", "normal")
+    priority_map = {"low": 25, "normal": 50, "high": 75}
+    priority = priority_map.get(priority_str, 50)
+
     # Create scan jobs for each selected target
     job_ids = []
     queue = JobQueue(session, user.tenant_id)
@@ -699,11 +916,16 @@ async def create_scan_form(
             session.add(job)
             await session.flush()
 
-            # Enqueue the scan job
+            # Enqueue the scan job with options in payload
             await queue.enqueue(
                 task_type="scan",
-                payload={"job_id": str(job.id)},
-                priority=50,
+                payload={
+                    "job_id": str(job.id),
+                    "force_full_scan": not incremental,
+                    "apply_labels": apply_labels,
+                    "deep_scan": deep_scan,
+                },
+                priority=priority,
             )
             job_ids.append(str(job.id))
 
@@ -719,7 +941,14 @@ async def dashboard_stats_partial(
     session: AsyncSession = Depends(get_session),
     user=Depends(get_optional_user),
 ):
-    """Dashboard stats partial for HTMX updates."""
+    """Dashboard stats partial for HTMX updates.
+
+    Mirrors the GET /api/v1/dashboard/stats endpoint semantics:
+    - total_files: total files scanned across all jobs (from ScanJob)
+    - total_findings: count of sensitive files (from ScanResult)
+    - critical_findings: count of CRITICAL-tier files
+    - active_scans: currently running/pending scans
+    """
     stats = {
         "total_files": 0,
         "total_findings": 0,
@@ -728,26 +957,29 @@ async def dashboard_stats_partial(
     }
 
     if user:
-        # Get file stats
+        # Total files scanned and active scans from ScanJob (matches API)
+        scan_stats_query = select(
+            func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
+            func.sum(
+                case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+            ).label("active"),
+        ).where(ScanJob.tenant_id == user.tenant_id)
+
+        result = await session.execute(scan_stats_query)
+        scan_row = result.one()
+        stats["total_files"] = scan_row.total_files_scanned or 0
+        stats["active_scans"] = scan_row.active or 0
+
+        # Sensitive file stats from ScanResult (matches API's files_with_pii / critical_files)
         file_stats_query = select(
-            func.count().label("total_files"),
-            func.sum(ScanResult.total_entities).label("total_findings"),
+            func.count().label("files_with_pii"),
             func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
         ).where(ScanResult.tenant_id == user.tenant_id)
 
         result = await session.execute(file_stats_query)
         row = result.one()
-        stats["total_files"] = row.total_files or 0
-        stats["total_findings"] = row.total_findings or 0
+        stats["total_findings"] = row.files_with_pii or 0
         stats["critical_findings"] = row.critical_files or 0
-
-        # Get active scans
-        active_query = select(func.count()).where(
-            ScanJob.tenant_id == user.tenant_id,
-            ScanJob.status.in_(["pending", "running"]),
-        )
-        result = await session.execute(active_query)
-        stats["active_scans"] = result.scalar() or 0
 
     return templates.TemplateResponse(
         "partials/dashboard_stats.html",
@@ -941,10 +1173,37 @@ async def recent_activity_partial(
 
 
 @router.get("/partials/health-status", response_class=HTMLResponse)
-async def health_status_partial(request: Request):
+async def health_status_partial(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
     """Health status partial for HTMX updates."""
-    # Simple health check
+    from openlabels.server.models import JobQueue as JobQueueModel
+    from sqlalchemy import text as sa_text
+
     health = {"status": "healthy"}
+
+    # Check database connectivity
+    try:
+        await session.execute(sa_text("SELECT 1"))
+    except Exception:
+        health["status"] = "unhealthy"
+        return templates.TemplateResponse(
+            "partials/health_status.html",
+            {"request": request, "health": health},
+        )
+
+    # Check for excessive failed jobs (indicates systemic issues)
+    try:
+        failed_query = select(func.count()).select_from(
+            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+        )
+        result = await session.execute(failed_query)
+        failed_count = result.scalar() or 0
+        if failed_count > 10:
+            health["status"] = "degraded"
+    except Exception:
+        health["status"] = "degraded"
 
     return templates.TemplateResponse(
         "partials/health_status.html",
@@ -1035,18 +1294,25 @@ async def scans_list_partial(
         scan_rows = result.scalars().all()
 
         for scan in scan_rows:
-            progress = 0
-            if scan.total_files and scan.total_files > 0:
-                progress = int((scan.files_scanned or 0) / scan.total_files * 100)
+            progress_data = scan.progress or {}
+            total_files = (
+                progress_data.get("files_total")
+                or scan.total_files_estimated
+                or 0
+            )
+
+            progress_pct = 0
+            if total_files > 0:
+                progress_pct = int((scan.files_scanned or 0) / total_files * 100)
             elif scan.status == "completed":
-                progress = 100
+                progress_pct = 100
 
             scans.append({
                 "id": str(scan.id),
                 "target_name": scan.target_name or "Unknown",
                 "status": scan.status,
                 "files_scanned": scan.files_scanned or 0,
-                "progress": progress,
+                "progress": progress_pct,
                 "created_at": scan.created_at,
             })
 
@@ -1103,6 +1369,9 @@ async def results_list_partial(
         base_conditions = [ScanResult.tenant_id == user.tenant_id]
         if risk_tier:
             base_conditions.append(ScanResult.risk_tier == risk_tier)
+        if entity_type:
+            # Filter results that contain this entity type in their JSONB entity_counts
+            base_conditions.append(ScanResult.entity_counts.has_key(entity_type))  # noqa: W601
         if has_label == "true":
             base_conditions.append(ScanResult.label_applied == True)  # noqa: E712
         elif has_label == "false":
@@ -1279,6 +1548,9 @@ async def system_health_partial(
     session: AsyncSession = Depends(get_session),
 ):
     """System health partial for HTMX updates."""
+    from openlabels.server.models import JobQueue as JobQueueModel
+    from sqlalchemy import text as sa_text
+
     health = {
         "status": "healthy",
         "components": {
@@ -1289,12 +1561,28 @@ async def system_health_partial(
 
     # Check database
     try:
-        await session.execute(select(1))
+        await session.execute(sa_text("SELECT 1"))
     except Exception as db_err:
-        # Database connectivity is critical - log the failure
         logger.error(f"Database health check failed: {type(db_err).__name__}: {db_err}")
         health["status"] = "unhealthy"
         health["components"]["database"] = "error"
+
+    # Check job queue for failures
+    try:
+        failed_query = select(func.count()).select_from(
+            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+        )
+        result = await session.execute(failed_query)
+        failed_count = result.scalar() or 0
+        if failed_count > 10:
+            health["components"]["queue"] = "warning"
+            if health["status"] == "healthy":
+                health["status"] = "degraded"
+    except Exception as queue_err:
+        logger.warning(f"Queue health check failed: {type(queue_err).__name__}: {queue_err}")
+        health["components"]["queue"] = "warning"
+        if health["status"] == "healthy":
+            health["status"] = "degraded"
 
     return templates.TemplateResponse(
         "partials/system_health.html",
@@ -1326,7 +1614,7 @@ async def labels_list_partial(
                 "id": str(label.id),
                 "name": label.name,
                 "description": label.description,
-                "color": label.color,
+                "color": _sanitize_color(label.color),
                 "priority": label.priority,
                 "synced_at": label.synced_at,
             })
@@ -1344,12 +1632,12 @@ async def label_mappings_partial(
     user=Depends(get_optional_user),
 ):
     """Label mappings partial for HTMX updates."""
+    from openlabels.server.models import LabelRule, SensitivityLabel
+
     labels = []
     mappings = {}
 
     if user:
-        from openlabels.server.models import SensitivityLabel
-
         query = (
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
@@ -1362,6 +1650,22 @@ async def label_mappings_partial(
                 "id": str(label.id),
                 "name": label.name,
             })
+
+        # Load existing risk_tier label rules to populate current mappings
+        rules_query = (
+            select(LabelRule)
+            .where(
+                LabelRule.tenant_id == user.tenant_id,
+                LabelRule.rule_type == "risk_tier",
+            )
+            .order_by(desc(LabelRule.priority))
+        )
+        result = await session.execute(rules_query)
+        for rule in result.scalars().all():
+            # Map risk tier values (CRITICAL, HIGH, MEDIUM, LOW) to label IDs
+            # Only store the first (highest priority) mapping per tier
+            if rule.match_value not in mappings:
+                mappings[rule.match_value] = rule.label_id
 
     return templates.TemplateResponse(
         "partials/label_mappings.html",
@@ -1441,15 +1745,21 @@ async def schedules_list_partial(
         result = await session.execute(query)
         schedule_rows = result.scalars().all()
 
-        for schedule in schedule_rows:
-            # Get target name
-            target = await session.get(ScanTarget, schedule.target_id)
-            target_name = target.name if target else "Unknown"
+        # Batch-fetch all target names to avoid N+1 queries
+        target_ids = {s.target_id for s in schedule_rows}
+        target_names = {}
+        if target_ids:
+            targets_query = select(ScanTarget.id, ScanTarget.name).where(
+                ScanTarget.id.in_(target_ids)
+            )
+            targets_result = await session.execute(targets_query)
+            target_names = {row.id: row.name for row in targets_result.all()}
 
+        for schedule in schedule_rows:
             schedules.append({
                 "id": str(schedule.id),
                 "name": schedule.name,
-                "target_name": target_name,
+                "target_name": target_names.get(schedule.target_id, "Unknown"),
                 "cron": schedule.cron,
                 "enabled": schedule.enabled,
                 "last_run_at": schedule.last_run_at,
