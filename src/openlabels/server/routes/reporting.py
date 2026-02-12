@@ -45,7 +45,7 @@ router = APIRouter()
 
 # Valid report types
 VALID_TYPES = {"executive_summary", "compliance_report", "scan_detail", "access_audit", "sensitive_files"}
-VALID_FORMATS = {"html", "pdf", "csv"}
+VALID_FORMATS = {"html", "pdf", "csv", "xml"}
 
 
 # ── Request / Response schemas ──────────────────────────────────────
@@ -531,6 +531,7 @@ async def download_report(
         "pdf": "application/pdf",
         "csv": "text/csv",
         "html": "text/html",
+        "xml": "application/xml",
     }.get(report.format, "application/octet-stream")
 
     return FileResponse(

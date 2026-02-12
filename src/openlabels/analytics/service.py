@@ -33,6 +33,9 @@ class FileStats:
     labels_applied: int = 0
     critical_files: int = 0
     high_files: int = 0
+    medium_files: int = 0
+    low_files: int = 0
+    minimal_files: int = 0
 
 
 @dataclass
@@ -239,7 +242,10 @@ class DuckDBDashboardService:
                 count(*)                                        AS files_with_pii,
                 count(*) FILTER (WHERE label_applied)           AS labels_applied,
                 count(*) FILTER (WHERE risk_tier = 'CRITICAL')  AS critical_files,
-                count(*) FILTER (WHERE risk_tier = 'HIGH')      AS high_files
+                count(*) FILTER (WHERE risk_tier = 'HIGH')      AS high_files,
+                count(*) FILTER (WHERE risk_tier = 'MEDIUM')    AS medium_files,
+                count(*) FILTER (WHERE risk_tier = 'LOW')       AS low_files,
+                count(*) FILTER (WHERE risk_tier = 'MINIMAL')   AS minimal_files
             FROM scan_results
             WHERE tenant = ?
             """,
@@ -254,6 +260,9 @@ class DuckDBDashboardService:
             labels_applied=r["labels_applied"],
             critical_files=r["critical_files"],
             high_files=r["high_files"],
+            medium_files=r["medium_files"],
+            low_files=r["low_files"],
+            minimal_files=r["minimal_files"],
         )
 
     async def get_trends(

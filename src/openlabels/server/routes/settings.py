@@ -1,27 +1,95 @@
 """
-Settings API routes.
+Settings API routes (JSON).
 
-Handles configuration updates from the web UI.
-Note: For security, Azure client secrets are write-only (cannot be retrieved).
+Provides GET/POST endpoints for tenant settings management.
+All responses are JSON for SPA frontend consumption.
+
+Note: Azure client secrets are write-only (cannot be retrieved via GET).
 """
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Form
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import TenantSettings
-from openlabels.server.routes import htmx_notify
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ── Response / Request schemas ───────────────────────────────────────
+
+
+class AzureSettingsResponse(BaseModel):
+    """Azure AD settings (secret is write-only)."""
+    azure_tenant_id: str | None = None
+    azure_client_id: str | None = None
+    azure_client_secret_set: bool = False
+
+
+class ScanSettingsResponse(BaseModel):
+    """Scan configuration settings."""
+    max_file_size_mb: int = 100
+    concurrent_files: int = 10
+    enable_ocr: bool = False
+
+
+class EntitySettingsResponse(BaseModel):
+    """Entity detection settings."""
+    enabled_entities: list[str] = Field(default_factory=list)
+
+
+class FanoutSettingsResponse(BaseModel):
+    """Horizontal scaling / fan-out settings."""
+    fanout_enabled: bool = True
+    fanout_threshold: int = 10000
+    fanout_max_partitions: int = 16
+    pipeline_max_concurrent_files: int = 8
+    pipeline_memory_budget_mb: int = 512
+
+
+class AllSettingsResponse(BaseModel):
+    """Combined response for all tenant settings."""
+    azure: AzureSettingsResponse = Field(default_factory=AzureSettingsResponse)
+    scan: ScanSettingsResponse = Field(default_factory=ScanSettingsResponse)
+    entities: EntitySettingsResponse = Field(default_factory=EntitySettingsResponse)
+    fanout: FanoutSettingsResponse = Field(default_factory=FanoutSettingsResponse)
+
+
+class AzureSettingsRequest(BaseModel):
+    """Request to update Azure AD settings."""
+    tenant_id: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+
+
+class ScanSettingsRequest(BaseModel):
+    """Request to update scan settings."""
+    max_file_size_mb: int = Field(default=100, ge=1, le=10000)
+    concurrent_files: int = Field(default=10, ge=1, le=100)
+    enable_ocr: bool = False
+
+
+class EntitySettingsRequest(BaseModel):
+    """Request to update entity detection settings."""
+    entities: list[str] = Field(default_factory=list)
+
+
+class SettingsUpdateResponse(BaseModel):
+    """Generic success response for settings updates."""
+    status: str = "ok"
+    message: str
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
 
 
 async def _get_or_create_settings(
@@ -41,78 +109,120 @@ async def _get_or_create_settings(
     return settings
 
 
-@router.post("/azure", response_class=HTMLResponse)
-async def update_azure_settings(
-    tenant_id: str = Form(""),
-    client_id: str = Form(""),
-    client_secret: str = Form(""),
+def _settings_to_response(settings: TenantSettings | None) -> AllSettingsResponse:
+    """Convert a TenantSettings row (or None) to the API response."""
+    if settings is None:
+        return AllSettingsResponse()
+
+    return AllSettingsResponse(
+        azure=AzureSettingsResponse(
+            azure_tenant_id=settings.azure_tenant_id,
+            azure_client_id=settings.azure_client_id,
+            azure_client_secret_set=settings.azure_client_secret_set,
+        ),
+        scan=ScanSettingsResponse(
+            max_file_size_mb=settings.max_file_size_mb,
+            concurrent_files=settings.concurrent_files,
+            enable_ocr=settings.enable_ocr,
+        ),
+        entities=EntitySettingsResponse(
+            enabled_entities=settings.enabled_entities or [],
+        ),
+        fanout=FanoutSettingsResponse(
+            fanout_enabled=settings.fanout_enabled,
+            fanout_threshold=settings.fanout_threshold,
+            fanout_max_partitions=settings.fanout_max_partitions,
+            pipeline_max_concurrent_files=settings.pipeline_max_concurrent_files,
+            pipeline_memory_budget_mb=settings.pipeline_memory_budget_mb,
+        ),
+    )
+
+
+# ── Endpoints ────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=AllSettingsResponse)
+async def get_all_settings(
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> AllSettingsResponse:
+    """
+    Get all tenant settings.
+
+    Returns current configuration or system defaults if no tenant-specific
+    settings have been saved.
+    """
+    result = await session.execute(
+        select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+    )
+    settings = result.scalar_one_or_none()
+    return _settings_to_response(settings)
+
+
+@router.post("/azure", response_model=SettingsUpdateResponse)
+async def update_azure_settings(
+    request: AzureSettingsRequest,
+    user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> SettingsUpdateResponse:
     """
     Update Azure AD configuration.
 
     The client_secret value is NOT stored in the database. If a non-empty
     secret is provided we only record that one has been configured
-    (azure_client_secret_set = True).  In production the real secret
+    (azure_client_secret_set = True). In production the real secret
     should be forwarded to a secrets manager.
     """
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.azure_tenant_id = tenant_id or None
-    settings.azure_client_id = client_id or None
-    if client_secret:
+    settings.azure_tenant_id = request.tenant_id or None
+    settings.azure_client_id = request.client_id or None
+    if request.client_secret:
         settings.azure_client_secret_set = True
     settings.updated_by = user.id
 
     logger.info(
-        f"Azure settings updated by user {user.email}",
-        extra={"tenant_id": tenant_id, "client_id": client_id},
+        "Azure settings updated by user %s",
+        user.email,
+        extra={"tenant_id": request.tenant_id, "client_id": request.client_id},
     )
 
-    return htmx_notify("Azure settings updated")
+    return SettingsUpdateResponse(message="Azure settings updated")
 
 
-@router.post("/scan", response_class=HTMLResponse)
+@router.post("/scan", response_model=SettingsUpdateResponse)
 async def update_scan_settings(
-    max_file_size_mb: int = Form(100),
-    concurrent_files: int = Form(10),
-    enable_ocr: str | None = Form(None),  # Checkbox sends "on" or nothing
+    request: ScanSettingsRequest,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> SettingsUpdateResponse:
     """Update scan configuration and persist to tenant settings."""
-    # SECURITY: Validate bounds to prevent resource exhaustion
-    max_file_size_mb = max(1, min(max_file_size_mb, 10_000))
-    concurrent_files = max(1, min(concurrent_files, 100))
-
-    ocr_enabled = enable_ocr == "on"
-
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.max_file_size_mb = max_file_size_mb
-    settings.concurrent_files = concurrent_files
-    settings.enable_ocr = ocr_enabled
+    settings.max_file_size_mb = request.max_file_size_mb
+    settings.concurrent_files = request.concurrent_files
+    settings.enable_ocr = request.enable_ocr
     settings.updated_by = user.id
 
     logger.info(
-        f"Scan settings updated by user {user.email}",
+        "Scan settings updated by user %s",
+        user.email,
         extra={
-            "max_file_size_mb": max_file_size_mb,
-            "concurrent_files": concurrent_files,
-            "enable_ocr": ocr_enabled,
+            "max_file_size_mb": request.max_file_size_mb,
+            "concurrent_files": request.concurrent_files,
+            "enable_ocr": request.enable_ocr,
         },
     )
 
-    return htmx_notify("Scan settings updated")
+    return SettingsUpdateResponse(message="Scan settings updated")
 
 
-@router.post("/entities", response_class=HTMLResponse)
+@router.post("/entities", response_model=SettingsUpdateResponse)
 async def update_entity_settings(
-    entities: list[str] = Form(default=[]),
+    request: EntitySettingsRequest,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> SettingsUpdateResponse:
     """
     Update entity detection configuration.
 
@@ -120,22 +230,23 @@ async def update_entity_settings(
     """
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.enabled_entities = entities
+    settings.enabled_entities = request.entities
     settings.updated_by = user.id
 
     logger.info(
-        f"Entity settings updated by user {user.email}",
-        extra={"enabled_entities": entities},
+        "Entity settings updated by user %s",
+        user.email,
+        extra={"enabled_entities": request.entities},
     )
 
-    return htmx_notify("Entity detection settings updated")
+    return SettingsUpdateResponse(message="Entity detection settings updated")
 
 
-@router.post("/reset", response_class=HTMLResponse)
+@router.post("/reset", response_model=SettingsUpdateResponse)
 async def reset_settings(
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> SettingsUpdateResponse:
     """
     Reset all settings to defaults.
 
@@ -147,7 +258,8 @@ async def reset_settings(
     )
 
     logger.warning(
-        f"Settings reset to defaults by user {user.email}",
+        "Settings reset to defaults by user %s",
+        user.email,
     )
 
-    return htmx_notify("Settings reset to defaults")
+    return SettingsUpdateResponse(message="Settings reset to defaults")

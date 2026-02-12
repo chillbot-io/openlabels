@@ -10,7 +10,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.dependencies import DbSessionDep, TenantContextDep
-from openlabels.server.models import DirectoryTree, FolderInventory, SecurityDescriptor
+from openlabels.server.models import DirectoryTree, FileInventory, FolderInventory, SecurityDescriptor
 
 router = APIRouter()
 
@@ -158,6 +158,106 @@ async def browse_folders(
         parent_id=parent_id,
         parent_path=parent_path,
         folders=folders,
+        total=total,
+    )
+
+
+class BrowseFile(BaseModel):
+    """A single file in a directory listing."""
+
+    id: UUID
+    file_path: str
+    file_name: str
+    file_size: int | None = None
+    file_modified: str | None = None
+    risk_score: int = 0
+    risk_tier: str = "MINIMAL"
+    entity_counts: dict[str, int] = {}
+    total_entities: int = 0
+    exposure_level: str | None = None
+    owner: str | None = None
+    current_label_name: str | None = None
+    last_scanned_at: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BrowseFilesResponse(BaseModel):
+    """Response for file listing within a directory."""
+
+    target_id: UUID
+    folder_path: str | None = None
+    files: list[BrowseFile]
+    total: int
+
+
+@router.get("/{target_id}/files", response_model=BrowseFilesResponse)
+async def browse_files(
+    target_id: UUID,
+    db: DbSessionDep,
+    tenant: TenantContextDep,
+    folder_path: str | None = Query(None, description="Filter by folder path"),
+    risk_tier: str | None = Query(None, description="Filter by risk tier (CRITICAL, HIGH, MEDIUM, LOW, MINIMAL)"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> BrowseFilesResponse:
+    """List individual files within a target, optionally filtered by folder path.
+
+    Returns file-level details including risk score, entity counts,
+    exposure level, and labeling status from the FileInventory table.
+    """
+    base_filter = [
+        FileInventory.tenant_id == tenant.tenant_id,
+        FileInventory.target_id == target_id,
+    ]
+
+    if folder_path is not None:
+        # Match files whose path starts with the given folder
+        # Append / to avoid matching folders that share a prefix
+        folder_prefix = folder_path.rstrip("/\\") + "/"
+        base_filter.append(FileInventory.file_path.startswith(folder_prefix))
+
+    if risk_tier is not None:
+        base_filter.append(FileInventory.risk_tier == risk_tier)
+
+    # Count
+    count_stmt = select(func.count()).select_from(
+        select(FileInventory.id).where(*base_filter).subquery()
+    )
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # Fetch
+    stmt = (
+        select(FileInventory)
+        .where(*base_filter)
+        .order_by(FileInventory.risk_score.desc(), FileInventory.file_name)
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    files = []
+    for f in rows:
+        files.append(BrowseFile(
+            id=f.id,
+            file_path=f.file_path,
+            file_name=f.file_name,
+            file_size=f.file_size,
+            file_modified=f.file_modified.isoformat() if f.file_modified else None,
+            risk_score=f.risk_score,
+            risk_tier=str(f.risk_tier),
+            entity_counts=f.entity_counts or {},
+            total_entities=f.total_entities,
+            exposure_level=str(f.exposure_level) if f.exposure_level else None,
+            owner=f.owner,
+            current_label_name=f.current_label_name,
+            last_scanned_at=f.last_scanned_at.isoformat() if f.last_scanned_at else None,
+        ))
+
+    return BrowseFilesResponse(
+        target_id=target_id,
+        folder_path=folder_path,
+        files=files,
         total=total,
     )
 

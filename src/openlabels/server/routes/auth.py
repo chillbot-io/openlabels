@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from msal import ConfidentialClientApplication
 from pydantic import BaseModel
 from slowapi import Limiter
@@ -129,6 +129,18 @@ SESSION_TTL_SECONDS = SESSION_COOKIE_MAX_AGE
 
 # Per-session lock to prevent concurrent token refresh races
 _refresh_locks: dict[str, asyncio.Lock] = {}
+
+
+class DevLoginRequest(BaseModel):
+    """Request body for dev-mode username/password login."""
+    username: str
+    password: str
+
+
+class DevLoginResponse(BaseModel):
+    """Response after successful dev login."""
+    authenticated: bool
+    user: dict
 
 
 class UserInfoResponse(BaseModel):
@@ -445,6 +457,104 @@ async def auth_callback(
         secure=is_secure,
     )
 
+    return response
+
+
+@router.post("/dev-login", response_model=DevLoginResponse)
+@limiter.limit(lambda: get_settings().rate_limit.auth_limit)
+async def dev_login(
+    request: Request,
+    body: DevLoginRequest,
+    db: AsyncSession = Depends(get_session),
+) -> DevLoginResponse:
+    """
+    Simple username/password login for development only.
+
+    Accepts admin/admin and creates a dev session. Blocked in production
+    and when AUTH_PROVIDER is not 'none'.
+    """
+    settings = get_settings()
+
+    if settings.server.environment == "production":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dev login is disabled in production",
+        )
+
+    if settings.auth.provider != "none":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dev login requires AUTH_PROVIDER=none",
+        )
+
+    if not settings.server.debug:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dev login requires DEBUG=true",
+        )
+
+    # Only accept admin/admin
+    if body.username != "admin" or body.password != "admin":
+        log_security_event(
+            event_type="dev_login_failed",
+            details={
+                **_get_request_context(request),
+                "username": body.username,
+            },
+            level="warning",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    session_store = SessionStore(db)
+
+    # Invalidate existing session
+    existing_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if existing_session_id:
+        await session_store.delete(existing_session_id)
+
+    logger.warning("DEV MODE: admin/admin login used — DO NOT USE IN PRODUCTION")
+    session_id = _generate_session_id()
+    session_data = {
+        "access_token": "dev-token",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        "claims": {
+            "oid": "dev-user-oid",
+            "preferred_username": "admin@localhost",
+            "name": "Admin (Dev)",
+            "tid": "dev-tenant",
+            "roles": ["admin"],
+        },
+    }
+    await session_store.set(
+        session_id,
+        session_data,
+        SESSION_TTL_SECONDS,
+        tenant_id=None,
+        user_id=None,
+    )
+
+    user_info = {
+        "id": "dev-user-oid",
+        "email": "admin@localhost",
+        "name": "Admin (Dev)",
+        "roles": ["admin"],
+    }
+
+    response = JSONResponse(
+        content={"authenticated": True, "user": user_info},
+    )
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_id,
+        max_age=SESSION_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=is_secure,
+    )
     return response
 
 

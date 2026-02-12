@@ -52,6 +52,9 @@ class OverallStats(BaseModel):
     labels_applied: int
     critical_files: int
     high_files: int
+    medium_files: int
+    low_files: int
+    minimal_files: int
     active_scans: int
 
 
@@ -96,6 +99,22 @@ class EntityTrendsResponse(BaseModel):
     series: dict[str, list[tuple[str, int]]]  # entity_type -> [(date, count), ...]
     truncated: bool = False
     total_records: int = 0
+
+
+class EntityDistributionItem(BaseModel):
+    """Single entity type with aggregated counts."""
+
+    entity_type: str
+    total_count: int
+    file_count: int
+
+
+class EntityDistributionResponse(BaseModel):
+    """Aggregated distribution of sensitive data types across all files."""
+
+    items: list[EntityDistributionItem]
+    total_entities: int
+    total_files_with_entities: int
 
 
 class AccessHeatmapResponse(BaseModel):
@@ -185,6 +204,9 @@ async def get_overall_stats(
         labels_applied=file_stats.labels_applied,
         critical_files=file_stats.critical_files,
         high_files=file_stats.high_files,
+        medium_files=file_stats.medium_files,
+        low_files=file_stats.low_files,
+        minimal_files=file_stats.minimal_files,
         active_scans=active_scans,
     )
 
@@ -270,6 +292,61 @@ async def get_entity_trends(
         series=data.series,
         truncated=data.truncated,
         total_records=data.total_records,
+    )
+
+
+@router.get("/entity-distribution", response_model=EntityDistributionResponse)
+async def get_entity_distribution(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Get aggregated distribution of sensitive data types.
+
+    Returns a ranked list of entity types (SSN, CREDIT_CARD, EMAIL, etc.)
+    with total occurrence counts and the number of distinct files containing
+    each type. Designed for heatmap / treemap visualizations.
+    """
+    svc = _get_dashboard_service(request)
+    rows = await svc._safe_query(
+        """
+        WITH expanded AS (
+            SELECT
+                unnest(map_keys(entity_counts))   AS entity_type,
+                unnest(map_values(entity_counts))  AS entity_count,
+                file_path
+            FROM scan_results
+            WHERE tenant = ?
+              AND total_entities > 0
+        )
+        SELECT
+            entity_type,
+            sum(entity_count)          AS total_count,
+            count(DISTINCT file_path)  AS file_count
+        FROM expanded
+        GROUP BY entity_type
+        ORDER BY total_count DESC
+        """,
+        [str(user.tenant_id)],
+    )
+
+    items = [
+        EntityDistributionItem(
+            entity_type=r["entity_type"],
+            total_count=r["total_count"],
+            file_count=r["file_count"],
+        )
+        for r in rows
+    ]
+
+    total_entities = sum(i.total_count for i in items)
+    total_files = max((i.file_count for i in items), default=0)
+
+    return EntityDistributionResponse(
+        items=items,
+        total_entities=total_entities,
+        total_files_with_entities=total_files,
     )
 
 
