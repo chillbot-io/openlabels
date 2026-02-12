@@ -63,10 +63,9 @@ class QRadarAdapter(SyslogTransportMixin):
     async def test_connection(self) -> bool:
         try:
             if self._protocol == "udp":
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.settimeout(5)
-                sock.sendto(b"<14>OpenLabels connection test\n", (self._host, self._port))
-                sock.close()
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.settimeout(5)
+                    sock.sendto(b"<14>OpenLabels connection test\n", (self._host, self._port))
             else:
                 reader, writer = await asyncio.wait_for(
                     self._open_tcp_connection(), timeout=10,
@@ -102,7 +101,10 @@ class QRadarAdapter(SyslogTransportMixin):
             "sourceAdapter": record.source_adapter,
             "tenantId": str(record.tenant_id),
         }
-        extensions = kv_sep.join(f"{k}={v}" for k, v in fields.items())
+        # Escape tab and equals in LEEF field values to prevent parsing issues
+        def _leef_esc(val: str) -> str:
+            return val.replace("\\", "\\\\").replace("\t", "\\t").replace("=", "\\=")
+        extensions = kv_sep.join(f"{k}={_leef_esc(str(v))}" for k, v in fields.items())
         header = (
             f"LEEF:{_LEEF_VERSION}|{_VENDOR}|{_PRODUCT}|"
             f"{_PRODUCT_VERSION}|{event_id}|"

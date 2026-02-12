@@ -8,7 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -374,10 +374,12 @@ async def delete_result(
 
     file_name = result.file_name
     await db.delete(result)
-    await db.flush()
+    await db.commit()
 
     if request.headers.get("HX-Request"):
         return htmx_notify(f'Result for "{file_name}" deleted', refreshResults=True)
+
+    return JSONResponse(status_code=200, content={"message": f'Result for "{file_name}" deleted'})
 
 
 @router.post("/{result_id}/apply-label")

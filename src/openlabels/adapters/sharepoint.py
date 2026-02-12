@@ -251,21 +251,20 @@ class SharePointAdapter(BaseGraphAdapter):
 
         try:
             items_iter = client.iter_all_pages(endpoint)
+            async for item in items_iter:
+                if "folder" not in item:
+                    continue
+
+                folder_info = self._folder_from_item(item, site_id=site_id)
+                yield folder_info
+
+                if recursive:
+                    folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
+                    async for sub in self._list_drive_folders(
+                        client, site_id, drive_id, folder_path, recursive
+                    ):
+                        yield sub
         except (PermissionError, ConnectionError, TimeoutError,
                 httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.debug(f"Cannot list folders at {path} for site {site_id}: {e}")
             return
-
-        async for item in items_iter:
-            if "folder" not in item:
-                continue
-
-            folder_info = self._folder_from_item(item, site_id=site_id)
-            yield folder_info
-
-            if recursive:
-                folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
-                async for sub in self._list_drive_folders(
-                    client, site_id, drive_id, folder_path, recursive
-                ):
-                    yield sub

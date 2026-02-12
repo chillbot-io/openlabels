@@ -111,6 +111,7 @@ async def get_scan(
 @limiter.limit("10/minute")
 async def delete_scan(
     scan_id: UUID,
+    request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
 ) -> None:

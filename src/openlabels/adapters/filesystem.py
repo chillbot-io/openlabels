@@ -286,7 +286,7 @@ class FilesystemAdapter:
         if directory.is_symlink():
             try:
                 resolved = directory.resolve(strict=True)
-                if not str(resolved).startswith(str(scan_root.resolve())):
+                if not resolved.is_relative_to(scan_root.resolve()):
                     logger.warning(
                         "Skipping symlink escaping scan root: %s -> %s",
                         directory, resolved,

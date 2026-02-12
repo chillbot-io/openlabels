@@ -479,15 +479,21 @@ class TieredPipeline:
                 for d in self._stage1_detectors
             }
 
-            for future in as_completed(futures, timeout=DETECTOR_TIMEOUT):
-                detector = futures[future]
-                try:
-                    spans = future.result()
-                    all_spans.extend(spans)
-                    if spans:
-                        detectors_used.append(detector.name)
-                except (RuntimeError, ValueError, OSError) as e:
-                    logger.error(f"Stage 1 detector {detector.name} failed: {e}")
+            try:
+                for future in as_completed(futures, timeout=DETECTOR_TIMEOUT):
+                    detector = futures[future]
+                    try:
+                        spans = future.result()
+                        all_spans.extend(spans)
+                        if spans:
+                            detectors_used.append(detector.name)
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.error(f"Stage 1 detector {detector.name} failed: {e}")
+            except TimeoutError:
+                timed_out = [
+                    futures[f].name for f in futures if not f.done()
+                ]
+                logger.error(f"Stage 1 detector timeout ({DETECTOR_TIMEOUT}s): {timed_out}")
 
         return all_spans, detectors_used
 

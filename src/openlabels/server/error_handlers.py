@@ -121,9 +121,12 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: OpenLabelsError,
     ) -> JSONResponse:
         request_id = get_request_id()
-        status_code, error_code = _DOMAIN_ERROR_STATUS.get(
-            type(exc), (500, "INTERNAL_ERROR"),
-        )
+        # Walk the MRO to find the closest matching parent class
+        status_code, error_code = (500, "INTERNAL_ERROR")
+        for cls in type(exc).__mro__:
+            if cls in _DOMAIN_ERROR_STATUS:
+                status_code, error_code = _DOMAIN_ERROR_STATUS[cls]
+                break
 
         body: dict[str, Any] = {"error": error_code, "message": exc.message}
         if exc.details:

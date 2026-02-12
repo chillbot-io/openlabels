@@ -78,7 +78,8 @@ class TestQRadarFormatting:
             assert f"|{expected_sev}|" in cef, f"Expected severity {expected_sev} for tier {tier}"
 
     def test_cef_escape_special_chars(self):
-        assert QRadarAdapter._cef_escape("a=b|c\\d") == "a\\=b\\|c\\\\d"
+        from openlabels.export.adapters.base import cef_escape
+        assert cef_escape("a=b|c\\d") == "a\\=b\\|c\\\\d"
 
 
 class TestQRadarExportBatch:

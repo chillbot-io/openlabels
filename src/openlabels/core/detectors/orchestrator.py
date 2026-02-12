@@ -201,15 +201,23 @@ class DetectorOrchestrator:
             for detector in self.detectors
         }
 
-        for future in as_completed(future_to_detector, timeout=DETECTOR_TIMEOUT):
-            detector = future_to_detector[future]
-            try:
-                spans = future.result()
-                all_spans.extend(spans)
-                if spans:
-                    detectors_used.append(detector.name)
-            except (DetectionError, RuntimeError, ValueError, OSError) as e:
-                logger.error(f"Detector {detector.name} failed: {e}")
+        try:
+            for future in as_completed(future_to_detector, timeout=DETECTOR_TIMEOUT):
+                detector = future_to_detector[future]
+                try:
+                    spans = future.result()
+                    all_spans.extend(spans)
+                    if spans:
+                        detectors_used.append(detector.name)
+                except (DetectionError, RuntimeError, ValueError, OSError) as e:
+                    logger.error(f"Detector {detector.name} failed: {e}")
+        except TimeoutError:
+            timed_out = [
+                future_to_detector[f].name
+                for f in future_to_detector
+                if not f.done()
+            ]
+            logger.error(f"Detector timeout ({DETECTOR_TIMEOUT}s): {timed_out}")
 
         processed_spans = self._post_process(all_spans)
 
