@@ -112,20 +112,10 @@ _DEFAULT_STATS = {
 
 
 # Page routes
-@router.get("/", response_class=HTMLResponse)
+@router.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "active_page": "dashboard",
-            "stats": _DEFAULT_STATS,
-            "recent_scans": [],
-            "findings": [],
-            "risk_distribution": [],
-            "activity": [],
-        },
-    )
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui/dashboard", status_code=302)
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -430,27 +420,27 @@ async def settings_page(
         "fanout": {
             "fanout_enabled": (
                 tenant_settings.fanout_enabled
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_enabled is not None
                 else True
             ),
             "fanout_threshold": (
                 tenant_settings.fanout_threshold
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_threshold is not None
                 else 10000
             ),
             "fanout_max_partitions": (
                 tenant_settings.fanout_max_partitions
-                if tenant_settings
+                if tenant_settings and tenant_settings.fanout_max_partitions is not None
                 else 16
             ),
             "pipeline_max_concurrent_files": (
                 tenant_settings.pipeline_max_concurrent_files
-                if tenant_settings
+                if tenant_settings and tenant_settings.pipeline_max_concurrent_files is not None
                 else 8
             ),
             "pipeline_memory_budget_mb": (
                 tenant_settings.pipeline_memory_budget_mb
-                if tenant_settings
+                if tenant_settings and tenant_settings.pipeline_memory_budget_mb is not None
                 else 512
             ),
         },
@@ -1151,7 +1141,12 @@ async def findings_by_type_partial(
 
         agg_query = sa_text("""
             SELECT kv.key AS entity_type,
-                   SUM(kv.value::int) AS total_count,
+                   SUM(
+                       CASE WHEN kv.value ~ '^[0-9]+$'
+                            THEN kv.value::int
+                            ELSE 0
+                       END
+                   ) AS total_count,
                    MAX(CASE r.risk_tier
                        WHEN 'CRITICAL' THEN 4
                        WHEN 'HIGH' THEN 3

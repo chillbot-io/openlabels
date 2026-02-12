@@ -226,7 +226,7 @@
         x-data="{ toasts: [] }"
         @notify.window="toasts.push({message: $event.detail.message, type: $event.detail.type || 'info'}); setTimeout(() => toasts.shift(), 5000)"
     >
-        <template x-for="(toast, index) in toasts" :key="index">
+        <template x-for="(toast, index) in toasts" :key="toast.message + index">
             <div
                 class="px-4 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300"
                 :class="{
