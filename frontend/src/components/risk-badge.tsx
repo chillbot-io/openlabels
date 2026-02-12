@@ -7,7 +7,7 @@ interface RiskBadgeProps {
 }
 
 export function RiskBadge({ tier, className }: RiskBadgeProps) {
-  const colors = RISK_COLORS[tier];
+  const colors = RISK_COLORS[tier] ?? { bg: 'bg-gray-100', text: 'text-gray-600' };
   return (
     <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold', colors.bg, colors.text, className)}>
       {tier}
