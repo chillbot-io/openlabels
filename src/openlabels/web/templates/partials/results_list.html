@@ -106,7 +106,7 @@
                     <button
                         hx-get="/ui/partials/results-list?page={{ page - 1 }}"
                         hx-target="#results-list"
-                        hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label']"
+                        hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label'],[name='scan_id']"
                         class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     >
                         Previous
@@ -116,7 +116,7 @@
                     <button
                         hx-get="/ui/partials/results-list?page={{ page + 1 }}"
                         hx-target="#results-list"
-                        hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label']"
+                        hx-include="[name='risk_tier'],[name='entity_type'],[name='has_label'],[name='scan_id']"
                         class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                     >
                         Next

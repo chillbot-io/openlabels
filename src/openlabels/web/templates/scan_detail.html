@@ -4,7 +4,7 @@
 {% block page_title %}Scan Details{% endblock %}
 
 {% block content %}
-<div class="space-y-6" x-data="scanDetail('{{ scan.id }}', '{{ scan.status }}')">
+<div class="space-y-6" x-data="scanDetail({{ scan.id | tojson }}, {{ scan.status | tojson }})">
     <!-- Back link -->
     <div>
         <a href="/ui/scans" class="text-sm text-primary-600 hover:text-primary-800 flex items-center">
@@ -79,8 +79,9 @@
                 <button
                     type="button"
                     class="inline-flex items-center px-4 py-2 border border-yellow-300 rounded-md shadow-sm text-sm font-medium text-yellow-700 bg-white hover:bg-yellow-50"
-                    hx-post="/api/scans/{{ scan.id }}/cancel"
+                    hx-post="/api/v1/scans/{{ scan.id }}/cancel"
                     hx-swap="none"
+                    hx-on::after-request="if(event.detail.successful) window.location.reload()"
                 >
                     Cancel Scan
                 </button>
@@ -89,8 +90,9 @@
                 <button
                     type="button"
                     class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700"
-                    hx-post="/api/scans/{{ scan.id }}/retry"
+                    hx-post="/api/v1/scans/{{ scan.id }}/retry"
                     hx-swap="none"
+                    hx-on::after-request="if(event.detail.successful) window.location.reload()"
                 >
                     Retry Scan
                 </button>
@@ -199,9 +201,9 @@
 function scanDetail(scanId, initialStatus) {
     return {
         status: initialStatus,
-        progress: {{ scan.progress }},
-        filesScanned: {{ scan.files_scanned }},
-        totalFiles: {{ scan.total_files }},
+        progress: {{ scan.progress | default(0) | tojson }},
+        filesScanned: {{ scan.files_scanned | default(0) | tojson }},
+        totalFiles: {{ scan.total_files | default(0) | tojson }},
         error: {{ scan.error | tojson if scan.error else 'null' }},
         logs: [],
         ws: null,
@@ -288,7 +290,7 @@ function scanDetail(scanId, initialStatus) {
                 if (this.wsConnected) return;
 
                 try {
-                    const response = await fetch(`/api/scans/${scanId}`);
+                    const response = await fetch(`/api/v1/scans/${scanId}`);
                     if (response.ok) {
                         const data = await response.json();
                         this.status = data.status;
@@ -296,7 +298,7 @@ function scanDetail(scanId, initialStatus) {
                         const progressData = data.progress || {};
                         this.totalFiles = progressData.files_total || data.total_files_estimated || 0;
                         if (this.totalFiles > 0) {
-                            this.progress = Math.round((this.filesScanned / this.totalFiles) * 100);
+                            this.progress = Math.min(100, Math.round((this.filesScanned / this.totalFiles) * 100));
                         }
                         if (data.error) this.error = data.error;
                     }

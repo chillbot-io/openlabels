@@ -56,6 +56,23 @@ def format_relative_time(dt: datetime | None) -> str:
     diff = now - dt
     seconds = diff.total_seconds()
 
+    if seconds < 0:
+        # Future date
+        abs_seconds = abs(seconds)
+        if abs_seconds < 60:
+            return "In a moment"
+        elif abs_seconds < 3600:
+            minutes = int(abs_seconds / 60)
+            return f"In {minutes}m"
+        elif abs_seconds < 86400:
+            hours = int(abs_seconds / 3600)
+            return f"In {hours}h"
+        elif abs_seconds < 604800:
+            days = int(abs_seconds / 86400)
+            return f"In {days}d"
+        else:
+            return dt.strftime("%Y-%m-%d")
+
     if seconds < 60:
         return "Just now"
     elif seconds < 3600:
@@ -603,7 +620,7 @@ async def scan_detail_page(
 
             progress_pct = 0
             if total_files > 0:
-                progress_pct = int((scan_obj.files_scanned or 0) / total_files * 100)
+                progress_pct = min(100, int((scan_obj.files_scanned or 0) / total_files * 100))
             elif scan_obj.status == "completed":
                 progress_pct = 100
 
@@ -731,20 +748,32 @@ async def create_target_form(
             status_code=400,
         )
 
-    target = ScanTarget(
-        tenant_id=user.tenant_id,
-        name=name,
-        adapter=adapter,
-        config=config,
-        enabled=enabled == "on",
-        created_by=user.id,
-    )
-    session.add(target)
-    await session.flush()
+    try:
+        target = ScanTarget(
+            tenant_id=user.tenant_id,
+            name=name,
+            adapter=adapter,
+            config=config,
+            enabled=enabled == "on",
+            created_by=user.id,
+        )
+        session.add(target)
+        await session.flush()
+    except Exception as e:
+        logger.warning("Failed to create target: %s", e)
+        return templates.TemplateResponse(
+            "targets_form.html",
+            {"request": request, "active_page": "targets", "target": None,
+             "mode": "create", "error": "Failed to create target. Name may already exist."},
+            status_code=400,
+        )
 
-    # Return redirect with success notification
-    response = RedirectResponse(url="/ui/targets", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/targets"
+    # Return redirect — use HX-Redirect for HTMX, 303 as fallback for non-HTMX
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/targets"
+    else:
+        response = RedirectResponse(url="/ui/targets", status_code=303)
     return response
 
 
@@ -798,8 +827,11 @@ async def update_target_form(
     target.config = config
     target.enabled = enabled == "on"
 
-    response = RedirectResponse(url="/ui/targets", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/targets"
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/targets"
+    else:
+        response = RedirectResponse(url="/ui/targets", status_code=303)
     return response
 
 
@@ -816,24 +848,45 @@ async def create_schedule_form(
     """Handle schedule creation form submission."""
     from openlabels.jobs import parse_cron_expression
 
-    schedule = ScanSchedule(
-        tenant_id=user.tenant_id,
-        name=name,
-        target_id=UUID(target_id),
-        cron=cron if cron else None,
-        enabled=enabled == "on",
-        created_by=user.id,
-    )
+    try:
+        parsed_target_id = UUID(target_id)
+    except (ValueError, AttributeError):
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400, "error_message": "Invalid target ID"},
+            status_code=400,
+        )
 
-    # Calculate next run time if cron is set
-    if cron:
-        schedule.next_run_at = parse_cron_expression(cron)
+    try:
+        schedule = ScanSchedule(
+            tenant_id=user.tenant_id,
+            name=name,
+            target_id=parsed_target_id,
+            cron=cron if cron else None,
+            enabled=enabled == "on",
+            created_by=user.id,
+        )
 
-    session.add(schedule)
-    await session.flush()
+        # Calculate next run time if cron is set
+        if cron:
+            schedule.next_run_at = parse_cron_expression(cron)
 
-    response = RedirectResponse(url="/ui/schedules", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/schedules"
+        session.add(schedule)
+        await session.flush()
+    except Exception as e:
+        logger.warning("Failed to create schedule: %s", e)
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400,
+             "error_message": "Failed to create schedule. Check your cron expression."},
+            status_code=400,
+        )
+
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/schedules"
+    else:
+        response = RedirectResponse(url="/ui/schedules", status_code=303)
     return response
 
 
@@ -859,16 +912,39 @@ async def update_schedule_form(
             status_code=404,
         )
 
+    try:
+        parsed_target_id = UUID(target_id)
+    except (ValueError, AttributeError):
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 400, "error_message": "Invalid target ID"},
+            status_code=400,
+        )
+
     schedule.name = name
-    schedule.target_id = UUID(target_id)
+    schedule.target_id = parsed_target_id
     schedule.cron = cron if cron else None
     schedule.enabled = enabled == "on"
 
     if cron:
-        schedule.next_run_at = parse_cron_expression(cron)
+        try:
+            schedule.next_run_at = parse_cron_expression(cron)
+        except Exception as e:
+            logger.warning("Invalid cron expression %r: %s", cron, e)
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error_code": 400,
+                 "error_message": f"Invalid cron expression: {cron}"},
+                status_code=400,
+            )
+    else:
+        schedule.next_run_at = None
 
-    response = RedirectResponse(url="/ui/schedules", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/schedules"
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/schedules"
+    else:
+        response = RedirectResponse(url="/ui/schedules", status_code=303)
     return response
 
 
@@ -903,34 +979,52 @@ async def create_scan_form(
     job_ids = []
     queue = JobQueue(session, user.tenant_id)
 
-    for target_id in target_ids:
-        target = await session.get(ScanTarget, UUID(target_id))
-        if target and target.tenant_id == user.tenant_id:
-            job = ScanJob(
-                tenant_id=user.tenant_id,
-                target_id=target.id,
-                target_name=target.name,
-                status="pending",
-                created_by=user.id,
-            )
-            session.add(job)
-            await session.flush()
+    try:
+        for tid in target_ids:
+            try:
+                parsed_tid = UUID(tid)
+            except (ValueError, AttributeError):
+                logger.warning("Skipping invalid target ID: %r", tid)
+                continue
 
-            # Enqueue the scan job with options in payload
-            await queue.enqueue(
-                task_type="scan",
-                payload={
-                    "job_id": str(job.id),
-                    "force_full_scan": not incremental,
-                    "apply_labels": apply_labels,
-                    "deep_scan": deep_scan,
-                },
-                priority=priority,
-            )
-            job_ids.append(str(job.id))
+            target = await session.get(ScanTarget, parsed_tid)
+            if target and target.tenant_id == user.tenant_id:
+                job = ScanJob(
+                    tenant_id=user.tenant_id,
+                    target_id=target.id,
+                    target_name=target.name,
+                    status="pending",
+                    created_by=user.id,
+                )
+                session.add(job)
+                await session.flush()
 
-    response = RedirectResponse(url="/ui/scans", status_code=303)
-    response.headers["HX-Redirect"] = "/ui/scans"
+                # Enqueue the scan job with options in payload
+                await queue.enqueue(
+                    task_type="scan",
+                    payload={
+                        "job_id": str(job.id),
+                        "force_full_scan": not incremental,
+                        "apply_labels": apply_labels,
+                        "deep_scan": deep_scan,
+                    },
+                    priority=priority,
+                )
+                job_ids.append(str(job.id))
+    except Exception as e:
+        logger.error("Failed to create scan jobs: %s", e)
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_code": 500,
+             "error_message": "Failed to create scan. Please try again."},
+            status_code=500,
+        )
+
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/ui/scans"
+    else:
+        response = RedirectResponse(url="/ui/scans", status_code=303)
     return response
 
 
@@ -1176,12 +1270,19 @@ async def recent_activity_partial(
 async def health_status_partial(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
 ):
     """Health status partial for HTMX updates."""
+    health = {"status": "healthy"}
+
+    if not user:
+        return templates.TemplateResponse(
+            "partials/health_status.html",
+            {"request": request, "health": health},
+        )
+
     from openlabels.server.models import JobQueue as JobQueueModel
     from sqlalchemy import text as sa_text
-
-    health = {"status": "healthy"}
 
     # Check database connectivity
     try:
@@ -1303,7 +1404,7 @@ async def scans_list_partial(
 
             progress_pct = 0
             if total_files > 0:
-                progress_pct = int((scan.files_scanned or 0) / total_files * 100)
+                progress_pct = min(100, int((scan.files_scanned or 0) / total_files * 100))
             elif scan.status == "completed":
                 progress_pct = 100
 
@@ -1546,11 +1647,9 @@ async def job_queue_partial(
 async def system_health_partial(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    user=Depends(get_optional_user),
 ):
     """System health partial for HTMX updates."""
-    from openlabels.server.models import JobQueue as JobQueueModel
-    from sqlalchemy import text as sa_text
-
     health = {
         "status": "healthy",
         "components": {
@@ -1559,11 +1658,20 @@ async def system_health_partial(
         },
     }
 
+    if not user:
+        return templates.TemplateResponse(
+            "partials/system_health.html",
+            {"request": request, "health": health},
+        )
+
+    from openlabels.server.models import JobQueue as JobQueueModel
+    from sqlalchemy import text as sa_text
+
     # Check database
     try:
         await session.execute(sa_text("SELECT 1"))
     except Exception as db_err:
-        logger.error(f"Database health check failed: {type(db_err).__name__}: {db_err}")
+        logger.error("Database health check failed: %s: %s", type(db_err).__name__, db_err)
         health["status"] = "unhealthy"
         health["components"]["database"] = "error"
 
@@ -1579,7 +1687,7 @@ async def system_health_partial(
             if health["status"] == "healthy":
                 health["status"] = "degraded"
     except Exception as queue_err:
-        logger.warning(f"Queue health check failed: {type(queue_err).__name__}: {queue_err}")
+        logger.warning("Queue health check failed: %s: %s", type(queue_err).__name__, queue_err)
         health["components"]["queue"] = "warning"
         if health["status"] == "healthy":
             health["status"] = "degraded"
