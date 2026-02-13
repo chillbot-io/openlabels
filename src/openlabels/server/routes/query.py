@@ -462,7 +462,9 @@ async def execute_query(
                 detail="No data available for the queried table yet",
             )
         logger.warning("Query execution failed: %s", error_msg)
-        raise HTTPException(status_code=400, detail=f"Query error: {error_msg}")
+        # Truncate to first line and limit length to avoid leaking internal details
+        safe_msg = error_msg.split("\n")[0][:200] if error_msg else "Unknown error"
+        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}")
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     truncated = len(rows) > body.limit
@@ -515,7 +517,7 @@ async def ai_query(
         logger.error("AI SQL generation failed: %s", e)
         raise HTTPException(
             status_code=503,
-            detail=f"AI query generation failed: {type(e).__name__}: {e}",
+            detail="AI query generation failed. Check server logs for details.",
         )
 
     # Validate the generated SQL

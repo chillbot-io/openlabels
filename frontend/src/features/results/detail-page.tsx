@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useParams } from 'react-router';
 import { useResult } from '@/api/hooks/use-results.ts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
@@ -8,6 +9,55 @@ import { LoadingSkeleton } from '@/components/loading-skeleton.tsx';
 import { formatDateTime } from '@/lib/date.ts';
 import { formatNumber } from '@/lib/utils.ts';
 import type { RiskTier } from '@/lib/constants.ts';
+
+function maskValue(value: string): string {
+  if (value.length <= 4) return '\u2022'.repeat(value.length);
+  return '\u2022'.repeat(value.length - 4) + value.slice(-4);
+}
+
+function EntityTable({ entities }: { entities: Array<{ entity_type: string; value: string; confidence: number; context: string }> }) {
+  const [revealed, setRevealed] = useState(false);
+  const toggle = useCallback(() => setRevealed((v) => !v), []);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Detected Entities ({entities.length})</CardTitle>
+        <button
+          type="button"
+          onClick={toggle}
+          className="text-xs text-[var(--muted-foreground)] underline hover:text-[var(--foreground)]"
+        >
+          {revealed ? 'Mask values' : 'Reveal values'}
+        </button>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" aria-label="Detected entities">
+            <thead className="bg-[var(--muted)]">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Type</th>
+                <th className="px-4 py-2 text-left font-medium">Value</th>
+                <th className="px-4 py-2 text-left font-medium">Confidence</th>
+                <th className="px-4 py-2 text-left font-medium">Context</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entities.map((entity, i) => (
+                <tr key={i} className="border-t">
+                  <td className="px-4 py-2"><EntityTag type={entity.entity_type} /></td>
+                  <td className="px-4 py-2 font-mono text-xs">{revealed ? entity.value : maskValue(entity.value)}</td>
+                  <td className="px-4 py-2">{(entity.confidence * 100).toFixed(0)}%</td>
+                  <td className="px-4 py-2 text-xs text-[var(--muted-foreground)] max-w-md truncate">{entity.context}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function Component() {
   const { resultId } = useParams<{ resultId: string }>();
@@ -91,33 +141,7 @@ export function Component() {
       </Card>
 
       {entityList.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Detected Entities ({entityList.length})</CardTitle></CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Detected entities">
-                <thead className="bg-[var(--muted)]">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium">Type</th>
-                    <th className="px-4 py-2 text-left font-medium">Value</th>
-                    <th className="px-4 py-2 text-left font-medium">Confidence</th>
-                    <th className="px-4 py-2 text-left font-medium">Context</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entityList.map((entity, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="px-4 py-2"><EntityTag type={entity.entity_type} /></td>
-                      <td className="px-4 py-2 font-mono text-xs">{entity.value}</td>
-                      <td className="px-4 py-2">{(entity.confidence * 100).toFixed(0)}%</td>
-                      <td className="px-4 py-2 text-xs text-[var(--muted-foreground)] max-w-md truncate">{entity.context}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <EntityTable entities={entityList} />
       )}
 
       {r.policy_violations && r.policy_violations.length > 0 && (
