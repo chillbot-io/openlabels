@@ -5,8 +5,7 @@ interface EventFilters {
   file_path?: string;
   user_name?: string;
   action?: string;
-  start_date?: string;
-  end_date?: string;
+  since?: string;
   page_size?: number;
 }
 

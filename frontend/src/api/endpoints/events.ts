@@ -8,7 +8,6 @@ export const eventsApi = {
     file_path?: string;
     user_name?: string;
     action?: string;
-    start_date?: string;
-    end_date?: string;
+    since?: string;
   }) => apiFetch<CursorPaginatedResponse<FileAccessEvent>>('/monitoring/events/cursor', { params }),
 };

@@ -333,6 +333,46 @@ def validate_gcs_target_config(config: dict) -> dict:
     return config
 
 
+def validate_azure_blob_target_config(config: dict) -> dict:
+    """
+    Validate Azure Blob Storage scan target configuration.
+
+    Args:
+        config: Target configuration dictionary
+
+    Returns:
+        Validated and sanitized config
+
+    Raises:
+        HTTPException: If configuration is invalid
+    """
+    if not config:
+        raise HTTPException(status_code=400, detail="Configuration is required")
+
+    container = config.get("container")
+    if not container:
+        raise HTTPException(
+            status_code=400,
+            detail="Azure Blob target requires 'container' in config",
+        )
+
+    # Validate container name per Azure naming rules (3-63 chars, lowercase, alphanumeric + hyphens)
+    if not re.match(r"^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$", container):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Azure Blob container name",
+        )
+
+    prefix = config.get("prefix", "")
+    if ".." in prefix:
+        raise HTTPException(
+            status_code=400,
+            detail="Azure Blob prefix contains invalid traversal sequences",
+        )
+
+    return config
+
+
 def validate_target_config(adapter: str, config: dict) -> dict:
     """
     Validate scan target configuration based on adapter type.
@@ -353,6 +393,7 @@ def validate_target_config(adapter: str, config: dict) -> dict:
         "onedrive": validate_onedrive_target_config,
         "s3": validate_s3_target_config,
         "gcs": validate_gcs_target_config,
+        "azure_blob": validate_azure_blob_target_config,
     }
 
     validator = validators.get(adapter)
@@ -366,7 +407,7 @@ class TargetCreate(BaseModel):
     """Request to create a scan target."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Target name")
-    adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive|s3|gcs)$", description="Adapter type")
+    adapter: str = Field(..., pattern="^(filesystem|sharepoint|onedrive|s3|gcs|azure_blob)$", description="Adapter type")
     config: dict = Field(..., description="Adapter-specific configuration")
 
     @field_validator("name")
@@ -445,7 +486,7 @@ async def create_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Create a new scan target."""
-    if request.adapter not in ("filesystem", "sharepoint", "onedrive", "s3", "gcs"):
+    if request.adapter not in ("filesystem", "sharepoint", "onedrive", "s3", "gcs", "azure_blob"):
         raise HTTPException(status_code=400, detail="Invalid adapter type")
 
     # Security: Validate target configuration to prevent path traversal and SSRF

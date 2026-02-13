@@ -293,15 +293,12 @@ class ReportEngine:
                         s.login(smtp_user, smtp_password)
                     s.send_message(msg)
             else:
-                # SECURITY: Warn when credentials are sent over unencrypted connection
                 if smtp_user:
-                    logger.warning(
-                        "SECURITY: SMTP credentials are being sent without TLS. "
+                    raise ValueError(
+                        "SMTP credentials cannot be sent without TLS. "
                         "Set smtp_use_tls=True to encrypt the connection."
                     )
                 with smtplib.SMTP(smtp_host, smtp_port) as s:
-                    if smtp_user:
-                        s.login(smtp_user, smtp_password)
                     s.send_message(msg)
 
         await asyncio.to_thread(_send)

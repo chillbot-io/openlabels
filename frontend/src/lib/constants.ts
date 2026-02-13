@@ -12,12 +12,13 @@ export const RISK_COLORS: Record<RiskTier, { bg: string; text: string }> = {
 export const SCAN_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const;
 export type ScanStatus = (typeof SCAN_STATUSES)[number];
 
-export const STATUS_COLORS: Record<ScanStatus, string> = {
+export const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700 border-gray-300',
   running: 'bg-blue-100 text-blue-700 border-blue-300',
   completed: 'bg-green-100 text-green-700 border-green-300',
   failed: 'bg-red-100 text-red-700 border-red-300',
   cancelled: 'bg-gray-100 text-gray-500 border-gray-300',
+  rolled_back: 'bg-purple-100 text-purple-700 border-purple-300',
 };
 
 export const ENTITY_TYPES = [

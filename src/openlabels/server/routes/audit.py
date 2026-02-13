@@ -83,6 +83,7 @@ async def list_audit_logs(
             'schedule_created', 'schedule_updated', 'schedule_deleted',
             'quarantine_executed', 'lockdown_executed', 'rollback_executed',
             'monitoring_enabled', 'monitoring_disabled',
+            'policy_violation',
         }
         if action not in VALID_AUDIT_ACTIONS:
             return PaginatedResponse[AuditLogResponse](

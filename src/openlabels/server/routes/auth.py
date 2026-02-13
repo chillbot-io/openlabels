@@ -591,7 +591,13 @@ async def logout(
             f"https://login.microsoftonline.com/{settings.auth.tenant_id}"
             f"/oauth2/v2.0/logout?post_logout_redirect_uri={request.base_url}"
         )
-        return RedirectResponse(url=logout_url, status_code=302)
+        response = RedirectResponse(url=logout_url, status_code=302)
+        response.delete_cookie(
+            SESSION_COOKIE_NAME,
+            samesite="lax",
+            secure=is_secure,
+        )
+        return response
 
     return response
 

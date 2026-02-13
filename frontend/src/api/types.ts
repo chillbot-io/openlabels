@@ -268,10 +268,20 @@ export interface DirectoryACL {
 }
 
 export interface ExposureSummary {
-  PUBLIC: number;
-  ORG_WIDE: number;
-  INTERNAL: number;
-  PRIVATE: number;
+  total_directories: number;
+  with_security_descriptor: number;
+  world_accessible: number;
+  authenticated_users: number;
+  custom_acl: number;
+  private: number;
+}
+
+export interface DirectoryEntry {
+  id: string;
+  path: string;
+  exposure_level: string | null;
+  file_count: number;
+  sd_hash: string | null;
 }
 
 export interface FileAccessEvent {

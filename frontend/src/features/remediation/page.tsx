@@ -86,7 +86,7 @@ export function Component() {
           </Button>
         ) : null,
     },
-  ], []);
+  ], [handleRollback]);
 
   return (
     <div className="space-y-6 p-6">

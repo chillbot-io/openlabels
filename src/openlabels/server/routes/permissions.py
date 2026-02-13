@@ -140,11 +140,11 @@ async def get_exposure_summary(
     descriptor flags.
     """
     conditions = ["d.tenant_id = :tenant_id"]
-    params: dict = {"tenant_id": tenant.tenant_id}
+    params: dict = {"tenant_id": str(tenant.tenant_id)}
 
     if target_id:
         conditions.append("d.target_id = :target_id")
-        params["target_id"] = target_id
+        params["target_id"] = str(target_id)
 
     where = " AND ".join(conditions)
 
@@ -361,13 +361,13 @@ async def lookup_principal_access(
         "sd.permissions_json ? :principal",  # JSONB ? operator: key exists
     ]
     params: dict = {
-        "tenant_id": tenant.tenant_id,
+        "tenant_id": str(tenant.tenant_id),
         "principal": principal,
     }
 
     if target_id:
         conditions.append("d.target_id = :target_id")
-        params["target_id"] = target_id
+        params["target_id"] = str(target_id)
 
     where = " AND ".join(conditions)
 
