@@ -13,6 +13,8 @@ from pathlib import Path
 import click
 
 from openlabels.cli.utils import collect_files
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.scoring.scorer import TIER_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()
@@ -143,13 +145,13 @@ def heatmap(path: str, recursive: bool, depth: int, fmt: str):
 
             for h in heatmap_data:
                 # Visual risk indicator
-                if h["max_score"] >= 80:
+                if h["max_score"] >= TIER_THRESHOLDS['critical']:
                     indicator = "[!!!!]"  # Critical
-                elif h["max_score"] >= 55:
+                elif h["max_score"] >= TIER_THRESHOLDS['high']:
                     indicator = "[!!! ]"  # High
-                elif h["max_score"] >= 31:
+                elif h["max_score"] >= TIER_THRESHOLDS['medium']:
                     indicator = "[!!  ]"  # Medium
-                elif h["max_score"] >= 11:
+                elif h["max_score"] >= TIER_THRESHOLDS['low']:
                     indicator = "[!   ]"  # Low
                 else:
                     indicator = "[    ]"  # Minimal

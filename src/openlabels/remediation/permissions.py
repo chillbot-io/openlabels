@@ -16,6 +16,7 @@ import platform
 import subprocess
 from pathlib import Path
 
+from openlabels.core.constants import SUBPROCESS_TIMEOUT
 from openlabels.exceptions import RemediationPermissionError
 
 from .base import (
@@ -160,7 +161,7 @@ def _lock_down_windows(
                 ["icacls", str(path), "/inheritance:d"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=SUBPROCESS_TIMEOUT,
             )
             if result.returncode != 0:
                 logger.warning(f"Failed to disable inheritance: {result.stderr}")
@@ -170,7 +171,7 @@ def _lock_down_windows(
             ["icacls", str(path), "/reset"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=SUBPROCESS_TIMEOUT,
         )
         if result.returncode != 0:
             raise RemediationPermissionError(f"Failed to reset permissions: {result.stderr}", path)
@@ -183,7 +184,7 @@ def _lock_down_windows(
                 ["icacls", str(path), "/grant:r", f"{principal}:(OI)(CI)F"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=SUBPROCESS_TIMEOUT,
             )
             if result.returncode != 0:
                 raise RemediationPermissionError(
@@ -206,7 +207,7 @@ def _lock_down_windows(
                     ["icacls", str(path), "/remove", principal],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
 
         logger.info(f"Successfully locked down {path} to: {allowed_principals}")
@@ -284,7 +285,7 @@ def _lock_down_unix(
             subprocess.run(
                 ["setfacl", "-b", str(path)],  # Remove all ACLs
                 capture_output=True,
-                timeout=30,
+                timeout=SUBPROCESS_TIMEOUT,
             )
 
         # Step 2: Set base permissions to owner-only
@@ -302,14 +303,14 @@ def _lock_down_unix(
                 result = subprocess.run(
                     ["setfacl", "-m", f"u:{principal}:rwx", str(path)],
                     capture_output=True,
-                    timeout=30,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
                 if result.returncode != 0:
                     # Try as group
                     subprocess.run(
                         ["setfacl", "-m", f"g:{principal}:rwx", str(path)],
                         capture_output=True,
-                        timeout=30,
+                        timeout=SUBPROCESS_TIMEOUT,
                     )
 
         logger.info(f"Successfully locked down {path} to: {allowed_principals}")
@@ -335,7 +336,7 @@ def _get_acl_windows(path: Path) -> dict:
         ["icacls", str(path)],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=SUBPROCESS_TIMEOUT,
     )
 
     return {
@@ -364,7 +365,7 @@ def _get_acl_unix(path: Path) -> dict:
             ["getfacl", "-p", str(path)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=SUBPROCESS_TIMEOUT,
         )
         if proc.returncode == 0:
             result["acl"] = proc.stdout
@@ -446,7 +447,7 @@ def _restore_permissions_windows(path: Path, acl_data: str) -> RemediationResult
         # Reset to clean state first
         result = subprocess.run(
             ["icacls", str(path), "/reset"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
         )
         if result.returncode != 0:
             raise RemediationPermissionError(
@@ -467,7 +468,7 @@ def _restore_permissions_windows(path: Path, acl_data: str) -> RemediationResult
                 ace_str = match.group(0)  # "PRINCIPAL:(OI)(CI)F"
                 grant_result = subprocess.run(
                     ["icacls", str(path), "/grant", ace_str],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
                 )
                 if grant_result.returncode != 0:
                     restore_failures.append(ace_str)
@@ -555,7 +556,7 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
             try:
                 result = subprocess.run(
                     ["setfacl", "--restore", tmp_path],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
                 )
                 if result.returncode != 0:
                     setfacl_failed = True

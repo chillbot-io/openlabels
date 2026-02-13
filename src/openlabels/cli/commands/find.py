@@ -13,6 +13,7 @@ import sys
 import click
 
 from openlabels.cli.utils import collect_files, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
                 task = progress.add_task("Scanning files", total=len(files))
                 for file_path in files:
                     try:
-                        if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                             continue
                         with open(file_path, "rb") as f:
                             content = f.read()

@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 # Memory footprint per agent (NER model + overhead)
 AGENT_MEMORY_MB = 400  # ~350MB model + 50MB overhead
 MIN_SYSTEM_MEMORY_MB = 2048  # Keep 2GB free for OS
-_MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+
+_MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
 
 @dataclass

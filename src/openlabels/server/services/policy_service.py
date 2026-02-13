@@ -16,6 +16,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.server.models import Policy, ScanResult
 from openlabels.server.services.base import BaseService
 
@@ -272,7 +273,7 @@ class PolicyService(BaseService):
                 ScanResult.tenant_id == self.tenant_id,
                 ScanResult.policy_violations.isnot(None),
             )
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         rows = (await self.session.execute(detail_q)).scalars().all()
 

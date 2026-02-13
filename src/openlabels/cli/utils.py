@@ -11,6 +11,8 @@ from pathlib import Path
 import click
 import httpx
 
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,7 +101,7 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
         for file_path in files:
             try:
                 file_size = os.path.getsize(file_path)
-                if file_size > 200 * 1024 * 1024:
+                if file_size > MAX_DECOMPRESSED_SIZE:
                     continue
                 with open(file_path, "rb") as f:
                     content = f.read()

@@ -28,6 +28,7 @@ from openlabels.adapters.base import (
     validate_content_size,
     validate_file_size,
 )
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 
 try:
     from azure.core import MatchConditions as _MatchConditions
@@ -274,7 +275,7 @@ class AzureBlobAdapter:
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Download blob content from Azure with size limit."""
         validate_file_size(file_info, max_size_bytes)

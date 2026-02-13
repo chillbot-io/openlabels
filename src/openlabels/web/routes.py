@@ -20,6 +20,7 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
@@ -522,7 +523,7 @@ async def new_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled == True)  # noqa: E712
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -562,7 +563,7 @@ async def edit_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id)
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -1792,7 +1793,7 @@ async def label_mappings_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1840,7 +1841,7 @@ async def target_checkboxes_partial(
                 ScanTarget.enabled == True,  # noqa: E712
             )
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for target in result.scalars().all():

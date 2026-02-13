@@ -19,6 +19,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import require_admin
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog
 from openlabels.server.routes import get_or_404
@@ -130,7 +131,7 @@ async def get_audit_filters(
         select(AuditLog.action)
         .where(AuditLog.tenant_id == user.tenant_id)
         .distinct()
-        .limit(500)
+        .limit(DEFAULT_QUERY_LIMIT)
     )
     actions_result = await session.execute(actions_query)
     actions = [row[0] for row in actions_result.all()]
@@ -143,7 +144,7 @@ async def get_audit_filters(
             AuditLog.resource_type.isnot(None),
         )
         .distinct()
-        .limit(500)
+        .limit(DEFAULT_QUERY_LIMIT)
     )
     types_result = await session.execute(types_query)
     resource_types = [row[0] for row in types_result.all()]

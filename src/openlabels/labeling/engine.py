@@ -41,7 +41,9 @@ from openlabels.exceptions import GraphAPIError
 
 logger = logging.getLogger(__name__)
 
-_MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+
+_MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
 
 # --- LABEL CACHE ---

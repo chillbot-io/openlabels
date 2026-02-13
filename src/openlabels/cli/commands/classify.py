@@ -12,6 +12,7 @@ from pathlib import Path
 import click
 
 from openlabels.cli.utils import collect_files
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
@@ -49,7 +50,7 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()

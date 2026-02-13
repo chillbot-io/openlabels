@@ -28,6 +28,7 @@ from openlabels.adapters import (
     SharePointAdapter,
 )
 from openlabels.adapters.base import ExposureLevel, FileInfo
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
@@ -854,7 +855,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
         .join(SensitivityLabel, LabelRule.label_id == SensitivityLabel.id)
         .where(LabelRule.tenant_id == job.tenant_id)
         .order_by(LabelRule.priority.desc())
-        .limit(500)
+        .limit(DEFAULT_QUERY_LIMIT)
     )
     rules_result = await session.execute(rules_query)
     rules_data = rules_result.all()

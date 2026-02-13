@@ -19,6 +19,7 @@ import httpx
 from openlabels.adapters.base import DEFAULT_FILTER, FileInfo, FilterConfig, FolderInfo
 from openlabels.adapters.graph_base import BaseGraphAdapter
 from openlabels.adapters.graph_client import GraphClient
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class SharePointAdapter(BaseGraphAdapter):
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Download file content with size limit."""
         if file_info.size > max_size_bytes:

@@ -17,6 +17,7 @@ import httpx
 
 from openlabels.cli.base import api_client, server_options
 from openlabels.cli.utils import collect_files, handle_http_error, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()

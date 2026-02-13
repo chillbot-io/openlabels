@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from openlabels.cli.utils import collect_files, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()
@@ -197,7 +198,7 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
             all_results = []
             for fp in files:
                 try:
-                    if os.path.getsize(fp) > 200 * 1024 * 1024:
+                    if os.path.getsize(fp) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(fp, "rb") as f:
                         content = f.read()

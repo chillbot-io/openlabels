@@ -23,6 +23,10 @@ __all__ = [
     "MAX_FILE_SIZE_BYTES",
     "MAX_DECOMPRESSED_SIZE",
     "MAX_EXTRACTION_RATIO",
+    "DEFAULT_MAX_READ_BYTES",
+    # Subprocess & query limits
+    "SUBPROCESS_TIMEOUT",
+    "DEFAULT_QUERY_LIMIT",
     # OCR / Models
     "MODEL_LOAD_TIMEOUT",
     "OCR_READY_TIMEOUT",
@@ -104,6 +108,13 @@ MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB file upload limit
 # DOCX/XLSX are ZIP files - malicious files could decompress to gigabytes
 MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024  # 200MB - reasonable for large documents
 MAX_EXTRACTION_RATIO = 100  # Max ratio of decompressed:compressed size
+
+# Adapter read_file default limit (prevents memory exhaustion)
+DEFAULT_MAX_READ_BYTES = 100 * 1024 * 1024  # 100MB
+
+# --- SUBPROCESS & QUERY LIMITS ---
+SUBPROCESS_TIMEOUT = 30  # seconds - timeout for icacls/setfacl/getfacl calls
+DEFAULT_QUERY_LIMIT = 500  # Safety limit for unbounded SELECT queries
 
 # --- OCR / MODELS ---
 MODEL_LOAD_TIMEOUT = 60.0  # seconds - timeout for loading ML models

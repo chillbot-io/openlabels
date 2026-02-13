@@ -20,6 +20,8 @@ from enum import Enum
 from types import TracebackType
 from typing import Protocol, runtime_checkable
 
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
+
 logger = logging.getLogger(__name__)
 
 # Rust file filter acceleration
@@ -374,7 +376,7 @@ class ReadAdapter(Protocol):
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Read file content with size limit.
 
