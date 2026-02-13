@@ -164,57 +164,6 @@ class TestCachedLabel:
 
 
 # =============================================================================
-# TOKEN CACHE TESTS
-# =============================================================================
-
-
-class TestTokenCache:
-    """Tests for TokenCache."""
-
-    def test_is_valid_false_when_empty(self):
-        """Empty token should be invalid."""
-        from openlabels.labeling.engine import TokenCache
-
-        cache = TokenCache()
-
-        assert cache.is_valid() is False
-
-    def test_is_valid_false_when_expired(self):
-        """Expired token should be invalid."""
-        from openlabels.labeling.engine import TokenCache
-
-        cache = TokenCache(
-            access_token="some-token",
-            expires_at=datetime.now(timezone.utc) - timedelta(hours=1)
-        )
-
-        assert cache.is_valid() is False
-
-    def test_is_valid_true_when_fresh(self):
-        """Fresh token should be valid."""
-        from openlabels.labeling.engine import TokenCache
-
-        cache = TokenCache(
-            access_token="some-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1)
-        )
-
-        assert cache.is_valid() is True
-
-    def test_is_valid_accounts_for_buffer(self):
-        """Token expiring within 5 minutes should be considered invalid."""
-        from openlabels.labeling.engine import TokenCache
-
-        # Expires in 3 minutes - should be invalid due to 5 min buffer
-        cache = TokenCache(
-            access_token="some-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=3)
-        )
-
-        assert cache.is_valid() is False
-
-
-# =============================================================================
 # LABELING ENGINE CONFIGURATION TESTS
 # =============================================================================
 
@@ -222,15 +171,30 @@ class TestTokenCache:
 class TestLabelingEngineConfiguration:
     """Tests for LabelingEngine configuration."""
 
-    def test_token_cache_starts_invalid(self):
-        """Token cache should start in invalid state."""
+    def test_graph_client_starts_none_when_not_provided(self):
+        """GraphClient should be None until first Graph API call."""
         from openlabels.labeling.engine import LabelingEngine
 
         engine = LabelingEngine(
             tenant_id="t", client_id="c", client_secret="s"
         )
 
-        assert engine._token_cache.is_valid() is False
+        assert engine._graph_client is None
+        assert engine._owns_graph_client is True
+
+    def test_graph_client_injected(self):
+        """Injected GraphClient should be used directly."""
+        from openlabels.labeling.engine import LabelingEngine
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        engine = LabelingEngine(
+            tenant_id="t", client_id="c", client_secret="s",
+            graph_client=mock_client,
+        )
+
+        assert engine._graph_client is mock_client
+        assert engine._owns_graph_client is False
 
 
 # =============================================================================

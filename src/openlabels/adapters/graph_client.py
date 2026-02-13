@@ -481,6 +481,20 @@ class GraphClient:
         response.raise_for_status()
         return response.json()
 
+    async def patch(self, path: str, **kwargs) -> dict[str, Any]:
+        """PATCH request returning JSON."""
+        response = await self._request("PATCH", path, **kwargs)
+        response.raise_for_status()
+        return response.json()
+
+    async def request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Execute a request and return the raw httpx.Response.
+
+        Unlike get/post/patch, this does NOT call raise_for_status(),
+        allowing the caller to inspect status codes directly.
+        """
+        return await self._request(method, path, **kwargs)
+
     # --- Delta Query Support ---
 
     def get_delta_token(self, resource_path: str) -> DeltaToken | None:
