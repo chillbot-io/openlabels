@@ -40,7 +40,7 @@ __all__ = [
     "RISK_TIER_ORDER",
 ]
 
-# --- DETECTION ---
+# DETECTION
 BERT_MAX_LENGTH = 512  # BERT tokenizer sequence length limit
 
 # NAME span boundary validation - common words that should never end a name
@@ -97,11 +97,11 @@ PRODUCT_CODE_PREFIXES = frozenset({
     'asin', 'isbn', 'gtin', 'mpn', 'oem', 'ndc', 'abc', 'xyz',
 })
 
-# --- PROCESSING ---
+# PROCESSING
 MAX_DETECTOR_WORKERS = 8
 DETECTOR_TIMEOUT = 120.0  # seconds
 
-# --- FILE PROCESSING & SECURITY ---
+# FILE PROCESSING & SECURITY
 MAX_DOCUMENT_PAGES = 50  # Maximum pages to process per document (prevents DoS)
 MAX_SPREADSHEET_ROWS = 100000  # Per-sheet row limit (increased for CSV processing)
 MIN_NATIVE_TEXT_LENGTH = 20  # Below this, assume scanned/image-based
@@ -115,21 +115,21 @@ MAX_EXTRACTION_RATIO = 100  # Max ratio of decompressed:compressed size
 # Adapter read_file default limit (prevents memory exhaustion)
 DEFAULT_MAX_READ_BYTES = 100 * 1024 * 1024  # 100MB
 
-# --- SUBPROCESS & QUERY LIMITS ---
+# SUBPROCESS & QUERY LIMITS
 SUBPROCESS_TIMEOUT = 30  # seconds - timeout for icacls/setfacl/getfacl calls
 DEFAULT_QUERY_LIMIT = 500  # Safety limit for unbounded SELECT queries
 
-# --- RISK TIER ORDERING & PRIORITY ---
+# RISK TIER ORDERING & PRIORITY
 # Canonical ascending order of risk tiers (index = severity rank)
 RISK_TIER_ORDER = ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
 # Numeric priority for comparisons (higher = more severe)
 RISK_TIER_PRIORITY = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
 
-# --- OCR / MODELS ---
+# OCR / MODELS
 MODEL_LOAD_TIMEOUT = 60.0  # seconds - timeout for loading ML models
 OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
 
-# --- DATA DIRECTORIES ---
+# DATA DIRECTORIES
 # Project-relative paths under .openlabels/
 # Structure:
 #   <project_root>/.openlabels/

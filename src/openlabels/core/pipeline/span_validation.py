@@ -127,8 +127,7 @@ def _validate_single_span(span: Span, text: str, text_len: int) -> str | None:
     return None
 
 
-# --- RUST ACCELERATION (default — Python below is fallback only) ---
-
+# RUST ACCELERATION (default — Python below is fallback only)
 _USE_RUST_SPANS = False
 try:
     from openlabels_matcher import check_overlaps as _rust_check_overlaps

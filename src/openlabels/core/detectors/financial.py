@@ -310,10 +310,9 @@ def _validate_seed_phrase(text: str) -> bool:
     return common_bip39 >= len(words) * 0.5
 
 
-# --- PATTERNS ---
-
+# PATTERNS
 FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
-    # --- SECURITY IDENTIFIERS ---
+    # SECURITY IDENTIFIERS
     _p(r'(?:CUSIP)[:\s#]+([A-Z0-9]{9})\b', 'CUSIP', 0.98, 1, _validate_cusip, flags=re.I),
     _p(r'\b([0-9]{3}[A-Z0-9]{5}[0-9])\b', 'CUSIP', 0.85, 1, _validate_cusip),
 
@@ -331,7 +330,7 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'(?:FIGI)[:\s#]+([A-Z0-9]{12})\b', 'FIGI', 0.98, 1, flags=re.I),
     _p(r'\b(BBG[A-Z0-9]{9})\b', 'FIGI', 0.95, 1),
 
-    # --- CRYPTOCURRENCY ---
+    # CRYPTOCURRENCY
     _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
     _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
@@ -355,7 +354,7 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(r[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,34})\b',
        'XRP_ADDRESS', 0.80, 1),
 
-    # --- SEED PHRASES ---
+    # SEED PHRASES
     _p(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){11})\b',
        'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, flags=re.I),
     _p(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){23})\b',

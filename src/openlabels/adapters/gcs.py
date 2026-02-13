@@ -69,7 +69,6 @@ class GCSAdapter:
         self._client = None
         self._bucket = None
 
-    # ── ReadAdapter protocol ────────────────────────────────────────
 
     @property
     def adapter_type(self) -> str:
@@ -308,7 +307,6 @@ class GCSAdapter:
             },
         )
 
-    # ── Cloud label sync-back ───────────────────────────────────────
 
     async def apply_label_and_sync(
         self,
@@ -408,7 +406,6 @@ class GCSAdapter:
         logger.info("Applied label %s to gs://%s/%s", label_id, self._bucket_name, blob_name)
         return {"success": True, "method": "gcs_metadata"}
 
-    # ── GCS change detection (generation diff) ──────────────────────
 
     async def list_blobs_with_generations(
         self,
@@ -428,7 +425,6 @@ class GCSAdapter:
         blobs = await asyncio.to_thread(lambda: list(blob_iter))
         return {b.name: b.generation for b in blobs if not b.name.endswith("/")}
 
-    # ── Internal helpers ────────────────────────────────────────────
 
     def _build_client(self):
         try:

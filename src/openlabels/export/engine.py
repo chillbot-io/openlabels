@@ -46,7 +46,6 @@ class ExportEngine:
         """Return cursors as ISO strings for API serialization."""
         return {k: v.isoformat() for k, v in self._cursors.items()}
 
-    # ── high-level export methods ────────────────────────────────────
 
     async def export_scan(
         self,
@@ -131,7 +130,6 @@ class ExportEngine:
             "adapter_count": len(self._adapters),
         }
 
-    # ── internal helpers ─────────────────────────────────────────────
 
     async def _dispatch(self, records: list[ExportRecord]) -> dict[str, int]:
         """Send records to all adapters."""
@@ -151,7 +149,6 @@ class ExportEngine:
         return results
 
 
-# ── Record builders ──────────────────────────────────────────────────
 
 def scan_result_to_export_records(
     rows: list[dict[str, Any]],

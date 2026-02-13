@@ -47,7 +47,6 @@ def _login_redirect(request: Request) -> RedirectResponse:
     return RedirectResponse(url=f"/ui/login?next={request.url.path}", status_code=302)
 
 
-# Set up templates directory
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 

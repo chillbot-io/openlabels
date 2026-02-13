@@ -96,7 +96,6 @@ class S3Adapter:
         self._endpoint_url = endpoint_url
         self._client = None
 
-    # ── ReadAdapter protocol ────────────────────────────────────────
 
     @property
     def adapter_type(self) -> str:
@@ -315,7 +314,6 @@ class S3Adapter:
             permissions={"etag": etag, "metadata": head.get("Metadata", {})},
         )
 
-    # ── Cloud label sync-back ───────────────────────────────────────
 
     async def apply_label_and_sync(
         self,
@@ -407,7 +405,6 @@ class S3Adapter:
         logger.info("Applied label %s to s3://%s/%s", label_id, self._bucket, key)
         return {"success": True, "method": "s3_metadata"}
 
-    # ── S3 change detection (ETag diff) ─────────────────────────────
 
     async def list_objects_with_etags(
         self,
@@ -430,7 +427,6 @@ class S3Adapter:
 
         return result
 
-    # ── Internal helpers ────────────────────────────────────────────
 
     @staticmethod
     def _iter_pages_sync(paginator_result):

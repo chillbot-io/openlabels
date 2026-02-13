@@ -1,8 +1,5 @@
 """
-Path validation utilities for preventing path traversal attacks.
-
-This module provides centralized path validation used across CLI commands
-and server routes to ensure consistent security checks.
+Path validation for preventing path traversal attacks.
 
 Security features:
 - Path normalization to prevent traversal (../, ./, etc.)

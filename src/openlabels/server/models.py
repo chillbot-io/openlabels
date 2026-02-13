@@ -37,8 +37,7 @@ from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
 
-# --- CROSS-DATABASE JSON TYPE ---
-
+# CROSS-DATABASE JSON TYPE
 class JSONB(TypeDecorator):
     """
     Cross-database JSON type.
@@ -54,8 +53,7 @@ class JSONB(TypeDecorator):
             return dialect.type_descriptor(PG_JSONB())
         return dialect.type_descriptor(JSON())
 
-# --- UUID v7 GENERATION ---
-
+# UUID v7 GENERATION
 try:
     from uuid_utils import uuid7
 except ImportError:
@@ -84,8 +82,7 @@ def generate_uuid() -> PyUUID:
     return generated
 
 
-# --- POSTGRESQL ENUM TYPES ---
-
+# POSTGRESQL ENUM TYPES
 # User roles
 UserRoleEnum = ENUM(
     'admin', 'viewer',
@@ -164,9 +161,7 @@ AccessActionEnum = ENUM(
 )
 
 
-# --- CORE MODELS ---
-
-
+# CORE MODELS
 class Tenant(Base):
     """Multi-tenancy support."""
 
@@ -535,9 +530,7 @@ class JobQueue(Base):
     )
 
 
-# --- DATA INVENTORY MODELS (for delta scanning) ---
-
-
+# DATA INVENTORY MODELS (for delta scanning)
 class FolderInventory(Base):
     """
     Folder-level inventory for delta scanning.
@@ -651,9 +644,7 @@ class FileInventory(Base):
     )
 
 
-# --- REMEDIATION MODELS ---
-
-
+# REMEDIATION MODELS
 class RemediationAction(Base):
     """
     Track remediation actions (quarantine, lockdown) for audit and rollback.
@@ -703,9 +694,7 @@ class RemediationAction(Base):
     )
 
 
-# --- MONITORING MODELS ---
-
-
+# MONITORING MODELS
 class MonitoredFile(Base):
     """
     Files registered for access monitoring.
@@ -800,9 +789,7 @@ class FileAccessEvent(Base):
     )
 
 
-# --- SESSION MODELS ---
-
-
+# SESSION MODELS
 class Session(Base):
     """
     Database-backed session storage.
@@ -935,8 +922,7 @@ class Policy(Base):
     )
 
 
-# --- REPORTING (Phase M) ---
-
+# REPORTING (Phase M)
 class ScanSummary(Base):
     """Pre-aggregated per-job summary for fast dashboard queries.
 

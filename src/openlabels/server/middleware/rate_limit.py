@@ -29,9 +29,7 @@ _KEY_PREFIX = "openlabels:ratelimit"
 _TENANT_KEY_PREFIX = "openlabels:tenant_rl:"
 
 
-# --- IP-based rate limiting (slowapi — for unauthenticated endpoints) ---
-
-
+# IP-based rate limiting (slowapi — for unauthenticated endpoints)
 def _get_storage_uri() -> str | None:
     """Resolve the storage URI for rate-limit counters.
 
@@ -93,9 +91,7 @@ def create_limiter() -> Limiter:
     return Limiter(key_func=get_client_ip, key_prefix=_KEY_PREFIX)
 
 
-# --- Per-tenant rate limiting (for authenticated API endpoints) ---
-
-
+# Per-tenant rate limiting (for authenticated API endpoints)
 class _InMemoryTenantBackend:
     """In-memory sliding-window counters. Per-instance only."""
 

@@ -184,8 +184,7 @@ async def get_optional_user(
         return None
 
 
-# --- Role-based access control ---
-
+# Role-based access control
 # Type alias for the dependency callable returned by require_role().
 _RoleDep = Callable[..., Coroutine[Any, Any, CurrentUser]]
 

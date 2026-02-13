@@ -64,7 +64,6 @@ class CatalogStorage(Protocol):
         ...
 
 
-# ── Local filesystem ─────────────────────────────────────────────────
 
 class LocalStorage:
     """Local filesystem / NAS storage backend."""
@@ -148,7 +147,6 @@ class LocalStorage:
             json.dump(data, f, indent=2, default=str)
 
 
-# ── S3 / S3-compatible ───────────────────────────────────────────────
 
 class S3Storage:
     """S3-compatible object storage backend.
@@ -306,7 +304,6 @@ class S3Storage:
                 pass
 
 
-# ── Azure Blob Storage ───────────────────────────────────────────────
 
 class AzureBlobStorage:
     """Azure Blob Storage backend.
@@ -462,7 +459,6 @@ class AzureBlobStorage:
             self._container.get_blob_client(blob.name).delete_blob()
 
 
-# ── Factory ──────────────────────────────────────────────────────────
 
 def create_storage(catalog_settings) -> CatalogStorage:
     """Factory: build a storage backend from :class:`CatalogSettings`."""

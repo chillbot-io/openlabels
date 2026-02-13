@@ -42,7 +42,6 @@ DASHBOARD_STATS_CACHE_PREFIX = "dashboard:stats"
 DASHBOARD_STATS_TTL = 60  # 60 seconds - stats change frequently
 
 
-# ── Response models ──────────────────────────────────────────────────
 
 class OverallStats(BaseModel):
     """Overall dashboard statistics."""
@@ -159,7 +158,6 @@ HEATMAP_MAX_FILES = 10000
 HEATMAP_MAX_DEPTH = 10
 
 
-# ── Service resolution ────────────────────────────────────────────────
 
 def _get_dashboard_service(request: Request) -> DashboardQueryService:
     """Return the DuckDB-backed dashboard service.
@@ -177,7 +175,6 @@ def _get_dashboard_service(request: Request) -> DashboardQueryService:
     return svc
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/stats", response_model=OverallStats)
 async def get_overall_stats(
@@ -541,7 +538,6 @@ async def get_heatmap(
     )
 
 
-# ── Heatmap tree builder ─────────────────────────────────────────────
 
 def _build_heatmap_node(name: str, data: dict, path: str) -> HeatmapNode:
     """Recursively build heatmap nodes from the intermediate tree dict."""

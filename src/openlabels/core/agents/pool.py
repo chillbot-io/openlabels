@@ -451,7 +451,6 @@ class ScanOrchestrator:
         self,
         pool_config: AgentPoolConfig | None = None,
         result_handler: ResultHandler | None = None,
-        # ── Phase F additions ───────────────────────────────
         adapter: object | None = None,       # ReadAdapter
         change_provider: object | None = None,  # ChangeProvider
         inventory: object | None = None,      # InventoryService
@@ -556,7 +555,6 @@ class ScanOrchestrator:
 
             return pool.stats
 
-    # ── Stage 1: Walk files ────────────────────────────────────────────
 
     async def _walk_files(self) -> None:
         """Queue files from the ChangeProvider for extraction."""
@@ -608,7 +606,6 @@ class ScanOrchestrator:
 
         logger.debug("File walker completed")
 
-    # ── Stage 2: Extract + submit ──────────────────────────────────────
 
     async def _extract_and_submit(self, pool: AgentPool) -> None:
         """Extract text, run delta checks, attach metadata, submit."""
@@ -733,7 +730,6 @@ class ScanOrchestrator:
             )
             await pool.submit(work)
 
-    # ── Stage 3: Collect results + full pipeline ───────────────────────
 
     async def _collect_and_store(
         self,
@@ -816,14 +812,12 @@ class ScanOrchestrator:
                 exposure_level = meta.get("exposure_level", ExposureLevel.PRIVATE)
                 owner = meta.get("owner")
 
-                # ── Risk scoring (full engine, not hardcoded) ──────
                 risk_score, risk_tier, content_score, exp_multiplier = self._compute_risk(
                     file_result.entity_counts,
                     file_result.total_entities,
                     exposure_level,
                 )
 
-                # ── DB persist ─────────────────────────────────────
                 scan_result = ScanResult(
                     tenant_id=self._job.tenant_id,
                     job_id=self._job.id,
@@ -843,7 +837,6 @@ class ScanOrchestrator:
                 )
                 self._session.add(scan_result)
 
-                # ── Update stats ───────────────────────────────────
                 self.stats["files_scanned"] += 1
                 if file_result.total_entities > 0:
                     self.stats["files_with_pii"] += 1
@@ -851,7 +844,6 @@ class ScanOrchestrator:
                 tier_key = f"{risk_tier.lower()}_count"
                 self.stats[tier_key] = self.stats.get(tier_key, 0) + 1
 
-                # ── Folder stats for inventory ─────────────────────
                 if file_info:
                     folder_path = get_folder_path(file_info.path)
                     if folder_path not in self._folder_stats:
@@ -872,7 +864,6 @@ class ScanOrchestrator:
                         if fs["highest_risk"] is None or RISK_TIER_PRIORITY.get(risk_tier, 0) > RISK_TIER_PRIORITY.get(fs["highest_risk"], 0):
                             fs["highest_risk"] = risk_tier
 
-                    # ── File inventory update (sensitive files) ────
                     if file_result.total_entities > 0 and self._inventory:
                         await self._inventory.update_file_inventory(
                             file_info=file_info,
@@ -881,7 +872,6 @@ class ScanOrchestrator:
                             job_id=self._job.id,
                         )
 
-                # ── WebSocket streaming ────────────────────────────
                 if _send_file_result:
                     try:
                         await _send_file_result(
@@ -909,7 +899,6 @@ class ScanOrchestrator:
                     except (ConnectionError, OSError):
                         pass
 
-                # ── Job progress ───────────────────────────────────
                 self._job.files_scanned = self.stats["files_scanned"]
                 self._job.files_with_pii = self.stats["files_with_pii"]
                 self._job.progress = {

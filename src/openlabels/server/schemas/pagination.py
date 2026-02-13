@@ -27,9 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 T = TypeVar("T")
 
 
-# --- OFFSET-BASED PAGINATION ---
-
-
+# OFFSET-BASED PAGINATION
 class PaginatedResponse(BaseModel, Generic[T]):
     """
     Generic paginated response model.
@@ -174,9 +172,7 @@ def create_paginated_response(
     }
 
 
-# --- CURSOR-BASED PAGINATION ---
-
-
+# CURSOR-BASED PAGINATION
 class CursorPaginatedResponse(BaseModel, Generic[T]):
     """
     Cursor-based paginated response for large datasets.

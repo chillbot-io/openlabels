@@ -43,7 +43,6 @@ class ElasticAdapter:
         self._index_prefix = index_prefix
         self._verify_ssl = verify_ssl
 
-    # ── SIEMAdapter protocol ─────────────────────────────────────────
 
     async def export_batch(self, records: list[ExportRecord]) -> int:
         if not records:
@@ -74,7 +73,6 @@ class ElasticAdapter:
     def format_name(self) -> str:
         return "elastic"
 
-    # ── internals ────────────────────────────────────────────────────
 
     def _build_bulk_body(self, records: list[ExportRecord]) -> str:
         """Build NDJSON body for the _bulk API."""

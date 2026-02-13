@@ -236,9 +236,7 @@ class Lexer:
         return tokens
 
 
-# --- AST Nodes ---
-
-
+# AST Nodes
 @dataclass
 class FilterExpression:
     """Base class for filter expressions."""
@@ -278,9 +276,7 @@ class FunctionCall(FilterExpression):
     comparison_value: Any | None = None
 
 
-# --- Parser ---
-
-
+# Parser
 class Parser:
     """Recursive descent parser for the filter grammar."""
 

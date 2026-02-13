@@ -47,9 +47,7 @@ from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 _MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
 
-# --- LABEL CACHE ---
-
-
+# LABEL CACHE
 @dataclass
 class CachedLabel:
     """A cached sensitivity label."""
@@ -191,9 +189,7 @@ def get_label_cache() -> LabelCache:
     return _label_cache
 
 
-# --- LABELING RESULT ---
-
-
+# LABELING RESULT
 @dataclass
 class LabelResult:
     """Result of a labeling operation."""
@@ -205,9 +201,7 @@ class LabelResult:
     error: str | None = None
 
 
-# --- LOCAL LABEL WRITER — pure synchronous file I/O ---
-
-
+# LOCAL LABEL WRITER — pure synchronous file I/O
 class LocalLabelWriter:
     """
     Pure synchronous handler for all local file labeling operations.
@@ -220,8 +214,7 @@ class LocalLabelWriter:
     ``await asyncio.to_thread(writer.method, ...)``.
     """
 
-    # --- Apply helpers ---
-
+    # Apply helpers
     def apply_office_metadata(
         self,
         file_path: str,
@@ -423,8 +416,7 @@ class LocalLabelWriter:
                 error=f"OS error creating sidecar file: {e}",
             )
 
-    # --- Remove helpers ---
-
+    # Remove helpers
     def remove_office_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from an Office document's custom properties."""
         try:
@@ -511,8 +503,7 @@ class LocalLabelWriter:
         except ValueError as e:
             return LabelResult(success=False, error=f"Invalid PDF format: {e}")
 
-    # --- Read helpers ---
-
+    # Read helpers
     def get_local_label(self, file_path: str) -> dict | None:
         """Read the current sensitivity label from a local file.
 
@@ -589,8 +580,7 @@ class LocalLabelWriter:
 
         return None
 
-    # --- Sidecar cleanup ---
-
+    # Sidecar cleanup
     @staticmethod
     def remove_sidecar(file_path: str) -> None:
         """Delete the ``.openlabels`` sidecar file if it exists."""
@@ -599,9 +589,7 @@ class LocalLabelWriter:
             sidecar.unlink()
 
 
-# --- LABELING ENGINE — async orchestrator ---
-
-
+# LABELING ENGINE — async orchestrator
 class LabelingEngine:
     """
     Unified interface for applying sensitivity labels.
@@ -640,8 +628,7 @@ class LabelingEngine:
         self._graph_client = graph_client
         self._owns_graph_client = graph_client is None  # whether we manage its lifecycle
 
-    # --- Graph API helpers ---
-
+    # Graph API helpers
     async def _ensure_graph_client(self) -> GraphClient:
         """Get or lazily create the GraphClient, entering its async context."""
         if self._graph_client is None:
@@ -677,8 +664,7 @@ class LabelingEngine:
             await self._graph_client.__aexit__(None, None, None)
             self._graph_client = None
 
-    # --- Public API — apply / remove / get ---
-
+    # Public API — apply / remove / get
     async def apply_label(
         self,
         file_info: FileInfo,
@@ -800,8 +786,7 @@ class LabelingEngine:
             cached = _label_cache.get_all()
             return [label.to_dict() for label in cached] if cached else []
 
-    # --- Cache convenience methods ---
-
+    # Cache convenience methods
     def get_cached_label(self, label_id: str) -> dict | None:
         """
         Get a label from cache by ID.
@@ -837,8 +822,7 @@ class LabelingEngine:
         """Get label cache statistics."""
         return _label_cache.stats
 
-    # --- Local file orchestration (MIP SDK -> metadata fallback chain) ---
-
+    # Local file orchestration (MIP SDK -> metadata fallback chain)
     async def _apply_local_label(
         self,
         file_path: str,
@@ -933,8 +917,7 @@ class LabelingEngine:
             # Sidecar removal was enough
             return LabelResult(success=True, method="sidecar_removed")
 
-    # --- Graph API operations (SharePoint / OneDrive) ---
-
+    # Graph API operations (SharePoint / OneDrive)
     async def _apply_graph_label(
         self,
         file_info: FileInfo,

@@ -23,7 +23,6 @@ from openlabels.analytics.engine import DuckDBEngine
 logger = logging.getLogger(__name__)
 
 
-# ── Data transfer objects ─────────────────────────────────────────────
 
 @dataclass
 class FileStats:
@@ -88,7 +87,6 @@ class ComplianceStats:
     violations_by_severity: dict[str, int] = field(default_factory=dict)
 
 
-# ── Protocol ──────────────────────────────────────────────────────────
 
 @runtime_checkable
 class DashboardQueryService(Protocol):
@@ -126,7 +124,6 @@ class DashboardQueryService(Protocol):
     ) -> ComplianceStats: ...
 
 
-# ── Low-level async wrapper ──────────────────────────────────────────
 
 class AnalyticsService:
     """Async wrapper around :class:`DuckDBEngine`."""
@@ -211,7 +208,6 @@ class AnalyticsService:
         self._engine.close()
 
 
-# ── DuckDB-backed dashboard service ──────────────────────────────────
 
 class DuckDBDashboardService:
     """Implements :class:`DashboardQueryService` over DuckDB + Parquet."""

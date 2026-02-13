@@ -35,9 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# --- Response models ---
-
-
+# Response models
 class ExposureSummary(BaseModel):
     """Tenant-wide exposure summary across all targets."""
 
@@ -97,9 +95,7 @@ class PrincipalAccess(BaseModel):
     permissions: list[str]  # Permissions granted to this principal
 
 
-# --- Helpers ---
-
-
+# Helpers
 def _exposure_level(
     world_accessible: bool | None,
     authenticated_users: bool | None,
@@ -118,9 +114,7 @@ def _exposure_level(
     return "PRIVATE"
 
 
-# --- Endpoints ---
-
-
+# Endpoints
 @router.get("/exposure", response_model=ExposureSummary)
 async def get_exposure_summary(
     db: DbSessionDep,

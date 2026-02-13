@@ -32,7 +32,6 @@ class PolicyService(BaseService):
     All methods automatically filter by ``tenant_id`` for proper isolation.
     """
 
-    # ── CRUD ────────────────────────────────────────────────────────────
 
     async def list_policies(
         self,
@@ -107,7 +106,6 @@ class PolicyService(BaseService):
         await self.flush()
         return policy
 
-    # ── Built-in packs ──────────────────────────────────────────────────
 
     async def load_builtin_pack(self, pack_name: str) -> Policy:
         """Load a built-in policy pack as a tenant-scoped Policy row.
@@ -153,7 +151,6 @@ class PolicyService(BaseService):
             for p in load_builtin_policies()
         ]
 
-    # ── Dry-run evaluation ──────────────────────────────────────────────
 
     async def evaluate_results(
         self,
@@ -225,7 +222,6 @@ class PolicyService(BaseService):
 
         return output
 
-    # ── Compliance stats ────────────────────────────────────────────────
 
     async def compliance_stats(self) -> dict:
         """Aggregate compliance statistics for the tenant.
@@ -296,7 +292,6 @@ class PolicyService(BaseService):
             "violations_by_severity": by_severity,
         }
 
-    # ── Internal helpers ────────────────────────────────────────────────
 
     async def _build_tenant_engine(self) -> PolicyEngine:
         """Build a PolicyEngine loaded with the tenant's active policies."""

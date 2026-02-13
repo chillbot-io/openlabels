@@ -21,8 +21,7 @@ import math
 
 from ..types import RiskTier, ScoringResult, normalize_entity_type
 
-# --- CALIBRATION PARAMETERS ---
-
+# CALIBRATION PARAMETERS
 # Scale factor: converts weights (1-10) to scoring weights
 # Calibrated so single SSN (weight=10) at PRIVATE = Medium tier (~40)
 WEIGHT_SCALE = 4.0
@@ -46,8 +45,7 @@ EXPOSURE_MULTIPLIERS = {
     'PUBLIC': 2.5,
 }
 
-# --- ENTITY WEIGHTS ---
-
+# ENTITY WEIGHTS
 ENTITY_WEIGHTS: dict[str, int] = {
     # Critical identifiers (10)
     "SSN": 10,
@@ -118,8 +116,7 @@ ENTITY_WEIGHTS: dict[str, int] = {
 
 DEFAULT_WEIGHT = 5  # For unknown entity types
 
-# --- ENTITY CATEGORIES ---
-
+# ENTITY CATEGORIES
 ENTITY_CATEGORIES: dict[str, str] = {
     # Direct identifiers
     "SSN": "direct_identifier",
@@ -183,8 +180,7 @@ ENTITY_CATEGORIES: dict[str, str] = {
     "DISSEMINATION_CONTROL": "classification_marking",
 }
 
-# --- CO-OCCURRENCE RULES ---
-
+# CO-OCCURRENCE RULES
 # (required_categories, multiplier, rule_name)
 CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
     # HIPAA: Direct ID + Health data
@@ -204,8 +200,7 @@ CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
 ]
 
 
-# --- SCORING FUNCTIONS ---
-
+# SCORING FUNCTIONS
 def get_weight(entity_type: str) -> int:
     """Get weight for an entity type (1-10 scale)."""
     normalized = normalize_entity_type(entity_type)

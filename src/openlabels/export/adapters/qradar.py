@@ -47,7 +47,6 @@ class QRadarAdapter(SyslogTransportMixin):
         self._use_tls = use_tls
         self._fmt = fmt.lower()  # "leef" or "cef"
 
-    # ── SIEMAdapter protocol ─────────────────────────────────────────
 
     async def export_batch(self, records: list[ExportRecord]) -> int:
         if not records:
@@ -82,7 +81,6 @@ class QRadarAdapter(SyslogTransportMixin):
     def format_name(self) -> str:
         return "qradar"
 
-    # ── LEEF / CEF formatters ────────────────────────────────────────
 
     def _to_leef(self, record: ExportRecord) -> str:
         """Convert ExportRecord to LEEF 2.0 syslog message."""

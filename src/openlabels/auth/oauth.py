@@ -49,8 +49,7 @@ class TokenClaims(BaseModel):
         return data
 
 
-# --- JWKS cache with async-safe locking ---
-
+# JWKS cache with async-safe locking
 # Maps tenant_id -> (jwks_data, fetched_at_monotonic)
 _jwks_cache: dict[str, tuple[dict[str, Any], float]] = {}
 _jwks_lock = asyncio.Lock()
@@ -121,9 +120,7 @@ async def _find_signing_key(kid: str, tenant_id: str) -> dict[str, Any]:
     raise TokenInvalidError("Unable to find signing key after cache refresh")
 
 
-# --- Token validation ---
-
-
+# Token validation
 async def validate_token(token: str) -> TokenClaims:
     """Validate an Azure AD access token and extract claims.
 

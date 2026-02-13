@@ -1,9 +1,4 @@
-"""
-OpenLabels Risk Scoring.
-
-This module provides risk scoring for detected entities,
-taking into account entity types, counts, and exposure levels.
-"""
+"""Risk scoring for detected entities based on type, count, and exposure level."""
 
 from .scorer import (
     CO_OCCURRENCE_RULES,

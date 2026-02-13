@@ -42,8 +42,7 @@ from ..types import DetectionResult, Span, normalize_entity_type
 
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURATION ---
-
+# CONFIGURATION
 # Escalation threshold - spans below this confidence trigger ML escalation
 ESCALATION_THRESHOLD = 0.70
 
@@ -662,8 +661,7 @@ class TieredPipeline:
 
         return result
 
-    # --- OCR INTEGRATION ---
-
+    # OCR INTEGRATION
     def detect_image(
         self,
         image_path: str | Path,
@@ -778,8 +776,7 @@ class TieredPipeline:
             logger.error(f"OCR extraction failed: {e}")
             return ""
 
-    # --- CONVENIENCE METHODS ---
-
+    # CONVENIENCE METHODS
     def detect_file(
         self,
         file_path: str | Path,
@@ -876,8 +873,7 @@ class TieredPipeline:
         return bool(self._ml_detectors)
 
 
-# --- CONVENIENCE FUNCTIONS ---
-
+# CONVENIENCE FUNCTIONS
 def create_pipeline(
     auto_detect_medical: bool = True,
     enable_hyperscan: bool = False,

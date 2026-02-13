@@ -42,7 +42,6 @@ class SyslogCEFAdapter(SyslogTransportMixin):
         self._protocol = protocol.lower()
         self._use_tls = use_tls
 
-    # ── SIEMAdapter protocol ─────────────────────────────────────────
 
     async def export_batch(self, records: list[ExportRecord]) -> int:
         if not records:
@@ -78,7 +77,6 @@ class SyslogCEFAdapter(SyslogTransportMixin):
     def format_name(self) -> str:
         return "syslog_cef"
 
-    # ── CEF formatter ────────────────────────────────────────────────
 
     def _to_cef(self, record: ExportRecord) -> str:
         return format_cef(

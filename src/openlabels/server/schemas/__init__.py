@@ -1,8 +1,4 @@
-"""
-Server schemas for request/response models.
-
-This module contains Pydantic models for API standardization.
-"""
+"""Server schemas for request/response models."""
 
 from openlabels.server.schemas.error import (
     ErrorResponse,

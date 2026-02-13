@@ -80,8 +80,7 @@ class Pattern:
     validator: Callable[[str], bool] | None = None  # Post-match validation (e.g., Luhn check)
 
 
-# --- PII/Sensitive Data Patterns ---
-
+# PII/Sensitive Data Patterns
 # These patterns are designed for Hyperscan's regex dialect
 # Note: Hyperscan uses PCRE-like syntax but with some restrictions
 
@@ -340,7 +339,7 @@ PII_PATTERNS: list[Pattern] = [
 ]
 
 
-# --- Validators ---
+# Validators
 # luhn_check and ssn_validate imported from _rust/validators_py (single source of truth).
 
 # Map pattern names to validators
@@ -354,8 +353,7 @@ VALIDATORS: dict[str, Callable[[str], bool]] = {
 }
 
 
-# --- Hyperscan Matcher ---
-
+# Hyperscan Matcher
 class HyperscanMatcher:
     """
     High-performance pattern matcher using Intel Hyperscan.
@@ -611,8 +609,7 @@ class HyperscanMatcher:
         return HYPERSCAN_AVAILABLE and self._db is not None
 
 
-# --- Global singleton for efficient reuse ---
-
+# Global singleton for efficient reuse
 _matcher_instance: HyperscanMatcher | None = None
 
 

@@ -1,16 +1,5 @@
 """
-FastAPI dependency injection module for OpenLabels.
-
-This module provides a centralized location for all dependency injection
-providers used across the application. It integrates with existing modules
-and provides type-safe, annotated dependencies for FastAPI routes.
-
-Dependencies are organized into categories:
-- Settings: Application configuration
-- Database: Session management
-- Authentication: User and tenant context
-- Services: Business logic services
-- Caching: Cache management
+FastAPI dependency injection.
 
 Usage:
     from openlabels.server.dependencies import (
@@ -56,15 +45,12 @@ from openlabels.server.services.job_service import JobService
 from openlabels.server.services.label_service import LabelService
 from openlabels.server.services.result_service import ResultService
 
-# Import service classes
 from openlabels.server.services.scan_service import ScanService
 
 logger = logging.getLogger(__name__)
 
 
-# --- SETTINGS PROVIDER ---
-
-
+# SETTINGS PROVIDER
 @lru_cache
 def get_settings() -> Settings:
     """
@@ -109,9 +95,7 @@ def clear_settings_cache() -> None:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-# --- DATABASE SESSION PROVIDER ---
-
-
+# DATABASE SESSION PROVIDER
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Get an async database session for dependency injection.
@@ -142,9 +126,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
-# --- TENANT CONTEXT ---
-
-
+# TENANT CONTEXT
 class TenantContext:
     """
     Multi-tenant context for request handling.
@@ -267,9 +249,7 @@ OptionalTenantContextDep = Annotated[TenantContext | None, Depends(get_optional_
 AdminContextDep = Annotated[TenantContext, Depends(require_admin_context)]
 
 
-# --- CACHE PROVIDER ---
-
-
+# CACHE PROVIDER
 async def get_cache(settings: SettingsDep) -> CacheManager:
     """
     Get the cache manager instance.
@@ -307,7 +287,7 @@ async def get_cache(settings: SettingsDep) -> CacheManager:
 CacheDep = Annotated[CacheManager, Depends(get_cache)]
 
 
-# --- SERVICE PROVIDERS ---
+# SERVICE PROVIDERS
 #
 # These service providers use forward references because the service classes
 # don't exist yet. When implementing services, update the imports and remove
@@ -481,9 +461,7 @@ JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 ResultServiceDep = Annotated[ResultService, Depends(get_result_service)]
 
 
-# --- PER-TENANT RATE LIMITING ---
-
-
+# PER-TENANT RATE LIMITING
 async def check_tenant_rate_limit(
     request: Request,
     tenant: TenantContextDep,
@@ -513,9 +491,7 @@ async def check_tenant_rate_limit(
 TenantRateLimitDep = Annotated[None, Depends(check_tenant_rate_limit)]
 
 
-# --- UTILITY DEPENDENCIES ---
-
-
+# UTILITY DEPENDENCIES
 async def get_request_id() -> str:
     """
     Generate a unique request ID for tracing.
@@ -574,8 +550,7 @@ async def verify_tenant_access(
         )
 
 
-# --- EXPORTS ---
-
+# EXPORTS
 __all__ = [
     # Settings
     "get_settings",

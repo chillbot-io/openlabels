@@ -186,8 +186,7 @@ class BaseGraphAdapter:
             )
             return False
 
-    # --- Shared delta-query and folder-listing helpers ---
-
+    # Shared delta-query and folder-listing helpers
     async def _iter_delta_files(
         self,
         client: GraphClient,

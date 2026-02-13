@@ -41,9 +41,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# --- ROOT ---
-
-
+# ROOT
 class OpenLabelsError(Exception):
     """
     Base exception for all OpenLabels errors.
@@ -75,9 +73,7 @@ class OpenLabelsError(Exception):
         return ". ".join(parts)
 
 
-# --- DETECTION & EXTRACTION ---
-
-
+# DETECTION & EXTRACTION
 class DetectionError(OpenLabelsError):
     """Raised when the detection pipeline fails to process content."""
 
@@ -118,9 +114,7 @@ class ExtractionError(OpenLabelsError):
         self.file_type = file_type
 
 
-# --- ADAPTERS ---
-
-
+# ADAPTERS
 class AdapterError(OpenLabelsError):
     """Raised when communication with a storage adapter fails."""
 
@@ -187,9 +181,7 @@ class FilesystemError(AdapterError):
         self.path = path
 
 
-# --- AUTH ---
-
-
+# AUTH
 class AuthError(OpenLabelsError):
     """Authentication or authorization error."""
 
@@ -214,18 +206,14 @@ class ForbiddenError(AuthError):
     pass
 
 
-# --- LABELING ---
-
-
+# LABELING
 class LabelingError(OpenLabelsError):
     """Error during label application."""
 
     pass
 
 
-# --- REMEDIATION ---
-
-
+# REMEDIATION
 class RemediationError(OpenLabelsError):
     """Base exception for remediation failures."""
 
@@ -261,9 +249,7 @@ class RemediationPermissionError(RemediationError):
     pass
 
 
-# --- MONITORING ---
-
-
+# MONITORING
 class MonitoringError(OpenLabelsError):
     """Base exception for monitoring operations."""
 
@@ -292,9 +278,7 @@ class AuditRuleError(MonitoringError):
     pass
 
 
-# --- ML / JOBS / SECURITY ---
-
-
+# ML / JOBS / SECURITY
 class ModelLoadError(OpenLabelsError):
     """ML model loading failure."""
 
@@ -359,9 +343,7 @@ class SecurityError(OpenLabelsError):
         self.source = source
 
 
-# --- DOMAIN ERRORS (not API-specific, but used across server and other modules) ---
-
-
+# DOMAIN ERRORS (not API-specific, but used across server and other modules)
 class NotFoundError(OpenLabelsError):
     """Requested resource not found."""
 
@@ -415,9 +397,7 @@ class ValidationError(OpenLabelsError):
         super().__init__(message, details=details, **kwargs)
 
 
-# --- API-LAYER EXCEPTIONS (used by server error handlers) ---
-
-
+# API-LAYER EXCEPTIONS (used by server error handlers)
 class APIError(OpenLabelsError):
     """
     Base for API-specific errors with HTTP status code.

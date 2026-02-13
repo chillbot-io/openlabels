@@ -49,7 +49,6 @@ VALID_TYPES = {"executive_summary", "compliance_report", "scan_detail", "access_
 VALID_FORMATS = {"html", "pdf", "csv", "xml"}
 
 
-# ── Request / Response schemas ──────────────────────────────────────
 
 
 class ReportGenerateRequest(BaseModel):
@@ -89,7 +88,6 @@ class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
 
 
 async def _build_report_data(
@@ -187,7 +185,6 @@ async def _build_report_data(
         reverse=True,
     )
 
-    # ── Compliance data from Policy model + ScanResult.policy_violations ──
     total_policies = 0
     total_violations = 0
     violations_by_policy: list[dict] = []
@@ -253,7 +250,6 @@ async def _build_report_data(
         1,
     )
 
-    # ── Access audit data from FileAccessEvent ──
     access_total_events = 0
     access_unique_users = 0
     access_sensitive_accesses = 0
@@ -389,7 +385,6 @@ async def _build_report_data(
     }
 
 
-# ── Endpoints ───────────────────────────────────────────────────────
 
 
 @router.post("/generate", response_model=ReportResponse, status_code=201)

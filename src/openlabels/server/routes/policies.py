@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ── Request / Response models ───────────────────────────────────────
 
 
 class PolicyResponse(BaseModel):
@@ -123,7 +122,6 @@ class ComplianceStatsResponse(BaseModel):
     violations_by_severity: dict[str, int]
 
 
-# ── Dependency ──────────────────────────────────────────────────────
 
 async def _get_policy_service(
     db: DbSessionDep,
@@ -146,7 +144,6 @@ async def _get_policy_service(
 PolicyServiceDep = Depends(_get_policy_service)
 
 
-# ── Collection endpoints (no path params) ───────────────────────────
 
 
 @router.get("", response_model=PaginatedResponse[PolicyResponse])
@@ -186,7 +183,6 @@ async def create_policy(
     return PolicyResponse.model_validate(policy)
 
 
-# ── Static sub-paths (must come BEFORE /{policy_id}) ────────────────
 
 
 @router.get("/builtins", response_model=list[BuiltinPackResponse])
@@ -239,7 +235,6 @@ async def compliance_stats(
     return ComplianceStatsResponse(**stats)
 
 
-# ── Per-policy endpoints (/{policy_id} must come LAST) ──────────────
 
 
 @router.get("/{policy_id}", response_model=PolicyResponse)

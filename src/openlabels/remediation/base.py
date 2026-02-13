@@ -1,8 +1,5 @@
 """
-Base types for remediation actions.
-
-This module defines the common types used across all remediation
-operations (quarantine, permission lockdown, etc.).
+Base types for remediation actions (quarantine, permission lockdown, etc.).
 
 Exception classes live in openlabels.exceptions.
 """

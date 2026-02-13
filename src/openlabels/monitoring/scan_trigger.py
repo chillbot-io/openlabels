@@ -38,7 +38,6 @@ from openlabels.monitoring.providers.base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
 
-# ── Debounce tiers ───────────────────────────────────────────────────
 
 _DEBOUNCE_BY_TIER: dict[str, float] = {
     "CRITICAL": 2.0,

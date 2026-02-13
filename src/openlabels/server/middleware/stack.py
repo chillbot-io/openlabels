@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 _CallNext = Callable[[Request], Coroutine[Any, Any, Response]]
 
 
-# --- Standalone middleware functions (importable for unit testing) ---
-
-
+# Standalone middleware functions (importable for unit testing)
 async def add_request_id(request: Request, call_next: _CallNext) -> Response:
     """Attach a correlation ID to every request/response."""
     raw_id = request.headers.get("X-Request-ID")
@@ -171,9 +169,7 @@ async def add_deprecation_warning(request: Request, call_next: _CallNext) -> Res
     return response
 
 
-# --- Registration ---
-
-
+# Registration
 def register_middleware(app: FastAPI) -> None:
     """Register all middleware on *app* in the correct order.
 
@@ -182,8 +178,7 @@ def register_middleware(app: FastAPI) -> None:
     """
     settings = get_settings()
 
-    # --- class-based middleware ---
-
+    # class-based middleware
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -213,7 +208,7 @@ def register_middleware(app: FastAPI) -> None:
             pass
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
-    # --- function-based middleware ---
+    # function-based middleware
     # Registered via app.middleware() which wraps them in BaseHTTPMiddleware.
     _register = app.middleware("http")
     _register(add_request_id)

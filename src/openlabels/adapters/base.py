@@ -486,9 +486,7 @@ def supports_remediation(adapter: ReadAdapter) -> bool:
     return isinstance(adapter, RemediationAdapter)
 
 
-# --- Shared cloud-adapter helpers ---
-
-
+# Shared cloud-adapter helpers
 def resolve_prefix(prefix: str, target: str) -> str:
     """Join a base prefix and a target sub-path, skipping empty parts."""
     parts = [p for p in (prefix, target) if p]

@@ -38,7 +38,7 @@ from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
-# --- VALIDATORS ---
+# VALIDATORS
 # Python fallback — Rust overrides these below.
 # Core bool validators imported from _rust/validators_py (single source of truth).
 # Wrappers below add (bool, float) return signatures where needed.
@@ -256,8 +256,7 @@ def validate_aba_routing(aba: str) -> tuple[bool, float]:
     return True, 0.99
 
 
-# --- TRACKING NUMBER VALIDATORS ---
-
+# TRACKING NUMBER VALIDATORS
 def validate_ups_tracking(tracking: str) -> tuple[bool, float]:
     """Validate UPS tracking number (1Z + 16 alphanumeric)."""
     tracking = tracking.upper().replace(' ', '')
@@ -366,8 +365,7 @@ def validate_usps_tracking(tracking: str) -> tuple[bool, float]:
     return False, 0.0
 
 
-# --- FINANCIAL INSTRUMENT VALIDATORS ---
-
+# FINANCIAL INSTRUMENT VALIDATORS
 def validate_cusip(cusip: str) -> tuple[bool, float]:
     """Validate CUSIP (9-character security identifier).
 
@@ -388,8 +386,7 @@ def validate_isin(isin: str) -> tuple[bool, float]:
     return True, 0.99
 
 
-# --- RUST ACCELERATION (default — Python above is fallback only) ---
-
+# RUST ACCELERATION (default — Python above is fallback only)
 try:
     from openlabels_matcher import (
         checksum_aba_routing as _rust_aba,
@@ -447,8 +444,7 @@ except ImportError:
     logger.info("Checksum validators: using Python fallback")
 
 
-# --- PATTERNS ---
-
+# PATTERNS
 CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
     # SSN - various formats with anti-evasion
     (re.compile(r'(?<![A-Za-z-])(\d{3}-\d{2}-\d{4})(?![A-Za-z])'), 'SSN', validate_ssn),
@@ -490,8 +486,7 @@ CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
 )
 
 
-# --- DETECTOR ---
-
+# DETECTOR
 @register_detector
 class ChecksumDetector(BaseDetector):
     """

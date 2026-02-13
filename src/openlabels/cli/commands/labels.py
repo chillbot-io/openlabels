@@ -65,9 +65,7 @@ def labels_sync(server: str, token: str | None) -> None:
         handle_http_error(e, server)
 
 
-# --- Local commands (no server needed) ---
-
-
+# Local commands (no server needed)
 @labels.command("apply")
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--label", required=True, help="Label name or ID to apply")

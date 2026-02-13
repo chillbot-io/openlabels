@@ -1,9 +1,4 @@
-"""
-Standardized error response schemas for API responses.
-
-This module contains Pydantic models for error responses,
-ensuring consistent error handling across all API endpoints.
-"""
+"""Standardized error response schemas for API responses."""
 
 from __future__ import annotations
 

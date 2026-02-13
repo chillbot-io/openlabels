@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ── Response / Request schemas ───────────────────────────────────────
 
 
 class AzureSettingsResponse(BaseModel):
@@ -91,7 +90,6 @@ class SettingsUpdateResponse(BaseModel):
     message: str
 
 
-# ── Helpers ──────────────────────────────────────────────────────────
 
 
 async def _get_or_create_settings(
@@ -140,7 +138,6 @@ def _settings_to_response(settings: TenantSettings | None) -> AllSettingsRespons
     )
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
 
 
 @router.get("", response_model=AllSettingsResponse)

@@ -300,7 +300,7 @@ class ONNXDetector(BaseDetector):
 
             return inputs['input_ids'], inputs['attention_mask'], offset_mapping
 
-    # --- CHUNKING FOR LONG DOCUMENTS ---
+    # CHUNKING FOR LONG DOCUMENTS
     def _chunk_text(self, text: str) -> list[tuple[int, str]]:
         """Split long text into overlapping chunks for processing."""
         if len(text) <= self.CHUNK_MAX_CHARS:
@@ -448,7 +448,7 @@ class ONNXDetector(BaseDetector):
 
         return adjusted_spans
 
-    # --- MAIN DETECTION ---
+    # MAIN DETECTION
     def detect(self, text: str) -> list[Span]:
         """Run NER inference using ONNX runtime.
 

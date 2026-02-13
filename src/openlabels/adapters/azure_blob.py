@@ -79,7 +79,6 @@ class AzureBlobAdapter:
         self._client = None
         self._container_client = None
 
-    # ── ReadAdapter protocol ────────────────────────────────────────
 
     @property
     def adapter_type(self) -> str:
@@ -312,7 +311,6 @@ class AzureBlobAdapter:
             },
         )
 
-    # ── Cloud label sync-back ───────────────────────────────────────
 
     async def apply_label_and_sync(
         self,
@@ -403,7 +401,6 @@ class AzureBlobAdapter:
         )
         return {"success": True, "method": "azure_metadata"}
 
-    # ── Azure change detection (ETag diff) ──────────────────────────
 
     async def list_blobs_with_etags(
         self,
@@ -426,7 +423,6 @@ class AzureBlobAdapter:
             if not b.name.endswith("/")
         }
 
-    # ── Internal helpers ────────────────────────────────────────────
 
     def _build_client(self):
         try:

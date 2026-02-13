@@ -30,11 +30,9 @@ from openlabels.monitoring.providers.base import RawAccessEvent, poll_events
 
 logger = logging.getLogger(__name__)
 
-# ── Platform detection ───────────────────────────────────────────────
 
 _IS_LINUX = sys.platform == "linux"
 
-# ── fanotify constants ───────────────────────────────────────────────
 
 # fanotify_init flags
 FAN_CLASS_NOTIF = 0x00000000
@@ -97,7 +95,6 @@ def _mask_to_action(mask: int) -> str:
     return "write"
 
 
-# ── /proc helpers ────────────────────────────────────────────────────
 
 def _resolve_pid_user(pid: int) -> str | None:
     """Resolve PID to username via /proc/{pid}/status."""
@@ -127,7 +124,6 @@ def _resolve_fd_path(fd: int) -> str | None:
         return None
 
 
-# ── libc wrappers ────────────────────────────────────────────────────
 
 _libc_cache = None
 
@@ -196,7 +192,6 @@ def _fanotify_mark(
         return False
 
 
-# ── FanotifyProvider ─────────────────────────────────────────────────
 
 
 class FanotifyProvider:
@@ -356,7 +351,6 @@ class FanotifyProvider:
 
         return events
 
-    # ── EventProvider protocol ───────────────────────────────────────
 
     async def collect(
         self, since: datetime | None = None,
@@ -370,7 +364,6 @@ class FanotifyProvider:
 
         return events
 
-    # ── Streaming mode (for EventStreamManager) ──────────────────────
 
     async def stream(
         self,
@@ -387,7 +380,6 @@ class FanotifyProvider:
         ):
             yield batch
 
-    # ── Cleanup ──────────────────────────────────────────────────────
 
     def close(self) -> None:
         """Close the fanotify file descriptor."""

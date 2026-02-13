@@ -495,8 +495,7 @@ class GraphClient:
         """
         return await self._request(method, path, **kwargs)
 
-    # --- Delta Query Support ---
-
+    # Delta Query Support
     def get_delta_token(self, resource_path: str) -> DeltaToken | None:
         """Get stored delta token for a resource path."""
         token = self._delta_tokens.get(resource_path)
@@ -608,8 +607,7 @@ class GraphClient:
 
         return _iter(), is_delta
 
-    # --- Pagination Helper ---
-
+    # Pagination Helper
     async def get_all_pages(self, path: str) -> list[dict]:
         """Get all pages of a paginated response.
 

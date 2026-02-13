@@ -86,9 +86,7 @@ class SIEMAdapter(Protocol):
         ...
 
 
-# --- Shared syslog transport mixin ---
-
-
+# Shared syslog transport mixin
 def risk_tier_to_cef_severity(tier: str | None) -> int:
     """Map risk tier to CEF numeric severity."""
     return {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 5, "LOW": 3, "MINIMAL": 1}.get(

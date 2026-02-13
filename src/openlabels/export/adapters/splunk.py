@@ -44,7 +44,6 @@ class SplunkAdapter:
         self._verify_ssl = verify_ssl
         self._batch_size = min(batch_size, _MAX_BATCH_SIZE)
 
-    # ── SIEMAdapter protocol ─────────────────────────────────────────
 
     async def export_batch(self, records: list[ExportRecord]) -> int:
         """POST newline-delimited JSON events to HEC."""
@@ -94,7 +93,6 @@ class SplunkAdapter:
     def format_name(self) -> str:
         return "splunk"
 
-    # ── internals ────────────────────────────────────────────────────
 
     def _format_event(self, record: ExportRecord) -> str:
         """Convert an ExportRecord to a Splunk HEC JSON event."""

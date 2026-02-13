@@ -28,7 +28,6 @@ from openlabels.monitoring.providers.base import RawAccessEvent, poll_events
 
 logger = logging.getLogger(__name__)
 
-# ── USN reason-code → AccessAction mapping ───────────────────────────
 
 # https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-usn_record_v2
 USN_REASON_DATA_OVERWRITE = 0x00000001
@@ -73,7 +72,6 @@ def _reason_to_action(reason: int) -> str:
     return "write"  # Default for any other mutation
 
 
-# ── Windows FILETIME → datetime ──────────────────────────────────────
 
 _EPOCH_DIFF_100NS = 116_444_736_000_000_000  # 1601-01-01 → 1970-01-01
 
@@ -86,7 +84,6 @@ def _filetime_to_datetime(ft: int) -> datetime:
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
-# ── USN_RECORD_V2 parser ────────────────────────────────────────────
 
 # Struct layout (fixed portion = 64 bytes for V2, then variable-length filename)
 #   RecordLength          I   4
@@ -160,7 +157,6 @@ def parse_usn_records(buf: bytes) -> list[dict]:
     return records
 
 
-# ── Windows API wrappers (ctypes) ────────────────────────────────────
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -285,7 +281,6 @@ def _read_usn_journal(
     return data, next_usn
 
 
-# ── MFT reference → full path resolution ─────────────────────────────
 
 def _resolve_path_via_mft(
     handle: int,
@@ -303,7 +298,6 @@ def _resolve_path_via_mft(
     return f"{drive_letter}:\\{filename}"
 
 
-# ── USNJournalProvider ───────────────────────────────────────────────
 
 
 class USNJournalProvider:
@@ -340,7 +334,6 @@ class USNJournalProvider:
         """Update the set of watched paths for filtering."""
         self._watched_paths = {p.lower() for p in paths} if paths else None
 
-    # ── EventProvider protocol ───────────────────────────────────────
 
     async def collect(
         self, since: datetime | None = None,
@@ -418,7 +411,6 @@ class USNJournalProvider:
         finally:
             _close_handle(handle)
 
-    # ── Streaming mode (for EventStreamManager) ──────────────────────
 
     async def stream(
         self,

@@ -291,8 +291,7 @@ class JobQueue:
         result = await self.session.execute(query)
         return result.scalar() or 0
 
-    # --- Dead Letter Queue (DLQ) Operations ---
-
+    # Dead Letter Queue (DLQ) Operations
     async def get_failed_jobs(
         self,
         task_type: str | None = None,
@@ -501,8 +500,7 @@ class JobQueue:
 
         return stats
 
-    # --- Stuck Job Recovery ---
-
+    # Stuck Job Recovery
     async def reclaim_stuck_jobs(
         self,
         timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
@@ -578,8 +576,7 @@ class JobQueue:
         result = await self.session.execute(query)
         return result.scalar() or 0
 
-    # --- Job TTL / Expiration ---
-
+    # Job TTL / Expiration
     async def cleanup_expired_jobs(
         self,
         completed_ttl_days: int | None = None,

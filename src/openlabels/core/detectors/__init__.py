@@ -1,9 +1,6 @@
 """
 OpenLabels Detectors.
 
-This module provides entity detection capabilities through
-multiple specialized detectors.
-
 Detectors:
 - ChecksumDetector: Validates entities with checksums (SSN, Credit Card, etc.)
 - SecretsDetector: Detects API keys, tokens, credentials

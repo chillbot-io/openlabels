@@ -590,13 +590,13 @@ class MonitoringSettings(BaseSettings):
     # Set to 0 to disable periodic sync (startup-only).
     cache_sync_interval_seconds: int = 300
 
-    # --- M365 audit (Management Activity API) ---
+    # M365 audit (Management Activity API)
     # Separate harvest interval for M365 (API batches events; 5 min is typical)
     m365_harvest_interval_seconds: int = 300
     # SharePoint site URLs to filter events (None = all sites)
     m365_site_urls: list[str] = Field(default_factory=list)
 
-    # --- Real-time event streams (Phase I) ---
+    # Real-time event streams (Phase I)
     # Enable EventStreamManager for continuous kernel-level monitoring
     stream_enabled: bool = False
     # Stream providers to activate (usn_journal on Windows, fanotify on Linux)
@@ -613,7 +613,7 @@ class MonitoringSettings(BaseSettings):
     scan_trigger_cooldown_seconds: float = 60.0
     scan_trigger_min_risk_tier: str = "MEDIUM"
 
-    # --- Graph webhooks ---
+    # Graph webhooks
     webhook_enabled: bool = False
     # Public HTTPS URL for Graph change notification subscriptions.
     # Graph sends POST notifications to this URL when drive items change.
