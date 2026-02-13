@@ -33,9 +33,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_client_ip)
 
-# ---------------------------------------------------------------------------
-# Safety: SQL validation
-# ---------------------------------------------------------------------------
+# --- Safety: SQL validation ---
 
 # Statements that are NEVER allowed
 _FORBIDDEN_PATTERNS = re.compile(
@@ -172,9 +170,7 @@ def _replace_param_placeholders(sql: str) -> tuple[str, int]:
     return "".join(result), count
 
 
-# ---------------------------------------------------------------------------
-# Request / Response models
-# ---------------------------------------------------------------------------
+# --- Request / Response models ---
 
 
 class QueryRequest(BaseModel):
@@ -260,9 +256,7 @@ class AIQueryResponse(BaseModel):
     error: str | None = None
 
 
-# ---------------------------------------------------------------------------
-# Schema introspection
-# ---------------------------------------------------------------------------
+# --- Schema introspection ---
 
 # Known analytics views and their columns (from DuckDBEngine._VIEW_DEFS).
 # These are the Parquet-backed views registered by the engine.
@@ -347,9 +341,7 @@ def _build_schema() -> list[SchemaTable]:
     return tables
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+# --- Endpoints ---
 
 
 @router.get("/schema", response_model=SchemaResponse)
@@ -603,9 +595,7 @@ async def ai_query(
     )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# --- Helpers ---
 
 
 def _serialize_value(value: Any) -> Any:

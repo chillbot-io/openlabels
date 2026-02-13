@@ -310,9 +310,7 @@ def _validate_seed_phrase(text: str) -> bool:
     return common_bip39 >= len(words) * 0.5
 
 
-# =============================================================================
-# PATTERNS
-# =============================================================================
+# --- PATTERNS ---
 
 FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     # --- SECURITY IDENTIFIERS ---

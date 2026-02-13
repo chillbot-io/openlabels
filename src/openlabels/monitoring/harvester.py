@@ -84,9 +84,7 @@ class EventHarvester:
         self.total_cycles: int = 0
         self.last_cycle_at: datetime | None = None
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # --- Public API ---
 
     async def run(
         self,
@@ -169,9 +167,7 @@ class EventHarvester:
         self.last_cycle_at = datetime.now(timezone.utc)
         return count
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
+    # --- Internals ---
 
     def _apply_pending_checkpoints(self) -> None:
         """Move pending checkpoints to the active checkpoint dict."""
@@ -330,9 +326,7 @@ class EventHarvester:
         return mapping
 
 
-# ------------------------------------------------------------------
-# Convenience coroutine for lifespan registration
-# ------------------------------------------------------------------
+# --- Convenience coroutine for lifespan registration ---
 
 
 async def periodic_event_harvest(

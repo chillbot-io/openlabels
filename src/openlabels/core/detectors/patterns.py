@@ -203,7 +203,7 @@ _INITIAL = r"[A-Z]\.?"
 # Double initial: "R.J." or "R. J." or "RJ"
 _DOUBLE_INITIAL = r"[A-Z]\.?\s*[A-Z]\.?"
 
-# === Credential Suffixes (comprehensive list) ===
+# === Credential Suffixes ===
 # Medical doctors, nurses, physician assistants, pharmacists, therapists, dentists, etc.
 _CREDENTIALS = (
     r'(?:MD|DO|MBBS|'                           # Medical doctors
@@ -1135,9 +1135,7 @@ _p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
 _p(r'\b([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.75, 1),
 
 
-# ============================================================================
-# HEALTHCARE-SPECIFIC IDENTIFIERS
-# ============================================================================
+# --- HEALTHCARE-SPECIFIC IDENTIFIERS ---
 
 # === NDC (National Drug Code) - 5-4-2 format with dashes ===
 # FDA standard drug identifier, reveals medication info
@@ -1173,9 +1171,7 @@ _p(r'(?:Pre-?cert(?:ification)?)[:\s#]+([A-Z0-9]{6,20})', 'AUTH_NUMBER', 0.88, 1
 _p(r'(?:Workers?\s*Comp|WC)\s*(?:Claim)?[:\s#]+([A-Z0-9]{6,20})', 'CLAIM_NUMBER', 0.88, 1, flags=re.I),
 
 
-# ============================================================================
-# PHYSICAL IDENTIFIERS (with strong context to avoid FPs)
-# ============================================================================
+# --- PHYSICAL IDENTIFIERS (with strong context to avoid FPs) ---
 
 # === Blood Type ===
 _p(r'(?:Blood\s*Type|Blood\s*Group|ABO)[:\s]+([ABO]{1,2}[+-])', 'BLOOD_TYPE', 0.92, 1, flags=re.I),
@@ -1194,9 +1190,7 @@ _p(r'(?:Weight|Wt\.?)[:\s]+(\d{2,3}(?:\.\d)?)\s*(?:lbs?|kg)', 'WEIGHT', 0.88, 1,
 _p(r'(?:BMI|Body\s*Mass\s*Index)[:\s]+(\d{2}(?:\.\d{1,2})?)', 'BMI', 0.90, 1, flags=re.I),
 
 
-# ============================================================================
-# GEOGRAPHIC IDENTIFIERS
-# ============================================================================
+# --- GEOGRAPHIC IDENTIFIERS ---
 
 # === GPS Coordinates ===
 # Decimal degrees: 41.8781, -87.6298 or 41.8781° N, 87.6298° W
@@ -1208,9 +1202,7 @@ _p(r'(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[NS])\s*(\d{1,3}°\d{1,2}[\'′]\d{1
 _p(r'(?:GPS|Coordinates?|Location|Lat(?:itude)?[/,]\s*Lon(?:gitude)?)[:\s]+(.{10,40})', 'GPS_COORDINATES', 0.85, 1, flags=re.I),
 
 
-# ============================================================================
-# INTERNATIONAL IDENTIFIERS (with context/checksums)
-# ============================================================================
+# --- INTERNATIONAL IDENTIFIERS (with context/checksums) ---
 
 # === UK NHS Number (10 digits with checksum) ===
 _p(r'(?:NHS|National\s+Health)[:\s#]+(\d{3}\s?\d{3}\s?\d{4})', 'NHS_NUMBER', 0.92, 1, flags=re.I),

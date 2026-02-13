@@ -149,9 +149,7 @@ if PYSIDE6_AVAILABLE:
             self.status_label = QLabel("Connecting...")
             layout.addWidget(self.status_label)
 
-        # --------------------------------------------------------------
-        # Stream management
-        # --------------------------------------------------------------
+        # --- Stream management ---
 
         def start(self):
             """Start streaming logs."""
@@ -190,9 +188,7 @@ if PYSIDE6_AVAILABLE:
         def _restart_stream(self):
             self.start()
 
-        # --------------------------------------------------------------
-        # Log display
-        # --------------------------------------------------------------
+        # --- Log display ---
 
         def _append_line(self, line: str):
             self.log_output.appendPlainText(line)
@@ -236,9 +232,7 @@ if PYSIDE6_AVAILABLE:
                     break
                 cursor.mergeCharFormat(highlight_fmt)
 
-        # --------------------------------------------------------------
-        # Lifecycle
-        # --------------------------------------------------------------
+        # --- Lifecycle ---
 
         def showEvent(self, event):
             super().showEvent(event)

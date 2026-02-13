@@ -1,7 +1,7 @@
 """
 Health and status API endpoints.
 
-Provides comprehensive system health information for monitoring dashboards.
+Health and status endpoints for monitoring dashboards.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class JobMetrics(BaseModel):
 
 
 class HealthStatus(BaseModel):
-    """Comprehensive health status response."""
+    """Health status response."""
 
     # Server status
     api: str  # healthy, warning, error
@@ -99,7 +99,7 @@ async def get_health_status(
     user=Depends(get_optional_user),
 ):
     """
-    Get comprehensive system health status.
+    Get system health status.
 
     Authentication is optional — unauthenticated requests (e.g. load
     balancer probes) receive component health without tenant-specific

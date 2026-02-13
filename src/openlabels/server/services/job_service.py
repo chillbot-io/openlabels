@@ -145,7 +145,7 @@ class JobService(BaseService):
 
     async def get_queue_stats(self) -> dict:
         """
-        Get comprehensive queue statistics.
+        Get queue statistics.
 
         Returns:
             Dictionary with job counts by status and task type:

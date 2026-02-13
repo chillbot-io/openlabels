@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 _MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
 
 
-# =============================================================================
-# LABEL CACHE
-# =============================================================================
+# --- LABEL CACHE ---
 
 
 @dataclass
@@ -188,9 +186,7 @@ def get_label_cache() -> LabelCache:
     return _label_cache
 
 
-# =============================================================================
-# LABELING RESULT
-# =============================================================================
+# --- LABELING RESULT ---
 
 
 @dataclass
@@ -216,9 +212,7 @@ class TokenCache:
         return bool(self.access_token and datetime.now(timezone.utc) < (self.expires_at - timedelta(minutes=5)))
 
 
-# =============================================================================
-# LOCAL LABEL WRITER — pure synchronous file I/O
-# =============================================================================
+# --- LOCAL LABEL WRITER — pure synchronous file I/O ---
 
 
 class LocalLabelWriter:
@@ -233,9 +227,7 @@ class LocalLabelWriter:
     ``await asyncio.to_thread(writer.method, ...)``.
     """
 
-    # ------------------------------------------------------------------
-    # Apply helpers
-    # ------------------------------------------------------------------
+    # --- Apply helpers ---
 
     def apply_office_metadata(
         self,
@@ -435,9 +427,7 @@ class LocalLabelWriter:
                 error=f"OS error creating sidecar file: {e}",
             )
 
-    # ------------------------------------------------------------------
-    # Remove helpers
-    # ------------------------------------------------------------------
+    # --- Remove helpers ---
 
     def remove_office_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from an Office document's custom properties."""
@@ -525,9 +515,7 @@ class LocalLabelWriter:
         except ValueError as e:
             return LabelResult(success=False, error=f"Invalid PDF format: {e}")
 
-    # ------------------------------------------------------------------
-    # Read helpers
-    # ------------------------------------------------------------------
+    # --- Read helpers ---
 
     def get_local_label(self, file_path: str) -> dict | None:
         """Read the current sensitivity label from a local file.
@@ -605,9 +593,7 @@ class LocalLabelWriter:
 
         return None
 
-    # ------------------------------------------------------------------
-    # Sidecar cleanup
-    # ------------------------------------------------------------------
+    # --- Sidecar cleanup ---
 
     @staticmethod
     def remove_sidecar(file_path: str) -> None:
@@ -617,9 +603,7 @@ class LocalLabelWriter:
             sidecar.unlink()
 
 
-# =============================================================================
-# LABELING ENGINE — async orchestrator
-# =============================================================================
+# --- LABELING ENGINE — async orchestrator ---
 
 
 class LabelingEngine:
@@ -659,9 +643,7 @@ class LabelingEngine:
         self._max_retries = 4
         self._base_delay = 2.0  # seconds
 
-    # -----------------------------------------------------------------
-    # Graph API helpers (async, httpx)
-    # -----------------------------------------------------------------
+    # --- Graph API helpers (async, httpx) ---
 
     async def _get_access_token(self) -> str:
         """Get Graph API access token with caching and retry logic."""
@@ -755,9 +737,7 @@ class LabelingEngine:
 
         raise Exception(f"Graph API request failed after {self._max_retries} retries: {last_error}")
 
-    # -----------------------------------------------------------------
-    # Public API — apply / remove / get
-    # -----------------------------------------------------------------
+    # --- Public API — apply / remove / get ---
 
     async def apply_label(
         self,
@@ -888,9 +868,7 @@ class LabelingEngine:
             cached = _label_cache.get_all()
             return [label.to_dict() for label in cached] if cached else []
 
-    # -----------------------------------------------------------------
-    # Cache convenience methods
-    # -----------------------------------------------------------------
+    # --- Cache convenience methods ---
 
     def get_cached_label(self, label_id: str) -> dict | None:
         """
@@ -927,9 +905,7 @@ class LabelingEngine:
         """Get label cache statistics."""
         return _label_cache.stats
 
-    # -----------------------------------------------------------------
-    # Local file orchestration (MIP SDK -> metadata fallback chain)
-    # -----------------------------------------------------------------
+    # --- Local file orchestration (MIP SDK -> metadata fallback chain) ---
 
     async def _apply_local_label(
         self,
@@ -1025,9 +1001,7 @@ class LabelingEngine:
             # Sidecar removal was enough
             return LabelResult(success=True, method="sidecar_removed")
 
-    # -----------------------------------------------------------------
-    # Graph API operations (SharePoint / OneDrive)
-    # -----------------------------------------------------------------
+    # --- Graph API operations (SharePoint / OneDrive) ---
 
     async def _apply_graph_label(
         self,

@@ -44,9 +44,7 @@ router = APIRouter()
 GLOBAL_PUBSUB_CHANNEL = "openlabels:ws:global"
 
 
-# ---------------------------------------------------------------------------
-# Connection management
-# ---------------------------------------------------------------------------
+# --- Connection management ---
 
 
 class GlobalConnection:
@@ -267,17 +265,13 @@ class GlobalPubSubBroadcaster:
                     await asyncio.sleep(1.0)
 
 
-# ---------------------------------------------------------------------------
-# Module-level instances
-# ---------------------------------------------------------------------------
+# --- Module-level instances ---
 
 global_manager = GlobalConnectionManager()
 global_broadcaster = GlobalPubSubBroadcaster(global_manager)
 
 
-# ---------------------------------------------------------------------------
-# WebSocket endpoint
-# ---------------------------------------------------------------------------
+# --- WebSocket endpoint ---
 
 
 @router.websocket("/ws/events")
@@ -358,9 +352,7 @@ async def websocket_global_events(websocket: WebSocket) -> None:
         global_manager.disconnect(conn)
 
 
-# ---------------------------------------------------------------------------
-# Publishing helpers — called from other modules to push events
-# ---------------------------------------------------------------------------
+# --- Publishing helpers — called from other modules to push events ---
 
 
 async def publish_scan_progress(

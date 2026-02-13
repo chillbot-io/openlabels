@@ -29,9 +29,7 @@ from openlabels.core.policies.schema import (
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# Built-in Policy Packs
-# ============================================================================
+# --- Built-in Policy Packs ---
 
 def _create_hipaa_phi() -> PolicyPack:
     """HIPAA Protected Health Information (PHI) policy."""
@@ -512,9 +510,7 @@ def load_builtin_policies() -> list[PolicyPack]:
     return [factory() for factory in BUILTIN_POLICIES]
 
 
-# ============================================================================
-# YAML/JSON Loader
-# ============================================================================
+# --- YAML/JSON Loader ---
 
 def _parse_trigger(data: dict[str, Any]) -> PolicyTrigger:
     """Parse trigger configuration from dict."""

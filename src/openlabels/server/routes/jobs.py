@@ -224,9 +224,7 @@ async def cancel_job(
     return {"message": "Job cancelled successfully", "job_id": str(job_id)}
 
 
-# =============================================================================
-# Worker Pool Configuration
-# =============================================================================
+# --- Worker Pool Configuration ---
 
 
 class WorkerConfigRequest(BaseModel):

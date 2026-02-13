@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# =============================================================================
-# REQUEST/RESPONSE MODELS
-# =============================================================================
+# --- REQUEST/RESPONSE MODELS ---
 
 
 class LabelResponse(BaseModel):
@@ -106,9 +104,7 @@ class LabelMappingsResponse(BaseModel):
     labels: list[LabelResponse] = []
 
 
-# =============================================================================
-# LABEL ENDPOINTS
-# =============================================================================
+# --- LABEL ENDPOINTS ---
 
 
 @router.get("", response_model=PaginatedResponse[LabelResponse])
@@ -236,9 +232,7 @@ async def invalidate_label_cache(
     }
 
 
-# =============================================================================
-# LABEL RULES ENDPOINTS
-# =============================================================================
+# --- LABEL RULES ENDPOINTS ---
 
 
 @router.get("/rules", response_model=PaginatedResponse[LabelRuleResponse])
@@ -303,9 +297,7 @@ async def delete_label_rule(
     await label_service.delete_label_rule(rule_id)
 
 
-# =============================================================================
-# LABEL APPLICATION ENDPOINTS
-# =============================================================================
+# --- LABEL APPLICATION ENDPOINTS ---
 
 
 @router.post("/apply", status_code=202)
@@ -356,9 +348,7 @@ async def apply_label(
         ) from e
 
 
-# =============================================================================
-# LABEL MAPPINGS (simplified interface for web UI)
-# =============================================================================
+# --- LABEL MAPPINGS (simplified interface for web UI) ---
 
 
 @router.get("/mappings", response_model=LabelMappingsResponse)

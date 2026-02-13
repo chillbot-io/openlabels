@@ -41,9 +41,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# =============================================================================
-# ROOT
-# =============================================================================
+# --- ROOT ---
 
 
 class OpenLabelsError(Exception):
@@ -77,9 +75,7 @@ class OpenLabelsError(Exception):
         return ". ".join(parts)
 
 
-# =============================================================================
-# DETECTION & EXTRACTION
-# =============================================================================
+# --- DETECTION & EXTRACTION ---
 
 
 class DetectionError(OpenLabelsError):
@@ -122,9 +118,7 @@ class ExtractionError(OpenLabelsError):
         self.file_type = file_type
 
 
-# =============================================================================
-# ADAPTERS
-# =============================================================================
+# --- ADAPTERS ---
 
 
 class AdapterError(OpenLabelsError):
@@ -193,9 +187,7 @@ class FilesystemError(AdapterError):
         self.path = path
 
 
-# =============================================================================
-# AUTH
-# =============================================================================
+# --- AUTH ---
 
 
 class AuthError(OpenLabelsError):
@@ -222,9 +214,7 @@ class ForbiddenError(AuthError):
     pass
 
 
-# =============================================================================
-# LABELING
-# =============================================================================
+# --- LABELING ---
 
 
 class LabelingError(OpenLabelsError):
@@ -233,9 +223,7 @@ class LabelingError(OpenLabelsError):
     pass
 
 
-# =============================================================================
-# REMEDIATION
-# =============================================================================
+# --- REMEDIATION ---
 
 
 class RemediationError(OpenLabelsError):
@@ -273,9 +261,7 @@ class RemediationPermissionError(RemediationError):
     pass
 
 
-# =============================================================================
-# MONITORING
-# =============================================================================
+# --- MONITORING ---
 
 
 class MonitoringError(OpenLabelsError):
@@ -306,9 +292,7 @@ class AuditRuleError(MonitoringError):
     pass
 
 
-# =============================================================================
-# ML / JOBS / SECURITY
-# =============================================================================
+# --- ML / JOBS / SECURITY ---
 
 
 class ModelLoadError(OpenLabelsError):
@@ -375,9 +359,7 @@ class SecurityError(OpenLabelsError):
         self.source = source
 
 
-# =============================================================================
-# DOMAIN ERRORS (not API-specific, but used across server and other modules)
-# =============================================================================
+# --- DOMAIN ERRORS (not API-specific, but used across server and other modules) ---
 
 
 class NotFoundError(OpenLabelsError):
@@ -433,9 +415,7 @@ class ValidationError(OpenLabelsError):
         super().__init__(message, details=details, **kwargs)
 
 
-# =============================================================================
-# API-LAYER EXCEPTIONS (used by server error handlers)
-# =============================================================================
+# --- API-LAYER EXCEPTIONS (used by server error handlers) ---
 
 
 class APIError(OpenLabelsError):

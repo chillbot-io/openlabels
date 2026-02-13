@@ -39,9 +39,7 @@ from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------
-# Management Activity API base URL
-# -----------------------------------------------------------------------
+# --- Management Activity API base URL ---
 
 _MANAGE_API_BASE = "https://manage.office.com/api/v1.0"
 _TOKEN_URL = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
@@ -50,9 +48,7 @@ _MANAGE_SCOPE = "https://manage.office.com/.default"
 EVENT_SOURCE = "m365_audit"
 CONTENT_TYPE = "Audit.SharePoint"
 
-# -----------------------------------------------------------------------
-# M365 operation → RawAccessEvent action mapping
-# -----------------------------------------------------------------------
+# --- M365 operation → RawAccessEvent action mapping ---
 
 M365_OPERATION_MAP: dict[str, str] = {
     # File access
@@ -153,9 +149,7 @@ class M365AuditProvider:
     def name(self) -> str:
         return EVENT_SOURCE
 
-    # ------------------------------------------------------------------
-    # EventProvider.collect()
-    # ------------------------------------------------------------------
+    # --- EventProvider.collect() ---
 
     async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Collect audit events from M365.
@@ -205,9 +199,7 @@ class M365AuditProvider:
 
         return events
 
-    # ------------------------------------------------------------------
-    # Token management
-    # ------------------------------------------------------------------
+    # --- Token management ---
 
     async def _ensure_token(self) -> str:
         """Ensure we have a valid access token for manage.office.com."""
@@ -268,9 +260,7 @@ class M365AuditProvider:
         response = await client.request(method, url, headers=headers, **kwargs)
         return response
 
-    # ------------------------------------------------------------------
-    # Subscription management
-    # ------------------------------------------------------------------
+    # --- Subscription management ---
 
     async def _ensure_subscription(self, client: httpx.AsyncClient) -> None:
         """Ensure the Audit.SharePoint subscription is active.
@@ -321,9 +311,7 @@ class M365AuditProvider:
             )
             response.raise_for_status()
 
-    # ------------------------------------------------------------------
-    # Content listing and blob fetching (H.4: pagination)
-    # ------------------------------------------------------------------
+    # --- Content listing and blob fetching (H.4: pagination) ---
 
     async def _list_content(
         self,
@@ -402,9 +390,7 @@ class M365AuditProvider:
 
         return events
 
-    # ------------------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------------------
+    # --- Cleanup ---
 
     async def close(self) -> None:
         """Close the HTTP client and clear credentials."""
@@ -416,9 +402,7 @@ class M365AuditProvider:
         self._token_expires_at = None
 
 
-# -----------------------------------------------------------------------
-# Record parsing
-# -----------------------------------------------------------------------
+# --- Record parsing ---
 
 
 def _parse_audit_record(

@@ -35,9 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Response models
-# ---------------------------------------------------------------------------
+# --- Response models ---
 
 
 class ExposureSummary(BaseModel):
@@ -99,9 +97,7 @@ class PrincipalAccess(BaseModel):
     permissions: list[str]  # Permissions granted to this principal
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# --- Helpers ---
 
 
 def _exposure_level(
@@ -122,9 +118,7 @@ def _exposure_level(
     return "PRIVATE"
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+# --- Endpoints ---
 
 
 @router.get("/exposure", response_model=ExposureSummary)
