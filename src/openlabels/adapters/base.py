@@ -482,3 +482,32 @@ class RemediationAdapter(Protocol):
 def supports_remediation(adapter: ReadAdapter) -> bool:
     """Check whether *adapter* supports remediation operations."""
     return isinstance(adapter, RemediationAdapter)
+
+
+# --- Shared cloud-adapter helpers ---
+
+
+def resolve_prefix(prefix: str, target: str) -> str:
+    """Join a base prefix and a target sub-path, skipping empty parts."""
+    parts = [p for p in (prefix, target) if p]
+    return "/".join(parts)
+
+
+def validate_file_size(file_info: FileInfo, max_size_bytes: int) -> None:
+    """Raise :class:`ValueError` if *file_info.size* exceeds *max_size_bytes*."""
+    if file_info.size > max_size_bytes:
+        raise ValueError(
+            f"File too large for processing: {file_info.size} bytes "
+            f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+        )
+
+
+def validate_content_size(
+    content: bytes, max_size_bytes: int, file_path: str
+) -> None:
+    """Raise :class:`ValueError` if downloaded *content* exceeds *max_size_bytes*."""
+    if len(content) > max_size_bytes:
+        raise ValueError(
+            f"File content exceeds limit: {len(content)} bytes "
+            f"(max: {max_size_bytes} bytes). File: {file_path}"
+        )

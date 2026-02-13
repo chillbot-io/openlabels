@@ -88,45 +88,17 @@ class OneDriveAdapter(BaseGraphAdapter):
 
         drive_id = drive["id"]
 
-        # Use delta query if available and requested
-        resource_path = f"onedrive:{user_id}:{drive_id}"
-
         if use_delta:
-            initial_path = f"/users/{user_id}/drive/root/delta"
-            items_iter, is_delta = await client.iter_with_delta(initial_path, resource_path)
-
-            if is_delta:
-                logger.info(f"Delta scan for {resource_path}")
-
-            async for item in items_iter:
-                # Skip deleted items
-                if item.get("deleted"):
-                    yield FileInfo(
-                        path=item.get("name", "unknown"),
-                        name=item.get("name", "unknown"),
-                        size=0,
-                        modified=datetime.now(timezone.utc),
-                        adapter=self.adapter_type,
-                        item_id=item.get("id"),
-                        user_id=user_id,
-                        change_type="deleted",
-                    )
-                    continue
-
-                # Skip folders
-                if "folder" in item:
-                    continue
-
-                # Only yield files
-                if "file" in item:
-                    file_info = self._item_to_file_info(item, user_id)
-
-                    # Apply filter
-                    if filter_config.should_include(file_info):
-                        file_info.change_type = "modified" if is_delta else None
-                        yield file_info
+            async for file_info in self._iter_delta_files(
+                client=client,
+                initial_path=f"/users/{user_id}/drive/root/delta",
+                resource_path=f"onedrive:{user_id}:{drive_id}",
+                resource_id=user_id,
+                resource_kwarg="user_id",
+                filter_config=filter_config,
+            ):
+                yield file_info
         else:
-            # Traditional recursive enumeration
             async for file_info in self._list_drive_items(
                 client, user_id, "/", recursive, filter_config
             ):
@@ -265,28 +237,13 @@ class OneDriveAdapter(BaseGraphAdapter):
         recursive: bool,
     ) -> AsyncIterator[FolderInfo]:
         """Recursively list folders in a user's drive."""
-        if path == "/":
-            endpoint = f"/users/{user_id}/drive/root/children"
-        else:
-            endpoint = f"/users/{user_id}/drive/root:{path}:/children"
 
-        try:
-            items_iter = client.iter_all_pages(endpoint)
-        except (PermissionError, ConnectionError, TimeoutError,
-                httpx.HTTPStatusError, httpx.RequestError) as e:
-            logger.debug(f"Cannot list folders at {path} for {user_id}: {e}")
-            return
+        def _endpoint(p: str) -> str:
+            if p == "/":
+                return f"/users/{user_id}/drive/root/children"
+            return f"/users/{user_id}/drive/root:{p}:/children"
 
-        async for item in items_iter:
-            if "folder" not in item:
-                continue
-
-            folder_info = self._folder_from_item(item, user_id=user_id)
-            yield folder_info
-
-            if recursive:
-                folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
-                async for sub in self._list_drive_folders(
-                    client, user_id, folder_path, recursive
-                ):
-                    yield sub
+        async for folder in self._list_drive_folders_impl(
+            client, _endpoint, "user_id", user_id, path, recursive
+        ):
+            yield folder

@@ -70,46 +70,17 @@ class SharePointAdapter(BaseGraphAdapter):
         drive = await client.get(f"/sites/{site_id}/drive")
         drive_id = drive["id"]
 
-        # Use delta query if available and requested
-        resource_path = f"sharepoint:{site_id}:{drive_id}"
-
         if use_delta:
-            initial_path = f"/sites/{site_id}/drives/{drive_id}/root/delta"
-            items_iter, is_delta = await client.iter_with_delta(initial_path, resource_path)
-
-            if is_delta:
-                logger.info(f"Delta scan for {resource_path}")
-
-            async for item in items_iter:
-                # Skip deleted items
-                if item.get("deleted"):
-                    # Yield with change_type for inventory to handle
-                    yield FileInfo(
-                        path=item.get("name", "unknown"),
-                        name=item.get("name", "unknown"),
-                        size=0,
-                        modified=datetime.now(timezone.utc),
-                        adapter=self.adapter_type,
-                        item_id=item.get("id"),
-                        site_id=site_id,
-                        change_type="deleted",
-                    )
-                    continue
-
-                # Skip folders
-                if "folder" in item:
-                    continue
-
-                # Only yield files
-                if "file" in item:
-                    file_info = self._item_to_file_info(item, site_id)
-
-                    # Apply filter
-                    if filter_config.should_include(file_info):
-                        file_info.change_type = "modified" if is_delta else None
-                        yield file_info
+            async for file_info in self._iter_delta_files(
+                client=client,
+                initial_path=f"/sites/{site_id}/drives/{drive_id}/root/delta",
+                resource_path=f"sharepoint:{site_id}:{drive_id}",
+                resource_id=site_id,
+                resource_kwarg="site_id",
+                filter_config=filter_config,
+            ):
+                yield file_info
         else:
-            # Traditional recursive enumeration
             async for file_info in self._list_drive_items(
                 client, site_id, drive_id, "/", recursive, filter_config
             ):
@@ -244,27 +215,13 @@ class SharePointAdapter(BaseGraphAdapter):
         recursive: bool,
     ) -> AsyncIterator[FolderInfo]:
         """Recursively list folders in a drive."""
-        if path == "/":
-            endpoint = f"/sites/{site_id}/drives/{drive_id}/root/children"
-        else:
-            endpoint = f"/sites/{site_id}/drives/{drive_id}/root:{path}:/children"
 
-        try:
-            items_iter = client.iter_all_pages(endpoint)
-            async for item in items_iter:
-                if "folder" not in item:
-                    continue
+        def _endpoint(p: str) -> str:
+            if p == "/":
+                return f"/sites/{site_id}/drives/{drive_id}/root/children"
+            return f"/sites/{site_id}/drives/{drive_id}/root:{p}:/children"
 
-                folder_info = self._folder_from_item(item, site_id=site_id)
-                yield folder_info
-
-                if recursive:
-                    folder_path = f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
-                    async for sub in self._list_drive_folders(
-                        client, site_id, drive_id, folder_path, recursive
-                    ):
-                        yield sub
-        except (PermissionError, ConnectionError, TimeoutError,
-                httpx.HTTPStatusError, httpx.RequestError) as e:
-            logger.debug(f"Cannot list folders at {path} for site {site_id}: {e}")
-            return
+        async for folder in self._list_drive_folders_impl(
+            client, _endpoint, "site_id", site_id, path, recursive
+        ):
+            yield folder

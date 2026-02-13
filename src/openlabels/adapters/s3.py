@@ -24,6 +24,9 @@ from openlabels.adapters.base import (
     FilterConfig,
     PartitionSpec,
     is_label_compatible,
+    resolve_prefix,
+    validate_content_size,
+    validate_file_size,
 )
 
 try:
@@ -275,11 +278,7 @@ class S3Adapter:
         max_size_bytes: int = 100 * 1024 * 1024,
     ) -> bytes:
         """Download object content from S3 with size limit."""
-        if file_info.size > max_size_bytes:
-            raise ValueError(
-                f"File too large for processing: {file_info.size} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_file_size(file_info, max_size_bytes)
         client = self._ensure_client()
         key = file_info.item_id or file_info.path.split(f"s3://{self._bucket}/", 1)[-1]
 
@@ -291,11 +290,7 @@ class S3Adapter:
             content = await asyncio.to_thread(body.read)
         finally:
             body.close()
-        if len(content) > max_size_bytes:
-            raise ValueError(
-                f"File content exceeds limit: {len(content)} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_content_size(content, max_size_bytes, file_info.path)
         return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
@@ -469,5 +464,4 @@ class S3Adapter:
         return self._client
 
     def _resolve_prefix(self, target: str) -> str:
-        parts = [p for p in (self._prefix, target) if p]
-        return "/".join(parts)
+        return resolve_prefix(self._prefix, target)

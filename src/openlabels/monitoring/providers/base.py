@@ -19,9 +19,14 @@ keeping the harvester simple and uniform.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,3 +108,33 @@ class EventProvider(Protocol):
     async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Return events that occurred after *since*."""
         ...
+
+
+async def poll_events(
+    read_fn: Callable[[], list[RawAccessEvent]],
+    shutdown_event: asyncio.Event,
+    provider_name: str,
+    poll_interval: float = 0.5,
+) -> AsyncIterator[list[RawAccessEvent]]:
+    """Shared polling loop for event providers.
+
+    Runs *read_fn* (a synchronous callable) in the default executor
+    every *poll_interval* seconds, yielding non-empty batches, until
+    *shutdown_event* is set.
+    """
+    loop = asyncio.get_running_loop()
+    while not shutdown_event.is_set():
+        try:
+            events = await loop.run_in_executor(None, read_fn)
+            if events:
+                yield events
+        except Exception:
+            logger.warning("%s stream read failed", provider_name, exc_info=True)
+
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(), timeout=poll_interval,
+            )
+            break
+        except asyncio.TimeoutError:
+            pass

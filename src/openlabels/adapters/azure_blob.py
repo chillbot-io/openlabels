@@ -24,6 +24,9 @@ from openlabels.adapters.base import (
     FilterConfig,
     PartitionSpec,
     is_label_compatible,
+    resolve_prefix,
+    validate_content_size,
+    validate_file_size,
 )
 
 try:
@@ -274,22 +277,14 @@ class AzureBlobAdapter:
         max_size_bytes: int = 100 * 1024 * 1024,
     ) -> bytes:
         """Download blob content from Azure with size limit."""
-        if file_info.size > max_size_bytes:
-            raise ValueError(
-                f"File too large for processing: {file_info.size} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_file_size(file_info, max_size_bytes)
         container = self._ensure_container_client()
         blob_name = file_info.item_id or self._extract_blob_name(file_info.path)
         blob_client = container.get_blob_client(blob_name)
 
         downloader = await asyncio.to_thread(blob_client.download_blob)
         content = await asyncio.to_thread(downloader.readall)
-        if len(content) > max_size_bytes:
-            raise ValueError(
-                f"File content exceeds limit: {len(content)} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_content_size(content, max_size_bytes, file_info.path)
         return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
@@ -478,8 +473,7 @@ class AzureBlobAdapter:
         return self._container_client
 
     def _resolve_prefix(self, target: str) -> str:
-        parts = [p for p in (self._prefix, target) if p]
-        return "/".join(parts)
+        return resolve_prefix(self._prefix, target)
 
     def _extract_blob_name(self, path: str) -> str:
         """Extract blob name from full URL path."""

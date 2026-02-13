@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator
 from ctypes import wintypes
 from datetime import datetime, timezone
 
-from openlabels.monitoring.providers.base import RawAccessEvent
+from openlabels.monitoring.providers.base import RawAccessEvent, poll_events
 
 logger = logging.getLogger(__name__)
 
@@ -430,21 +430,10 @@ class USNJournalProvider:
         Polls the USN journal every *poll_interval* seconds until
         *shutdown_event* is set.
         """
-        loop = asyncio.get_running_loop()
-        while not shutdown_event.is_set():
-            try:
-                events = await loop.run_in_executor(
-                    None, self._collect_sync, None,
-                )
-                if events:
-                    yield events
-            except Exception:
-                logger.warning("USN stream read failed", exc_info=True)
-
-            try:
-                await asyncio.wait_for(
-                    shutdown_event.wait(), timeout=poll_interval,
-                )
-                break
-            except asyncio.TimeoutError:
-                pass
+        async for batch in poll_events(
+            lambda: self._collect_sync(None),
+            shutdown_event,
+            "USN",
+            poll_interval,
+        ):
+            yield batch

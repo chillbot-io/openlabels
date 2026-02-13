@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from openlabels.monitoring.providers.base import RawAccessEvent
+from openlabels.monitoring.providers.base import RawAccessEvent, poll_events
 
 logger = logging.getLogger(__name__)
 
@@ -382,24 +382,10 @@ class FanotifyProvider:
         Reads the fanotify fd every *poll_interval* seconds until
         *shutdown_event* is set.
         """
-        loop = asyncio.get_running_loop()
-        while not shutdown_event.is_set():
-            try:
-                events = await loop.run_in_executor(
-                    None, self._read_events_sync,
-                )
-                if events:
-                    yield events
-            except Exception:
-                logger.warning("fanotify stream read failed", exc_info=True)
-
-            try:
-                await asyncio.wait_for(
-                    shutdown_event.wait(), timeout=poll_interval,
-                )
-                break
-            except asyncio.TimeoutError:
-                pass
+        async for batch in poll_events(
+            self._read_events_sync, shutdown_event, "fanotify", poll_interval
+        ):
+            yield batch
 
     # ── Cleanup ──────────────────────────────────────────────────────
 
