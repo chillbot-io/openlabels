@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 # Memory footprint per agent (NER model + overhead)
 AGENT_MEMORY_MB = 400  # ~350MB model + 50MB overhead
 MIN_SYSTEM_MEMORY_MB = 2048  # Keep 2GB free for OS
-_MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+
+_MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
 
 @dataclass
@@ -449,7 +451,6 @@ class ScanOrchestrator:
         self,
         pool_config: AgentPoolConfig | None = None,
         result_handler: ResultHandler | None = None,
-        # ── Phase F additions ───────────────────────────────
         adapter: object | None = None,       # ReadAdapter
         change_provider: object | None = None,  # ChangeProvider
         inventory: object | None = None,      # InventoryService
@@ -554,7 +555,6 @@ class ScanOrchestrator:
 
             return pool.stats
 
-    # ── Stage 1: Walk files ────────────────────────────────────────────
 
     async def _walk_files(self) -> None:
         """Queue files from the ChangeProvider for extraction."""
@@ -606,7 +606,6 @@ class ScanOrchestrator:
 
         logger.debug("File walker completed")
 
-    # ── Stage 2: Extract + submit ──────────────────────────────────────
 
     async def _extract_and_submit(self, pool: AgentPool) -> None:
         """Extract text, run delta checks, attach metadata, submit."""
@@ -731,7 +730,6 @@ class ScanOrchestrator:
             )
             await pool.submit(work)
 
-    # ── Stage 3: Collect results + full pipeline ───────────────────────
 
     async def _collect_and_store(
         self,
@@ -791,6 +789,7 @@ class ScanOrchestrator:
 
     async def _persist_unified(self, completed_files: list[FileResult]) -> None:
         """Full result pipeline: score → persist → inventory → WebSocket."""
+        from openlabels.core.types import JobStatus
         from openlabels.jobs.inventory import get_folder_path
         from openlabels.server.models import ScanResult
 
@@ -809,17 +808,16 @@ class ScanOrchestrator:
                 meta = self._file_metadata.get(file_result.file_path, {})
                 file_info = meta.get("file_info")
                 content_hash = meta.get("content_hash")
-                exposure_level = meta.get("exposure_level", "PRIVATE")
+                from openlabels.core.types import ExposureLevel
+                exposure_level = meta.get("exposure_level", ExposureLevel.PRIVATE)
                 owner = meta.get("owner")
 
-                # ── Risk scoring (full engine, not hardcoded) ──────
                 risk_score, risk_tier, content_score, exp_multiplier = self._compute_risk(
                     file_result.entity_counts,
                     file_result.total_entities,
                     exposure_level,
                 )
 
-                # ── DB persist ─────────────────────────────────────
                 scan_result = ScanResult(
                     tenant_id=self._job.tenant_id,
                     job_id=self._job.id,
@@ -839,7 +837,6 @@ class ScanOrchestrator:
                 )
                 self._session.add(scan_result)
 
-                # ── Update stats ───────────────────────────────────
                 self.stats["files_scanned"] += 1
                 if file_result.total_entities > 0:
                     self.stats["files_with_pii"] += 1
@@ -847,7 +844,6 @@ class ScanOrchestrator:
                 tier_key = f"{risk_tier.lower()}_count"
                 self.stats[tier_key] = self.stats.get(tier_key, 0) + 1
 
-                # ── Folder stats for inventory ─────────────────────
                 if file_info:
                     folder_path = get_folder_path(file_info.path)
                     if folder_path not in self._folder_stats:
@@ -864,11 +860,10 @@ class ScanOrchestrator:
                     if file_result.total_entities > 0:
                         fs["has_sensitive"] = True
                         fs["total_entities"] += file_result.total_entities
-                        _rp = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
-                        if fs["highest_risk"] is None or _rp.get(risk_tier, 0) > _rp.get(fs["highest_risk"], 0):
+                        from openlabels.core.constants import RISK_TIER_PRIORITY
+                        if fs["highest_risk"] is None or RISK_TIER_PRIORITY.get(risk_tier, 0) > RISK_TIER_PRIORITY.get(fs["highest_risk"], 0):
                             fs["highest_risk"] = risk_tier
 
-                    # ── File inventory update (sensitive files) ────
                     if file_result.total_entities > 0 and self._inventory:
                         await self._inventory.update_file_inventory(
                             file_info=file_info,
@@ -877,7 +872,6 @@ class ScanOrchestrator:
                             job_id=self._job.id,
                         )
 
-                # ── WebSocket streaming ────────────────────────────
                 if _send_file_result:
                     try:
                         await _send_file_result(
@@ -895,7 +889,7 @@ class ScanOrchestrator:
                     try:
                         await _send_progress(
                             scan_id=self._job.id,
-                            status="running",
+                            status=JobStatus.RUNNING,
                             progress={
                                 "files_scanned": self.stats["files_scanned"],
                                 "files_with_pii": self.stats["files_with_pii"],
@@ -905,7 +899,6 @@ class ScanOrchestrator:
                     except (ConnectionError, OSError):
                         pass
 
-                # ── Job progress ───────────────────────────────────
                 self._job.files_scanned = self.stats["files_scanned"]
                 self._job.files_with_pii = self.stats["files_with_pii"]
                 self._job.progress = {
@@ -943,26 +936,28 @@ class ScanOrchestrator:
         content_score = min(total_entities * 10, 100)
 
         # Exposure multiplier
+        from openlabels.core.types import ExposureLevel
         exposure_multipliers = {
-            "PRIVATE": 1.0,
-            "INTERNAL": 1.2,
-            "ORG_WIDE": 1.5,
-            "PUBLIC": 2.0,
+            ExposureLevel.PRIVATE: 1.0,
+            ExposureLevel.INTERNAL: 1.2,
+            ExposureLevel.ORG_WIDE: 1.5,
+            ExposureLevel.PUBLIC: 2.0,
         }
         multiplier = exposure_multipliers.get(exposure_level, 1.0)
         score = min(int(content_score * multiplier), 100)
 
         # Tier from score
+        from openlabels.core.types import RiskTier
         if score >= 80:
-            tier = "CRITICAL"
+            tier = RiskTier.CRITICAL
         elif score >= 60:
-            tier = "HIGH"
+            tier = RiskTier.HIGH
         elif score >= 40:
-            tier = "MEDIUM"
+            tier = RiskTier.MEDIUM
         elif score >= 10:
-            tier = "LOW"
+            tier = RiskTier.LOW
         else:
-            tier = "MINIMAL"
+            tier = RiskTier.MINIMAL
 
         return score, tier, content_score, multiplier
 

@@ -1,5 +1,5 @@
 """
-Report commands — local scanning and server-backed report generation.
+Report commands -- local scanning and server-backed report generation.
 """
 
 from __future__ import annotations
@@ -15,8 +15,10 @@ from pathlib import Path
 import click
 import httpx
 
-from openlabels.cli.base import get_api_client, server_options
+from openlabels.cli.base import api_client, server_options
 from openlabels.cli.utils import collect_files, handle_http_error, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.types import ExposureLevel, RiskTier
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
@@ -80,20 +82,20 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
                         file_path=str(file_path),
                         content=content,
-                        exposure_level="PRIVATE",
+                        exposure_level=ExposureLevel.PRIVATE,
                     )
                     all_results.append({
                         "file_path": str(file_path),
                         "file_name": result.file_name,
                         "risk_score": result.risk_score,
-                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "risk_tier": result.risk_tier,
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
@@ -122,11 +124,8 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             "files_with_findings": len([r for r in results if r["total_entities"] > 0]),
             "total_entities": sum(r["total_entities"] for r in results),
             "by_tier": {
-                "CRITICAL": len([r for r in results if r["risk_tier"] == "CRITICAL"]),
-                "HIGH": len([r for r in results if r["risk_tier"] == "HIGH"]),
-                "MEDIUM": len([r for r in results if r["risk_tier"] == "MEDIUM"]),
-                "LOW": len([r for r in results if r["risk_tier"] == "LOW"]),
-                "MINIMAL": len([r for r in results if r["risk_tier"] == "MINIMAL"]),
+                tier: len([r for r in results if r["risk_tier"] == tier])
+                for tier in RiskTier
             },
             "by_entity": {},
         }
@@ -162,7 +161,7 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             lines.append(f"Files with findings: {summary['files_with_findings']}")
             lines.append(f"Total entities found: {summary['total_entities']}")
             lines.append("\nBy Risk Tier:")
-            for tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "MINIMAL"]:
+            for tier in reversed(RiskTier):
                 count = summary["by_tier"][tier]
                 if count > 0:
                     lines.append(f"  {tier}: {count}")
@@ -276,7 +275,7 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
         sys.exit(1)
 
 
-# ── Server-backed subcommands ───────────────────────────────────────
+# -- Server-backed subcommands -------------------------------------------
 
 
 @report.command("generate")
@@ -310,49 +309,46 @@ def report_generate(
     """
     from openlabels.cli.base import spinner
 
-    client = get_api_client(server, token)
-
     try:
-        payload: dict = {
-            "report_type": template,
-            "format": fmt,
-        }
-        if job:
-            payload["job_id"] = job
+        with api_client(server, token) as client:
+            payload: dict = {
+                "report_type": template,
+                "format": fmt,
+            }
+            if job:
+                payload["job_id"] = job
 
-        with spinner("Generating report..."):
-            response = client.post("/api/v1/reporting/generate", json=payload)
+            with spinner("Generating report..."):
+                response = client.post("/api/v1/reporting/generate", json=payload)
 
-        if response.status_code != 201:
-            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
-            return
-
-        data = response.json()
-        report_id = data["id"]
-        click.echo(f"Report generated: {data['name']} (id={report_id}, status={data['status']})")
-
-        if output and data["status"] == "generated":
-            try:
-                validated_output = validate_output_path(output, create_parent=True)
-            except PathValidationError as e:
-                click.echo(f"Error: Invalid output path: {e}", err=True)
+            if response.status_code != 201:
+                click.echo(f"Error: {response.status_code} - {response.text}", err=True)
                 return
 
-            with spinner("Downloading report..."):
-                dl = client.get(f"/api/v1/reporting/{report_id}/download")
+            data = response.json()
+            report_id = data["id"]
+            click.echo(f"Report generated: {data['name']} (id={report_id}, status={data['status']})")
 
-            if dl.status_code == 200:
-                with open(validated_output, "wb") as f:
-                    f.write(dl.content)
-                size_kb = len(dl.content) / 1024
-                click.echo(f"Downloaded to: {validated_output} ({size_kb:.1f} KB)")
-            else:
-                click.echo(f"Download failed: {dl.status_code} - {dl.text}", err=True)
+            if output and data["status"] == "generated":
+                try:
+                    validated_output = validate_output_path(output, create_parent=True)
+                except PathValidationError as e:
+                    click.echo(f"Error: Invalid output path: {e}", err=True)
+                    return
+
+                with spinner("Downloading report..."):
+                    dl = client.get(f"/api/v1/reporting/{report_id}/download")
+
+                if dl.status_code == 200:
+                    with open(validated_output, "wb") as f:
+                        f.write(dl.content)
+                    size_kb = len(dl.content) / 1024
+                    click.echo(f"Downloaded to: {validated_output} ({size_kb:.1f} KB)")
+                else:
+                    click.echo(f"Download failed: {dl.status_code} - {dl.text}", err=True)
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)
-    finally:
-        client.close()
 
 
 @report.command("list")
@@ -377,45 +373,42 @@ def report_list(
         openlabels report list
         openlabels report list --type executive_summary
     """
-    client = get_api_client(server, token)
-
     try:
-        params: dict = {"page_size": page_size}
-        if report_type:
-            params["report_type"] = report_type
+        with api_client(server, token) as client:
+            params: dict = {"page_size": page_size}
+            if report_type:
+                params["report_type"] = report_type
 
-        response = client.get("/api/v1/reporting", params=params)
+            response = client.get("/api/v1/reporting", params=params)
 
-        if response.status_code != 200:
-            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
-            return
+            if response.status_code != 200:
+                click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+                return
 
-        data = response.json()
-        items = data.get("items", [])
+            data = response.json()
+            items = data.get("items", [])
 
-        if not items:
-            click.echo("No reports found.")
-            return
+            if not items:
+                click.echo("No reports found.")
+                return
 
-        # Header
-        click.echo(f"{'ID':<38} {'Type':<22} {'Format':<6} {'Status':<12} {'Created At'}")
-        click.echo("-" * 100)
+            # Header
+            click.echo(f"{'ID':<38} {'Type':<22} {'Format':<6} {'Status':<12} {'Created At'}")
+            click.echo("-" * 100)
 
-        for r in items:
-            created = r.get("created_at", "-")[:19]
-            click.echo(
-                f"{r['id']:<38} {r['report_type']:<22} {r['format']:<6} "
-                f"{r['status']:<12} {created}"
-            )
+            for r in items:
+                created = r.get("created_at", "-")[:19]
+                click.echo(
+                    f"{r['id']:<38} {r['report_type']:<22} {r['format']:<6} "
+                    f"{r['status']:<12} {created}"
+                )
 
-        total = data.get("total", len(items))
-        if total > page_size:
-            click.echo(f"\nShowing {len(items)} of {total} reports. Use --limit to see more.")
+            total = data.get("total", len(items))
+            if total > page_size:
+                click.echo(f"\nShowing {len(items)} of {total} reports. Use --limit to see more.")
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)
-    finally:
-        client.close()
 
 
 @report.command("schedule")
@@ -449,29 +442,26 @@ def report_schedule(
         openlabels report schedule -t executive_summary --cron "0 9 * * MON" --format pdf
         openlabels report schedule -t compliance_report --cron "0 2 1 * *" --email admin@co.com
     """
-    client = get_api_client(server, token)
-
     try:
-        payload: dict = {
-            "report_type": template,
-            "format": fmt,
-            "cron": cron,
-        }
-        if name:
-            payload["name"] = name
-        if email:
-            payload["distribute_to"] = list(email)
+        with api_client(server, token) as client:
+            payload: dict = {
+                "report_type": template,
+                "format": fmt,
+                "cron": cron,
+            }
+            if name:
+                payload["name"] = name
+            if email:
+                payload["distribute_to"] = list(email)
 
-        response = client.post("/api/v1/reporting/schedule", json=payload)
+            response = client.post("/api/v1/reporting/schedule", json=payload)
 
-        if response.status_code != 201:
-            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
-            return
+            if response.status_code != 201:
+                click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+                return
 
-        data = response.json()
-        click.echo(f"Scheduled: {data['message']}")
+            data = response.json()
+            click.echo(f"Scheduled: {data['message']}")
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)
-    finally:
-        client.close()

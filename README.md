@@ -17,23 +17,13 @@ OpenLabels scans SharePoint, OneDrive, and file shares to detect sensitive data 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Windows Server                                         │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │  OpenLabels Windows App                           │  │
-│  │  - GUI (PySide6)                                  │  │
-│  │  - MIP SDK integration                            │  │
-│  │  - Windows Service                                │  │
-│  └───────────────────────────────────────────────────┘  │
-│                         │                                │
-│                         ▼                                │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │  Docker (backend)                                 │  │
-│  │  - FastAPI server                                 │  │
-│  │  - PostgreSQL database                            │  │
-│  │  - Detection engine                               │  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│  Docker                                           │
+│  - FastAPI server (REST API + WebSocket)          │
+│  - PostgreSQL database                            │
+│  - Detection engine                               │
+│  - React frontend (Vite)                          │
+└───────────────────────────────────────────────────┘
 ```
 
 ## Quick Start

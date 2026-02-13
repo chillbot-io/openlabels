@@ -78,8 +78,7 @@ _LEGACY_API_PREFIXES = [
 ]
 
 
-# --- Router wiring ---
-
+# Router wiring
 _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/auth", "Authentication", auth),
     ("/audit", "Audit", audit),
@@ -108,7 +107,7 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
 def _include_routes(app: FastAPI) -> None:
     """Wire up versioned (v1) and legacy API routers, plus WebSocket & Web UI."""
 
-    # --- Versioned API ---
+    # Versioned API
     api_v1_router = APIRouter(prefix=API_V1_PREFIX)
     for prefix, tag, module in _ROUTE_MODULES:
         api_v1_router.include_router(module.router, prefix=prefix, tags=[tag])
@@ -119,11 +118,11 @@ def _include_routes(app: FastAPI) -> None:
     # route handler under /api/ — that duplicated memory, OpenAPI schema
     # entries, and middleware invocations.
 
-    # --- WebSocket (not versioned) ---
+    # WebSocket (not versioned)
     app.include_router(ws.router, tags=["WebSocket"])
     app.include_router(ws_events.router, tags=["WebSocket"])
 
-    # --- Web UI ---
+    # Web UI
     app.include_router(web_router, prefix="/ui", tags=["Web UI"])
 
 
@@ -265,9 +264,7 @@ def _register_spa_serving(app: FastAPI) -> None:
         return FileResponse(str(index_html), media_type="text/html")
 
 
-# --- Application factory ---
-
-
+# Application factory
 def create_app() -> FastAPI:
     """Build and return the fully-configured FastAPI application."""
     application = FastAPI(

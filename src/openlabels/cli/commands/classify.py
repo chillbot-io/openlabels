@@ -12,12 +12,14 @@ from pathlib import Path
 import click
 
 from openlabels.cli.utils import collect_files
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 from openlabels.core.path_validation import PathValidationError, validate_output_path
+from openlabels.core.types import ExposureLevel
 
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True))
-@click.option("--exposure", default="PRIVATE", type=click.Choice(["PRIVATE", "INTERNAL", "ORG_WIDE", "PUBLIC"]))
+@click.option("--exposure", default=ExposureLevel.PRIVATE, type=click.Choice([e.value for e in ExposureLevel]))
 @click.option("--enable-ml", is_flag=True, help="Enable ML-based detectors")
 @click.option("--recursive", "-r", is_flag=True, help="Scan directories recursively")
 @click.option("--output", "-o", help="Output file for results (JSON)")
@@ -49,7 +51,7 @@ def classify(path: str, exposure: str, enable_ml: bool, recursive: bool, output:
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()

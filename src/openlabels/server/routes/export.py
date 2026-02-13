@@ -16,7 +16,6 @@ from openlabels.server.config import get_settings
 router = APIRouter()
 
 
-# ── Request / Response schemas ───────────────────────────────────────
 
 class SIEMExportRequest(BaseModel):
     since: datetime | None = None
@@ -41,7 +40,6 @@ class SIEMStatusResponse(BaseModel):
     cursors: dict[str, str]
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post("/siem", response_model=SIEMExportResponse)
 async def trigger_siem_export(

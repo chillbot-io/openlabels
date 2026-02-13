@@ -24,7 +24,11 @@ from openlabels.adapters.base import (
     FilterConfig,
     PartitionSpec,
     is_label_compatible,
+    resolve_prefix,
+    validate_content_size,
+    validate_file_size,
 )
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 
 try:
     from botocore.exceptions import BotoCoreError
@@ -92,7 +96,6 @@ class S3Adapter:
         self._endpoint_url = endpoint_url
         self._client = None
 
-    # ── ReadAdapter protocol ────────────────────────────────────────
 
     @property
     def adapter_type(self) -> str:
@@ -114,8 +117,8 @@ class S3Adapter:
         if self._client is not None:
             try:
                 await asyncio.to_thread(self._client.close)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("S3 client close failed: %s", e)
         self._client = None
 
     async def test_connection(self, config: dict) -> bool:
@@ -272,14 +275,10 @@ class S3Adapter:
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Download object content from S3 with size limit."""
-        if file_info.size > max_size_bytes:
-            raise ValueError(
-                f"File too large for processing: {file_info.size} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_file_size(file_info, max_size_bytes)
         client = self._ensure_client()
         key = file_info.item_id or file_info.path.split(f"s3://{self._bucket}/", 1)[-1]
 
@@ -291,11 +290,7 @@ class S3Adapter:
             content = await asyncio.to_thread(body.read)
         finally:
             body.close()
-        if len(content) > max_size_bytes:
-            raise ValueError(
-                f"File content exceeds limit: {len(content)} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_content_size(content, max_size_bytes, file_info.path)
         return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
@@ -319,7 +314,6 @@ class S3Adapter:
             permissions={"etag": etag, "metadata": head.get("Metadata", {})},
         )
 
-    # ── Cloud label sync-back ───────────────────────────────────────
 
     async def apply_label_and_sync(
         self,
@@ -411,7 +405,6 @@ class S3Adapter:
         logger.info("Applied label %s to s3://%s/%s", label_id, self._bucket, key)
         return {"success": True, "method": "s3_metadata"}
 
-    # ── S3 change detection (ETag diff) ─────────────────────────────
 
     async def list_objects_with_etags(
         self,
@@ -434,7 +427,6 @@ class S3Adapter:
 
         return result
 
-    # ── Internal helpers ────────────────────────────────────────────
 
     @staticmethod
     def _iter_pages_sync(paginator_result):
@@ -469,5 +461,4 @@ class S3Adapter:
         return self._client
 
     def _resolve_prefix(self, target: str) -> str:
-        parts = [p for p in (self._prefix, target) if p]
-        return "/".join(parts)
+        return resolve_prefix(self._prefix, target)

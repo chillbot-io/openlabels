@@ -20,6 +20,8 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT, RISK_TIER_ORDER
+from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
@@ -45,7 +47,6 @@ def _login_redirect(request: Request) -> RedirectResponse:
     return RedirectResponse(url=f"/ui/login?next={request.url.path}", status_code=302)
 
 
-# Set up templates directory
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 
@@ -522,7 +523,7 @@ async def new_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled == True)  # noqa: E712
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -562,7 +563,7 @@ async def edit_schedule_page(
             select(ScanTarget)
             .where(ScanTarget.tenant_id == user.tenant_id)
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for t in result.scalars().all():
@@ -639,7 +640,7 @@ async def scan_detail_page(
             progress_pct = 0
             if total_files > 0:
                 progress_pct = min(100, int((scan_obj.files_scanned or 0) / total_files * 100))
-            elif scan_obj.status == "completed":
+            elif scan_obj.status == JobStatus.COMPLETED:
                 progress_pct = 100
 
             scan = {
@@ -1011,7 +1012,7 @@ async def create_scan_form(
                     tenant_id=user.tenant_id,
                     target_id=target.id,
                     target_name=target.name,
-                    status="pending",
+                    status=JobStatus.PENDING,
                     created_by=user.id,
                 )
                 session.add(job)
@@ -1073,7 +1074,7 @@ async def dashboard_stats_partial(
         scan_stats_query = select(
             func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
             func.sum(
-                case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+                case((ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]), 1), else_=0)
             ).label("active"),
         ).where(ScanJob.tenant_id == user.tenant_id)
 
@@ -1085,7 +1086,7 @@ async def dashboard_stats_partial(
         # Sensitive file stats from ScanResult (matches API's files_with_pii / critical_files)
         file_stats_query = select(
             func.count().label("files_with_pii"),
-            func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
+            func.sum(case((ScanResult.risk_tier == RiskTier.CRITICAL, 1), else_=0)).label("critical_files"),
         ).where(ScanResult.tenant_id == user.tenant_id)
 
         result = await session.execute(file_stats_query)
@@ -1229,7 +1230,7 @@ async def risk_distribution_partial(
         rows = result.all()
 
         total = sum(row.count for row in rows) or 1
-        risk_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        risk_order = list(reversed(RISK_TIER_ORDER[1:]))  # CRITICAL..LOW (exclude MINIMAL)
         risk_data = {row.risk_tier: row.count for row in rows}
 
         for level in risk_order:
@@ -1310,7 +1311,8 @@ async def health_status_partial(
     # Check database connectivity
     try:
         await session.execute(sa_text("SELECT 1"))
-    except Exception:
+    except Exception as e:
+        logger.warning("Health check DB query failed: %s", e)
         health["status"] = "unhealthy"
         return templates.TemplateResponse(
             "partials/health_status.html",
@@ -1320,13 +1322,14 @@ async def health_status_partial(
     # Check for excessive failed jobs (indicates systemic issues)
     try:
         failed_query = select(func.count()).select_from(
-            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+            select(JobQueueModel).where(JobQueueModel.status == JobStatus.FAILED).subquery()
         )
         result = await session.execute(failed_query)
         failed_count = result.scalar() or 0
         if failed_count > 10:
             health["status"] = "degraded"
-    except Exception:
+    except Exception as e:
+        logger.warning("Health check job queue query failed: %s", e)
         health["status"] = "degraded"
 
     return templates.TemplateResponse(
@@ -1428,7 +1431,7 @@ async def scans_list_partial(
             progress_pct = 0
             if total_files > 0:
                 progress_pct = min(100, int((scan.files_scanned or 0) / total_files * 100))
-            elif scan.status == "completed":
+            elif scan.status == JobStatus.COMPLETED:
                 progress_pct = 100
 
             scans.append({
@@ -1646,7 +1649,7 @@ async def job_queue_partial(
             select(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == user.tenant_id,
-                JobQueueModel.status == "failed",
+                JobQueueModel.status == JobStatus.FAILED,
             )
             .order_by(desc(JobQueueModel.completed_at))
             .limit(5)
@@ -1701,7 +1704,7 @@ async def system_health_partial(
     # Check job queue for failures
     try:
         failed_query = select(func.count()).select_from(
-            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+            select(JobQueueModel).where(JobQueueModel.status == JobStatus.FAILED).subquery()
         )
         result = await session.execute(failed_query)
         failed_count = result.scalar() or 0
@@ -1792,7 +1795,7 @@ async def label_mappings_partial(
             select(SensitivityLabel)
             .where(SensitivityLabel.tenant_id == user.tenant_id)
             .order_by(SensitivityLabel.priority)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for label in result.scalars().all():
@@ -1840,7 +1843,7 @@ async def target_checkboxes_partial(
                 ScanTarget.enabled == True,  # noqa: E712
             )
             .order_by(ScanTarget.name)
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         result = await session.execute(query)
         for target in result.scalars().all():

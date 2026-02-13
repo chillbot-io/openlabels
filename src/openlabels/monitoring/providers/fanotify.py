@@ -26,15 +26,13 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from openlabels.monitoring.providers.base import RawAccessEvent
+from openlabels.monitoring.providers.base import RawAccessEvent, poll_events
 
 logger = logging.getLogger(__name__)
 
-# ── Platform detection ───────────────────────────────────────────────
 
 _IS_LINUX = sys.platform == "linux"
 
-# ── fanotify constants ───────────────────────────────────────────────
 
 # fanotify_init flags
 FAN_CLASS_NOTIF = 0x00000000
@@ -97,7 +95,6 @@ def _mask_to_action(mask: int) -> str:
     return "write"
 
 
-# ── /proc helpers ────────────────────────────────────────────────────
 
 def _resolve_pid_user(pid: int) -> str | None:
     """Resolve PID to username via /proc/{pid}/status."""
@@ -127,7 +124,6 @@ def _resolve_fd_path(fd: int) -> str | None:
         return None
 
 
-# ── libc wrappers ────────────────────────────────────────────────────
 
 _libc_cache = None
 
@@ -196,7 +192,6 @@ def _fanotify_mark(
         return False
 
 
-# ── FanotifyProvider ─────────────────────────────────────────────────
 
 
 class FanotifyProvider:
@@ -356,7 +351,6 @@ class FanotifyProvider:
 
         return events
 
-    # ── EventProvider protocol ───────────────────────────────────────
 
     async def collect(
         self, since: datetime | None = None,
@@ -370,7 +364,6 @@ class FanotifyProvider:
 
         return events
 
-    # ── Streaming mode (for EventStreamManager) ──────────────────────
 
     async def stream(
         self,
@@ -382,26 +375,11 @@ class FanotifyProvider:
         Reads the fanotify fd every *poll_interval* seconds until
         *shutdown_event* is set.
         """
-        loop = asyncio.get_running_loop()
-        while not shutdown_event.is_set():
-            try:
-                events = await loop.run_in_executor(
-                    None, self._read_events_sync,
-                )
-                if events:
-                    yield events
-            except Exception:
-                logger.warning("fanotify stream read failed", exc_info=True)
+        async for batch in poll_events(
+            self._read_events_sync, shutdown_event, "fanotify", poll_interval
+        ):
+            yield batch
 
-            try:
-                await asyncio.wait_for(
-                    shutdown_event.wait(), timeout=poll_interval,
-                )
-                break
-            except asyncio.TimeoutError:
-                pass
-
-    # ── Cleanup ──────────────────────────────────────────────────────
 
     def close(self) -> None:
         """Close the fanotify file descriptor."""

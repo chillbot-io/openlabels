@@ -28,6 +28,7 @@ from openlabels.analytics.service import (
     DashboardQueryService,
 )
 from openlabels.auth.dependencies import get_current_user
+from openlabels.core.types import JobStatus
 from openlabels.server.cache import get_cache_manager
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob
@@ -41,7 +42,6 @@ DASHBOARD_STATS_CACHE_PREFIX = "dashboard:stats"
 DASHBOARD_STATS_TTL = 60  # 60 seconds - stats change frequently
 
 
-# ── Response models ──────────────────────────────────────────────────
 
 class OverallStats(BaseModel):
     """Overall dashboard statistics."""
@@ -158,7 +158,6 @@ HEATMAP_MAX_FILES = 10000
 HEATMAP_MAX_DEPTH = 10
 
 
-# ── Service resolution ────────────────────────────────────────────────
 
 def _get_dashboard_service(request: Request) -> DashboardQueryService:
     """Return the DuckDB-backed dashboard service.
@@ -176,7 +175,6 @@ def _get_dashboard_service(request: Request) -> DashboardQueryService:
     return svc
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/stats", response_model=OverallStats)
 async def get_overall_stats(
@@ -207,7 +205,7 @@ async def get_overall_stats(
     scan_stats_query = select(
         func.count().label("total"),
         func.sum(
-            case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+            case((ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]), 1), else_=0)
         ).label("active"),
         func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
     ).where(ScanJob.tenant_id == user.tenant_id)
@@ -540,7 +538,6 @@ async def get_heatmap(
     )
 
 
-# ── Heatmap tree builder ─────────────────────────────────────────────
 
 def _build_heatmap_node(name: str, data: dict, path: str) -> HeatmapNode:
     """Recursively build heatmap nodes from the intermediate tree dict."""

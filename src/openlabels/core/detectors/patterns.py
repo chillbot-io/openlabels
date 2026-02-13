@@ -926,112 +926,112 @@ _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE',
 # === Driver's License - State-specific formats (bare patterns) ===
 # These catch DL numbers even without labels, based on known state formats
 
-# --- Florida: Letter + 3-3-2-3-1 with dashes (W426-545-30-761-0) ---
+# Florida: Letter + 3-3-2-3-1 with dashes (W426-545-30-761-0)
 _p(r'\b([A-Z]\d{3}-\d{3}-\d{2}-\d{3}-\d)\b', 'DRIVER_LICENSE', 0.95, 1),
 # Florida without dashes (OCR may miss them): W4265453076110
 _p(r'\b([A-Z]\d{12}0)\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# --- California: Letter + 7 digits (A1234567) ---
+# California: Letter + 7 digits (A1234567)
 _p(r'\b([A-Z]\d{7})\b', 'DRIVER_LICENSE', 0.72, 1),
 
-# --- New York: 9 digits OR Letter + 7 digits + space + 3 digits ---
+# New York: 9 digits OR Letter + 7 digits + space + 3 digits
 # Note: 9 digit overlaps with SSN, so need context
 _p(r'(?:DL|License)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.85, 1, flags=re.I),
 
-# --- Pennsylvania: 8 digits ---
+# Pennsylvania: 8 digits
 _p(r'\b(\d{8})\b(?=.*(?:PA|Pennsylvania|DL|License))', 'DRIVER_LICENSE', 0.75, 1, flags=re.I),
 
-# --- Illinois: Letter + 11-12 digits (A12345678901) ---
+# Illinois: Letter + 11-12 digits (A12345678901)
 _p(r'\b([A-Z]\d{11,12})\b', 'DRIVER_LICENSE', 0.82, 1),
 
-# --- Ohio: 2 letters + 6 digits (AB123456) OR 8 digits ---
+# Ohio: 2 letters + 6 digits (AB123456) OR 8 digits
 _p(r'\b([A-Z]{2}\d{6})\b', 'DRIVER_LICENSE', 0.78, 1),
 
-# --- Michigan: Letter + 10-12 digits ---
+# Michigan: Letter + 10-12 digits
 _p(r'\b([A-Z]\d{10,12})\b', 'DRIVER_LICENSE', 0.80, 1),
 
-# --- New Jersey: Letter + 14 digits ---
+# New Jersey: Letter + 14 digits
 _p(r'\b([A-Z]\d{14})\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# --- Virginia: Letter + 8-9 digits OR 9 digits (with context) ---
+# Virginia: Letter + 8-9 digits OR 9 digits (with context)
 _p(r'\b([A-Z]\d{8,9})\b', 'DRIVER_LICENSE', 0.75, 1),
 
-# --- Maryland: Letter + 12 digits ---
+# Maryland: Letter + 12 digits
 # (Covered by Michigan pattern above)
 
-# --- Wisconsin: Letter + 13 digits ---
+# Wisconsin: Letter + 13 digits
 _p(r'\b([A-Z]\d{13})\b', 'DRIVER_LICENSE', 0.82, 1),
 
-# --- Washington: WDL prefix + alphanumeric (12 chars total like WDL*ABC1234D) ---
+# Washington: WDL prefix + alphanumeric (12 chars total like WDL*ABC1234D)
 _p(r'\b(WDL[A-Z0-9*]{9})\b', 'DRIVER_LICENSE', 0.92, 1),
 
-# --- Hawaii: H + 8 digits (H12345678) ---
+# Hawaii: H + 8 digits (H12345678)
 _p(r'\b(H\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# --- Colorado: 2 letters + 3-6 digits OR 9 digits (with context) ---
+# Colorado: 2 letters + 3-6 digits OR 9 digits (with context)
 _p(r'\b([A-Z]{2}\d{3,6})\b', 'DRIVER_LICENSE', 0.72, 1),
 _p(r'(?:CO|Colorado|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 
-# --- Nevada: 9-12 digits, often starts with X or 9 ---
+# Nevada: 9-12 digits, often starts with X or 9
 _p(r'\b(X\d{8,11})\b', 'DRIVER_LICENSE', 0.85, 1),
 _p(r'(?:NV|Nevada|DL)[:\s]+(\d{9,12})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- New Hampshire: 2 digits + 3 letters + 5 digits (12ABC34567) ---
+# New Hampshire: 2 digits + 3 letters + 5 digits (12ABC34567)
 _p(r'\b(\d{2}[A-Z]{3}\d{5})\b', 'DRIVER_LICENSE', 0.88, 1),
 
-# --- North Dakota: 3 letters + 6 digits (ABC123456) ---
+# North Dakota: 3 letters + 6 digits (ABC123456)
 _p(r'\b([A-Z]{3}\d{6})\b', 'DRIVER_LICENSE', 0.82, 1),
 
-# --- Iowa: 3 digits + 2 letters + 4 digits (123AB4567) OR 9 digits ---
+# Iowa: 3 digits + 2 letters + 4 digits (123AB4567) OR 9 digits
 _p(r'\b(\d{3}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
 
-# --- Kansas: K + 8 digits (K12345678) ---
+# Kansas: K + 8 digits (K12345678)
 _p(r'\b(K\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# --- Massachusetts: S + 8 digits (S12345678) ---
+# Massachusetts: S + 8 digits (S12345678)
 _p(r'\b(S\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# --- Arizona: Letter + 8 digits OR 9 digits with context ---
+# Arizona: Letter + 8 digits OR 9 digits with context
 _p(r'(?:AZ|Arizona|DL)[:\s]+([A-Z]?\d{8,9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 
-# --- Minnesota: Letter + 12 digits ---
+# Minnesota: Letter + 12 digits
 # (Covered by Illinois pattern: Letter + 11-12 digits)
 
-# --- Kentucky: Letter + 8-9 digits ---
+# Kentucky: Letter + 8-9 digits
 # (Covered by Virginia pattern: Letter + 8-9 digits)
 
-# --- Louisiana: 8 digits, often starts with 00 ---
+# Louisiana: 8 digits, often starts with 00
 _p(r'\b(00\d{6})\b', 'DRIVER_LICENSE', 0.80, 1),
 
-# --- Indiana: 4 digits + 2 letters + 4 digits (1234AB5678) OR 10 digits ---
+# Indiana: 4 digits + 2 letters + 4 digits (1234AB5678) OR 10 digits
 _p(r'\b(\d{4}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
 _p(r'(?:IN|Indiana|DL)[:\s]+(\d{10})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Oregon: 1-7 digits OR Letter + 6 digits ---
+# Oregon: 1-7 digits OR Letter + 6 digits
 _p(r'\b([A-Z]\d{6})\b', 'DRIVER_LICENSE', 0.72, 1),
 
-# --- Connecticut: 9 digits (with context, overlaps SSN) ---
+# Connecticut: 9 digits (with context, overlaps SSN)
 _p(r'(?:CT|Connecticut|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Texas: 8 digits (with context) ---
+# Texas: 8 digits (with context)
 _p(r'(?:TX|Texas|DL)[:\s]+(\d{8})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Georgia: 7-9 digits (with context) ---
+# Georgia: 7-9 digits (with context)
 _p(r'(?:GA|Georgia|DL)[:\s]+(\d{7,9})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Alabama: 7 digits (with context) ---
+# Alabama: 7 digits (with context)
 _p(r'(?:AL|Alabama|DL)[:\s]+(\d{7})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Missouri: Letter + 5-10 digits OR 9 digits with context ---
+# Missouri: Letter + 5-10 digits OR 9 digits with context
 _p(r'(?:MO|Missouri|DL)[:\s]+([A-Z]?\d{5,10})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- Tennessee: 7-9 digits (with context) ---
+# Tennessee: 7-9 digits (with context)
 _p(r'(?:TN|Tennessee|DL)[:\s]+(\d{7,9})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- South Carolina: 5-11 digits (with context) ---
+# South Carolina: 5-11 digits (with context)
 _p(r'(?:SC|South\s+Carolina|DL)[:\s]+(\d{5,11})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
-# --- General formats ---
+# General formats
 # Letter(s) + 5-14 digits (many states)
 _p(r'\b([A-Z]{1,2}\d{5,14})\b', 'DRIVER_LICENSE', 0.68, 1),
 
@@ -1135,8 +1135,7 @@ _p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
 _p(r'\b([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.75, 1),
 
 
-# --- HEALTHCARE-SPECIFIC IDENTIFIERS ---
-
+# HEALTHCARE-SPECIFIC IDENTIFIERS
 # === NDC (National Drug Code) - 5-4-2 format with dashes ===
 # FDA standard drug identifier, reveals medication info
 _p(r'\b(\d{5}-\d{4}-\d{2})\b', 'NDC', 0.92, 1),
@@ -1171,8 +1170,7 @@ _p(r'(?:Pre-?cert(?:ification)?)[:\s#]+([A-Z0-9]{6,20})', 'AUTH_NUMBER', 0.88, 1
 _p(r'(?:Workers?\s*Comp|WC)\s*(?:Claim)?[:\s#]+([A-Z0-9]{6,20})', 'CLAIM_NUMBER', 0.88, 1, flags=re.I),
 
 
-# --- PHYSICAL IDENTIFIERS (with strong context to avoid FPs) ---
-
+# PHYSICAL IDENTIFIERS (with strong context to avoid FPs)
 # === Blood Type ===
 _p(r'(?:Blood\s*Type|Blood\s*Group|ABO)[:\s]+([ABO]{1,2}[+-])', 'BLOOD_TYPE', 0.92, 1, flags=re.I),
 _p(r'(?:Type)[:\s]+([ABO]{1,2}[+-])(?:\s+blood|\s+Rh)', 'BLOOD_TYPE', 0.88, 1, flags=re.I),
@@ -1190,8 +1188,7 @@ _p(r'(?:Weight|Wt\.?)[:\s]+(\d{2,3}(?:\.\d)?)\s*(?:lbs?|kg)', 'WEIGHT', 0.88, 1,
 _p(r'(?:BMI|Body\s*Mass\s*Index)[:\s]+(\d{2}(?:\.\d{1,2})?)', 'BMI', 0.90, 1, flags=re.I),
 
 
-# --- GEOGRAPHIC IDENTIFIERS ---
-
+# GEOGRAPHIC IDENTIFIERS
 # === GPS Coordinates ===
 # Decimal degrees: 41.8781, -87.6298 or 41.8781° N, 87.6298° W
 _p(r'(-?\d{1,3}\.\d{4,8})[,\s]+(-?\d{1,3}\.\d{4,8})', 'GPS_COORDINATES', 0.88, 0),
@@ -1202,8 +1199,7 @@ _p(r'(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[NS])\s*(\d{1,3}°\d{1,2}[\'′]\d{1
 _p(r'(?:GPS|Coordinates?|Location|Lat(?:itude)?[/,]\s*Lon(?:gitude)?)[:\s]+(.{10,40})', 'GPS_COORDINATES', 0.85, 1, flags=re.I),
 
 
-# --- INTERNATIONAL IDENTIFIERS (with context/checksums) ---
-
+# INTERNATIONAL IDENTIFIERS (with context/checksums)
 # === UK NHS Number (10 digits with checksum) ===
 _p(r'(?:NHS|National\s+Health)[:\s#]+(\d{3}\s?\d{3}\s?\d{4})', 'NHS_NUMBER', 0.92, 1, flags=re.I),
 _p(r'(?:NHS)[:\s#]+(\d{10})\b', 'NHS_NUMBER', 0.90, 1, flags=re.I),

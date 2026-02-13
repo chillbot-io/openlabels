@@ -519,8 +519,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _graph_client is not None:
         try:
             await _graph_client.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Graph client close failed: %s", e)
 
     # Stop periodic monitoring cache sync
     if monitoring_sync_task and not monitoring_sync_task.done():

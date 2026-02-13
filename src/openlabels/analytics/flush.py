@@ -47,7 +47,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ── Flush-state persistence ──────────────────────────────────────────
 
 _METADATA_DIR = "_metadata"
 _FLUSH_STATE_FILE = "flush_state.json"
@@ -78,7 +77,6 @@ def save_flush_state(storage: CatalogStorage, state: dict) -> None:
     storage.write_bytes(path, data)
 
 
-# ── 1. Scan completion flush ─────────────────────────────────────────
 
 async def flush_scan_to_catalog(
     session: AsyncSession,
@@ -134,7 +132,6 @@ async def flush_scan_to_catalog(
     return len(rows)
 
 
-# ── 2. Periodic event flush ──────────────────────────────────────────
 
 async def flush_events_to_catalog(
     session: AsyncSession,
@@ -151,7 +148,6 @@ async def flush_events_to_catalog(
     state = load_flush_state(storage)
     counts: dict[str, int] = {"access_events": 0, "audit_logs": 0, "remediation_actions": 0}
 
-    # ── Access events ────────────────────────────────────────────────
     last_ae = state.get("last_access_event_flush")
     ae_query = select(FileAccessEvent).order_by(FileAccessEvent.collected_at)
     if last_ae:
@@ -170,7 +166,6 @@ async def flush_events_to_catalog(
         state["last_access_event_flush"] = ae_rows[-1].collected_at.isoformat()
         counts["access_events"] = len(ae_rows)
 
-    # ── Audit logs ───────────────────────────────────────────────────
     last_al = state.get("last_audit_log_flush")
     al_query = select(AuditLog).order_by(AuditLog.created_at)
     if last_al:
@@ -186,7 +181,6 @@ async def flush_events_to_catalog(
         state["last_audit_log_flush"] = al_rows[-1].created_at.isoformat()
         counts["audit_logs"] = len(al_rows)
 
-    # ── Remediation actions ───────────────────────────────────────────
     last_ra = state.get("last_remediation_action_flush")
     ra_query = select(RemediationAction).order_by(RemediationAction.created_at)
     if last_ra:
@@ -206,7 +200,6 @@ async def flush_events_to_catalog(
     return counts
 
 
-# ── Partitioned write helpers ─────────────────────────────────────────
 
 def _write_partitioned_access_events(
     storage: CatalogStorage,

@@ -34,7 +34,7 @@ _DOD_PREFIX = (
 )
 
 GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
-    # --- CLASSIFICATION LEVELS ---
+    # CLASSIFICATION LEVELS
     _p(r'\b(TOP\s*SECRET)\b', 'CLASSIFICATION_LEVEL', 0.98, 1, flags=re.I),
     _p(r'\b(SECRET)\b(?!\s*(?:santa|garden|service|recipe|ingredient|weapon|sauce))',
        'CLASSIFICATION_LEVEL', 0.85, 1, flags=re.I),
@@ -46,7 +46,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
        'CLASSIFICATION_LEVEL', 0.88, 1, flags=re.I),
     _p(r'\b(CONTROLLED\s+UNCLASSIFIED\s+INFORMATION)\b', 'CLASSIFICATION_LEVEL', 0.98, 1, flags=re.I),
 
-    # --- FULL CLASSIFICATION MARKINGS ---
+    # FULL CLASSIFICATION MARKINGS
     _p(r'\b((?:TOP\s*SECRET|SECRET)//SCI)\b', 'CLASSIFICATION_MARKING', 0.99, 1, flags=re.I),
     _p(r'\b((?:TOP\s*SECRET|SECRET)(?://[A-Z]{2,})+(?://[A-Z\s]+)?)\b',
        'CLASSIFICATION_MARKING', 0.98, 1, flags=re.I),
@@ -57,7 +57,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\(([TCS]S?(?://[A-Z/]+)?)\)', 'CLASSIFICATION_MARKING', 0.92, 1),
     _p(r'\((TS//SCI(?:/[A-Z]+)*)\)', 'CLASSIFICATION_MARKING', 0.98, 1),
 
-    # --- SCI MARKERS ---
+    # SCI MARKERS
     _p(r'\b(//SI)\b', 'SCI_MARKING', 0.98, 1),
     _p(r'\b(//TK)\b', 'SCI_MARKING', 0.98, 1),
     _p(r'\b(//HCS)\b', 'SCI_MARKING', 0.98, 1),
@@ -69,7 +69,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(//MASINT)\b', 'SCI_MARKING', 0.98, 1, flags=re.I),
     _p(r'\b(SPECIAL\s+ACCESS\s+(?:PROGRAM|REQUIRED))\b', 'SCI_MARKING', 0.98, 1, flags=re.I),
 
-    # --- DISSEMINATION CONTROLS ---
+    # DISSEMINATION CONTROLS
     _p(r'\b(//NOFORN)\b', 'DISSEMINATION_CONTROL', 0.99, 1, flags=re.I),
     _p(r'\b(NOFORN|NF)\b(?=.*(?://|secret|classified|rel|dissem))',
        'DISSEMINATION_CONTROL', 0.95, 1, flags=re.I),
@@ -83,27 +83,27 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(FOUO)\b', 'DISSEMINATION_CONTROL', 0.95, 1),
     _p(r'\b(LAW\s+ENFORCEMENT\s+SENSITIVE)\b', 'DISSEMINATION_CONTROL', 0.98, 1, flags=re.I),
 
-    # --- GOVERNMENT ENTITY CODES ---
+    # GOVERNMENT ENTITY CODES
     _p(r'(?:CAGE|cage)[:\s#]+([A-Z0-9]{5})\b', 'CAGE_CODE', 0.98, 1, flags=re.I),
     _p(r'(?:DUNS|D-U-N-S)[:\s#]+(\d{9})\b', 'DUNS_NUMBER', 0.98, 1, flags=re.I),
     _p(r'(?:DUNS|D-U-N-S)[:\s#]+(\d{2}-\d{3}-\d{4})\b', 'DUNS_NUMBER', 0.98, 1, flags=re.I),
     _p(r'(?:UEI|Unique\s+Entity\s+(?:ID|Identifier))[:\s#]+([A-Z0-9]{12})\b', 'UEI', 0.98, 1, flags=re.I),
     _p(r'(?:SAM|SAM\.gov)[:\s]+(?:registration|ID|#)[:\s]*([A-Z0-9]{12})\b', 'UEI', 0.95, 1, flags=re.I),
 
-    # --- DOD CONTRACT NUMBERS ---
+    # DOD CONTRACT NUMBERS
     _p(rf'\b({_DOD_PREFIX}\d{{4,5}}-\d{{2}}-[CDGM]-\d{{4}})\b', 'DOD_CONTRACT', 0.98, 1, flags=re.I),
     _p(rf'\b({_DOD_PREFIX}\d{{4,5}}-\d{{2}}-[CDGM]-\d{{4}}-[PM]\d{{3,5}})\b', 'DOD_CONTRACT', 0.98, 1, flags=re.I),
     _p(r'\b([A-Z]{1,6}\d{4,5}-\d{2}-[CDGM]-\d{4})\b', 'DOD_CONTRACT', 0.90, 1),
     _p(r'(?:Contract|Contract\s+(?:No|Number|#))[:\s]+(?!47[A-Z]{2})([A-Z0-9\-]{10,25})\b', 'DOD_CONTRACT', 0.85, 1, flags=re.I),
 
-    # --- GSA CONTRACT NUMBERS ---
+    # GSA CONTRACT NUMBERS
     _p(r'\b(GS-\d{2}[A-Z]-\d{4}[A-Z]?)\b', 'GSA_CONTRACT', 0.98, 1),
     _p(r'\b(GS-\d{3}-\d{4}[A-Z]?)\b', 'GSA_CONTRACT', 0.98, 1),
     _p(r'\b(47[A-Z]{2}[A-Z0-9]{2}\d{2}[A-Z]\d{4})\b', 'GSA_CONTRACT', 0.95, 1),
     _p(r'(?:GSA\s+(?:Schedule|Contract)|Schedule\s+Contract)[:\s#]+([A-Z0-9\-]{8,20})\b',
        'GSA_CONTRACT', 0.92, 1, flags=re.I),
 
-    # --- SECURITY CLEARANCE ---
+    # SECURITY CLEARANCE
     _p(r'\b(TS/SCI)\b', 'CLEARANCE_LEVEL', 0.98, 1),
     _p(r'\b(TOP\s*SECRET\s+(?:SCI\s+)?CLEARANCE)\b', 'CLEARANCE_LEVEL', 0.98, 1, flags=re.I),
     _p(r'\b(SECRET\s+CLEARANCE)\b', 'CLEARANCE_LEVEL', 0.95, 1, flags=re.I),
@@ -113,7 +113,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(L\s+CLEARANCE)\b', 'CLEARANCE_LEVEL', 0.98, 1, flags=re.I),
     _p(r'\b(YANKEE\s+WHITE)\b', 'CLEARANCE_LEVEL', 0.98, 1, flags=re.I),
 
-    # --- EXPORT CONTROL (ITAR/EAR) ---
+    # EXPORT CONTROL (ITAR/EAR)
     _p(r'\b(ITAR\s+(?:CONTROLLED|RESTRICTED|DATA|INFORMATION))\b', 'ITAR_MARKING', 0.98, 1, flags=re.I),
     _p(r'\b(USML\s+CATEGORY\s+[IVXLCDM]+)\b', 'ITAR_MARKING', 0.98, 1, flags=re.I),
     _p(r'\b(22\s*CFR\s*1[2-9][0-9])\b', 'ITAR_MARKING', 0.95, 1, flags=re.I),
@@ -122,7 +122,7 @@ GOVERNMENT_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(15\s*CFR\s*7[3-9][0-9])\b', 'EAR_MARKING', 0.95, 1, flags=re.I),
     _p(r'\b(EXPORT\s+(?:CONTROLLED|RESTRICTED))\b', 'EAR_MARKING', 0.88, 1, flags=re.I),
 
-    # --- SENSITIVE BUT UNCLASSIFIED ---
+    # SENSITIVE BUT UNCLASSIFIED
     _p(r'\b(SENSITIVE\s+BUT\s+UNCLASSIFIED)\b', 'CLASSIFICATION_LEVEL', 0.98, 1, flags=re.I),
     _p(r'\b(LIMITED\s+OFFICIAL\s+USE)\b', 'CLASSIFICATION_LEVEL', 0.98, 1, flags=re.I),
     _p(r'\b(OFFICIAL\s+USE\s+ONLY)\b', 'CLASSIFICATION_LEVEL', 0.95, 1, flags=re.I),

@@ -32,12 +32,12 @@ try:
     HAS_PYPDF2 = True
 except ImportError:
     HAS_PYPDF2 = False
+from openlabels.exceptions import GraphAPIError
 from openlabels.labeling.engine import (
     CachedLabel,
     LabelCache,
     LabelingEngine,
     LabelResult,
-    TokenCache,
     get_label_cache,
 )
 
@@ -59,29 +59,6 @@ class TestCachedLabel:
         after = datetime.now(timezone.utc)
 
         assert before <= label.cached_at <= after
-
-class TestTokenCache:
-    """Tests for TokenCache dataclass."""
-
-    def test_token_cache_just_outside_buffer(self):
-        """Token just outside 5-minute buffer is valid."""
-        cache = TokenCache(
-            access_token="test-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=6),
-        )
-
-        assert cache.is_valid() is True
-
-    def test_token_cache_empty_token_invalid(self):
-        """Empty token is invalid even with future expiry."""
-        cache = TokenCache(
-            access_token="",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-        )
-
-        # Note: is_valid() returns falsy value when token is empty
-        assert not cache.is_valid()
-
 
 class TestLabelCache:
     """Tests for LabelCache singleton."""
@@ -149,113 +126,6 @@ class TestLabelCache:
         assert "ttl_seconds" in stats
         assert "is_expired" in stats
         assert stats["label_count"] == 1
-
-
-class TestLabelingEngineTokenAcquisition:
-    """Tests for token acquisition with retry logic."""
-
-    async def test_get_access_token_uses_cache(self):
-        """_get_access_token returns cached token if valid."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-        engine._token_cache = TokenCache(
-            access_token="cached-token",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-        )
-
-        token = await engine._get_access_token()
-
-        assert token == "cached-token"
-
-    async def test_get_access_token_fetches_new_when_expired(self):
-        """_get_access_token fetches new token when expired."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "access_token": "new-token",
-            "expires_in": 3600,
-        }
-
-        with patch.object(httpx.AsyncClient, "post", return_value=mock_response):
-            token = await engine._get_access_token()
-
-        assert token == "new-token"
-        assert engine._token_cache.access_token == "new-token"
-
-    async def test_get_access_token_handles_rate_limit(self):
-        """_get_access_token handles 429 rate limiting."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        # First call returns 429, second returns success
-        mock_429 = MagicMock()
-        mock_429.status_code = 429
-        mock_429.headers = {"Retry-After": "1"}
-
-        mock_success = MagicMock()
-        mock_success.status_code = 200
-        mock_success.json.return_value = {"access_token": "token", "expires_in": 3600}
-        mock_success.raise_for_status = MagicMock()
-
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return mock_429
-            return mock_success
-
-        with patch.object(httpx.AsyncClient, "post", side_effect=mock_post):
-            with patch("asyncio.sleep", return_value=None):
-                token = await engine._get_access_token()
-
-        assert token == "token"
-        assert call_count[0] == 2
-
-    async def test_get_access_token_retries_on_5xx(self):
-        """_get_access_token retries on server errors."""
-        engine = LabelingEngine(
-            tenant_id="t",
-            client_id="c",
-            client_secret="s",
-        )
-
-        # First call fails with 500, second succeeds
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            mock_response = MagicMock()
-            if call_count[0] == 1:
-                mock_response.status_code = 500
-                mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                    "Server Error",
-                    request=MagicMock(),
-                    response=mock_response,
-                )
-                return mock_response
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"access_token": "token", "expires_in": 3600}
-            mock_response.raise_for_status = MagicMock()
-            return mock_response
-
-        with patch.object(httpx.AsyncClient, "post", side_effect=mock_post):
-            with patch("asyncio.sleep", return_value=None):
-                token = await engine._get_access_token()
-
-        assert token == "token"
 
 
 class TestLabelingEngineOfficeMetadata:
@@ -581,7 +451,7 @@ class TestLabelingEngineGraphAPI:
             site_id="site-456",
         )
 
-        with patch.object(engine, "_graph_request", side_effect=httpx.TimeoutException("Timeout")):
+        with patch.object(engine, "_graph_request", side_effect=GraphAPIError("Request timed out")):
             result = await engine._apply_graph_label(file_info, "label-123")
 
         assert result.success is False

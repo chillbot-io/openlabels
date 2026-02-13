@@ -1,8 +1,7 @@
 """
 Server utility functions.
 
-This module contains utility functions that need to be imported by multiple
-modules. It's kept dependency-light to avoid circular imports.
+Kept dependency-light to avoid circular imports.
 """
 
 from fastapi import Request

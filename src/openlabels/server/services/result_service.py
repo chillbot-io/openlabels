@@ -14,6 +14,7 @@ from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
 
+from openlabels.core.types import RiskTier
 from openlabels.server.models import ScanResult
 from openlabels.server.services.base import BaseService
 
@@ -46,8 +47,7 @@ class ResultService(BaseService):
         stats = await service.get_stats(job_id=job_id)
     """
 
-    # --- STREAMING METHODS (Memory Efficient) ---
-
+    # STREAMING METHODS (Memory Efficient)
     async def stream_results(
         self,
         job_id: UUID | None = None,
@@ -220,8 +220,7 @@ class ResultService(BaseService):
                 last_scanned_at = scan_result.scanned_at
                 last_id = scan_result.id
 
-    # --- STANDARD METHODS ---
-
+    # STANDARD METHODS
     async def get_result(self, result_id: UUID) -> ScanResult | None:
         """
         Get a single scan result by ID.
@@ -343,8 +342,7 @@ class ResultService(BaseService):
 
         return deleted_count
 
-    # --- STATISTICS (Efficient SQL Aggregation) ---
-
+    # STATISTICS (Efficient SQL Aggregation)
     async def get_stats(self, job_id: UUID | None = None) -> dict:
         """
         Get aggregated statistics for scan results.
@@ -390,19 +388,19 @@ class ResultService(BaseService):
 
         stats_query = select(
             func.count().label("files_with_pii"),
-            func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.CRITICAL, 1), else_=0)).label(
                 "critical_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.HIGH, 1), else_=0)).label(
                 "high_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "MEDIUM", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.MEDIUM, 1), else_=0)).label(
                 "medium_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "LOW", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.LOW, 1), else_=0)).label(
                 "low_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "MINIMAL", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.MINIMAL, 1), else_=0)).label(
                 "minimal_count"
             ),
             func.sum(

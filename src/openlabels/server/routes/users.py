@@ -13,9 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, require_admin
-from openlabels.exceptions import BadRequestError, ConflictError, NotFoundError
+from openlabels.exceptions import BadRequestError, ConflictError
 from openlabels.server.db import get_session
 from openlabels.server.models import User
+from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -118,14 +119,7 @@ async def get_user(
     current_user=Depends(get_current_user),
 ):
     """Get user details."""
-    user = await session.get(User, user_id)
-    if not user or user.tenant_id != current_user.tenant_id:
-        raise NotFoundError(
-            message="User not found",
-            resource_type="User",
-            resource_id=str(user_id),
-        )
-    return user
+    return await get_or_404(session, User, user_id, tenant_id=current_user.tenant_id)
 
 
 @router.put("/{user_id}", response_model=UserResponse)
@@ -136,13 +130,7 @@ async def update_user(
     current_user=Depends(require_admin),
 ):
     """Update user details."""
-    user = await session.get(User, user_id)
-    if not user or user.tenant_id != current_user.tenant_id:
-        raise NotFoundError(
-            message="User not found",
-            resource_type="User",
-            resource_id=str(user_id),
-        )
+    user = await get_or_404(session, User, user_id, tenant_id=current_user.tenant_id)
 
     if user_data.name is not None:
         user.name = user_data.name
@@ -160,13 +148,7 @@ async def delete_user(
     current_user=Depends(require_admin),
 ):
     """Delete a user."""
-    user = await session.get(User, user_id)
-    if not user or user.tenant_id != current_user.tenant_id:
-        raise NotFoundError(
-            message="User not found",
-            resource_type="User",
-            resource_id=str(user_id),
-        )
+    user = await get_or_404(session, User, user_id, tenant_id=current_user.tenant_id)
 
     # Prevent self-deletion
     if user.id == current_user.id:

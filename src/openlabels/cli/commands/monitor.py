@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from openlabels.core.types import RiskTier
+
 
 @click.group()
 def monitor():
@@ -16,7 +18,7 @@ def monitor():
 
 @monitor.command("enable")
 @click.argument("file_path", type=click.Path(exists=True))
-@click.option("--risk-tier", default="HIGH", type=click.Choice(["CRITICAL", "HIGH", "MEDIUM", "LOW"]))
+@click.option("--risk-tier", default=RiskTier.HIGH, type=click.Choice([e.value for e in RiskTier if e != RiskTier.MINIMAL]))
 @click.option("--audit-read/--no-audit-read", default=True, help="Audit read access")
 @click.option("--audit-write/--no-audit-write", default=True, help="Audit write access")
 def monitor_enable(file_path: str, risk_tier: str, audit_read: bool, audit_write: bool):

@@ -1,5 +1,5 @@
 """
-Server, worker, and GUI commands.
+Server and worker commands.
 """
 
 import click
@@ -32,10 +32,3 @@ def worker(concurrency: int):
     run_worker(concurrency=concurrency)
 
 
-@click.command()
-@click.option("--server", default="http://localhost:8000", help="Server URL to connect to")
-def gui(server: str):
-    """Launch the OpenLabels GUI application."""
-    from openlabels.gui.main import run_gui
-
-    run_gui(server_url=server)

@@ -22,9 +22,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
-from openlabels.exceptions import InternalError
+from openlabels.core.types import AdapterType
 from openlabels.server.db import get_session
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
 from openlabels.server.routes import get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
@@ -253,124 +253,63 @@ def validate_onedrive_target_config(config: dict) -> dict:
     return sanitized
 
 
-def validate_s3_target_config(config: dict) -> dict:
-    """
-    Validate S3 scan target configuration.
+def _validate_cloud_target_config(
+    config: dict,
+    adapter_name: str,
+    resource_field: str,
+    name_regex: str,
+) -> dict:
+    """Shared validation for cloud storage targets (S3, GCS, Azure Blob).
 
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
+    Each cloud target follows the same pattern: require a named resource
+    (bucket or container), validate its name against provider rules, and
+    check for traversal in the optional prefix.
     """
     if not config:
         raise HTTPException(status_code=400, detail="Configuration is required")
 
-    bucket = config.get("bucket")
-    if not bucket:
+    resource = config.get(resource_field)
+    if not resource:
         raise HTTPException(
             status_code=400,
-            detail="S3 target requires 'bucket' in config",
+            detail=f"{adapter_name} target requires '{resource_field}' in config",
         )
 
-    # Validate bucket name per S3 naming rules
-    if not re.match(r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$", bucket):
+    if not re.match(name_regex, resource):
         raise HTTPException(
             status_code=400,
-            detail="Invalid S3 bucket name",
+            detail=f"Invalid {adapter_name} {resource_field} name",
         )
 
     prefix = config.get("prefix", "")
     if ".." in prefix:
         raise HTTPException(
             status_code=400,
-            detail="S3 prefix contains invalid traversal sequences",
+            detail=f"{adapter_name} prefix contains invalid traversal sequences",
         )
 
     return config
+
+
+def validate_s3_target_config(config: dict) -> dict:
+    """Validate S3 scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "S3", "bucket", r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$"
+    )
 
 
 def validate_gcs_target_config(config: dict) -> dict:
-    """
-    Validate GCS scan target configuration.
-
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
-    """
-    if not config:
-        raise HTTPException(status_code=400, detail="Configuration is required")
-
-    bucket = config.get("bucket")
-    if not bucket:
-        raise HTTPException(
-            status_code=400,
-            detail="GCS target requires 'bucket' in config",
-        )
-
-    # Validate bucket name per GCS naming rules
-    if not re.match(r"^[a-z0-9][a-z0-9_\-\.]{1,220}[a-z0-9]$", bucket):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid GCS bucket name",
-        )
-
-    prefix = config.get("prefix", "")
-    if ".." in prefix:
-        raise HTTPException(
-            status_code=400,
-            detail="GCS prefix contains invalid traversal sequences",
-        )
-
-    return config
+    """Validate GCS scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "GCS", "bucket", r"^[a-z0-9][a-z0-9_\-\.]{1,220}[a-z0-9]$"
+    )
 
 
 def validate_azure_blob_target_config(config: dict) -> dict:
-    """
-    Validate Azure Blob Storage scan target configuration.
-
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
-    """
-    if not config:
-        raise HTTPException(status_code=400, detail="Configuration is required")
-
-    container = config.get("container")
-    if not container:
-        raise HTTPException(
-            status_code=400,
-            detail="Azure Blob target requires 'container' in config",
-        )
-
-    # Validate container name per Azure naming rules (3-63 chars, lowercase, alphanumeric + hyphens)
-    if not re.match(r"^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$", container):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Azure Blob container name",
-        )
-
-    prefix = config.get("prefix", "")
-    if ".." in prefix:
-        raise HTTPException(
-            status_code=400,
-            detail="Azure Blob prefix contains invalid traversal sequences",
-        )
-
-    return config
+    """Validate Azure Blob Storage scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "Azure Blob", "container", r"^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$"
+    )
 
 
 def validate_target_config(adapter: str, config: dict) -> dict:
@@ -388,12 +327,12 @@ def validate_target_config(adapter: str, config: dict) -> dict:
         HTTPException: If configuration is invalid
     """
     validators = {
-        "filesystem": validate_filesystem_target_config,
-        "sharepoint": validate_sharepoint_target_config,
-        "onedrive": validate_onedrive_target_config,
-        "s3": validate_s3_target_config,
-        "gcs": validate_gcs_target_config,
-        "azure_blob": validate_azure_blob_target_config,
+        AdapterType.FILESYSTEM: validate_filesystem_target_config,
+        AdapterType.SHAREPOINT: validate_sharepoint_target_config,
+        AdapterType.ONEDRIVE: validate_onedrive_target_config,
+        AdapterType.S3: validate_s3_target_config,
+        AdapterType.GCS: validate_gcs_target_config,
+        AdapterType.AZURE_BLOB: validate_azure_blob_target_config,
     }
 
     validator = validators.get(adapter)
@@ -486,7 +425,7 @@ async def create_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Create a new scan target."""
-    if request.adapter not in ("filesystem", "sharepoint", "onedrive", "s3", "gcs", "azure_blob"):
+    if request.adapter not in tuple(AdapterType):
         raise HTTPException(status_code=400, detail="Invalid adapter type")
 
     # Security: Validate target configuration to prevent path traversal and SSRF
@@ -509,11 +448,7 @@ async def create_target(
 
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error creating target: {e}")
-        raise InternalError(
-            message="Database error occurred while creating target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("creating target", e)
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -527,11 +462,7 @@ async def get_target(
         target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error getting target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while getting target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("getting target", e)
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -556,11 +487,7 @@ async def update_target(
 
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error updating target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while updating target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("updating target", e)
 
 
 @router.delete("/{target_id}")
@@ -584,8 +511,4 @@ async def delete_target(
         # Regular REST response
         return Response(status_code=204)
     except SQLAlchemyError as e:
-        logger.error(f"Database error deleting target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while deleting target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("deleting target", e)

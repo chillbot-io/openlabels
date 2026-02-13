@@ -86,9 +86,7 @@ class SIEMAdapter(Protocol):
         ...
 
 
-# --- Shared syslog transport mixin ---
-
-
+# Shared syslog transport mixin
 def risk_tier_to_cef_severity(tier: str | None) -> int:
     """Map risk tier to CEF numeric severity."""
     return {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 5, "LOW": 3, "MINIMAL": 1}.get(
@@ -99,6 +97,41 @@ def risk_tier_to_cef_severity(tier: str | None) -> int:
 def cef_escape(value: str) -> str:
     """Escape CEF special characters: backslash, equals, pipe."""
     return value.replace("\\", "\\\\").replace("=", "\\=").replace("|", "\\|")
+
+
+def format_cef(
+    record: ExportRecord,
+    vendor: str,
+    product: str,
+    product_version: str,
+    *,
+    include_source: bool = False,
+) -> str:
+    """Build a CEF-formatted syslog message from an :class:`ExportRecord`.
+
+    Both ``QRadarAdapter._to_cef`` and ``SyslogCefAdapter._to_cef`` used
+    identical formatting logic.  The only difference was whether the
+    ``src=`` extension field was included.
+    """
+    severity = risk_tier_to_cef_severity(record.risk_tier)
+    event_id = record.record_type.replace("_", "")
+    name = f"OpenLabels {record.record_type}"
+    extensions = (
+        f"filePath={cef_escape(record.file_path)} "
+        f"riskScore={record.risk_score or 0} "
+        f"riskTier={record.risk_tier or 'MINIMAL'} "
+        f"entityTypes={','.join(record.entity_types)} "
+        f"policyViolations={','.join(record.policy_violations)} "
+        f"suser={cef_escape(record.user or '')} "
+        f"act={cef_escape(record.action_taken or '')} "
+        f"rt={record.timestamp.strftime('%b %d %Y %H:%M:%S')}"
+    )
+    if include_source:
+        extensions += f" src={cef_escape(record.source_adapter)}"
+    return (
+        f"CEF:0|{vendor}|{product}|{product_version}|"
+        f"{event_id}|{name}|{severity}|{extensions}"
+    )
 
 
 class SyslogTransportMixin:

@@ -8,13 +8,18 @@ Provides metrics for monitoring:
 - Detection/scan processing statistics
 """
 
+import logging
+
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
+
+from openlabels.core.types import JobStatus
+
+logger = logging.getLogger(__name__)
 
 # Use the default registry
 registry = REGISTRY
 
-# --- HTTP Request Metrics ---
-
+# HTTP Request Metrics
 http_requests_total = Counter(
     "openlabels_http_requests_total",
     "Total number of HTTP requests",
@@ -36,8 +41,7 @@ http_active_connections = Gauge(
     registry=registry,
 )
 
-# --- Job Queue Metrics ---
-
+# Job Queue Metrics
 jobs_enqueued_total = Counter(
     "openlabels_jobs_enqueued_total",
     "Total number of jobs enqueued",
@@ -66,8 +70,7 @@ jobs_queue_depth = Gauge(
     registry=registry,
 )
 
-# --- Detection/Scan Metrics ---
-
+# Detection/Scan Metrics
 files_processed_total = Counter(
     "openlabels_files_processed_total",
     "Total number of files processed for detection",
@@ -91,8 +94,7 @@ processing_duration_seconds = Histogram(
 )
 
 
-# --- Catalog / Data Lake Metrics ---
-
+# Catalog / Data Lake Metrics
 catalog_flush_lag_seconds = Gauge(
     "openlabels_catalog_flush_lag_seconds",
     "Seconds since last successful catalog event flush",
@@ -120,8 +122,7 @@ catalog_flush_total = Counter(
 )
 
 
-# --- Convenience Functions ---
-
+# Convenience Functions
 def record_http_request(method: str, path: str, status: int, duration: float) -> None:
     """
     Record metrics for an HTTP request.
@@ -176,9 +177,9 @@ def record_job_failed(task_type: str) -> None:
 
 def update_queue_depth(pending: int, running: int, failed: int) -> None:
     """Update the job queue depth gauges."""
-    jobs_queue_depth.labels(status="pending").set(pending)
-    jobs_queue_depth.labels(status="running").set(running)
-    jobs_queue_depth.labels(status="failed").set(failed)
+    jobs_queue_depth.labels(status=JobStatus.PENDING).set(pending)
+    jobs_queue_depth.labels(status=JobStatus.RUNNING).set(running)
+    jobs_queue_depth.labels(status=JobStatus.FAILED).set(failed)
 
 
 def record_file_processed(adapter: str) -> None:
@@ -240,5 +241,5 @@ def update_catalog_health(storage) -> None:
                 total_bytes += p.stat().st_size
         catalog_storage_bytes.set(total_bytes)
 
-    except Exception:
-        pass  # Metrics are best-effort
+    except Exception as e:
+        logger.debug("Catalog metrics collection failed: %s", e)

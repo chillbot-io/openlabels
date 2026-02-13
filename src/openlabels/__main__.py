@@ -4,7 +4,6 @@ OpenLabels CLI entry point.
 Usage:
     openlabels serve [--host HOST] [--port PORT] [--workers N]
     openlabels worker [--concurrency N]
-    openlabels gui [--server URL]
     openlabels db upgrade
     openlabels config show
 """
@@ -22,7 +21,6 @@ from openlabels.cli.commands import (
     doctor,
     export,
     find,
-    gui,
     heatmap,
     index,
     labels,
@@ -52,7 +50,6 @@ def cli():
 # Register server commands
 cli.add_command(serve)
 cli.add_command(worker)
-cli.add_command(gui)
 
 # Register command groups
 cli.add_command(db)

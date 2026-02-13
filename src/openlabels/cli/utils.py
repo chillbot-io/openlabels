@@ -11,6 +11,9 @@ from pathlib import Path
 import click
 import httpx
 
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.types import ExposureLevel
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,7 +77,7 @@ def collect_files(path, recursive=False):
     return files
 
 
-def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
+def scan_files(files, enable_ml=False, exposure_level=ExposureLevel.PRIVATE):
     """Scan files with FileProcessor and return results as dicts.
 
     Processes each file through the classification pipeline and returns
@@ -99,7 +102,7 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
         for file_path in files:
             try:
                 file_size = os.path.getsize(file_path)
-                if file_size > 200 * 1024 * 1024:
+                if file_size > MAX_DECOMPRESSED_SIZE:
                     continue
                 with open(file_path, "rb") as f:
                     content = f.read()
@@ -112,7 +115,7 @@ def scan_files(files, enable_ml=False, exposure_level="PRIVATE"):
                     "file_path": str(file_path),
                     "file_name": result.file_name,
                     "risk_score": result.risk_score,
-                    "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                    "risk_tier": result.risk_tier,
                     "entity_counts": result.entity_counts,
                     "total_entities": sum(result.entity_counts.values()),
                 })

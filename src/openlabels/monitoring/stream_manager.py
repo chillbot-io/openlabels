@@ -29,7 +29,6 @@ _VALID_DB_ACTIONS = frozenset({
 })
 
 
-# ── StreamProvider protocol ──────────────────────────────────────────
 
 @runtime_checkable
 class StreamProvider(Protocol):
@@ -47,7 +46,6 @@ class StreamProvider(Protocol):
         ...
 
 
-# ── EventStreamManager ──────────────────────────────────────────────
 
 
 class EventStreamManager:
@@ -319,7 +317,6 @@ class EventStreamManager:
 
         return persisted
 
-    # ── Public API ───────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
         """Return current stream manager statistics."""

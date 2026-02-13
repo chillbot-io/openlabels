@@ -17,6 +17,8 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import PartitionSpec
+from openlabels.core.constants import RISK_TIER_PRIORITY
+from openlabels.core.types import AdapterType, JobStatus
 from openlabels.exceptions import JobError
 from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
 from openlabels.jobs.tasks.scan import (
@@ -84,10 +86,10 @@ async def execute_scan_partition_task(
         )
 
     # Check if parent was cancelled
-    if job.status == "cancelled":
-        partition.status = "cancelled"
+    if job.status == JobStatus.CANCELLED:
+        partition.status = JobStatus.CANCELLED
         await session.commit()
-        return {"status": "cancelled"}
+        return {"status": JobStatus.CANCELLED}
 
     target = await session.get(ScanTarget, job.target_id)
     if not target:
@@ -99,7 +101,7 @@ async def execute_scan_partition_task(
         )
 
     # Mark partition as running
-    partition.status = "running"
+    partition.status = JobStatus.RUNNING
     partition.started_at = datetime.now(timezone.utc)
     await session.flush()
 
@@ -220,10 +222,9 @@ async def execute_scan_partition_task(
             if result["total_entities"] > 0:
                 folder_stats[folder_path]["has_sensitive"] = True
                 folder_stats[folder_path]["total_entities"] += result["total_entities"]
-                risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
                 current_risk = folder_stats[folder_path]["highest_risk"]
                 new_risk = result["risk_tier"]
-                if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                if current_risk is None or RISK_TIER_PRIORITY.get(new_risk, 0) > RISK_TIER_PRIORITY.get(current_risk, 0):
                     folder_stats[folder_path]["highest_risk"] = new_risk
 
                 try:
@@ -248,7 +249,7 @@ async def execute_scan_partition_task(
                 try:
                     await send_scan_progress(
                         scan_id=job.id,
-                        status="running",
+                        status=JobStatus.RUNNING,
                         progress={
                             "files_scanned": ctx.stats.files_scanned,
                             "files_with_pii": ctx.stats.files_with_pii,
@@ -282,10 +283,10 @@ async def execute_scan_partition_task(
                 "Partition %d of job %s cancelled at %d files",
                 partition.partition_index, job_id, stats["files_scanned"],
             )
-            partition.status = "cancelled"
+            partition.status = JobStatus.CANCELLED
             partition.stats = stats
             await session.commit()
-            return {**stats, "status": "cancelled"}
+            return {**stats, "status": JobStatus.CANCELLED}
 
         # Update folder inventory
         for folder_path, fstats in folder_stats.items():
@@ -304,7 +305,7 @@ async def execute_scan_partition_task(
                 logger.warning("Folder inventory failed for %s: %s", folder_path, inv_err)
 
         # Mark partition completed
-        partition.status = "completed"
+        partition.status = JobStatus.COMPLETED
         partition.completed_at = datetime.now(timezone.utc)
         partition.stats = stats
         await session.commit()
@@ -325,7 +326,7 @@ async def execute_scan_partition_task(
 
     except Exception:
         # Mark partition failed
-        partition.status = "failed"
+        partition.status = JobStatus.FAILED
         partition.completed_at = datetime.now(timezone.utc)
         partition.stats = stats
         await session.commit()
@@ -361,7 +362,7 @@ async def _check_and_aggregate(
     incomplete = await session.execute(
         select(func.count()).select_from(ScanPartition).where(
             ScanPartition.job_id == job.id,
-            ScanPartition.status.notin_(["completed", "failed", "cancelled"]),
+            ScanPartition.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]),
         )
     )
     remaining = incomplete.scalar() or 0
@@ -386,12 +387,12 @@ async def _check_and_aggregate(
     failed_count = 0
 
     for p in partitions:
-        if p.status == "completed":
+        if p.status == JobStatus.COMPLETED:
             completed_count += 1
             total_scanned += p.files_scanned or 0
             total_with_pii += p.files_with_pii or 0
             total_entities += p.total_entities or 0
-        elif p.status == "failed":
+        elif p.status == JobStatus.FAILED:
             failed_count += 1
 
     # Update parent job
@@ -402,13 +403,13 @@ async def _check_and_aggregate(
     job.completed_at = datetime.now(timezone.utc)
 
     if failed_count > 0 and completed_count == 0:
-        job.status = "failed"
+        job.status = JobStatus.FAILED
         job.error = f"All {failed_count} partitions failed"
     elif failed_count > 0:
-        job.status = "completed"
+        job.status = JobStatus.COMPLETED
         job.error = f"{failed_count}/{len(partitions)} partitions failed"
     else:
-        job.status = "completed"
+        job.status = JobStatus.COMPLETED
 
     await session.commit()
 
@@ -457,7 +458,7 @@ async def _run_post_scan_operations(
 
     # Cloud label sync-back
     target = await session.get(ScanTarget, job.target_id)
-    if target and target.adapter in ("s3", "gcs") and settings.labeling.enabled:
+    if target and target.adapter in (AdapterType.S3, AdapterType.GCS) and settings.labeling.enabled:
         adapter_settings = getattr(settings.adapters, target.adapter, None)
         if adapter_settings and getattr(adapter_settings, "label_sync_enabled", False):
             try:
@@ -481,6 +482,7 @@ async def _run_post_scan_operations(
             from openlabels.export.engine import (
                 ExportEngine,
                 scan_result_to_export_records,
+                scan_results_to_dicts,
             )
             from openlabels.export.setup import build_adapters_from_settings
 
@@ -492,20 +494,8 @@ async def _run_post_scan_operations(
                     select(ScanResult).where(ScanResult.job_id == job.id)
                 )
                 async for batch in result_stream.scalars().partitions(batch_size):
-                    result_dicts = [
-                        {
-                            "file_path": r.file_path,
-                            "risk_score": r.risk_score,
-                            "risk_tier": r.risk_tier,
-                            "entity_counts": r.entity_counts,
-                            "policy_violations": r.policy_violations,
-                            "owner": r.owner,
-                            "scanned_at": r.scanned_at,
-                        }
-                        for r in batch
-                    ]
                     export_records = scan_result_to_export_records(
-                        result_dicts, job.tenant_id,
+                        scan_results_to_dicts(batch), job.tenant_id,
                     )
                     await engine.export_full(
                         job.tenant_id,

@@ -1,13 +1,4 @@
-"""
-Core data types for OpenLabels detection engine.
-
-This module defines the fundamental types used throughout the detection system:
-- Span: A detected entity with position, type, and confidence
-- Tier: Detection authority hierarchy
-- Entity types: Comprehensive list of detectable entities
-
-These types are used by all detectors and the scoring engine.
-"""
+"""Core data types for the detection engine (Span, Tier, entity types, etc.)."""
 
 from __future__ import annotations
 
@@ -21,6 +12,8 @@ __all__ = [
     "Tier",
     "RiskTier",
     "ExposureLevel",
+    "AdapterType",
+    "JobStatus",
     # Constants
     "KNOWN_ENTITY_TYPES",
     "CLINICAL_CONTEXT_TYPES",
@@ -58,7 +51,7 @@ class Tier(IntEnum):
         return cls(value)
 
 
-class RiskTier(Enum):
+class RiskTier(str, Enum):
     """Risk tier classification for files."""
     MINIMAL = "MINIMAL"   # Score 0-10
     LOW = "LOW"           # Score 11-30
@@ -67,7 +60,7 @@ class RiskTier(Enum):
     CRITICAL = "CRITICAL" # Score 80-100
 
 
-class ExposureLevel(Enum):
+class ExposureLevel(str, Enum):
     """File exposure/accessibility level."""
     PRIVATE = "PRIVATE"     # Only owner can access
     INTERNAL = "INTERNAL"   # Specific users/groups
@@ -75,33 +68,51 @@ class ExposureLevel(Enum):
     PUBLIC = "PUBLIC"       # Publicly accessible
 
 
-# --- ENTITY TYPES ---
+class AdapterType(str, Enum):
+    """Storage adapter types for scan targets."""
+    FILESYSTEM = "filesystem"
+    SHAREPOINT = "sharepoint"
+    ONEDRIVE = "onedrive"
+    S3 = "s3"
+    GCS = "gcs"
+    AZURE_BLOB = "azure_blob"
 
+
+class JobStatus(str, Enum):
+    """Job/scan execution statuses."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+# ENTITY TYPES
 # Known entity types - used for validation
 # Categories: Names, Dates, Locations, IDs, Contact, Financial, Medical, Secrets, Government
 # Sources: HIPAA Safe Harbor, i2b2 2014, AI4Privacy, Stanford PHI-BERT, custom detectors
 KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
-    # --- NAMES ---
+    # NAMES
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
     "PERSON", "PER", "PATIENT", "DOCTOR", "PHYSICIAN", "NURSE", "STAFF",
     "FIRSTNAME", "LASTNAME", "MIDDLENAME", "PREFIX", "SUFFIX", "FULLNAME",
 
-    # --- DATES & TIME ---
+    # DATES & TIME
     "DATE", "DATE_DOB", "DATE_TIME", "DATETIME", "TIME",
     "BIRTHDAY", "DOB", "DATEOFBIRTH", "DATE_OF_BIRTH", "BIRTH_DATE", "BIRTHDATE",
     "BIRTH_YEAR", "YEAR_OF_BIRTH", "DATE_RANGE",
 
-    # --- AGE ---
+    # AGE
     "AGE",
 
-    # --- LOCATIONS ---
+    # LOCATIONS
     "ADDRESS", "ZIP", "CITY", "STATE", "COUNTRY", "COUNTY",
     "GPS_COORDINATE", "LATITUDE", "LONGITUDE", "COORDINATE", "COORDINATES",
     "GPE", "LOC", "STREET_ADDRESS", "STREET", "ZIPCODE", "LOCATION_ZIP",
     "ZIP_CODE", "POSTCODE", "LOCATION_OTHER",
     "ROOM", "ROOM_NUMBER",
 
-    # --- IDENTIFIERS - Government ---
+    # IDENTIFIERS - Government
     "SSN", "SSN_PARTIAL", "US_SSN", "SOCIAL_SECURITY", "SOCIALSECURITYNUMBER",
     "UKNINUMBER", "SIN", "SIN_CA",  # UK/Canada National Insurance
     "DRIVER_LICENSE", "LICENSE", "US_DRIVER_LICENSE", "DRIVERSLICENSE",
@@ -110,25 +121,25 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "MILITARY_ID", "EDIPI", "DOD_ID",
     "TAX_ID", "TIN", "EIN", "ITIN",
 
-    # --- IDENTIFIERS - Medical ---
+    # IDENTIFIERS - Medical
     "MRN", "MEDICAL_RECORD", "MEDICALRECORD",
     "NPI", "DEA", "MEDICAL_LICENSE",
     "ENCOUNTER_ID", "ACCESSION_ID",
     "HEALTH_PLAN_ID", "HEALTHPLAN", "HEALTH_PLAN", "MEMBERID", "MEMBER_ID",
     "MEDICARE_ID", "MBI", "PHARMACY_ID", "NDC",
 
-    # --- IDENTIFIERS - Vehicle ---
+    # IDENTIFIERS - Vehicle
     "VIN", "VEHICLEVIN", "VEHICLE_VIN", "VEHICLE_IDENTIFICATION",
     "LICENSE_PLATE", "VEHICLEVRM", "VEHICLE_PLATE", "PLATE_NUMBER",
 
-    # --- CONTACT ---
+    # CONTACT
     "PHONE", "PHONE_NUMBER", "PHONENUMBER", "US_PHONE_NUMBER", "TELEPHONE",
     "EMAIL", "EMAIL_ADDRESS", "EMAILADDRESS",
     "FAX", "FAX_NUMBER", "FAXNUMBER",
     "PAGER", "PAGER_NUMBER",
     "URL", "USERNAME",
 
-    # --- NETWORK & DEVICE ---
+    # NETWORK & DEVICE
     "IP_ADDRESS", "IP", "IPADDRESS", "IPV4", "IPV6",
     "MAC_ADDRESS", "MAC", "MACADDRESS",
     "DEVICE_ID", "IMEI", "DEVICE", "BIOID", "USERAGENT",
@@ -136,7 +147,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "IMAGE_ID", "PHOTO_ID", "DICOM_UID",
     "CERTIFICATE_NUMBER", "CLAIM_NUMBER",
 
-    # --- FINANCIAL - Traditional ---
+    # FINANCIAL - Traditional
     "CREDIT_CARD", "CREDIT_CARD_NUMBER", "CREDITCARDNUMBER", "CC",
     "CREDIT_CARD_PARTIAL",
     "ACCOUNT_NUMBER", "ACCOUNT", "BANK_ACCOUNT",
@@ -144,64 +155,64 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "ABA_ROUTING", "ROUTING", "ROUTING_NUMBER",
     "BIC", "SWIFT", "SWIFT_BIC",
 
-    # --- FINANCIAL - Securities ---
+    # FINANCIAL - Securities
     "CUSIP", "ISIN", "SEDOL", "FIGI", "LEI",
 
-    # --- CRYPTOCURRENCY ---
+    # CRYPTOCURRENCY
     "BITCOIN_ADDRESS", "ETHEREUM_ADDRESS", "CRYPTO_SEED_PHRASE",
     "SOLANA_ADDRESS", "CARDANO_ADDRESS", "LITECOIN_ADDRESS",
     "DOGECOIN_ADDRESS", "XRP_ADDRESS",
 
-    # --- SECRETS - Cloud Providers ---
+    # SECRETS - Cloud Providers
     "AWS_ACCESS_KEY", "AWS_SECRET_KEY", "AWS_SESSION_TOKEN",
     "AZURE_STORAGE_KEY", "AZURE_CONNECTION_STRING", "AZURE_SAS_TOKEN",
     "GOOGLE_API_KEY", "GOOGLE_OAUTH_ID", "GOOGLE_OAUTH_SECRET",
     "FIREBASE_KEY",
 
-    # --- SECRETS - Code Repositories ---
+    # SECRETS - Code Repositories
     "GITHUB_TOKEN", "GITLAB_TOKEN", "NPM_TOKEN", "PYPI_TOKEN", "NUGET_KEY",
 
-    # --- SECRETS - Communication Services ---
+    # SECRETS - Communication Services
     "SLACK_TOKEN", "SLACK_WEBHOOK",
     "DISCORD_TOKEN", "DISCORD_WEBHOOK",
     "TWILIO_ACCOUNT_SID", "TWILIO_KEY", "TWILIO_TOKEN",
     "SENDGRID_KEY", "MAILCHIMP_KEY",
 
-    # --- SECRETS - Payment & E-Commerce ---
+    # SECRETS - Payment & E-Commerce
     "STRIPE_KEY", "SQUARE_TOKEN", "SQUARE_SECRET",
     "SHOPIFY_TOKEN", "SHOPIFY_KEY", "SHOPIFY_SECRET",
 
-    # --- SECRETS - Infrastructure ---
+    # SECRETS - Infrastructure
     "HEROKU_KEY", "DATADOG_KEY", "NEWRELIC_KEY", "DATABASE_URL",
 
-    # --- SECRETS - Authentication ---
+    # SECRETS - Authentication
     "PRIVATE_KEY", "JWT", "BASIC_AUTH", "BEARER_TOKEN",
     "PASSWORD", "API_KEY", "SECRET",
 
-    # --- GOVERNMENT - Classification ---
+    # GOVERNMENT - Classification
     "CLASSIFICATION_LEVEL", "CLASSIFICATION_MARKING",
     "SCI_MARKING", "DISSEMINATION_CONTROL",
 
-    # --- GOVERNMENT - Contracts & Identifiers ---
+    # GOVERNMENT - Contracts & Identifiers
     "CAGE_CODE", "DUNS_NUMBER", "UEI",
     "DOD_CONTRACT", "GSA_CONTRACT",
     "CLEARANCE_LEVEL", "ITAR_MARKING", "EAR_MARKING",
 
-    # --- PROFESSIONAL ---
+    # PROFESSIONAL
     "PROFESSION", "OCCUPATION", "JOB", "JOB_TITLE",
 
-    # --- MEDICAL (context-only) ---
+    # MEDICAL (context-only)
     "DRUG", "MEDICATION", "LAB_TEST", "DIAGNOSIS", "PROCEDURE", "PAYER",
     "RX_NUMBER", "PRESCRIPTION", "BLOOD_TYPE",
 
-    # --- FACILITY / ORGANIZATION ---
+    # FACILITY / ORGANIZATION
     "FACILITY", "HOSPITAL", "ORG", "ORGANIZATION", "VENDOR",
     "COMPANYNAME", "COMPANY", "EMPLOYER",
 
-    # --- DOCUMENT & TRACKING ---
+    # DOCUMENT & TRACKING
     "DOCUMENT_ID", "ID_NUMBER", "TRACKING_NUMBER", "SHIPMENT_ID",
 
-    # --- OTHER ---
+    # OTHER
     "RELATIVE", "FAMILY", "UNIQUE_ID", "HCW", "ID",
 ])
 
@@ -304,8 +315,7 @@ def normalize_entity_type(entity_type: str) -> str:
     return _ENTITY_ALIASES.get(upper, upper)
 
 
-# --- SPAN DATA CLASSES ---
-
+# SPAN DATA CLASSES
 @dataclass(frozen=True)
 class SpanContext:
     """Contextual metadata about where a span was detected.
@@ -417,8 +427,7 @@ class Span:
         return d
 
 
-# --- RESULT DATA CLASSES ---
-
+# RESULT DATA CLASSES
 @dataclass
 class DetectionResult:
     """Result of running detection on text."""

@@ -86,7 +86,6 @@ class FullWalkProvider:
             yield file_info
 
 
-# ── Real-time change providers (Phase I) ─────────────────────────────
 
 
 class _StreamChangeProvider:
@@ -147,7 +146,6 @@ class FanotifyChangeProvider(_StreamChangeProvider):
     pass
 
 
-# ── Cloud change providers (Phase L) ─────────────────────────────────
 
 
 class SQSChangeProvider:

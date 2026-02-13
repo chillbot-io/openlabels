@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
@@ -48,7 +49,6 @@ VALID_TYPES = {"executive_summary", "compliance_report", "scan_detail", "access_
 VALID_FORMATS = {"html", "pdf", "csv", "xml"}
 
 
-# ── Request / Response schemas ──────────────────────────────────────
 
 
 class ReportGenerateRequest(BaseModel):
@@ -88,7 +88,6 @@ class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
 
 
 async def _build_report_data(
@@ -186,7 +185,6 @@ async def _build_report_data(
         reverse=True,
     )
 
-    # ── Compliance data from Policy model + ScanResult.policy_violations ──
     total_policies = 0
     total_violations = 0
     violations_by_policy: list[dict] = []
@@ -252,7 +250,6 @@ async def _build_report_data(
         1,
     )
 
-    # ── Access audit data from FileAccessEvent ──
     access_total_events = 0
     access_unique_users = 0
     access_sensitive_accesses = 0
@@ -382,13 +379,12 @@ async def _build_report_data(
         "total_sensitive": len(sensitive_findings),
         "publicly_exposed": publicly_exposed,
         "unlabeled": unlabeled,
-        "critical_count": by_tier.get("CRITICAL", 0),
+        "critical_count": by_tier.get(RiskTier.CRITICAL, 0),
         "by_entity_type": by_entity_type,
         "by_exposure": by_exposure,
     }
 
 
-# ── Endpoints ───────────────────────────────────────────────────────
 
 
 @router.post("/generate", response_model=ReportResponse, status_code=201)
@@ -633,7 +629,7 @@ async def schedule_report(
             "name": name,
             "distribute_to": request.distribute_to,
         },
-        status="pending",
+        status=JobStatus.PENDING,
     )
     session.add(job)
     await session.commit()

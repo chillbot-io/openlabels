@@ -12,12 +12,13 @@ Extracts shared logic between SharePointAdapter and OneDriveAdapter:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
 
 import httpx
 
-from openlabels.adapters.base import ExposureLevel, FolderInfo
+from openlabels.adapters.base import ExposureLevel, FileInfo, FilterConfig, FolderInfo
 from openlabels.adapters.graph_client import GraphClient, RateLimiterConfig
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,126 @@ class BaseGraphAdapter:
                 exc_info=True,
             )
             return False
+
+    # Shared delta-query and folder-listing helpers
+    async def _iter_delta_files(
+        self,
+        client: GraphClient,
+        initial_path: str,
+        resource_path: str,
+        resource_id: str,
+        resource_kwarg: str,
+        filter_config: FilterConfig,
+    ) -> AsyncIterator[FileInfo]:
+        """Iterate files via delta query, yielding FileInfo objects.
+
+        This is the shared core of the delta branch in ``list_files()``.
+        Subclasses supply the endpoint paths and the resource-specific
+        FileInfo keyword (``user_id`` or ``site_id``).
+
+        Args:
+            client: Active GraphClient.
+            initial_path: Full delta endpoint, e.g.
+                ``/users/{uid}/drive/root/delta``.
+            resource_path: Logical resource key for delta token caching,
+                e.g. ``onedrive:{uid}:{drive_id}``.
+            resource_id: The resource identifier value (user ID or site ID).
+            resource_kwarg: The FileInfo keyword for the resource ID
+                (``"user_id"`` or ``"site_id"``).
+            filter_config: Filter to apply before yielding.
+        """
+        items_iter, is_delta = await client.iter_with_delta(
+            initial_path, resource_path
+        )
+
+        if is_delta:
+            logger.info(f"Delta scan for {resource_path}")
+
+        async for item in items_iter:
+            if item.get("deleted"):
+                yield FileInfo(
+                    path=item.get("name", "unknown"),
+                    name=item.get("name", "unknown"),
+                    size=0,
+                    modified=datetime.now(timezone.utc),
+                    adapter=self.adapter_type,
+                    item_id=item.get("id"),
+                    change_type="deleted",
+                    **{resource_kwarg: resource_id},
+                )
+                continue
+
+            if "folder" in item:
+                continue
+
+            if "file" in item:
+                file_info = FileInfo(
+                    **self._base_file_info(item),
+                    **{resource_kwarg: resource_id},
+                )
+
+                if filter_config.should_include(file_info):
+                    file_info.change_type = "modified" if is_delta else None
+                    yield file_info
+
+    async def _list_drive_folders_impl(
+        self,
+        client: GraphClient,
+        endpoint_fn,
+        resource_kwarg: str,
+        resource_id: str,
+        path: str,
+        recursive: bool,
+    ) -> AsyncIterator[FolderInfo]:
+        """Shared recursive folder listing.
+
+        Args:
+            client: Active GraphClient.
+            endpoint_fn: Callable ``(path) -> endpoint_str`` that builds
+                the children endpoint for a given folder path.
+            resource_kwarg: Keyword for ``_folder_from_item``
+                (``"user_id"`` or ``"site_id"``).
+            resource_id: Value for that keyword.
+            path: Current folder path (``"/"`` for root).
+            recursive: Whether to recurse into subfolders.
+        """
+        endpoint = endpoint_fn(path)
+
+        try:
+            items_iter = client.iter_all_pages(endpoint)
+            async for item in items_iter:
+                if "folder" not in item:
+                    continue
+
+                folder_info = self._folder_from_item(
+                    item, **{resource_kwarg: resource_id}
+                )
+                yield folder_info
+
+                if recursive:
+                    folder_path = (
+                        f"{path}/{item['name']}" if path != "/" else f"/{item['name']}"
+                    )
+                    async for sub in self._list_drive_folders_impl(
+                        client,
+                        endpoint_fn,
+                        resource_kwarg,
+                        resource_id,
+                        folder_path,
+                        recursive,
+                    ):
+                        yield sub
+        except (
+            PermissionError,
+            ConnectionError,
+            TimeoutError,
+            httpx.HTTPStatusError,
+            httpx.RequestError,
+        ) as e:
+            logger.debug(
+                f"Cannot list folders at {path} for {resource_id}: {e}"
+            )
+            return
 
     def get_stats(self) -> dict:
         """Get adapter statistics including rate limiter stats."""

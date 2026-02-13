@@ -7,7 +7,6 @@ Runs on a schedule or on-demand via API.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -16,16 +15,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.labeling.engine import create_labeling_engine
 from openlabels.server.models import SensitivityLabel
 
 logger = logging.getLogger(__name__)
-
-# Check for httpx
-try:
-    import httpx
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
 
 
 class LabelSyncResult:
@@ -83,11 +76,7 @@ async def execute_label_sync_task(
                 **LabelSyncResult().to_dict(),
             }
 
-        tenant_id_azure = auth.tenant_id
-        client_id = auth.client_id
-        client_secret = auth.client_secret
-
-        if not all([tenant_id_azure, client_id, client_secret]):
+        if not all([auth.tenant_id, auth.client_id, auth.client_secret]):
             return {
                 "success": False,
                 "error": "Azure AD credentials not configured - check AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET",
@@ -106,9 +95,6 @@ async def execute_label_sync_task(
     result = await sync_labels_from_graph(
         session=session,
         tenant_id=tenant_id,
-        azure_tenant_id=tenant_id_azure,
-        client_id=client_id,
-        client_secret=client_secret,
         remove_stale=payload.get("remove_stale", False),
     )
 
@@ -122,20 +108,17 @@ async def execute_label_sync_task(
 async def sync_labels_from_graph(
     session: AsyncSession,
     tenant_id: UUID,
-    azure_tenant_id: str,
-    client_id: str,
-    client_secret: str,
     remove_stale: bool = False,
 ) -> LabelSyncResult:
     """
     Sync sensitivity labels from Microsoft Graph API.
 
+    Uses LabelingEngine.get_available_labels() for all Graph API
+    communication (token acquisition, retry logic, pagination).
+
     Args:
         session: Database session
         tenant_id: OpenLabels tenant ID
-        azure_tenant_id: Azure AD tenant ID
-        client_id: Azure AD client ID
-        client_secret: Azure AD client secret
         remove_stale: Whether to remove labels not in M365
 
     Returns:
@@ -143,21 +126,12 @@ async def sync_labels_from_graph(
     """
     result = LabelSyncResult()
 
-    if not HTTPX_AVAILABLE:
-        result.errors.append("httpx not installed - cannot sync labels")
-        return result
-
     try:
-        # Get access token
-        token = await _get_graph_token(azure_tenant_id, client_id, client_secret)
-        if not token:
-            result.errors.append("Failed to obtain Graph API access token")
-            return result
+        engine = create_labeling_engine()
+        labels_data = await engine.get_available_labels(use_cache=False)
 
-        # Fetch labels from Graph API
-        labels_data = await _fetch_labels_from_graph(token)
-        if labels_data is None:
-            result.errors.append("Failed to fetch labels from Graph API")
+        if not labels_data:
+            result.errors.append("No labels returned from Graph API")
             return result
 
         logger.info(f"Fetched {len(labels_data)} labels from M365")
@@ -198,7 +172,7 @@ async def sync_labels_from_graph(
                     existing.description = label_data.get("description")
                     existing.color = label_data.get("color")
                     existing.priority = label_data.get("priority", 0)
-                    existing.parent_id = label_data.get("parent", {}).get("id") if label_data.get("parent") else None
+                    existing.parent_id = label_data.get("parent_id")
                     existing.synced_at = datetime.now(timezone.utc)
                     result.labels_updated += 1
                 else:
@@ -210,7 +184,7 @@ async def sync_labels_from_graph(
                         description=label_data.get("description"),
                         color=label_data.get("color"),
                         priority=label_data.get("priority", 0),
-                        parent_id=label_data.get("parent", {}).get("id") if label_data.get("parent") else None,
+                        parent_id=label_data.get("parent_id"),
                         synced_at=datetime.now(timezone.utc),
                     )
                     session.add(new_label)
@@ -240,99 +214,6 @@ async def sync_labels_from_graph(
         result.errors.append(str(e))
 
     return result
-
-
-async def _get_graph_token(
-    tenant_id: str,
-    client_id: str,
-    client_secret: str,
-) -> str | None:
-    """Get OAuth2 access token for Microsoft Graph API."""
-    if not HTTPX_AVAILABLE:
-        return None
-
-    max_retries = 3
-    base_delay = 2.0
-
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": client_id,
-                        "client_secret": client_secret,
-                        "scope": "https://graph.microsoft.com/.default",
-                    },
-                )
-
-                if response.status_code == 200:
-                    return response.json().get("access_token")
-                elif response.status_code == 429:
-                    # Rate limited
-                    retry_after = int(response.headers.get("Retry-After", base_delay * (2 ** attempt)))
-                    logger.warning(f"Rate limited, retrying after {retry_after}s")
-                    await asyncio.sleep(retry_after)
-                elif response.status_code >= 500:
-                    # Server error - retry
-                    await asyncio.sleep(base_delay * (2 ** attempt))
-                else:
-                    logger.error(f"Token error: {response.status_code} - {response.text[:200]}")
-                    return None
-
-        except httpx.RequestError as e:
-            logger.warning(f"Token request failed (attempt {attempt + 1}): {e}")
-            await asyncio.sleep(base_delay * (2 ** attempt))
-
-    return None
-
-
-async def _fetch_labels_from_graph(token: str) -> list[dict] | None:
-    """Fetch sensitivity labels from Microsoft Graph API."""
-    if not HTTPX_AVAILABLE:
-        return None
-
-    all_labels = []
-    url = "https://graph.microsoft.com/v1.0/informationProtection/policy/labels"
-
-    max_retries = 3
-    base_delay = 2.0
-
-    while url:
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(
-                        url,
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
-
-                    if response.status_code == 200:
-                        data = response.json()
-                        all_labels.extend(data.get("value", []))
-
-                        # Handle pagination
-                        url = data.get("@odata.nextLink")
-                        break
-                    elif response.status_code == 429:
-                        retry_after = int(response.headers.get("Retry-After", base_delay * (2 ** attempt)))
-                        logger.warning(f"Rate limited, retrying after {retry_after}s")
-                        await asyncio.sleep(retry_after)
-                    elif response.status_code >= 500:
-                        await asyncio.sleep(base_delay * (2 ** attempt))
-                    else:
-                        logger.error(f"Graph API error: {response.status_code} - {response.text[:500]}")
-                        return None
-
-            except httpx.RequestError as e:
-                logger.warning(f"Graph request failed (attempt {attempt + 1}): {e}")
-                await asyncio.sleep(base_delay * (2 ** attempt))
-        else:
-            # All retries exhausted
-            return None
-
-    return all_labels
 
 
 async def _remove_stale_labels(

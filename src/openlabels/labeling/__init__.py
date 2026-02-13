@@ -13,6 +13,7 @@ from .engine import (
     LabelCache,
     LabelingEngine,
     LabelResult,
+    create_labeling_engine,
     get_label_cache,
 )
 from .mip import (
@@ -26,6 +27,7 @@ __all__ = [
     # Engine
     "LabelingEngine",
     "LabelResult",
+    "create_labeling_engine",
     # Caching
     "LabelCache",
     "CachedLabel",

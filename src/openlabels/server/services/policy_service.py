@@ -16,6 +16,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.server.models import Policy, ScanResult
 from openlabels.server.services.base import BaseService
 
@@ -31,7 +32,6 @@ class PolicyService(BaseService):
     All methods automatically filter by ``tenant_id`` for proper isolation.
     """
 
-    # ── CRUD ────────────────────────────────────────────────────────────
 
     async def list_policies(
         self,
@@ -106,7 +106,6 @@ class PolicyService(BaseService):
         await self.flush()
         return policy
 
-    # ── Built-in packs ──────────────────────────────────────────────────
 
     async def load_builtin_pack(self, pack_name: str) -> Policy:
         """Load a built-in policy pack as a tenant-scoped Policy row.
@@ -152,7 +151,6 @@ class PolicyService(BaseService):
             for p in load_builtin_policies()
         ]
 
-    # ── Dry-run evaluation ──────────────────────────────────────────────
 
     async def evaluate_results(
         self,
@@ -224,7 +222,6 @@ class PolicyService(BaseService):
 
         return output
 
-    # ── Compliance stats ────────────────────────────────────────────────
 
     async def compliance_stats(self) -> dict:
         """Aggregate compliance statistics for the tenant.
@@ -272,7 +269,7 @@ class PolicyService(BaseService):
                 ScanResult.tenant_id == self.tenant_id,
                 ScanResult.policy_violations.isnot(None),
             )
-            .limit(500)
+            .limit(DEFAULT_QUERY_LIMIT)
         )
         rows = (await self.session.execute(detail_q)).scalars().all()
 
@@ -295,7 +292,6 @@ class PolicyService(BaseService):
             "violations_by_severity": by_severity,
         }
 
-    # ── Internal helpers ────────────────────────────────────────────────
 
     async def _build_tenant_engine(self) -> PolicyEngine:
         """Build a PolicyEngine loaded with the tenant's active policies."""

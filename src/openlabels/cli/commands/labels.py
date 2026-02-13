@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 import httpx
 
-from openlabels.cli.base import format_option, get_api_client, server_options
+from openlabels.cli.base import api_client, format_option, server_options
 from openlabels.cli.output import OutputFormatter
 from openlabels.cli.utils import handle_http_error
 
@@ -26,53 +26,46 @@ def labels() -> None:
 def labels_list(server: str, token: str | None, output_format: str) -> None:
     """List configured sensitivity labels."""
     fmt = OutputFormatter(output_format)
-    client = get_api_client(server, token)
 
     try:
-        response = client.get("/api/labels")
-        if response.status_code == 200:
-            labels_data = response.json()
-            display = []
-            for label in labels_data:
-                display.append({
-                    "name": label.get("name", ""),
-                    "priority": label.get("priority", 0),
-                    "id": label.get("id", ""),
-                })
-            fmt.print_table(display, columns=["name", "priority", "id"])
-        else:
-            click.echo(f"Error: {response.status_code}", err=True)
+        with api_client(server, token) as client:
+            response = client.get("/api/labels")
+            if response.status_code == 200:
+                labels_data = response.json()
+                display = []
+                for label in labels_data:
+                    display.append({
+                        "name": label.get("name", ""),
+                        "priority": label.get("priority", 0),
+                        "id": label.get("id", ""),
+                    })
+                fmt.print_table(display, columns=["name", "priority", "id"])
+            else:
+                click.echo(f"Error: {response.status_code}", err=True)
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)
-    finally:
-        client.close()
 
 
 @labels.command("sync")
 @server_options
 def labels_sync(server: str, token: str | None) -> None:
     """Sync sensitivity labels from Microsoft 365."""
-    client = get_api_client(server, token)
-
     try:
-        click.echo("Syncing labels from M365...")
-        response = client.post("/api/labels/sync")
-        if response.status_code == 202:
-            result = response.json()
-            click.echo(f"Synced {result.get('labels_synced', 0)} labels")
-        else:
-            click.echo(f"Error: {response.status_code} - {response.text}", err=True)
+        with api_client(server, token) as client:
+            click.echo("Syncing labels from M365...")
+            response = client.post("/api/labels/sync")
+            if response.status_code == 202:
+                result = response.json()
+                click.echo(f"Synced {result.get('labels_synced', 0)} labels")
+            else:
+                click.echo(f"Error: {response.status_code} - {response.text}", err=True)
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
         handle_http_error(e, server)
-    finally:
-        client.close()
 
 
-# --- Local commands (no server needed) ---
-
-
+# Local commands (no server needed)
 @labels.command("apply")
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--label", required=True, help="Label name or ID to apply")

@@ -8,8 +8,8 @@ Provides a unified interface for applying MIP sensitivity labels across:
 Architecture:
 - LocalLabelWriter: Pure synchronous class for all local file I/O (zipfile, pypdf,
   sidecar files). Easy to unit test, no async, no asyncio.
-- LabelingEngine: Async orchestrator that handles Graph API calls (httpx) and
-  delegates local file operations to LocalLabelWriter via asyncio.to_thread().
+- LabelingEngine: Async orchestrator that delegates Graph API calls to
+  GraphClient and local file operations to LocalLabelWriter via asyncio.to_thread().
 
 Features:
 - Label caching with TTL for performance
@@ -36,15 +36,18 @@ from typing import Optional
 import httpx
 
 from openlabels.adapters.base import FileInfo
+from openlabels.adapters.graph_client import GraphClient
+from openlabels.core.types import AdapterType
+from openlabels.exceptions import GraphAPIError
 
 logger = logging.getLogger(__name__)
 
-_MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+
+_MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
 
-# --- LABEL CACHE ---
-
-
+# LABEL CACHE
 @dataclass
 class CachedLabel:
     """A cached sensitivity label."""
@@ -186,9 +189,7 @@ def get_label_cache() -> LabelCache:
     return _label_cache
 
 
-# --- LABELING RESULT ---
-
-
+# LABELING RESULT
 @dataclass
 class LabelResult:
     """Result of a labeling operation."""
@@ -200,21 +201,7 @@ class LabelResult:
     error: str | None = None
 
 
-@dataclass
-class TokenCache:
-    """Cache for Graph API access tokens."""
-
-    access_token: str = ""
-    expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-    def is_valid(self) -> bool:
-        """Check if token is still valid (with 5 min buffer)."""
-        return bool(self.access_token and datetime.now(timezone.utc) < (self.expires_at - timedelta(minutes=5)))
-
-
-# --- LOCAL LABEL WRITER — pure synchronous file I/O ---
-
-
+# LOCAL LABEL WRITER — pure synchronous file I/O
 class LocalLabelWriter:
     """
     Pure synchronous handler for all local file labeling operations.
@@ -227,8 +214,7 @@ class LocalLabelWriter:
     ``await asyncio.to_thread(writer.method, ...)``.
     """
 
-    # --- Apply helpers ---
-
+    # Apply helpers
     def apply_office_metadata(
         self,
         file_path: str,
@@ -430,8 +416,7 @@ class LocalLabelWriter:
                 error=f"OS error creating sidecar file: {e}",
             )
 
-    # --- Remove helpers ---
-
+    # Remove helpers
     def remove_office_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from an Office document's custom properties."""
         try:
@@ -518,8 +503,7 @@ class LocalLabelWriter:
         except ValueError as e:
             return LabelResult(success=False, error=f"Invalid PDF format: {e}")
 
-    # --- Read helpers ---
-
+    # Read helpers
     def get_local_label(self, file_path: str) -> dict | None:
         """Read the current sensitivity label from a local file.
 
@@ -596,8 +580,7 @@ class LocalLabelWriter:
 
         return None
 
-    # --- Sidecar cleanup ---
-
+    # Sidecar cleanup
     @staticmethod
     def remove_sidecar(file_path: str) -> None:
         """Delete the ``.openlabels`` sidecar file if it exists."""
@@ -606,9 +589,7 @@ class LocalLabelWriter:
             sidecar.unlink()
 
 
-# --- LABELING ENGINE — async orchestrator ---
-
-
+# LABELING ENGINE — async orchestrator
 class LabelingEngine:
     """
     Unified interface for applying sensitivity labels.
@@ -627,6 +608,7 @@ class LabelingEngine:
         tenant_id: str,
         client_id: str,
         client_secret: str,
+        graph_client: GraphClient | None = None,
     ):
         """
         Initialize the labeling engine.
@@ -635,66 +617,29 @@ class LabelingEngine:
             tenant_id: Azure AD tenant ID
             client_id: Azure AD application ID
             client_secret: Azure AD client secret
+            graph_client: Optional pre-configured GraphClient.
+                          If not provided, one is created lazily on
+                          the first Graph API call.
         """
         self.tenant_id = tenant_id
         self.client_id = client_id
         self.client_secret = client_secret
-        self._token_cache = TokenCache()
         self._writer = LocalLabelWriter()
+        self._graph_client = graph_client
+        self._owns_graph_client = graph_client is None  # whether we manage its lifecycle
 
-        # Retry configuration
-        self._max_retries = 4
-        self._base_delay = 2.0  # seconds
-
-    # --- Graph API helpers (async, httpx) ---
-
-    async def _get_access_token(self) -> str:
-        """Get Graph API access token with caching and retry logic."""
-        if self._token_cache.is_valid():
-            return self._token_cache.access_token
-
-        token_url = f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
-        data = {
-            "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "scope": "https://graph.microsoft.com/.default",
-        }
-
-        last_error = None
-        for attempt in range(self._max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(token_url, data=data)
-
-                    if response.status_code == 429:
-                        # Rate limited - use Retry-After header if present
-                        retry_after = int(response.headers.get("Retry-After", self._base_delay * (2 ** attempt)))
-                        logger.warning(f"Rate limited, retrying after {retry_after}s")
-                        await asyncio.sleep(retry_after)
-                        continue
-
-                    response.raise_for_status()
-                    token_data = response.json()
-
-                    self._token_cache.access_token = token_data["access_token"]
-                    expires_in = token_data.get("expires_in", 3600)
-                    self._token_cache.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-
-                    return self._token_cache.access_token
-
-            except httpx.HTTPStatusError as e:
-                last_error = e
-                if e.response.status_code >= 500:
-                    # Server error - retry with backoff
-                    await asyncio.sleep(self._base_delay * (2 ** attempt))
-                else:
-                    raise
-            except httpx.RequestError as e:
-                last_error = e
-                await asyncio.sleep(self._base_delay * (2 ** attempt))
-
-        raise Exception(f"Failed to get access token after {self._max_retries} retries: {last_error}")
+    # Graph API helpers
+    async def _ensure_graph_client(self) -> GraphClient:
+        """Get or lazily create the GraphClient, entering its async context."""
+        if self._graph_client is None:
+            self._graph_client = GraphClient(
+                tenant_id=self.tenant_id,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+            )
+            self._owns_graph_client = True
+            await self._graph_client.__aenter__()
+        return self._graph_client
 
     async def _graph_request(
         self,
@@ -702,46 +647,24 @@ class LabelingEngine:
         endpoint: str,
         json_data: dict | None = None,
     ) -> httpx.Response:
-        """Make a Graph API request with retry logic and rate limiting."""
-        token = await self._get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        """Make a Graph API request via GraphClient.
 
-        url = f"https://graph.microsoft.com/v1.0{endpoint}"
+        Delegates retry, rate limiting, circuit breaker, and token
+        management to the shared GraphClient.
+        """
+        client = await self._ensure_graph_client()
+        kwargs = {}
+        if json_data is not None:
+            kwargs["json"] = json_data
+        return await client.request(method, endpoint, **kwargs)
 
-        last_error = None
-        for attempt in range(self._max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    if method.upper() == "GET":
-                        response = await client.get(url, headers=headers)
-                    elif method.upper() == "PATCH":
-                        response = await client.patch(url, headers=headers, json=json_data)
-                    elif method.upper() == "POST":
-                        response = await client.post(url, headers=headers, json=json_data)
-                    else:
-                        raise ValueError(f"Unsupported HTTP method: {method}")
+    async def close(self) -> None:
+        """Close the GraphClient if we own it."""
+        if self._graph_client and self._owns_graph_client:
+            await self._graph_client.__aexit__(None, None, None)
+            self._graph_client = None
 
-                    if response.status_code == 429:
-                        # Rate limited
-                        retry_after = int(response.headers.get("Retry-After", self._base_delay * (2 ** attempt)))
-                        logger.warning(f"Graph API rate limited, retrying after {retry_after}s")
-                        await asyncio.sleep(retry_after)
-                        continue
-
-                    return response
-
-            except httpx.RequestError as e:
-                last_error = e
-                logger.warning(f"Graph API request failed (attempt {attempt + 1}): {e}")
-                await asyncio.sleep(self._base_delay * (2 ** attempt))
-
-        raise Exception(f"Graph API request failed after {self._max_retries} retries: {last_error}")
-
-    # --- Public API — apply / remove / get ---
-
+    # Public API — apply / remove / get
     async def apply_label(
         self,
         file_info: FileInfo,
@@ -759,11 +682,11 @@ class LabelingEngine:
         Returns:
             LabelResult with success status
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await self._apply_local_label(file_info.path, label_id, label_name)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._apply_graph_label(file_info, label_id, label_name)
-        elif file_info.adapter in ("s3", "gcs"):
+        elif file_info.adapter in (AdapterType.S3, AdapterType.GCS):
             # Cloud object store labels are applied via adapter.apply_label_and_sync()
             # in the scan pipeline's _cloud_label_sync_back step (Phase L).
             # Return success here so auto-labeling marks the DB record.
@@ -789,9 +712,9 @@ class LabelingEngine:
         Returns:
             LabelResult with success status
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await self._remove_local_label(file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._remove_graph_label(file_info)
         else:
             return LabelResult(
@@ -809,9 +732,9 @@ class LabelingEngine:
         Returns:
             Label dict with id and name, or None if no label
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await asyncio.to_thread(self._writer.get_local_label, file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._get_graph_label(file_info)
         return None
 
@@ -858,21 +781,12 @@ class LabelingEngine:
 
             return labels
 
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout getting available labels: {e}")
-            cached = _label_cache.get_all()
-            return [label.to_dict() for label in cached] if cached else []
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error getting available labels: {e}")
-            cached = _label_cache.get_all()
-            return [label.to_dict() for label in cached] if cached else []
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting available labels: {e}")
+        except GraphAPIError as e:
+            logger.error(f"Graph API error getting available labels: {e}")
             cached = _label_cache.get_all()
             return [label.to_dict() for label in cached] if cached else []
 
-    # --- Cache convenience methods ---
-
+    # Cache convenience methods
     def get_cached_label(self, label_id: str) -> dict | None:
         """
         Get a label from cache by ID.
@@ -908,8 +822,7 @@ class LabelingEngine:
         """Get label cache statistics."""
         return _label_cache.stats
 
-    # --- Local file orchestration (MIP SDK -> metadata fallback chain) ---
-
+    # Local file orchestration (MIP SDK -> metadata fallback chain)
     async def _apply_local_label(
         self,
         file_path: str,
@@ -1004,8 +917,7 @@ class LabelingEngine:
             # Sidecar removal was enough
             return LabelResult(success=True, method="sidecar_removed")
 
-    # --- Graph API operations (SharePoint / OneDrive) ---
-
+    # Graph API operations (SharePoint / OneDrive)
     async def _apply_graph_label(
         self,
         file_info: FileInfo,
@@ -1075,26 +987,12 @@ class LabelingEngine:
                     error=f"Graph API error: {error_msg}",
                 )
 
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout applying Graph API label: {e}")
+        except GraphAPIError as e:
+            logger.error(f"Graph API error applying label: {e}")
             return LabelResult(
                 success=False,
                 label_id=label_id,
-                error=f"Request timed out: {e}",
-            )
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error applying Graph API label: {e}")
-            return LabelResult(
-                success=False,
-                label_id=label_id,
-                error=f"Connection error: {e}",
-            )
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error applying Graph API label: {e}")
-            return LabelResult(
-                success=False,
-                label_id=label_id,
-                error=f"HTTP error {e.response.status_code}",
+                error=str(e),
             )
 
     async def _resolve_share_url(self, url: str) -> str | None:
@@ -1119,14 +1017,8 @@ class LabelingEngine:
 
             return None
 
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout resolving share URL: {e}")
-            return None
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error resolving share URL: {e}")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error resolving share URL: {e}")
+        except GraphAPIError as e:
+            logger.error(f"Graph API error resolving share URL: {e}")
             return None
 
     async def _remove_graph_label(self, file_info: FileInfo) -> LabelResult:
@@ -1156,12 +1048,8 @@ class LabelingEngine:
                 error_msg = error_data.get("error", {}).get("message", response.text)
                 return LabelResult(success=False, error=f"Graph API error: {error_msg}")
 
-        except httpx.TimeoutException as e:
-            return LabelResult(success=False, error=f"Request timed out: {e}")
-        except httpx.ConnectError as e:
-            return LabelResult(success=False, error=f"Connection error: {e}")
-        except httpx.HTTPStatusError as e:
-            return LabelResult(success=False, error=f"HTTP error {e.response.status_code}")
+        except GraphAPIError as e:
+            return LabelResult(success=False, error=str(e))
 
     async def _get_graph_label(self, file_info: FileInfo) -> dict | None:
         """Get label from SharePoint/OneDrive file via Graph API."""
@@ -1193,12 +1081,22 @@ class LabelingEngine:
 
             return None
 
-        except httpx.TimeoutException as e:
-            logger.error(f"Timeout getting Graph label: {e}")
+        except GraphAPIError as e:
+            logger.error(f"Graph API error getting label: {e}")
             return None
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error getting Graph label: {e}")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting Graph label: {e}")
-            return None
+
+
+def create_labeling_engine() -> LabelingEngine:
+    """Create a LabelingEngine using credentials from application settings.
+
+    Convenience factory that avoids repeating the settings-extraction
+    boilerplate at every call site.
+    """
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    return LabelingEngine(
+        tenant_id=settings.auth.tenant_id,
+        client_id=settings.auth.client_id,
+        client_secret=settings.auth.client_secret,
+    )

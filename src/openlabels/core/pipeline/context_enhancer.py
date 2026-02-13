@@ -27,8 +27,7 @@ from ..types import Span, Tier
 logger = logging.getLogger(__name__)
 
 
-# --- DENY LISTS - Known false positives to reject immediately ---
-
+# DENY LISTS - Known false positives to reject immediately
 # Common words that get falsely detected as NAMEs
 NAME_DENY_LIST: set[str] = {
     # Common verbs/words that are rarely names
@@ -111,8 +110,7 @@ COMPANY_SUFFIXES: set[str] = {
 }
 
 
-# --- HOTWORDS - Context words that adjust confidence ---
-
+# HOTWORDS - Context words that adjust confidence
 @dataclass
 class HotwordRule:
     """A rule for adjusting confidence based on nearby words."""
@@ -192,8 +190,7 @@ NAME_NEGATIVE_HOTWORDS: list[HotwordRule] = [
 ]
 
 
-# --- PATTERN EXCLUSIONS ---
-
+# PATTERN EXCLUSIONS
 # Pattern: "X, Y and Z" or "X and Y" - likely a company/firm name
 COMPANY_PATTERN = re.compile(
     r'^[A-Z][a-z]+(?:[-\s][A-Z][a-z]+)*'
@@ -245,8 +242,7 @@ BUSINESS_CONTEXT_WORDS = re.compile(
 )
 
 
-# --- CONTEXT ENHANCER CLASS ---
-
+# CONTEXT ENHANCER CLASS
 @dataclass
 class EnhancementResult:
     """Result of context enhancement for a span."""

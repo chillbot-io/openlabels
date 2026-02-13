@@ -24,7 +24,11 @@ from openlabels.adapters.base import (
     FilterConfig,
     PartitionSpec,
     is_label_compatible,
+    resolve_prefix,
+    validate_content_size,
+    validate_file_size,
 )
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 
 try:
     from google.api_core.exceptions import GoogleAPIError
@@ -65,7 +69,6 @@ class GCSAdapter:
         self._client = None
         self._bucket = None
 
-    # ── ReadAdapter protocol ────────────────────────────────────────
 
     @property
     def adapter_type(self) -> str:
@@ -265,14 +268,10 @@ class GCSAdapter:
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Download blob content from GCS with size limit."""
-        if file_info.size > max_size_bytes:
-            raise ValueError(
-                f"File too large for processing: {file_info.size} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_file_size(file_info, max_size_bytes)
         client = self._ensure_client()
         bucket = client.bucket(self._bucket_name)
         blob_name = file_info.item_id or file_info.path.split(
@@ -280,11 +279,7 @@ class GCSAdapter:
         )[-1]
         blob = bucket.blob(blob_name)
         content = await asyncio.to_thread(blob.download_as_bytes)
-        if len(content) > max_size_bytes:
-            raise ValueError(
-                f"File content exceeds limit: {len(content)} bytes "
-                f"(max: {max_size_bytes} bytes). File: {file_info.path}"
-            )
+        validate_content_size(content, max_size_bytes, file_info.path)
         return content
 
     async def get_metadata(self, file_info: FileInfo) -> FileInfo:
@@ -312,7 +307,6 @@ class GCSAdapter:
             },
         )
 
-    # ── Cloud label sync-back ───────────────────────────────────────
 
     async def apply_label_and_sync(
         self,
@@ -412,7 +406,6 @@ class GCSAdapter:
         logger.info("Applied label %s to gs://%s/%s", label_id, self._bucket_name, blob_name)
         return {"success": True, "method": "gcs_metadata"}
 
-    # ── GCS change detection (generation diff) ──────────────────────
 
     async def list_blobs_with_generations(
         self,
@@ -432,7 +425,6 @@ class GCSAdapter:
         blobs = await asyncio.to_thread(lambda: list(blob_iter))
         return {b.name: b.generation for b in blobs if not b.name.endswith("/")}
 
-    # ── Internal helpers ────────────────────────────────────────────
 
     def _build_client(self):
         try:
@@ -461,5 +453,4 @@ class GCSAdapter:
         return self._client
 
     def _resolve_prefix(self, target: str) -> str:
-        parts = [p for p in (self._prefix, target) if p]
-        return "/".join(parts)
+        return resolve_prefix(self._prefix, target)

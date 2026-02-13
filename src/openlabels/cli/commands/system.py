@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import click
 import httpx
 
-from openlabels.cli.base import get_api_client, server_options
+from openlabels.cli.base import api_client, server_options
 
 logger = logging.getLogger(__name__)
 
@@ -51,98 +51,93 @@ def status(server: str, token: str | None) -> None:
     Examples:
         openlabels status
     """
-    client = get_api_client(server, token)
+    with api_client(server, token) as client:
+        click.echo("OpenLabels Status")
+        click.echo("=" * 50)
 
-    click.echo("OpenLabels Status")
-    click.echo("=" * 50)
+        # Check server health
+        try:
+            response = client.get("/health", timeout=5.0)
+            if response.status_code == 200:
+                health = response.json()
+                click.echo(f"Server:      \u2713 Online ({server})")
+                click.echo(f"  Version:   {health.get('version', 'unknown')}")
+                click.echo(f"  Database:  {health.get('database', 'unknown')}")
+            else:
+                click.echo(f"Server:      \u2717 Unhealthy (status {response.status_code})")
+        except httpx.TimeoutException:
+            click.echo("Server:      \u2717 Offline (connection timed out)")
+            click.echo("\nCannot retrieve additional status without server connection.")
+            return
+        except httpx.ConnectError as e:
+            click.echo(f"Server:      \u2717 Offline (cannot connect: {e})")
+            click.echo("\nCannot retrieve additional status without server connection.")
+            return
 
-    # Check server health
-    try:
-        response = client.get("/health", timeout=5.0)
-        if response.status_code == 200:
-            health = response.json()
-            click.echo(f"Server:      \u2713 Online ({server})")
-            click.echo(f"  Version:   {health.get('version', 'unknown')}")
-            click.echo(f"  Database:  {health.get('database', 'unknown')}")
-        else:
-            click.echo(f"Server:      \u2717 Unhealthy (status {response.status_code})")
-    except httpx.TimeoutException:
-        click.echo("Server:      \u2717 Offline (connection timed out)")
-        click.echo("\nCannot retrieve additional status without server connection.")
-        client.close()
-        return
-    except httpx.ConnectError as e:
-        click.echo(f"Server:      \u2717 Offline (cannot connect: {e})")
-        click.echo("\nCannot retrieve additional status without server connection.")
-        client.close()
-        return
+        # Get job queue status
+        try:
+            response = client.get("/api/jobs/stats")
+            if response.status_code == 200:
+                stats = response.json()
+                click.echo("\nJob Queue:")
+                click.echo(f"  Pending:   {stats.get('pending', 0)}")
+                click.echo(f"  Running:   {stats.get('running', 0)}")
+                click.echo(f"  Completed: {stats.get('completed', 0)}")
+                click.echo(f"  Failed:    {stats.get('failed', 0)}")
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            logger.debug(f"Failed to get job queue stats: {e}")
 
-    # Get job queue status
-    try:
-        response = client.get("/api/jobs/stats")
-        if response.status_code == 200:
-            stats = response.json()
-            click.echo("\nJob Queue:")
-            click.echo(f"  Pending:   {stats.get('pending', 0)}")
-            click.echo(f"  Running:   {stats.get('running', 0)}")
-            click.echo(f"  Completed: {stats.get('completed', 0)}")
-            click.echo(f"  Failed:    {stats.get('failed', 0)}")
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        logger.debug(f"Failed to get job queue stats: {e}")
+        # Get scan statistics
+        try:
+            response = client.get("/api/dashboard/summary")
+            if response.status_code == 200:
+                summary = response.json()
+                click.echo("\nScan Summary:")
+                click.echo(f"  Total files scanned:  {summary.get('total_files', 0):,}")
+                click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
+                click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
+                click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            logger.debug(f"Failed to get dashboard summary: {e}")
 
-    # Get scan statistics
-    try:
-        response = client.get("/api/dashboard/summary")
-        if response.status_code == 200:
-            summary = response.json()
-            click.echo("\nScan Summary:")
-            click.echo(f"  Total files scanned:  {summary.get('total_files', 0):,}")
-            click.echo(f"  Sensitive files:      {summary.get('sensitive_files', 0):,}")
-            click.echo(f"  Critical risk:        {summary.get('critical_count', 0):,}")
-            click.echo(f"  High risk:            {summary.get('high_count', 0):,}")
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        logger.debug(f"Failed to get dashboard summary: {e}")
+        # Get monitored files count
+        try:
+            from openlabels.monitoring import get_watched_files
+            watched = get_watched_files()
+            click.echo("\nMonitoring:")
+            click.echo(f"  Files monitored:      {len(watched)}")
+        except ImportError:
+            logger.debug("Monitoring module not installed")
+        except OSError as e:
+            logger.debug(f"Failed to get watched files: {e}")
 
-    # Get monitored files count
-    try:
-        from openlabels.monitoring import get_watched_files
-        watched = get_watched_files()
-        click.echo("\nMonitoring:")
-        click.echo(f"  Files monitored:      {len(watched)}")
-    except ImportError:
-        logger.debug("Monitoring module not installed")
-    except OSError as e:
-        logger.debug(f"Failed to get watched files: {e}")
+        # Check MIP availability
+        try:
+            from openlabels.labeling.mip import MIPClient
+            mip = MIPClient()
+            if mip.is_available():
+                click.echo("\nMIP SDK:     \u2713 Available")
+            else:
+                click.echo("\nMIP SDK:     \u2717 Not available (Windows only)")
+        except ImportError:
+            click.echo("\nMIP SDK:     \u2717 Not installed")
+        except RuntimeError as e:
+            logger.debug(f"Failed to check MIP availability: {e}")
 
-    # Check MIP availability
-    try:
-        from openlabels.labeling.mip import MIPClient
-        mip = MIPClient()
-        if mip.is_available():
-            click.echo("\nMIP SDK:     \u2713 Available")
-        else:
-            click.echo("\nMIP SDK:     \u2717 Not available (Windows only)")
-    except ImportError:
-        click.echo("\nMIP SDK:     \u2717 Not installed")
-    except RuntimeError as e:
-        logger.debug(f"Failed to check MIP availability: {e}")
+        # Check ML models
+        from openlabels.core.constants import DEFAULT_MODELS_DIR
+        phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
+                   (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
+        pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
+                   (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
+        rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
 
-    # Check ML models
-    from openlabels.core.constants import DEFAULT_MODELS_DIR
-    phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
-               (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
-    pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
-               (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
-    rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
-
-    check = "\u2713"
-    cross = "\u2717"
-    click.echo("\nML Models:")
-    click.echo(f"  PHI-BERT:  {check if phi_bert else cross}")
-    click.echo(f"  PII-BERT:  {check if pii_bert else cross}")
-    click.echo(f"  RapidOCR:  {check if rapidocr else cross}")
-
-    client.close()
+        check = "\u2713"
+        cross = "\u2717"
+        click.echo("\nML Models:")
+        click.echo(f"  PHI-BERT:  {check if phi_bert else cross}")
+        click.echo(f"  PII-BERT:  {check if pii_bert else cross}")
+        click.echo(f"  RapidOCR:  {check if rapidocr else cross}")
 
 
 @click.command()
@@ -174,25 +169,23 @@ def backup(output: str, include_db: bool, db_url: str | None, server: str, token
     backup_dir.mkdir(exist_ok=True)
 
     # Export API data
-    client = get_api_client(server, token)
     try:
-        for endpoint in ["targets", "labels", "labels/rules", "schedules", "policies"]:
-            try:
-                response = client.get(f"/api/{endpoint}")
-                if response.status_code == 200:
-                    with open(backup_dir / f"{endpoint.replace('/', '_')}.json", "w") as f:
-                        json.dump(response.json(), f, indent=2)
-                    click.echo(f"  Exported: {endpoint}")
-            except httpx.TimeoutException:
-                click.echo(f"  Failed to export {endpoint}: request timed out", err=True)
-            except httpx.ConnectError:
-                click.echo(f"  Failed to export {endpoint}: cannot connect to server", err=True)
-            except httpx.HTTPStatusError as e:
-                click.echo(f"  Failed to export {endpoint}: HTTP {e.response.status_code}", err=True)
+        with api_client(server, token) as client:
+            for endpoint in ["targets", "labels", "labels/rules", "schedules", "policies"]:
+                try:
+                    response = client.get(f"/api/{endpoint}")
+                    if response.status_code == 200:
+                        with open(backup_dir / f"{endpoint.replace('/', '_')}.json", "w") as f:
+                            json.dump(response.json(), f, indent=2)
+                        click.echo(f"  Exported: {endpoint}")
+                except httpx.TimeoutException:
+                    click.echo(f"  Failed to export {endpoint}: request timed out", err=True)
+                except httpx.ConnectError:
+                    click.echo(f"  Failed to export {endpoint}: cannot connect to server", err=True)
+                except httpx.HTTPStatusError as e:
+                    click.echo(f"  Failed to export {endpoint}: HTTP {e.response.status_code}", err=True)
     except OSError as e:
         click.echo(f"API export failed: file system error: {e}", err=True)
-    finally:
-        client.close()
 
     # Export config
     try:
@@ -296,7 +289,7 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
                 click.echo("  Restoring database from pg_dump...")
                 try:
                     import gzip
-                    # Stream gzip → psql via pipe to avoid loading
+                    # Stream gzip -> psql via pipe to avoid loading
                     # entire dump into memory (mirrors backup streaming)
                     pg_env = _parse_pg_env(db_connection)
                     proc = subprocess.Popen(
@@ -325,46 +318,43 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
                     click.echo("  psql timed out after 10 minutes.", err=True)
 
     # Restore API data
-    client = get_api_client(server, token)
-
     try:
-        for file in sorted(backup_path.glob("*.json")):
-            if file.name == "config.json":
-                click.echo("  Skipped: config.json (apply manually)")
-                continue
+        with api_client(server, token) as client:
+            for file in sorted(backup_path.glob("*.json")):
+                if file.name == "config.json":
+                    click.echo("  Skipped: config.json (apply manually)")
+                    continue
 
-            endpoint = file.stem.replace("_", "/")
-            try:
-                with open(file) as f:
-                    data = json.load(f)
+                endpoint = file.stem.replace("_", "/")
+                try:
+                    with open(file) as f:
+                        data = json.load(f)
 
-                if isinstance(data, list):
-                    restored = 0
-                    for item in data:
-                        response = client.post(f"/api/{endpoint}", json=item)
-                        if response.status_code in (200, 201):
-                            restored += 1
-                        else:
-                            logger.debug(
-                                "Failed to restore item in %s: %s",
-                                endpoint, response.status_code,
-                            )
-                    click.echo(f"  Restored: {endpoint} ({restored}/{len(data)} items)")
-                else:
-                    click.echo(f"  Skipped: {file.name} (not a list)")
+                    if isinstance(data, list):
+                        restored = 0
+                        for item in data:
+                            response = client.post(f"/api/{endpoint}", json=item)
+                            if response.status_code in (200, 201):
+                                restored += 1
+                            else:
+                                logger.debug(
+                                    "Failed to restore item in %s: %s",
+                                    endpoint, response.status_code,
+                                )
+                        click.echo(f"  Restored: {endpoint} ({restored}/{len(data)} items)")
+                    else:
+                        click.echo(f"  Skipped: {file.name} (not a list)")
 
-            except json.JSONDecodeError as e:
-                click.echo(f"  Failed to restore {file.name}: invalid JSON: {e}", err=True)
-            except httpx.TimeoutException:
-                click.echo(f"  Failed to restore {file.name}: request timed out", err=True)
-            except httpx.ConnectError:
-                click.echo(f"  Failed to restore {file.name}: cannot connect to server", err=True)
-            except httpx.HTTPStatusError as e:
-                click.echo(f"  Failed to restore {file.name}: HTTP {e.response.status_code}", err=True)
+                except json.JSONDecodeError as e:
+                    click.echo(f"  Failed to restore {file.name}: invalid JSON: {e}", err=True)
+                except httpx.TimeoutException:
+                    click.echo(f"  Failed to restore {file.name}: request timed out", err=True)
+                except httpx.ConnectError:
+                    click.echo(f"  Failed to restore {file.name}: cannot connect to server", err=True)
+                except httpx.HTTPStatusError as e:
+                    click.echo(f"  Failed to restore {file.name}: HTTP {e.response.status_code}", err=True)
 
-        click.echo("Restore completed")
+            click.echo("Restore completed")
 
     except OSError as e:
         click.echo(f"Restore failed: file system error: {e}", err=True)
-    finally:
-        client.close()

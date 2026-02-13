@@ -86,7 +86,6 @@ async def _run_rebuild(batch_size: int) -> None:
 
     try:
         async with get_session_context() as session:
-            # ── Scan Results ──────────────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(ScanResult))).scalar() or 0
             click.echo(f"  Scan results: {total} rows")
             offset = 0
@@ -124,7 +123,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-            # ── File Inventory ────────────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(FileInventory))).scalar() or 0
             click.echo(f"  File inventory: {total} rows")
             offset = 0
@@ -156,7 +154,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-            # ── Folder Inventory ──────────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(FolderInventory))).scalar() or 0
             click.echo(f"  Folder inventory: {total} rows")
             offset = 0
@@ -188,7 +185,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-            # ── Access Events ─────────────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(FileAccessEvent))).scalar() or 0
             click.echo(f"  Access events: {total} rows")
             offset = 0
@@ -225,7 +221,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-            # ── Audit Logs ────────────────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(AuditLog))).scalar() or 0
             click.echo(f"  Audit logs: {total} rows")
             offset = 0
@@ -262,7 +257,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-            # ── Remediation Actions ───────────────────────────────────
             total = (await session.execute(select(func.count()).select_from(RemediationAction))).scalar() or 0
             click.echo(f"  Remediation actions: {total} rows")
             offset = 0
@@ -299,7 +293,6 @@ async def _run_rebuild(batch_size: int) -> None:
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 
-        # ── Reset flush state cursors ─────────────────────────────────
         state = {
             "last_access_event_flush": last_ae_at.isoformat() if last_ae_at else None,
             "last_audit_log_flush": last_al_at.isoformat() if last_al_at else None,

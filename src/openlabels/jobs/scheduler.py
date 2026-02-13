@@ -25,6 +25,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import JobStatus
 from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
 
 logger = logging.getLogger(__name__)
@@ -261,7 +262,7 @@ class DatabaseScheduler:
             target_id=schedule.target_id,
             target_name=target.name,
             name=f"{schedule.name} (scheduled)",
-            status="pending",
+            status=JobStatus.PENDING,
         )
         session.add(job)
         await session.flush()

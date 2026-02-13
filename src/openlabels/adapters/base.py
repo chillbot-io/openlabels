@@ -15,10 +15,12 @@ import fnmatch
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from types import TracebackType
 from typing import Protocol, runtime_checkable
+
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +263,34 @@ class FileInfo:
     # Delta tracking
     change_type: str | None = None  # 'created', 'modified', 'deleted' for delta queries
 
+    @classmethod
+    def from_scan_result(
+        cls,
+        result: object,
+        adapter: str = "filesystem",
+        *,
+        exposure: ExposureLevel | None = None,
+        item_id_override: str | None = None,
+    ) -> FileInfo:
+        """Build a FileInfo from a ScanResult (or any duck-typed equivalent).
+
+        Args:
+            result: Object with file_path, file_name, file_size,
+                    file_modified, and adapter_item_id attributes.
+            adapter: Adapter identifier (e.g. "filesystem", "sharepoint").
+            exposure: Optional exposure level override.
+            item_id_override: If set, used instead of result.adapter_item_id.
+        """
+        return cls(
+            path=result.file_path,
+            name=result.file_name,
+            size=result.file_size or 0,
+            modified=result.file_modified or datetime.now(timezone.utc),
+            adapter=adapter,
+            item_id=item_id_override if item_id_override is not None else getattr(result, "adapter_item_id", None),
+            exposure=exposure if exposure is not None else ExposureLevel.PRIVATE,
+        )
+
 
 @dataclass
 class FolderInfo:
@@ -346,7 +376,7 @@ class ReadAdapter(Protocol):
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """Read file content with size limit.
 
@@ -454,3 +484,30 @@ class RemediationAdapter(Protocol):
 def supports_remediation(adapter: ReadAdapter) -> bool:
     """Check whether *adapter* supports remediation operations."""
     return isinstance(adapter, RemediationAdapter)
+
+
+# Shared cloud-adapter helpers
+def resolve_prefix(prefix: str, target: str) -> str:
+    """Join a base prefix and a target sub-path, skipping empty parts."""
+    parts = [p for p in (prefix, target) if p]
+    return "/".join(parts)
+
+
+def validate_file_size(file_info: FileInfo, max_size_bytes: int) -> None:
+    """Raise :class:`ValueError` if *file_info.size* exceeds *max_size_bytes*."""
+    if file_info.size > max_size_bytes:
+        raise ValueError(
+            f"File too large for processing: {file_info.size} bytes "
+            f"(max: {max_size_bytes} bytes). File: {file_info.path}"
+        )
+
+
+def validate_content_size(
+    content: bytes, max_size_bytes: int, file_path: str
+) -> None:
+    """Raise :class:`ValueError` if downloaded *content* exceeds *max_size_bytes*."""
+    if len(content) > max_size_bytes:
+        raise ValueError(
+            f"File content exceeds limit: {len(content)} bytes "
+            f"(max: {max_size_bytes} bytes). File: {file_path}"
+        )

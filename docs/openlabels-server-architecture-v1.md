@@ -2,7 +2,7 @@
 
 **Open Source Data Classification & Auto-Labeling Platform**
 
-This document is the ground truth for OpenLabels Server architecture. It captures the complete design for the server-based deployment model, including the detection engine, MIP labeling integration, adapters, GUI, and deployment options.
+This document is the ground truth for OpenLabels Server architecture. It captures the complete design for the server-based deployment model, including the detection engine, MIP labeling integration, adapters, and deployment options.
 
 ---
 
@@ -17,12 +17,10 @@ This document is the ground truth for OpenLabels Server architecture. It capture
 7. [Adapters](#adapters)
 8. [Database Schema](#database-schema)
 9. [Authentication & Authorization](#authentication--authorization)
-10. [GUI Application](#gui-application)
-11. [Deployment Models](#deployment-models)
-12. [Windows Installer](#windows-installer)
-13. [Azure Cloud Deployment](#azure-cloud-deployment)
-14. [Configuration](#configuration)
-15. [CLI Reference](#cli-reference)
+10. [Deployment Models](#deployment-models)
+11. [Azure Cloud Deployment](#azure-cloud-deployment)
+12. [Configuration](#configuration)
+13. [CLI Reference](#cli-reference)
 16. [API Reference](#api-reference)
 17. [Repository Structure](#repository-structure)
 18. [Implementation Roadmap](#implementation-roadmap)
@@ -138,16 +136,6 @@ Organizations can now:
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
-                                    │ HTTP/WebSocket
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           OPENLABELS GUI (PyQt)                             │
-│                                                                              │
-│  • Scan configuration       • Results heatmap (tree view)                   │
-│  • Label rule management    • File detail context cards                     │
-│  • Schedule management      • Dashboard & reporting                         │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow
@@ -796,31 +784,6 @@ Azure Rights Management Services:
 | **Admin** | Full access: configure targets, schedules, label rules, view all results |
 | **Viewer** | View-only: see scan results, dashboards, reports |
 
----
-
-## GUI Application
-
-### Technology Stack
-
-- **Framework**: PySide6 (Qt for Python)
-- **Communication**: REST API + WebSocket for live updates
-- **Packaging**: PyInstaller for Windows executable
-
-### Main Screens
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ OpenLabels                                              [🔔 Update] [≡]    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  [Dashboard] [Scans] [Results] [Schedules] [Labels] [Settings]              │
-│                                                                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│                         (Screen content)                                     │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
 
 ### Results Heatmap (Tree View)
 

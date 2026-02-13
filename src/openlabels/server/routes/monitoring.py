@@ -40,9 +40,7 @@ from openlabels.server.schemas.pagination import (
 router = APIRouter()
 
 
-# --- RESPONSE MODELS ---
-
-
+# RESPONSE MODELS
 class MonitoredFileResponse(BaseModel):
     """Monitored file response."""
 
@@ -94,9 +92,7 @@ class AccessStatsResponse(BaseModel):
     monitored_files_count: int
 
 
-# --- MONITORED FILES ENDPOINTS ---
-
-
+# MONITORED FILES ENDPOINTS
 @router.get("/files", response_model=PaginatedResponse[MonitoredFileResponse])
 async def list_monitored_files(
     risk_tier: str | None = Query(None, description="Filter by risk tier"),
@@ -227,9 +223,7 @@ async def disable_file_monitoring(
     await session.flush()
 
 
-# --- ACCESS EVENTS ENDPOINTS ---
-
-
+# ACCESS EVENTS ENDPOINTS
 @router.get("/events", response_model=PaginatedResponse[AccessEventResponse])
 async def list_access_events(
     file_path: str | None = Query(None, description="Filter by file path"),
@@ -411,9 +405,7 @@ async def get_user_access_history(
     )
 
 
-# --- STATISTICS ENDPOINTS ---
-
-
+# STATISTICS ENDPOINTS
 @router.get("/stats", response_model=AccessStatsResponse)
 async def get_access_stats(
     request: Request,

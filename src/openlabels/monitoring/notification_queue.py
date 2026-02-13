@@ -34,8 +34,7 @@ _graph_notifications: list[dict[str, Any]] = []
 _m365_notifications: list[dict[str, Any]] = []
 
 
-# --- Graph change notifications ---
-
+# Graph change notifications
 def push_graph_notification(notification: dict[str, Any]) -> bool:
     """Add a Graph change notification to the queue.
 
@@ -54,8 +53,7 @@ def drain_graph_notifications() -> list[dict[str, Any]]:
     return notifications
 
 
-# --- M365 audit "content available" signals ---
-
+# M365 audit "content available" signals
 def push_m365_notification(notification: dict[str, Any]) -> bool:
     """Add an M365 audit notification to the queue.
 

@@ -261,20 +261,20 @@ class PubSubBroadcaster:
             try:
                 await self._pubsub.unsubscribe(WS_PUBSUB_CHANNEL)
                 await self._pubsub.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis pubsub close failed: %s", e)
             self._pubsub = None
         if self._subscriber:
             try:
                 await self._subscriber.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis subscriber close failed: %s", e)
             self._subscriber = None
         if self._publisher:
             try:
                 await self._publisher.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis publisher close failed: %s", e)
             self._publisher = None
 
     async def publish(self, scan_id: UUID, message: dict):

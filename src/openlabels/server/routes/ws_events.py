@@ -44,9 +44,7 @@ router = APIRouter()
 GLOBAL_PUBSUB_CHANNEL = "openlabels:ws:global"
 
 
-# --- Connection management ---
-
-
+# Connection management
 class GlobalConnection:
     """Authenticated WebSocket connection with tenant context."""
 
@@ -201,8 +199,8 @@ class GlobalPubSubBroadcaster:
                     if client_name == "_pubsub":
                         await client.unsubscribe(GLOBAL_PUBSUB_CHANNEL)
                     await client.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis client %s close failed: %s", client_name, e)
                 setattr(self, client_name, None)
 
     async def publish(self, tenant_id: UUID, message: dict) -> None:
@@ -265,15 +263,12 @@ class GlobalPubSubBroadcaster:
                     await asyncio.sleep(1.0)
 
 
-# --- Module-level instances ---
-
+# Module-level instances
 global_manager = GlobalConnectionManager()
 global_broadcaster = GlobalPubSubBroadcaster(global_manager)
 
 
-# --- WebSocket endpoint ---
-
-
+# WebSocket endpoint
 @router.websocket("/ws/events")
 async def websocket_global_events(websocket: WebSocket) -> None:
     """
@@ -352,9 +347,7 @@ async def websocket_global_events(websocket: WebSocket) -> None:
         global_manager.disconnect(conn)
 
 
-# --- Publishing helpers — called from other modules to push events ---
-
-
+# Publishing helpers — called from other modules to push events
 async def publish_scan_progress(
     tenant_id: UUID,
     scan_id: UUID,

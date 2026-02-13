@@ -22,14 +22,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.exceptions import InternalError, NotFoundError
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT
+from openlabels.exceptions import NotFoundError
 from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
     LabelServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -42,9 +43,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# --- REQUEST/RESPONSE MODELS ---
-
-
+# REQUEST/RESPONSE MODELS
 class LabelResponse(BaseModel):
     """Sensitivity label response."""
 
@@ -104,9 +103,7 @@ class LabelMappingsResponse(BaseModel):
     labels: list[LabelResponse] = []
 
 
-# --- LABEL ENDPOINTS ---
-
-
+# LABEL ENDPOINTS
 @router.get("", response_model=PaginatedResponse[LabelResponse])
 async def list_labels(
     label_service: LabelServiceDep,
@@ -176,11 +173,7 @@ async def get_sync_status(
         row = result.one()
         label_count, last_synced = row
     except SQLAlchemyError as e:
-        logger.error(f"Database error getting sync status: {e}")
-        raise InternalError(
-            message="Database error occurred while getting sync status",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("getting sync status", e)
 
     # Get cache status
     try:
@@ -232,9 +225,7 @@ async def invalidate_label_cache(
     }
 
 
-# --- LABEL RULES ENDPOINTS ---
-
-
+# LABEL RULES ENDPOINTS
 @router.get("/rules", response_model=PaginatedResponse[LabelRuleResponse])
 async def list_label_rules(
     label_service: LabelServiceDep,
@@ -297,9 +288,7 @@ async def delete_label_rule(
     await label_service.delete_label_rule(rule_id)
 
 
-# --- LABEL APPLICATION ENDPOINTS ---
-
-
+# LABEL APPLICATION ENDPOINTS
 @router.post("/apply", status_code=202)
 async def apply_label(
     request: ApplyLabelRequest,
@@ -341,16 +330,10 @@ async def apply_label(
     except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error applying label: {e}")
-        raise InternalError(
-            message="Database error occurred while applying label",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("applying label", e)
 
 
-# --- LABEL MAPPINGS (simplified interface for web UI) ---
-
-
+# LABEL MAPPINGS (simplified interface for web UI)
 @router.get("/mappings", response_model=LabelMappingsResponse)
 async def get_label_mappings(
     db: DbSessionDep,
@@ -391,7 +374,7 @@ async def get_label_mappings(
     query = select(LabelRule).where(
         LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
-    ).limit(500)
+    ).limit(DEFAULT_QUERY_LIMIT)
     result = await db.execute(query)
     rules = result.scalars().all()
 
@@ -403,7 +386,7 @@ async def get_label_mappings(
     # Get available labels
     label_query = select(SensitivityLabel).where(
         SensitivityLabel.tenant_id == tenant_id
-    ).order_by(SensitivityLabel.priority).limit(500)
+    ).order_by(SensitivityLabel.priority).limit(DEFAULT_QUERY_LIMIT)
     label_result = await db.execute(label_query)
     labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
 
@@ -466,7 +449,7 @@ async def update_label_mappings(
     existing_query = select(LabelRule).where(
         LabelRule.tenant_id == tenant_id,
         LabelRule.rule_type == "risk_tier",
-    ).limit(500)
+    ).limit(DEFAULT_QUERY_LIMIT)
     existing_result = await db.execute(existing_query)
     for rule in existing_result.scalars().all():
         await db.delete(rule)

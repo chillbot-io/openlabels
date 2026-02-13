@@ -25,6 +25,7 @@ import aiofiles
 import aiofiles.os
 
 from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig, FolderInfo
+from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 from openlabels.exceptions import FilesystemError
 
 logger = logging.getLogger(__name__)
@@ -323,7 +324,7 @@ class FilesystemAdapter:
     async def read_file(
         self,
         file_info: FileInfo,
-        max_size_bytes: int = 100 * 1024 * 1024,  # Default 100MB
+        max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
     ) -> bytes:
         """
         Read file content with size limit.

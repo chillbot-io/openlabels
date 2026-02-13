@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -45,7 +46,6 @@ class ExportEngine:
         """Return cursors as ISO strings for API serialization."""
         return {k: v.isoformat() for k, v in self._cursors.items()}
 
-    # ── high-level export methods ────────────────────────────────────
 
     async def export_scan(
         self,
@@ -130,7 +130,6 @@ class ExportEngine:
             "adapter_count": len(self._adapters),
         }
 
-    # ── internal helpers ─────────────────────────────────────────────
 
     async def _dispatch(self, records: list[ExportRecord]) -> dict[str, int]:
         """Send records to all adapters."""
@@ -150,7 +149,6 @@ class ExportEngine:
         return results
 
 
-# ── Record builders ──────────────────────────────────────────────────
 
 def scan_result_to_export_records(
     rows: list[dict[str, Any]],
@@ -178,3 +176,23 @@ def scan_result_to_export_records(
             source_adapter=row.get("source_adapter", "filesystem"),
         ))
     return records
+
+
+def scan_results_to_dicts(results: Sequence) -> list[dict[str, Any]]:
+    """Convert ScanResult ORM objects to export-ready dicts.
+
+    This avoids repeating the same field-extraction dict comprehension
+    in every job task that feeds ``scan_result_to_export_records``.
+    """
+    return [
+        {
+            "file_path": r.file_path,
+            "risk_score": r.risk_score,
+            "risk_tier": r.risk_tier,
+            "entity_counts": r.entity_counts,
+            "policy_violations": r.policy_violations,
+            "owner": r.owner,
+            "scanned_at": r.scanned_at,
+        }
+        for r in results
+    ]

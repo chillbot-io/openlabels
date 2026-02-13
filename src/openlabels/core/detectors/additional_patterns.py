@@ -22,7 +22,7 @@ from .registry import register_detector
 
 # Pattern definitions: frozen tuple of PatternDefinition objects
 ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
-    # --- EMPLOYER - Company/Organization Names (~773 missed) ---
+    # EMPLOYER - Company/Organization Names (~773 missed)
     # Company names with common suffixes
     _p(
         r"\b([A-Z][A-Za-z0-9&'\-]*(?:\s+[A-Z][A-Za-z0-9&'\-]*){0,5})\s+"
@@ -45,7 +45,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "EMPLOYER", 0.80, 1, flags=re.IGNORECASE
     ),
 
-    # --- AGE - Age Expressions (~579 missed) ---
+    # AGE - Age Expressions (~579 missed)
     # "45 years old", "45-year-old", "45 y/o", "45yo", "45 yr old"
     _p(
         r"\b(\d{1,3})\s*[-–]?\s*(?:years?\s*old|year[-–]old|y/?o(?:ld)?|yo|yr\s*old)\b",
@@ -76,7 +76,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "AGE", 0.85, 0, flags=re.IGNORECASE
     ),
 
-    # --- HEALTH_PLAN_ID / MEMBER_ID - Insurance Identifiers (~873 missed) ---
+    # HEALTH_PLAN_ID / MEMBER_ID - Insurance Identifiers (~873 missed)
     # "Member ID: ABC123456", "Subscriber ID: 123456789", "Policy #: XYZ789"
     _p(
         r"\b(?:member|subscriber|policy|group|plan|insurance|ins|beneficiary)\s*"
@@ -108,7 +108,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "HEALTH_PLAN_ID", 0.88, 1, flags=re.IGNORECASE
     ),
 
-    # --- NPI - National Provider Identifier (10 digits, starts with 1 or 2) ---
+    # NPI - National Provider Identifier (10 digits, starts with 1 or 2)
     _p(
         r"\b(?:NPI|national\s+provider\s+(?:id|identifier|number))\s*[:\s#]*([12]\d{9})\b",
         "NPI", 0.95, 1, flags=re.IGNORECASE
@@ -120,7 +120,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "NPI", 0.85, 1, flags=re.IGNORECASE
     ),
 
-    # --- BANK_ROUTING - ABA Routing Numbers (9 digits) ---
+    # BANK_ROUTING - ABA Routing Numbers (9 digits)
     _p(
         r"\b(?:routing|ABA|RTN)\s*(?:number|#|no\.?)?\s*[:\s#]*(\d{9})\b",
         "BANK_ROUTING", 0.90, 1, flags=re.IGNORECASE
@@ -132,7 +132,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "BANK_ROUTING", 0.88, 1, flags=re.IGNORECASE
     ),
 
-    # --- EMPLOYEE_ID - Employee/Staff Identifiers ---
+    # EMPLOYEE_ID - Employee/Staff Identifiers
     _p(
         r"\b(?:employee|staff|personnel|worker)\s*(?:id|#|number|no\.?)\s*[:\s#]*([A-Z0-9]{4,15})\b",
         "EMPLOYEE_ID", 0.82, 1, flags=re.IGNORECASE
@@ -145,7 +145,7 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
 )
 
 
-# --- Detector Class ---
+# Detector Class
 @register_detector
 class AdditionalPatternDetector(BaseDetector):
     """

@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import RiskTier
 from openlabels.server.models import ScanJob, ScanResult, ScanSummary
 
 logger = logging.getLogger(__name__)
@@ -100,11 +101,11 @@ async def generate_scan_summary(
         files_with_pii=totals.files_with_pii,
         files_skipped=job.progress.get("files_skipped", 0) if job.progress else 0,
         total_entities=totals.total_entities,
-        critical_count=tier_counts.get("CRITICAL", 0),
-        high_count=tier_counts.get("HIGH", 0),
-        medium_count=tier_counts.get("MEDIUM", 0),
-        low_count=tier_counts.get("LOW", 0),
-        minimal_count=tier_counts.get("MINIMAL", 0),
+        critical_count=tier_counts.get(RiskTier.CRITICAL, 0),
+        high_count=tier_counts.get(RiskTier.HIGH, 0),
+        medium_count=tier_counts.get(RiskTier.MEDIUM, 0),
+        low_count=tier_counts.get(RiskTier.LOW, 0),
+        minimal_count=tier_counts.get(RiskTier.MINIMAL, 0),
         entity_type_counts=entity_type_totals if entity_type_totals else None,
         scan_mode=job.scan_mode or "single",
         total_partitions=job.total_partitions,

@@ -33,8 +33,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_client_ip)
 
-# --- Safety: SQL validation ---
-
+# Safety: SQL validation
 # Statements that are NEVER allowed
 _FORBIDDEN_PATTERNS = re.compile(
     r"""
@@ -170,9 +169,7 @@ def _replace_param_placeholders(sql: str) -> tuple[str, int]:
     return "".join(result), count
 
 
-# --- Request / Response models ---
-
-
+# Request / Response models
 class QueryRequest(BaseModel):
     """Execute a SQL query against the analytics layer."""
 
@@ -256,8 +253,7 @@ class AIQueryResponse(BaseModel):
     error: str | None = None
 
 
-# --- Schema introspection ---
-
+# Schema introspection
 # Known analytics views and their columns (from DuckDBEngine._VIEW_DEFS).
 # These are the Parquet-backed views registered by the engine.
 _ANALYTICS_SCHEMA: dict[str, list[tuple[str, str]]] = {
@@ -341,9 +337,7 @@ def _build_schema() -> list[SchemaTable]:
     return tables
 
 
-# --- Endpoints ---
-
-
+# Endpoints
 @router.get("/schema", response_model=SchemaResponse)
 async def get_query_schema(
     request: Request,
@@ -396,8 +390,8 @@ async def get_query_schema(
                         ],
                     ))
             return SchemaResponse(tables=tables)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Dynamic analytics schema lookup failed, using static: %s", e)
 
     # Fallback to static schema
     return SchemaResponse(tables=_build_schema())
@@ -597,9 +591,7 @@ async def ai_query(
     )
 
 
-# --- Helpers ---
-
-
+# Helpers
 def _serialize_value(value: Any) -> Any:
     """Convert DuckDB values to JSON-safe types."""
     if value is None:

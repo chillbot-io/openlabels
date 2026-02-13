@@ -13,6 +13,8 @@ from pathlib import Path
 import click
 
 from openlabels.cli.utils import collect_files, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.types import ExposureLevel
 
 logger = logging.getLogger(__name__)
 
@@ -65,19 +67,19 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
             all_results = []
             for file_path in files:
                 try:
-                    if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                    if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(file_path, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
                         file_path=str(file_path),
                         content=content,
-                        exposure_level="PRIVATE",
+                        exposure_level=ExposureLevel.PRIVATE,
                     )
                     all_results.append({
                         "file_path": str(file_path),
                         "risk_score": result.risk_score,
-                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "risk_tier": result.risk_tier,
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
@@ -197,19 +199,19 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
             all_results = []
             for fp in files:
                 try:
-                    if os.path.getsize(fp) > 200 * 1024 * 1024:
+                    if os.path.getsize(fp) > MAX_DECOMPRESSED_SIZE:
                         continue
                     with open(fp, "rb") as f:
                         content = f.read()
                     result = await processor.process_file(
                         file_path=str(fp),
                         content=content,
-                        exposure_level="PRIVATE",
+                        exposure_level=ExposureLevel.PRIVATE,
                     )
                     all_results.append({
                         "file_path": str(fp),
                         "risk_score": result.risk_score,
-                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "risk_tier": result.risk_tier,
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })

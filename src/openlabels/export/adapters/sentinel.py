@@ -45,7 +45,6 @@ class SentinelAdapter:
             f"/api/logs?api-version={_API_VERSION}"
         )
 
-    # ── SIEMAdapter protocol ─────────────────────────────────────────
 
     async def export_batch(self, records: list[ExportRecord]) -> int:
         if not records:
@@ -99,7 +98,6 @@ class SentinelAdapter:
     def format_name(self) -> str:
         return "sentinel"
 
-    # ── internals ────────────────────────────────────────────────────
 
     def _build_signature(self, date: str, content_length: int) -> str:
         """Build the HMAC-SHA256 Authorization header value.

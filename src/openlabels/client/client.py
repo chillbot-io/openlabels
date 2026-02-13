@@ -54,8 +54,7 @@ class OpenLabelsClient:
         self.max_retries = max_retries
         self._client: httpx.AsyncClient | None = None
 
-    # --- Connection lifecycle ---
-
+    # Connection lifecycle
     @property
     def api_base(self) -> str:
         if self.api_version:
@@ -88,8 +87,7 @@ class OpenLabelsClient:
     async def __aexit__(self, *args):
         await self.close()
 
-    # --- Core request with retry ---
-
+    # Core request with retry
     async def _request(
         self,
         method: str,
@@ -139,8 +137,7 @@ class OpenLabelsClient:
             return None
         return resp.json()
 
-    # --- Auto-pagination ---
-
+    # Auto-pagination
     async def _iter_pages(
         self,
         url: str,
@@ -167,8 +164,7 @@ class OpenLabelsClient:
             if not cursor:
                 break
 
-    # --- Health ---
-
+    # Health
     async def health(self) -> dict:
         """GET /health -- basic health check (root-level, not versioned)."""
         client = await self._get_client()
@@ -184,8 +180,7 @@ class OpenLabelsClient:
         """GET /health/cache -- cache health info."""
         return await self._json("GET", "/health/cache")
 
-    # --- Scans ---
-
+    # Scans
     async def create_scan(
         self, target_id: UUID, name: str | None = None,
     ) -> dict:
@@ -231,8 +226,7 @@ class OpenLabelsClient:
         """POST /scans/{scan_id}/retry"""
         return await self._json("POST", f"/scans/{scan_id}/retry")
 
-    # --- Results ---
-
+    # Results
     async def list_results(
         self,
         job_id: UUID | None = None,
@@ -313,8 +307,7 @@ class OpenLabelsClient:
         """POST /results/{result_id}/rescan"""
         return await self._json("POST", f"/results/{result_id}/rescan")
 
-    # --- Targets ---
-
+    # Targets
     async def list_targets(self, adapter: str | None = None) -> Any:
         """GET /targets"""
         params = {}
@@ -345,8 +338,7 @@ class OpenLabelsClient:
         """DELETE /targets/{target_id}"""
         await self._request("DELETE", f"/targets/{target_id}")
 
-    # --- Labels ---
-
+    # Labels
     async def list_labels(self) -> Any:
         """GET /labels"""
         return await self._json("GET", "/labels")
@@ -399,8 +391,7 @@ class OpenLabelsClient:
         """POST /labels/mappings"""
         return await self._json("POST", "/labels/mappings", json=mappings)
 
-    # --- Schedules ---
-
+    # Schedules
     async def list_schedules(self) -> Any:
         """GET /schedules"""
         return await self._json("GET", "/schedules")
@@ -432,8 +423,7 @@ class OpenLabelsClient:
         """POST /schedules/{schedule_id}/run"""
         return await self._json("POST", f"/schedules/{schedule_id}/run")
 
-    # --- Users ---
-
+    # Users
     async def list_users(self) -> Any:
         """GET /users"""
         return await self._json("GET", "/users")
@@ -457,8 +447,7 @@ class OpenLabelsClient:
         """DELETE /users/{user_id}"""
         await self._request("DELETE", f"/users/{user_id}")
 
-    # --- Settings ---
-
+    # Settings
     async def update_azure_settings(self, settings: dict) -> dict:
         """POST /settings/azure"""
         return await self._json("POST", "/settings/azure", json=settings)
@@ -475,8 +464,7 @@ class OpenLabelsClient:
         """POST /settings/reset"""
         return await self._json("POST", "/settings/reset")
 
-    # --- Monitoring ---
-
+    # Monitoring
     async def list_monitored_files(self) -> Any:
         """GET /monitoring/files"""
         return await self._json("GET", "/monitoring/files")
@@ -526,8 +514,7 @@ class OpenLabelsClient:
         """GET /monitoring/stats/anomalies"""
         return await self._json("GET", "/monitoring/stats/anomalies")
 
-    # --- Audit ---
-
+    # Audit
     async def list_audit_logs(
         self,
         limit: int = 50,
@@ -562,8 +549,7 @@ class OpenLabelsClient:
             "GET", f"/audit/resource/{resource_type}/{resource_id}",
         )
 
-    # --- Jobs ---
-
+    # Jobs
     async def list_jobs(self) -> Any:
         """GET /jobs"""
         return await self._json("GET", "/jobs")
@@ -604,8 +590,7 @@ class OpenLabelsClient:
         """POST /jobs/workers/config"""
         return await self._json("POST", "/jobs/workers/config", json=config)
 
-    # --- Auth ---
-
+    # Auth
     async def login(self) -> Any:
         """GET /auth/login -- initiate OAuth login flow."""
         return await self._json("GET", "/auth/login")
@@ -638,8 +623,7 @@ class OpenLabelsClient:
         """POST /auth/logout-all"""
         return await self._json("POST", "/auth/logout-all")
 
-    # --- Remediation ---
-
+    # Remediation
     async def list_remediation_actions(
         self,
         limit: int = 50,
@@ -683,8 +667,7 @@ class OpenLabelsClient:
         """GET /remediation/stats/summary"""
         return await self._json("GET", "/remediation/stats/summary")
 
-    # --- Dashboard ---
-
+    # Dashboard
     async def get_dashboard_stats(self) -> dict:
         """GET /dashboard/stats"""
         return await self._json("GET", "/dashboard/stats")

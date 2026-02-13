@@ -76,7 +76,7 @@ async def m365_webhook(
     validationToken: str | None = Query(default=None),
 ) -> Response:
     """Receive M365 Management Activity API audit notifications."""
-    # --- Case 1: Subscription validation handshake ---
+    # Case 1: Subscription validation handshake
     if validationToken is not None:
         # SECURITY: Validate token format to prevent reflection of arbitrary content
         if len(validationToken) > 1024 or not validationToken.isprintable():
@@ -90,7 +90,7 @@ async def m365_webhook(
             headers={"X-Content-Type-Options": "nosniff"},
         )
 
-    # --- Case 2: Content available notification ---
+    # Case 2: Content available notification
     settings = get_settings()
     expected_state = settings.monitoring.webhook_client_state
 
@@ -134,7 +134,7 @@ async def graph_webhook(
     validationToken: str | None = Query(default=None),
 ) -> Response:
     """Receive Microsoft Graph change notifications (drive item changes)."""
-    # --- Validation handshake ---
+    # Validation handshake
     if validationToken is not None:
         # SECURITY: Validate token format to prevent reflection of arbitrary content
         if len(validationToken) > 1024 or not validationToken.isprintable():
@@ -148,7 +148,7 @@ async def graph_webhook(
             headers={"X-Content-Type-Options": "nosniff"},
         )
 
-    # --- Change notification ---
+    # Change notification
     settings = get_settings()
     expected_state = settings.monitoring.webhook_client_state
 

@@ -13,6 +13,8 @@ import sys
 import click
 
 from openlabels.cli.utils import collect_files, validate_where_filter
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE, RISK_TIER_ORDER
+from openlabels.core.types import ExposureLevel
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
                 task = progress.add_task("Scanning files", total=len(files))
                 for file_path in files:
                     try:
-                        if os.path.getsize(file_path) > 200 * 1024 * 1024:
+                        if os.path.getsize(file_path) > MAX_DECOMPRESSED_SIZE:
                             continue
                         with open(file_path, "rb") as f:
                             content = f.read()
@@ -80,13 +82,13 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
                         result = await processor.process_file(
                             file_path=str(file_path),
                             content=content,
-                            exposure_level="PRIVATE",
+                            exposure_level=ExposureLevel.PRIVATE,
                         )
                         all_results.append({
                             "file_path": str(file_path),
                             "file_name": result.file_name,
                             "risk_score": result.risk_score,
-                            "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                            "risk_tier": result.risk_tier,
                             "entity_counts": result.entity_counts,
                             "total_entities": sum(result.entity_counts.values()),
                             "exposure_level": "PRIVATE",
@@ -114,7 +116,7 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
         sort_key_map = {
             "score": lambda x: x["risk_score"],
             "path": lambda x: x["file_path"],
-            "tier": lambda x: ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"].index(x["risk_tier"]),
+            "tier": lambda x: RISK_TIER_ORDER.index(x["risk_tier"]),
             "entities": lambda x: x["total_entities"],
         }
         results.sort(key=sort_key_map[sort_by], reverse=descending)
