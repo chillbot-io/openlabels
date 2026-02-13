@@ -23,6 +23,15 @@ from openlabels.server.models import Tenant, User
 
 logger = logging.getLogger(__name__)
 
+# Claims used in development mode (auth.provider == "none" + server.debug)
+_DEV_CLAIMS = TokenClaims(
+    oid="dev-user-oid",
+    preferred_username="dev@localhost",
+    name="Development User",
+    tenant_id="dev-tenant",
+    roles=["admin"],
+)
+
 # OAuth2 scheme
 settings = get_settings()
 oauth2_scheme = OAuth2AuthorizationCodeBearer(
@@ -122,14 +131,7 @@ async def get_current_user(
                 "Set AUTH_PROVIDER=azure_ad for production or "
                 "OPENLABELS_SERVER__DEBUG=true for development.",
             )
-        # Development mode - create/get dev user
-        claims = TokenClaims(
-            oid="dev-user-oid",
-            preferred_username="dev@localhost",
-            name="Development User",
-            tenant_id="dev-tenant",
-            roles=["admin"],
-        )
+        claims = _DEV_CLAIMS
     else:
         if not token:
             raise HTTPException(
@@ -167,15 +169,7 @@ async def get_optional_user(
     if settings.auth.provider == "none":
         if not settings.server.debug:
             return None
-        # Development mode - create/get dev user
-        claims = TokenClaims(
-            oid="dev-user-oid",
-            preferred_username="dev@localhost",
-            name="Development User",
-            tenant_id="dev-tenant",
-            roles=["admin"],
-        )
-        user = await get_or_create_user(session, claims)
+        user = await get_or_create_user(session, _DEV_CLAIMS)
         return CurrentUser.model_validate(user)
 
     if not token:

@@ -253,124 +253,63 @@ def validate_onedrive_target_config(config: dict) -> dict:
     return sanitized
 
 
-def validate_s3_target_config(config: dict) -> dict:
-    """
-    Validate S3 scan target configuration.
+def _validate_cloud_target_config(
+    config: dict,
+    adapter_name: str,
+    resource_field: str,
+    name_regex: str,
+) -> dict:
+    """Shared validation for cloud storage targets (S3, GCS, Azure Blob).
 
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
+    Each cloud target follows the same pattern: require a named resource
+    (bucket or container), validate its name against provider rules, and
+    check for traversal in the optional prefix.
     """
     if not config:
         raise HTTPException(status_code=400, detail="Configuration is required")
 
-    bucket = config.get("bucket")
-    if not bucket:
+    resource = config.get(resource_field)
+    if not resource:
         raise HTTPException(
             status_code=400,
-            detail="S3 target requires 'bucket' in config",
+            detail=f"{adapter_name} target requires '{resource_field}' in config",
         )
 
-    # Validate bucket name per S3 naming rules
-    if not re.match(r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$", bucket):
+    if not re.match(name_regex, resource):
         raise HTTPException(
             status_code=400,
-            detail="Invalid S3 bucket name",
+            detail=f"Invalid {adapter_name} {resource_field} name",
         )
 
     prefix = config.get("prefix", "")
     if ".." in prefix:
         raise HTTPException(
             status_code=400,
-            detail="S3 prefix contains invalid traversal sequences",
+            detail=f"{adapter_name} prefix contains invalid traversal sequences",
         )
 
     return config
+
+
+def validate_s3_target_config(config: dict) -> dict:
+    """Validate S3 scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "S3", "bucket", r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$"
+    )
 
 
 def validate_gcs_target_config(config: dict) -> dict:
-    """
-    Validate GCS scan target configuration.
-
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
-    """
-    if not config:
-        raise HTTPException(status_code=400, detail="Configuration is required")
-
-    bucket = config.get("bucket")
-    if not bucket:
-        raise HTTPException(
-            status_code=400,
-            detail="GCS target requires 'bucket' in config",
-        )
-
-    # Validate bucket name per GCS naming rules
-    if not re.match(r"^[a-z0-9][a-z0-9_\-\.]{1,220}[a-z0-9]$", bucket):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid GCS bucket name",
-        )
-
-    prefix = config.get("prefix", "")
-    if ".." in prefix:
-        raise HTTPException(
-            status_code=400,
-            detail="GCS prefix contains invalid traversal sequences",
-        )
-
-    return config
+    """Validate GCS scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "GCS", "bucket", r"^[a-z0-9][a-z0-9_\-\.]{1,220}[a-z0-9]$"
+    )
 
 
 def validate_azure_blob_target_config(config: dict) -> dict:
-    """
-    Validate Azure Blob Storage scan target configuration.
-
-    Args:
-        config: Target configuration dictionary
-
-    Returns:
-        Validated and sanitized config
-
-    Raises:
-        HTTPException: If configuration is invalid
-    """
-    if not config:
-        raise HTTPException(status_code=400, detail="Configuration is required")
-
-    container = config.get("container")
-    if not container:
-        raise HTTPException(
-            status_code=400,
-            detail="Azure Blob target requires 'container' in config",
-        )
-
-    # Validate container name per Azure naming rules (3-63 chars, lowercase, alphanumeric + hyphens)
-    if not re.match(r"^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$", container):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Azure Blob container name",
-        )
-
-    prefix = config.get("prefix", "")
-    if ".." in prefix:
-        raise HTTPException(
-            status_code=400,
-            detail="Azure Blob prefix contains invalid traversal sequences",
-        )
-
-    return config
+    """Validate Azure Blob Storage scan target configuration."""
+    return _validate_cloud_target_config(
+        config, "Azure Blob", "container", r"^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$"
+    )
 
 
 def validate_target_config(adapter: str, config: dict) -> dict:
