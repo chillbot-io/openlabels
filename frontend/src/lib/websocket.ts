@@ -1,5 +1,16 @@
 type EventHandler = (data: unknown) => void;
 
+const KNOWN_EVENT_TYPES = new Set([
+  'scan_progress',
+  'scan_completed',
+  'scan_failed',
+  'label_applied',
+  'remediation_completed',
+  'job_status',
+  'health_update',
+  'file_access',
+]);
+
 class OpenLabelsWebSocket {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -34,6 +45,7 @@ class OpenLabelsWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data as string) as { type: string; data: unknown };
+        if (typeof message.type !== 'string' || !KNOWN_EVENT_TYPES.has(message.type)) return;
         const handlers = this.listeners.get(message.type);
         handlers?.forEach((handler) => handler(message.data));
       } catch {
