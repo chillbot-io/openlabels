@@ -15,8 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import FileInfo
-from openlabels.labeling.engine import LabelingEngine
-from openlabels.server.config import get_settings
+from openlabels.labeling.engine import create_labeling_engine
 from openlabels.server.models import ScanResult, SensitivityLabel
 
 logger = logging.getLogger(__name__)
@@ -83,13 +82,7 @@ async def execute_label_task(
             item_id=getattr(result, "adapter_item_id", None),
         )
 
-        # Get auth credentials from settings
-        settings = get_settings()
-        engine = LabelingEngine(
-            tenant_id=settings.auth.tenant_id,
-            client_id=settings.auth.client_id,
-            client_secret=settings.auth.client_secret,
-        )
+        engine = create_labeling_engine()
 
         labeling_result = await engine.apply_label(file_info, label_id, label.name)
 

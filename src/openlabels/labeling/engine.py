@@ -1202,3 +1202,19 @@ class LabelingEngine:
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error getting Graph label: {e}")
             return None
+
+
+def create_labeling_engine() -> LabelingEngine:
+    """Create a LabelingEngine using credentials from application settings.
+
+    Convenience factory that avoids repeating the settings-extraction
+    boilerplate at every call site.
+    """
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    return LabelingEngine(
+        tenant_id=settings.auth.tenant_id,
+        client_id=settings.auth.client_id,
+        client_secret=settings.auth.client_secret,
+    )

@@ -33,7 +33,7 @@ from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
 from openlabels.exceptions import AdapterError, JobError
 from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
-from openlabels.labeling.engine import LabelingEngine
+from openlabels.labeling.engine import create_labeling_engine
 from openlabels.server.config import get_settings
 from openlabels.server.metrics import (
     record_entities_found,
@@ -916,11 +916,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                     entity_type_rules[rule.match_value] = (rule, label)
 
     # Initialize labeling engine
-    labeling_engine = LabelingEngine(
-        tenant_id=settings.auth.tenant_id,
-        client_id=settings.auth.client_id,
-        client_secret=settings.auth.client_secret,
-    )
+    labeling_engine = create_labeling_engine()
 
     # Get target for adapter info
     target = await session.get(ScanTarget, job.target_id)

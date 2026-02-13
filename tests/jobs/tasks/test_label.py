@@ -20,9 +20,27 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from openlabels.jobs.tasks.label import execute_label_task, _infer_adapter
 
 
-class TestInferAdapter:
-    """Tests for _infer_adapter helper."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
+def _mock_engine(success=True, method="test", error=None):
+    """Return a patch context that mocks create_labeling_engine."""
+    engine = MagicMock()
+    engine.apply_label = AsyncMock(return_value=MagicMock(
+        success=success, method=method, error=error,
+    ))
+    return patch(
+        "openlabels.jobs.tasks.label.create_labeling_engine",
+        return_value=engine,
+    )
+
+
+# ---------------------------------------------------------------------------
+# _infer_adapter
+# ---------------------------------------------------------------------------
+
+class TestInferAdapter:
     def test_sharepoint_url(self):
         assert _infer_adapter("https://contoso.sharepoint.com/sites/docs/file.docx") == "sharepoint"
 
@@ -42,263 +60,169 @@ class TestInferAdapter:
         assert _infer_adapter("http://example.com/file.txt") == "filesystem"
 
 
-class TestExecuteLabelTask:
-    """Tests for execute_label_task function."""
+# ---------------------------------------------------------------------------
+# execute_label_task
+# ---------------------------------------------------------------------------
 
+def _make_result(**overrides):
+    defaults = dict(
+        id=uuid4(),
+        file_path="/test/document.docx",
+        file_name="document.docx",
+        file_size=1024,
+        file_modified=datetime.now(timezone.utc),
+        adapter_item_id=None,
+        label_applied=False,
+        label_applied_at=None,
+        current_label_id=None,
+        current_label_name=None,
+        label_error=None,
+    )
+    defaults.update(overrides)
+    return MagicMock(**defaults)
+
+
+def _make_label(label_name="Confidential", **overrides):
+    label = MagicMock()
+    label.id = overrides.pop("id", str(uuid4()))
+    label.name = label_name
+    for k, v in overrides.items():
+        setattr(label, k, v)
+    return label
+
+
+class TestExecuteLabelTask:
     @pytest.fixture
     def mock_session(self):
         return AsyncMock()
 
-    @pytest.fixture
-    def mock_result(self):
-        result = MagicMock()
-        result.id = uuid4()
-        result.file_path = "/test/document.docx"
-        result.file_name = "document.docx"
-        result.file_size = 1024
-        result.file_modified = datetime.now(timezone.utc)
-        result.adapter_item_id = None
-        result.label_applied = False
-        result.label_applied_at = None
-        result.current_label_id = None
-        result.current_label_name = None
-        result.label_error = None
-        return result
-
-    @pytest.fixture
-    def mock_label(self):
-        label = MagicMock()
-        label.id = str(uuid4())
-        label.name = "Confidential"
-        return label
-
     async def test_raises_when_result_not_found(self, mock_session):
         mock_session.get = AsyncMock(return_value=None)
-
         with pytest.raises(ValueError, match="Result not found"):
             await execute_label_task(
                 mock_session,
                 {"result_id": str(uuid4()), "label_id": str(uuid4())},
             )
 
-    async def test_raises_when_label_not_found(self, mock_session, mock_result):
-        mock_session.get = AsyncMock(side_effect=[mock_result, None])
-
+    async def test_raises_when_label_not_found(self, mock_session):
+        result = _make_result()
+        mock_session.get = AsyncMock(side_effect=[result, None])
         with pytest.raises(ValueError, match="Label not found"):
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": str(uuid4())},
+                {"result_id": str(result.id), "label_id": str(uuid4())},
             )
 
-    async def test_rejects_non_microsoft_http_urls(self, mock_session, mock_result, mock_label):
-        mock_result.file_path = "https://example.com/files/document.pdf"
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
+    async def test_rejects_non_microsoft_http_urls(self, mock_session):
+        result = _make_result(file_path="https://example.com/files/document.pdf")
+        label = _make_label()
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-        result = await execute_label_task(
+        out = await execute_label_task(
             mock_session,
-            {"result_id": str(mock_result.id), "label_id": mock_label.id},
+            {"result_id": str(result.id), "label_id": label.id},
         )
+        assert out["success"] is False
+        assert out["method"] == "unsupported"
 
-        assert result["success"] is False
-        assert result["method"] == "unsupported"
+    async def test_returns_success_on_successful_labeling(self, mock_session):
+        result = _make_result()
+        label = _make_label()
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    @patch("openlabels.jobs.tasks.label.get_settings")
-    @patch("openlabels.jobs.tasks.label.LabelingEngine")
-    async def test_returns_success_on_successful_labeling(
-        self, MockEngine, mock_settings, mock_session, mock_result, mock_label,
-    ):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
+        with _mock_engine(success=True, method="mip_sdk"):
+            out = await execute_label_task(
+                mock_session,
+                {"result_id": str(result.id), "label_id": label.id},
+            )
 
-        engine_inst = MockEngine.return_value
-        engine_inst.apply_label = AsyncMock(return_value=MagicMock(
-            success=True, method="mip_sdk", error=None,
-        ))
+        assert out["success"] is True
+        assert out["label_name"] == "Confidential"
+        assert out["method"] == "mip_sdk"
 
-        settings = MagicMock()
-        settings.auth.tenant_id = "t"
-        settings.auth.client_id = "c"
-        settings.auth.client_secret = "s"
-        mock_settings.return_value = settings
+    async def test_returns_failure_on_labeling_error(self, mock_session):
+        result = _make_result()
+        label = _make_label()
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-        result = await execute_label_task(
-            mock_session,
-            {"result_id": str(mock_result.id), "label_id": mock_label.id},
-        )
+        with _mock_engine(success=False, method="mip", error="MIP SDK not available"):
+            out = await execute_label_task(
+                mock_session,
+                {"result_id": str(result.id), "label_id": label.id},
+            )
 
-        assert result["success"] is True
-        assert result["label_name"] == "Confidential"
-        assert result["method"] == "mip_sdk"
+        assert out["success"] is False
+        assert out["error"] == "MIP SDK not available"
 
-    @patch("openlabels.jobs.tasks.label.get_settings")
-    @patch("openlabels.jobs.tasks.label.LabelingEngine")
-    async def test_returns_failure_on_labeling_error(
-        self, MockEngine, mock_settings, mock_session, mock_result, mock_label,
-    ):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
 
-        engine_inst = MockEngine.return_value
-        engine_inst.apply_label = AsyncMock(return_value=MagicMock(
-            success=False, method="mip", error="MIP SDK not available",
-        ))
-
-        settings = MagicMock()
-        settings.auth.tenant_id = "t"
-        settings.auth.client_id = "c"
-        settings.auth.client_secret = "s"
-        mock_settings.return_value = settings
-
-        result = await execute_label_task(
-            mock_session,
-            {"result_id": str(mock_result.id), "label_id": mock_label.id},
-        )
-
-        assert result["success"] is False
-        assert result["error"] == "MIP SDK not available"
-
+# ---------------------------------------------------------------------------
+# DB field updates
+# ---------------------------------------------------------------------------
 
 class TestLabelResultUpdate:
-    """Tests for scan result field updates after labeling."""
-
     @pytest.fixture
     def mock_session(self):
         return AsyncMock()
 
-    @pytest.fixture
-    def mock_result(self):
-        result = MagicMock()
-        result.id = uuid4()
-        result.file_path = "/test/file.docx"
-        result.file_name = "file.docx"
-        result.file_size = 512
-        result.file_modified = datetime.now(timezone.utc)
-        result.adapter_item_id = None
-        result.label_applied = False
-        result.label_applied_at = None
-        result.current_label_id = None
-        result.current_label_name = None
-        result.label_error = None
-        return result
+    async def test_updates_label_applied_on_success(self, mock_session):
+        result = _make_result()
+        label = _make_label(label_name="Secret")
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    @pytest.fixture
-    def mock_label(self):
-        label = MagicMock()
-        label.id = str(uuid4())
-        label.name = "Secret"
-        return label
-
-    def _patch_engine(self, success, method="test", error=None):
-        """Return context managers that patch LabelingEngine and get_settings."""
-        engine_patch = patch("openlabels.jobs.tasks.label.LabelingEngine")
-        settings_patch = patch("openlabels.jobs.tasks.label.get_settings")
-        return engine_patch, settings_patch, MagicMock(
-            success=success, method=method, error=error,
-        )
-
-    async def test_updates_label_applied_on_success(self, mock_session, mock_result, mock_label):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
-
-        with patch("openlabels.jobs.tasks.label.LabelingEngine") as MockEngine, \
-             patch("openlabels.jobs.tasks.label.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.auth.tenant_id = "t"
-            settings.auth.client_id = "c"
-            settings.auth.client_secret = "s"
-            mock_settings.return_value = settings
-            MockEngine.return_value.apply_label = AsyncMock(
-                return_value=MagicMock(success=True, method="test", error=None)
-            )
-
+        with _mock_engine(success=True):
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": mock_label.id},
+                {"result_id": str(result.id), "label_id": label.id},
             )
+        assert result.label_applied is True
 
-            assert mock_result.label_applied is True
+    async def test_updates_label_applied_at_on_success(self, mock_session):
+        result = _make_result()
+        label = _make_label(label_name="Secret")
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    async def test_updates_label_applied_at_on_success(self, mock_session, mock_result, mock_label):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
-
-        with patch("openlabels.jobs.tasks.label.LabelingEngine") as MockEngine, \
-             patch("openlabels.jobs.tasks.label.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.auth.tenant_id = "t"
-            settings.auth.client_id = "c"
-            settings.auth.client_secret = "s"
-            mock_settings.return_value = settings
-            MockEngine.return_value.apply_label = AsyncMock(
-                return_value=MagicMock(success=True, method="test", error=None)
-            )
-
+        with _mock_engine(success=True):
             before = datetime.now(timezone.utc)
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": mock_label.id},
+                {"result_id": str(result.id), "label_id": label.id},
             )
             after = datetime.now(timezone.utc)
+        assert before <= result.label_applied_at <= after
 
-            assert before <= mock_result.label_applied_at <= after
+    async def test_updates_current_label_on_success(self, mock_session):
+        result = _make_result()
+        label = _make_label(label_name="Secret")
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    async def test_updates_current_label_on_success(self, mock_session, mock_result, mock_label):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
-
-        with patch("openlabels.jobs.tasks.label.LabelingEngine") as MockEngine, \
-             patch("openlabels.jobs.tasks.label.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.auth.tenant_id = "t"
-            settings.auth.client_id = "c"
-            settings.auth.client_secret = "s"
-            mock_settings.return_value = settings
-            MockEngine.return_value.apply_label = AsyncMock(
-                return_value=MagicMock(success=True, method="test", error=None)
-            )
-
+        with _mock_engine(success=True):
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": mock_label.id},
+                {"result_id": str(result.id), "label_id": label.id},
             )
+        assert result.current_label_id == label.id
+        assert result.current_label_name == "Secret"
 
-            assert mock_result.current_label_id == mock_label.id
-            assert mock_result.current_label_name == "Secret"
+    async def test_clears_label_error_on_success(self, mock_session):
+        result = _make_result(label_error="Previous error")
+        label = _make_label(label_name="Secret")
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    async def test_clears_label_error_on_success(self, mock_session, mock_result, mock_label):
-        mock_result.label_error = "Previous error"
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
-
-        with patch("openlabels.jobs.tasks.label.LabelingEngine") as MockEngine, \
-             patch("openlabels.jobs.tasks.label.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.auth.tenant_id = "t"
-            settings.auth.client_id = "c"
-            settings.auth.client_secret = "s"
-            mock_settings.return_value = settings
-            MockEngine.return_value.apply_label = AsyncMock(
-                return_value=MagicMock(success=True, method="test", error=None)
-            )
-
+        with _mock_engine(success=True):
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": mock_label.id},
+                {"result_id": str(result.id), "label_id": label.id},
             )
+        assert result.label_error is None
 
-            assert mock_result.label_error is None
+    async def test_sets_label_error_on_failure(self, mock_session):
+        result = _make_result()
+        label = _make_label(label_name="Secret")
+        mock_session.get = AsyncMock(side_effect=[result, label])
 
-    async def test_sets_label_error_on_failure(self, mock_session, mock_result, mock_label):
-        mock_session.get = AsyncMock(side_effect=[mock_result, mock_label])
-
-        with patch("openlabels.jobs.tasks.label.LabelingEngine") as MockEngine, \
-             patch("openlabels.jobs.tasks.label.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.auth.tenant_id = "t"
-            settings.auth.client_id = "c"
-            settings.auth.client_secret = "s"
-            mock_settings.return_value = settings
-            MockEngine.return_value.apply_label = AsyncMock(
-                return_value=MagicMock(success=False, method="test", error="Labeling failed")
-            )
-
+        with _mock_engine(success=False, error="Labeling failed"):
             await execute_label_task(
                 mock_session,
-                {"result_id": str(mock_result.id), "label_id": mock_label.id},
+                {"result_id": str(result.id), "label_id": label.id},
             )
-
-            assert mock_result.label_error == "Labeling failed"
+        assert result.label_error == "Labeling failed"
