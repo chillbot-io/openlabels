@@ -3,11 +3,11 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.t
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 
 const COLORS: Record<string, string> = {
-  CRITICAL: '#dc2626',
-  HIGH: '#f97316',
-  MEDIUM: '#eab308',
-  LOW: '#22c55e',
-  MINIMAL: '#6b7280',
+  CRITICAL: 'var(--color-risk-critical)',
+  HIGH: 'var(--color-risk-high)',
+  MEDIUM: 'var(--color-risk-medium)',
+  LOW: 'var(--color-risk-low)',
+  MINIMAL: 'var(--color-risk-minimal)',
 };
 
 interface Props {
@@ -45,7 +45,7 @@ export function RiskDistributionChart({ data, isLoading }: Props) {
                 dataKey="value"
               >
                 {chartData.map((entry) => (
-                  <Cell key={entry.name} fill={COLORS[entry.name] ?? '#9ca3af'} />
+                  <Cell key={entry.name} fill={COLORS[entry.name] ?? 'var(--color-risk-minimal)'} />
                 ))}
               </Pie>
               <Tooltip />

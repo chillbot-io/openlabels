@@ -58,6 +58,11 @@
     --accent-foreground: #93c5fd;
     --destructive: #ef4444;
     --ring: #3b82f6;
+    --color-risk-critical: #ef4444;
+    --color-risk-high: #fb923c;
+    --color-risk-medium: #facc15;
+    --color-risk-low: #4ade80;
+    --color-risk-minimal: #9ca3af;
   }
 }
 
@@ -73,6 +78,11 @@
   --accent-foreground: #93c5fd;
   --destructive: #ef4444;
   --ring: #3b82f6;
+  --color-risk-critical: #ef4444;
+  --color-risk-high: #fb923c;
+  --color-risk-medium: #facc15;
+  --color-risk-low: #4ade80;
+  --color-risk-minimal: #9ca3af;
 }
 
 * {
