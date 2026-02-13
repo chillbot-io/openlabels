@@ -110,24 +110,25 @@ export interface Schedule {
 
 export interface Label {
   id: string;
-  tenant_id: string;
   name: string;
-  color: string;
-  description: string;
+  description: string | null;
   priority: number | null;
-  auto_apply: boolean;
-  risk_tier_mapping: string | null;
-  synced_at: string | null;
-  created_at: string;
+  color: string | null;
+  parent_id: string | null;
 }
 
-export interface LabelSync {
-  id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  labels_synced: number;
-  labels_failed: number;
-  started_at: string | null;
-  completed_at: string | null;
+export interface LabelSyncStatus {
+  label_count: number;
+  last_synced_at: string | null;
+  cache: Record<string, unknown>;
+}
+
+export interface LabelMappingsResponse {
+  CRITICAL: string | null;
+  HIGH: string | null;
+  MEDIUM: string | null;
+  LOW: string | null;
+  labels: Label[];
 }
 
 export interface DashboardStats {
@@ -157,15 +158,26 @@ export interface AuditLogEntry {
 }
 
 export interface HealthStatus {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  components: Record<string, ComponentHealth>;
-  uptime_seconds: number;
-}
-
-export interface ComponentHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  message?: string;
-  latency_ms?: number;
+  api: string;
+  api_text: string;
+  db: string;
+  db_text: string;
+  queue: string;
+  queue_text: string;
+  ml: string;
+  ml_text: string;
+  mip: string;
+  mip_text: string;
+  ocr: string;
+  ocr_text: string;
+  scans_today: number;
+  files_processed: number;
+  success_rate: number;
+  circuit_breakers?: unknown[];
+  job_metrics?: unknown;
+  python_version?: string;
+  platform?: string;
+  uptime_seconds?: number;
 }
 
 export interface JobQueueStats {
@@ -191,15 +203,13 @@ export interface JobInfo {
 
 export interface RemediationAction {
   id: string;
-  tenant_id: string;
-  file_path: string;
   action_type: 'quarantine' | 'lockdown' | 'rollback';
   status: 'pending' | 'completed' | 'failed' | 'rolled_back';
-  performed_by: string;
+  source_path: string;
+  dest_path: string | null;
   dry_run: boolean;
-  details: Record<string, unknown>;
+  error: string | null;
   created_at: string;
-  completed_at: string | null;
 }
 
 export interface Policy {
@@ -223,18 +233,28 @@ export interface PolicyRule {
   action: string;
 }
 
-export interface DirectoryEntry {
+export interface BrowseFolder {
   id: string;
+  dir_path: string;
+  dir_name: string;
+  child_dir_count: number | null;
+  child_file_count: number | null;
+  dir_modified: string | null;
+  world_accessible: boolean | null;
+  authenticated_users: boolean | null;
+  custom_acl: boolean | null;
+  has_sensitive_files: boolean | null;
+  highest_risk_tier: string | null;
+  total_entities_found: number | null;
+  last_scanned_at: string | null;
+}
+
+export interface BrowseResponse {
   target_id: string;
-  path: string;
-  name: string;
-  is_directory: boolean;
-  file_size: number | null;
-  risk_score: number | null;
-  risk_tier: string | null;
-  exposure_level: string | null;
-  children_count: number;
-  entity_count: number;
+  parent_id: string | null;
+  parent_path: string | null;
+  folders: BrowseFolder[];
+  total: number;
 }
 
 export interface DirectoryACL {
@@ -291,11 +311,32 @@ export interface AIQueryResponse {
   result?: QueryResult;
 }
 
-export interface Setting {
-  key: string;
-  value: unknown;
-  category: string;
-  description: string;
+export interface AllSettings {
+  azure: {
+    azure_tenant_id: string | null;
+    azure_client_id: string | null;
+    azure_client_secret_set: boolean;
+  };
+  scan: {
+    max_file_size_mb: number;
+    concurrent_files: number;
+    enable_ocr: boolean;
+  };
+  entities: {
+    enabled_entities: string[];
+  };
+  fanout: {
+    fanout_enabled: boolean;
+    fanout_threshold: number;
+    fanout_max_partitions: number;
+    pipeline_max_concurrent_files: number;
+    pipeline_memory_budget_mb: number;
+  };
+}
+
+export interface SettingsUpdateResponse {
+  status: string;
+  message: string;
 }
 
 // WebSocket event types

@@ -8,8 +8,8 @@ export const scansApi = {
   get: (id: string) =>
     apiFetch<ScanJob>(`/scans/${id}`),
 
-  create: (payload: { target_ids: string[] }) =>
-    apiFetch<ScanJob[]>('/scans', { method: 'POST', body: payload }),
+  create: (payload: { target_id: string; name?: string }) =>
+    apiFetch<ScanJob>('/scans', { method: 'POST', body: payload }),
 
   cancel: (id: string) =>
     apiFetch<void>(`/scans/${id}/cancel`, { method: 'POST' }),

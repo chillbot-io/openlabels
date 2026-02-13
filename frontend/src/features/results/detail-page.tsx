@@ -52,7 +52,7 @@ export function Component() {
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-[var(--muted-foreground)]">File Size</p>
-            <p className="text-xl font-bold mt-1">{formatNumber(r.file_size)}</p>
+            <p className="text-xl font-bold mt-1">{formatNumber(r.file_size ?? 0)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -126,8 +126,15 @@ export function Component() {
           <CardContent>
             <div className="space-y-2">
               {r.policy_violations.map((violation, i) => (
-                <div key={i} role="alert" className="rounded-md border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 px-4 py-3 text-sm text-[var(--destructive)]">
-                  {JSON.stringify(violation)}
+                <div key={i} role="alert" className="rounded-md border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 px-4 py-3 text-sm">
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    {Object.entries(violation).map(([key, value]) => (
+                      <div key={key} className="contents">
+                        <dt className="font-medium text-[var(--destructive)]">{key.replace(/_/g, ' ')}</dt>
+                        <dd className="text-[var(--foreground)]">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               ))}
             </div>

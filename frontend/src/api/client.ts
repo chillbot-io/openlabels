@@ -38,13 +38,15 @@ export async function apiFetch<T>(
 
   const { params: _params, body, ...fetchOptions } = options ?? {};
 
+  const headers: Record<string, string> = {
+    ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(fetchOptions.headers as Record<string, string>),
+  };
+
   const response = await fetch(url, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...fetchOptions.headers,
-    },
     ...fetchOptions,
+    credentials: 'include',
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
 

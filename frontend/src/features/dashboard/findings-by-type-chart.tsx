@@ -30,11 +30,11 @@ export function FindingsByTypeChart({ data, isLoading }: Props) {
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={chartData} layout="vertical" margin={{ left: 80 }} role="img" aria-label={`Top entity types: ${chartData.map((d) => `${d.name} ${d.count}`).join(', ')}`}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis type="number" stroke="var(--muted-foreground)" />
+              <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
               <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="count" fill="var(--color-primary-500)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}

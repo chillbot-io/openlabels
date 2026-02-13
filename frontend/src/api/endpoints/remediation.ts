@@ -8,10 +8,10 @@ export const remediationApi = {
   get: (id: string) =>
     apiFetch<RemediationAction>(`/remediation/${id}`),
 
-  quarantine: (payload: { file_path: string; reason?: string; dry_run?: boolean }) =>
+  quarantine: (payload: { file_path: string; quarantine_dir?: string; dry_run?: boolean }) =>
     apiFetch<RemediationAction>('/remediation/quarantine', { method: 'POST', body: payload }),
 
-  lockdown: (payload: { file_path: string; principals: string[]; dry_run?: boolean }) =>
+  lockdown: (payload: { file_path: string; allowed_principals: string[]; dry_run?: boolean }) =>
     apiFetch<RemediationAction>('/remediation/lockdown', { method: 'POST', body: payload }),
 
   rollback: (actionId: string) =>

@@ -31,9 +31,5 @@ export function useLabelSyncStatus() {
   return useQuery({
     queryKey: ['labels', 'sync-status'],
     queryFn: () => labelsApi.syncStatus(),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'running' || status === 'pending' ? 3_000 : false;
-    },
   });
 }

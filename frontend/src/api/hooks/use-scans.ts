@@ -22,10 +22,15 @@ export function useScan(id: string) {
   });
 }
 
-export function useCreateScan() {
+export function useCreateScans() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: scansApi.create,
+    mutationFn: async (targetIds: string[]) => {
+      const results = await Promise.all(
+        targetIds.map((target_id) => scansApi.create({ target_id })),
+      );
+      return results;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scans'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -40,6 +45,7 @@ export function useCancelScan() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['scans'] });
       queryClient.invalidateQueries({ queryKey: ['scans', id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils.ts';
-import { STATUS_COLORS, type ScanStatus } from '@/lib/constants.ts';
+import { STATUS_COLORS } from '@/lib/constants.ts';
 
 interface StatusBadgeProps {
-  status: ScanStatus;
+  status: string;
   className?: string;
 }
 

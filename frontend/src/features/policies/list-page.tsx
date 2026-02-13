@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Trash2 } from 'lucide-react';
 import { usePolicies, useCreatePolicy, useDeletePolicy } from '@/api/hooks/use-policies.ts';
@@ -8,14 +8,27 @@ import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.tsx';
+import { ConfirmDialog } from '@/components/confirm-dialog.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type { Policy } from '@/api/types.ts';
+
+const staticColumns: ColumnDef<Policy, unknown>[] = [
+  { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+  { accessorKey: 'description', header: 'Description' },
+  { accessorKey: 'enabled', header: 'Status', cell: ({ row }) => (
+    <Badge variant={row.original.enabled ? 'default' : 'secondary'}>
+      {row.original.enabled ? 'Active' : 'Disabled'}
+    </Badge>
+  )},
+  { accessorKey: 'rules', header: 'Rules', cell: ({ row }) => `${row.original.rules?.length ?? 0} rules` },
+];
 
 export function Component() {
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<Policy | null>(null);
   const addToast = useUIStore((s) => s.addToast);
 
   const policies = usePolicies(page + 1);
@@ -37,28 +50,17 @@ export function Component() {
     );
   };
 
-  const columns: ColumnDef<Policy, unknown>[] = [
-    { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { accessorKey: 'description', header: 'Description' },
-    { accessorKey: 'enabled', header: 'Status', cell: ({ row }) => (
-      <Badge variant={row.original.enabled ? 'default' : 'secondary'}>
-        {row.original.enabled ? 'Active' : 'Disabled'}
-      </Badge>
-    )},
-    { accessorKey: 'rules', header: 'Rules', cell: ({ row }) => `${row.original.rules?.length ?? 0} rules` },
+  const columns = useMemo<ColumnDef<Policy, unknown>[]>(() => [
+    ...staticColumns,
     { id: 'actions', header: '', cell: ({ row }) => (
       <Button variant="ghost" size="icon" aria-label={`Delete policy ${row.original.name}`} onClick={(e) => {
         e.stopPropagation();
-        if (confirm('Delete this policy?')) {
-          deletePolicy.mutate(row.original.id, {
-            onSuccess: () => addToast({ level: 'success', message: 'Policy deleted' }),
-          });
-        }
+        setPendingDelete(row.original);
       }}>
         <Trash2 className="h-4 w-4 text-red-500" />
       </Button>
     )},
-  ];
+  ], []);
 
   return (
     <div className="space-y-6 p-6">
@@ -101,6 +103,24 @@ export function Component() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        title="Delete Policy"
+        description={`Are you sure you want to delete "${pendingDelete?.name}"? This action cannot be undone.`}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          deletePolicy.mutate(pendingDelete.id, {
+            onSuccess: () => {
+              addToast({ level: 'success', message: 'Policy deleted' });
+              setPendingDelete(null);
+            },
+            onError: (err) => addToast({ level: 'error', message: err.message }),
+          });
+        }}
+        isPending={deletePolicy.isPending}
+      />
     </div>
   );
 }

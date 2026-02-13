@@ -21,13 +21,7 @@ const columns: ColumnDef<Label, unknown>[] = [
     </div>
   )},
   { accessorKey: 'description', header: 'Description' },
-  { accessorKey: 'auto_apply', header: 'Auto Apply', cell: ({ row }) => (
-    <Badge variant={row.original.auto_apply ? 'default' : 'secondary'}>
-      {row.original.auto_apply ? 'Yes' : 'No'}
-    </Badge>
-  )},
-  { accessorKey: 'risk_tier_mapping', header: 'Risk Tier', cell: ({ row }) =>
-    row.original.risk_tier_mapping ?? '—' },
+  { accessorKey: 'priority', header: 'Priority', cell: ({ row }) => row.original.priority ?? '—' },
 ];
 
 export function Component() {
