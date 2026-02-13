@@ -29,7 +29,7 @@ export function Component() {
         </CardHeader>
         <CardContent className="space-y-4">
           {(s.status === 'running' || s.status === 'pending') && (
-            <Progress value={pct} />
+            <Progress value={pct} aria-label={`Sync progress: ${pct}%`} />
           )}
 
           <div className="grid grid-cols-2 gap-4 text-center">

@@ -72,18 +72,18 @@ export function Component() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="name">Name</Label>
-              <Input id="name" {...form.register('name')} />
+              <Input id="name" aria-describedby={form.formState.errors.name ? 'name-error' : undefined} aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
               {form.formState.errors.name && (
-                <p className="mt-1 text-xs text-red-500">{form.formState.errors.name.message}</p>
+                <p id="name-error" role="alert" className="mt-1 text-xs text-red-500">{form.formState.errors.name.message}</p>
               )}
             </div>
 
             <div>
               <Label htmlFor="cron">Cron Expression</Label>
-              <Input id="cron" {...form.register('cron')} placeholder="0 2 * * 1" />
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">{cronDescription.join(' | ')}</p>
+              <Input id="cron" aria-describedby={`cron-description${form.formState.errors.cron ? ' cron-error' : ''}`} aria-invalid={!!form.formState.errors.cron} {...form.register('cron')} placeholder="0 2 * * 1" />
+              <p id="cron-description" className="mt-1 text-xs text-[var(--muted-foreground)]">{cronDescription.join(' | ')}</p>
               {form.formState.errors.cron && (
-                <p className="mt-1 text-xs text-red-500">{form.formState.errors.cron.message}</p>
+                <p id="cron-error" role="alert" className="mt-1 text-xs text-red-500">{form.formState.errors.cron.message}</p>
               )}
             </div>
 
@@ -97,11 +97,12 @@ export function Component() {
         <Card>
           <CardHeader><CardTitle>Target</CardTitle></CardHeader>
           <CardContent>
+            <Label htmlFor="target_id">Target</Label>
             <Select
               value={form.watch('target_id')}
               onValueChange={(v) => form.setValue('target_id', v, { shouldValidate: true })}
             >
-              <SelectTrigger><SelectValue placeholder="Select a target" /></SelectTrigger>
+              <SelectTrigger id="target_id" aria-invalid={!!form.formState.errors.target_id}><SelectValue placeholder="Select a target" /></SelectTrigger>
               <SelectContent>
                 {(targets.data?.items ?? []).map((target) => (
                   <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
@@ -109,7 +110,7 @@ export function Component() {
               </SelectContent>
             </Select>
             {form.formState.errors.target_id && (
-              <p className="mt-1 text-xs text-red-500">{form.formState.errors.target_id.message}</p>
+              <p role="alert" className="mt-1 text-xs text-red-500">{form.formState.errors.target_id.message}</p>
             )}
           </CardContent>
         </Card>

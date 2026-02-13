@@ -126,7 +126,7 @@ export function Component() {
           <CardContent>
             <div className="space-y-2">
               {r.policy_violations.map((violation, i) => (
-                <div key={i} className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-800">
+                <div key={i} role="alert" className="rounded-md border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 px-4 py-3 text-sm text-[var(--destructive)]">
                   {JSON.stringify(violation)}
                 </div>
               ))}

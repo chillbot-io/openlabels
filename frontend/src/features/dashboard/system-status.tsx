@@ -36,7 +36,8 @@ export function SystemStatus() {
                 {comp.latency_ms !== undefined && (
                   <span className="text-xs text-[var(--muted-foreground)]">{comp.latency_ms}ms</span>
                 )}
-                <span className={`h-2 w-2 rounded-full ${comp.status === 'healthy' ? 'bg-green-500' : comp.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                <span className={`h-2 w-2 rounded-full ${comp.status === 'healthy' ? 'bg-green-500' : comp.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'}`} aria-hidden="true" />
+                <span className="sr-only">{comp.status}</span>
               </div>
             </div>
           ))}

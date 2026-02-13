@@ -26,23 +26,25 @@ export function Breadcrumbs() {
   if (segments.length <= 1) return null;
 
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 px-6 py-2 text-sm text-[var(--muted-foreground)]">
-      {segments.map((segment, index) => {
-        const path = '/' + segments.slice(0, index + 1).join('/');
-        const label = PATH_LABELS[segment] ?? segment;
-        const isLast = index === segments.length - 1;
+    <nav aria-label="Breadcrumb" className="px-6 py-2 text-sm text-[var(--muted-foreground)]">
+      <ol className="flex items-center gap-1.5">
+        {segments.map((segment, index) => {
+          const path = '/' + segments.slice(0, index + 1).join('/');
+          const label = PATH_LABELS[segment] ?? segment;
+          const isLast = index === segments.length - 1;
 
-        return (
-          <span key={path} className="flex items-center gap-1.5">
-            {index > 0 && <span>/</span>}
-            {isLast ? (
-              <span className="font-medium text-[var(--foreground)]">{label}</span>
-            ) : (
-              <Link to={path} className="hover:text-[var(--foreground)]">{label}</Link>
-            )}
-          </span>
-        );
-      })}
+          return (
+            <li key={path} className="flex items-center gap-1.5">
+              {index > 0 && <span aria-hidden="true">/</span>}
+              {isLast ? (
+                <span className="font-medium text-[var(--foreground)]" aria-current="page">{label}</span>
+              ) : (
+                <Link to={path} className="hover:text-[var(--foreground)]">{label}</Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
     </nav>
   );
 }

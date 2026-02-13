@@ -34,7 +34,7 @@ export function RiskDistributionChart({ data, isLoading }: Props) {
           </p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
+            <PieChart role="img" aria-label={`Risk distribution: ${chartData.map((d) => `${d.name} ${d.value}`).join(', ')}`}>
               <Pie
                 data={chartData}
                 cx="50%"

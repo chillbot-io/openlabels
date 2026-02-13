@@ -63,7 +63,7 @@ export function Component() {
         <TabsContent value="directories" className="space-y-4 pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <Select value={targetId} onValueChange={(v) => { setTargetId(v); setPage(1); }}>
-              <SelectTrigger className="w-48"><SelectValue placeholder="Select target" /></SelectTrigger>
+              <SelectTrigger className="w-48" aria-label="Select target"><SelectValue placeholder="Select target" /></SelectTrigger>
               <SelectContent>
                 {(targets.data?.items ?? []).map((t) => (
                   <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -72,7 +72,7 @@ export function Component() {
             </Select>
 
             <Select value={exposure} onValueChange={(v) => { setExposure(v === 'all' ? '' : v); setPage(1); }}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="Exposure" /></SelectTrigger>
+              <SelectTrigger className="w-36" aria-label="Filter by exposure level"><SelectValue placeholder="Exposure" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All levels</SelectItem>
                 {EXPOSURE_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
@@ -124,6 +124,7 @@ export function Component() {
             value={principal}
             onChange={(e) => setPrincipal(e.target.value)}
             className="w-96"
+            aria-label="Search by SID or principal name"
           />
 
           {principalLookup.isLoading && debouncedPrincipal ? (
