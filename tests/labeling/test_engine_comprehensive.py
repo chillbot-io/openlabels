@@ -441,15 +441,10 @@ class TestLabelingEnginePDFMetadata:
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
 
-    async def test_apply_pdf_metadata_uncaught_exception_bug(self, tmp_path):
+    async def test_apply_pdf_metadata_falls_back_on_corrupt_pdf(self, tmp_path):
         """
-        BUG EXPOSED: _apply_pdf_metadata doesn't catch PdfReadError.
-
-        When PyPDF2 encounters an invalid PDF, it raises PdfReadError which
-        is not caught, causing the method to fail instead of falling back
-        to sidecar. This is a real application bug.
-
-        The code should catch all PDF-related exceptions and fall back to sidecar.
+        BUG FIX: _apply_pdf_metadata now catches PdfReadError and falls
+        back to sidecar instead of propagating the exception.
         """
         engine = LabelingEngine(
             tenant_id="t",
@@ -460,11 +455,10 @@ class TestLabelingEnginePDFMetadata:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_text("Not a valid PDF")
 
-        # This demonstrates the bug - PdfReadError is not caught
-        from PyPDF2.errors import PdfReadError
-
-        with pytest.raises(PdfReadError):
-            await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
+        # Should NOT raise — falls back to sidecar via the success=False path
+        result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
+        assert result.success is True
+        assert result.method == "sidecar"
 
 
 class TestLocalLabelWriterSidecar:

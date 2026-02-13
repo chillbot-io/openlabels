@@ -408,6 +408,16 @@ class ResultService(BaseService):
             func.sum(
                 case((ScanResult.label_applied == True, 1), else_=0)  # noqa: E712
             ).label("labels_applied"),
+            func.sum(
+                case(
+                    (
+                        (ScanResult.recommended_label_id.isnot(None))
+                        & (ScanResult.label_applied == False),  # noqa: E712
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("labels_pending"),
         ).where(*conditions)
 
         result = await self.session.execute(stats_query)
@@ -422,6 +432,7 @@ class ResultService(BaseService):
             "low_count": row.low_count or 0,
             "minimal_count": row.minimal_count or 0,
             "labels_applied": row.labels_applied or 0,
+            "labels_pending": row.labels_pending or 0,
         }
 
         self._log_debug(

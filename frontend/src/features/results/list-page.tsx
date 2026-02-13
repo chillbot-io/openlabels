@@ -56,7 +56,7 @@ export function Component() {
   const allResults = results.data?.pages.flatMap((p) => p.items) ?? [];
   const addToast = useUIStore((s) => s.addToast);
 
-  const handleExport = async (format: 'csv' | 'xlsx') => {
+  const handleExport = async (format: 'csv' | 'json') => {
     try {
       const blob = await exportApi.results({ format, risk_tier: riskTier, entity_type: entityType, search: debouncedSearch || undefined });
       downloadBlob(blob, `results-${Date.now()}.${format}`);

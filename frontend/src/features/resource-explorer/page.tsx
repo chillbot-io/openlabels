@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FolderOpen, ChevronRight, ChevronDown } from 'lucide-react';
+import { FolderOpen, ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
 import { browseApi } from '@/api/endpoints/browse.ts';
 import { useTargets } from '@/api/hooks/use-targets.ts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
@@ -86,6 +86,12 @@ export function Component() {
           {rootEntries.isLoading ? (
             <div className="space-y-1">
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
+            </div>
+          ) : rootEntries.isError ? (
+            <div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-[var(--destructive)]">
+              <AlertCircle className="h-5 w-5" />
+              <p>Failed to load folders</p>
+              <button className="text-xs underline" onClick={() => rootEntries.refetch()}>Retry</button>
             </div>
           ) : (
             (rootEntries.data?.folders ?? []).map((folder) => (

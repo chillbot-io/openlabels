@@ -18,6 +18,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -400,9 +401,13 @@ class ScanResult(Base):
     policy_violations: Mapped[list | None] = mapped_column(JSONB)
 
     # Labeling status
-    current_label_id: Mapped[str | None] = mapped_column(String(36))
+    current_label_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sensitivity_labels.id", ondelete="SET NULL"),
+    )
     current_label_name: Mapped[str | None] = mapped_column(String(255))
-    recommended_label_id: Mapped[str | None] = mapped_column(String(36))
+    recommended_label_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sensitivity_labels.id", ondelete="SET NULL"),
+    )
     recommended_label_name: Mapped[str | None] = mapped_column(String(255))
     label_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     label_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -415,6 +420,7 @@ class ScanResult(Base):
     job: Mapped[ScanJob] = relationship(back_populates="results")
 
     __table_args__ = (
+        CheckConstraint("risk_score >= 0 AND risk_score <= 100", name="ck_scan_results_risk_score_range"),
         # Primary query patterns
         Index('ix_scan_results_tenant_risk_time', 'tenant_id', 'risk_tier', 'scanned_at'),
         Index('ix_scan_results_tenant_path', 'tenant_id', 'file_path'),
