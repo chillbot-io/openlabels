@@ -23,7 +23,9 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, info.componentStack);
+    if (import.meta.env.DEV) {
+      console.error('ErrorBoundary caught:', error, info.componentStack);
+    }
   }
 
   render() {
@@ -35,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <AlertTriangle className="mb-4 h-12 w-12 text-[var(--destructive)]" />
           <h2 className="text-lg font-semibold">Something went wrong</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            {this.state.error?.message ?? 'An unexpected error occurred'}
+            An unexpected error occurred. Please try again.
           </p>
           <Button
             className="mt-4"

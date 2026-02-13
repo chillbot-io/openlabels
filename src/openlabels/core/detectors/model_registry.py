@@ -107,9 +107,7 @@ class ModelSpec:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Model manifest
-# ---------------------------------------------------------------------------
+# --- Model manifest ---
 # HuggingFace repo IDs are placeholders until the user publishes models.
 # The download logic works with any valid HF repo.
 
@@ -201,9 +199,7 @@ def resolve_names(names: list[str]) -> list[str]:
     return [n for n in resolved if not (n in seen or seen.add(n))]
 
 
-# ---------------------------------------------------------------------------
-# Download
-# ---------------------------------------------------------------------------
+# --- Download ---
 
 def _verify_sha256(path: Path, expected: str) -> bool:
     """Verify file SHA-256 checksum."""

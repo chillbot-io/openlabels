@@ -90,9 +90,7 @@ class GraphWebhookProvider:
     def name(self) -> str:
         return EVENT_SOURCE
 
-    # ------------------------------------------------------------------
-    # EventProvider.collect()
-    # ------------------------------------------------------------------
+    # --- EventProvider.collect() ---
 
     async def collect(self, since: datetime | None = None) -> list[RawAccessEvent]:
         """Process queued webhook notifications via delta queries.
@@ -131,9 +129,7 @@ class GraphWebhookProvider:
 
         return events
 
-    # ------------------------------------------------------------------
-    # Subscription management
-    # ------------------------------------------------------------------
+    # --- Subscription management ---
 
     async def subscribe(self, drive_id: str) -> str:
         """Create a Graph change notification subscription for a drive.
@@ -196,9 +192,7 @@ class GraphWebhookProvider:
             raise ValueError(f"Unknown subscription: {subscription_id}")
         return await self.subscribe(drive_id)
 
-    # ------------------------------------------------------------------
-    # Delta query
-    # ------------------------------------------------------------------
+    # --- Delta query ---
 
     async def _delta_query(self, drive_id: str) -> list[RawAccessEvent]:
         """Run a delta query on a drive to find changed files."""

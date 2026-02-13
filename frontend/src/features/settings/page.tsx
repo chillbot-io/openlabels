@@ -34,7 +34,12 @@ function SettingsTab({ category, settings }: { category: SettingsCategory; setti
       if (Array.isArray(original)) {
         payload[key] = value.split(',').map((v) => v.trim()).filter(Boolean);
       } else if (typeof original === 'number') {
-        payload[key] = Number(value);
+        const n = Number(value);
+        if (Number.isNaN(n)) {
+          addToast({ level: 'error', message: `"${key.replace(/_/g, ' ')}" must be a number` });
+          return;
+        }
+        payload[key] = n;
       } else if (typeof original === 'boolean') {
         payload[key] = value === 'true';
       } else {

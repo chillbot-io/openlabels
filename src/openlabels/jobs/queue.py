@@ -290,9 +290,7 @@ class JobQueue:
         result = await self.session.execute(query)
         return result.scalar() or 0
 
-    # =========================================================================
-    # Dead Letter Queue (DLQ) Operations
-    # =========================================================================
+    # --- Dead Letter Queue (DLQ) Operations ---
 
     async def get_failed_jobs(
         self,
@@ -458,7 +456,7 @@ class JobQueue:
 
     async def get_queue_stats(self) -> dict:
         """
-        Get comprehensive queue statistics.
+        Get queue statistics.
 
         Returns:
             Dictionary with job counts by status and task type
@@ -502,9 +500,7 @@ class JobQueue:
 
         return stats
 
-    # =========================================================================
-    # Stuck Job Recovery
-    # =========================================================================
+    # --- Stuck Job Recovery ---
 
     async def reclaim_stuck_jobs(
         self,
@@ -581,9 +577,7 @@ class JobQueue:
         result = await self.session.execute(query)
         return result.scalar() or 0
 
-    # =========================================================================
-    # Job TTL / Expiration
-    # =========================================================================
+    # --- Job TTL / Expiration ---
 
     async def cleanup_expired_jobs(
         self,

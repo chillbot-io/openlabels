@@ -36,9 +36,7 @@ from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
 
-# =============================================================================
-# CROSS-DATABASE JSON TYPE
-# =============================================================================
+# --- CROSS-DATABASE JSON TYPE ---
 
 class JSONB(TypeDecorator):
     """
@@ -55,9 +53,7 @@ class JSONB(TypeDecorator):
             return dialect.type_descriptor(PG_JSONB())
         return dialect.type_descriptor(JSON())
 
-# =============================================================================
-# UUID v7 GENERATION
-# =============================================================================
+# --- UUID v7 GENERATION ---
 
 try:
     from uuid_utils import uuid7
@@ -87,9 +83,7 @@ def generate_uuid() -> PyUUID:
     return generated
 
 
-# =============================================================================
-# POSTGRESQL ENUM TYPES
-# =============================================================================
+# --- POSTGRESQL ENUM TYPES ---
 
 # User roles
 UserRoleEnum = ENUM(
@@ -169,9 +163,7 @@ AccessActionEnum = ENUM(
 )
 
 
-# =============================================================================
-# CORE MODELS
-# =============================================================================
+# --- CORE MODELS ---
 
 
 class Tenant(Base):
@@ -537,9 +529,7 @@ class JobQueue(Base):
     )
 
 
-# =============================================================================
-# DATA INVENTORY MODELS (for delta scanning)
-# =============================================================================
+# --- DATA INVENTORY MODELS (for delta scanning) ---
 
 
 class FolderInventory(Base):
@@ -655,9 +645,7 @@ class FileInventory(Base):
     )
 
 
-# =============================================================================
-# REMEDIATION MODELS
-# =============================================================================
+# --- REMEDIATION MODELS ---
 
 
 class RemediationAction(Base):
@@ -709,9 +697,7 @@ class RemediationAction(Base):
     )
 
 
-# =============================================================================
-# MONITORING MODELS
-# =============================================================================
+# --- MONITORING MODELS ---
 
 
 class MonitoredFile(Base):
@@ -808,9 +794,7 @@ class FileAccessEvent(Base):
     )
 
 
-# =============================================================================
-# SESSION MODELS
-# =============================================================================
+# --- SESSION MODELS ---
 
 
 class Session(Base):
@@ -945,9 +929,7 @@ class Policy(Base):
     )
 
 
-# =============================================================================
-# REPORTING (Phase M)
-# =============================================================================
+# --- REPORTING (Phase M) ---
 
 class ScanSummary(Base):
     """Pre-aggregated per-job summary for fast dashboard queries.

@@ -53,15 +53,26 @@ export function Component() {
     resetForm();
   };
 
+  const validateFilePath = (path: string): string | null => {
+    if (!path.trim()) return 'File path is required';
+    if (path.includes('..')) return 'Path traversal sequences are not allowed';
+    if (/[<>"|?*]/.test(path)) return 'Path contains invalid characters';
+    return null;
+  };
+
   const handleQuarantine = () => {
-    quarantine.mutate({ file_path: filePath, dry_run: dryRun }, {
+    const error = validateFilePath(filePath);
+    if (error) { addToast({ level: 'error', message: error }); return; }
+    quarantine.mutate({ file_path: filePath.trim(), dry_run: dryRun }, {
       onSuccess: () => { addToast({ level: 'success', message: 'Quarantine initiated' }); closeDialog(); },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
   };
 
   const handleLockdown = () => {
-    lockdown.mutate({ file_path: filePath, allowed_principals: principals.split(',').map((p) => p.trim()).filter(Boolean), dry_run: dryRun }, {
+    const error = validateFilePath(filePath);
+    if (error) { addToast({ level: 'error', message: error }); return; }
+    lockdown.mutate({ file_path: filePath.trim(), allowed_principals: principals.split(',').map((p) => p.trim()).filter(Boolean), dry_run: dryRun }, {
       onSuccess: () => { addToast({ level: 'success', message: 'Lockdown initiated' }); closeDialog(); },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });

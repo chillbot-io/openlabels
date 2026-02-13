@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 _CallNext = Callable[[Request], Coroutine[Any, Any, Response]]
 
 
-# ---------------------------------------------------------------------------
-# Standalone middleware functions (importable for unit testing)
-# ---------------------------------------------------------------------------
+# --- Standalone middleware functions (importable for unit testing) ---
 
 
 async def add_request_id(request: Request, call_next: _CallNext) -> Response:
@@ -173,9 +171,7 @@ async def add_deprecation_warning(request: Request, call_next: _CallNext) -> Res
     return response
 
 
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
+# --- Registration ---
 
 
 def register_middleware(app: FastAPI) -> None:

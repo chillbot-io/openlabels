@@ -62,9 +62,7 @@ from openlabels.server.services.scan_service import ScanService
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# SETTINGS PROVIDER
-# =============================================================================
+# --- SETTINGS PROVIDER ---
 
 
 @lru_cache
@@ -111,9 +109,7 @@ def clear_settings_cache() -> None:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-# =============================================================================
-# DATABASE SESSION PROVIDER
-# =============================================================================
+# --- DATABASE SESSION PROVIDER ---
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -146,9 +142,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
-# =============================================================================
-# TENANT CONTEXT
-# =============================================================================
+# --- TENANT CONTEXT ---
 
 
 class TenantContext:
@@ -273,9 +267,7 @@ OptionalTenantContextDep = Annotated[TenantContext | None, Depends(get_optional_
 AdminContextDep = Annotated[TenantContext, Depends(require_admin_context)]
 
 
-# =============================================================================
-# CACHE PROVIDER
-# =============================================================================
+# --- CACHE PROVIDER ---
 
 
 async def get_cache(settings: SettingsDep) -> CacheManager:
@@ -315,9 +307,7 @@ async def get_cache(settings: SettingsDep) -> CacheManager:
 CacheDep = Annotated[CacheManager, Depends(get_cache)]
 
 
-# =============================================================================
-# SERVICE PROVIDERS
-# =============================================================================
+# --- SERVICE PROVIDERS ---
 #
 # These service providers use forward references because the service classes
 # don't exist yet. When implementing services, update the imports and remove
@@ -327,7 +317,6 @@ CacheDep = Annotated[CacheManager, Depends(get_cache)]
 # 1. Create service class in src/openlabels/services/
 # 2. Import it in this file
 # 3. Update the get_*_service function to return the actual service
-# =============================================================================
 
 
 async def get_scan_service(
@@ -492,9 +481,7 @@ JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 ResultServiceDep = Annotated[ResultService, Depends(get_result_service)]
 
 
-# =============================================================================
-# PER-TENANT RATE LIMITING
-# =============================================================================
+# --- PER-TENANT RATE LIMITING ---
 
 
 async def check_tenant_rate_limit(
@@ -526,9 +513,7 @@ async def check_tenant_rate_limit(
 TenantRateLimitDep = Annotated[None, Depends(check_tenant_rate_limit)]
 
 
-# =============================================================================
-# UTILITY DEPENDENCIES
-# =============================================================================
+# --- UTILITY DEPENDENCIES ---
 
 
 async def get_request_id() -> str:
@@ -589,9 +574,7 @@ async def verify_tenant_access(
         )
 
 
-# =============================================================================
-# EXPORTS
-# =============================================================================
+# --- EXPORTS ---
 
 __all__ = [
     # Settings

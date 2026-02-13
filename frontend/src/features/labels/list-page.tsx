@@ -8,12 +8,19 @@ import { Button } from '@/components/ui/button.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type { Label } from '@/api/types.ts';
 
+const HEX_COLOR_RE = /^#[\da-fA-F]{3,8}$/;
+
+function safeColor(color: string | null | undefined): string | undefined {
+  if (!color) return undefined;
+  return HEX_COLOR_RE.test(color) ? color : undefined;
+}
+
 const columns: ColumnDef<Label, unknown>[] = [
   { accessorKey: 'name', header: 'Label', cell: ({ row }) => (
     <div className="flex items-center gap-2">
       <span
         className="h-3 w-3 rounded-full"
-        style={{ backgroundColor: row.original.color ?? undefined }}
+        style={{ backgroundColor: safeColor(row.original.color) }}
         aria-hidden="true"
       />
       <span className="font-medium">{row.original.name}</span>

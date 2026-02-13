@@ -13,9 +13,7 @@ from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 # Use the default registry
 registry = REGISTRY
 
-# =============================================================================
-# HTTP Request Metrics
-# =============================================================================
+# --- HTTP Request Metrics ---
 
 http_requests_total = Counter(
     "openlabels_http_requests_total",
@@ -38,9 +36,7 @@ http_active_connections = Gauge(
     registry=registry,
 )
 
-# =============================================================================
-# Job Queue Metrics
-# =============================================================================
+# --- Job Queue Metrics ---
 
 jobs_enqueued_total = Counter(
     "openlabels_jobs_enqueued_total",
@@ -70,9 +66,7 @@ jobs_queue_depth = Gauge(
     registry=registry,
 )
 
-# =============================================================================
-# Detection/Scan Metrics
-# =============================================================================
+# --- Detection/Scan Metrics ---
 
 files_processed_total = Counter(
     "openlabels_files_processed_total",
@@ -97,9 +91,7 @@ processing_duration_seconds = Histogram(
 )
 
 
-# =============================================================================
-# Catalog / Data Lake Metrics
-# =============================================================================
+# --- Catalog / Data Lake Metrics ---
 
 catalog_flush_lag_seconds = Gauge(
     "openlabels_catalog_flush_lag_seconds",
@@ -128,9 +120,7 @@ catalog_flush_total = Counter(
 )
 
 
-# =============================================================================
-# Convenience Functions
-# =============================================================================
+# --- Convenience Functions ---
 
 def record_http_request(method: str, path: str, status: int, duration: float) -> None:
     """

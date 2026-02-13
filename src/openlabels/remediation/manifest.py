@@ -48,9 +48,7 @@ class QuarantineManifest:
         self._entries: dict[str, QuarantineEntry] = {}
         self._load()
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
+    # --- Persistence ---
 
     def _load(self) -> None:
         if self._path.exists():
@@ -75,9 +73,7 @@ class QuarantineManifest:
                 indent=2,
             )
 
-    # ------------------------------------------------------------------
-    # CRUD
-    # ------------------------------------------------------------------
+    # --- CRUD ---
 
     def add(
         self,

@@ -172,9 +172,7 @@ def get_watched_file(path: Path) -> WatchedFile | None:
         return _watched_files.get(str(Path(path).resolve()))
 
 
-# =============================================================================
-# DATABASE CACHE MANAGEMENT (async)
-# =============================================================================
+# --- DATABASE CACHE MANAGEMENT (async) ---
 
 
 async def populate_cache_from_db(
@@ -309,9 +307,7 @@ async def periodic_cache_sync(
     logger.info("Periodic monitoring cache sync stopped")
 
 
-# =============================================================================
-# ASYNC WRAPPERS WITH DB PERSISTENCE
-# =============================================================================
+# --- ASYNC WRAPPERS WITH DB PERSISTENCE ---
 
 
 async def enable_monitoring_async(
@@ -367,9 +363,7 @@ async def disable_monitoring_async(
     return result
 
 
-# =============================================================================
-# BULK OPERATIONS
-# =============================================================================
+# --- BULK OPERATIONS ---
 
 
 def enable_monitoring_batch(
@@ -545,9 +539,7 @@ def _enable_batch_linux(
     return results
 
 
-# =============================================================================
-# WINDOWS IMPLEMENTATION
-# =============================================================================
+# --- WINDOWS IMPLEMENTATION ---
 
 
 def _enable_monitoring_windows(
@@ -697,9 +689,7 @@ Set-Acl -Path $path -AclObject $acl
         )
 
 
-# =============================================================================
-# LINUX IMPLEMENTATION
-# =============================================================================
+# --- LINUX IMPLEMENTATION ---
 
 
 def _enable_monitoring_linux(

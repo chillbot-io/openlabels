@@ -78,9 +78,7 @@ _LEGACY_API_PREFIXES = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Router wiring
-# ---------------------------------------------------------------------------
+# --- Router wiring ---
 
 _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/auth", "Authentication", auth),
@@ -267,9 +265,7 @@ def _register_spa_serving(app: FastAPI) -> None:
         return FileResponse(str(index_html), media_type="text/html")
 
 
-# ---------------------------------------------------------------------------
-# Application factory
-# ---------------------------------------------------------------------------
+# --- Application factory ---
 
 
 def create_app() -> FastAPI:

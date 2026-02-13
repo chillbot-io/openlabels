@@ -38,11 +38,10 @@ from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# VALIDATORS (Python fallback — Rust overrides these below)
+# --- VALIDATORS ---
+# Python fallback — Rust overrides these below.
 # Core bool validators imported from _rust/validators_py (single source of truth).
 # Wrappers below add (bool, float) return signatures where needed.
-# =============================================================================
 
 luhn_check = validate_luhn
 
@@ -257,9 +256,7 @@ def validate_aba_routing(aba: str) -> tuple[bool, float]:
     return True, 0.99
 
 
-# =============================================================================
-# TRACKING NUMBER VALIDATORS
-# =============================================================================
+# --- TRACKING NUMBER VALIDATORS ---
 
 def validate_ups_tracking(tracking: str) -> tuple[bool, float]:
     """Validate UPS tracking number (1Z + 16 alphanumeric)."""
@@ -369,9 +366,7 @@ def validate_usps_tracking(tracking: str) -> tuple[bool, float]:
     return False, 0.0
 
 
-# =============================================================================
-# FINANCIAL INSTRUMENT VALIDATORS
-# =============================================================================
+# --- FINANCIAL INSTRUMENT VALIDATORS ---
 
 def validate_cusip(cusip: str) -> tuple[bool, float]:
     """Validate CUSIP (9-character security identifier).
@@ -393,9 +388,7 @@ def validate_isin(isin: str) -> tuple[bool, float]:
     return True, 0.99
 
 
-# =============================================================================
-# RUST ACCELERATION (default — Python above is fallback only)
-# =============================================================================
+# --- RUST ACCELERATION (default — Python above is fallback only) ---
 
 try:
     from openlabels_matcher import (
@@ -454,9 +447,7 @@ except ImportError:
     logger.info("Checksum validators: using Python fallback")
 
 
-# =============================================================================
-# PATTERNS
-# =============================================================================
+# --- PATTERNS ---
 
 CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
     # SSN - various formats with anti-evasion
@@ -499,9 +490,7 @@ CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
 )
 
 
-# =============================================================================
-# DETECTOR
-# =============================================================================
+# --- DETECTOR ---
 
 @register_detector
 class ChecksumDetector(BaseDetector):

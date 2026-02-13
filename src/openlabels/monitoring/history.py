@@ -95,9 +95,7 @@ def _is_system_account(username: str | None, sid: str | None) -> bool:
     return False
 
 
-# =============================================================================
-# WINDOWS IMPLEMENTATION
-# =============================================================================
+# --- WINDOWS IMPLEMENTATION ---
 
 
 def _get_history_windows(
@@ -249,9 +247,7 @@ def _parse_windows_access_mask(mask: int) -> AccessAction:
         return AccessAction.UNKNOWN
 
 
-# =============================================================================
-# LINUX IMPLEMENTATION
-# =============================================================================
+# --- LINUX IMPLEMENTATION ---
 
 
 def _get_history_linux(

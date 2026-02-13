@@ -1,5 +1,16 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+const CSRF_COOKIE_NAME = 'openlabels_csrf';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
+
+function getCsrfToken(): string | undefined {
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
+  return match?.split('=')[1];
+}
+
 export class ApiError extends Error {
   status: number;
   body: { error?: string; message?: string; detail?: string };
@@ -42,6 +53,15 @@ export async function apiFetch<T>(
     ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...(fetchOptions.headers as Record<string, string>),
   };
+
+  // Include CSRF token for state-changing requests
+  const method = (fetchOptions.method ?? 'GET').toUpperCase();
+  if (CSRF_PROTECTED_METHODS.has(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers[CSRF_HEADER_NAME] = csrfToken;
+    }
+  }
 
   const response = await fetch(url, {
     ...fetchOptions,

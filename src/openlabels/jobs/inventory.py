@@ -169,9 +169,7 @@ class DistributedScanInventory:
         except (json.JSONDecodeError, TypeError):
             return None
 
-    # -------------------------------------------------------------------------
-    # Folder Operations
-    # -------------------------------------------------------------------------
+    # --- Folder Operations ---
 
     async def get_folder(self, path: str) -> dict | None:
         """
@@ -301,9 +299,7 @@ class DistributedScanInventory:
                 return True
             return False
 
-    # -------------------------------------------------------------------------
-    # File Operations
-    # -------------------------------------------------------------------------
+    # --- File Operations ---
 
     async def get_file(self, path: str) -> dict | None:
         """
@@ -433,9 +429,7 @@ class DistributedScanInventory:
                 return True
             return False
 
-    # -------------------------------------------------------------------------
-    # Atomic Scanned File Tracking
-    # -------------------------------------------------------------------------
+    # --- Atomic Scanned File Tracking ---
 
     async def mark_file_scanned(self, path: str) -> bool:
         """
@@ -546,9 +540,7 @@ class DistributedScanInventory:
         async with self._local_lock:
             return len(self._local_scanned_files)
 
-    # -------------------------------------------------------------------------
-    # Scan Progress and Statistics
-    # -------------------------------------------------------------------------
+    # --- Scan Progress and Statistics ---
 
     async def get_scan_progress(self) -> dict:
         """
@@ -643,9 +635,7 @@ class DistributedScanInventory:
 
         return None
 
-    # -------------------------------------------------------------------------
-    # Cache Management
-    # -------------------------------------------------------------------------
+    # --- Cache Management ---
 
     async def clear_inventory(self) -> bool:
         """

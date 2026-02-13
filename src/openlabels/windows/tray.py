@@ -250,9 +250,7 @@ class SystemTrayApp:
             "C:\\ProgramData\\OpenLabels\\config.yaml"
         )
 
-    # ------------------------------------------------------------------
-    # Service controls (12.6: run in background thread)
-    # ------------------------------------------------------------------
+    # --- Service controls (12.6: run in background thread) ---
 
     def _run_service_command(self, command: list, status_text: str):
         """Run a service command in a background thread."""
@@ -308,9 +306,7 @@ class SystemTrayApp:
         self._log_viewer.raise_()
         self._log_viewer.activateWindow()
 
-    # ------------------------------------------------------------------
-    # Tray notifications (12.4)
-    # ------------------------------------------------------------------
+    # --- Tray notifications (12.4) ---
 
     def notify(self, title: str, message: str, *, error: bool = False, duration_ms: int = 5000):
         """Show a system tray balloon notification."""
@@ -331,9 +327,7 @@ class SystemTrayApp:
             f"Applied '{label_name}' to {file_count} file{'s' if file_count != 1 else ''}",
         )
 
-    # ------------------------------------------------------------------
-    # Auto-start (12.5)
-    # ------------------------------------------------------------------
+    # --- Auto-start (12.5) ---
 
     _REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
     _REGISTRY_APP_NAME = "OpenLabels"

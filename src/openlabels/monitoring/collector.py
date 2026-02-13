@@ -40,9 +40,7 @@ class EventCollector:
         else:
             yield from self._collect_linux(since, paths)
 
-    # ------------------------------------------------------------------
-    # Windows
-    # ------------------------------------------------------------------
+    # --- Windows ---
 
     def _collect_windows(
         self,
@@ -131,9 +129,7 @@ class EventCollector:
             event_id=int(fields["Event ID"]) if fields.get("Event ID", "").isdigit() else None,
         )
 
-    # ------------------------------------------------------------------
-    # Linux
-    # ------------------------------------------------------------------
+    # --- Linux ---
 
     def _collect_linux(
         self,

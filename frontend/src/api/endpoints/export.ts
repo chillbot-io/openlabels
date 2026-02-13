@@ -1,5 +1,12 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+function getCsrfToken(): string | undefined {
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('openlabels_csrf='));
+  return match?.split('=')[1];
+}
+
 async function fetchBlob(path: string, params?: Record<string, string | undefined>): Promise<Blob> {
   let url = `${BASE_URL}/api/v1${path}`;
   if (params) {
@@ -11,9 +18,15 @@ async function fetchBlob(path: string, params?: Record<string, string | undefine
     if (qs) url += `?${qs}`;
   }
 
+  const headers: Record<string, string> = { Accept: 'application/octet-stream' };
+  const csrfToken = getCsrfToken();
+  if (csrfToken) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
   const response = await fetch(url, {
     credentials: 'include',
-    headers: { Accept: 'application/octet-stream' },
+    headers,
   });
 
   if (response.status === 401) {

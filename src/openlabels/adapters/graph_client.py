@@ -481,9 +481,7 @@ class GraphClient:
         response.raise_for_status()
         return response.json()
 
-    # =========================================================================
-    # Delta Query Support
-    # =========================================================================
+    # --- Delta Query Support ---
 
     def get_delta_token(self, resource_path: str) -> DeltaToken | None:
         """Get stored delta token for a resource path."""
@@ -596,9 +594,7 @@ class GraphClient:
 
         return _iter(), is_delta
 
-    # =========================================================================
-    # Pagination Helper
-    # =========================================================================
+    # --- Pagination Helper ---
 
     async def get_all_pages(self, path: str) -> list[dict]:
         """Get all pages of a paginated response.

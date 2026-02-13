@@ -75,9 +75,7 @@ class ExposureLevel(Enum):
     PUBLIC = "PUBLIC"       # Publicly accessible
 
 
-# =============================================================================
-# ENTITY TYPES
-# =============================================================================
+# --- ENTITY TYPES ---
 
 # Known entity types - used for validation
 # Categories: Names, Dates, Locations, IDs, Contact, Financial, Medical, Secrets, Government
@@ -306,9 +304,7 @@ def normalize_entity_type(entity_type: str) -> str:
     return _ENTITY_ALIASES.get(upper, upper)
 
 
-# =============================================================================
-# SPAN DATA CLASSES
-# =============================================================================
+# --- SPAN DATA CLASSES ---
 
 @dataclass(frozen=True)
 class SpanContext:
@@ -421,9 +417,7 @@ class Span:
         return d
 
 
-# =============================================================================
-# RESULT DATA CLASSES
-# =============================================================================
+# --- RESULT DATA CLASSES ---
 
 @dataclass
 class DetectionResult:

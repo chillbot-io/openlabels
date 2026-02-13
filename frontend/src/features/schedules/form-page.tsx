@@ -15,7 +15,10 @@ import { useUIStore } from '@/stores/ui-store.ts';
 
 const scheduleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  cron: z.string().min(1, 'Cron expression is required'),
+  cron: z.string().min(1, 'Cron expression is required').regex(
+    /^(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)$/,
+    'Invalid cron expression (expected 5 fields: min hour day month weekday)',
+  ),
   target_id: z.string().min(1, 'Select a target'),
   enabled: z.boolean(),
 });

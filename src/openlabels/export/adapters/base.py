@@ -86,9 +86,7 @@ class SIEMAdapter(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------
-# Shared syslog transport mixin
-# ---------------------------------------------------------------------------
+# --- Shared syslog transport mixin ---
 
 
 def risk_tier_to_cef_severity(tier: str | None) -> int:
