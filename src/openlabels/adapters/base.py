@@ -15,7 +15,7 @@ import fnmatch
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from types import TracebackType
 from typing import Protocol, runtime_checkable
@@ -260,6 +260,34 @@ class FileInfo:
 
     # Delta tracking
     change_type: str | None = None  # 'created', 'modified', 'deleted' for delta queries
+
+    @classmethod
+    def from_scan_result(
+        cls,
+        result: object,
+        adapter: str = "filesystem",
+        *,
+        exposure: ExposureLevel | None = None,
+        item_id_override: str | None = None,
+    ) -> FileInfo:
+        """Build a FileInfo from a ScanResult (or any duck-typed equivalent).
+
+        Args:
+            result: Object with file_path, file_name, file_size,
+                    file_modified, and adapter_item_id attributes.
+            adapter: Adapter identifier (e.g. "filesystem", "sharepoint").
+            exposure: Optional exposure level override.
+            item_id_override: If set, used instead of result.adapter_item_id.
+        """
+        return cls(
+            path=result.file_path,
+            name=result.file_name,
+            size=result.file_size or 0,
+            modified=result.file_modified or datetime.now(timezone.utc),
+            adapter=adapter,
+            item_id=item_id_override if item_id_override is not None else getattr(result, "adapter_item_id", None),
+            exposure=exposure if exposure is not None else ExposureLevel.PRIVATE,
+        )
 
 
 @dataclass

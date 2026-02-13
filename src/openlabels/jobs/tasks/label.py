@@ -73,14 +73,7 @@ async def execute_label_task(
                 "method": "unsupported",
             }
 
-        file_info = FileInfo(
-            path=result.file_path,
-            name=result.file_name,
-            size=result.file_size or 0,
-            modified=result.file_modified or datetime.now(timezone.utc),
-            adapter=adapter,
-            item_id=getattr(result, "adapter_item_id", None),
-        )
+        file_info = FileInfo.from_scan_result(result, adapter=adapter)
 
         engine = create_labeling_engine()
 

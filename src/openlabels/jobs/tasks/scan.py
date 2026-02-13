@@ -965,14 +965,10 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
                     continue
 
                 # Build FileInfo for labeling engine
-                file_info = FileInfo(
-                    path=result.file_path,
-                    name=result.file_name,
-                    size=result.file_size or 0,
-                    modified=result.file_modified or datetime.now(timezone.utc),
+                file_info = FileInfo.from_scan_result(
+                    result,
                     adapter=target.adapter if target else "filesystem",
-                    exposure=ExposureLevel(result.exposure_level) if result.exposure_level else ExposureLevel.PRIVATE,
-                    item_id=result.adapter_item_id,
+                    exposure=ExposureLevel(result.exposure_level) if result.exposure_level else None,
                 )
 
                 # Apply label
@@ -1043,18 +1039,15 @@ async def _cloud_label_sync_back(
         result_stream = await session.stream(results_query)
         async for batch in result_stream.scalars().partitions(500):
             for result in batch:
-                item_id = (
+                cloud_item_id = (
                     result.file_path.split("://", 1)[-1].split("/", 1)[-1]
                     if "://" in result.file_path
                     else result.file_path
                 )
-                file_info = FileInfo(
-                    path=result.file_path,
-                    name=result.file_name,
-                    size=result.file_size or 0,
-                    modified=result.file_modified or datetime.now(timezone.utc),
+                file_info = FileInfo.from_scan_result(
+                    result,
                     adapter=target.adapter,
-                    item_id=item_id,
+                    item_id_override=cloud_item_id,
                 )
 
                 try:
