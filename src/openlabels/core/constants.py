@@ -35,6 +35,9 @@ __all__ = [
     "DATA_DIR",
     "DEFAULT_MODELS_DIR",
     "DEFAULT_DICTIONARIES_DIR",
+    # Risk tier ordering & priority
+    "RISK_TIER_PRIORITY",
+    "RISK_TIER_ORDER",
 ]
 
 # --- DETECTION ---
@@ -115,6 +118,12 @@ DEFAULT_MAX_READ_BYTES = 100 * 1024 * 1024  # 100MB
 # --- SUBPROCESS & QUERY LIMITS ---
 SUBPROCESS_TIMEOUT = 30  # seconds - timeout for icacls/setfacl/getfacl calls
 DEFAULT_QUERY_LIMIT = 500  # Safety limit for unbounded SELECT queries
+
+# --- RISK TIER ORDERING & PRIORITY ---
+# Canonical ascending order of risk tiers (index = severity rank)
+RISK_TIER_ORDER = ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+# Numeric priority for comparisons (higher = more severe)
+RISK_TIER_PRIORITY = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
 
 # --- OCR / MODELS ---
 MODEL_LOAD_TIMEOUT = 60.0  # seconds - timeout for loading ML models

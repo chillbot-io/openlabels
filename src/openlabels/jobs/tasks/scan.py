@@ -28,9 +28,9 @@ from openlabels.adapters import (
     SharePointAdapter,
 )
 from openlabels.adapters.base import ExposureLevel, FileInfo
-from openlabels.core.constants import DEFAULT_QUERY_LIMIT
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT, RISK_TIER_PRIORITY
 from openlabels.core.policies.engine import get_policy_engine
-from openlabels.core.types import AdapterType, JobStatus
+from openlabels.core.types import AdapterType, ExposureLevel, JobStatus
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
 from openlabels.exceptions import AdapterError, JobError
@@ -455,10 +455,9 @@ async def execute_scan_task(
                 # Update folder stats for inventory
                 folder_stats[folder_path]["has_sensitive"] = True
                 folder_stats[folder_path]["total_entities"] += result["total_entities"]
-                risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
                 current_risk = folder_stats[folder_path]["highest_risk"]
                 new_risk = result["risk_tier"]
-                if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                if current_risk is None or RISK_TIER_PRIORITY.get(new_risk, 0) > RISK_TIER_PRIORITY.get(current_risk, 0):
                     folder_stats[folder_path]["highest_risk"] = new_risk
 
                 try:
@@ -1148,9 +1147,9 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
     processor = get_processor()
 
     # Get exposure level from file info
-    exposure_level = "PRIVATE"
-    if hasattr(file_info, 'exposure'):
-        exposure_level = file_info.exposure.value if hasattr(file_info.exposure, 'value') else str(file_info.exposure)
+    exposure_level = ExposureLevel.PRIVATE
+    if hasattr(file_info, 'exposure') and file_info.exposure is not None:
+        exposure_level = file_info.exposure
 
     try:
         # Process file through the detection engine

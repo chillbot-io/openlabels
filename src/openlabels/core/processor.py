@@ -29,7 +29,7 @@ from .detectors.config import DetectionConfig
 from .detectors.orchestrator import DetectorOrchestrator
 from .extractors import extract_text as _extract_text_from_file
 from .scoring.scorer import score
-from .types import RiskTier, Span
+from .types import ExposureLevel, RiskTier, Span
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ class FileProcessor:
         self,
         file_path: str,
         content: str | bytes,
-        exposure_level: str = "PRIVATE",
+        exposure_level: str = ExposureLevel.PRIVATE,
         file_size: int | None = None,
     ) -> FileClassification:
         """
@@ -464,7 +464,7 @@ class FileProcessor:
 async def process_file(
     file_path: str,
     content: str | bytes,
-    exposure_level: str = "PRIVATE",
+    exposure_level: str = ExposureLevel.PRIVATE,
     config: DetectionConfig | None = None,
 ) -> FileClassification:
     """

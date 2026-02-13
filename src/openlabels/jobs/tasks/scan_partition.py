@@ -17,6 +17,7 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import PartitionSpec
+from openlabels.core.constants import RISK_TIER_PRIORITY
 from openlabels.core.types import AdapterType, JobStatus
 from openlabels.exceptions import JobError
 from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
@@ -221,10 +222,9 @@ async def execute_scan_partition_task(
             if result["total_entities"] > 0:
                 folder_stats[folder_path]["has_sensitive"] = True
                 folder_stats[folder_path]["total_entities"] += result["total_entities"]
-                risk_priority = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
                 current_risk = folder_stats[folder_path]["highest_risk"]
                 new_risk = result["risk_tier"]
-                if current_risk is None or risk_priority.get(new_risk, 0) > risk_priority.get(current_risk, 0):
+                if current_risk is None or RISK_TIER_PRIORITY.get(new_risk, 0) > RISK_TIER_PRIORITY.get(current_risk, 0):
                     folder_stats[folder_path]["highest_risk"] = new_risk
 
                 try:

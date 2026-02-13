@@ -812,7 +812,8 @@ class ScanOrchestrator:
                 meta = self._file_metadata.get(file_result.file_path, {})
                 file_info = meta.get("file_info")
                 content_hash = meta.get("content_hash")
-                exposure_level = meta.get("exposure_level", "PRIVATE")
+                from openlabels.core.types import ExposureLevel
+                exposure_level = meta.get("exposure_level", ExposureLevel.PRIVATE)
                 owner = meta.get("owner")
 
                 # ── Risk scoring (full engine, not hardcoded) ──────
@@ -867,8 +868,8 @@ class ScanOrchestrator:
                     if file_result.total_entities > 0:
                         fs["has_sensitive"] = True
                         fs["total_entities"] += file_result.total_entities
-                        _rp = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "MINIMAL": 1}
-                        if fs["highest_risk"] is None or _rp.get(risk_tier, 0) > _rp.get(fs["highest_risk"], 0):
+                        from openlabels.core.constants import RISK_TIER_PRIORITY
+                        if fs["highest_risk"] is None or RISK_TIER_PRIORITY.get(risk_tier, 0) > RISK_TIER_PRIORITY.get(fs["highest_risk"], 0):
                             fs["highest_risk"] = risk_tier
 
                     # ── File inventory update (sensitive files) ────
@@ -946,26 +947,28 @@ class ScanOrchestrator:
         content_score = min(total_entities * 10, 100)
 
         # Exposure multiplier
+        from openlabels.core.types import ExposureLevel
         exposure_multipliers = {
-            "PRIVATE": 1.0,
-            "INTERNAL": 1.2,
-            "ORG_WIDE": 1.5,
-            "PUBLIC": 2.0,
+            ExposureLevel.PRIVATE: 1.0,
+            ExposureLevel.INTERNAL: 1.2,
+            ExposureLevel.ORG_WIDE: 1.5,
+            ExposureLevel.PUBLIC: 2.0,
         }
         multiplier = exposure_multipliers.get(exposure_level, 1.0)
         score = min(int(content_score * multiplier), 100)
 
         # Tier from score
+        from openlabels.core.types import RiskTier
         if score >= 80:
-            tier = "CRITICAL"
+            tier = RiskTier.CRITICAL
         elif score >= 60:
-            tier = "HIGH"
+            tier = RiskTier.HIGH
         elif score >= 40:
-            tier = "MEDIUM"
+            tier = RiskTier.MEDIUM
         elif score >= 10:
-            tier = "LOW"
+            tier = RiskTier.LOW
         else:
-            tier = "MINIMAL"
+            tier = RiskTier.MINIMAL
 
         return score, tier, content_score, multiplier
 

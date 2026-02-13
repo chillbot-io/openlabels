@@ -18,6 +18,7 @@ import httpx
 from openlabels.cli.base import api_client, server_options
 from openlabels.cli.utils import collect_files, handle_http_error, validate_where_filter
 from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.types import ExposureLevel, RiskTier
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 logger = logging.getLogger(__name__)
@@ -88,13 +89,13 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
                     result = await processor.process_file(
                         file_path=str(file_path),
                         content=content,
-                        exposure_level="PRIVATE",
+                        exposure_level=ExposureLevel.PRIVATE,
                     )
                     all_results.append({
                         "file_path": str(file_path),
                         "file_name": result.file_name,
                         "risk_score": result.risk_score,
-                        "risk_tier": result.risk_tier.value if hasattr(result.risk_tier, 'value') else result.risk_tier,
+                        "risk_tier": result.risk_tier,
                         "entity_counts": result.entity_counts,
                         "total_entities": sum(result.entity_counts.values()),
                     })
@@ -123,11 +124,8 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             "files_with_findings": len([r for r in results if r["total_entities"] > 0]),
             "total_entities": sum(r["total_entities"] for r in results),
             "by_tier": {
-                "CRITICAL": len([r for r in results if r["risk_tier"] == "CRITICAL"]),
-                "HIGH": len([r for r in results if r["risk_tier"] == "HIGH"]),
-                "MEDIUM": len([r for r in results if r["risk_tier"] == "MEDIUM"]),
-                "LOW": len([r for r in results if r["risk_tier"] == "LOW"]),
-                "MINIMAL": len([r for r in results if r["risk_tier"] == "MINIMAL"]),
+                tier: len([r for r in results if r["risk_tier"] == tier])
+                for tier in RiskTier
             },
             "by_entity": {},
         }
@@ -163,7 +161,7 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             lines.append(f"Files with findings: {summary['files_with_findings']}")
             lines.append(f"Total entities found: {summary['total_entities']}")
             lines.append("\nBy Risk Tier:")
-            for tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "MINIMAL"]:
+            for tier in reversed(RiskTier):
                 count = summary["by_tier"][tier]
                 if count > 0:
                     lines.append(f"  {tier}: {count}")

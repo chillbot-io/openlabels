@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from openlabels.core.constants import RISK_TIER_ORDER
 from openlabels.monitoring.providers.base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
@@ -101,9 +102,8 @@ class ScanTriggerBuffer:
 
     def _tier_meets_threshold(self, tier: str) -> bool:
         """Check if a risk tier meets the minimum threshold."""
-        tier_order = ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
         try:
-            return tier_order.index(tier) >= tier_order.index(self._min_tier)
+            return RISK_TIER_ORDER.index(tier) >= RISK_TIER_ORDER.index(self._min_tier)
         except ValueError:
             return False
 
