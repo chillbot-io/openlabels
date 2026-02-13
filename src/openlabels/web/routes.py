@@ -20,8 +20,8 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
-from openlabels.core.constants import DEFAULT_QUERY_LIMIT
-from openlabels.core.types import JobStatus
+from openlabels.core.constants import DEFAULT_QUERY_LIMIT, RISK_TIER_ORDER
+from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
@@ -1075,7 +1075,7 @@ async def dashboard_stats_partial(
         scan_stats_query = select(
             func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
             func.sum(
-                case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+                case((ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]), 1), else_=0)
             ).label("active"),
         ).where(ScanJob.tenant_id == user.tenant_id)
 
@@ -1087,7 +1087,7 @@ async def dashboard_stats_partial(
         # Sensitive file stats from ScanResult (matches API's files_with_pii / critical_files)
         file_stats_query = select(
             func.count().label("files_with_pii"),
-            func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label("critical_files"),
+            func.sum(case((ScanResult.risk_tier == RiskTier.CRITICAL, 1), else_=0)).label("critical_files"),
         ).where(ScanResult.tenant_id == user.tenant_id)
 
         result = await session.execute(file_stats_query)
@@ -1231,7 +1231,7 @@ async def risk_distribution_partial(
         rows = result.all()
 
         total = sum(row.count for row in rows) or 1
-        risk_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        risk_order = list(reversed(RISK_TIER_ORDER[1:]))  # CRITICAL..LOW (exclude MINIMAL)
         risk_data = {row.risk_tier: row.count for row in rows}
 
         for level in risk_order:

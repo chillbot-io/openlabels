@@ -14,6 +14,7 @@ from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
 
+from openlabels.core.types import RiskTier
 from openlabels.server.models import ScanResult
 from openlabels.server.services.base import BaseService
 
@@ -390,19 +391,19 @@ class ResultService(BaseService):
 
         stats_query = select(
             func.count().label("files_with_pii"),
-            func.sum(case((ScanResult.risk_tier == "CRITICAL", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.CRITICAL, 1), else_=0)).label(
                 "critical_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "HIGH", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.HIGH, 1), else_=0)).label(
                 "high_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "MEDIUM", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.MEDIUM, 1), else_=0)).label(
                 "medium_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "LOW", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.LOW, 1), else_=0)).label(
                 "low_count"
             ),
-            func.sum(case((ScanResult.risk_tier == "MINIMAL", 1), else_=0)).label(
+            func.sum(case((ScanResult.risk_tier == RiskTier.MINIMAL, 1), else_=0)).label(
                 "minimal_count"
             ),
             func.sum(

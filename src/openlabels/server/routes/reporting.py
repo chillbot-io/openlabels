@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.core.types import JobStatus
+from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
@@ -383,7 +383,7 @@ async def _build_report_data(
         "total_sensitive": len(sensitive_findings),
         "publicly_exposed": publicly_exposed,
         "unlabeled": unlabeled,
-        "critical_count": by_tier.get("CRITICAL", 0),
+        "critical_count": by_tier.get(RiskTier.CRITICAL, 0),
         "by_entity_type": by_entity_type,
         "by_exposure": by_exposure,
     }

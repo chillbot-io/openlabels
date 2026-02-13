@@ -28,6 +28,7 @@ from openlabels.analytics.service import (
     DashboardQueryService,
 )
 from openlabels.auth.dependencies import get_current_user
+from openlabels.core.types import JobStatus
 from openlabels.server.cache import get_cache_manager
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob
@@ -207,7 +208,7 @@ async def get_overall_stats(
     scan_stats_query = select(
         func.count().label("total"),
         func.sum(
-            case((ScanJob.status.in_(["pending", "running"]), 1), else_=0)
+            case((ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]), 1), else_=0)
         ).label("active"),
         func.coalesce(func.sum(ScanJob.files_scanned), 0).label("total_files_scanned"),
     ).where(ScanJob.tenant_id == user.tenant_id)
