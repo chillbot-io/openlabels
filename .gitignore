@@ -67,6 +67,9 @@ credentials.json
 secrets.json
 dump.rdb
 
+# Runtime data (DuckDB/analytics catalog)
+data/
+
 # Internal audit reports
 test_docs/
 
