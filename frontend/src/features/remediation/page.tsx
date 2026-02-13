@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { useRemediationActions, useQuarantine, useLockdown, useRollback } from '@/api/hooks/use-remediation.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
@@ -67,12 +67,12 @@ export function Component() {
     });
   };
 
-  const handleRollback = (actionId: string) => {
+  const handleRollback = useCallback((actionId: string) => {
     rollback.mutate(actionId, {
       onSuccess: () => addToast({ level: 'success', message: 'Rollback initiated' }),
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
-  };
+  }, [rollback, addToast]);
 
   const columns = useMemo<ColumnDef<RemAction, unknown>[]>(() => [
     ...staticColumns,
