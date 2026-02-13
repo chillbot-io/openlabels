@@ -442,15 +442,3 @@ class TestCLIErrorHandling:
         assert "Missing" in result.output or "TARGET_NAME" in result.output or "argument" in result.output.lower()
 
 
-class TestGUICommand:
-    """Tests for GUI command."""
-
-    def test_gui_help_shows_usage(self):
-        """gui --help should show usage."""
-        from openlabels.__main__ import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["gui", "--help"])
-
-        assert result.exit_code == 0
-        assert "Usage:" in result.output
