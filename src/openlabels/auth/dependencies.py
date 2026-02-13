@@ -206,7 +206,7 @@ def require_role(*allowed_roles: str) -> _RoleDep:
         @router.delete("/{id}", dependencies=[Depends(require_role("admin"))])
         async def delete_item(id: UUID): ...
 
-        @router.get("/report", dependencies=[Depends(require_role("admin", "operator"))])
+        @router.get("/report", dependencies=[Depends(require_role("admin", "viewer"))])
         async def get_report(): ...
     """
     async def _check_role(
@@ -229,5 +229,5 @@ def require_role(*allowed_roles: str) -> _RoleDep:
 
 # Pre-built dependencies for common roles.
 require_admin: _RoleDep = require_role("admin")
-require_operator: _RoleDep = require_role("admin", "operator")
-require_viewer: _RoleDep = require_role("admin", "operator", "viewer")
+require_operator: _RoleDep = require_role("admin")
+require_viewer: _RoleDep = require_role("admin", "viewer")

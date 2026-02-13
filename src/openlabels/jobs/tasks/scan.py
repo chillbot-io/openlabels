@@ -187,6 +187,10 @@ async def execute_scan_task(
     job_id = UUID(payload["job_id"])
     force_full_scan = payload.get("force_full_scan", False)
 
+    # Rescan mode: scan a single file instead of the whole target
+    rescan_file_path: str | None = payload.get("file_path")
+    rescan_result_id: str | None = payload.get("result_id")
+
     job = await session.get(ScanJob, job_id)
 
     if not job:
@@ -212,7 +216,8 @@ async def execute_scan_task(
         )
 
     # Check if this scan should be split into partitions (fan-out)
-    if not payload.get("_skip_fanout"):
+    # Skip fan-out for single-file rescans
+    if not payload.get("_skip_fanout") and not rescan_file_path:
         try:
             from openlabels.jobs.coordinator import ScanCoordinator
             coordinator = ScanCoordinator(session, job.tenant_id)
@@ -269,8 +274,12 @@ async def execute_scan_task(
         "low_count": 0,
         "minimal_count": 0,
         "files_skipped": 0,  # Delta scan skips
-        "scan_mode": "full" if force_full_scan else "delta",
+        "scan_mode": "rescan" if rescan_file_path else ("full" if force_full_scan else "delta"),
     }
+
+    # Force full scan for rescans (bypass delta check — the user explicitly wants a fresh scan)
+    if rescan_file_path:
+        force_full_scan = True
 
     try:
         # Get target path from config
@@ -299,6 +308,41 @@ async def execute_scan_task(
             )
 
         async def _iter_all_files():
+            # Single-file rescan: yield only the target file
+            if rescan_file_path:
+                # Build FileInfo from the original scan result if available
+                original: ScanResult | None = None
+                if rescan_result_id:
+                    stmt = select(ScanResult).where(
+                        ScanResult.id == UUID(rescan_result_id),
+                        ScanResult.tenant_id == job.tenant_id,
+                    )
+                    original = (await session.execute(stmt)).scalar_one_or_none()
+
+                if original:
+                    fi = FileInfo(
+                        path=rescan_file_path,
+                        name=original.file_name,
+                        size=original.file_size,
+                        modified=original.file_modified or datetime.now(timezone.utc),
+                        owner=original.owner,
+                        exposure=ExposureLevel(original.exposure_level) if original.exposure_level else ExposureLevel.PRIVATE,
+                        adapter=target.adapter,
+                        item_id=original.adapter_item_id,
+                    )
+                else:
+                    # Fallback: construct minimal FileInfo from path alone
+                    import os
+                    fi = FileInfo(
+                        path=rescan_file_path,
+                        name=os.path.basename(rescan_file_path),
+                        size=0,
+                        modified=datetime.now(timezone.utc),
+                        adapter=target.adapter,
+                    )
+                yield fi
+                return
+
             for sp in scan_paths:
                 try:
                     async for fi in adapter.list_files(sp):

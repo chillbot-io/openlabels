@@ -5,7 +5,6 @@ import { RefreshCw } from 'lucide-react';
 import { useLabels, useSyncLabels } from '@/api/hooks/use-labels.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { Badge } from '@/components/ui/badge.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type { Label } from '@/api/types.ts';
 
@@ -14,7 +13,7 @@ const columns: ColumnDef<Label, unknown>[] = [
     <div className="flex items-center gap-2">
       <span
         className="h-3 w-3 rounded-full"
-        style={{ backgroundColor: row.original.color }}
+        style={{ backgroundColor: row.original.color ?? undefined }}
         aria-hidden="true"
       />
       <span className="font-medium">{row.original.name}</span>

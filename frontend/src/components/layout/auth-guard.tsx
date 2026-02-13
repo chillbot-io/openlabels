@@ -9,10 +9,15 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     checkAuth();
   }, [checkAuth]);
 
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      window.location.href = '/api/v1/auth/login';
+    }
+  }, [isLoading, isAuthenticated]);
+
   if (isLoading) return <LoadingSkeleton />;
 
   if (!isAuthenticated) {
-    window.location.href = '/api/v1/auth/login';
     return null;
   }
 

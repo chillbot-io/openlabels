@@ -9,35 +9,46 @@ const STATUS_STYLES: Record<string, string> = {
   unhealthy: 'bg-red-100 text-red-700',
 };
 
+const HEALTH_COMPONENTS = ['db', 'queue', 'ml', 'mip', 'ocr'] as const;
+
+const healthDot = (status: string) =>
+  status === 'healthy' ? 'bg-green-500' : status === 'warning' ? 'bg-yellow-500' : 'bg-red-500';
+
 export function SystemStatus() {
   const health = useHealth();
 
   if (health.isLoading) return <Skeleton className="h-32" />;
   if (!health.data) return null;
 
-  const { status, components, uptime_seconds } = health.data;
-  const uptimeHours = Math.floor(uptime_seconds / 3600);
-  const uptimeMins = Math.floor((uptime_seconds % 3600) / 60);
+  const data = health.data;
+
+  // Derive overall status from component statuses
+  const overallStatus = HEALTH_COMPONENTS.some((c) => data[c] === 'error')
+    ? 'unhealthy'
+    : HEALTH_COMPONENTS.some((c) => data[c] === 'warning')
+      ? 'degraded'
+      : 'healthy';
+
+  const uptimeHours = data.uptime_seconds != null ? Math.floor(data.uptime_seconds / 3600) : 0;
+  const uptimeMins = data.uptime_seconds != null ? Math.floor((data.uptime_seconds % 3600) / 60) : 0;
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">System Status</CardTitle>
-          <Badge className={STATUS_STYLES[status] ?? ''}>{status}</Badge>
+          <Badge className={STATUS_STYLES[overallStatus] ?? ''}>{overallStatus}</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-2">
-          {Object.entries(components).map(([name, comp]) => (
+          {HEALTH_COMPONENTS.map((name) => (
             <div key={name} className="flex items-center justify-between text-sm">
               <span className="capitalize">{name}</span>
               <div className="flex items-center gap-2">
-                {comp.latency_ms !== undefined && (
-                  <span className="text-xs text-[var(--muted-foreground)]">{comp.latency_ms}ms</span>
-                )}
-                <span className={`h-2 w-2 rounded-full ${comp.status === 'healthy' ? 'bg-green-500' : comp.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'}`} aria-hidden="true" />
-                <span className="sr-only">{comp.status}</span>
+                <span className="text-xs text-[var(--muted-foreground)]">{data[`${name}_text` as keyof typeof data] as string}</span>
+                <span className={`h-2 w-2 rounded-full ${healthDot(data[name])}`} aria-hidden="true" />
+                <span className="sr-only">{data[name]}</span>
               </div>
             </div>
           ))}

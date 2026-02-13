@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth-store.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type { AllSettings } from '@/api/types.ts';
 
-type SettingsCategory = 'azure' | 'scan' | 'entities';
+type SettingsCategory = 'azure' | 'scan' | 'entities' | 'fanout';
 
 function SettingsTab({ category, settings }: { category: SettingsCategory; settings: AllSettings }) {
   const updateSettings = useUpdateSettings();
@@ -53,16 +53,34 @@ function SettingsTab({ category, settings }: { category: SettingsCategory; setti
   return (
     <Card>
       <CardContent className="space-y-4 p-6">
-        {Object.entries(formValues).map(([key, value]) => (
-          <div key={key} className="space-y-1">
-            <Label htmlFor={`setting-${key}`}>{key.replace(/_/g, ' ')}</Label>
-            <Input
-              id={`setting-${key}`}
-              value={value}
-              onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: e.target.value }))}
-            />
-          </div>
-        ))}
+        {Object.entries(formValues).map(([key, value]) => {
+          const original = (categoryData as Record<string, unknown>)[key];
+          const isBool = typeof original === 'boolean';
+
+          return (
+            <div key={key} className="space-y-1">
+              <Label htmlFor={`setting-${key}`}>{key.replace(/_/g, ' ')}</Label>
+              {isBool ? (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`setting-${key}`}
+                    checked={value === 'true'}
+                    onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: String(e.target.checked) }))}
+                    className="rounded"
+                  />
+                  <span className="text-sm">{value === 'true' ? 'Enabled' : 'Disabled'}</span>
+                </label>
+              ) : (
+                <Input
+                  id={`setting-${key}`}
+                  value={value}
+                  onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                />
+              )}
+            </div>
+          );
+        })}
         <Button onClick={handleSave} disabled={updateSettings.isPending}>
           {updateSettings.isPending ? 'Saving...' : 'Save'}
         </Button>
@@ -121,12 +139,14 @@ export function Component() {
           <TabsTrigger value="azure">Azure AD</TabsTrigger>
           <TabsTrigger value="scan">Scan</TabsTrigger>
           <TabsTrigger value="entities">Entities</TabsTrigger>
+          <TabsTrigger value="fanout">Fanout</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
         </TabsList>
 
         <TabsContent value="azure"><SettingsTab category="azure" settings={settings.data} /></TabsContent>
         <TabsContent value="scan"><SettingsTab category="scan" settings={settings.data} /></TabsContent>
         <TabsContent value="entities"><SettingsTab category="entities" settings={settings.data} /></TabsContent>
+        <TabsContent value="fanout"><SettingsTab category="fanout" settings={settings.data} /></TabsContent>
         <TabsContent value="users"><UsersTab /></TabsContent>
       </Tabs>
     </div>

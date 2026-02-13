@@ -45,7 +45,15 @@ WORKER_STATE_TTL_SECONDS = 60  # Workers should heartbeat to stay registered
 
 # Global state manager instance
 _state_manager: Optional[WorkerStateManager] = None
-_state_manager_lock = asyncio.Lock()
+_state_manager_lock: asyncio.Lock | None = None
+
+
+def _get_state_manager_lock() -> asyncio.Lock:
+    """Get or create the state manager lock within a running event loop."""
+    global _state_manager_lock
+    if _state_manager_lock is None:
+        _state_manager_lock = asyncio.Lock()
+    return _state_manager_lock
 
 
 class InMemoryWorkerState:
@@ -314,7 +322,7 @@ async def get_worker_state_manager() -> WorkerStateManager:
     """
     global _state_manager
 
-    async with _state_manager_lock:
+    async with _get_state_manager_lock():
         if _state_manager is None:
             settings = get_settings()
             redis_config = settings.redis
@@ -335,7 +343,7 @@ async def close_worker_state_manager() -> None:
     """Close the global worker state manager."""
     global _state_manager
 
-    async with _state_manager_lock:
+    async with _get_state_manager_lock():
         if _state_manager:
             await _state_manager.close()
             _state_manager = None
@@ -707,6 +715,8 @@ class Worker:
             elif job.task_type == "export":
                 from openlabels.jobs.tasks.export import execute_export_task
                 result = await execute_export_task(session, job.payload)
+            elif job.task_type == "rescan":
+                result = await execute_scan_task(session, job.payload)
             else:
                 raise JobError(
                     f"Unknown task type: {job.task_type}",
@@ -756,6 +766,11 @@ class Worker:
             # Catch-all for runtime issues
             error_msg = f"Runtime error in {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with runtime error: {error_msg}")
+            await queue.fail(job.id, error_msg)
+        except Exception as e:
+            # Catch-all for any other unexpected exception types
+            error_msg = f"Unexpected error in {job.task_type} task: {type(e).__name__}: {e}"
+            logger.error(f"Job {job.id} failed with unexpected error: {error_msg}", exc_info=True)
             await queue.fail(job.id, error_msg)
 
 

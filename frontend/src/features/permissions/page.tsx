@@ -39,18 +39,48 @@ export function Component() {
       <h1 className="text-2xl font-bold">Permissions Explorer</h1>
 
       {/* Exposure summary */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
         {exposureSummary.isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)
+          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)
         ) : exposureSummary.data ? (
-          EXPOSURE_LEVELS.map((level) => (
-            <Card key={level}>
+          <>
+            <Card>
               <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data[level]}</p>
-                <Badge className={EXPOSURE_COLORS[level]}>{level}</Badge>
+                <p className="text-2xl font-bold">{exposureSummary.data.total_directories}</p>
+                <p className="text-xs text-[var(--muted-foreground)]">Total Dirs</p>
               </CardContent>
             </Card>
-          ))
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold">{exposureSummary.data.world_accessible}</p>
+                <Badge className={EXPOSURE_COLORS.PUBLIC}>Public</Badge>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold">{exposureSummary.data.authenticated_users}</p>
+                <Badge className={EXPOSURE_COLORS.ORG_WIDE}>Org-Wide</Badge>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold">{exposureSummary.data.custom_acl}</p>
+                <Badge className={EXPOSURE_COLORS.INTERNAL}>Custom ACL</Badge>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold">{exposureSummary.data.private}</p>
+                <Badge className={EXPOSURE_COLORS.PRIVATE}>Private</Badge>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-2xl font-bold">{exposureSummary.data.with_security_descriptor}</p>
+                <p className="text-xs text-[var(--muted-foreground)]">With SD</p>
+              </CardContent>
+            </Card>
+          </>
         ) : null}
       </div>
 

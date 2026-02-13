@@ -569,13 +569,9 @@ class HyperscanMatcher:
         try:
             self._db.scan(text_bytes, match_event_handler=on_match, scratch=self._scratch)
             if callback_count[0] == 0:
-                # Debug: no callbacks at all - this helps diagnose scanning issues
-                import sys
-                print(f"DEBUG: Hyperscan scan returned 0 callbacks for text len={len(text)}", file=sys.stderr)
+                logger.debug("Hyperscan scan returned 0 callbacks for text len=%d", len(text))
         except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Hyperscan scan error: {e}")
-            import sys
-            print(f"DEBUG: Hyperscan scan exception: {e}", file=sys.stderr)
 
         return matches
 
