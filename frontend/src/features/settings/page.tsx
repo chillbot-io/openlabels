@@ -1,54 +1,71 @@
+import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings } from '@/api/hooks/use-settings.ts';
 import { useUsers } from '@/api/hooks/use-users.ts';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Card, CardContent } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
+import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { useAuthStore } from '@/stores/auth-store.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
-import type { Setting } from '@/api/types.ts';
+import type { AllSettings } from '@/api/types.ts';
 
-function SettingsTab({ category }: { category: string }) {
-  const settings = useSettings();
+type SettingsCategory = 'azure' | 'scan' | 'entities';
+
+function SettingsTab({ category, settings }: { category: SettingsCategory; settings: AllSettings }) {
   const updateSettings = useUpdateSettings();
   const addToast = useUIStore((s) => s.addToast);
+  const categoryData = settings[category];
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
 
-  const filtered = (settings.data ?? []).filter((s: Setting) => s.category === category);
+  useEffect(() => {
+    const initial: Record<string, string> = {};
+    for (const [key, value] of Object.entries(categoryData)) {
+      initial[key] = Array.isArray(value) ? value.join(', ') : String(value ?? '');
+    }
+    setFormValues(initial);
+  }, [categoryData]);
 
-  if (settings.isLoading) return <Skeleton className="h-48" />;
+  const handleSave = () => {
+    const payload: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(formValues)) {
+      const original = (categoryData as Record<string, unknown>)[key];
+      if (Array.isArray(original)) {
+        payload[key] = value.split(',').map((v) => v.trim()).filter(Boolean);
+      } else if (typeof original === 'number') {
+        payload[key] = Number(value);
+      } else if (typeof original === 'boolean') {
+        payload[key] = value === 'true';
+      } else {
+        payload[key] = value;
+      }
+    }
+    updateSettings.mutate(
+      { category, settings: payload },
+      {
+        onSuccess: () => addToast({ level: 'success', message: `${category} settings updated` }),
+        onError: (err) => addToast({ level: 'error', message: err.message }),
+      },
+    );
+  };
 
   return (
     <Card>
       <CardContent className="space-y-4 p-6">
-        {filtered.length === 0 ? (
-          <p className="text-sm text-[var(--muted-foreground)]">No settings in this category</p>
-        ) : (
-          filtered.map((setting: Setting) => (
-            <div key={setting.key} className="space-y-1">
-              <Label htmlFor={`setting-${setting.key}`}>{setting.key}</Label>
-              <p className="text-xs text-[var(--muted-foreground)]" id={`setting-desc-${setting.key}`}>{setting.description}</p>
-              <div className="flex gap-2">
-                <Input
-                  id={`setting-${setting.key}`}
-                  aria-describedby={`setting-desc-${setting.key}`}
-                  defaultValue={String(setting.value ?? '')}
-                  onBlur={(e) => {
-                    if (e.target.value !== String(setting.value ?? '')) {
-                      updateSettings.mutate(
-                        { category, settings: { [setting.key]: e.target.value } },
-                        {
-                          onSuccess: () => addToast({ level: 'success', message: `${setting.key} updated` }),
-                          onError: (err) => addToast({ level: 'error', message: err.message }),
-                        },
-                      );
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          ))
-        )}
+        {Object.entries(formValues).map(([key, value]) => (
+          <div key={key} className="space-y-1">
+            <Label htmlFor={`setting-${key}`}>{key.replace(/_/g, ' ')}</Label>
+            <Input
+              id={`setting-${key}`}
+              value={value}
+              onChange={(e) => setFormValues((prev) => ({ ...prev, [key]: e.target.value }))}
+            />
+          </div>
+        ))}
+        <Button onClick={handleSave} disabled={updateSettings.isPending}>
+          {updateSettings.isPending ? 'Saving...' : 'Save'}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -81,32 +98,37 @@ function UsersTab() {
 export function Component() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
+  const settings = useSettings();
+
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="mt-4 text-[var(--muted-foreground)]" role="alert">Settings are only accessible to administrators.</p>
+      </div>
+    );
+  }
+
+  if (settings.isLoading) return <Skeleton className="m-6 h-48" />;
+  if (!settings.data) return null;
 
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      {!isAdmin ? (
-        <p className="text-[var(--muted-foreground)]" role="alert">Settings are only accessible to administrators.</p>
-      ) : (
-        <Tabs defaultValue="general">
-          <TabsList aria-label="Settings categories">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="azure">Azure AD</TabsTrigger>
-            <TabsTrigger value="detection">Detection</TabsTrigger>
-            <TabsTrigger value="entities">Entities</TabsTrigger>
-            <TabsTrigger value="adapters">Adapters</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="azure">
+        <TabsList aria-label="Settings categories">
+          <TabsTrigger value="azure">Azure AD</TabsTrigger>
+          <TabsTrigger value="scan">Scan</TabsTrigger>
+          <TabsTrigger value="entities">Entities</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="general"><SettingsTab category="general" /></TabsContent>
-          <TabsContent value="azure"><SettingsTab category="azure" /></TabsContent>
-          <TabsContent value="detection"><SettingsTab category="detection" /></TabsContent>
-          <TabsContent value="entities"><SettingsTab category="entities" /></TabsContent>
-          <TabsContent value="adapters"><SettingsTab category="adapters" /></TabsContent>
-          <TabsContent value="users"><UsersTab /></TabsContent>
-        </Tabs>
-      )}
+        <TabsContent value="azure"><SettingsTab category="azure" settings={settings.data} /></TabsContent>
+        <TabsContent value="scan"><SettingsTab category="scan" settings={settings.data} /></TabsContent>
+        <TabsContent value="entities"><SettingsTab category="entities" settings={settings.data} /></TabsContent>
+        <TabsContent value="users"><UsersTab /></TabsContent>
+      </Tabs>
     </div>
   );
 }

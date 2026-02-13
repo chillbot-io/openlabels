@@ -15,8 +15,8 @@ import type { RemediationAction as RemAction } from '@/api/types.ts';
 import type { ScanStatus } from '@/lib/constants.ts';
 
 const columns: ColumnDef<RemAction, unknown>[] = [
-  { accessorKey: 'file_path', header: 'File', cell: ({ row }) => (
-    <span className="font-mono text-xs">{truncatePath(row.original.file_path)}</span>
+  { accessorKey: 'source_path', header: 'File', cell: ({ row }) => (
+    <span className="font-mono text-xs">{truncatePath(row.original.source_path)}</span>
   )},
   { accessorKey: 'action_type', header: 'Action', cell: ({ row }) => (
     <Badge variant="outline" className="capitalize">{row.original.action_type}</Badge>
@@ -24,7 +24,6 @@ const columns: ColumnDef<RemAction, unknown>[] = [
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => (
     <StatusBadge status={row.original.status as ScanStatus} />
   )},
-  { accessorKey: 'performed_by', header: 'By' },
   { accessorKey: 'dry_run', header: 'Dry Run', cell: ({ row }) => row.original.dry_run ? 'Yes' : 'No' },
   { accessorKey: 'created_at', header: 'Date', cell: ({ row }) => formatDateTime(row.original.created_at) },
 ];
@@ -63,7 +62,7 @@ export function Component() {
   };
 
   const handleLockdown = () => {
-    lockdown.mutate({ file_path: filePath, principals: principals.split(',').map((p) => p.trim()).filter(Boolean), dry_run: dryRun }, {
+    lockdown.mutate({ file_path: filePath, allowed_principals: principals.split(',').map((p) => p.trim()).filter(Boolean), dry_run: dryRun }, {
       onSuccess: () => { addToast({ level: 'success', message: 'Lockdown initiated' }); closeDialog(); },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
@@ -83,7 +82,7 @@ export function Component() {
       header: '',
       cell: ({ row }) =>
         (row.original.status === 'completed' && row.original.action_type !== 'rollback') ? (
-          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRollback(row.original.id); }} aria-label={`Rollback action on ${row.original.file_path}`}>
+          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleRollback(row.original.id); }} aria-label={`Rollback action on ${row.original.source_path}`}>
             Rollback
           </Button>
         ) : null,

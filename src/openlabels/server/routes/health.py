@@ -179,74 +179,71 @@ async def get_health_status(
         status["queue"] = "warning"
         status["queue_text"] = "Unknown"
 
-    # Check ML models
-    try:
-        from openlabels.core.detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
-        # Check if models are loadable
-        models_available = []
+    # SECURITY: Detailed component checks only for authenticated users.
+    # Unauthenticated probes (load balancers) only see api/db/queue.
+    if user is not None:
+        # Check ML models
         try:
-            detector = PIIBertONNXDetector()
-            if detector._session is not None:
-                models_available.append("PII-BERT")
-        except (OSError, RuntimeError, ValueError) as e:
-            # Model loading failures are expected if models aren't installed
-            logger.info(f"PII-BERT model not available: {type(e).__name__}: {e}")
+            from openlabels.core.detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
+            models_available = []
+            try:
+                detector = PIIBertONNXDetector()
+                if detector._session is not None:
+                    models_available.append("PII-BERT")
+            except (OSError, RuntimeError, ValueError) as e:
+                logger.info(f"PII-BERT model not available: {type(e).__name__}: {e}")
 
-        try:
-            detector = PHIBertONNXDetector()
-            if detector._session is not None:
-                models_available.append("PHI-BERT")
-        except (OSError, RuntimeError, ValueError) as e:
-            # Model loading failures are expected if models aren't installed
-            logger.info(f"PHI-BERT model not available: {type(e).__name__}: {e}")
+            try:
+                detector = PHIBertONNXDetector()
+                if detector._session is not None:
+                    models_available.append("PHI-BERT")
+            except (OSError, RuntimeError, ValueError) as e:
+                logger.info(f"PHI-BERT model not available: {type(e).__name__}: {e}")
 
-        if models_available:
-            status["ml"] = "healthy"
-            status["ml_text"] = f"{len(models_available)} models"
-        else:
+            if models_available:
+                status["ml"] = "healthy"
+                status["ml_text"] = f"{len(models_available)} models"
+            else:
+                status["ml"] = "warning"
+                status["ml_text"] = "No models"
+        except ImportError:
             status["ml"] = "warning"
-            status["ml_text"] = "No models"
-    except ImportError:
-        status["ml"] = "warning"
-        status["ml_text"] = "Not installed"
-    except (OSError, RuntimeError, ValueError) as e:
-        # Log ML check failures - may indicate configuration issues
-        logger.warning(f"ML health check failed: {type(e).__name__}: {e}")
-        status["ml"] = "warning"
-        status["ml_text"] = "Not loaded"
+            status["ml_text"] = "Not installed"
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.warning(f"ML health check failed: {type(e).__name__}: {e}")
+            status["ml"] = "warning"
+            status["ml_text"] = "Not loaded"
 
-    # Check MIP SDK
-    try:
-        if sys.platform == "win32":
-            from openlabels.labeling.mip import MIPClient
-            status["mip"] = "healthy"
-            status["mip_text"] = "Available"
-        else:
+        # Check MIP SDK
+        try:
+            if sys.platform == "win32":
+                from openlabels.labeling.mip import MIPClient
+                status["mip"] = "healthy"
+                status["mip_text"] = "Available"
+            else:
+                status["mip"] = "warning"
+                status["mip_text"] = "Windows only"
+        except ImportError:
             status["mip"] = "warning"
-            status["mip_text"] = "Windows only"
-    except ImportError:
-        status["mip"] = "warning"
-        status["mip_text"] = "Not installed"
-    except (OSError, RuntimeError) as e:
-        # Log MIP SDK failures - labeling features will be unavailable
-        logger.info(f"MIP SDK check failed (labeling unavailable): {type(e).__name__}: {e}")
-        status["mip"] = "warning"
-        status["mip_text"] = "Not available"
+            status["mip_text"] = "Not installed"
+        except (OSError, RuntimeError) as e:
+            logger.info(f"MIP SDK check failed (labeling unavailable): {type(e).__name__}: {e}")
+            status["mip"] = "warning"
+            status["mip_text"] = "Not available"
 
-    # Check OCR
-    try:
-        import pytesseract
-        version = pytesseract.get_tesseract_version()
-        status["ocr"] = "healthy"
-        status["ocr_text"] = f"Tesseract {version}"
-    except ImportError:
-        status["ocr"] = "warning"
-        status["ocr_text"] = "Not installed"
-    except (OSError, RuntimeError) as e:
-        # Log OCR failures - image processing will be degraded
-        logger.info(f"OCR check failed (image text extraction unavailable): {type(e).__name__}: {e}")
-        status["ocr"] = "warning"
-        status["ocr_text"] = "Not available"
+        # Check OCR
+        try:
+            import pytesseract
+            version = pytesseract.get_tesseract_version()
+            status["ocr"] = "healthy"
+            status["ocr_text"] = f"Tesseract {version}"
+        except ImportError:
+            status["ocr"] = "warning"
+            status["ocr_text"] = "Not installed"
+        except (OSError, RuntimeError) as e:
+            logger.info(f"OCR check failed (image text extraction unavailable): {type(e).__name__}: {e}")
+            status["ocr"] = "warning"
+            status["ocr_text"] = "Not available"
 
     # Get scan statistics (tenant-specific, requires authentication)
     if user is not None:

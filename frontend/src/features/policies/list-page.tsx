@@ -52,6 +52,7 @@ export function Component() {
         if (confirm('Delete this policy?')) {
           deletePolicy.mutate(row.original.id, {
             onSuccess: () => addToast({ level: 'success', message: 'Policy deleted' }),
+            onError: (err) => addToast({ level: 'error', message: err.message }),
           });
         }
       }}>

@@ -1,23 +1,33 @@
 import { useState } from 'react';
 import { useHealth, useJobQueue, useActivityLog } from '@/api/hooks/use-monitoring.ts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
-import { StatusBadge } from '@/components/status-badge.tsx';
+import { Button } from '@/components/ui/button.tsx';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { formatRelativeTime, formatNumber } from '@/lib/utils.ts';
-import type { ScanStatus } from '@/lib/constants.ts';
+
+const healthColor: Record<string, string> = {
+  healthy: 'bg-green-500',
+  warning: 'bg-yellow-500',
+  error: 'bg-red-500',
+};
+
+const HEALTH_COMPONENTS = ['db', 'queue', 'ml', 'mip', 'ocr'] as const;
 
 export function Component() {
   const health = useHealth();
   const jobQueue = useJobQueue();
-  const [activityPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
   const activity = useActivityLog({ page: activityPage, page_size: 20 });
 
-  const healthColor = {
-    healthy: 'bg-green-500',
-    degraded: 'bg-yellow-500',
-    unhealthy: 'bg-red-500',
-  };
+  // Derive overall status from component statuses
+  const overallStatus = health.data
+    ? HEALTH_COMPONENTS.some((c) => health.data[c] === 'error')
+      ? 'error'
+      : HEALTH_COMPONENTS.some((c) => health.data[c] === 'warning')
+        ? 'warning'
+        : 'healthy'
+    : 'healthy';
 
   return (
     <div className="space-y-6 p-6">
@@ -37,33 +47,51 @@ export function Component() {
             <>
               <Card>
                 <CardContent className="flex items-center gap-4 p-6">
-                  <span className={`h-4 w-4 rounded-full ${healthColor[health.data.status]}`} role="img" aria-label={`System status: ${health.data.status}`} />
+                  <span className={`h-4 w-4 rounded-full ${healthColor[overallStatus] ?? 'bg-gray-400'}`} role="img" aria-label={`System status: ${overallStatus}`} />
                   <div>
-                    <p className="text-lg font-semibold capitalize">{health.data.status}</p>
-                    <p className="text-sm text-[var(--muted-foreground)]">
-                      Uptime: {Math.floor(health.data.uptime_seconds / 3600)}h
-                    </p>
+                    <p className="text-lg font-semibold capitalize">{overallStatus}</p>
+                    {health.data.uptime_seconds != null && (
+                      <p className="text-sm text-[var(--muted-foreground)]">
+                        Uptime: {Math.floor(health.data.uptime_seconds / 3600)}h
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
 
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                {Object.entries(health.data.components).map(([name, comp]) => (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+                {HEALTH_COMPONENTS.map((name) => (
                   <Card key={name}>
                     <CardContent className="p-4">
                       <div className="flex items-center gap-2">
-                        <span className={`h-2.5 w-2.5 rounded-full ${healthColor[comp.status]}`} role="img" aria-label={`${name} status: ${comp.status}`} />
-                        <p className="text-sm font-medium capitalize">{name}</p>
+                        <span className={`h-2.5 w-2.5 rounded-full ${healthColor[health.data[name]] ?? 'bg-gray-400'}`} role="img" aria-label={`${name} status: ${health.data[name]}`} />
+                        <p className="text-sm font-medium uppercase">{name}</p>
                       </div>
-                      {comp.latency_ms !== undefined && (
-                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">{comp.latency_ms}ms</p>
-                      )}
-                      {comp.message && (
-                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">{comp.message}</p>
-                      )}
+                      <p className="mt-1 text-xs text-[var(--muted-foreground)]">{health.data[`${name}_text` as keyof typeof health.data] as string}</p>
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold">{formatNumber(health.data.scans_today)}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Scans Today</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold">{formatNumber(health.data.files_processed)}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Files Processed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold">{health.data.success_rate.toFixed(1)}%</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Success Rate</p>
+                  </CardContent>
+                </Card>
               </div>
             </>
           ) : null}
@@ -131,6 +159,17 @@ export function Component() {
               )}
             </CardContent>
           </Card>
+          {activity.data && (
+            <div className="flex justify-center gap-2">
+              <Button variant="outline" size="sm" disabled={activityPage <= 1} onClick={() => setActivityPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <span className="flex items-center text-sm text-[var(--muted-foreground)]">Page {activityPage}</span>
+              <Button variant="outline" size="sm" disabled={!activity.data.has_next} onClick={() => setActivityPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

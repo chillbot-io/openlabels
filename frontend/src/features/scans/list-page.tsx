@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
-import { useScans, useCreateScan } from '@/api/hooks/use-scans.ts';
+import { useScans, useCreateScans } from '@/api/hooks/use-scans.ts';
 import { useTargets } from '@/api/hooks/use-targets.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { StatusBadge } from '@/components/status-badge.tsx';
@@ -28,12 +28,12 @@ export function Component() {
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const scans = useScans({ page: page + 1, page_size: 20 });
   const targets = useTargets();
-  const createScan = useCreateScan();
+  const createScan = useCreateScans();
   const addToast = useUIStore((s) => s.addToast);
 
   const handleCreate = () => {
     if (selectedTargets.length === 0) return;
-    createScan.mutate({ target_ids: selectedTargets }, {
+    createScan.mutate(selectedTargets, {
       onSuccess: () => {
         setDialogOpen(false);
         setSelectedTargets([]);

@@ -695,6 +695,7 @@ class CatalogSettings(BaseSettings):
         OPENLABELS_CATALOG__AZURE__CONTAINER=my-container
     """
 
+    enabled: bool = False
     backend: Literal["local", "s3", "azure"] = "local"
     local_path: str = "data/catalog"
 

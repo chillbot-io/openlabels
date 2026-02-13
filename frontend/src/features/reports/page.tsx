@@ -37,7 +37,7 @@ function ResultsGrid({ result }: { result: QueryResult }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            const csv = [result.columns.join(','), ...result.rows.map((r) => r.map((c) => JSON.stringify(c ?? '')).join(','))].join('\n');
+            const csv = [result.columns.map((c) => JSON.stringify(c)).join(','), ...result.rows.map((r) => r.map((c) => JSON.stringify(c ?? '')).join(','))].join('\n');
             downloadBlob(new Blob([csv], { type: 'text/csv' }), `query-results-${Date.now()}.csv`);
           }}
         >

@@ -1,13 +1,13 @@
 import { apiFetch } from '../client.ts';
-import type { Setting } from '../types.ts';
+import type { AllSettings, SettingsUpdateResponse } from '../types.ts';
 
 export const settingsApi = {
   list: () =>
-    apiFetch<Setting[]>('/settings'),
+    apiFetch<AllSettings>('/settings'),
 
   update: (category: string, settings: Record<string, unknown>) =>
-    apiFetch<Setting[]>(`/settings/${category}`, { method: 'POST', body: settings }),
+    apiFetch<SettingsUpdateResponse>(`/settings/${category}`, { method: 'POST', body: settings }),
 
   reset: () =>
-    apiFetch<Setting[]>('/settings/reset', { method: 'POST' }),
+    apiFetch<SettingsUpdateResponse>('/settings/reset', { method: 'POST' }),
 };

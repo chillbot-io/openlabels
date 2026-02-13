@@ -36,6 +36,7 @@ export function useRollback() {
     mutationFn: remediationApi.rollback,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['remediation'] });
+      queryClient.invalidateQueries({ queryKey: ['results'] });
     },
   });
 }
