@@ -121,6 +121,8 @@ dev = [
     "rapidocr-onnxruntime>=1.3.0",
     # High-performance regex (optional, may need system libs)
     "hyperscan>=0.7.0",
+    # Rust extension build tooling
+    "maturin>=1.4.0",
 ]
 # SIMD-accelerated regex for high-performance pattern matching
 hyperscan = [

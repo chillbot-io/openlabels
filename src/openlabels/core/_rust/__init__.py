@@ -3,19 +3,66 @@
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_RUST_DIR = Path(__file__).resolve().parent
 _RUST_AVAILABLE = False
+
+
+def _auto_build_rust() -> bool:
+    """Try to build the Rust extension with maturin if both maturin and rustc are available."""
+    if not shutil.which("rustc"):
+        logger.info("Rust toolchain not found, skipping auto-build")
+        return False
+    if not shutil.which("maturin"):
+        logger.info("maturin not found, skipping auto-build (pip install maturin)")
+        return False
+    if not (_RUST_DIR / "Cargo.toml").is_file():
+        return False
+
+    logger.info("Building Rust pattern matcher with maturin (this may take a moment)...")
+    try:
+        result = subprocess.run(
+            ["maturin", "develop", "--release"],
+            cwd=str(_RUST_DIR),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode == 0:
+            logger.info("Rust pattern matcher built successfully")
+            return True
+        else:
+            logger.warning("Rust auto-build failed (exit %d): %s", result.returncode, result.stderr)
+            return False
+    except Exception as exc:
+        logger.warning("Rust auto-build error: %s", exc)
+        return False
+
+
 try:
     from openlabels_matcher import PatternMatcher as RustPatternMatcher
     from openlabels_matcher import RawMatch
     _RUST_AVAILABLE = True
     logger.info("Rust pattern matcher loaded successfully")
 except ImportError:
-    logger.warning("Rust pattern matcher not available, using Python fallback")
-    RustPatternMatcher = None
+    if _auto_build_rust():
+        try:
+            from openlabels_matcher import PatternMatcher as RustPatternMatcher
+            from openlabels_matcher import RawMatch
+            _RUST_AVAILABLE = True
+            logger.info("Rust pattern matcher loaded after auto-build")
+        except ImportError:
+            logger.warning("Rust pattern matcher import failed after build, using Python fallback")
+            RustPatternMatcher = None
+    else:
+        logger.warning("Rust pattern matcher not available, using Python fallback")
+        RustPatternMatcher = None
 
 
 @dataclass
