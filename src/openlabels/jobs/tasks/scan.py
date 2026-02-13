@@ -788,26 +788,16 @@ def _get_adapter(adapter_type: str, config: dict):
         return FilesystemAdapter(
             service_account=config.get("service_account"),
         )
-    elif adapter_type == "sharepoint":
+    elif adapter_type in ("sharepoint", "onedrive"):
         if not settings.auth.tenant_id or not settings.auth.client_id:
+            display_name = "SharePoint" if adapter_type == "sharepoint" else "OneDrive"
             raise AdapterError(
-                "SharePoint adapter requires auth configuration",
-                adapter_type="sharepoint",
+                f"{display_name} adapter requires auth configuration",
+                adapter_type=adapter_type,
                 context="missing tenant_id or client_id in settings",
             )
-        return SharePointAdapter(
-            tenant_id=settings.auth.tenant_id,
-            client_id=settings.auth.client_id,
-            client_secret=settings.auth.client_secret,
-        )
-    elif adapter_type == "onedrive":
-        if not settings.auth.tenant_id or not settings.auth.client_id:
-            raise AdapterError(
-                "OneDrive adapter requires auth configuration",
-                adapter_type="onedrive",
-                context="missing tenant_id or client_id in settings",
-            )
-        return OneDriveAdapter(
+        cls = SharePointAdapter if adapter_type == "sharepoint" else OneDriveAdapter
+        return cls(
             tenant_id=settings.auth.tenant_id,
             client_id=settings.auth.client_id,
             client_secret=settings.auth.client_secret,
