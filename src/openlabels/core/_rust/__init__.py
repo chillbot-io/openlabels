@@ -1,4 +1,12 @@
-"""Python wrapper around the Rust PatternMatcher, with pure-Python fallback."""
+"""Python wrapper around the Rust PatternMatcher, with pure-Python fallback.
+
+To build the Rust extension::
+
+    pip install -e src/openlabels/core/_rust
+
+This uses maturin as the PEP 517 build backend and is the standard way to
+compile and install the ``openlabels_matcher`` shared library.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +22,10 @@ try:
     _RUST_AVAILABLE = True
     logger.info("Rust pattern matcher loaded successfully")
 except ImportError:
-    logger.warning("Rust pattern matcher not available, using Python fallback")
+    logger.info(
+        "Rust pattern matcher not available (run: pip install -e src/openlabels/core/_rust). "
+        "Using Python fallback."
+    )
     RustPatternMatcher = None
 
 
