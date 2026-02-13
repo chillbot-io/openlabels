@@ -16,8 +16,7 @@ import socket
 from openlabels.export.adapters.base import (
     ExportRecord,
     SyslogTransportMixin,
-    cef_escape,
-    risk_tier_to_cef_severity,
+    format_cef,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,21 +81,6 @@ class SyslogCEFAdapter(SyslogTransportMixin):
     # ── CEF formatter ────────────────────────────────────────────────
 
     def _to_cef(self, record: ExportRecord) -> str:
-        severity = risk_tier_to_cef_severity(record.risk_tier)
-        event_id = record.record_type.replace("_", "")
-        name = f"OpenLabels {record.record_type}"
-        extensions = (
-            f"filePath={cef_escape(record.file_path)} "
-            f"riskScore={record.risk_score or 0} "
-            f"riskTier={record.risk_tier or 'MINIMAL'} "
-            f"entityTypes={','.join(record.entity_types)} "
-            f"policyViolations={','.join(record.policy_violations)} "
-            f"suser={cef_escape(record.user or '')} "
-            f"act={cef_escape(record.action_taken or '')} "
-            f"rt={record.timestamp.strftime('%b %d %Y %H:%M:%S')} "
-            f"src={cef_escape(record.source_adapter)}"
-        )
-        return (
-            f"CEF:0|{_VENDOR}|{_PRODUCT}|{_PRODUCT_VERSION}|"
-            f"{event_id}|{name}|{severity}|{extensions}"
+        return format_cef(
+            record, _VENDOR, _PRODUCT, _PRODUCT_VERSION, include_source=True
         )

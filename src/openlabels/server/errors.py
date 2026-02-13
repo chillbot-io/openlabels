@@ -2,7 +2,12 @@
 Standardized error codes for OpenLabels API.
 """
 
+from __future__ import annotations
+
+import logging
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorCode(str, Enum):
@@ -41,3 +46,18 @@ class ErrorCode(str, Enum):
     HTTPX_NOT_AVAILABLE = "HTTPX_NOT_AVAILABLE"
     LABEL_SYNC_FAILED = "LABEL_SYNC_FAILED"
     CACHE_INVALIDATION_FAILED = "CACHE_INVALIDATION_FAILED"
+
+
+def raise_database_error(operation: str, exc: Exception) -> None:
+    """Log and raise a standardized database error.
+
+    Replaces the repeated ``except SQLAlchemyError`` → ``InternalError``
+    pattern found across route handlers.
+    """
+    from openlabels.exceptions import InternalError
+
+    logger.error("Database error %s: %s", operation, exc)
+    raise InternalError(
+        message=f"Database error occurred while {operation}",
+        details={"error_code": ErrorCode.DATABASE_ERROR},
+    ) from exc

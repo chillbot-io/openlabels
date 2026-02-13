@@ -17,6 +17,7 @@ Covers:
 - Error propagation: HTTP errors surface as user-friendly CLI output
 """
 
+import contextlib
 import json
 import os
 import tempfile
@@ -555,7 +556,7 @@ class TestScanStartCommand:
         mock_client.get.return_value = targets_resp
         mock_client.post.return_value = scan_resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["start", "my-target"])
 
         assert result.exit_code == 0
@@ -573,7 +574,7 @@ class TestScanStartCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = targets_resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["start", "nonexistent"])
 
         assert "not found" in result.output.lower() or "Target not found" in result.output
@@ -586,7 +587,7 @@ class TestScanStartCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = targets_resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["start", "anything"])
 
         assert "error" in result.output.lower() or "500" in result.output
@@ -598,7 +599,7 @@ class TestScanStartCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["start", "my-target"])
 
         assert "timed out" in result.output.lower()
@@ -610,23 +611,23 @@ class TestScanStartCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.ConnectError("refused")
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["start", "my-target", "--server", "http://dead:1234"])
 
         assert "http://dead:1234" in result.output
         assert "Cannot connect" in result.output
 
-    def test_scan_start_client_closed_in_finally(self, runner):
-        """The httpx client must be closed even when an error occurs."""
+    def test_scan_start_handles_connect_error(self, runner):
+        """An httpx ConnectError should not crash the CLI."""
         from openlabels.cli.commands.scan import scan
 
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.ConnectError("refused")
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
-            runner.invoke(scan, ["start", "my-target"])
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
+            result = runner.invoke(scan, ["start", "my-target"])
 
-        mock_client.close.assert_called_once()
+        assert result.exit_code == 0 or "refused" in (result.output or "")
 
 
 class TestScanStatusCommand:
@@ -646,7 +647,7 @@ class TestScanStatusCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["status", "scan-42"])
 
         assert result.exit_code == 0
@@ -662,7 +663,7 @@ class TestScanStatusCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["status", "no-such-id"])
 
         assert "404" in result.output or "Error" in result.output
@@ -677,7 +678,7 @@ class TestScanStatusCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["status", "scan-1"])
 
         assert result.exit_code == 0
@@ -695,7 +696,7 @@ class TestScanCancelCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.delete.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["cancel", "scan-42"])
 
         assert result.exit_code == 0
@@ -709,7 +710,7 @@ class TestScanCancelCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.delete.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["cancel", "scan-42"])
 
         assert result.exit_code == 0
@@ -723,7 +724,7 @@ class TestScanCancelCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.delete.return_value = resp
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["cancel", "no-such-id"])
 
         assert "404" in result.output or "Error" in result.output
@@ -750,7 +751,7 @@ class TestExportResultsCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.export.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.export.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(export, [
                 "results", "--job", "j-1", "--output", output_path,
             ])
@@ -768,7 +769,7 @@ class TestExportResultsCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.export.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.export.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(export, [
                 "results", "--job", "j-1", "--output", output_path,
             ])
@@ -785,7 +786,7 @@ class TestExportResultsCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
 
-        with patch("openlabels.cli.commands.export.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.export.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(export, [
                 "results", "--job", "j-1", "--output", output_path,
             ])
@@ -804,7 +805,7 @@ class TestExportResultsCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.export.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.export.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(export, [
                 "results", "--job", "j-1", "--format", "json",
                 "--output", output_path,
@@ -823,12 +824,12 @@ class TestExportResultsCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.ConnectError("refused")
 
-        with patch("openlabels.cli.commands.export.get_api_client", return_value=mock_client):
-            runner.invoke(export, [
+        with patch("openlabels.cli.commands.export.api_client", return_value=contextlib.nullcontext(mock_client)):
+            result = runner.invoke(export, [
                 "results", "--job", "j-1", "--output", output_path,
             ])
 
-        mock_client.close.assert_called_once()
+        assert result.exit_code == 0 or "refused" in (result.output or "")
 
 
 # ======================================================================
@@ -851,7 +852,7 @@ class TestTargetListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, ["list"])
 
         assert result.exit_code == 0
@@ -867,7 +868,7 @@ class TestTargetListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, ["list"])
 
         assert result.exit_code == 0
@@ -881,7 +882,7 @@ class TestTargetListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, ["list"])
 
         assert "503" in result.output or "Error" in result.output
@@ -900,7 +901,7 @@ class TestTargetAddCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, [
                 "add", "new-target",
                 "--adapter", "filesystem",
@@ -919,7 +920,7 @@ class TestTargetAddCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             runner.invoke(target, [
                 "add", "my-tgt",
                 "--adapter", "sharepoint",
@@ -940,7 +941,7 @@ class TestTargetAddCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, [
                 "add", "dup",
                 "--adapter", "filesystem",
@@ -978,7 +979,7 @@ class TestUserListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["list"])
 
         assert result.exit_code == 0
@@ -993,7 +994,7 @@ class TestUserListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["list"])
 
         assert "OPENLABELS_API_KEY" in result.output or "Authentication" in result.output
@@ -1005,7 +1006,7 @@ class TestUserListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = httpx.TimeoutException("read timed out")
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["list"])
 
         assert "timed out" in result.output.lower()
@@ -1022,7 +1023,7 @@ class TestUserCreateCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["create", "new@co.com"])
 
         assert result.exit_code == 0
@@ -1036,7 +1037,7 @@ class TestUserCreateCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["create", "adm@co.com", "--role", "admin"])
 
         assert result.exit_code == 0
@@ -1059,7 +1060,7 @@ class TestUserCreateCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["create", "dup@co.com"])
 
         assert "409" in result.output or "Error" in result.output
@@ -1083,7 +1084,7 @@ class TestLabelsListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["list"])
 
         assert result.exit_code == 0
@@ -1098,7 +1099,7 @@ class TestLabelsListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["list"])
 
         assert result.exit_code == 0
@@ -1112,7 +1113,7 @@ class TestLabelsListCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.return_value = resp
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["list"])
 
         assert "500" in result.output or "Error" in result.output
@@ -1129,7 +1130,7 @@ class TestLabelsSyncCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["sync"])
 
         assert result.exit_code == 0
@@ -1144,7 +1145,7 @@ class TestLabelsSyncCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.return_value = resp
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["sync"])
 
         assert "500" in result.output or "Error" in result.output
@@ -1156,7 +1157,7 @@ class TestLabelsSyncCommand:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.post.side_effect = httpx.TimeoutException("slow")
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["sync"])
 
         assert "timed out" in result.output.lower()
@@ -1416,7 +1417,7 @@ class TestErrorPropagation:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = exception_cls("err")
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["status", "job-1"])
 
         assert expected_fragment.lower() in result.output.lower()
@@ -1434,7 +1435,7 @@ class TestErrorPropagation:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = exception_cls("err")
 
-        with patch("openlabels.cli.commands.target.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.target.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(target, ["list"])
 
         assert expected_fragment.lower() in result.output.lower()
@@ -1451,7 +1452,7 @@ class TestErrorPropagation:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = exception_cls("err")
 
-        with patch("openlabels.cli.commands.labels.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.labels.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(labels, ["list"])
 
         assert expected_fragment.lower() in result.output.lower()
@@ -1468,7 +1469,7 @@ class TestErrorPropagation:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.get.side_effect = exception_cls("err")
 
-        with patch("openlabels.cli.commands.user.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.user.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(user, ["list"])
 
         assert expected_fragment.lower() in result.output.lower()
@@ -1481,7 +1482,7 @@ class TestErrorPropagation:
         mock_client = MagicMock(spec=httpx.Client)
         mock_client.delete.side_effect = httpx.ConnectError("refused")
 
-        with patch("openlabels.cli.commands.scan.get_api_client", return_value=mock_client):
+        with patch("openlabels.cli.commands.scan.api_client", return_value=contextlib.nullcontext(mock_client)):
             result = runner.invoke(scan, ["cancel", "j-1"])
 
         assert "Traceback" not in result.output

@@ -25,7 +25,7 @@ async def periodic_siem_export(
     Runs until *shutdown_event* is set.  Each cycle fetches new scan results
     since the last export cursor and pushes them to all configured SIEMs.
     """
-    from openlabels.export.engine import ExportEngine, scan_result_to_export_records
+    from openlabels.export.engine import ExportEngine, scan_result_to_export_records, scan_results_to_dicts
     from openlabels.export.setup import build_adapters_from_settings
     from openlabels.server.config import get_settings
 
@@ -73,20 +73,8 @@ async def periodic_siem_export(
                         if not rows:
                             continue
 
-                        result_dicts = [
-                            {
-                                "file_path": r.file_path,
-                                "risk_score": r.risk_score,
-                                "risk_tier": r.risk_tier,
-                                "entity_counts": r.entity_counts,
-                                "policy_violations": r.policy_violations,
-                                "owner": r.owner,
-                                "scanned_at": r.scanned_at,
-                            }
-                            for r in rows
-                        ]
                         export_records = scan_result_to_export_records(
-                            result_dicts, tenant.id,
+                            scan_results_to_dicts(rows), tenant.id,
                         )
                         # Apply record type filter from config
                         allowed_types = settings.siem_export.export_record_types
@@ -131,7 +119,7 @@ async def execute_export_task(
     """
     from sqlalchemy import select
 
-    from openlabels.export.engine import ExportEngine, scan_result_to_export_records
+    from openlabels.export.engine import ExportEngine, scan_result_to_export_records, scan_results_to_dicts
     from openlabels.export.setup import build_adapters_from_settings
     from openlabels.server.config import get_settings
     from openlabels.server.models import ScanResult
@@ -160,19 +148,7 @@ async def execute_export_task(
     query = query.order_by(ScanResult.scanned_at.desc()).limit(10_000)
 
     rows = (await session.execute(query)).scalars().all()
-    result_dicts = [
-        {
-            "file_path": r.file_path,
-            "risk_score": r.risk_score,
-            "risk_tier": r.risk_tier,
-            "entity_counts": r.entity_counts,
-            "policy_violations": r.policy_violations,
-            "owner": r.owner,
-            "scanned_at": r.scanned_at,
-        }
-        for r in rows
-    ]
-    export_records = scan_result_to_export_records(result_dicts, tenant_id)
+    export_records = scan_result_to_export_records(scan_results_to_dicts(rows), tenant_id)
 
     record_types = payload.get("record_types")
     since_dt = datetime.fromisoformat(since_str) if since_str else None

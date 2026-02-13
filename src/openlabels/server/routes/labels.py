@@ -22,14 +22,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.exceptions import InternalError, NotFoundError
+from openlabels.exceptions import NotFoundError
 from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
     LabelServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -176,11 +176,7 @@ async def get_sync_status(
         row = result.one()
         label_count, last_synced = row
     except SQLAlchemyError as e:
-        logger.error(f"Database error getting sync status: {e}")
-        raise InternalError(
-            message="Database error occurred while getting sync status",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("getting sync status", e)
 
     # Get cache status
     try:
@@ -341,11 +337,7 @@ async def apply_label(
     except NotFoundError:
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error applying label: {e}")
-        raise InternalError(
-            message="Database error occurred while applying label",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("applying label", e)
 
 
 # --- LABEL MAPPINGS (simplified interface for web UI) ---

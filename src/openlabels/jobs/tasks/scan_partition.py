@@ -481,6 +481,7 @@ async def _run_post_scan_operations(
             from openlabels.export.engine import (
                 ExportEngine,
                 scan_result_to_export_records,
+                scan_results_to_dicts,
             )
             from openlabels.export.setup import build_adapters_from_settings
 
@@ -492,20 +493,8 @@ async def _run_post_scan_operations(
                     select(ScanResult).where(ScanResult.job_id == job.id)
                 )
                 async for batch in result_stream.scalars().partitions(batch_size):
-                    result_dicts = [
-                        {
-                            "file_path": r.file_path,
-                            "risk_score": r.risk_score,
-                            "risk_tier": r.risk_tier,
-                            "entity_counts": r.entity_counts,
-                            "policy_violations": r.policy_violations,
-                            "owner": r.owner,
-                            "scanned_at": r.scanned_at,
-                        }
-                        for r in batch
-                    ]
                     export_records = scan_result_to_export_records(
-                        result_dicts, job.tenant_id,
+                        scan_results_to_dicts(batch), job.tenant_id,
                     )
                     await engine.export_full(
                         job.tenant_id,

@@ -22,9 +22,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
-from openlabels.exceptions import InternalError
+
 from openlabels.server.db import get_session
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
 from openlabels.server.routes import get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
@@ -509,11 +509,7 @@ async def create_target(
 
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error creating target: {e}")
-        raise InternalError(
-            message="Database error occurred while creating target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("creating target", e)
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -527,11 +523,7 @@ async def get_target(
         target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error getting target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while getting target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("getting target", e)
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -556,11 +548,7 @@ async def update_target(
 
         return target
     except SQLAlchemyError as e:
-        logger.error(f"Database error updating target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while updating target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("updating target", e)
 
 
 @router.delete("/{target_id}")
@@ -584,8 +572,4 @@ async def delete_target(
         # Regular REST response
         return Response(status_code=204)
     except SQLAlchemyError as e:
-        logger.error(f"Database error deleting target {target_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while deleting target",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("deleting target", e)

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 
 import click
@@ -122,3 +123,22 @@ def get_api_client(server: str, token: str | None = None) -> httpx.Client:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return httpx.Client(base_url=server, timeout=30.0, headers=headers)
+
+
+@contextlib.contextmanager
+def api_client(server: str, token: str | None = None) -> Generator[httpx.Client]:
+    """Context manager wrapping :func:`get_api_client` with auto-close.
+
+    Replaces the repeated ``client = get_api_client(…); try: … finally: client.close()``
+    pattern found across all CLI commands.
+
+    Usage::
+
+        with api_client(server, token) as client:
+            resp = client.get("/api/labels")
+    """
+    client = get_api_client(server, token)
+    try:
+        yield client
+    finally:
+        client.close()

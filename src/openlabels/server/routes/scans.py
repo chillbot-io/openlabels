@@ -14,14 +14,14 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
+from openlabels.exceptions import BadRequestError, NotFoundError
 from openlabels.server.config import get_settings
 from openlabels.server.dependencies import (
     AdminContextDep,
     ScanServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -154,8 +154,4 @@ async def retry_scan(
     except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error retrying scan {scan_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while retrying scan",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("retrying scan", e)

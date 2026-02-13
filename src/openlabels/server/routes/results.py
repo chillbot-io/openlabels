@@ -12,14 +12,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import SQLAlchemyError
 
-from openlabels.exceptions import BadRequestError, InternalError, NotFoundError
+from openlabels.exceptions import BadRequestError, NotFoundError
 from openlabels.server.dependencies import (
     AdminContextDep,
     DbSessionDep,
     ResultServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode
+from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.routes import htmx_notify
 from openlabels.server.utils import get_client_ip
 
@@ -415,11 +415,7 @@ async def apply_recommended_label(
     except (NotFoundError, BadRequestError):
         raise
     except SQLAlchemyError as e:
-        logger.error(f"Database error applying label to result {result_id}: {e}")
-        raise InternalError(
-            message="Database error occurred while applying label",
-            details={"error_code": ErrorCode.DATABASE_ERROR},
-        ) from e
+        raise_database_error("applying label", e)
 
 
 @router.post("/{result_id}/rescan")
