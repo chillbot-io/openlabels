@@ -5,6 +5,10 @@ const CSRF_COOKIE_NAME = 'openlabels_csrf';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
 const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
+// Guard against multiple concurrent 401 responses each triggering a
+// full-page navigation to the login endpoint.
+let isRedirectingToLogin = false;
+
 function getCsrfToken(): string | undefined {
   const match = document.cookie
     .split('; ')
@@ -74,7 +78,10 @@ export async function apiFetch<T>(
   });
 
   if (response.status === 401) {
-    window.location.href = '/api/v1/auth/login';
+    if (!isRedirectingToLogin) {
+      isRedirectingToLogin = true;
+      window.location.href = '/api/v1/auth/login';
+    }
     throw new ApiError(401, { message: 'Unauthorized' });
   }
 

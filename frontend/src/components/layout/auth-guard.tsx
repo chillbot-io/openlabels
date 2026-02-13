@@ -7,17 +7,14 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkAuth();
-  }, [checkAuth]);
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      window.location.href = '/api/v1/auth/login';
-    }
-  }, [isLoading, isAuthenticated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   if (isLoading) return <LoadingSkeleton />;
 
   if (!isAuthenticated) {
+    // apiFetch already redirects to /api/v1/auth/login on 401,
+    // so we just render nothing while the navigation happens.
     return null;
   }
 

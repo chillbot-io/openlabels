@@ -253,6 +253,11 @@ async def login(
             tenant_id=None,
             user_id=None,
         )
+        # Commit session to DB before sending the redirect response.
+        # Without this, the browser follows the 302 and hits /auth/me
+        # before the get_session dependency cleanup commits the transaction,
+        # causing a 401 → redirect loop.
+        await db.commit()
 
         # Validate redirect URI to prevent open redirect attacks
         safe_redirect = validate_redirect_uri(redirect_uri, request)
