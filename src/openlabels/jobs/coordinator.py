@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import PartitionSpec
+from openlabels.core.types import AdapterType, JobStatus
 from openlabels.server.models import (
     ScanJob,
     ScanPartition,
@@ -123,7 +124,7 @@ class ScanCoordinator:
             return FanoutDecision(False, "fanout_disabled")
 
         # Only cloud object stores benefit from fan-out
-        if target.adapter not in ("s3", "gcs", "azure_blob"):
+        if target.adapter not in (AdapterType.S3, AdapterType.GCS, AdapterType.AZURE_BLOB):
             return FanoutDecision(False, f"adapter_{target.adapter}_not_partitionable")
 
         # Check if adapter has estimation capability
@@ -203,7 +204,7 @@ class ScanCoordinator:
         job.partitions_completed = 0
         job.partitions_failed = 0
         job.total_files_estimated = estimated_files
-        job.status = "running"
+        job.status = JobStatus.RUNNING
         job.started_at = datetime.now(timezone.utc)
 
         # Create partition rows
@@ -216,7 +217,7 @@ class ScanCoordinator:
                 partition_index=i,
                 total_partitions=actual_count,
                 partition_spec=spec.to_dict(),
-                status="pending",
+                status=JobStatus.PENDING,
             )
             self.session.add(partition)
             partitions.append(partition)

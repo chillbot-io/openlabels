@@ -201,8 +201,8 @@ class GlobalPubSubBroadcaster:
                     if client_name == "_pubsub":
                         await client.unsubscribe(GLOBAL_PUBSUB_CHANNEL)
                     await client.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Redis client %s close failed: %s", client_name, e)
                 setattr(self, client_name, None)
 
     async def publish(self, tenant_id: UUID, message: dict) -> None:

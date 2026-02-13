@@ -37,6 +37,7 @@ import httpx
 
 from openlabels.adapters.base import FileInfo
 from openlabels.adapters.graph_client import GraphClient
+from openlabels.core.types import AdapterType
 from openlabels.exceptions import GraphAPIError
 
 logger = logging.getLogger(__name__)
@@ -695,11 +696,11 @@ class LabelingEngine:
         Returns:
             LabelResult with success status
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await self._apply_local_label(file_info.path, label_id, label_name)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._apply_graph_label(file_info, label_id, label_name)
-        elif file_info.adapter in ("s3", "gcs"):
+        elif file_info.adapter in (AdapterType.S3, AdapterType.GCS):
             # Cloud object store labels are applied via adapter.apply_label_and_sync()
             # in the scan pipeline's _cloud_label_sync_back step (Phase L).
             # Return success here so auto-labeling marks the DB record.
@@ -725,9 +726,9 @@ class LabelingEngine:
         Returns:
             LabelResult with success status
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await self._remove_local_label(file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._remove_graph_label(file_info)
         else:
             return LabelResult(
@@ -745,9 +746,9 @@ class LabelingEngine:
         Returns:
             Label dict with id and name, or None if no label
         """
-        if file_info.adapter == "filesystem":
+        if file_info.adapter == AdapterType.FILESYSTEM:
             return await asyncio.to_thread(self._writer.get_local_label, file_info.path)
-        elif file_info.adapter in ("sharepoint", "onedrive"):
+        elif file_info.adapter in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
             return await self._get_graph_label(file_info)
         return None
 

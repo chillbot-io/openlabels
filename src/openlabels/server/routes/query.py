@@ -396,8 +396,8 @@ async def get_query_schema(
                         ],
                     ))
             return SchemaResponse(tables=tables)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Dynamic analytics schema lookup failed, using static: %s", e)
 
     # Fallback to static schema
     return SchemaResponse(tables=_build_schema())

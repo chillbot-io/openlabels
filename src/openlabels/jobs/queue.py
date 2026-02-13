@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import JobStatus
 from openlabels.server.metrics import (
     record_job_completed,
     record_job_enqueued,
@@ -103,7 +104,7 @@ class JobQueue:
             task_type=task_type,
             payload=payload,
             priority=priority,
-            status="pending",
+            status=JobStatus.PENDING,
             scheduled_for=scheduled_for,
         )
         self.session.add(job)
@@ -145,7 +146,7 @@ class JobQueue:
             select(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "pending",
+                JobQueueModel.status == JobStatus.PENDING,
                 (JobQueueModel.scheduled_for.is_(None)) | (JobQueueModel.scheduled_for <= now),
             )
             .order_by(
@@ -160,7 +161,7 @@ class JobQueue:
         job = result.scalar_one_or_none()
 
         if job:
-            job.status = "running"
+            job.status = JobStatus.RUNNING
             job.worker_id = worker_id
             job.started_at = now
             await self.session.flush()
@@ -183,7 +184,7 @@ class JobQueue:
             update(JobQueueModel)
             .where(JobQueueModel.id == job_id)
             .values(
-                status="completed",
+                status=JobStatus.COMPLETED,
                 completed_at=datetime.now(timezone.utc),
                 result=result,
             )
@@ -225,7 +226,7 @@ class JobQueue:
             delay = calculate_retry_delay(job.retry_count)
             retry_at = datetime.now(timezone.utc) + delay
 
-            job.status = "pending"
+            job.status = JobStatus.PENDING
             job.retry_count += 1
             job.worker_id = None
             job.started_at = None
@@ -233,7 +234,7 @@ class JobQueue:
             job.scheduled_for = retry_at  # Delay next execution
         else:
             # Move to dead letter queue (failed status)
-            job.status = "failed"
+            job.status = JobStatus.FAILED
             job.completed_at = datetime.now(timezone.utc)
             job.error = error
 
@@ -243,7 +244,7 @@ class JobQueue:
         await self.session.flush()
 
         # Fire failure callback when permanently failed
-        if job.status == "failed" and self._on_failed:
+        if job.status == JobStatus.FAILED and self._on_failed:
             try:
                 await self._on_failed(job)
             except Exception as exc:  # noqa: BLE001 — catch-all for arbitrary user callback
@@ -264,10 +265,10 @@ class JobQueue:
         if not job:
             return False
 
-        if job.status not in ("pending", "running"):
+        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
             return False
 
-        job.status = "cancelled"
+        job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now(timezone.utc)
         await self.session.flush()
         return True
@@ -276,7 +277,7 @@ class JobQueue:
         """Get count of pending jobs using efficient SQL COUNT."""
         query = select(func.count()).select_from(JobQueueModel).where(
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "pending",
+            JobQueueModel.status == JobStatus.PENDING,
         )
         result = await self.session.execute(query)
         return result.scalar() or 0
@@ -285,7 +286,7 @@ class JobQueue:
         """Get count of running jobs using efficient SQL COUNT."""
         query = select(func.count()).select_from(JobQueueModel).where(
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "running",
+            JobQueueModel.status == JobStatus.RUNNING,
         )
         result = await self.session.execute(query)
         return result.scalar() or 0
@@ -311,7 +312,7 @@ class JobQueue:
         """
         conditions = [
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "failed",
+            JobQueueModel.status == JobStatus.FAILED,
         ]
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
@@ -330,7 +331,7 @@ class JobQueue:
         """Get count of failed jobs in dead letter queue."""
         conditions = [
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "failed",
+            JobQueueModel.status == JobStatus.FAILED,
         ]
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
@@ -361,13 +362,13 @@ class JobQueue:
         # Refresh to get latest state from database (in case of concurrent modifications)
         await self.session.refresh(job)
 
-        if job.status != "failed":
+        if job.status != JobStatus.FAILED:
             return False
 
         if job.tenant_id != self.tenant_id:
             return False
 
-        job.status = "pending"
+        job.status = JobStatus.PENDING
         job.worker_id = None
         job.started_at = None
         job.completed_at = None
@@ -397,7 +398,7 @@ class JobQueue:
         """
         conditions = [
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "failed",
+            JobQueueModel.status == JobStatus.FAILED,
         ]
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
@@ -440,7 +441,7 @@ class JobQueue:
 
         conditions = [
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "failed",
+            JobQueueModel.status == JobStatus.FAILED,
         ]
         if task_type:
             conditions.append(JobQueueModel.task_type == task_type)
@@ -475,7 +476,7 @@ class JobQueue:
             select(JobQueueModel.task_type, func.count())
             .where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "failed",
+                JobQueueModel.status == JobStatus.FAILED,
             )
             .group_by(JobQueueModel.task_type)
         )
@@ -483,11 +484,11 @@ class JobQueue:
         failed_by_type = dict(failed_result.all())
 
         stats = {
-            "pending": by_status.get("pending", 0),
-            "running": by_status.get("running", 0),
-            "completed": by_status.get("completed", 0),
-            "failed": by_status.get("failed", 0),
-            "cancelled": by_status.get("cancelled", 0),
+            JobStatus.PENDING: by_status.get(JobStatus.PENDING, 0),
+            JobStatus.RUNNING: by_status.get(JobStatus.RUNNING, 0),
+            JobStatus.COMPLETED: by_status.get(JobStatus.COMPLETED, 0),
+            JobStatus.FAILED: by_status.get(JobStatus.FAILED, 0),
+            JobStatus.CANCELLED: by_status.get(JobStatus.CANCELLED, 0),
             "failed_by_type": failed_by_type,
         }
 
@@ -526,7 +527,7 @@ class JobQueue:
             select(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "running",
+                JobQueueModel.status == JobStatus.RUNNING,
                 JobQueueModel.started_at < cutoff,
             )
             .with_for_update(skip_locked=True)
@@ -539,7 +540,7 @@ class JobQueue:
         reclaimed = 0
         for job in stuck_jobs:
             # Treat as a failure and let retry logic handle it
-            job.status = "pending"
+            job.status = JobStatus.PENDING
             job.retry_count += 1
             job.worker_id = None
             job.started_at = None
@@ -547,7 +548,7 @@ class JobQueue:
 
             if job.retry_count >= job.max_retries:
                 # Move to dead letter queue
-                job.status = "failed"
+                job.status = JobStatus.FAILED
                 job.completed_at = datetime.now(timezone.utc)
 
             reclaimed += 1
@@ -569,7 +570,7 @@ class JobQueue:
             .select_from(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "running",
+                JobQueueModel.status == JobStatus.RUNNING,
                 JobQueueModel.started_at < cutoff,
             )
         )
@@ -620,7 +621,7 @@ class JobQueue:
         completed_result = await self.session.execute(
             delete(JobQueueModel).where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "completed",
+                JobQueueModel.status == JobStatus.COMPLETED,
                 JobQueueModel.completed_at < completed_cutoff,
             )
         )
@@ -630,7 +631,7 @@ class JobQueue:
         cancelled_result = await self.session.execute(
             delete(JobQueueModel).where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "cancelled",
+                JobQueueModel.status == JobStatus.CANCELLED,
                 JobQueueModel.completed_at < completed_cutoff,
             )
         )
@@ -641,7 +642,7 @@ class JobQueue:
         failed_result = await self.session.execute(
             delete(JobQueueModel).where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "failed",
+                JobQueueModel.status == JobStatus.FAILED,
                 JobQueueModel.completed_at < failed_cutoff,
             )
         )
@@ -693,7 +694,7 @@ class JobQueue:
             select(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == self.tenant_id,
-                JobQueueModel.status == "pending",
+                JobQueueModel.status == JobStatus.PENDING,
                 JobQueueModel.created_at < cutoff,
             )
             .order_by(JobQueueModel.created_at.asc())
@@ -732,7 +733,7 @@ class JobQueue:
             ).label("avg_age_seconds"),
         ).where(
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "pending",
+            JobQueueModel.status == JobStatus.PENDING,
         )
         pending_result = await self.session.execute(pending_query)
         pending_row = pending_result.one()
@@ -755,7 +756,7 @@ class JobQueue:
             ).label("avg_age_seconds"),
         ).where(
             JobQueueModel.tenant_id == self.tenant_id,
-            JobQueueModel.status == "running",
+            JobQueueModel.status == JobStatus.RUNNING,
             JobQueueModel.started_at.isnot(None),
         )
         running_result = await self.session.execute(running_query)
@@ -794,7 +795,7 @@ async def dequeue_next_job(
     query = (
         select(JobQueueModel)
         .where(
-            JobQueueModel.status == "pending",
+            JobQueueModel.status == JobStatus.PENDING,
             (JobQueueModel.scheduled_for.is_(None)) | (JobQueueModel.scheduled_for <= now),
         )
         .order_by(
@@ -809,7 +810,7 @@ async def dequeue_next_job(
     job = result.scalar_one_or_none()
 
     if job:
-        job.status = "running"
+        job.status = JobStatus.RUNNING
         job.worker_id = worker_id
         job.started_at = now
         await session.flush()

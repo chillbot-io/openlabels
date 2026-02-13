@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT
+from openlabels.core.types import JobStatus
 from openlabels.server.db import get_session
 from openlabels.server.models import AuditLog, ScanJob, ScanResult, ScanSchedule, ScanTarget
 
@@ -640,7 +641,7 @@ async def scan_detail_page(
             progress_pct = 0
             if total_files > 0:
                 progress_pct = min(100, int((scan_obj.files_scanned or 0) / total_files * 100))
-            elif scan_obj.status == "completed":
+            elif scan_obj.status == JobStatus.COMPLETED:
                 progress_pct = 100
 
             scan = {
@@ -1012,7 +1013,7 @@ async def create_scan_form(
                     tenant_id=user.tenant_id,
                     target_id=target.id,
                     target_name=target.name,
-                    status="pending",
+                    status=JobStatus.PENDING,
                     created_by=user.id,
                 )
                 session.add(job)
@@ -1311,7 +1312,8 @@ async def health_status_partial(
     # Check database connectivity
     try:
         await session.execute(sa_text("SELECT 1"))
-    except Exception:
+    except Exception as e:
+        logger.warning("Health check DB query failed: %s", e)
         health["status"] = "unhealthy"
         return templates.TemplateResponse(
             "partials/health_status.html",
@@ -1321,13 +1323,14 @@ async def health_status_partial(
     # Check for excessive failed jobs (indicates systemic issues)
     try:
         failed_query = select(func.count()).select_from(
-            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+            select(JobQueueModel).where(JobQueueModel.status == JobStatus.FAILED).subquery()
         )
         result = await session.execute(failed_query)
         failed_count = result.scalar() or 0
         if failed_count > 10:
             health["status"] = "degraded"
-    except Exception:
+    except Exception as e:
+        logger.warning("Health check job queue query failed: %s", e)
         health["status"] = "degraded"
 
     return templates.TemplateResponse(
@@ -1429,7 +1432,7 @@ async def scans_list_partial(
             progress_pct = 0
             if total_files > 0:
                 progress_pct = min(100, int((scan.files_scanned or 0) / total_files * 100))
-            elif scan.status == "completed":
+            elif scan.status == JobStatus.COMPLETED:
                 progress_pct = 100
 
             scans.append({
@@ -1647,7 +1650,7 @@ async def job_queue_partial(
             select(JobQueueModel)
             .where(
                 JobQueueModel.tenant_id == user.tenant_id,
-                JobQueueModel.status == "failed",
+                JobQueueModel.status == JobStatus.FAILED,
             )
             .order_by(desc(JobQueueModel.completed_at))
             .limit(5)
@@ -1702,7 +1705,7 @@ async def system_health_partial(
     # Check job queue for failures
     try:
         failed_query = select(func.count()).select_from(
-            select(JobQueueModel).where(JobQueueModel.status == "failed").subquery()
+            select(JobQueueModel).where(JobQueueModel.status == JobStatus.FAILED).subquery()
         )
         result = await session.execute(failed_query)
         failed_count = result.scalar() or 0

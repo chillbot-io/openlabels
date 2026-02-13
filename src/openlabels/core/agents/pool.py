@@ -793,6 +793,7 @@ class ScanOrchestrator:
 
     async def _persist_unified(self, completed_files: list[FileResult]) -> None:
         """Full result pipeline: score → persist → inventory → WebSocket."""
+        from openlabels.core.types import JobStatus
         from openlabels.jobs.inventory import get_folder_path
         from openlabels.server.models import ScanResult
 
@@ -897,7 +898,7 @@ class ScanOrchestrator:
                     try:
                         await _send_progress(
                             scan_id=self._job.id,
-                            status="running",
+                            status=JobStatus.RUNNING,
                             progress={
                                 "files_scanned": self.stats["files_scanned"],
                                 "files_with_pii": self.stats["files_with_pii"],

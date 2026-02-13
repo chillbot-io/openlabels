@@ -118,8 +118,8 @@ class S3Adapter:
         if self._client is not None:
             try:
                 await asyncio.to_thread(self._client.close)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("S3 client close failed: %s", e)
         self._client = None
 
     async def test_connection(self, config: dict) -> bool:

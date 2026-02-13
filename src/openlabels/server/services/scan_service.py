@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 
+from openlabels.core.types import JobStatus
 from openlabels.exceptions import BadRequestError, NotFoundError
 from openlabels.jobs import JobQueue
 from openlabels.server.models import ScanJob, ScanTarget
@@ -29,7 +30,7 @@ class ScanService(BaseService):
             target_id=target_id,
             target_name=target.name,
             name=name or f"Scan: {target.name}",
-            status="pending",
+            status=JobStatus.PENDING,
             created_by=self.user_id,
         )
         self.session.add(job)
@@ -63,7 +64,7 @@ class ScanService(BaseService):
         offset: int = 0,
     ) -> tuple[list[ScanJob], int]:
         """List scan jobs with optional status filter and pagination."""
-        VALID_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
+        VALID_STATUSES = set(JobStatus)
         conditions = [ScanJob.tenant_id == self.tenant_id]
         if status:
             if status not in VALID_STATUSES:
@@ -99,7 +100,7 @@ class ScanService(BaseService):
         """Cancel a pending or running scan."""
         job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
-        if job.status not in ("pending", "running"):
+        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
             self._log_warning(
                 f"Cannot cancel scan {scan_id}: status is {job.status}",
                 scan_id=str(scan_id),
@@ -109,11 +110,11 @@ class ScanService(BaseService):
                 message="Scan cannot be cancelled",
                 details={
                     "current_status": job.status,
-                    "allowed_statuses": ["pending", "running"],
+                    "allowed_statuses": [JobStatus.PENDING, JobStatus.RUNNING],
                 },
             )
 
-        job.status = "cancelled"
+        job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now(timezone.utc)
         await self.flush()
 
@@ -128,7 +129,7 @@ class ScanService(BaseService):
         """Create a new scan job for the same target with higher priority."""
         job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
-        if job.status not in ("failed", "cancelled"):
+        if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
             self._log_warning(
                 f"Cannot retry scan {scan_id}: status is {job.status}",
                 scan_id=str(scan_id),
@@ -138,7 +139,7 @@ class ScanService(BaseService):
                 message="Only failed or cancelled scans can be retried",
                 details={
                     "current_status": job.status,
-                    "allowed_statuses": ["failed", "cancelled"],
+                    "allowed_statuses": [JobStatus.FAILED, JobStatus.CANCELLED],
                 },
             )
 
@@ -158,7 +159,7 @@ class ScanService(BaseService):
             target_id=job.target_id,
             target_name=target.name,
             name=f"{job.name} (retry)",
-            status="pending",
+            status=JobStatus.PENDING,
             created_by=self.user_id,
         )
         self.session.add(new_job)
@@ -186,7 +187,7 @@ class ScanService(BaseService):
         """Delete a completed/failed/cancelled scan. Active scans must be cancelled first."""
         job = await self.get_tenant_entity(ScanJob, scan_id, "ScanJob")
 
-        if job.status in ("pending", "running"):
+        if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
             self._log_warning(
                 f"Cannot delete scan {scan_id}: status is {job.status}",
                 scan_id=str(scan_id),
@@ -221,11 +222,11 @@ class ScanService(BaseService):
         by_status = dict(result.all())
 
         stats = {
-            "pending": by_status.get("pending", 0),
-            "running": by_status.get("running", 0),
-            "completed": by_status.get("completed", 0),
-            "failed": by_status.get("failed", 0),
-            "cancelled": by_status.get("cancelled", 0),
+            JobStatus.PENDING: by_status.get(JobStatus.PENDING, 0),
+            JobStatus.RUNNING: by_status.get(JobStatus.RUNNING, 0),
+            JobStatus.COMPLETED: by_status.get(JobStatus.COMPLETED, 0),
+            JobStatus.FAILED: by_status.get(JobStatus.FAILED, 0),
+            JobStatus.CANCELLED: by_status.get(JobStatus.CANCELLED, 0),
         }
         stats["total"] = sum(stats.values())
 
@@ -261,7 +262,7 @@ class ScanService(BaseService):
             select(ScanJob)
             .where(
                 ScanJob.tenant_id == self.tenant_id,
-                ScanJob.status.in_(["pending", "running"]),
+                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
             )
             .order_by(ScanJob.created_at.desc())
             .limit(1000)
@@ -296,7 +297,7 @@ class ScanService(BaseService):
             conditions.append(ScanJob.status == status)
         else:
             # Default: only clean up terminal states
-            conditions.append(ScanJob.status.in_(["completed", "cancelled"]))
+            conditions.append(ScanJob.status.in_([JobStatus.COMPLETED, JobStatus.CANCELLED]))
 
         stmt = delete(ScanJob).where(*conditions)
         result = await self.session.execute(stmt)

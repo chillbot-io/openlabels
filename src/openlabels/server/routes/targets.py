@@ -22,7 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
-
+from openlabels.core.types import AdapterType
 from openlabels.server.db import get_session
 from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
@@ -327,12 +327,12 @@ def validate_target_config(adapter: str, config: dict) -> dict:
         HTTPException: If configuration is invalid
     """
     validators = {
-        "filesystem": validate_filesystem_target_config,
-        "sharepoint": validate_sharepoint_target_config,
-        "onedrive": validate_onedrive_target_config,
-        "s3": validate_s3_target_config,
-        "gcs": validate_gcs_target_config,
-        "azure_blob": validate_azure_blob_target_config,
+        AdapterType.FILESYSTEM: validate_filesystem_target_config,
+        AdapterType.SHAREPOINT: validate_sharepoint_target_config,
+        AdapterType.ONEDRIVE: validate_onedrive_target_config,
+        AdapterType.S3: validate_s3_target_config,
+        AdapterType.GCS: validate_gcs_target_config,
+        AdapterType.AZURE_BLOB: validate_azure_blob_target_config,
     }
 
     validator = validators.get(adapter)
@@ -425,7 +425,7 @@ async def create_target(
     user: CurrentUser = Depends(require_admin),
 ) -> TargetResponse:
     """Create a new scan target."""
-    if request.adapter not in ("filesystem", "sharepoint", "onedrive", "s3", "gcs", "azure_blob"):
+    if request.adapter not in tuple(AdapterType):
         raise HTTPException(status_code=400, detail="Invalid adapter type")
 
     # Security: Validate target configuration to prevent path traversal and SSRF

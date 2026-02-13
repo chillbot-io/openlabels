@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user
 from openlabels.core.circuit_breaker import CircuitBreaker
+from openlabels.core.types import JobStatus
 from openlabels.jobs.queue import JobQueue as JobQueueService
 from openlabels.server.cache import get_cache_stats
 from openlabels.server.db import get_session
@@ -149,18 +150,18 @@ async def get_health_status(
     try:
         queue_query = select(
             func.count().label("total"),
-            func.sum(func.cast(JobQueue.status == "pending", Integer)).label("pending"),
-            func.sum(func.cast(JobQueue.status == "failed", Integer)).label("failed"),
+            func.sum(func.cast(JobQueue.status == JobStatus.PENDING, Integer)).label("pending"),
+            func.sum(func.cast(JobQueue.status == JobStatus.FAILED, Integer)).label("failed"),
         )
         # Simplified query - just count pending jobs
         pending_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == "pending"
+            JobQueue.status == JobStatus.PENDING
         )
         result = await session.execute(pending_query)
         pending_count = result.scalar() or 0
 
         failed_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == "failed"
+            JobQueue.status == JobStatus.FAILED
         )
         result = await session.execute(failed_query)
         failed_count = result.scalar() or 0
@@ -270,7 +271,7 @@ async def get_health_status(
             week_ago = datetime.now(timezone.utc) - timedelta(days=7)
             success_query = select(
                 func.count().label("total"),
-                func.sum(func.cast(ScanJob.status == "completed", Integer)).label("completed"),
+                func.sum(func.cast(ScanJob.status == JobStatus.COMPLETED, Integer)).label("completed"),
             ).where(
                 ScanJob.tenant_id == user.tenant_id,
                 ScanJob.created_at >= week_ago,
@@ -310,13 +311,13 @@ async def get_health_status(
             stale_jobs = await job_queue.get_stale_pending_jobs()
 
             tenant_pending_query = select(func.count()).select_from(JobQueue).where(
-                JobQueue.status == "pending",
+                JobQueue.status == JobStatus.PENDING,
                 JobQueue.tenant_id == user.tenant_id,
             )
             tenant_pending = (await session.execute(tenant_pending_query)).scalar() or 0
 
             tenant_failed_query = select(func.count()).select_from(JobQueue).where(
-                JobQueue.status == "failed",
+                JobQueue.status == JobStatus.FAILED,
                 JobQueue.tenant_id == user.tenant_id,
             )
             tenant_failed = (await session.execute(tenant_failed_query)).scalar() or 0

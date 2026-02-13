@@ -15,6 +15,7 @@ from uuid import UUID
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import JobStatus
 from openlabels.exceptions import BadRequestError
 from openlabels.jobs.queue import JobQueue
 from openlabels.server.config import Settings
@@ -124,13 +125,13 @@ class JobService(BaseService):
         """
         job = await self.get_tenant_entity(JobQueueModel, job_id, "Job")
 
-        if job.status not in ("pending", "running"):
+        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
             raise BadRequestError(
                 message=f"Cannot cancel job in {job.status} status",
                 details={
                     "job_id": str(job_id),
                     "status": job.status,
-                    "cancellable_statuses": ["pending", "running"],
+                    "cancellable_statuses": [JobStatus.PENDING, JobStatus.RUNNING],
                 },
             )
 
@@ -264,7 +265,7 @@ class JobService(BaseService):
         """
         job = await self.get_tenant_entity(JobQueueModel, job_id, "Job")
 
-        if job.status != "failed":
+        if job.status != JobStatus.FAILED:
             raise BadRequestError(
                 message="Only failed jobs can be requeued",
                 details={

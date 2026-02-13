@@ -21,6 +21,8 @@ __all__ = [
     "Tier",
     "RiskTier",
     "ExposureLevel",
+    "AdapterType",
+    "JobStatus",
     # Constants
     "KNOWN_ENTITY_TYPES",
     "CLINICAL_CONTEXT_TYPES",
@@ -58,7 +60,7 @@ class Tier(IntEnum):
         return cls(value)
 
 
-class RiskTier(Enum):
+class RiskTier(str, Enum):
     """Risk tier classification for files."""
     MINIMAL = "MINIMAL"   # Score 0-10
     LOW = "LOW"           # Score 11-30
@@ -67,12 +69,31 @@ class RiskTier(Enum):
     CRITICAL = "CRITICAL" # Score 80-100
 
 
-class ExposureLevel(Enum):
+class ExposureLevel(str, Enum):
     """File exposure/accessibility level."""
     PRIVATE = "PRIVATE"     # Only owner can access
     INTERNAL = "INTERNAL"   # Specific users/groups
     ORG_WIDE = "ORG_WIDE"   # All organization members
     PUBLIC = "PUBLIC"       # Publicly accessible
+
+
+class AdapterType(str, Enum):
+    """Storage adapter types for scan targets."""
+    FILESYSTEM = "filesystem"
+    SHAREPOINT = "sharepoint"
+    ONEDRIVE = "onedrive"
+    S3 = "s3"
+    GCS = "gcs"
+    AZURE_BLOB = "azure_blob"
+
+
+class JobStatus(str, Enum):
+    """Job/scan execution statuses."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 # --- ENTITY TYPES ---

@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlabels.core.types import JobStatus
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
@@ -633,7 +634,7 @@ async def schedule_report(
             "name": name,
             "distribute_to": request.distribute_to,
         },
-        status="pending",
+        status=JobStatus.PENDING,
     )
     session.add(job)
     await session.commit()

@@ -187,16 +187,12 @@ class TestLabelingEngineCloudSupport:
         """LabelingEngine must reference s3/gcs adapter types and deferred sync."""
         engine_py = Path("src/openlabels/labeling/engine.py")
         source = engine_py.read_text()
-        tree = ast.parse(source)
 
-        # Collect all string constants used in the engine
-        string_constants = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                string_constants.add(node.value)
-
-        assert "s3" in string_constants, "Engine must handle 's3' adapter type"
-        assert "gcs" in string_constants, "Engine must handle 'gcs' adapter type"
+        # Check for AdapterType enum usage or raw string literals for s3/gcs
+        has_s3 = "AdapterType.S3" in source or '"s3"' in source
+        has_gcs = "AdapterType.GCS" in source or '"gcs"' in source
+        assert has_s3, "Engine must handle 's3' adapter type (via AdapterType.S3 or string literal)"
+        assert has_gcs, "Engine must handle 'gcs' adapter type (via AdapterType.GCS or string literal)"
         assert "deferred_cloud_sync" in source, "Engine must support deferred cloud sync"
 
 

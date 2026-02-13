@@ -8,7 +8,13 @@ Provides metrics for monitoring:
 - Detection/scan processing statistics
 """
 
+import logging
+
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
+
+from openlabels.core.types import JobStatus
+
+logger = logging.getLogger(__name__)
 
 # Use the default registry
 registry = REGISTRY
@@ -176,9 +182,9 @@ def record_job_failed(task_type: str) -> None:
 
 def update_queue_depth(pending: int, running: int, failed: int) -> None:
     """Update the job queue depth gauges."""
-    jobs_queue_depth.labels(status="pending").set(pending)
-    jobs_queue_depth.labels(status="running").set(running)
-    jobs_queue_depth.labels(status="failed").set(failed)
+    jobs_queue_depth.labels(status=JobStatus.PENDING).set(pending)
+    jobs_queue_depth.labels(status=JobStatus.RUNNING).set(running)
+    jobs_queue_depth.labels(status=JobStatus.FAILED).set(failed)
 
 
 def record_file_processed(adapter: str) -> None:
@@ -240,5 +246,5 @@ def update_catalog_health(storage) -> None:
                 total_bytes += p.stat().st_size
         catalog_storage_bytes.set(total_bytes)
 
-    except Exception:
-        pass  # Metrics are best-effort
+    except Exception as e:
+        logger.debug("Catalog metrics collection failed: %s", e)

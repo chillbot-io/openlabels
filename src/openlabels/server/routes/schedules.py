@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
+from openlabels.core.types import JobStatus
 from openlabels.jobs import JobQueue, parse_cron_expression
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
@@ -188,7 +189,7 @@ async def trigger_schedule(
         tenant_id=user.tenant_id,
         target_id=schedule.target_id,
         name=f"{schedule.name} (manual trigger)",
-        status="pending",
+        status=JobStatus.PENDING,
         created_by=user.id,
     )
     session.add(job)

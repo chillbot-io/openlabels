@@ -427,6 +427,7 @@ async def rescan_file(
     admin: AdminContextDep,
 ):
     """Rescan a specific file."""
+    from openlabels.core.types import JobStatus
     from openlabels.jobs import JobQueue
     from openlabels.server.models import ScanJob
 
@@ -457,7 +458,7 @@ async def rescan_file(
         target_id=target_id,
         target_name=f"{target_name}: {result.file_name}",
         name=f"Rescan: {result.file_name}",
-        status="pending",
+        status=JobStatus.PENDING,
         created_by=admin.user_id,
     )
     db.add(new_job)

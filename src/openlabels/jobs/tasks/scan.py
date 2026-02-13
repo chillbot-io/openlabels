@@ -30,6 +30,7 @@ from openlabels.adapters import (
 from openlabels.adapters.base import ExposureLevel, FileInfo
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.core.policies.engine import get_policy_engine
+from openlabels.core.types import AdapterType, JobStatus
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
 from openlabels.exceptions import AdapterError, JobError
@@ -157,7 +158,7 @@ async def _check_cancellation(session: AsyncSession, job_id: UUID) -> bool:
         select(ScanJob.status).where(ScanJob.id == job_id)
     )
     current_status = result.scalar_one_or_none()
-    return current_status == "cancelled"
+    return current_status == JobStatus.CANCELLED
 
 
 # How often to check for cancellation (every N files)
@@ -203,9 +204,9 @@ async def execute_scan_task(
         )
 
     # Check if job was cancelled before we start
-    if job.status == "cancelled":
+    if job.status == JobStatus.CANCELLED:
         logger.info(f"Scan job {job_id} was cancelled before processing")
-        return {"status": "cancelled", "files_scanned": 0}
+        return {"status": JobStatus.CANCELLED, "files_scanned": 0}
 
     target = await session.get(ScanTarget, job.target_id)
     if not target:
@@ -249,7 +250,7 @@ async def execute_scan_task(
             logger.warning("Fan-out evaluation failed, falling back to single-worker: %s", e)
 
     # Update job status
-    job.status = "running"
+    job.status = JobStatus.RUNNING
     await session.flush()
 
     # Get adapter (use as async context manager for proper resource cleanup)
@@ -288,12 +289,12 @@ async def execute_scan_task(
 
         # Support scan_all_sites / scan_all_users auto-discovery
         scan_paths: list[str] = []
-        if target.adapter == "sharepoint" and settings.adapters.sharepoint.scan_all_sites and not target_path:
+        if target.adapter == AdapterType.SHAREPOINT and settings.adapters.sharepoint.scan_all_sites and not target_path:
             sp_adapter: SharePointAdapter = adapter  # type: ignore[assignment]
             sites = await sp_adapter.list_sites()
             scan_paths = [s["id"] for s in sites if s.get("id")]
             logger.info("scan_all_sites enabled: discovered %d sites", len(scan_paths))
-        elif target.adapter == "onedrive" and settings.adapters.onedrive.scan_all_users and not target_path:
+        elif target.adapter == AdapterType.ONEDRIVE and settings.adapters.onedrive.scan_all_users and not target_path:
             od_adapter: OneDriveAdapter = adapter  # type: ignore[assignment]
             all_users = await od_adapter.list_users()
             scan_paths = [u["id"] for u in all_users if u.get("id")]
@@ -497,7 +498,7 @@ async def execute_scan_task(
                 try:
                     await send_scan_progress(
                         scan_id=job.id,
-                        status="running",
+                        status=JobStatus.RUNNING,
                         progress={
                             "files_scanned": ctx.stats.files_scanned,
                             "files_with_pii": ctx.stats.files_with_pii,
@@ -526,14 +527,14 @@ async def execute_scan_task(
         # Handle cancellation detected by pipeline
         if pipeline.cancelled:
             logger.info("Scan job %s cancelled mid-scan at %d files", job_id, stats["files_scanned"])
-            job.status = "cancelled"
-            stats["status"] = "cancelled"
+            job.status = JobStatus.CANCELLED
+            stats["status"] = JobStatus.CANCELLED
             await session.commit()
             if _ws_streaming_enabled:
                 try:
                     await send_scan_completed(
                         scan_id=job.id,
-                        status="cancelled",
+                        status=JobStatus.CANCELLED,
                         summary={
                             "files_scanned": stats["files_scanned"],
                             "files_with_pii": stats["files_with_pii"],
@@ -571,7 +572,7 @@ async def execute_scan_task(
         stats["inventory"] = inv_stats
 
         # Mark job as completed
-        job.status = "completed"
+        job.status = JobStatus.COMPLETED
         await session.commit()
 
         # Stream completion via WebSocket
@@ -579,7 +580,7 @@ async def execute_scan_task(
             try:
                 await send_scan_completed(
                     scan_id=job.id,
-                    status="completed",
+                    status=JobStatus.COMPLETED,
                     summary={
                         "files_scanned": stats["files_scanned"],
                         "files_with_pii": stats["files_with_pii"],
@@ -617,7 +618,7 @@ async def execute_scan_task(
 
         # Cloud label sync-back for S3/GCS adapters (Phase L, non-fatal)
         target = await session.get(ScanTarget, job.target_id)
-        if target and target.adapter in ("s3", "gcs") and settings.labeling.enabled:
+        if target and target.adapter in (AdapterType.S3, AdapterType.GCS) and settings.labeling.enabled:
             adapter_settings = getattr(settings.adapters, target.adapter, None)
             if adapter_settings and getattr(adapter_settings, "label_sync_enabled", False):
                 try:
@@ -706,7 +707,7 @@ async def execute_scan_task(
         return stats
 
     except PermissionError as e:
-        job.status = "failed"
+        job.status = JobStatus.FAILED
         job.error = f"Permission denied: {e}"
         await session.commit()
 
@@ -715,7 +716,7 @@ async def execute_scan_task(
             try:
                 await send_scan_completed(
                     scan_id=job.id,
-                    status="failed",
+                    status=JobStatus.FAILED,
                     summary={
                         "error": f"Permission denied: {e}",
                         "files_scanned": stats.get("files_scanned", 0),
@@ -727,7 +728,7 @@ async def execute_scan_task(
         raise
 
     except OSError as e:
-        job.status = "failed"
+        job.status = JobStatus.FAILED
         job.error = f"OS error: {e}"
         await session.commit()
 
@@ -735,7 +736,7 @@ async def execute_scan_task(
             try:
                 await send_scan_completed(
                     scan_id=job.id,
-                    status="failed",
+                    status=JobStatus.FAILED,
                     summary={
                         "error": f"OS error: {e}",
                         "files_scanned": stats.get("files_scanned", 0),
@@ -774,25 +775,25 @@ def _get_adapter(adapter_type: str, config: dict):
     """
     settings = get_settings()
 
-    if adapter_type == "filesystem":
+    if adapter_type == AdapterType.FILESYSTEM:
         return FilesystemAdapter(
             service_account=config.get("service_account"),
         )
-    elif adapter_type in ("sharepoint", "onedrive"):
+    elif adapter_type in (AdapterType.SHAREPOINT, AdapterType.ONEDRIVE):
         if not settings.auth.tenant_id or not settings.auth.client_id:
-            display_name = "SharePoint" if adapter_type == "sharepoint" else "OneDrive"
+            display_name = "SharePoint" if adapter_type == AdapterType.SHAREPOINT else "OneDrive"
             raise AdapterError(
                 f"{display_name} adapter requires auth configuration",
                 adapter_type=adapter_type,
                 context="missing tenant_id or client_id in settings",
             )
-        cls = SharePointAdapter if adapter_type == "sharepoint" else OneDriveAdapter
+        cls = SharePointAdapter if adapter_type == AdapterType.SHAREPOINT else OneDriveAdapter
         return cls(
             tenant_id=settings.auth.tenant_id,
             client_id=settings.auth.client_id,
             client_secret=settings.auth.client_secret,
         )
-    elif adapter_type == "s3":
+    elif adapter_type == AdapterType.S3:
         return S3Adapter(
             bucket=config.get("bucket", ""),
             prefix=config.get("prefix", ""),
@@ -801,7 +802,7 @@ def _get_adapter(adapter_type: str, config: dict):
             secret_key=config.get("secret_key", settings.adapters.s3.secret_key),
             endpoint_url=config.get("endpoint_url", settings.adapters.s3.endpoint_url),
         )
-    elif adapter_type == "gcs":
+    elif adapter_type == AdapterType.GCS:
         return GCSAdapter(
             bucket=config.get("bucket", ""),
             prefix=config.get("prefix", ""),
@@ -810,7 +811,7 @@ def _get_adapter(adapter_type: str, config: dict):
                 "credentials_path", settings.adapters.gcs.credentials_path
             ),
         )
-    elif adapter_type == "azure_blob":
+    elif adapter_type == AdapterType.AZURE_BLOB:
         return AzureBlobAdapter(
             storage_account=config.get(
                 "storage_account", settings.adapters.azure_blob.storage_account
