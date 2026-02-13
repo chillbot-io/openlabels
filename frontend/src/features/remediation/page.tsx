@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { useRemediationActions, useQuarantine, useLockdown, useRollback } from '@/api/hooks/use-remediation.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
@@ -12,9 +12,8 @@ import { formatDateTime } from '@/lib/date.ts';
 import { truncatePath } from '@/lib/utils.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type { RemediationAction as RemAction } from '@/api/types.ts';
-import type { ScanStatus } from '@/lib/constants.ts';
 
-const columns: ColumnDef<RemAction, unknown>[] = [
+const staticColumns: ColumnDef<RemAction, unknown>[] = [
   { accessorKey: 'source_path', header: 'File', cell: ({ row }) => (
     <span className="font-mono text-xs">{truncatePath(row.original.source_path)}</span>
   )},
@@ -22,7 +21,7 @@ const columns: ColumnDef<RemAction, unknown>[] = [
     <Badge variant="outline" className="capitalize">{row.original.action_type}</Badge>
   )},
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => (
-    <StatusBadge status={row.original.status as ScanStatus} />
+    <StatusBadge status={row.original.status} />
   )},
   { accessorKey: 'dry_run', header: 'Dry Run', cell: ({ row }) => row.original.dry_run ? 'Yes' : 'No' },
   { accessorKey: 'created_at', header: 'Date', cell: ({ row }) => formatDateTime(row.original.created_at) },
@@ -75,8 +74,8 @@ export function Component() {
     });
   };
 
-  const columnsWithActions: ColumnDef<RemAction, unknown>[] = [
-    ...columns,
+  const columns = useMemo<ColumnDef<RemAction, unknown>[]>(() => [
+    ...staticColumns,
     {
       id: 'actions',
       header: '',
@@ -87,7 +86,7 @@ export function Component() {
           </Button>
         ) : null,
     },
-  ];
+  ], []);
 
   return (
     <div className="space-y-6 p-6">
@@ -100,7 +99,7 @@ export function Component() {
       </div>
 
       <DataTable
-        columns={columnsWithActions}
+        columns={columns}
         data={actions.data?.items ?? []}
         totalRows={actions.data?.total}
         pagination={{ pageIndex: page, pageSize: 20 }}
