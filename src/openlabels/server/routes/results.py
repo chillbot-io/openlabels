@@ -165,7 +165,7 @@ async def get_result_stats(
         minimal_count=stats["minimal_count"],
         top_entity_types=entity_stats,
         labels_applied=stats["labels_applied"],
-        labels_pending=0,  # Default since service may not track this separately
+        labels_pending=stats["labels_pending"],
     )
 
 
@@ -177,7 +177,7 @@ async def export_results(
     job_id: UUID | None = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
     has_label: str | None = Query(None, description="Filter by label status"),
-    format: str = Query("csv", description="Export format (csv or json)"),
+    format: Literal["csv", "json"] = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
     """Export scan results as CSV or JSON."""
     import csv
@@ -190,6 +190,12 @@ async def export_results(
     if risk_tier:
         filename_parts.append(risk_tier.lower())
     filename = "_".join(filename_parts)
+
+    _EXPORT_COLS = [
+        "file_path", "file_name", "risk_score", "risk_tier",
+        "total_entities", "exposure_level", "owner",
+        "current_label_name", "recommended_label_name", "label_applied",
+    ]
 
     # Resolve data source — DuckDB (all filters pushed down) or PG (post-filter)
     analytics = getattr(request.app.state, "analytics", None)
@@ -205,7 +211,7 @@ async def export_results(
             risk_tier=risk_tier,
             has_label=has_label_bool,
         )
-        return _build_export_response(rows, format, filename)
+        return _build_export_response(rows, format, filename, _EXPORT_COLS)
 
     # PostgreSQL fallback — stream with post-filtering
     def _matches_filters(row_dict: dict) -> bool:
@@ -227,28 +233,13 @@ async def export_results(
         async def _csv_generator():
             header_buf = io.StringIO()
             writer = csv.writer(header_buf)
-            writer.writerow([
-                "file_path", "file_name", "risk_score", "risk_tier",
-                "total_entities", "exposure_level", "owner",
-                "current_label", "recommended_label", "label_applied",
-            ])
+            writer.writerow(_EXPORT_COLS)
             yield header_buf.getvalue()
 
             async for row_dict in _pg_row_iter():
                 row_buf = io.StringIO()
                 row_writer = csv.writer(row_buf)
-                row_writer.writerow([
-                    row_dict.get("file_path", ""),
-                    row_dict.get("file_name", ""),
-                    row_dict.get("risk_score", 0),
-                    row_dict.get("risk_tier", ""),
-                    row_dict.get("total_entities", 0),
-                    row_dict.get("exposure_level", ""),
-                    row_dict.get("owner", ""),
-                    row_dict.get("current_label_name", ""),
-                    row_dict.get("recommended_label_name", ""),
-                    row_dict.get("label_applied", False),
-                ])
+                row_writer.writerow([row_dict.get(c, "") for c in _EXPORT_COLS])
                 yield row_buf.getvalue()
 
         return StreamingResponse(
@@ -264,7 +255,11 @@ async def export_results(
                 if not first:
                     yield ",\n"
                 first = False
-                yield json.dumps(row_dict, indent=2, default=str)
+                yield json.dumps(
+                    {c: row_dict.get(c) for c in _EXPORT_COLS},
+                    indent=2,
+                    default=str,
+                )
             yield "\n]\n"
 
         return StreamingResponse(
@@ -275,28 +270,22 @@ async def export_results(
 
 
 def _build_export_response(
-    rows: list[dict], format: str, filename: str,
+    rows: list[dict], format: str, filename: str, columns: list[str],
 ) -> StreamingResponse:
     """Build a CSV or JSON streaming response from pre-fetched DuckDB rows."""
     import csv
     import io
     import json
 
-    _EXPORT_COLS = [
-        "file_path", "file_name", "risk_score", "risk_tier",
-        "total_entities", "exposure_level", "owner",
-        "current_label_name", "label_applied",
-    ]
-
     if format == "csv":
         def _csv_gen():
             header_buf = io.StringIO()
             writer = csv.writer(header_buf)
-            writer.writerow(_EXPORT_COLS)
+            writer.writerow(columns)
             yield header_buf.getvalue()
             for r in rows:
                 buf = io.StringIO()
-                csv.writer(buf).writerow([r.get(c, "") for c in _EXPORT_COLS])
+                csv.writer(buf).writerow([r.get(c, "") for c in columns])
                 yield buf.getvalue()
 
         return StreamingResponse(
@@ -310,7 +299,7 @@ def _build_export_response(
             for i, r in enumerate(rows):
                 if i:
                     yield ",\n"
-                yield json.dumps({c: r.get(c) for c in _EXPORT_COLS}, indent=2)
+                yield json.dumps({c: r.get(c) for c in columns}, indent=2)
             yield "\n]\n"
 
         return StreamingResponse(

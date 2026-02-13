@@ -1,4 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
+const API_TIMEOUT_MS = 30_000;
 
 const CSRF_COOKIE_NAME = 'openlabels_csrf';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
@@ -58,9 +59,10 @@ export async function apiFetch<T>(
   const method = (fetchOptions.method ?? 'GET').toUpperCase();
   if (CSRF_PROTECTED_METHODS.has(method)) {
     const csrfToken = getCsrfToken();
-    if (csrfToken) {
-      headers[CSRF_HEADER_NAME] = csrfToken;
+    if (!csrfToken) {
+      throw new ApiError(403, { message: 'Session expired. Please refresh the page and try again.' });
     }
+    headers[CSRF_HEADER_NAME] = csrfToken;
   }
 
   const response = await fetch(url, {
@@ -68,6 +70,7 @@ export async function apiFetch<T>(
     credentials: 'include',
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal: fetchOptions.signal ?? AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (response.status === 401) {

@@ -387,6 +387,9 @@ class LocalLabelWriter:
         except ValueError as e:
             logger.error(f"Invalid PDF format: {e}")
             return LabelResult(success=False, label_id=label_id, error=f"Invalid PDF: {e}")
+        except Exception as e:
+            logger.error(f"Failed to apply PDF metadata label ({type(e).__name__}): {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"PDF error: {e}")
 
     def apply_sidecar(
         self,

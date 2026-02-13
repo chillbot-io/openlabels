@@ -1,4 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
+const EXPORT_TIMEOUT_MS = 120_000;
 
 function getCsrfToken(): string | undefined {
   const match = document.cookie
@@ -27,6 +28,7 @@ async function fetchBlob(path: string, params?: Record<string, string | undefine
   const response = await fetch(url, {
     credentials: 'include',
     headers,
+    signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
   });
 
   if (response.status === 401) {
@@ -42,7 +44,7 @@ async function fetchBlob(path: string, params?: Record<string, string | undefine
 }
 
 export const exportApi = {
-  results: (params?: { format?: 'csv' | 'xlsx' | 'pdf'; scan_id?: string; risk_tier?: string; entity_type?: string; search?: string }) =>
+  results: (params?: { format?: 'csv' | 'json'; scan_id?: string; risk_tier?: string; entity_type?: string; search?: string }) =>
     fetchBlob('/results/export', params),
 
   report: (reportId: string, format: 'pdf' | 'xlsx' | 'csv') =>
