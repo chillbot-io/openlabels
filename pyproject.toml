@@ -98,18 +98,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = [
-    "PySide6>=6.6.0",
-    "pyqtgraph>=0.13.0",
-    "numpy>=1.24.0",
-]
 mip = [
     "pythonnet>=3.0.0",
-]
-windows = [
-    "PySide6>=6.6.0",
-    "pywin32>=306",
-    "httpx>=0.26.0",
 ]
 dev = [
     "pytest>=7.4.0",
@@ -154,7 +144,7 @@ reports = [
     "weasyprint>=62.0",
 ]
 all = [
-    "openlabels[gui,mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports]",
+    "openlabels[mip,dev,hyperscan,ocr,s3,gcs,azure,reports]",
 ]
 
 [project.scripts]
@@ -213,9 +203,6 @@ module = [
     "pythonnet", "pythonnet.*",
     "clr", "clr.*",
     "Microsoft", "Microsoft.*",
-    # GUI
-    "PySide6", "PySide6.*",
-    "pyqtgraph", "pyqtgraph.*",
     # Web framework
     "fastapi", "fastapi.*",
     "starlette", "starlette.*",

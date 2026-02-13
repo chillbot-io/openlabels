@@ -49,7 +49,7 @@ from openlabels.cli.commands.report import report
 
 # Scan management commands
 from openlabels.cli.commands.scan import scan
-from openlabels.cli.commands.server import gui, serve, worker
+from openlabels.cli.commands.server import serve, worker
 
 # System commands
 from openlabels.cli.commands.system import backup, restore, status
@@ -64,7 +64,6 @@ __all__ = [
     # Server commands
     "serve",
     "worker",
-    "gui",
     # Command groups
     "db",
     "config",

@@ -1,56 +1,22 @@
 """
 Unified test configuration for OpenLabels.
 
-Combines fixtures and utilities from the merged OpenRisk and ScrubIQ codebases.
-Handles optional dependencies (Qt, OCR, ML) gracefully.
+Handles optional dependencies (OCR, ML) gracefully.
 """
 
 import sys
 import pytest
 from typing import List, Dict, Any
 
-# =============================================================================
-# QT/GUI HANDLING
-# =============================================================================
-
-_qt_available = False
-_qt_skip_reason = "Qt not available"
-
-try:
-    from PySide6 import QtWidgets
-    _qt_available = True
-except ImportError as e:
-    _qt_skip_reason = f"PySide6 not installed: {e}"
-except OSError as e:
-    _qt_skip_reason = f"Qt system libraries missing: {e}"
-
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "gui: mark test as requiring Qt GUI"
-    )
     config.addinivalue_line(
         "markers", "slow: mark test as slow running"
     )
     config.addinivalue_line(
         "markers", "integration: mark test as integration test"
     )
-
-
-def pytest_collection_modifyitems(config, items):
-    """Skip tests based on available dependencies."""
-    for item in items:
-        # Skip GUI tests if Qt is not available
-        if not _qt_available:
-            if "test_gui" in item.nodeid or "gui" in item.keywords:
-                item.add_marker(pytest.mark.skip(reason=_qt_skip_reason))
-
-
-if not _qt_available:
-    @pytest.fixture
-    def qtbot():
-        pytest.skip(_qt_skip_reason)
 
 
 # =============================================================================
