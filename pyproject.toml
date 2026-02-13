@@ -101,6 +101,10 @@ dependencies = [
 mip = [
     "pythonnet>=3.0.0",
 ]
+windows = [
+    "pywin32>=306",
+    "httpx>=0.26.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
@@ -144,7 +148,7 @@ reports = [
     "weasyprint>=62.0",
 ]
 all = [
-    "openlabels[mip,dev,hyperscan,ocr,s3,gcs,azure,reports]",
+    "openlabels[mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports]",
 ]
 
 [project.scripts]
