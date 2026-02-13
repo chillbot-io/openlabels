@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.4.0,<2"]
+build-backend = "maturin"
+
+[project]
+name = "openlabels_matcher"
+version = "0.1.0"
+description = "High-performance pattern matching for OpenLabels"
+requires-python = ">=3.10"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

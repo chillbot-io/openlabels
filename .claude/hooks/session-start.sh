@@ -16,6 +16,17 @@ cd "$PROJECT_DIR"
 uv pip install -e ".[dev]" 2>&1 || true
 
 # -------------------------------------------------------
+# 1b. Build Rust extension (openlabels_matcher) if rustc is available
+# -------------------------------------------------------
+RUST_EXT_DIR="$PROJECT_DIR/src/openlabels/core/_rust"
+if command -v rustc &> /dev/null && [ -f "$RUST_EXT_DIR/Cargo.toml" ]; then
+  echo "Building Rust pattern matcher..."
+  uv pip install -e "$RUST_EXT_DIR" 2>&1 || echo "WARNING: Rust extension build failed (Python fallback will be used)"
+else
+  echo "Rust toolchain not found, skipping openlabels_matcher build (Python fallback will be used)"
+fi
+
+# -------------------------------------------------------
 # 2. Purge orphaned PostgreSQL and Redis instances
 # -------------------------------------------------------
 echo "Purging orphaned processes..."
