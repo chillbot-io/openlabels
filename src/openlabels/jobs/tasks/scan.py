@@ -76,14 +76,24 @@ def register_shutdown_callback(callback) -> None:
     _shutdown_callbacks.append(callback)
 
 
-def get_processor(enable_ml: bool = False) -> FileProcessor:
+def get_processor(enable_ml: bool | None = None) -> FileProcessor:
     """
     Get or create the file processor.
 
     The processor is cached globally for efficiency during job execution.
     Call cleanup_processor() during worker shutdown to release resources.
+
+    Args:
+        enable_ml: Whether to enable ML detectors. If None, reads from
+                   server config (detection.enable_ml, default True).
     """
     global _processor
+    settings = get_settings()
+
+    # Resolve enable_ml from server config if not explicitly provided
+    if enable_ml is None:
+        enable_ml = getattr(settings.detection, "enable_ml", True)
+
     if _processor is not None:
         # If the caller requests ML but the cached processor doesn't have it,
         # recreate with ML enabled.
@@ -94,7 +104,6 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
         else:
             return _processor
 
-    settings = get_settings()
     from openlabels.core.detectors.config import DetectionConfig
     _processor = FileProcessor(
         config=DetectionConfig(
@@ -103,7 +112,7 @@ def get_processor(enable_ml: bool = False) -> FileProcessor:
             confidence_threshold=getattr(settings, 'confidence_threshold', 0.70),
         ),
     )
-    logger.debug("Created ML processor instance (enable_ml=%s)", enable_ml)
+    logger.info("Created processor instance (enable_ml=%s)", enable_ml)
     return _processor
 
 
@@ -265,6 +274,19 @@ async def execute_scan_task(
     settings = get_settings()
     max_file_size_bytes = settings.detection.max_file_size_mb * 1024 * 1024
 
+    # Resolve enable_ml: tenant setting overrides server config
+    enable_ml: bool = getattr(settings.detection, "enable_ml", True)
+    try:
+        from openlabels.server.models import TenantSettings as _TS
+        _ts_result = await session.execute(
+            select(_TS).where(_TS.tenant_id == job.tenant_id)
+        )
+        _ts = _ts_result.scalar_one_or_none()
+        if _ts is not None:
+            enable_ml = getattr(_ts, "enable_ml", enable_ml)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        logger.debug("Could not load tenant ML setting for %s", job.tenant_id)
+
     # Scan statistics
     stats = {
         "files_scanned": 0,
@@ -396,7 +418,7 @@ async def execute_scan_task(
                 return
 
             # Run detection
-            result = await _detect_and_score(content, file_info, target.adapter)
+            result = await _detect_and_score(content, file_info, target.adapter, enable_ml=enable_ml)
 
             # Update pipeline stats (all files, regardless of sensitivity)
             ctx.stats.record_result(result["risk_tier"], result["total_entities"])
@@ -1125,7 +1147,12 @@ async def _build_pipeline_config(settings, tenant_id=None, session=None) -> Pipe
     return config
 
 
-async def _detect_and_score(content: bytes, file_info, adapter_type: str = "filesystem") -> dict:
+async def _detect_and_score(
+    content: bytes,
+    file_info,
+    adapter_type: str = "filesystem",
+    enable_ml: bool | None = None,
+) -> dict:
     """
     Run detection and scoring on file content.
 
@@ -1140,11 +1167,12 @@ async def _detect_and_score(content: bytes, file_info, adapter_type: str = "file
         content: Raw file bytes
         file_info: File metadata (path, name, exposure, etc.)
         adapter_type: Type of adapter being used (for metrics)
+        enable_ml: Whether to enable ML detectors. None = use server config.
 
     Returns:
         Dict with risk_score, risk_tier, entity_counts, etc.
     """
-    processor = get_processor()
+    processor = get_processor(enable_ml=enable_ml)
 
     # Get exposure level from file info
     exposure_level = ExposureLevel.PRIVATE

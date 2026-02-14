@@ -865,6 +865,7 @@ class TenantSettings(Base):
     max_file_size_mb: Mapped[int] = mapped_column(Integer, default=100)
     concurrent_files: Mapped[int] = mapped_column(Integer, default=10)
     enable_ocr: Mapped[bool] = mapped_column(Boolean, default=False)
+    enable_ml: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Entity detection configuration
     enabled_entities: Mapped[list] = mapped_column(JSONB, default=list)
