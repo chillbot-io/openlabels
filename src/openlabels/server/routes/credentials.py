@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Must match the cookie name in auth.py and ws.py
 SESSION_COOKIE_NAME = "openlabels_session"
 
 # Valid source types that can store credentials

@@ -439,8 +439,14 @@ export function Component() {
     setHasEnumerated(false);
     setEnumError(null);
     setCredentials({});
-    // Store source_type in config so backend knows which protocol
-    form.setValue('config', { source_type: newType });
+    // Preserve filter/label fields across source type changes
+    const prev = form.getValues('config');
+    form.setValue('config', {
+      source_type: newType,
+      extensions: prev.extensions ?? '',
+      exclude_patterns: prev.exclude_patterns ?? '',
+      apply_mip_labels: prev.apply_mip_labels ?? false,
+    });
   };
 
   const handleConnect = async () => {
@@ -499,7 +505,14 @@ export function Component() {
   const onSubmit = (data: TargetFormData) => {
     // Merge selected resources into config
     const selectedItems = enumeratedResources.filter((r) => selectedResources.has(r.id));
-    const finalConfig = {
+
+    // Require at least one resource selected (unless editing — may already have config)
+    if (!isEdit && selectedItems.length === 0 && !hasEnumerated) {
+      addToast({ level: 'error', message: 'Connect and select at least one resource before creating.' });
+      return;
+    }
+
+    const finalConfig: Record<string, unknown> = {
       ...data.config,
       source_type: sourceType,
       selected_resources: selectedItems.map((r) => ({
@@ -516,15 +529,17 @@ export function Component() {
       const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
       finalConfig.resource = host;
       finalConfig.is_local = isLocal;
-      // If only one resource selected and it has a path, use as root_path
-      if (selectedItems.length === 1) {
+      if (selectedItems.length >= 1) {
         finalConfig.root_path = selectedItems[0].path;
-        // For filesystem adapter, set 'path' which the backend validator expects
+        // 'path' is what the backend filesystem validator requires
         finalConfig.path = selectedItems[0].path;
-      } else if (selectedItems.length > 0) {
-        // Find common parent or use first path
-        finalConfig.root_path = selectedItems[0].path;
-        finalConfig.path = selectedItems[0].path;
+      } else if (isEdit) {
+        // Keep existing path from saved config when editing without re-enumerating
+        const existing = data.config.path ?? data.config.root_path;
+        if (existing) {
+          finalConfig.path = existing;
+          finalConfig.root_path = existing;
+        }
       }
     }
 
@@ -533,28 +548,41 @@ export function Component() {
       if (selectedItems.length > 0) {
         finalConfig.site_url = selectedItems[0].path;
         finalConfig.document_libraries = selectedItems.map((r) => r.name).join(',');
+      } else if (isEdit) {
+        finalConfig.site_url = data.config.site_url;
       }
     } else if (sourceType === 'onedrive') {
       if (selectedItems.length > 0) {
         finalConfig.user_emails = selectedItems.map((r) => r.path).join(',');
         finalConfig.user_id = selectedItems[0].id;
+      } else if (isEdit) {
+        finalConfig.user_id = data.config.user_id;
       }
     } else if (sourceType === 's3') {
       if (selectedItems.length > 0) {
         finalConfig.bucket = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.bucket = data.config.bucket;
       }
-      finalConfig.region = credentials.region || 'us-east-1';
-      if (credentials.endpoint_url) finalConfig.endpoint_url = credentials.endpoint_url;
+      finalConfig.region = credentials.region || data.config.region || 'us-east-1';
+      const ep = credentials.endpoint_url || data.config.endpoint_url;
+      if (ep) finalConfig.endpoint_url = ep;
     } else if (sourceType === 'gcs') {
       if (selectedItems.length > 0) {
         finalConfig.bucket = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.bucket = data.config.bucket;
       }
-      if (credentials.project) finalConfig.project = credentials.project;
+      const proj = credentials.project || data.config.project;
+      if (proj) finalConfig.project = proj;
     } else if (sourceType === 'azure_blob') {
       if (selectedItems.length > 0) {
         finalConfig.container = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.container = data.config.container;
       }
-      if (credentials.storage_account) finalConfig.storage_account = credentials.storage_account;
+      const sa = credentials.storage_account || data.config.storage_account;
+      if (sa) finalConfig.storage_account = sa;
     }
 
     const submitData = { ...data, config: finalConfig };

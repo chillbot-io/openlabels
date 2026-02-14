@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import subprocess
 from typing import Any
 
@@ -39,6 +40,40 @@ from openlabels.server.session import SessionStore
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Hostname: allow alphanumeric, hyphens, dots, IPv4, bracketed IPv6 — no slashes/traversal
+_HOST_RE = re.compile(r"^[a-zA-Z0-9\-\.:\[\]]+$")
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _validate_host(host: str) -> str:
+    """Sanitize and validate a hostname / IP address."""
+    host = host.strip()
+    if not host:
+        raise HTTPException(status_code=400, detail="Host is required")
+    if not _HOST_RE.match(host):
+        raise HTTPException(status_code=400, detail="Host contains invalid characters")
+    if ".." in host:
+        raise HTTPException(status_code=400, detail="Host contains invalid traversal sequence")
+    return host
+
+
+def _validate_uuid(value: str, label: str) -> str:
+    """Validate that a string looks like a UUID."""
+    value = value.strip()
+    if not _UUID_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"{label} must be a valid UUID")
+    return value
+
+
+def _safe_json(resp: Any) -> dict:
+    """Safely parse JSON from an httpx response, returning {} on failure."""
+    try:
+        return resp.json()
+    except Exception:
+        return {}
 
 
 class EnumerateRequest(BaseModel):
@@ -102,12 +137,9 @@ async def _get_credentials(
 
 async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
     """Enumerate SMB shares on a host."""
-    host = creds.get("host", "").strip()
+    host = _validate_host(creds.get("host", ""))
     username = creds.get("username", "").strip()
     password = creds.get("password", "")
-
-    if not host:
-        raise HTTPException(status_code=400, detail="SMB host is required")
 
     # Check if this is localhost — enumerate local shares
     if host.lower() in ("localhost", "127.0.0.1", "::1"):
@@ -277,10 +309,7 @@ async def _enumerate_local_shares() -> list[EnumeratedResource]:
 
 async def _enumerate_nfs(creds: dict[str, Any]) -> list[EnumeratedResource]:
     """Enumerate NFS exports on a host."""
-    host = creds.get("host", "").strip()
-
-    if not host:
-        raise HTTPException(status_code=400, detail="NFS host is required")
+    host = _validate_host(creds.get("host", ""))
 
     if host.lower() in ("localhost", "127.0.0.1", "::1"):
         return await _enumerate_local_nfs()
@@ -397,6 +426,9 @@ async def _enumerate_sharepoint(creds: dict[str, Any]) -> list[EnumeratedResourc
             detail="SharePoint requires tenant_id, client_id, and client_secret",
         )
 
+    _validate_uuid(tenant_id, "Tenant ID")
+    _validate_uuid(client_id, "Client ID")
+
     try:
         import httpx
     except ImportError:
@@ -414,7 +446,7 @@ async def _enumerate_sharepoint(creds: dict[str, Any]) -> list[EnumeratedResourc
     async with httpx.AsyncClient(timeout=30) as client:
         token_resp = await client.post(token_url, data=token_data)
         if token_resp.status_code != 200:
-            error_detail = token_resp.json().get("error_description", "Authentication failed")
+            error_detail = _safe_json(token_resp).get("error_description", "Authentication failed")
             raise HTTPException(status_code=401, detail=f"SharePoint auth failed: {error_detail}")
 
         access_token = token_resp.json()["access_token"]
@@ -459,6 +491,9 @@ async def _enumerate_onedrive(creds: dict[str, Any]) -> list[EnumeratedResource]
             detail="OneDrive requires tenant_id, client_id, and client_secret",
         )
 
+    _validate_uuid(tenant_id, "Tenant ID")
+    _validate_uuid(client_id, "Client ID")
+
     try:
         import httpx
     except ImportError:
@@ -475,7 +510,7 @@ async def _enumerate_onedrive(creds: dict[str, Any]) -> list[EnumeratedResource]
     async with httpx.AsyncClient(timeout=30) as client:
         token_resp = await client.post(token_url, data=token_data)
         if token_resp.status_code != 200:
-            error_detail = token_resp.json().get("error_description", "Authentication failed")
+            error_detail = _safe_json(token_resp).get("error_description", "Authentication failed")
             raise HTTPException(status_code=401, detail=f"OneDrive auth failed: {error_detail}")
 
         access_token = token_resp.json()["access_token"]
