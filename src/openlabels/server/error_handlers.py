@@ -237,7 +237,7 @@ def register_error_handlers(app: FastAPI) -> None:
             exc,
             extra={
                 "path": request.url.path,
-                "method": request.method,
+                "method": getattr(request, "method", "WEBSOCKET"),
             },
         )
         body: dict[str, Any] = {
@@ -259,7 +259,7 @@ def register_error_handlers(app: FastAPI) -> None:
             "Unhandled exception: %s", exc,
             extra={
                 "path": request.url.path,
-                "method": request.method,
+                "method": getattr(request, "method", "WEBSOCKET"),
                 "exception_type": type(exc).__name__,
             },
         )
