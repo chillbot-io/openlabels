@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" fill="none">
+  <!-- String / loop (reversed, trailing left) -->
+  <path
+    d="M28 18 Q28 5, 20 5 Q12 5, 12 14"
+    stroke="rgba(255,255,255,0.5)" stroke-width="2.5" stroke-linecap="round" fill="none"
+  />
+  <!-- Tag body: rectangle with rounded corners (no pointed end) -->
+  <rect x="14" y="16" width="28" height="48" rx="4" fill="#E03E3E" />
+  <!-- Hole -->
+  <circle cx="28" cy="25" r="4" fill="white" />
+</svg>
