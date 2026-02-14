@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { useExposureSummary, useDirectories, useDirectoryACL, usePrincipalLookup } from '@/api/hooks/use-permissions.ts';
-import { useTargets } from '@/api/hooks/use-targets.ts';
+import { Shield, ShieldAlert, ShieldCheck, Lock, Unlock, Eye } from 'lucide-react';
+import { useDirectoryACL } from '@/api/hooks/use-permissions.ts';
+import { FolderTreePanel } from '@/components/folder-tree.tsx';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
-import { Input } from '@/components/ui/input.tsx';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
-import { useDebounce } from '@/hooks/use-debounce.ts';
-import { EXPOSURE_LEVELS } from '@/lib/constants.ts';
+import { EmptyState } from '@/components/empty-state.tsx';
+import type { BrowseFolder } from '@/api/types.ts';
 
 const EXPOSURE_COLORS: Record<string, string> = {
   PUBLIC: 'bg-red-100 text-red-800',
@@ -17,166 +15,134 @@ const EXPOSURE_COLORS: Record<string, string> = {
   PRIVATE: 'bg-green-100 text-green-800',
 };
 
-export function Component() {
-  const targets = useTargets();
-  const [targetId, setTargetId] = useState('');
-  const [exposure, setExposure] = useState<string>('');
-  const [page, setPage] = useState(1);
-  const [selectedDirId, setSelectedDirId] = useState<string>('');
-  const [principal, setPrincipal] = useState('');
-  const debouncedPrincipal = useDebounce(principal);
+function ACLPanel({ targetId, folder }: { targetId: string; folder: BrowseFolder }) {
+  const acl = useDirectoryACL(targetId, folder.id);
 
-  const exposureSummary = useExposureSummary();
-  const directories = useDirectories(targetId, {
-    page,
-    exposure: exposure || undefined,
-  });
-  const acl = useDirectoryACL(targetId, selectedDirId);
-  const principalLookup = usePrincipalLookup(debouncedPrincipal);
+  // Derive exposure from folder data
+  const hasSD = folder.world_accessible != null || folder.authenticated_users != null || folder.custom_acl != null;
+  const isOpenAccess = folder.world_accessible || folder.authenticated_users;
+  const isProtected = hasSD && !isOpenAccess;
 
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Permissions Explorer</h1>
-
-      {/* Exposure summary */}
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
-        {exposureSummary.isLoading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)
-        ) : exposureSummary.data ? (
-          <>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.total_directories}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">Total Dirs</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.world_accessible}</p>
-                <Badge className={EXPOSURE_COLORS.PUBLIC}>Public</Badge>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.authenticated_users}</p>
-                <Badge className={EXPOSURE_COLORS.ORG_WIDE}>Org-Wide</Badge>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.custom_acl}</p>
-                <Badge className={EXPOSURE_COLORS.INTERNAL}>Custom ACL</Badge>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.private}</p>
-                <Badge className={EXPOSURE_COLORS.PRIVATE}>Private</Badge>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold">{exposureSummary.data.with_security_descriptor}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">With SD</p>
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
+    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      {/* Folder header */}
+      <div>
+        <h2 className="text-lg font-semibold">{folder.dir_name}</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">{folder.dir_path}</p>
       </div>
 
-      <Tabs defaultValue="directories">
-        <TabsList>
-          <TabsTrigger value="directories">Directory ACLs</TabsTrigger>
-          <TabsTrigger value="principal">Principal Lookup</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="directories" className="space-y-4 pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Select value={targetId} onValueChange={(v) => { setTargetId(v); setPage(1); }}>
-              <SelectTrigger className="w-48" aria-label="Select target"><SelectValue placeholder="Select target" /></SelectTrigger>
-              <SelectContent>
-                {(targets.data?.items ?? []).map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={exposure} onValueChange={(v) => { setExposure(v === 'all' ? '' : v); setPage(1); }}>
-              <SelectTrigger className="w-36" aria-label="Filter by exposure level"><SelectValue placeholder="Exposure" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All levels</SelectItem>
-                {EXPOSURE_LEVELS.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {directories.isLoading ? (
-            <Skeleton className="h-48" />
-          ) : (
-            <div className="space-y-1">
-              {(directories.data?.items ?? []).map((dir) => (
-                <button
-                  key={dir.id}
-                  className="flex w-full items-center justify-between rounded-md px-4 py-3 text-left text-sm hover:bg-[var(--muted)]"
-                  onClick={() => setSelectedDirId(dir.id)}
-                >
-                  <span className="font-mono">{dir.path}</span>
-                  {dir.exposure_level && (
-                    <Badge className={EXPOSURE_COLORS[dir.exposure_level] ?? ''}>{dir.exposure_level}</Badge>
-                  )}
-                </button>
-              ))}
+      {/* Insight cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <Eye className="h-5 w-5 text-[var(--muted-foreground)]" />
+            <div>
+              <p className="text-2xl font-bold">{folder.total_entities_found ?? 0}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Sensitive Entities</p>
             </div>
-          )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            {isProtected ? (
+              <ShieldCheck className="h-5 w-5 text-green-600" />
+            ) : (
+              <ShieldAlert className="h-5 w-5 text-yellow-600" />
+            )}
+            <div>
+              <p className="text-sm font-semibold">{isProtected ? 'Protected' : hasSD ? 'Exposed' : 'No SD'}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Security Status</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            {isOpenAccess ? (
+              <Unlock className="h-5 w-5 text-red-600" />
+            ) : (
+              <Lock className="h-5 w-5 text-green-600" />
+            )}
+            <div>
+              <p className="text-sm font-semibold">{isOpenAccess ? 'Open Access' : 'Restricted'}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                {folder.world_accessible ? 'World Accessible' : folder.authenticated_users ? 'Auth Users' : 'Private'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-          {selectedDirId && acl.data && (
-            <Card>
-              <CardHeader><CardTitle>ACL Detail</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p><strong>Path:</strong> {acl.data.path}</p>
-                <p><strong>Owner:</strong> {acl.data.owner_sid ?? '—'}</p>
-                <p><strong>Group:</strong> {acl.data.group_sid ?? '—'}</p>
-                <p><strong>Exposure:</strong> <Badge className={EXPOSURE_COLORS[acl.data.exposure_level] ?? ''}>{acl.data.exposure_level}</Badge></p>
-                {acl.data.dacl_sddl && (
-                  <div>
-                    <p><strong>DACL SDDL:</strong></p>
-                    <pre className="mt-1 overflow-x-auto rounded-md bg-[var(--muted)] p-2 text-xs">{acl.data.dacl_sddl}</pre>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+      {/* ACL detail */}
+      {acl.isLoading ? (
+        <Skeleton className="h-48" />
+      ) : acl.data ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Access Control List
+              {acl.data.exposure_level && (
+                <Badge className={EXPOSURE_COLORS[acl.data.exposure_level] ?? ''}>{acl.data.exposure_level}</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[var(--muted-foreground)]">Owner</p>
+                <p className="font-mono">{acl.data.owner_sid ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-[var(--muted-foreground)]">Group</p>
+                <p className="font-mono">{acl.data.group_sid ?? '—'}</p>
+              </div>
+            </div>
+            {acl.data.dacl_sddl && (
+              <div>
+                <p className="text-[var(--muted-foreground)]">DACL (SDDL)</p>
+                <pre className="mt-1 overflow-x-auto rounded-md bg-[var(--muted)] p-3 text-xs">{acl.data.dacl_sddl}</pre>
+              </div>
+            )}
+            {acl.data.permissions_json && Object.keys(acl.data.permissions_json).length > 0 && (
+              <div>
+                <p className="text-[var(--muted-foreground)]">Permissions</p>
+                <pre className="mt-1 overflow-x-auto rounded-md bg-[var(--muted)] p-3 text-xs">
+                  {JSON.stringify(acl.data.permissions_json, null, 2)}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-6 text-center text-sm text-[var(--muted-foreground)]">
+            No security descriptor available for this directory
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
 
-        <TabsContent value="principal" className="space-y-4 pt-4">
-          <Input
-            placeholder="Search by SID or principal name..."
-            value={principal}
-            onChange={(e) => setPrincipal(e.target.value)}
-            className="w-96"
-            aria-label="Search by SID or principal name"
-          />
+export function Component() {
+  const [targetId, setTargetId] = useState('');
+  const [selectedFolder, setSelectedFolder] = useState<BrowseFolder | null>(null);
 
-          {principalLookup.isLoading && debouncedPrincipal ? (
-            <Skeleton className="h-32" />
-          ) : (principalLookup.data ?? []).length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
-                <div className="divide-y">
-                  {principalLookup.data!.map((dir) => (
-                    <div key={dir.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                      <span className="font-mono">{dir.path}</span>
-                      {dir.exposure_level && <Badge className={EXPOSURE_COLORS[dir.exposure_level] ?? ''}>{dir.exposure_level}</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : debouncedPrincipal ? (
-            <p className="text-sm text-[var(--muted-foreground)]">No directories found for this principal.</p>
-          ) : null}
-        </TabsContent>
-      </Tabs>
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+      <FolderTreePanel
+        targetId={targetId}
+        onTargetChange={(id) => { setTargetId(id); setSelectedFolder(null); }}
+        onSelect={setSelectedFolder}
+        selectedId={selectedFolder?.id ?? null}
+      />
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {selectedFolder ? (
+          <ACLPanel targetId={targetId} folder={selectedFolder} />
+        ) : (
+          <EmptyState icon={Shield} title="Select a folder" description="Click a path in the tree to view its ACL and security insights" />
+        )}
+      </div>
     </div>
   );
 }

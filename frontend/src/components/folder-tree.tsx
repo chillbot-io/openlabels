@@ -1,0 +1,113 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { FolderOpen, ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
+import { browseApi } from '@/api/endpoints/browse.ts';
+import { useTargets } from '@/api/hooks/use-targets.ts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
+import { RiskBadge } from '@/components/risk-badge.tsx';
+import { Skeleton } from '@/components/loading-skeleton.tsx';
+import { cn } from '@/lib/utils.ts';
+import type { BrowseFolder } from '@/api/types.ts';
+import type { RiskTier } from '@/lib/constants.ts';
+
+function FolderTreeItem({ folder, targetId, onSelect, selectedId }: {
+  folder: BrowseFolder;
+  targetId: string;
+  onSelect: (folder: BrowseFolder) => void;
+  selectedId: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const children = useQuery({
+    queryKey: ['browse', targetId, folder.id],
+    queryFn: () => browseApi.list(targetId, folder.id),
+    enabled: expanded,
+  });
+
+  const childFolders = children.data?.folders ?? [];
+  const isSelected = selectedId === folder.id;
+
+  return (
+    <div role="treeitem" aria-expanded={expanded} aria-selected={isSelected}>
+      <button
+        className={cn(
+          'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-[var(--muted)]',
+          isSelected && 'bg-[var(--accent)] font-medium',
+        )}
+        onClick={() => {
+          setExpanded(!expanded);
+          onSelect(folder);
+        }}
+        aria-label={`${folder.dir_name}, folder${folder.highest_risk_tier ? `, risk: ${folder.highest_risk_tier}` : ''}`}
+      >
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+        <FolderOpen className="h-4 w-4 text-yellow-500" aria-hidden="true" />
+        <span className="truncate">{folder.dir_name}</span>
+        {folder.highest_risk_tier && <RiskBadge tier={folder.highest_risk_tier as RiskTier} className="ml-auto text-[10px]" />}
+      </button>
+      {expanded && childFolders.length > 0 && (
+        <div className="ml-4 border-l pl-1" role="group">
+          {childFolders.map((child) => (
+            <FolderTreeItem key={child.id} folder={child} targetId={targetId} onSelect={onSelect} selectedId={selectedId} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FolderTreePanel({ targetId, onTargetChange, onSelect, selectedId, className }: {
+  targetId: string;
+  onTargetChange: (id: string) => void;
+  onSelect: (folder: BrowseFolder) => void;
+  selectedId: string | null;
+  className?: string;
+}) {
+  const targets = useTargets();
+
+  const rootEntries = useQuery({
+    queryKey: ['browse', targetId],
+    queryFn: () => browseApi.list(targetId),
+    enabled: !!targetId,
+  });
+
+  return (
+    <div className={cn('flex w-72 flex-col border-r', className)}>
+      <div className="border-b p-3">
+        <Select value={targetId} onValueChange={onTargetChange}>
+          <SelectTrigger aria-label="Select target"><SelectValue placeholder="Select target" /></SelectTrigger>
+          <SelectContent>
+            {(targets.data?.items ?? []).map((t) => (
+              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2" role="tree" aria-label="Folder tree">
+        {!targetId ? (
+          <p className="p-4 text-center text-sm text-[var(--muted-foreground)]">Select a target to browse</p>
+        ) : rootEntries.isLoading ? (
+          <div className="space-y-1">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
+          </div>
+        ) : rootEntries.isError ? (
+          <div className="flex flex-col items-center gap-2 p-4 text-center text-sm text-[var(--destructive)]">
+            <AlertCircle className="h-5 w-5" />
+            <p>Failed to load folders</p>
+            <button className="text-xs underline" onClick={() => rootEntries.refetch()}>Retry</button>
+          </div>
+        ) : (
+          (rootEntries.data?.folders ?? []).map((folder) => (
+            <FolderTreeItem
+              key={folder.id}
+              folder={folder}
+              targetId={targetId}
+              onSelect={onSelect}
+              selectedId={selectedId}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}

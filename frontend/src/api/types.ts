@@ -257,6 +257,28 @@ export interface BrowseResponse {
   total: number;
 }
 
+export interface BrowseFile {
+  id: string;
+  file_path: string;
+  file_name: string;
+  file_size: number | null;
+  risk_score: number;
+  risk_tier: string;
+  entity_counts: Record<string, number>;
+  total_entities: number;
+  exposure_level: string | null;
+  owner: string | null;
+  current_label_name: string | null;
+  last_scanned_at: string | null;
+}
+
+export interface BrowseFilesResponse {
+  target_id: string;
+  folder_path: string | null;
+  files: BrowseFile[];
+  total: number;
+}
+
 export interface DirectoryACL {
   id: string;
   path: string;

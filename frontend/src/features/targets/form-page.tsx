@@ -1,16 +1,23 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
+import { FolderOpen, ChevronRight, ChevronDown } from 'lucide-react';
 import { useTarget, useCreateTarget, useUpdateTarget } from '@/api/hooks/use-targets.ts';
+import { browseApi } from '@/api/endpoints/browse.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
 import { LoadingSkeleton } from '@/components/loading-skeleton.tsx';
+import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { ADAPTER_TYPES, ADAPTER_LABELS } from '@/lib/constants.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
+import { cn } from '@/lib/utils.ts';
+import type { BrowseFolder } from '@/api/types.ts';
 
 const targetSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
@@ -21,12 +28,7 @@ const targetSchema = z.object({
 
 type TargetFormData = z.infer<typeof targetSchema>;
 
-const ADAPTER_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
-  filesystem: [
-    { key: 'root_path', label: 'Root Path', placeholder: 'C:\\Shares\\Finance' },
-    { key: 'extensions', label: 'File Extensions', placeholder: '.docx,.xlsx,.pdf' },
-    { key: 'exclude_patterns', label: 'Exclude Patterns', placeholder: '*.tmp,~$*' },
-  ],
+const NON_FS_ADAPTER_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
   sharepoint: [
     { key: 'site_url', label: 'Site URL', placeholder: 'https://company.sharepoint.com/sites/hr' },
     { key: 'document_libraries', label: 'Document Libraries', placeholder: 'Documents,Shared Documents' },
@@ -48,6 +50,110 @@ const ADAPTER_FIELDS: Record<string, { key: string; label: string; placeholder: 
     { key: 'storage_account', label: 'Storage Account', placeholder: 'mystorageaccount' },
   ],
 };
+
+/* ── Folder picker tree (for editing existing targets) ── */
+
+function PickerTreeItem({ folder, targetId, onSelect, selectedPath }: {
+  folder: BrowseFolder;
+  targetId: string;
+  onSelect: (path: string) => void;
+  selectedPath: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const children = useQuery({
+    queryKey: ['browse', targetId, folder.id],
+    queryFn: () => browseApi.list(targetId, folder.id),
+    enabled: expanded,
+  });
+
+  const childFolders = children.data?.folders ?? [];
+  const isSelected = selectedPath === folder.dir_path;
+
+  return (
+    <div>
+      <button
+        type="button"
+        className={cn(
+          'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-[var(--muted)]',
+          isSelected && 'bg-[var(--accent)] font-medium',
+        )}
+        onClick={() => {
+          setExpanded(!expanded);
+          onSelect(folder.dir_path);
+        }}
+      >
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <FolderOpen className="h-4 w-4 text-yellow-500" />
+        <span className="truncate">{folder.dir_name}</span>
+      </button>
+      {expanded && childFolders.length > 0 && (
+        <div className="ml-4 border-l pl-1">
+          {childFolders.map((child) => (
+            <PickerTreeItem key={child.id} folder={child} targetId={targetId} onSelect={onSelect} selectedPath={selectedPath} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PathPicker({ targetId, value, onChange }: {
+  targetId: string | undefined;
+  value: string;
+  onChange: (path: string) => void;
+}) {
+  const rootEntries = useQuery({
+    queryKey: ['browse', targetId],
+    queryFn: () => browseApi.list(targetId!),
+    enabled: !!targetId,
+  });
+
+  if (!targetId) {
+    return (
+      <div>
+        <Label htmlFor="root_path">Root Path</Label>
+        <Input
+          id="root_path"
+          placeholder="/mnt/shares/data"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <p className="mt-1 text-xs text-[var(--muted-foreground)]">Save the target first to browse available paths</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Label>Root Path</Label>
+      {value && (
+        <p className="mb-2 rounded bg-[var(--muted)] px-3 py-1.5 text-sm font-mono">{value}</p>
+      )}
+      <div className="max-h-64 overflow-y-auto rounded-md border p-2">
+        {rootEntries.isLoading ? (
+          <div className="space-y-1">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}
+          </div>
+        ) : (rootEntries.data?.folders ?? []).length === 0 ? (
+          <p className="p-2 text-sm text-[var(--muted-foreground)]">No directories found. Run a scan to populate the tree.</p>
+        ) : (
+          (rootEntries.data?.folders ?? []).map((folder) => (
+            <PickerTreeItem
+              key={folder.id}
+              folder={folder}
+              targetId={targetId}
+              onSelect={onChange}
+              selectedPath={value}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Main form ── */
 
 export function Component() {
   const { targetId } = useParams<{ targetId: string }>();
@@ -72,7 +178,14 @@ export function Component() {
   if (isEdit && target.isLoading) return <LoadingSkeleton />;
 
   const adapterType = form.watch('adapter');
-  const fields = ADAPTER_FIELDS[adapterType] ?? [];
+  const config = form.watch('config');
+  const isLocal = config.is_local === true;
+  const isFilesystem = adapterType === 'filesystem';
+  const nonFsFields = NON_FS_ADAPTER_FIELDS[adapterType] ?? [];
+
+  const setConfigField = (key: string, value: unknown) => {
+    form.setValue('config', { ...form.getValues('config'), [key]: value });
+  };
 
   const onSubmit = (data: TargetFormData) => {
     if (isEdit) {
@@ -123,21 +236,94 @@ export function Component() {
           </CardContent>
         </Card>
 
-        {fields.length > 0 && (
+        {isFilesystem && (
           <Card>
             <CardHeader><CardTitle>Adapter Configuration</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              {fields.map((field) => (
+              {/* Resource selector */}
+              <div>
+                <Label htmlFor="resource">Resource</Label>
+                <div className="flex items-center gap-3">
+                  <label className="flex shrink-0 items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isLocal}
+                      onChange={(e) => {
+                        setConfigField('is_local', e.target.checked);
+                        if (e.target.checked) setConfigField('resource', 'localhost');
+                      }}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Local</span>
+                  </label>
+                  <Input
+                    id="resource"
+                    placeholder="hostname or IP address"
+                    value={(config.resource as string) ?? ''}
+                    onChange={(e) => setConfigField('resource', e.target.value)}
+                    disabled={isLocal}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  DNS name or IP address of the target server, or select Local
+                </p>
+              </div>
+
+              {/* Root path tree picker */}
+              <PathPicker
+                targetId={isEdit ? targetId : undefined}
+                value={(config.root_path as string) ?? ''}
+                onChange={(path) => setConfigField('root_path', path)}
+              />
+
+              {/* Extensions */}
+              <div>
+                <Label htmlFor="extensions">File Extensions</Label>
+                <Input
+                  id="extensions"
+                  placeholder=".docx,.xlsx,.pdf"
+                  value={(config.extensions as string) ?? ''}
+                  onChange={(e) => setConfigField('extensions', e.target.value)}
+                />
+              </div>
+
+              {/* Exclude patterns */}
+              <div>
+                <Label htmlFor="exclude_patterns">Exclude Patterns</Label>
+                <Input
+                  id="exclude_patterns"
+                  placeholder="*.tmp,~$*"
+                  value={(config.exclude_patterns as string) ?? ''}
+                  onChange={(e) => setConfigField('exclude_patterns', e.target.value)}
+                />
+              </div>
+
+              {/* Apply MIP Labels */}
+              <label className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  checked={config.apply_mip_labels === true}
+                  onChange={(e) => setConfigField('apply_mip_labels', e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm">Apply MIP Labels</span>
+              </label>
+            </CardContent>
+          </Card>
+        )}
+
+        {!isFilesystem && nonFsFields.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle>Adapter Configuration</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {nonFsFields.map((field) => (
                 <div key={field.key}>
                   <Label htmlFor={field.key}>{field.label}</Label>
                   <Input
                     id={field.key}
                     placeholder={field.placeholder}
-                    value={(form.watch('config')[field.key] as string) ?? ''}
-                    onChange={(e) => {
-                      const config = { ...form.getValues('config'), [field.key]: e.target.value };
-                      form.setValue('config', config);
-                    }}
+                    value={(config[field.key] as string) ?? ''}
+                    onChange={(e) => setConfigField(field.key, e.target.value)}
                   />
                 </div>
               ))}
