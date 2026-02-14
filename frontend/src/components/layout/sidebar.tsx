@@ -2,7 +2,7 @@ import { NavLink } from 'react-router';
 import {
   LayoutDashboard, FolderTree, Activity, FileSearch, Scan, Tag,
   Shield, ShieldAlert, BookOpen, Target, Calendar, Monitor,
-  BarChart3, Settings, ChevronLeft, ChevronRight,
+  BarChart3, Settings, ChevronLeft, ChevronRight, Server, Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.ts';
 import { NAV_GROUPS } from '@/lib/constants.ts';
@@ -11,7 +11,7 @@ import { useUIStore } from '@/stores/ui-store.ts';
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, FolderTree, Activity, FileSearch, Scan, Tag,
   Shield, ShieldAlert, BookOpen, Target, Calendar, Monitor,
-  BarChart3, Settings,
+  BarChart3, Settings, Server, Users,
 };
 
 export function Sidebar() {

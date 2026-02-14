@@ -59,7 +59,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Act',
+    label: 'Acts',
     items: [
       { label: 'Reports', path: '/reports', icon: 'BarChart3' },
       { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
@@ -67,10 +67,13 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Configure',
+    label: 'Configuration',
     items: [
-      { label: 'Scan Configuration', path: '/targets', icon: 'Scan' },
       { label: 'Settings', path: '/settings', icon: 'Settings' },
+      { label: 'Resources', path: '/config/resources', icon: 'Server' },
+      { label: 'Users', path: '/users', icon: 'Users' },
+      { label: 'Labels', path: '/labels', icon: 'Tag' },
+      { label: 'Scan Configuration', path: '/scan-config', icon: 'Scan' },
     ],
   },
 ] as const;
