@@ -155,6 +155,8 @@ async def validate_token(token: str) -> TokenClaims:
         # Decode header to get kid
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
+        if not kid:
+            raise TokenInvalidError("Token header missing 'kid' claim")
 
         # Find signing key (with automatic cache refresh on rotation)
         key_data = await _find_signing_key(kid, tenant_id)

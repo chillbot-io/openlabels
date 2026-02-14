@@ -209,20 +209,17 @@ class TestValidateToken:
             assert claims.oid == "dev-user-oid"
 
     async def test_missing_kid_raises_error(self):
-        """Token without kid in header should fail."""
+        """Token without kid in header should fail early without JWKS fetch."""
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
 
-        mock_jwks = {"keys": [{"kid": "key1", "kty": "RSA"}]}
-
         with patch("openlabels.auth.oauth.get_settings", return_value=mock_settings):
-            with patch("openlabels.auth.oauth.get_jwks", return_value=mock_jwks):
-                with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
-                    mock_header.return_value = {}  # No kid
+            with patch("openlabels.auth.oauth.jwt.get_unverified_header") as mock_header:
+                mock_header.return_value = {}  # No kid
 
-                    with pytest.raises(TokenInvalidError, match="Unable to find signing key"):
-                        await validate_token("token-without-kid")
+                with pytest.raises(TokenInvalidError, match="missing 'kid'"):
+                    await validate_token("token-without-kid")
 
     async def test_unknown_kid_raises_error(self):
         """Token with unknown kid should fail."""
