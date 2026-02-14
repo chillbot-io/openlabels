@@ -170,6 +170,9 @@ class Tenant(Base):
     id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     azure_tenant_id: Mapped[str | None] = mapped_column(String(36))
+    # Provider-agnostic identity fields (generic OIDC SSO)
+    idp_tenant_id: Mapped[str | None] = mapped_column(String(255))
+    auth_provider: Mapped[str] = mapped_column(String(20), default="azure_ad", server_default="azure_ad")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -179,6 +182,7 @@ class Tenant(Base):
 
     __table_args__ = (
         Index('ix_tenants_azure_tenant_id', 'azure_tenant_id'),
+        Index('ix_tenants_idp_tenant_id', 'idp_tenant_id'),
     )
 
 
@@ -192,7 +196,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(UserRoleEnum, default="viewer")
-    azure_oid: Mapped[str | None] = mapped_column(String(36))  # Azure AD object ID
+    azure_oid: Mapped[str | None] = mapped_column(String(36))  # Azure AD object ID (legacy)
+    # Provider-agnostic identity fields (generic OIDC SSO)
+    external_id: Mapped[str | None] = mapped_column(String(255))  # OIDC sub or Azure oid
+    auth_provider: Mapped[str] = mapped_column(String(20), default="azure_ad", server_default="azure_ad")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -201,6 +208,8 @@ class User(Base):
     __table_args__ = (
         Index('ix_users_tenant_email', 'tenant_id', 'email', unique=True),
         Index('ix_users_azure_oid', 'azure_oid'),
+        Index('ix_users_external_id', 'external_id'),
+        Index('ix_users_provider_external_id', 'auth_provider', 'external_id'),
     )
 
 
@@ -831,6 +840,7 @@ class PendingAuth(Base):
     state: Mapped[str] = mapped_column(String(64), primary_key=True)
     redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
     callback_url: Mapped[str] = mapped_column(Text, nullable=False)
+    nonce: Mapped[str | None] = mapped_column(String(64))  # OIDC replay protection
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
