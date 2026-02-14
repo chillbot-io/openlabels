@@ -198,8 +198,9 @@ function CredentialForm({ sourceType, credentials, onChange, onConnect, isConnec
 
   if (fields.length === 0) return null;
 
+  const hostValue = credentials.host?.trim() ?? '';
   const isLocalHost = (sourceType === 'smb' || sourceType === 'nfs') &&
-    ['localhost', '127.0.0.1', '::1', ''].includes(credentials.host?.trim() ?? '');
+    hostValue !== '' && ['localhost', '127.0.0.1', '::1'].includes(hostValue);
 
   return (
     <div className="space-y-4">
@@ -383,7 +384,21 @@ export function Component() {
   const addToast = useUIStore((s) => s.addToast);
 
   // Source type (UI-level — maps to backend adapter type)
-  const [sourceType, setSourceType] = useState<SourceType>('smb');
+  // When editing, restore from saved config; otherwise default to 'smb'
+  const initialSourceType = (): SourceType => {
+    if (target.data?.config) {
+      const saved = (target.data.config as Record<string, unknown>).source_type;
+      if (saved && SOURCE_TYPES.includes(saved as SourceType)) {
+        return saved as SourceType;
+      }
+      // Infer from adapter type for legacy targets without source_type
+      const adapter = target.data.adapter;
+      if (adapter === 'filesystem') return 'smb';
+      if (SOURCE_TYPES.includes(adapter as SourceType)) return adapter as SourceType;
+    }
+    return 'smb';
+  };
+  const [sourceType, setSourceType] = useState<SourceType>(initialSourceType);
 
   // Credentials
   const [credentials, setCredentials] = useState<Record<string, string>>({});

@@ -147,23 +147,26 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
                     if share_type.upper() in ("IPC", "PRINTER"):
                         continue
 
+                    # Use a mount-convention path that the filesystem adapter
+                    # can work with.  The UNC path goes in description.
+                    mount_path = f"/mnt/smb/{host}/{share_name}"
                     resources.append(EnumeratedResource(
                         id=f"smb://{host}/{share_name}",
                         name=share_name,
-                        path=f"\\\\{host}\\{share_name}",
+                        path=mount_path,
                         resource_type="share",
-                        description=description,
+                        description=f"\\\\{host}\\{share_name}"
+                        + (f" — {description}" if description else ""),
                     ))
             elif in_share_section and not line:
                 break  # End of share section
     except FileNotFoundError:
         # smbclient not installed — return helpful message
         logger.warning("smbclient not found, using fallback SMB enumeration")
-        # Try net share fallback for local
         resources.append(EnumeratedResource(
             id=f"smb://{host}/manual",
             name="(Enter share name manually)",
-            path=f"\\\\{host}\\",
+            path=f"/mnt/smb/{host}",
             resource_type="share",
             description="smbclient not installed — enter share paths manually",
         ))
@@ -300,19 +303,22 @@ async def _enumerate_nfs(creds: dict[str, Any]) -> list[EnumeratedResource]:
                 if parts:
                     export_path = parts[0]
                     allowed = " ".join(parts[1:]) if len(parts) > 1 else "*"
+                    # Use a mount-convention path; put host:path in description
+                    dir_name = os.path.basename(export_path) or export_path.strip("/")
+                    mount_path = f"/mnt/nfs/{host}/{dir_name}"
                     resources.append(EnumeratedResource(
                         id=f"nfs://{host}{export_path}",
-                        name=os.path.basename(export_path) or export_path,
-                        path=f"{host}:{export_path}",
+                        name=dir_name,
+                        path=mount_path,
                         resource_type="export",
-                        description=f"Allowed: {allowed}",
+                        description=f"{host}:{export_path} (Allowed: {allowed})",
                     ))
     except FileNotFoundError:
         logger.warning("showmount not found, trying /etc/exports")
         resources.append(EnumeratedResource(
             id=f"nfs://{host}/manual",
             name="(Enter export path manually)",
-            path=f"{host}:/",
+            path=f"/mnt/nfs/{host}",
             resource_type="export",
             description="showmount not installed — enter export paths manually",
         ))

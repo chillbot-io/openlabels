@@ -108,6 +108,14 @@ export function Component() {
   }
 
   if (settings.isLoading) return <Skeleton className="m-6 h-48" />;
+  if (settings.error) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="mt-4 text-red-600" role="alert">Failed to load settings: {settings.error.message}</p>
+      </div>
+    );
+  }
   if (!settings.data) return null;
 
   return (
