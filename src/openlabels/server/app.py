@@ -33,7 +33,9 @@ from openlabels.server.routes import (
     audit,
     auth,
     browse,
+    credentials,
     dashboard,
+    enumerate,
     export,
     health,
     jobs,
@@ -71,7 +73,8 @@ limiter = Limiter(key_func=get_client_ip)
 
 # Legacy API prefixes eligible for automatic redirect.
 _LEGACY_API_PREFIXES = [
-    "audit", "browse", "jobs", "scans", "results", "targets", "schedules",
+    "audit", "browse", "credentials", "enumerate", "jobs", "scans",
+    "results", "targets", "schedules",
     "labels", "users", "dashboard", "remediation", "monitoring",
     "health", "settings", "policies", "export", "reporting", "webhooks",
     "permissions", "query",
@@ -83,6 +86,8 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
     ("/auth", "Authentication", auth),
     ("/audit", "Audit", audit),
     ("/browse", "Browse", browse),
+    ("/credentials", "Credentials", credentials),
+    ("/enumerate", "Enumerate", enumerate),
     ("/jobs", "Jobs", jobs),
     ("/scans", "Scans", scans),
     ("/results", "Results", results),

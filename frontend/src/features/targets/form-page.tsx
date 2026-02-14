@@ -4,17 +4,27 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { FolderOpen, ChevronRight, ChevronDown } from 'lucide-react';
+import {
+  FolderOpen, ChevronRight, ChevronDown, Loader2, CheckCircle2,
+  AlertCircle, Lock, Eye, EyeOff, Server, Cloud,
+} from 'lucide-react';
 import { useTarget, useCreateTarget, useUpdateTarget } from '@/api/hooks/use-targets.ts';
+import { useStoreCredentials, useEnumerate } from '@/api/hooks/use-credentials.ts';
 import { browseApi } from '@/api/endpoints/browse.ts';
+import type { EnumeratedResource } from '@/api/endpoints/enumerate.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
 import { LoadingSkeleton } from '@/components/loading-skeleton.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
-import { ADAPTER_TYPES, ADAPTER_LABELS } from '@/lib/constants.ts';
+import {
+  ADAPTER_TYPES,
+  SOURCE_TYPES, SOURCE_LABELS, SOURCE_DESCRIPTIONS,
+  SOURCE_CREDENTIAL_FIELDS,
+  sourceToAdapter,
+  type SourceType,
+} from '@/lib/constants.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
 import { cn } from '@/lib/utils.ts';
 import type { BrowseFolder } from '@/api/types.ts';
@@ -27,29 +37,6 @@ const targetSchema = z.object({
 });
 
 type TargetFormData = z.infer<typeof targetSchema>;
-
-const NON_FS_ADAPTER_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
-  sharepoint: [
-    { key: 'site_url', label: 'Site URL', placeholder: 'https://company.sharepoint.com/sites/hr' },
-    { key: 'document_libraries', label: 'Document Libraries', placeholder: 'Documents,Shared Documents' },
-  ],
-  onedrive: [
-    { key: 'user_emails', label: 'User Emails', placeholder: 'user@company.com' },
-  ],
-  s3: [
-    { key: 'bucket', label: 'Bucket Name', placeholder: 'my-bucket' },
-    { key: 'region', label: 'Region', placeholder: 'us-east-1' },
-    { key: 'endpoint_url', label: 'Endpoint URL (optional)', placeholder: '' },
-  ],
-  gcs: [
-    { key: 'bucket', label: 'Bucket Name', placeholder: 'my-bucket' },
-    { key: 'project', label: 'Project', placeholder: 'my-project' },
-  ],
-  azure_blob: [
-    { key: 'container', label: 'Container', placeholder: 'my-container' },
-    { key: 'storage_account', label: 'Storage Account', placeholder: 'mystorageaccount' },
-  ],
-};
 
 /* ── Folder picker tree (for editing existing targets) ── */
 
@@ -153,6 +140,236 @@ function PathPicker({ targetId, value, onChange }: {
   );
 }
 
+/* ── Source type radio selector ── */
+
+function SourceTypeSelector({ value, onChange }: {
+  value: SourceType;
+  onChange: (v: SourceType) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>Source Type</Label>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {SOURCE_TYPES.map((st) => {
+          const isSelected = value === st;
+          const isFs = st === 'smb' || st === 'nfs';
+          return (
+            <button
+              key={st}
+              type="button"
+              className={cn(
+                'flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all',
+                isSelected
+                  ? 'border-primary-600 bg-primary-600/5'
+                  : 'border-[var(--border)] hover:border-[var(--muted-foreground)]/50',
+              )}
+              onClick={() => onChange(st)}
+            >
+              <div className="flex items-center gap-2">
+                {isFs ? (
+                  <Server className="h-4 w-4 text-[var(--muted-foreground)]" />
+                ) : (
+                  <Cloud className="h-4 w-4 text-[var(--muted-foreground)]" />
+                )}
+                <span className="text-sm font-semibold">{SOURCE_LABELS[st]}</span>
+              </div>
+              <span className="text-xs text-[var(--muted-foreground)]">{SOURCE_DESCRIPTIONS[st]}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Credential entry form ── */
+
+function CredentialForm({ sourceType, credentials, onChange, onConnect, isConnecting, saveCredentials, onSaveChange }: {
+  sourceType: SourceType;
+  credentials: Record<string, string>;
+  onChange: (creds: Record<string, string>) => void;
+  onConnect: () => void;
+  isConnecting: boolean;
+  saveCredentials: boolean;
+  onSaveChange: (v: boolean) => void;
+}) {
+  const fields = SOURCE_CREDENTIAL_FIELDS[sourceType] ?? [];
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+
+  if (fields.length === 0) return null;
+
+  const hostValue = credentials.host?.trim() ?? '';
+  const isLocalHost = (sourceType === 'smb' || sourceType === 'nfs') &&
+    hostValue !== '' && ['localhost', '127.0.0.1', '::1'].includes(hostValue);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Lock className="h-4 w-4 text-[var(--muted-foreground)]" />
+        <Label className="text-base font-semibold">Credentials</Label>
+      </div>
+
+      {/* Local option for SMB/NFS */}
+      {(sourceType === 'smb' || sourceType === 'nfs') && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={isLocalHost}
+            onChange={(e) => {
+              if (e.target.checked) {
+                onChange({ ...credentials, host: 'localhost' });
+              } else {
+                onChange({ ...credentials, host: '' });
+              }
+            }}
+            className="rounded"
+          />
+          <span className="text-sm">Local machine</span>
+        </label>
+      )}
+
+      {fields.map((field) => {
+        const isPassword = field.type === 'password';
+        const isTextarea = field.type === 'textarea';
+        const isVisible = showPasswords[field.key];
+
+        // Skip username/password for local SMB/NFS
+        if (isLocalHost && (field.key === 'username' || field.key === 'password')) {
+          return null;
+        }
+
+        return (
+          <div key={field.key}>
+            <Label htmlFor={`cred-${field.key}`}>{field.label}</Label>
+            {isTextarea ? (
+              <textarea
+                id={`cred-${field.key}`}
+                className="mt-1 block w-full rounded-md border bg-[var(--background)] px-3 py-2 text-sm font-mono"
+                rows={4}
+                placeholder={field.placeholder}
+                value={credentials[field.key] ?? ''}
+                onChange={(e) => onChange({ ...credentials, [field.key]: e.target.value })}
+              />
+            ) : (
+              <div className="relative">
+                <Input
+                  id={`cred-${field.key}`}
+                  type={isPassword && !isVisible ? 'password' : 'text'}
+                  placeholder={field.placeholder}
+                  value={credentials[field.key] ?? ''}
+                  onChange={(e) => onChange({ ...credentials, [field.key]: e.target.value })}
+                />
+                {isPassword && (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    onClick={() => setShowPasswords((p) => ({ ...p, [field.key]: !p[field.key] }))}
+                  >
+                    {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="flex items-center justify-between pt-2">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={saveCredentials}
+            onChange={(e) => onSaveChange(e.target.checked)}
+            className="rounded"
+          />
+          <span className="text-sm">Save credentials for this session</span>
+        </label>
+        <Button
+          type="button"
+          onClick={onConnect}
+          disabled={isConnecting}
+        >
+          {isConnecting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Connecting...
+            </>
+          ) : (
+            'Connect & Browse'
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Resource selection list ── */
+
+function ResourceSelector({ resources, selected, onToggle, onSelectAll }: {
+  resources: EnumeratedResource[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onSelectAll: (all: boolean) => void;
+}) {
+  if (resources.length === 0) {
+    return (
+      <p className="py-4 text-center text-sm text-[var(--muted-foreground)]">
+        No resources found. Check your credentials or connection.
+      </p>
+    );
+  }
+
+  const allSelected = resources.every((r) => selected.has(r.id));
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-base font-semibold">
+          Select Resources to Monitor ({selected.size} of {resources.length})
+        </Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onSelectAll(!allSelected)}
+        >
+          {allSelected ? 'Deselect All' : 'Select All'}
+        </Button>
+      </div>
+      <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
+        {resources.map((resource) => (
+          <label
+            key={resource.id}
+            className={cn(
+              'flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 transition-colors hover:bg-[var(--muted)]',
+              selected.has(resource.id) && 'bg-[var(--accent)]',
+            )}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded"
+              checked={selected.has(resource.id)}
+              onChange={() => onToggle(resource.id)}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{resource.name}</span>
+                <span className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--muted-foreground)]">
+                  {resource.resource_type}
+                </span>
+              </div>
+              <p className="truncate text-xs text-[var(--muted-foreground)]">{resource.path}</p>
+              {resource.description && (
+                <p className="text-xs text-[var(--muted-foreground)]">{resource.description}</p>
+              )}
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main form ── */
 
 export function Component() {
@@ -162,7 +379,36 @@ export function Component() {
   const target = useTarget(targetId ?? '');
   const createTarget = useCreateTarget();
   const updateTarget = useUpdateTarget();
+  const storeCreds = useStoreCredentials();
+  const enumerate = useEnumerate();
   const addToast = useUIStore((s) => s.addToast);
+
+  // Source type (UI-level — maps to backend adapter type)
+  // When editing, restore from saved config; otherwise default to 'smb'
+  const initialSourceType = (): SourceType => {
+    if (target.data?.config) {
+      const saved = (target.data.config as Record<string, unknown>).source_type;
+      if (saved && SOURCE_TYPES.includes(saved as SourceType)) {
+        return saved as SourceType;
+      }
+      // Infer from adapter type for legacy targets without source_type
+      const adapter = target.data.adapter;
+      if (adapter === 'filesystem') return 'smb';
+      if (SOURCE_TYPES.includes(adapter as SourceType)) return adapter as SourceType;
+    }
+    return 'smb';
+  };
+  const [sourceType, setSourceType] = useState<SourceType>(initialSourceType);
+
+  // Credentials
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const [saveCredentials, setSaveCredentials] = useState(false);
+
+  // Enumerated resources
+  const [enumeratedResources, setEnumeratedResources] = useState<EnumeratedResource[]>([]);
+  const [selectedResources, setSelectedResources] = useState<Set<string>>(new Set());
+  const [hasEnumerated, setHasEnumerated] = useState(false);
+  const [enumError, setEnumError] = useState<string | null>(null);
 
   const defaultVals: TargetFormData = { name: '', adapter: 'filesystem', enabled: true, config: {} };
   const targetValues: TargetFormData | undefined = target.data
@@ -177,25 +423,178 @@ export function Component() {
 
   if (isEdit && target.isLoading) return <LoadingSkeleton />;
 
-  const adapterType = form.watch('adapter');
   const config = form.watch('config');
-  const isLocal = config.is_local === true;
-  const isFilesystem = adapterType === 'filesystem';
-  const nonFsFields = NON_FS_ADAPTER_FIELDS[adapterType] ?? [];
 
   const setConfigField = (key: string, value: unknown) => {
     form.setValue('config', { ...form.getValues('config'), [key]: value });
   };
 
+  const handleSourceTypeChange = (newType: SourceType) => {
+    setSourceType(newType);
+    // Update the backend adapter type
+    form.setValue('adapter', sourceToAdapter(newType));
+    // Reset enumeration state
+    setEnumeratedResources([]);
+    setSelectedResources(new Set());
+    setHasEnumerated(false);
+    setEnumError(null);
+    setCredentials({});
+    // Preserve filter/label fields across source type changes
+    const prev = form.getValues('config');
+    form.setValue('config', {
+      source_type: newType,
+      extensions: prev.extensions ?? '',
+      exclude_patterns: prev.exclude_patterns ?? '',
+      apply_mip_labels: prev.apply_mip_labels ?? false,
+    });
+  };
+
+  const handleConnect = async () => {
+    setEnumError(null);
+
+    // Optionally save credentials first
+    if (saveCredentials) {
+      try {
+        await storeCreds.mutateAsync({
+          source_type: sourceType,
+          credentials,
+          save: true,
+        });
+      } catch (err) {
+        addToast({ level: 'error', message: `Failed to save credentials: ${(err as Error).message}` });
+      }
+    }
+
+    // Enumerate
+    try {
+      const result = await enumerate.mutateAsync({
+        source_type: sourceType,
+        credentials,
+      });
+      setEnumeratedResources(result.resources);
+      setHasEnumerated(true);
+      // Auto-select all by default
+      setSelectedResources(new Set(result.resources.map((r) => r.id)));
+      if (result.resources.length === 0) {
+        setEnumError('Connected successfully but no resources were found.');
+      }
+    } catch (err) {
+      const msg = (err as Error).message || 'Connection failed';
+      setEnumError(msg);
+      addToast({ level: 'error', message: msg });
+    }
+  };
+
+  const handleToggleResource = (id: string) => {
+    setSelectedResources((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = (all: boolean) => {
+    if (all) {
+      setSelectedResources(new Set(enumeratedResources.map((r) => r.id)));
+    } else {
+      setSelectedResources(new Set());
+    }
+  };
+
   const onSubmit = (data: TargetFormData) => {
+    // Merge selected resources into config
+    const selectedItems = enumeratedResources.filter((r) => selectedResources.has(r.id));
+
+    // Require at least one resource selected (unless editing — may already have config)
+    if (!isEdit && selectedItems.length === 0 && !hasEnumerated) {
+      addToast({ level: 'error', message: 'Connect and select at least one resource before creating.' });
+      return;
+    }
+
+    const finalConfig: Record<string, unknown> = {
+      ...data.config,
+      source_type: sourceType,
+      selected_resources: selectedItems.map((r) => ({
+        id: r.id,
+        name: r.name,
+        path: r.path,
+        resource_type: r.resource_type,
+      })),
+    };
+
+    // For SMB/NFS, set the host and path from credentials
+    if (sourceType === 'smb' || sourceType === 'nfs') {
+      const host = credentials.host?.trim() || 'localhost';
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      finalConfig.resource = host;
+      finalConfig.is_local = isLocal;
+      if (selectedItems.length >= 1) {
+        finalConfig.root_path = selectedItems[0].path;
+        // 'path' is what the backend filesystem validator requires
+        finalConfig.path = selectedItems[0].path;
+      } else if (isEdit) {
+        // Keep existing path from saved config when editing without re-enumerating
+        const existing = data.config.path ?? data.config.root_path;
+        if (existing) {
+          finalConfig.path = existing;
+          finalConfig.root_path = existing;
+        }
+      }
+    }
+
+    // For cloud sources, set relevant config fields from credentials/selection
+    if (sourceType === 'sharepoint') {
+      if (selectedItems.length > 0) {
+        finalConfig.site_url = selectedItems[0].path;
+        finalConfig.document_libraries = selectedItems.map((r) => r.name).join(',');
+      } else if (isEdit) {
+        finalConfig.site_url = data.config.site_url;
+      }
+    } else if (sourceType === 'onedrive') {
+      if (selectedItems.length > 0) {
+        finalConfig.user_emails = selectedItems.map((r) => r.path).join(',');
+        finalConfig.user_id = selectedItems[0].id;
+      } else if (isEdit) {
+        finalConfig.user_id = data.config.user_id;
+      }
+    } else if (sourceType === 's3') {
+      if (selectedItems.length > 0) {
+        finalConfig.bucket = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.bucket = data.config.bucket;
+      }
+      finalConfig.region = credentials.region || data.config.region || 'us-east-1';
+      const ep = credentials.endpoint_url || data.config.endpoint_url;
+      if (ep) finalConfig.endpoint_url = ep;
+    } else if (sourceType === 'gcs') {
+      if (selectedItems.length > 0) {
+        finalConfig.bucket = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.bucket = data.config.bucket;
+      }
+      const proj = credentials.project || data.config.project;
+      if (proj) finalConfig.project = proj;
+    } else if (sourceType === 'azure_blob') {
+      if (selectedItems.length > 0) {
+        finalConfig.container = selectedItems[0].name;
+      } else if (isEdit) {
+        finalConfig.container = data.config.container;
+      }
+      const sa = credentials.storage_account || data.config.storage_account;
+      if (sa) finalConfig.storage_account = sa;
+    }
+
+    const submitData = { ...data, config: finalConfig };
+
     if (isEdit) {
-      updateTarget.mutate({ id: targetId!, ...data }, {
-        onSuccess: () => { addToast({ level: 'success', message: 'Target updated' }); navigate('/targets'); },
+      updateTarget.mutate({ id: targetId!, ...submitData }, {
+        onSuccess: () => { addToast({ level: 'success', message: 'Resource updated' }); navigate('/targets'); },
         onError: (err) => addToast({ level: 'error', message: err.message }),
       });
     } else {
-      createTarget.mutate(data, {
-        onSuccess: () => { addToast({ level: 'success', message: 'Target created' }); navigate('/targets'); },
+      createTarget.mutate(submitData, {
+        onSuccess: () => { addToast({ level: 'success', message: 'Resource created' }); navigate('/targets'); },
         onError: (err) => addToast({ level: 'error', message: err.message }),
       });
     }
@@ -203,9 +602,10 @@ export function Component() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">{isEdit ? 'Edit Target' : 'New Target'}</h1>
+      <h1 className="text-2xl font-bold">{isEdit ? 'Edit Resource' : 'Add Resource'}</h1>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        {/* General */}
         <Card>
           <CardHeader><CardTitle>General</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -216,19 +616,6 @@ export function Component() {
                 <p id="name-error" role="alert" className="mt-1 text-xs text-red-500">{form.formState.errors.name.message}</p>
               )}
             </div>
-
-            <div>
-              <Label htmlFor="adapter">Adapter</Label>
-              <Select value={adapterType} onValueChange={(v) => form.setValue('adapter', v as typeof adapterType)}>
-                <SelectTrigger id="adapter"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ADAPTER_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{ADAPTER_LABELS[t]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <label className="flex items-center gap-2">
               <input type="checkbox" {...form.register('enabled')} className="rounded" />
               <span className="text-sm">Enabled</span>
@@ -236,104 +623,115 @@ export function Component() {
           </CardContent>
         </Card>
 
-        {isFilesystem && (
-          <Card>
-            <CardHeader><CardTitle>Adapter Configuration</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              {/* Resource selector */}
-              <div>
-                <Label htmlFor="resource">Resource</Label>
-                <div className="flex items-center gap-3">
-                  <label className="flex shrink-0 items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isLocal}
-                      onChange={(e) => {
-                        setConfigField('is_local', e.target.checked);
-                        if (e.target.checked) setConfigField('resource', 'localhost');
-                      }}
-                      className="rounded"
-                    />
-                    <span className="text-sm">Local</span>
-                  </label>
-                  <Input
-                    id="resource"
-                    placeholder="hostname or IP address"
-                    value={(config.resource as string) ?? ''}
-                    onChange={(e) => setConfigField('resource', e.target.value)}
-                    disabled={isLocal}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  DNS name or IP address of the target server, or select Local
-                </p>
-              </div>
+        {/* Resource — source type + credentials + enumeration */}
+        <Card>
+          <CardHeader><CardTitle>Resource</CardTitle></CardHeader>
+          <CardContent className="space-y-6">
+            <SourceTypeSelector value={sourceType} onChange={handleSourceTypeChange} />
 
-              {/* Root path tree picker */}
+            <div className="border-t pt-4">
+              <CredentialForm
+                sourceType={sourceType}
+                credentials={credentials}
+                onChange={setCredentials}
+                onConnect={handleConnect}
+                isConnecting={enumerate.isPending}
+                saveCredentials={saveCredentials}
+                onSaveChange={setSaveCredentials}
+              />
+            </div>
+
+            {/* Connection status */}
+            {enumerate.isPending && (
+              <div className="flex items-center gap-2 rounded-md bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Connecting and enumerating resources...
+              </div>
+            )}
+            {enumError && !enumerate.isPending && (
+              <div className="flex items-center gap-2 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle className="h-4 w-4" />
+                {enumError}
+              </div>
+            )}
+            {hasEnumerated && enumeratedResources.length > 0 && !enumerate.isPending && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 px-4 py-3 text-sm text-green-700">
+                <CheckCircle2 className="h-4 w-4" />
+                Connected — {enumeratedResources.length} resource{enumeratedResources.length !== 1 ? 's' : ''} found
+              </div>
+            )}
+
+            {/* Resource selection */}
+            {hasEnumerated && (
+              <div className="border-t pt-4">
+                <ResourceSelector
+                  resources={enumeratedResources}
+                  selected={selectedResources}
+                  onToggle={handleToggleResource}
+                  onSelectAll={handleSelectAll}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Filtering & Labels — always shown after source type is chosen */}
+        <Card>
+          <CardHeader><CardTitle>Filtering &amp; Labels</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            {/* File Extensions */}
+            <div>
+              <Label htmlFor="extensions">File Extensions</Label>
+              <Input
+                id="extensions"
+                placeholder=".docx,.xlsx,.pdf"
+                value={(config.extensions as string) ?? ''}
+                onChange={(e) => setConfigField('extensions', e.target.value)}
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Comma-separated list. Leave empty to scan all supported types.
+              </p>
+            </div>
+
+            {/* Exclude patterns */}
+            <div>
+              <Label htmlFor="exclude_patterns">Exclude Patterns</Label>
+              <Input
+                id="exclude_patterns"
+                placeholder="*.tmp,~$*,*.log"
+                value={(config.exclude_patterns as string) ?? ''}
+                onChange={(e) => setConfigField('exclude_patterns', e.target.value)}
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Glob patterns to exclude files from scanning (comma-separated).
+              </p>
+            </div>
+
+            {/* Root path for editing existing FS targets */}
+            {isEdit && (sourceType === 'smb' || sourceType === 'nfs') && (
               <PathPicker
-                targetId={isEdit ? targetId : undefined}
+                targetId={targetId}
                 value={(config.root_path as string) ?? ''}
                 onChange={(path) => setConfigField('root_path', path)}
               />
+            )}
 
-              {/* Extensions */}
-              <div>
-                <Label htmlFor="extensions">File Extensions</Label>
-                <Input
-                  id="extensions"
-                  placeholder=".docx,.xlsx,.pdf"
-                  value={(config.extensions as string) ?? ''}
-                  onChange={(e) => setConfigField('extensions', e.target.value)}
-                />
-              </div>
-
-              {/* Exclude patterns */}
-              <div>
-                <Label htmlFor="exclude_patterns">Exclude Patterns</Label>
-                <Input
-                  id="exclude_patterns"
-                  placeholder="*.tmp,~$*"
-                  value={(config.exclude_patterns as string) ?? ''}
-                  onChange={(e) => setConfigField('exclude_patterns', e.target.value)}
-                />
-              </div>
-
-              {/* Apply MIP Labels */}
-              <label className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  checked={config.apply_mip_labels === true}
-                  onChange={(e) => setConfigField('apply_mip_labels', e.target.checked)}
-                  className="rounded"
-                />
-                <span className="text-sm">Apply MIP Labels</span>
-              </label>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isFilesystem && nonFsFields.length > 0 && (
-          <Card>
-            <CardHeader><CardTitle>Adapter Configuration</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              {nonFsFields.map((field) => (
-                <div key={field.key}>
-                  <Label htmlFor={field.key}>{field.label}</Label>
-                  <Input
-                    id={field.key}
-                    placeholder={field.placeholder}
-                    value={(config[field.key] as string) ?? ''}
-                    onChange={(e) => setConfigField(field.key, e.target.value)}
-                  />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
+            {/* Apply MIP Labels */}
+            <label className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                checked={config.apply_mip_labels === true}
+                onChange={(e) => setConfigField('apply_mip_labels', e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-sm">Apply MIP Labels</span>
+            </label>
+          </CardContent>
+        </Card>
 
         <div className="flex gap-3">
           <Button type="submit" disabled={createTarget.isPending || updateTarget.isPending}>
-            {isEdit ? 'Save Changes' : 'Create Target'}
+            {isEdit ? 'Save Changes' : 'Create Resource'}
           </Button>
           <Button type="button" variant="outline" onClick={() => navigate('/targets')}>
             Cancel

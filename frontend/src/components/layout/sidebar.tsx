@@ -28,7 +28,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-white/10 px-4">
-        {collapsed ? <LogoIcon className="h-7 w-auto" /> : <Logo />}
+        {collapsed ? <LogoIcon className="h-7 w-auto" variant="white" /> : <Logo variant="white" />}
       </div>
 
       {/* Navigation */}
