@@ -112,6 +112,10 @@ async def get_or_create_user(
         # Update name if changed
         if claims.name and user.name != claims.name:
             user.name = claims.name
+        # Sync role from claims (e.g. admin granted via Azure AD)
+        expected_role = "admin" if "admin" in claims.roles else user.role
+        if user.role != expected_role:
+            user.role = expected_role
 
     return user
 
