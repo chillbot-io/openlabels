@@ -293,7 +293,12 @@ async def list_access_events_cursor(
     conditions = [FileAccessEvent.tenant_id == user.tenant_id]
 
     if file_path:
-        conditions.append(FileAccessEvent.file_path == file_path)
+        # Support both exact file match and folder prefix filtering
+        if file_path.endswith("/") or file_path.endswith("\\"):
+            safe_path = file_path.replace("%", r"\%").replace("_", r"\_")
+            conditions.append(FileAccessEvent.file_path.ilike(f"{safe_path}%"))
+        else:
+            conditions.append(FileAccessEvent.file_path.startswith(file_path))
     if user_name:
         safe_name = user_name.replace("%", r"\%").replace("_", r"\_")
         conditions.append(FileAccessEvent.user_name.ilike(f"%{safe_name}%"))
