@@ -7,6 +7,7 @@ import {
 import { cn } from '@/lib/utils.ts';
 import { NAV_GROUPS } from '@/lib/constants.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
+import { Logo, LogoIcon } from '@/components/brand/logo.tsx';
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, FolderTree, Activity, FileSearch, Scan, Tag,
@@ -26,9 +27,8 @@ export function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
-        <Shield className="h-6 w-6 shrink-0 text-primary-400" aria-hidden="true" />
-        {!collapsed && <span className="text-lg font-bold">OpenLabels</span>}
+      <div className="flex h-14 items-center border-b border-white/10 px-4">
+        {collapsed ? <LogoIcon className="h-7 w-auto" /> : <Logo />}
       </div>
 
       {/* Navigation */}
