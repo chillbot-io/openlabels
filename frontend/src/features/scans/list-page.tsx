@@ -36,7 +36,7 @@ export function Component() {
 
   const handleCreate = () => {
     if (!selectedTargetId) return;
-    createScan.mutate([selectedTargetId], {
+    createScan.mutate([{ target_id: selectedTargetId, name: scanName || undefined }], {
       onSuccess: (results) => {
         setDialogOpen(false);
         setSelectedTargetId('');

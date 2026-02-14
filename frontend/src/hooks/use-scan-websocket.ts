@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface LiveFinding {
   file_path: string;
@@ -14,14 +14,12 @@ export interface LiveFinding {
  */
 export function useScanWebSocket(scanId: string | undefined, isRunning: boolean) {
   const [findings, setFindings] = useState<LiveFinding[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!scanId || !isRunning) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${location.host}/ws/scans/${scanId}`);
-    wsRef.current = ws;
 
     ws.onmessage = (event) => {
       try {
@@ -45,7 +43,6 @@ export function useScanWebSocket(scanId: string | undefined, isRunning: boolean)
 
     return () => {
       ws.close();
-      wsRef.current = null;
     };
   }, [scanId, isRunning]);
 

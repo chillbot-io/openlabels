@@ -25,9 +25,9 @@ export function useScan(id: string) {
 export function useCreateScans() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (targetIds: string[]) => {
+    mutationFn: async (items: Array<{ target_id: string; name?: string }>) => {
       const results = await Promise.all(
-        targetIds.map((target_id) => scansApi.create({ target_id })),
+        items.map((item) => scansApi.create(item)),
       );
       return results;
     },
