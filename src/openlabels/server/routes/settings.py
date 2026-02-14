@@ -41,6 +41,7 @@ class ScanSettingsResponse(BaseModel):
     max_file_size_mb: int = 100
     concurrent_files: int = 10
     enable_ocr: bool = False
+    enable_ml: bool = True
 
 
 class EntitySettingsResponse(BaseModel):
@@ -77,6 +78,7 @@ class ScanSettingsRequest(BaseModel):
     max_file_size_mb: int = Field(default=100, ge=1, le=10000)
     concurrent_files: int = Field(default=10, ge=1, le=100)
     enable_ocr: bool = False
+    enable_ml: bool = True
 
 
 class EntitySettingsRequest(BaseModel):
@@ -124,6 +126,7 @@ def _settings_to_response(settings: TenantSettings | None) -> AllSettingsRespons
             max_file_size_mb=settings.max_file_size_mb,
             concurrent_files=settings.concurrent_files,
             enable_ocr=settings.enable_ocr,
+            enable_ml=settings.enable_ml,
         ),
         entities=EntitySettingsResponse(
             enabled_entities=settings.enabled_entities or [],
@@ -201,6 +204,7 @@ async def update_scan_settings(
     settings.max_file_size_mb = request.max_file_size_mb
     settings.concurrent_files = request.concurrent_files
     settings.enable_ocr = request.enable_ocr
+    settings.enable_ml = request.enable_ml
     settings.updated_by = user.id
 
     logger.info(
@@ -210,6 +214,7 @@ async def update_scan_settings(
             "max_file_size_mb": request.max_file_size_mb,
             "concurrent_files": request.concurrent_files,
             "enable_ocr": request.enable_ocr,
+            "enable_ml": request.enable_ml,
         },
     )
 

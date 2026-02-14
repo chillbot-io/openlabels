@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Logo Preview</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f8f9fa; padding: 40px; }
+  .preview { display: flex; gap: 60px; flex-wrap: wrap; }
+  .card {
+    background: white; border-radius: 12px; padding: 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center;
+  }
+  .card h3 { margin: 0 0 20px; color: #666; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  .dark { background: #1e293b; }
+  .icon-row { display: flex; gap: 40px; align-items: center; justify-content: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <h1 style="margin-bottom: 32px;">OpenLabels Logo — Review Draft</h1>
+
+  <div class="preview">
+    <!-- Full logo -->
+    <div class="card">
+      <h3>Full Logo (light bg)</h3>
+      <svg viewBox="0 0 280 80" fill="none" width="280" height="80" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(10, 4)">
+          <path d="M30 18 Q30 4, 38 4 Q46 4, 46 12" stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <path d="M18 16 L42 16 L42 58 L30 70 L18 58 Z" fill="#E03E3E"/>
+          <rect x="18" y="16" width="24" height="20" rx="3" ry="3" fill="#E03E3E"/>
+          <path d="M18 28 L42 28 L42 58 L30 70 L18 58 Z" fill="#E03E3E"/>
+          <circle cx="30" cy="24" r="3.5" fill="white"/>
+        </g>
+        <text x="68" y="52" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="700" fill="#1E293B" letter-spacing="-0.5">openlabels</text>
+      </svg>
+    </div>
+
+    <!-- Icon only -->
+    <div class="card">
+      <h3>Icon Only (light bg)</h3>
+      <div class="icon-row">
+        <!-- Large -->
+        <div>
+          <svg viewBox="0 0 64 80" fill="none" width="48" height="60" xmlns="http://www.w3.org/2000/svg">
+            <path d="M28 18 Q28 5, 36 5 Q44 5, 44 14" stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+            <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E"/>
+            <polygon points="14,50 42,50 28,68" fill="#E03E3E"/>
+            <circle cx="28" cy="25" r="4" fill="white"/>
+          </svg>
+          <div style="color:#999; font-size:11px; margin-top:8px;">48px</div>
+        </div>
+        <!-- Medium -->
+        <div>
+          <svg viewBox="0 0 64 80" fill="none" width="28" height="35" xmlns="http://www.w3.org/2000/svg">
+            <path d="M28 18 Q28 5, 36 5 Q44 5, 44 14" stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+            <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E"/>
+            <polygon points="14,50 42,50 28,68" fill="#E03E3E"/>
+            <circle cx="28" cy="25" r="4" fill="white"/>
+          </svg>
+          <div style="color:#999; font-size:11px; margin-top:8px;">28px</div>
+        </div>
+        <!-- Small (favicon size) -->
+        <div>
+          <svg viewBox="0 0 64 80" fill="none" width="16" height="20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M28 18 Q28 5, 36 5 Q44 5, 44 14" stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+            <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E"/>
+            <polygon points="14,50 42,50 28,68" fill="#E03E3E"/>
+            <circle cx="28" cy="25" r="4" fill="white"/>
+          </svg>
+          <div style="color:#999; font-size:11px; margin-top:8px;">16px</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dark sidebar mock -->
+    <div class="card dark" style="min-width: 240px;">
+      <h3 style="color: #94a3b8;">Sidebar (dark bg)</h3>
+      <div style="display:flex; align-items:center; gap:10px; justify-content:center;">
+        <svg viewBox="0 0 64 80" fill="none" width="28" height="35" xmlns="http://www.w3.org/2000/svg">
+          <path d="M28 18 Q28 5, 36 5 Q44 5, 44 14" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E"/>
+          <polygon points="14,50 42,50 28,68" fill="#E03E3E"/>
+          <circle cx="28" cy="25" r="4" fill="white"/>
+        </svg>
+        <span style="color:white; font-size:18px; font-weight:700; letter-spacing:-0.3px;">openlabels</span>
+      </div>
+    </div>
+
+    <!-- Login page mock -->
+    <div class="card" style="min-width: 300px;">
+      <h3>Login Page</h3>
+      <div style="margin-bottom: 12px;">
+        <svg viewBox="0 0 64 80" fill="none" width="48" height="60" xmlns="http://www.w3.org/2000/svg">
+          <path d="M28 18 Q28 5, 36 5 Q44 5, 44 14" stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E"/>
+          <polygon points="14,50 42,50 28,68" fill="#E03E3E"/>
+          <circle cx="28" cy="25" r="4" fill="white"/>
+        </svg>
+      </div>
+      <div style="font-size:24px; font-weight:600; color:#1e293b; letter-spacing:-0.5px;">openlabels</div>
+      <div style="font-size:13px; color:#64748b; margin-top:4px;">Sensitive data discovery and protection platform</div>
+      <button style="margin-top:20px; background:#3b82f6; color:white; border:none; padding:10px 24px; border-radius:6px; font-size:14px; cursor:pointer; width:100%;">Sign in with Microsoft</button>
+    </div>
+  </div>
+</body>
+</html>

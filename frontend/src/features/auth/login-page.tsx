@@ -1,16 +1,16 @@
-import { Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card.tsx';
+import { LogoIcon } from '@/components/brand/logo.tsx';
 
 export function Component() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md" role="main">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary-100">
-            <Shield className="h-6 w-6 text-primary-600" aria-hidden="true" />
+          <div className="mx-auto mb-2">
+            <LogoIcon className="mx-auto h-12 w-auto" />
           </div>
-          <h1 className="text-2xl font-semibold leading-none tracking-tight">OpenLabels</h1>
+          <h1 className="text-2xl font-semibold leading-none tracking-tight">openlabels</h1>
           <CardDescription>
             Sensitive data discovery and protection platform
           </CardDescription>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" fill="none">
+  <!-- String / loop -->
+  <path
+    d="M28 18 Q28 5, 36 5 Q44 5, 44 14"
+    stroke="#475569" stroke-width="2.5" stroke-linecap="round" fill="none"
+  />
+  <!-- Tag body -->
+  <rect x="14" y="16" width="28" height="42" rx="4" fill="#E03E3E" />
+  <!-- Pointed bottom -->
+  <polygon points="14,50 42,50 28,68" fill="#E03E3E" />
+  <!-- Hole -->
+  <circle cx="28" cy="25" r="4" fill="white" />
+</svg>

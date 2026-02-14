@@ -353,6 +353,7 @@ export interface AllSettings {
     max_file_size_mb: number;
     concurrent_files: number;
     enable_ocr: boolean;
+    enable_ml: boolean;
   };
   entities: {
     enabled_entities: string[];

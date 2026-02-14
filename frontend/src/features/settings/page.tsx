@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings } from '@/api/hooks/use-settings.ts';
-import { useUsers } from '@/api/hooks/use-users.ts';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Card, CardContent } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
@@ -94,30 +93,6 @@ function SettingsTab({ category, settings }: { category: SettingsCategory; setti
   );
 }
 
-function UsersTab() {
-  const users = useUsers();
-
-  if (users.isLoading) return <Skeleton className="h-48" />;
-
-  return (
-    <Card>
-      <CardContent className="p-0">
-        <div className="divide-y" role="list" aria-label="Users">
-          {(users.data?.items ?? []).map((user) => (
-            <div key={user.id} className="flex items-center justify-between px-4 py-3" role="listitem">
-              <div>
-                <p className="text-sm font-medium">{user.name}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">{user.email}</p>
-              </div>
-              <span className="rounded-full bg-[var(--muted)] px-2 py-0.5 text-xs font-medium">{user.role}</span>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function Component() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
@@ -145,14 +120,12 @@ export function Component() {
           <TabsTrigger value="scan">Scan</TabsTrigger>
           <TabsTrigger value="entities">Entities</TabsTrigger>
           <TabsTrigger value="fanout">Fanout</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
         </TabsList>
 
         <TabsContent value="azure"><SettingsTab category="azure" settings={settings.data} /></TabsContent>
         <TabsContent value="scan"><SettingsTab category="scan" settings={settings.data} /></TabsContent>
         <TabsContent value="entities"><SettingsTab category="entities" settings={settings.data} /></TabsContent>
         <TabsContent value="fanout"><SettingsTab category="fanout" settings={settings.data} /></TabsContent>
-        <TabsContent value="users"><UsersTab /></TabsContent>
       </Tabs>
     </div>
   );
