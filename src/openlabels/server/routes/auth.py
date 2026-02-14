@@ -28,7 +28,7 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -364,7 +364,7 @@ async def _login_oidc(
     safe_redirect = validate_redirect_uri(redirect_uri, request)
 
     # Store state, redirect, and nonce for callback validation
-    await pending_store.set(state, safe_redirect, callback_url)
+    await pending_store.set(state, safe_redirect, callback_url, nonce=nonce)
 
     auth_url = get_authorization_url(
         discovery=discovery,
@@ -454,9 +454,10 @@ async def auth_callback(
 
     callback_url = pending["callback_url"]
     final_redirect = pending["redirect_uri"]
+    nonce = pending.get("nonce")
 
     if settings.auth.provider == "oidc":
-        return await _callback_oidc(request, code, callback_url, final_redirect, db)
+        return await _callback_oidc(request, code, callback_url, final_redirect, db, nonce=nonce)
 
     # Default: Azure AD
     return await _callback_azure_ad(request, code, callback_url, final_redirect, db)
@@ -538,6 +539,7 @@ async def _callback_oidc(
     callback_url: str,
     final_redirect: str,
     db: AsyncSession,
+    nonce: str | None = None,
 ) -> RedirectResponse:
     """Handle generic OIDC callback."""
     from openlabels.auth.oidc_provider import (
@@ -571,6 +573,17 @@ async def _callback_oidc(
     id_token = token_result.get("id_token")
     if id_token:
         raw_claims = await validate_id_token(id_token, discovery, oidc_config)
+        # Validate nonce to prevent replay attacks
+        if nonce and raw_claims.get("nonce") != nonce:
+            log_security_event(
+                event_type="oidc_nonce_mismatch",
+                details=_get_request_context(request),
+                level="warning",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authentication failed: nonce mismatch (possible replay attack).",
+            )
     else:
         # Some providers don't return id_token in the code exchange —
         # fall back to userinfo endpoint
@@ -739,9 +752,10 @@ async def logout(
             logger.debug("Failed to get OIDC end_session_endpoint, falling back to local logout")
 
     elif settings.auth.provider == "azure_ad" and settings.auth.tenant_id:
+        encoded_redirect = quote(str(request.base_url), safe="")
         logout_url = (
             f"https://login.microsoftonline.com/{settings.auth.tenant_id}"
-            f"/oauth2/v2.0/logout?post_logout_redirect_uri={request.base_url}"
+            f"/oauth2/v2.0/logout?post_logout_redirect_uri={encoded_redirect}"
         )
         response = RedirectResponse(url=logout_url, status_code=302)
         response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", secure=is_secure)

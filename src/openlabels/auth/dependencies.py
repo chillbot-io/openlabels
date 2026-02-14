@@ -86,7 +86,7 @@ async def get_or_create_user(
     with fallback to legacy fields (azure_tenant_id, azure_oid) for backward
     compatibility during migration.
     """
-    provider = getattr(claims, "provider", "azure_ad")
+    provider = claims.provider
 
     # First, find or create tenant
     tenant = await _find_or_create_tenant(session, claims, provider)

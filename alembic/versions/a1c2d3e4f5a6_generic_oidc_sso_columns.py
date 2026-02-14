@@ -15,6 +15,9 @@ Tenants table:
 - idp_tenant_id: Provider-agnostic tenant identifier from the IdP
   Backfilled from azure_tenant_id
 
+PendingAuth table:
+- nonce: OIDC replay protection token (stored during login, validated in callback)
+
 The legacy azure_oid and azure_tenant_id columns are kept for backward
 compatibility. New code uses external_id/idp_tenant_id; old code continues
 to work via the legacy columns until a future cleanup migration.
@@ -82,8 +85,18 @@ def upgrade() -> None:
         ['idp_tenant_id'],
     )
 
+    # --- PendingAuth table ---
+    # Add nonce column for OIDC replay protection
+    op.add_column(
+        'pending_auth',
+        sa.Column('nonce', sa.String(64), nullable=True),
+    )
+
 
 def downgrade() -> None:
+    # --- PendingAuth ---
+    op.drop_column('pending_auth', 'nonce')
+
     # --- Tenants ---
     op.drop_index('ix_tenants_idp_tenant_id', table_name='tenants')
     op.drop_column('tenants', 'auth_provider')

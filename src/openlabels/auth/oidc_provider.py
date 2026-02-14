@@ -137,10 +137,25 @@ async def _get_jwks(jwks_uri: str) -> dict[str, Any]:
         return jwks
 
 
-async def _find_signing_key(kid: str, jwks_uri: str) -> dict[str, Any]:
-    """Find signing key by kid, refreshing cache if needed."""
+async def _find_signing_key(kid: str | None, jwks_uri: str) -> dict[str, Any]:
+    """Find signing key by kid, refreshing cache if needed.
+
+    If kid is None (some providers omit it), use the sole key if exactly
+    one signing key exists; otherwise raise an error.
+    """
     jwks = await _get_jwks(jwks_uri)
-    for k in jwks.get("keys", []):
+    keys: list[dict[str, Any]] = jwks.get("keys", [])
+
+    if kid is None:
+        # No kid header — only safe if there's exactly one signing key
+        signing_keys = [k for k in keys if k.get("use", "sig") == "sig"]
+        if len(signing_keys) == 1:
+            return signing_keys[0]
+        raise TokenInvalidError(
+            f"Token has no 'kid' header and JWKS has {len(signing_keys)} signing keys"
+        )
+
+    for k in keys:
         if k.get("kid") == kid:
             return k
 
@@ -181,8 +196,6 @@ def get_authorization_url(
     if nonce:
         params["nonce"] = nonce
 
-    query = "&".join(f"{k}={httpx.URL('', params={k: v}).params}" for k, v in params.items())
-    # Use httpx URL building for proper encoding
     url = httpx.URL(auth_endpoint, params=params)
     return str(url)
 
