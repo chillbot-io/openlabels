@@ -63,7 +63,7 @@ async def get_or_create_user(
         Tenant.azure_tenant_id == claims.tenant_id
     )
     tenant_result = await session.execute(tenant_query)
-    tenant = tenant_result.scalar_one_or_none()
+    tenant = tenant_result.scalars().first()
 
     if not tenant:
         # Create tenant

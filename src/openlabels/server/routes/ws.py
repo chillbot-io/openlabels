@@ -343,11 +343,11 @@ async def authenticate_websocket(
         async with get_session_factory()() as session:
             tenant_query = select(Tenant).where(Tenant.azure_tenant_id == "dev-tenant")
             result = await session.execute(tenant_query)
-            tenant = result.scalar_one_or_none()
+            tenant = result.scalars().first()
             if tenant:
                 user_query = select(User).where(User.tenant_id == tenant.id)
                 result = await session.execute(user_query)
-                user = result.scalar_one_or_none()
+                user = result.scalars().first()
                 if user:
                     return (user.id, tenant.id)
         logger.warning("WebSocket: auth.provider=none but no dev tenant/user found")
@@ -393,7 +393,7 @@ async def authenticate_websocket(
         # Find user and tenant
         tenant_query = select(Tenant).where(Tenant.azure_tenant_id == tenant_azure_id)
         result = await db_session.execute(tenant_query)
-        tenant = result.scalar_one_or_none()
+        tenant = result.scalars().first()
 
         if not tenant:
             logger.warning("WebSocket connection rejected: tenant not found")
