@@ -530,10 +530,12 @@ async def download_report(
         "xml": "application/xml",
     }.get(report.format, "application/octet-stream")
 
+    # SECURITY: Use the resolved path (not the raw DB value) to prevent
+    # TOCTOU race between the is_relative_to check and file serve.
     return FileResponse(
-        report.result_path,
+        str(report_file),
         media_type=media_type,
-        filename=Path(report.result_path).name,
+        filename=report_file.name,
     )
 
 

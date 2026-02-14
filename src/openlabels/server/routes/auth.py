@@ -75,11 +75,11 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
     if redirect_uri.startswith("/"):
         # Block protocol-relative URLs (//evil.com)
         if redirect_uri.startswith("//"):
-            logger.warning(f"Blocked protocol-relative redirect: {redirect_uri}")
+            logger.warning("Blocked protocol-relative redirect: %s", redirect_uri)
             return "/"
         # Block path traversal and control characters
         if ".." in redirect_uri or any(c in redirect_uri for c in "\x00\r\n"):
-            logger.warning(f"Blocked unsafe redirect path: {redirect_uri}")
+            logger.warning("Blocked unsafe redirect path: %s", redirect_uri)
             return "/"
         return redirect_uri
 
@@ -89,13 +89,13 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
     except (ValueError, TypeError) as e:
         # Log the exception type and message for debugging URL parsing failures
         logger.warning(
-            f"Failed to parse redirect URI '{redirect_uri}': {type(e).__name__}: {e}"
+            "Failed to parse redirect URI: %s: %s", type(e).__name__, e
         )
         return "/"
 
     # Must have a valid scheme
     if parsed.scheme not in ("http", "https"):
-        logger.warning(f"Blocked redirect with invalid scheme: {redirect_uri}")
+        logger.warning("Blocked redirect with invalid scheme: %s", redirect_uri)
         return "/"
 
     # Get the request's origin
@@ -321,7 +321,7 @@ async def auth_callback(
     # Handle errors from Microsoft
     if error:
         # Log detailed error server-side for debugging
-        logger.error(f"OAuth error: {error} - {error_description}")
+        logger.error("OAuth error: %s - %s", error, error_description)
         # Security: Log failed authentication attempt
         log_security_event(
             event_type="oauth_error",
@@ -387,7 +387,7 @@ async def auth_callback(
             redirect_uri=callback_url,
         )
     except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-        logger.error(f"Token acquisition failed: {e}")
+        logger.error("Token acquisition failed: %s", e)
         log_security_event(
             event_type="token_acquisition_failed",
             details={
@@ -403,7 +403,7 @@ async def auth_callback(
 
     if "error" in result:
         # Log detailed error server-side for debugging
-        logger.error(f"Token error: {result.get('error_description', result.get('error'))}")
+        logger.error("Token error: %s", result.get('error_description', result.get('error')))
         log_security_event(
             event_type="token_exchange_failed",
             details={
@@ -741,7 +741,7 @@ async def get_token(
                         raise
                     except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                         # SECURITY: Log token refresh failures for security monitoring
-                        logger.warning(f"Token refresh failed during session validation: {type(e).__name__}: {e}")
+                        logger.warning("Token refresh failed during session validation: %s: %s", type(e).__name__, e)
                         await session_store.delete(session_id)
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -878,7 +878,7 @@ async def logout_all_sessions(
     # Delete all sessions for this user
     count = await session_store.delete_all_for_user(user_id)
 
-    logger.info(f"User {user_id} logged out of {count} sessions")
+    logger.info("User %s logged out of %d sessions", user_id, count)
 
     return {
         "status": "success",

@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, require_admin
@@ -96,7 +97,8 @@ async def create_user(
             conflicting_field="email",
         )
 
-    # Create user
+    # Create user — catch IntegrityError from the unique index
+    # (tenant_id, email) to handle races between the check above and insert
     new_user = User(
         tenant_id=current_user.tenant_id,
         email=user_data.email,
@@ -104,7 +106,14 @@ async def create_user(
         role=user_data.role,
     )
     session.add(new_user)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise ConflictError(
+            message="User with this email already exists",
+            conflicting_field="email",
+        )
 
     # Refresh to load server-generated defaults (created_at)
     await session.refresh(new_user)
