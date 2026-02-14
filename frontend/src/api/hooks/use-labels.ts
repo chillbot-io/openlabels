@@ -33,3 +33,14 @@ export function useLabelSyncStatus() {
     queryFn: () => labelsApi.syncStatus(),
   });
 }
+
+export function useApplyLabel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: labelsApi.apply,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['results'] });
+      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    },
+  });
+}

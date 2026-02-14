@@ -50,30 +50,43 @@ export type RemediationAction = (typeof REMEDIATION_ACTIONS)[number];
 
 export const NAV_GROUPS = [
   {
-    label: 'Learn',
+    label: '',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: 'LayoutDashboard' },
-      { label: 'Resources', path: '/explorer', icon: 'FolderTree' },
+    ],
+  },
+  {
+    label: 'Scanning',
+    items: [
+      { label: 'Scan Targets', path: '/targets', icon: 'Target' },
+      { label: 'Scans', path: '/scans', icon: 'Scan' },
+      { label: 'Schedules', path: '/schedules', icon: 'Calendar' },
+    ],
+  },
+  {
+    label: 'Findings',
+    items: [
+      { label: 'Results', path: '/results', icon: 'FileSearch' },
+      { label: 'Explorer', path: '/explorer', icon: 'FolderTree' },
+      { label: 'Labels', path: '/labels', icon: 'Tag' },
+      { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
+    ],
+  },
+  {
+    label: 'Compliance',
+    items: [
+      { label: 'Policies', path: '/policies', icon: 'BookOpen' },
+      { label: 'Reports', path: '/reports', icon: 'BarChart3' },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { label: 'Monitoring', path: '/monitoring', icon: 'Monitor' },
       { label: 'Events', path: '/events', icon: 'Activity' },
       { label: 'Permissions', path: '/permissions', icon: 'Shield' },
-    ],
-  },
-  {
-    label: 'Acts',
-    items: [
-      { label: 'Reports', path: '/reports', icon: 'BarChart3' },
-      { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
-      { label: 'System Monitor', path: '/monitoring', icon: 'Monitor' },
-    ],
-  },
-  {
-    label: 'Configuration',
-    items: [
-      { label: 'Settings', path: '/settings', icon: 'Settings' },
-      { label: 'Resources', path: '/config/resources', icon: 'Server' },
       { label: 'Users', path: '/users', icon: 'Users' },
-      { label: 'Labels', path: '/labels', icon: 'Tag' },
-      { label: 'Scan Configuration', path: '/scan-config', icon: 'Scan' },
+      { label: 'Settings', path: '/settings', icon: 'Settings' },
     ],
   },
 ] as const;

@@ -37,4 +37,5 @@ export const router = createBrowserRouter([
     ],
   },
   { path: 'login', lazy: () => import('@/features/auth/login-page.tsx') },
+  { path: 'setup', lazy: () => import('@/features/setup/wizard-page.tsx') },
 ]);

@@ -7,10 +7,12 @@ import { useTargets } from '@/api/hooks/use-targets.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { StatusBadge } from '@/components/status-badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog.tsx';
 import { formatRelativeTime } from '@/lib/utils.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
-import type { ScanJob, Target } from '@/api/types.ts';
+import type { ScanJob } from '@/api/types.ts';
 import type { ScanStatus } from '@/lib/constants.ts';
 
 const columns: ColumnDef<ScanJob, unknown>[] = [
@@ -25,22 +27,32 @@ export function Component() {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+  const [selectedTargetId, setSelectedTargetId] = useState('');
+  const [scanName, setScanName] = useState('');
   const scans = useScans({ page: page + 1, page_size: 20 });
   const targets = useTargets();
   const createScan = useCreateScans();
   const addToast = useUIStore((s) => s.addToast);
 
   const handleCreate = () => {
-    if (selectedTargets.length === 0) return;
-    createScan.mutate(selectedTargets, {
-      onSuccess: () => {
+    if (!selectedTargetId) return;
+    createScan.mutate([selectedTargetId], {
+      onSuccess: (results) => {
         setDialogOpen(false);
-        setSelectedTargets([]);
+        setSelectedTargetId('');
+        setScanName('');
         addToast({ level: 'success', message: 'Scan started' });
+        if (results.length > 0) {
+          navigate(`/scans/${results[0].id}`);
+        }
       },
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
+  };
+
+  const resetDialog = () => {
+    setSelectedTargetId('');
+    setScanName('');
   };
 
   return (
@@ -64,33 +76,47 @@ export function Component() {
         onRowClick={(scan) => navigate(`/scans/${scan.id}`)}
       />
 
-      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setSelectedTargets([]); }}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetDialog(); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Scan</DialogTitle>
-            <DialogDescription>Select targets to scan for sensitive data.</DialogDescription>
+            <DialogDescription>Select a target to scan for sensitive data.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 max-h-64 overflow-y-auto" role="group" aria-label="Select scan targets">
-            {(targets.data?.items ?? []).map((target: Target) => (
-              <label key={target.id} className="flex items-center gap-2 rounded-md p-2 hover:bg-[var(--muted)]">
-                <input
-                  type="checkbox"
-                  checked={selectedTargets.includes(target.id)}
-                  onChange={(e) =>
-                    setSelectedTargets((prev) =>
-                      e.target.checked ? [...prev, target.id] : prev.filter((id) => id !== target.id),
-                    )
-                  }
-                  className="rounded"
-                />
-                <span className="text-sm">{target.name}</span>
-                <span className="text-xs text-[var(--muted-foreground)]">{target.adapter}</span>
-              </label>
-            ))}
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium" htmlFor="scan-target">Target *</label>
+              <Select value={selectedTargetId} onValueChange={setSelectedTargetId}>
+                <SelectTrigger id="scan-target">
+                  <SelectValue placeholder="Select a target" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(targets.data?.items ?? []).map((target) => (
+                    <SelectItem key={target.id} value={target.id}>
+                      {target.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium" htmlFor="scan-name">Scan Name (optional)</label>
+              <Input
+                id="scan-name"
+                value={scanName}
+                onChange={(e) => setScanName(e.target.value)}
+                placeholder="Q1 2025 Audit"
+              />
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">Leave blank for auto-generated name</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => { setDialogOpen(false); resetDialog(); }}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreate} disabled={!selectedTargetId || createScan.isPending}>
+                {createScan.isPending ? 'Starting...' : 'Start Scan'}
+              </Button>
+            </div>
           </div>
-          <Button onClick={handleCreate} disabled={selectedTargets.length === 0 || createScan.isPending}>
-            {createScan.isPending ? 'Starting...' : `Start Scan (${selectedTargets.length})`}
-          </Button>
         </DialogContent>
       </Dialog>
     </div>

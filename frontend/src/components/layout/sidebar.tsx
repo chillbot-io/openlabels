@@ -33,9 +33,9 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4" aria-label="Main navigation">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-4">
-            {!collapsed && (
+        {NAV_GROUPS.map((group, gi) => (
+          <div key={group.label || `nav-${gi}`} className="mb-4">
+            {!collapsed && group.label && (
               <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                 {group.label}
               </p>
