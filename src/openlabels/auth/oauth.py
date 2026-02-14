@@ -1,10 +1,15 @@
 """
-OAuth 2.0 / OIDC authentication with Azure AD.
+OAuth 2.0 / OIDC token validation.
+
+Supports:
+- Azure AD via direct JWKS validation (provider="azure_ad")
+- Generic OIDC via discovery document (provider="oidc")
+- Dev mode bypass (provider="none" + debug=True)
 
 Features:
-- JWT token validation against Azure AD JWKS
+- JWT token validation against provider JWKS
 - Thread-safe JWKS caching with asyncio.Lock
-- Automatic JWKS refresh on key-not-found (key rotation)
+- Automatic JWKS refresh on key rotation
 - Granular token error types (expired vs invalid)
 """
 
@@ -27,13 +32,19 @@ logger = logging.getLogger(__name__)
 
 
 class TokenClaims(BaseModel):
-    """Claims extracted from a validated JWT token."""
+    """Claims extracted from a validated JWT token.
 
-    oid: str  # Azure AD object ID
+    Provider-agnostic: works with both Azure AD and generic OIDC providers.
+    The `oid` field holds the external user identifier from any provider
+    (Azure AD object ID, OIDC subject, etc.).
+    """
+
+    oid: str  # External user ID (Azure AD oid, OIDC sub, etc.)
     preferred_username: str  # Email/UPN
     name: str | None = None
     tenant_id: str
     roles: list[str] = []
+    provider: str = "azure_ad"  # Which provider issued this token
 
     @model_validator(mode="before")
     @classmethod
@@ -49,7 +60,7 @@ class TokenClaims(BaseModel):
         return data
 
 
-# JWKS cache with async-safe locking
+# JWKS cache with async-safe locking (for Azure AD direct validation)
 # Maps tenant_id -> (jwks_data, fetched_at_monotonic)
 _jwks_cache: dict[str, tuple[dict[str, Any], float]] = {}
 _jwks_lock = asyncio.Lock()
@@ -120,9 +131,79 @@ async def _find_signing_key(kid: str, tenant_id: str) -> dict[str, Any]:
     raise TokenInvalidError("Unable to find signing key after cache refresh")
 
 
-# Token validation
+async def _validate_azure_ad_token(token: str) -> TokenClaims:
+    """Validate an Azure AD access token and extract claims."""
+    settings = get_settings()
+    tenant_id = settings.auth.tenant_id
+    if not tenant_id:
+        raise TokenInvalidError("auth.tenant_id is not configured")
+
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+
+        key_data = await _find_signing_key(kid, tenant_id)
+        signing_key = jwt.PyJWK(key_data)
+
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256"],
+            audience=settings.auth.client_id,
+            issuer=f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+        )
+
+        return TokenClaims(
+            oid=claims["oid"],
+            preferred_username=claims["preferred_username"],
+            name=claims.get("name"),
+            tenant_id=claims.get("tid", tenant_id),
+            roles=claims.get("roles", []),
+            provider="azure_ad",
+        )
+
+    except (TokenExpiredError, TokenInvalidError):
+        raise
+    except ExpiredSignatureError as e:
+        raise TokenExpiredError(f"Token expired: {e}") from e
+    except InvalidSignatureError as e:
+        raise TokenInvalidError(f"Invalid signature: {e}") from e
+    except PyJWTError as e:
+        raise TokenInvalidError(f"Invalid token: {e}") from e
+
+
+async def _validate_oidc_token(token: str) -> TokenClaims:
+    """Validate a generic OIDC id_token and extract claims."""
+    from openlabels.auth.oidc_provider import (
+        extract_claims,
+        get_discovery,
+        validate_id_token,
+    )
+
+    settings = get_settings()
+    oidc_config = settings.auth.oidc
+
+    if not oidc_config.discovery_url:
+        raise TokenInvalidError("auth.oidc.discovery_url is not configured")
+
+    discovery = await get_discovery(oidc_config.discovery_url)
+    raw_claims = await validate_id_token(token, discovery, oidc_config)
+    normalized = extract_claims(raw_claims, oidc_config)
+
+    return TokenClaims(
+        oid=normalized.sub,
+        preferred_username=normalized.email,
+        name=normalized.name,
+        tenant_id=normalized.tenant_id,
+        roles=normalized.roles,
+        provider="oidc",
+    )
+
+
 async def validate_token(token: str) -> TokenClaims:
-    """Validate an Azure AD access token and extract claims.
+    """Validate a token and extract claims.
+
+    Dispatches to the appropriate provider based on auth settings.
 
     Raises:
         TokenExpiredError: If the token has expired.
@@ -138,55 +219,20 @@ async def validate_token(token: str) -> TokenClaims:
                 "Auth provider 'none' is only allowed when server.debug is True. "
                 "Refusing to bypass authentication in non-debug mode."
             )
-        # Return mock claims for development
         return TokenClaims(
             oid="dev-user-oid",
             preferred_username="dev@localhost",
             name="Development User",
             tenant_id="dev-tenant",
             roles=["admin"],
+            provider="none",
         )
 
-    tenant_id = settings.auth.tenant_id
-    if not tenant_id:
-        raise TokenInvalidError("auth.tenant_id is not configured")
+    if settings.auth.provider == "oidc":
+        return await _validate_oidc_token(token)
 
-    try:
-        # Decode header to get kid
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-
-        # Find signing key (with automatic cache refresh on rotation)
-        key_data = await _find_signing_key(kid, tenant_id)
-
-        # Convert JWK dict to PyJWK for decoding
-        signing_key = jwt.PyJWK(key_data)
-
-        # Validate and decode
-        claims = jwt.decode(
-            token,
-            signing_key,
-            algorithms=["RS256"],
-            audience=settings.auth.client_id,
-            issuer=f"https://login.microsoftonline.com/{tenant_id}/v2.0",
-        )
-
-        return TokenClaims(
-            oid=claims["oid"],
-            preferred_username=claims["preferred_username"],
-            name=claims.get("name"),
-            tenant_id=claims.get("tid", tenant_id),
-            roles=claims.get("roles", []),
-        )
-
-    except (TokenExpiredError, TokenInvalidError):
-        raise
-    except ExpiredSignatureError as e:
-        raise TokenExpiredError(f"Token expired: {e}") from e
-    except InvalidSignatureError as e:
-        raise TokenInvalidError(f"Invalid signature: {e}") from e
-    except PyJWTError as e:
-        raise TokenInvalidError(f"Invalid token: {e}") from e
+    # Default: azure_ad
+    return await _validate_azure_ad_token(token)
 
 
 def clear_jwks_cache() -> None:

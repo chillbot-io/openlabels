@@ -1,5 +1,7 @@
 """
 FastAPI dependencies for authentication and role-based access control.
+
+Supports Azure AD, generic OIDC, and dev-mode authentication.
 """
 
 from __future__ import annotations
@@ -30,15 +32,35 @@ _DEV_CLAIMS = TokenClaims(
     name="Development User",
     tenant_id="dev-tenant",
     roles=["admin"],
+    provider="none",
 )
 
+
+def _build_oauth2_scheme() -> OAuth2AuthorizationCodeBearer:
+    """Build OAuth2 scheme based on current auth provider config."""
+    settings = get_settings()
+
+    if settings.auth.provider == "oidc" and settings.auth.oidc.discovery_url:
+        # For OIDC, we don't know the exact URLs at import time
+        # (they come from discovery), so use placeholder URLs.
+        # The actual auth flow is handled by the routes, not this scheme.
+        return OAuth2AuthorizationCodeBearer(
+            authorizationUrl="/api/v1/auth/login",
+            tokenUrl="/api/v1/auth/token",
+            auto_error=False,
+        )
+
+    # Azure AD or fallback
+    tenant_id = settings.auth.tenant_id or "common"
+    return OAuth2AuthorizationCodeBearer(
+        authorizationUrl=f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize",
+        tokenUrl=f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+        auto_error=False,
+    )
+
+
 # OAuth2 scheme
-settings = get_settings()
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=f"https://login.microsoftonline.com/{settings.auth.tenant_id or 'common'}/oauth2/v2.0/authorize",
-    tokenUrl=f"https://login.microsoftonline.com/{settings.auth.tenant_id or 'common'}/oauth2/v2.0/token",
-    auto_error=False,  # Don't auto-error so we can handle dev mode
-)
+oauth2_scheme = _build_oauth2_scheme()
 
 
 class CurrentUser(BaseModel):
@@ -57,24 +79,73 @@ async def get_or_create_user(
     session: AsyncSession,
     claims: TokenClaims,
 ) -> User:
-    """Get existing user or create new one from token claims."""
-    # First, ensure tenant exists
-    tenant_query = select(Tenant).where(
-        Tenant.azure_tenant_id == claims.tenant_id
-    )
-    tenant_result = await session.execute(tenant_query)
-    tenant = tenant_result.scalars().first()
+    """Get existing user or create new one from token claims.
+
+    Works with any auth provider: Azure AD, generic OIDC, or dev mode.
+    Uses provider-agnostic fields (idp_tenant_id, external_id) for lookups,
+    with fallback to legacy fields (azure_tenant_id, azure_oid) for backward
+    compatibility during migration.
+    """
+    provider = getattr(claims, "provider", "azure_ad")
+
+    # First, find or create tenant
+    tenant = await _find_or_create_tenant(session, claims, provider)
+
+    # Find or create user
+    user = await _find_or_create_user(session, tenant, claims, provider)
+
+    return user
+
+
+async def _find_or_create_tenant(
+    session: AsyncSession,
+    claims: TokenClaims,
+    provider: str,
+) -> Tenant:
+    """Find existing tenant or create new one."""
+    tenant = None
+
+    # Try provider-agnostic lookup first
+    if claims.tenant_id:
+        tenant_query = select(Tenant).where(
+            Tenant.idp_tenant_id == claims.tenant_id
+        )
+        result = await session.execute(tenant_query)
+        tenant = result.scalars().first()
+
+    # Fallback: try legacy azure_tenant_id lookup
+    if not tenant and claims.tenant_id:
+        tenant_query = select(Tenant).where(
+            Tenant.azure_tenant_id == claims.tenant_id
+        )
+        result = await session.execute(tenant_query)
+        tenant = result.scalars().first()
+        # If found via legacy field, backfill the new field
+        if tenant and not tenant.idp_tenant_id:
+            tenant.idp_tenant_id = claims.tenant_id
 
     if not tenant:
         # Create tenant
         tenant = Tenant(
             name=f"Tenant {claims.tenant_id[:8]}",
-            azure_tenant_id=claims.tenant_id,
+            azure_tenant_id=claims.tenant_id if provider == "azure_ad" else None,
+            idp_tenant_id=claims.tenant_id,
+            auth_provider=provider,
         )
         session.add(tenant)
         await session.flush()
 
-    # Find or create user
+    return tenant
+
+
+async def _find_or_create_user(
+    session: AsyncSession,
+    tenant: Tenant,
+    claims: TokenClaims,
+    provider: str,
+) -> User:
+    """Find existing user or create new one."""
+    # Look up by email within tenant (email is the canonical identity)
     user_query = select(User).where(
         User.tenant_id == tenant.id,
         User.email == claims.preferred_username,
@@ -86,8 +157,7 @@ async def get_or_create_user(
         # Determine role - first user is admin
         # SECURITY: Lock the tenant row to serialize concurrent user creation and
         # prevent a TOCTOU race where two requests both see zero users and both
-        # become admin.  FOR UPDATE on the tenant row blocks the second request
-        # until the first commits (even when the user table is empty).
+        # become admin.
         await session.execute(
             select(Tenant).where(Tenant.id == tenant.id).with_for_update()
         )
@@ -103,7 +173,9 @@ async def get_or_create_user(
             tenant_id=tenant.id,
             email=claims.preferred_username,
             name=claims.name,
-            azure_oid=claims.oid,
+            azure_oid=claims.oid if provider == "azure_ad" else None,
+            external_id=claims.oid,
+            auth_provider=provider,
             role="admin" if is_first_user or "admin" in claims.roles else "viewer",
         )
         session.add(user)
@@ -112,10 +184,14 @@ async def get_or_create_user(
         # Update name if changed
         if claims.name and user.name != claims.name:
             user.name = claims.name
-        # Sync role from claims (e.g. admin granted via Azure AD)
+        # Sync role from claims (e.g. admin granted via IdP)
         expected_role = "admin" if "admin" in claims.roles else user.role
         if user.role != expected_role:
             user.role = expected_role
+        # Backfill external_id if missing (migration from azure_oid)
+        if not user.external_id and claims.oid:
+            user.external_id = claims.oid
+            user.auth_provider = provider
 
     return user
 
@@ -132,7 +208,7 @@ async def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Auth provider 'none' requires server.debug=True. "
-                "Set AUTH_PROVIDER=azure_ad for production or "
+                "Set AUTH_PROVIDER=azure_ad or AUTH_PROVIDER=oidc for production or "
                 "OPENLABELS_SERVER__DEBUG=true for development.",
             )
         claims = _DEV_CLAIMS
@@ -163,11 +239,7 @@ async def get_optional_user(
     token: str | None = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> CurrentUser | None:
-    """Get the current user if authenticated, or None if not.
-
-    Use this for routes where authentication is optional (e.g., pages that
-    show different content for authenticated vs anonymous users).
-    """
+    """Get the current user if authenticated, or None if not."""
     settings = get_settings()
 
     if settings.auth.provider == "none":
@@ -184,31 +256,19 @@ async def get_optional_user(
         user = await get_or_create_user(session, claims)
         return CurrentUser.model_validate(user)
     except (ValueError, AuthError):
-        # Invalid or expired token — user is not authenticated
         return None
 
 
 # Role-based access control
-# Type alias for the dependency callable returned by require_role().
 _RoleDep = Callable[..., Coroutine[Any, Any, CurrentUser]]
 
 
 def require_role(*allowed_roles: str) -> _RoleDep:
-    """FastAPI dependency factory that enforces role-based access.
-
-    Usage::
-
-        @router.delete("/{id}", dependencies=[Depends(require_role("admin"))])
-        async def delete_item(id: UUID): ...
-
-        @router.get("/report", dependencies=[Depends(require_role("admin", "viewer"))])
-        async def get_report(): ...
-    """
+    """FastAPI dependency factory that enforces role-based access."""
     async def _check_role(
         user: CurrentUser = Depends(get_current_user),
     ) -> CurrentUser:
         if user.role not in allowed_roles:
-            # SECURITY: Log specifics server-side; return generic message to client
             logger.debug(
                 "RBAC denied: user %s (role=%s) needs one of %s",
                 user.email, user.role, allowed_roles,
