@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 370 120" width="370" height="120">
+  <text x="5" y="52" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="52" fill="#1a1a1a">openlabels</text>
+  
+  <!-- Oval loop clasp -->
+  <ellipse cx="318" cy="56" rx="8" ry="12" fill="none" stroke="#333" stroke-width="2.5"/>
+  
+  <!-- Tag body (rounded rectangle) -->
+  <rect x="304" y="66" width="28" height="46" rx="4" ry="4" fill="#cc2222"/>
+  <circle cx="318" cy="78" r="4.5" fill="white"/>
+</svg>
