@@ -16,4 +16,7 @@ export const labelsApi = {
 
   mappings: () =>
     apiFetch<LabelMappingsResponse>('/labels/mappings'),
+
+  apply: (payload: { result_id: string; label_id: string }) =>
+    apiFetch<{ job_id?: string; message?: string }>('/labels/apply', { method: 'POST', body: payload }),
 };

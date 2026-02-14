@@ -5,7 +5,6 @@ import { useUsers, useCreateUser, useDeleteUser } from '@/api/hooks/use-users.ts
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
