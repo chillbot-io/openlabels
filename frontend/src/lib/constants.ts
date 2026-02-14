@@ -50,34 +50,26 @@ export type RemediationAction = (typeof REMEDIATION_ACTIONS)[number];
 
 export const NAV_GROUPS = [
   {
-    label: 'Overview',
+    label: 'Learn',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: 'LayoutDashboard' },
-      { label: 'Resource Explorer', path: '/explorer', icon: 'FolderTree' },
+      { label: 'Resources', path: '/explorer', icon: 'FolderTree' },
       { label: 'Events', path: '/events', icon: 'Activity' },
       { label: 'Permissions', path: '/permissions', icon: 'Shield' },
     ],
   },
   {
-    label: 'Data Protection',
+    label: 'Act',
     items: [
-      { label: 'Scan Results', path: '/results', icon: 'FileSearch' },
-      { label: 'Labels', path: '/labels', icon: 'Tag' },
-      { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { label: 'Targets', path: '/targets', icon: 'Target' },
-      { label: 'Schedules', path: '/schedules', icon: 'Calendar' },
-      { label: 'Monitoring', path: '/monitoring', icon: 'Monitor' },
       { label: 'Reports', path: '/reports', icon: 'BarChart3' },
+      { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
+      { label: 'System Monitor', path: '/monitoring', icon: 'Monitor' },
     ],
   },
   {
-    label: 'Configuration',
+    label: 'Configure',
     items: [
+      { label: 'Scan Configuration', path: '/targets', icon: 'Scan' },
       { label: 'Settings', path: '/settings', icon: 'Settings' },
     ],
   },
