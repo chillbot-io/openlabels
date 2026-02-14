@@ -55,22 +55,15 @@ export const NAV_GROUPS = [
       { label: 'Dashboard', path: '/dashboard', icon: 'LayoutDashboard' },
       { label: 'Resource Explorer', path: '/explorer', icon: 'FolderTree' },
       { label: 'Events', path: '/events', icon: 'Activity' },
+      { label: 'Permissions', path: '/permissions', icon: 'Shield' },
     ],
   },
   {
     label: 'Data Protection',
     items: [
       { label: 'Scan Results', path: '/results', icon: 'FileSearch' },
-      { label: 'Scans', path: '/scans', icon: 'Scan' },
       { label: 'Labels', path: '/labels', icon: 'Tag' },
-    ],
-  },
-  {
-    label: 'Security',
-    items: [
-      { label: 'Permissions', path: '/permissions', icon: 'Shield' },
       { label: 'Remediation', path: '/remediation', icon: 'ShieldAlert' },
-      { label: 'Policies', path: '/policies', icon: 'BookOpen' },
     ],
   },
   {
