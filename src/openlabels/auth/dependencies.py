@@ -138,6 +138,14 @@ async def get_current_user(
                 "Set AUTH_PROVIDER=azure_ad for production or "
                 "OPENLABELS_SERVER__DEBUG=true for development.",
             )
+        # SECURITY: Dev mode only allowed when bound to localhost
+        if settings.server.host not in ("127.0.0.1", "localhost", "0.0.0.0", "::1"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Auth provider 'none' is only allowed when server.host "
+                "is localhost/127.0.0.1. This prevents accidental exposure "
+                "of unauthenticated admin access on network-accessible servers.",
+            )
         claims = _DEV_CLAIMS
     else:
         if not token:

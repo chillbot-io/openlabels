@@ -261,12 +261,15 @@ async def quarantine_file(
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
 
-    # Security: Verify file belongs to the requesting tenant
+    # Security: Verify file belongs to the requesting tenant.
+    # FOR UPDATE serializes concurrent remediations on the same file,
+    # preventing TOCTOU races where a file is verified then acted on
+    # after it has already been quarantined by a parallel request.
     result = await session.execute(
         select(ScanResult).where(
             ScanResult.file_path == validated_path,
             ScanResult.tenant_id == user.tenant_id,
-        ).limit(1)
+        ).limit(1).with_for_update()
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
@@ -372,12 +375,13 @@ async def lockdown_file(
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
 
-    # Security: Verify file belongs to the requesting tenant
+    # Security: Verify file belongs to the requesting tenant.
+    # FOR UPDATE serializes concurrent lockdowns on the same file.
     result = await session.execute(
         select(ScanResult).where(
             ScanResult.file_path == validated_path,
             ScanResult.tenant_id == user.tenant_id,
-        ).limit(1)
+        ).limit(1).with_for_update()
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
