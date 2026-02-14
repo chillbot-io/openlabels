@@ -95,6 +95,11 @@ class AuthSettings(BaseSettings):
     client_id: str | None = None
     client_secret: str | None = None
 
+    # Fernet key for encrypting tokens at rest in the session table.
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # If not set, tokens are stored in plaintext (a warning is logged on startup).
+    session_encryption_key: str | None = None
+
     @property
     def authority(self) -> str | None:
         if self.tenant_id:

@@ -227,5 +227,4 @@ def require_role(*allowed_roles: str) -> _RoleDep:
 
 # Pre-built dependencies for common roles.
 require_admin: _RoleDep = require_role("admin")
-require_operator: _RoleDep = require_role("admin")
 require_viewer: _RoleDep = require_role("admin", "viewer")
