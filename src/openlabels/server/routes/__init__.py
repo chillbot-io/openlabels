@@ -58,7 +58,8 @@ def __getattr__(name: str):
         return _module_cache[name]
 
     valid_modules = {
-        "audit", "auth", "browse", "jobs", "scans", "results", "targets",
+        "audit", "auth", "browse", "credentials", "enumerate", "jobs",
+        "scans", "results", "targets",
         "schedules", "labels", "dashboard", "ws", "ws_events", "users",
         "remediation", "monitoring", "health", "settings",
         "policies", "export", "reporting", "webhooks", "permissions",
@@ -80,6 +81,8 @@ __all__ = [
     "audit",
     "auth",
     "browse",
+    "credentials",
+    "enumerate",
     "jobs",
     "scans",
     "results",

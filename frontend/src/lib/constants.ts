@@ -42,6 +42,75 @@ export const ADAPTER_LABELS: Record<AdapterType, string> = {
   azure_blob: 'Azure Blob Storage',
 };
 
+// Source types shown in the Add Resource UI.
+// SMB and NFS both map to the 'filesystem' backend adapter.
+export const SOURCE_TYPES = [
+  'smb', 'nfs', 'sharepoint', 'onedrive', 's3', 'gcs', 'azure_blob',
+] as const;
+export type SourceType = (typeof SOURCE_TYPES)[number];
+
+export const SOURCE_LABELS: Record<SourceType, string> = {
+  smb: 'SMB',
+  nfs: 'NFS',
+  sharepoint: 'SharePoint',
+  onedrive: 'OneDrive',
+  s3: 'Amazon S3',
+  gcs: 'Google Cloud Storage',
+  azure_blob: 'Azure Blob Storage',
+};
+
+export const SOURCE_DESCRIPTIONS: Record<SourceType, string> = {
+  smb: 'Windows / Samba file shares',
+  nfs: 'Unix / Linux NFS exports',
+  sharepoint: 'Microsoft SharePoint Online sites',
+  onedrive: 'Microsoft OneDrive for Business',
+  s3: 'AWS S3 or S3-compatible storage',
+  gcs: 'Google Cloud Storage buckets',
+  azure_blob: 'Azure Blob Storage containers',
+};
+
+/** Map UI source type to backend adapter type */
+export function sourceToAdapter(source: SourceType): AdapterType {
+  if (source === 'smb' || source === 'nfs') return 'filesystem';
+  return source;
+}
+
+/** Credential fields required per source type */
+export const SOURCE_CREDENTIAL_FIELDS: Record<SourceType, { key: string; label: string; placeholder: string; type?: string }[]> = {
+  smb: [
+    { key: 'host', label: 'Host', placeholder: 'server.example.com or IP address' },
+    { key: 'username', label: 'Username', placeholder: 'DOMAIN\\user or user@domain' },
+    { key: 'password', label: 'Password', placeholder: '', type: 'password' },
+  ],
+  nfs: [
+    { key: 'host', label: 'Host', placeholder: 'server.example.com or IP address' },
+  ],
+  sharepoint: [
+    { key: 'tenant_id', label: 'Azure Tenant ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'client_id', label: 'Client ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'client_secret', label: 'Client Secret', placeholder: '', type: 'password' },
+  ],
+  onedrive: [
+    { key: 'tenant_id', label: 'Azure Tenant ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'client_id', label: 'Client ID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { key: 'client_secret', label: 'Client Secret', placeholder: '', type: 'password' },
+  ],
+  s3: [
+    { key: 'access_key', label: 'Access Key ID', placeholder: 'AKIAIOSFODNN7EXAMPLE' },
+    { key: 'secret_key', label: 'Secret Access Key', placeholder: '', type: 'password' },
+    { key: 'region', label: 'Region', placeholder: 'us-east-1' },
+    { key: 'endpoint_url', label: 'Endpoint URL (optional)', placeholder: 'https://s3.example.com' },
+  ],
+  gcs: [
+    { key: 'project', label: 'Project ID', placeholder: 'my-gcp-project' },
+    { key: 'credentials_json', label: 'Service Account JSON', placeholder: 'Paste service account key JSON', type: 'textarea' },
+  ],
+  azure_blob: [
+    { key: 'storage_account', label: 'Storage Account', placeholder: 'mystorageaccount' },
+    { key: 'account_key', label: 'Account Key', placeholder: '', type: 'password' },
+  ],
+};
+
 export const EXPOSURE_LEVELS = ['PUBLIC', 'ORG_WIDE', 'INTERNAL', 'PRIVATE'] as const;
 export type ExposureLevel = (typeof EXPOSURE_LEVELS)[number];
 
