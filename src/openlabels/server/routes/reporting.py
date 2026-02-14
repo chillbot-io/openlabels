@@ -26,6 +26,7 @@ from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
+from openlabels.server.routes import audit_log
 from openlabels.server.models import (
     FileAccessEvent,
     Policy,
@@ -435,6 +436,12 @@ async def generate_report(
         # SECURITY: Store sanitized error message; full details are in server logs
         report.error = f"Report generation failed ({type(exc).__name__})"
 
+    audit_log(
+        session, tenant_id=tenant_id, user_id=getattr(tenant, "user_id", None),
+        action="report_generated", resource_type="report", resource_id=report.id,
+        details={"report_type": request.report_type, "format": request.format, "status": report.status},
+    )
+
     await session.commit()
     await session.refresh(report)
     return ReportResponse.model_validate(report)
@@ -576,6 +583,12 @@ async def distribute_report(
         report.status = "distributed"
         report.distributed_to = [{"type": "email", "to": request.to}]
         report.distributed_at = datetime.now(timezone.utc)
+
+        audit_log(
+            session, tenant_id=tenant.tenant_id, user_id=getattr(tenant, "user_id", None),
+            action="report_distributed", resource_type="report", resource_id=report_id,
+            details={"to": request.to},
+        )
     except Exception as exc:
         logger.error("Report distribution failed: %s", exc, exc_info=True)
         raise HTTPException(

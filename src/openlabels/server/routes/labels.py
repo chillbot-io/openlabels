@@ -31,7 +31,7 @@ from openlabels.server.dependencies import (
     TenantContextDep,
 )
 from openlabels.server.errors import ErrorCode, raise_database_error
-from openlabels.server.routes import htmx_notify
+from openlabels.server.routes import audit_log, htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -145,9 +145,17 @@ async def sync_labels(
     - remove_stale: If true, removes labels from DB that no longer exist in M365
     """
     request = request or LabelSyncRequest()
-    return await label_service.sync_labels(
+    result = await label_service.sync_labels(
         background=request.background,
     )
+
+    audit_log(
+        label_service.session, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="label_sync", resource_type="label",
+        details={"background": request.background},
+    )
+
+    return result
 
 
 @router.get("/sync/status")
@@ -275,6 +283,12 @@ async def create_label_rule(
         "priority": request.priority,
     })
 
+    audit_log(
+        label_service.session, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="label_rule_created", resource_type="label_rule", resource_id=rule.id,
+        details={"rule_type": request.rule_type, "match_value": request.match_value, "label_id": request.label_id},
+    )
+
     return LabelRuleResponse.model_validate(rule)
 
 
@@ -285,6 +299,11 @@ async def delete_label_rule(
     _admin: AdminContextDep,
 ) -> None:
     """Delete a label rule."""
+    audit_log(
+        label_service.session, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="label_rule_deleted", resource_type="label_rule", resource_id=rule_id,
+    )
+
     await label_service.delete_label_rule(rule_id)
 
 
@@ -326,6 +345,13 @@ async def apply_label(
                 "label_id": request.label_id,
             }
         )
+
+        audit_log(
+            db, tenant_id=admin.tenant_id, user_id=admin.user_id,
+            action="label_applied", resource_type="scan_result", resource_id=request.result_id,
+            details={"label_id": request.label_id},
+        )
+
         return {"job_id": str(job_id), "message": "Label application queued"}
     except NotFoundError:
         raise
@@ -485,6 +511,12 @@ async def update_label_mappings(
             # Flush each insert individually to avoid asyncpg sentinel matching issues
             await db.flush()
         priority -= 10
+
+    audit_log(
+        db, tenant_id=admin.tenant_id, user_id=admin.user_id,
+        action="settings_updated", resource_type="label_mappings",
+        details={"mappings": {k: v for k, v in data.items() if v}},
+    )
 
     # Invalidate cache for label mappings
     try:

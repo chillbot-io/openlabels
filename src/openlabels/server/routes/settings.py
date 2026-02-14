@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import TenantSettings
-from openlabels.server.routes import htmx_notify
+from openlabels.server.routes import audit_log, htmx_notify
 
 logger = logging.getLogger(__name__)
 
@@ -183,10 +183,10 @@ async def update_azure_settings(
         settings.azure_client_secret_set = True
     settings.updated_by = user.id
 
-    logger.info(
-        "Azure settings updated by user %s",
-        user.email,
-        extra={"tenant_id": request.tenant_id, "client_id": request.client_id},
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={"section": "azure", "client_id": request.client_id or None},
     )
 
     return SettingsUpdateResponse(message="Azure settings updated")
@@ -207,10 +207,11 @@ async def update_scan_settings(
     settings.enable_ml = request.enable_ml
     settings.updated_by = user.id
 
-    logger.info(
-        "Scan settings updated by user %s",
-        user.email,
-        extra={
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={
+            "section": "scan",
             "max_file_size_mb": request.max_file_size_mb,
             "concurrent_files": request.concurrent_files,
             "enable_ocr": request.enable_ocr,
@@ -237,10 +238,10 @@ async def update_entity_settings(
     settings.enabled_entities = request.entities
     settings.updated_by = user.id
 
-    logger.info(
-        "Entity settings updated by user %s",
-        user.email,
-        extra={"enabled_entities": request.entities},
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={"section": "entities", "enabled_entities": request.entities},
     )
 
     return SettingsUpdateResponse(message="Entity detection settings updated")
@@ -272,14 +273,14 @@ async def update_fanout_settings(
     settings.pipeline_memory_budget_mb = pipeline_memory_budget_mb
     settings.updated_by = user.id
 
-    logger.info(
-        f"Fan-out/pipeline settings updated by user {user.email}",
-        extra={
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={
+            "section": "fanout",
             "fanout_enabled": settings.fanout_enabled,
             "fanout_threshold": fanout_threshold,
             "fanout_max_partitions": fanout_max_partitions,
-            "pipeline_max_concurrent_files": pipeline_max_concurrent_files,
-            "pipeline_memory_budget_mb": pipeline_memory_budget_mb,
         },
     )
 
@@ -322,9 +323,10 @@ async def update_adapter_defaults(
     }
     settings.updated_by = user.id
 
-    logger.info(
-        f"Adapter defaults updated by user {user.email}",
-        extra={"adapter_defaults": settings.adapter_defaults},
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={"section": "adapters"},
     )
 
     return htmx_notify("Adapter defaults updated")
@@ -346,9 +348,10 @@ async def reset_settings(
         delete(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
     )
 
-    logger.warning(
-        "Settings reset to defaults by user %s",
-        user.email,
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="settings_updated", resource_type="settings",
+        details={"section": "reset", "action": "reset_to_defaults"},
     )
 
     if request.headers.get("HX-Request"):

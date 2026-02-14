@@ -19,7 +19,7 @@ from openlabels.core.types import JobStatus
 from openlabels.jobs import JobQueue, parse_cron_expression
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
-from openlabels.server.routes import get_or_404, htmx_notify
+from openlabels.server.routes import audit_log, get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -110,6 +110,12 @@ async def create_schedule(
         session.add(schedule)
         await session.flush()
 
+        audit_log(
+            session, tenant_id=user.tenant_id, user_id=user.id,
+            action="schedule_created", resource_type="scan_schedule", resource_id=schedule.id,
+            details={"name": request.name, "cron": request.cron, "target_id": str(request.target_id)},
+        )
+
         # Refresh to load server-generated defaults and ensure proper types
         await session.refresh(schedule)
 
@@ -151,6 +157,12 @@ async def update_schedule(
     if request.enabled is not None:
         schedule.enabled = request.enabled
 
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="schedule_updated", resource_type="scan_schedule", resource_id=schedule.id,
+        details=request.model_dump(exclude_unset=True),
+    )
+
     return schedule
 
 
@@ -165,6 +177,11 @@ async def delete_schedule(
     schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
     schedule_name = schedule.name
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="schedule_deleted", resource_type="scan_schedule", resource_id=schedule.id,
+        details={"name": schedule_name},
+    )
     await session.delete(schedule)
     await session.flush()
 
@@ -201,6 +218,12 @@ async def trigger_schedule(
         task_type="scan",
         payload={"job_id": str(job.id)},
         priority=70,  # Higher priority for manual triggers
+    )
+
+    audit_log(
+        session, tenant_id=user.tenant_id, user_id=user.id,
+        action="scan_started", resource_type="scan_job", resource_id=job.id,
+        details={"trigger": "manual", "schedule_id": str(schedule_id)},
     )
 
     # Update last run time

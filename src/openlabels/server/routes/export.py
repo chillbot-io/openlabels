@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user
 from openlabels.server.config import get_settings
+from openlabels.server.routes import audit_log
 
 router = APIRouter()
 
@@ -102,6 +103,15 @@ async def trigger_siem_export(
         since=body.since,
         record_types=record_types,
     )
+
+    async with get_session_context() as audit_session:
+        audit_log(
+            audit_session, tenant_id=tenant_id, user_id=user.id,
+            action="siem_exported", resource_type="export",
+            details={"total_records": len(export_records), "adapters": engine.adapter_names},
+        )
+        await audit_session.commit()
+
     return SIEMExportResponse(
         exported=results,
         total_records=len(export_records),

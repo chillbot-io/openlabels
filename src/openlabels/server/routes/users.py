@@ -16,7 +16,7 @@ from openlabels.auth.dependencies import get_current_user, require_admin
 from openlabels.exceptions import BadRequestError, ConflictError
 from openlabels.server.db import get_session
 from openlabels.server.models import User
-from openlabels.server.routes import get_or_404
+from openlabels.server.routes import audit_log, get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -106,6 +106,12 @@ async def create_user(
     session.add(new_user)
     await session.flush()
 
+    audit_log(
+        session, tenant_id=current_user.tenant_id, user_id=current_user.id,
+        action="user_created", resource_type="user", resource_id=new_user.id,
+        details={"email": user_data.email, "role": user_data.role},
+    )
+
     # Refresh to load server-generated defaults (created_at)
     await session.refresh(new_user)
 
@@ -132,10 +138,19 @@ async def update_user(
     """Update user details."""
     user = await get_or_404(session, User, user_id, tenant_id=current_user.tenant_id)
 
+    changes = {}
     if user_data.name is not None:
+        changes["name"] = {"old": user.name, "new": user_data.name}
         user.name = user_data.name
     if user_data.role is not None:
+        changes["role"] = {"old": user.role, "new": user_data.role}
         user.role = user_data.role
+
+    audit_log(
+        session, tenant_id=current_user.tenant_id, user_id=current_user.id,
+        action="user_updated", resource_type="user", resource_id=user.id,
+        details={"changes": changes},
+    )
 
     await session.flush()
     return user
@@ -153,6 +168,12 @@ async def delete_user(
     # Prevent self-deletion
     if user.id == current_user.id:
         raise BadRequestError(message="Cannot delete yourself")
+
+    audit_log(
+        session, tenant_id=current_user.tenant_id, user_id=current_user.id,
+        action="user_deleted", resource_type="user", resource_id=user.id,
+        details={"email": user.email},
+    )
 
     await session.delete(user)
     await session.flush()

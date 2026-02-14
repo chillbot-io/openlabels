@@ -26,7 +26,7 @@ from openlabels.core.types import AdapterType
 from openlabels.server.db import get_session
 from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
-from openlabels.server.routes import get_or_404, htmx_notify
+from openlabels.server.routes import audit_log, get_or_404, htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -443,6 +443,12 @@ async def create_target(
         session.add(target)
         await session.flush()
 
+        audit_log(
+            session, tenant_id=user.tenant_id, user_id=user.id,
+            action="target_created", resource_type="scan_target", resource_id=target.id,
+            details={"name": request.name, "adapter": request.adapter},
+        )
+
         # Refresh to load server-generated defaults and ensure proper types
         await session.refresh(target)
 
@@ -485,6 +491,12 @@ async def update_target(
         if request.enabled is not None:
             target.enabled = request.enabled
 
+        audit_log(
+            session, tenant_id=user.tenant_id, user_id=user.id,
+            action="target_updated", resource_type="scan_target", resource_id=target.id,
+            details={"changes": request.model_dump(exclude_unset=True)},
+        )
+
         return target
     except SQLAlchemyError as e:
         raise_database_error("updating target", e)
@@ -502,6 +514,11 @@ async def delete_target(
         target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
 
         target_name = target.name
+        audit_log(
+            session, tenant_id=user.tenant_id, user_id=user.id,
+            action="target_deleted", resource_type="scan_target", resource_id=target.id,
+            details={"name": target_name},
+        )
         await session.delete(target)
 
         # Check if this is an HTMX request

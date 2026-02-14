@@ -18,9 +18,11 @@ from openlabels.exceptions import BadRequestError, NotFoundError
 from openlabels.server.config import get_settings
 from openlabels.server.dependencies import (
     AdminContextDep,
+    DbSessionDep,
     ScanServiceDep,
     TenantContextDep,
 )
+from openlabels.server.routes import audit_log
 from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
@@ -63,12 +65,20 @@ async def create_scan(
     scan_request: ScanCreate,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
+    db: DbSessionDep,
 ) -> ScanResponse:
     """Create a new scan job."""
     job = await scan_service.create_scan(
         target_id=scan_request.target_id,
         name=scan_request.name,
     )
+
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="scan_started", resource_type="scan", resource_id=job.id,
+        details={"target_id": str(scan_request.target_id), "name": scan_request.name},
+    )
+
     return ScanResponse.model_validate(job)
 
 
@@ -114,8 +124,14 @@ async def delete_scan(
     request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
+    db: DbSessionDep,
 ) -> None:
     """Cancel a running scan (DELETE method)."""
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="scan_cancelled", resource_type="scan", resource_id=scan_id,
+    )
+
     await scan_service.cancel_scan(scan_id)
 
 
@@ -126,8 +142,14 @@ async def cancel_scan(
     request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
+    db: DbSessionDep,
 ):
     """Cancel a running scan (POST method for HTMX)."""
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="scan_cancelled", resource_type="scan", resource_id=scan_id,
+    )
+
     await scan_service.cancel_scan(scan_id)
 
     if request.headers.get("HX-Request"):
@@ -142,10 +164,17 @@ async def retry_scan(
     request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
+    db: DbSessionDep,
 ):
     """Retry a failed scan by creating a new scan job."""
     try:
         new_job = await scan_service.retry_scan(scan_id)
+
+        audit_log(
+            db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+            action="scan_started", resource_type="scan", resource_id=new_job.id,
+            details={"retry_of": str(scan_id)},
+        )
 
         if request.headers.get("HX-Request"):
             return htmx_notify("Scan retry queued", refreshScans=True)

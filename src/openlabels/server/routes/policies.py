@@ -22,6 +22,7 @@ from openlabels.server.dependencies import (
     DbSessionDep,
     TenantContextDep,
 )
+from openlabels.server.routes import audit_log
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -175,10 +176,18 @@ async def list_policies(
 async def create_policy(
     request: PolicyCreate,
     _admin: AdminContextDep,
+    db: DbSessionDep,
     svc=PolicyServiceDep,
 ):
     """Create a custom policy."""
     policy = await svc.create_policy(request.model_dump())
+
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="policy_created", resource_type="policy", resource_id=policy.id,
+        details={"name": request.name, "framework": request.framework},
+    )
+
     await svc.commit()
     return PolicyResponse.model_validate(policy)
 
@@ -199,10 +208,18 @@ async def list_builtin_packs(
 async def load_builtin_pack(
     request: LoadPackRequest,
     _admin: AdminContextDep,
+    db: DbSessionDep,
     svc=PolicyServiceDep,
 ):
     """Load a built-in policy pack into the tenant's active policies."""
     policy = await svc.load_builtin_pack(request.pack_name)
+
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="policy_created", resource_type="policy", resource_id=policy.id,
+        details={"pack_name": request.pack_name, "source": "builtin"},
+    )
+
     await svc.commit()
     return PolicyResponse.model_validate(policy)
 
@@ -253,11 +270,19 @@ async def update_policy(
     policy_id: UUID,
     request: PolicyUpdate,
     _admin: AdminContextDep,
+    db: DbSessionDep,
     svc=PolicyServiceDep,
 ):
     """Update an existing policy."""
     data = request.model_dump(exclude_unset=True)
     policy = await svc.update_policy(policy_id, data)
+
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="policy_updated", resource_type="policy", resource_id=policy_id,
+        details={"changes": data},
+    )
+
     await svc.commit()
     return PolicyResponse.model_validate(policy)
 
@@ -266,9 +291,15 @@ async def update_policy(
 async def delete_policy(
     policy_id: UUID,
     _admin: AdminContextDep,
+    db: DbSessionDep,
     svc=PolicyServiceDep,
 ):
     """Delete a policy."""
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="policy_deleted", resource_type="policy", resource_id=policy_id,
+    )
+
     await svc.delete_policy(policy_id)
     await svc.commit()
 
@@ -278,9 +309,17 @@ async def toggle_policy(
     policy_id: UUID,
     request: PolicyToggle,
     _admin: AdminContextDep,
+    db: DbSessionDep,
     svc=PolicyServiceDep,
 ):
     """Enable or disable a policy."""
     policy = await svc.toggle_policy(policy_id, request.enabled)
+
+    audit_log(
+        db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+        action="policy_updated", resource_type="policy", resource_id=policy_id,
+        details={"enabled": request.enabled},
+    )
+
     await svc.commit()
     return PolicyResponse.model_validate(policy)

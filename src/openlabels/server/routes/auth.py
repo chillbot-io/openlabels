@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
+from openlabels.server.routes import audit_log
 from openlabels.server.security import log_security_event
 from openlabels.server.session import PendingAuthStore, SessionStore
 from openlabels.server.utils import get_client_ip
@@ -528,6 +529,16 @@ async def _callback_azure_ad(
     tenant_id = id_token_claims.get("tid")
     await session_store.set(session_id, session_data, SESSION_TTL_SECONDS, tenant_id=tenant_id, user_id=user_id)
 
+    audit_log(
+        db, tenant_id=None, user_id=None,
+        action="login_success", resource_type="session",
+        details={
+            "provider": "azure_ad",
+            "email": id_token_claims.get("preferred_username"),
+            "ip": get_client_ip(request),
+        },
+    )
+
     response = RedirectResponse(url=final_redirect, status_code=302)
     _set_session_cookie(response, session_id, request)
     return response
@@ -624,6 +635,16 @@ async def _callback_oidc(
     await session_store.set(
         session_id, session_data, SESSION_TTL_SECONDS,
         tenant_id=normalized.tenant_id, user_id=normalized.sub,
+    )
+
+    audit_log(
+        db, tenant_id=None, user_id=None,
+        action="login_success", resource_type="session",
+        details={
+            "provider": "oidc",
+            "email": normalized.email,
+            "ip": get_client_ip(request),
+        },
     )
 
     response = RedirectResponse(url=final_redirect, status_code=302)
@@ -729,6 +750,16 @@ async def logout(
         session_data = await session_store.get(session_id)
         if session_data:
             id_token = session_data.get("id_token")
+            claims = session_data.get("claims", {})
+            audit_log(
+                db, tenant_id=None, user_id=None,
+                action="logout", resource_type="session",
+                details={
+                    "provider": session_data.get("provider"),
+                    "email": claims.get("preferred_username", claims.get("email")),
+                    "ip": get_client_ip(request),
+                },
+            )
         await session_store.delete(session_id)
 
     is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
@@ -959,6 +990,12 @@ async def revoke_token(
 
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or already revoked")
+
+    audit_log(
+        db, tenant_id=None, user_id=None,
+        action="session_revoked", resource_type="session",
+        details={"ip": get_client_ip(request)},
+    )
 
     return {"status": "revoked", "message": "Session has been revoked"}
 
