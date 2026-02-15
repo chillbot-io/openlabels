@@ -9,6 +9,22 @@ networks:
     driver: bridge  # External access for API only
 
 services:
+  # ── Database migrations (runs once, then exits) ───────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: "no"
+
+  # ── API server ────────────────────────────────────────────────────────
   api:
     build:
       context: .
@@ -17,15 +33,21 @@ services:
       - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only, use reverse proxy for external
     environment:
       - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
-      - AUTH_PROVIDER=azure_ad
-      - AUTH_TENANT_ID=${AUTH_TENANT_ID}
-      - AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
-      - AUTH_CLIENT_SECRET=${AUTH_CLIENT_SECRET}
+      - REDIS_URL=redis://redis:6379/0
+      - AUTH_PROVIDER=${AUTH_PROVIDER:-none}
+      - AUTH_TENANT_ID=${AUTH_TENANT_ID:-}
+      - AUTH_CLIENT_ID=${AUTH_CLIENT_ID:-}
+      - AUTH_CLIENT_SECRET=${AUTH_CLIENT_SECRET:-}
+      - SERVER_ENVIRONMENT=${SERVER_ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
       - scan-data:/data
     restart: unless-stopped
     healthcheck:
@@ -33,10 +55,35 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     networks:
-      - internal  # Can reach database
+      - internal  # Can reach database and Redis
       - web       # Can be reached from outside (via reverse proxy)
 
+  # ── Background job worker ─────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "openlabels", "worker"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - scan-data:/data
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────
   db:
     image: postgres:15-alpine
     # SECURITY: No ports exposed to host - only accessible via internal network
@@ -60,13 +107,22 @@ services:
     networks:
       - internal  # SECURITY: Only on internal network - not accessible from outside
 
-  # Optional: Redis for job queue (if you want distributed workers)
-  # redis:
-  #   image: redis:7-alpine
-  #   restart: unless-stopped
-  #   networks:
-  #     - internal
+  # ── Redis (caching, rate limiting, job queue) ─────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
 
 volumes:
   postgres-data:
+  redis-data:
   scan-data:

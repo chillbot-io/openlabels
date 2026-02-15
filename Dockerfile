@@ -1,31 +1,46 @@
 # OpenLabels API Server
+# Multi-stage build for smaller production image
+
+# ── Build stage ─────────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project metadata and source, then install
+COPY pyproject.toml README.md ./
+COPY src/ src/
+
+RUN pip install --no-cache-dir --prefix=/install .
+
+# ── Production stage ────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # For psycopg2
-    libpq-dev \
-    # For PDF processing
+    libpq5 \
     libmupdf-dev \
-    # For OCR
     tesseract-ocr \
     tesseract-ocr-eng \
-    # For healthcheck
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and source, then install
-COPY pyproject.toml .
-COPY README.md .
-COPY src/ src/
-
-RUN pip install --no-cache-dir .
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy migration assets
 COPY alembic/ alembic/
 COPY alembic.ini .
+
+# Copy source for alembic env.py imports
+COPY src/ src/
 
 # Create non-root user
 RUN useradd -m -u 1000 openlabels && \
