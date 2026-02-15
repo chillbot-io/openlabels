@@ -82,6 +82,7 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "IPV6": "IP_ADDRESS",
     "IMEI": "IMEI",
     "PHONEIMEI": "IMEI",
+    "MAC": "MAC_ADDRESS",
     "MACADDRESS": "MAC_ADDRESS",
 
     # Vehicle
@@ -141,11 +142,17 @@ UNMAPPED_TYPES: frozenset[str] = frozenset({
 # Maps OpenLabels entity types to a human-readable category.
 EVAL_CATEGORIES: dict[str, str] = {
     "NAME": "names",
+    "NAME_PATIENT": "names",
+    "NAME_PROVIDER": "names",
+    "NAME_RELATIVE": "names",
     "FIRSTNAME": "names",
     "LASTNAME": "names",
     "MIDDLENAME": "names",
     "PREFIX": "names",
     "SUFFIX": "names",
+    "PERSON": "names",
+    "PATIENT": "names",
+    "FULLNAME": "names",
 
     "SSN": "government_ids",
     "DRIVER_LICENSE": "government_ids",
@@ -154,6 +161,7 @@ EVAL_CATEGORIES: dict[str, str] = {
     "TAX_ID": "government_ids",
     "UKNINUMBER": "government_ids",
     "SIN": "government_ids",
+    "MRN": "government_ids",
 
     "CREDIT_CARD": "financial",
     "IBAN": "financial",
@@ -181,6 +189,7 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "DATE": "dates",
     "DATE_DOB": "dates",
+    "DATETIME": "dates",
     "TIME": "dates",
     "AGE": "dates",
 
@@ -195,6 +204,8 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "JOB_TITLE": "professional",
     "COMPANY": "professional",
+    "EMPLOYER": "professional",
+    "FACILITY": "professional",
 }
 
 

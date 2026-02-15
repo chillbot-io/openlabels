@@ -118,12 +118,12 @@ class DetectorOrchestrator:
                 from .ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
 
                 phi_bert = PHIBertONNXDetector(model_dir=model_dir)
-                if phi_bert.load():
+                if phi_bert.is_available():
                     self.detectors.append(phi_bert)
                     logger.info("PHI-BERT ONNX detector loaded")
 
                 pii_bert = PIIBertONNXDetector(model_dir=model_dir)
-                if pii_bert.load():
+                if pii_bert.is_available():
                     self.detectors.append(pii_bert)
                     logger.info("PII-BERT ONNX detector loaded")
 
@@ -139,14 +139,14 @@ class DetectorOrchestrator:
                 phi_bert_dir = model_dir / "phi_bert"
                 if phi_bert_dir.exists():
                     phi_hf = PHIBertDetector(model_path=phi_bert_dir)
-                    if phi_hf.load():
+                    if phi_hf.is_available():
                         self.detectors.append(phi_hf)
                         logger.info("PHI-BERT HF detector loaded")
 
                 pii_bert_dir = model_dir / "pii_bert"
                 if pii_bert_dir.exists():
                     pii_hf = PIIBertDetector(model_path=pii_bert_dir)
-                    if pii_hf.load():
+                    if pii_hf.is_available():
                         self.detectors.append(pii_hf)
                         logger.info("PII-BERT HF detector loaded")
 

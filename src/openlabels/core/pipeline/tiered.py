@@ -267,7 +267,7 @@ class TieredPipeline:
                 from ..detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
 
                 phi_bert = PHIBertONNXDetector(model_dir=model_dir)
-                if phi_bert.load():
+                if phi_bert.is_available():
                     self._phi_bert = phi_bert
                     self._ml_detectors.append(phi_bert)
                     logger.info("PHI-BERT ONNX loaded for escalation")
@@ -278,7 +278,7 @@ class TieredPipeline:
                     )
 
                 pii_bert = PIIBertONNXDetector(model_dir=model_dir)
-                if pii_bert.load():
+                if pii_bert.is_available():
                     self._pii_bert = pii_bert
                     self._ml_detectors.append(pii_bert)
                     logger.info("PII-BERT ONNX loaded for escalation")
@@ -300,7 +300,7 @@ class TieredPipeline:
                 phi_bert_dir = model_dir / "phi_bert"
                 if phi_bert_dir.exists():
                     phi_bert = PHIBertDetector(model_path=phi_bert_dir)
-                    if phi_bert.load():
+                    if phi_bert.is_available():
                         self._phi_bert = phi_bert
                         self._ml_detectors.append(phi_bert)
                         logger.info("PHI-BERT (HuggingFace) loaded for escalation")
@@ -313,7 +313,7 @@ class TieredPipeline:
                 pii_bert_dir = model_dir / "pii_bert"
                 if pii_bert_dir.exists():
                     pii_bert = PIIBertDetector(model_path=pii_bert_dir)
-                    if pii_bert.load():
+                    if pii_bert.is_available():
                         self._pii_bert = pii_bert
                         self._ml_detectors.append(pii_bert)
                         logger.info("PII-BERT (HuggingFace) loaded for escalation")

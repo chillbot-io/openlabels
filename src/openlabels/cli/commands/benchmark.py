@@ -63,12 +63,20 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
     if model_dir:
         config.ml_model_dir = model_dir
 
-    click.echo(f"Benchmark: {config.name}")
+    # Show config name reflecting overrides
+    config_desc = config.name
+    if enable_ml and "ml" not in config.name:
+        config_desc = f"{config.name}+ml"
+    if tiered and "tiered" not in config.name:
+        config_desc = f"{config_desc}+tiered"
+    click.echo(f"Benchmark: {config_desc}")
     click.echo(f"Samples: {samples} | Threshold: {config.confidence_threshold}")
     ml_status = "ON" if config.enable_ml else "OFF"
     click.echo(f"ML: {ml_status} | "
                f"Pipeline: {'tiered' if config.use_tiered_pipeline else 'orchestrator'}")
-    if not config.enable_ml:
+    if config.enable_ml:
+        _show_model_status(config)
+    else:
         click.echo("  (name detection requires ML; use --enable-ml or --preset with_ml)")
     click.echo("-" * 60)
 
@@ -216,6 +224,34 @@ def tune(ctx, thresholds, enable_ml):
 
 
 # ── Output formatting ─────────────────────────────────────────────────
+
+def _show_model_status(config) -> None:
+    """Show ML model directory and loading status."""
+    from pathlib import Path
+
+    from openlabels.core.constants import DEFAULT_MODELS_DIR
+
+    model_dir = Path(config.ml_model_dir) if config.ml_model_dir else DEFAULT_MODELS_DIR
+    click.echo(f"  Model dir: {model_dir}")
+
+    if not model_dir.exists():
+        click.echo("  WARNING: model directory not found")
+        click.echo("  Run: openlabels models download ner")
+        return
+
+    # Check for ONNX model files
+    for name in ("phi_bert", "pii_bert"):
+        int8 = model_dir / f"{name}_int8.onnx"
+        fp32 = model_dir / f"{name}.onnx"
+        if int8.exists():
+            size_mb = int8.stat().st_size / (1024 * 1024)
+            click.echo(f"  {name}: {int8.name} ({size_mb:.1f} MB)")
+        elif fp32.exists():
+            size_mb = fp32.stat().st_size / (1024 * 1024)
+            click.echo(f"  {name}: {fp32.name} ({size_mb:.1f} MB)")
+        else:
+            click.echo(f"  {name}: NOT FOUND")
+
 
 def _cli_progress(current: int, total: int) -> None:
     """Simple progress indicator."""
