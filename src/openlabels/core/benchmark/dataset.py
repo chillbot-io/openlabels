@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Default cache location
 _CACHE_DIR = Path.home() / ".cache" / "openlabels" / "benchmark"
 
+# Bundled dataset shipped with the package
+_BUNDLED_PATH = Path(__file__).parent / "ai4privacy.jsonl"
+
 
 @dataclass(frozen=True)
 class GoldSpan:
@@ -61,10 +64,15 @@ def load_dataset(
     min_entities: int = 1,
     max_text_length: int = 10_000,
 ) -> list[BenchmarkSample]:
-    """Load English samples from the ai4privacy pii-masking-400k dataset.
+    """Load samples from the ai4privacy PII dataset.
+
+    Resolution order:
+    1. HuggingFace cache (``~/.cache/openlabels/benchmark/ai4privacy_en.jsonl``)
+    2. Bundled dataset shipped with the package
+    3. Download from HuggingFace Hub (requires ``datasets`` package)
 
     Args:
-        sample_size: Number of samples to return.  ``None`` = all English.
+        sample_size: Number of samples to return.  ``None`` = all.
         seed: Random seed for reproducible sub-sampling.
         cache_dir: Override default cache directory.
         min_entities: Minimum number of *mapped* gold entities per sample.
@@ -79,6 +87,9 @@ def load_dataset(
     if cache_path.exists():
         logger.info("Loading cached dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
+    elif _BUNDLED_PATH.exists():
+        logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
+        samples = _load_bundled(_BUNDLED_PATH)
     else:
         logger.info("Downloading ai4privacy dataset (first run)...")
         samples = _download_and_cache(cache_dir, cache_path)
@@ -176,6 +187,33 @@ def _download_and_cache(
     return samples
 
 
+def _load_bundled(path: Path) -> list[BenchmarkSample]:
+    """Load the bundled ai4privacy JSONL dataset.
+
+    Expects ``{"id": ..., "text": ..., "entities": [{"start", "end", "text", "label"}, ...]}``
+    format.  Entity types are mapped through ``map_entity_type``.
+    """
+    samples: list[BenchmarkSample] = []
+    with open(path, encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            text = record.get("text", "")
+            if not text:
+                continue
+            entities = record.get("entities", [])
+            gold_spans = _parse_annotations(text, entities)
+            samples.append(BenchmarkSample(
+                sample_id=idx,
+                text=text,
+                gold_spans=gold_spans,
+                language="en",
+            ))
+    return samples
+
+
 def _load_from_cache(cache_path: Path) -> list[BenchmarkSample]:
     """Read the JSONL cache file."""
     samples: list[BenchmarkSample] = []
@@ -217,7 +255,7 @@ def _parse_annotations(
         raw_label = ann.get("label", "")
         start = ann.get("start")
         end = ann.get("end")
-        value = ann.get("value", "")
+        value = ann.get("value", "") or ann.get("text", "")
 
         if start is None or end is None:
             continue
