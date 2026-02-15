@@ -287,12 +287,17 @@ class DetectorOrchestrator:
         self._executor.shutdown(wait=False)
 
     def _post_process(self, spans: list[Span]) -> list[Span]:
-        """Post-process: calibrate confidence, filter, deduplicate, sort."""
-        calibrated = calibrate_spans(spans)
-        return resolve_spans(
-            calibrated,
-            confidence_threshold=self.confidence_threshold,
-        )
+        """Post-process: filter by raw confidence, calibrate, deduplicate.
+
+        The threshold is applied to *raw* detector confidence (does the
+        detector trust this match?).  Calibration is then applied only for
+        cross-tier overlap resolution — a checksum match should beat a
+        pattern match at the same position, but calibration must never
+        silently discard a span that passed the raw threshold.
+        """
+        filtered = [s for s in spans if s.confidence >= self.confidence_threshold]
+        calibrated = calibrate_spans(filtered)
+        return resolve_spans(calibrated, confidence_threshold=0.0)
 
     def add_detector(self, detector: BaseDetector) -> None:
         """Add a custom detector to the orchestrator."""
