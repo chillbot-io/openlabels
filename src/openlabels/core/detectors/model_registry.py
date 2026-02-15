@@ -114,11 +114,11 @@ class ModelSpec:
 _PHI_BERT_SPEC = ModelSpec(
     name="phi_bert",
     description="Stanford Clinical PHI-BERT NER (ONNX, INT8 quantized)",
-    repo_id="chillbot-io/openlabels-phi-bert",
+    repo_id="bturner4/openlabels-phi-bert",
     files=[
-        ModelFile("phi_bert_int8.onnx", size_bytes=45_000_000),
-        ModelFile("phi_bert.onnx", size_bytes=170_000_000),
-        ModelFile("phi_bert.tokenizer.json", size_bytes=700_000),
+        ModelFile("phi_bert_int8.onnx", size_bytes=111_000_000),
+        ModelFile("phi_bert.onnx", size_bytes=111_000_000),
+        ModelFile("phi_bert.tokenizer.json", size_bytes=706_000),
         ModelFile("phi_bert.labels.json", size_bytes=500),
     ],
     alternatives={
@@ -129,12 +129,12 @@ _PHI_BERT_SPEC = ModelSpec(
 _PII_BERT_SPEC = ModelSpec(
     name="pii_bert",
     description="PII-BERT general NER (ONNX, INT8 quantized)",
-    repo_id="chillbot-io/openlabels-pii-bert",
+    repo_id="bturner4/openlabels-pii-bert",
     files=[
-        ModelFile("pii_bert_int8.onnx", size_bytes=45_000_000),
-        ModelFile("pii_bert.onnx", size_bytes=170_000_000),
-        ModelFile("pii_bert.tokenizer.json", size_bytes=700_000),
-        ModelFile("pii_bert.labels.json", size_bytes=500),
+        ModelFile("pii_bert_int8.onnx", size_bytes=111_000_000),
+        ModelFile("pii_bert.onnx", size_bytes=111_000_000),
+        ModelFile("pii_bert.tokenizer.json", size_bytes=712_000),
+        ModelFile("pii_bert.labels.json", size_bytes=600),
     ],
     alternatives={
         "onnx_model": ["pii_bert_int8.onnx", "pii_bert.onnx"],

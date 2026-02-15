@@ -165,6 +165,7 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "EMAIL": "contact",
     "PHONE": "contact",
+    "PHONE_EXT": "contact",
     "URL": "contact",
     "USERNAME": "contact",
 
@@ -175,6 +176,7 @@ EVAL_CATEGORIES: dict[str, str] = {
     "COUNTRY": "locations",
     "ZIP": "locations",
     "GPS_COORDINATE": "locations",
+    "GPS_COORDINATES": "locations",
     "LOCATION_OTHER": "locations",
 
     "DATE": "dates",
