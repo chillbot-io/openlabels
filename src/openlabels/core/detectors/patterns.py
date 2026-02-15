@@ -1229,14 +1229,23 @@ _p(r'(?:Sozialversicherungsnummer|SVNR|SV-Nummer)[:\s#]+(\d{2}\s?\d{6}\s?[A-Z]\s
 # VALIDATORS
 
 def _validate_ip(ip: str) -> bool:
-    """Validate IP address octets are 0-255."""
+    """Validate an IPv4 or IPv6 address."""
+    if ':' in ip:
+        # IPv6: 3-8 groups of 1-4 hex digits separated by colons
+        parts = ip.split(':')
+        if len(parts) < 3 or len(parts) > 8:
+            return False
+        return all(
+            len(p) <= 4 and all(c in '0123456789abcdefABCDEF' for c in p)
+            for p in parts if p  # allow empty parts for :: compression
+        )
+    # IPv4: 4 octets 0-255
     try:
         parts = ip.split('.')
         if len(parts) != 4:
             return False
         return all(0 <= int(p) <= 255 for p in parts)
     except ValueError:
-        # Non-numeric octets - invalid IP
         return False
 
 
