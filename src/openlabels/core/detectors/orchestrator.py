@@ -17,7 +17,7 @@ from ..pipeline.confidence import calibrate_spans
 from ..pipeline.span_resolver import resolve_spans
 from ..policies.engine import get_policy_engine
 from ..policies.schema import EntityMatch
-from ..types import DetectionResult, Span, normalize_entity_type
+from ..types import DetectionResult, Span, Tier, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
 from .registry import create_detector
@@ -294,8 +294,17 @@ class DetectorOrchestrator:
         cross-tier overlap resolution — a checksum match should beat a
         pattern match at the same position, but calibration must never
         silently discard a span that passed the raw threshold.
+
+        ML tier uses a separate (higher) threshold because ML models are
+        probabilistic classifiers where 0.70 means "30% chance of error",
+        unlike pattern confidence which is an author-assigned reliability
+        weight.
         """
-        filtered = [s for s in spans if s.confidence >= self.confidence_threshold]
+        ml_threshold = self.config.ml_confidence_threshold
+        filtered = [
+            s for s in spans
+            if s.confidence >= (ml_threshold if s.tier == Tier.ML else self.confidence_threshold)
+        ]
         calibrated = calibrate_spans(filtered)
         return resolve_spans(calibrated, confidence_threshold=0.0)
 
