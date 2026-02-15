@@ -29,10 +29,6 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     # Age
     "AGE": "AGE",
 
-    # Gender (not a PII type OpenLabels tracks)
-    "GENDER": "GENDER",
-    "SEX": "GENDER",
-
     # Location
     "CITY": "CITY",
     "STATE": "STATE",
@@ -63,31 +59,19 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
 
     # Financial
     "CREDITCARDNUMBER": "CREDIT_CARD",
-    "CREDITCARDCVV": "CREDIT_CARD",
-    "CREDITCARDISSUER": "CREDIT_CARD",
-    "CREDITCARDEXPIRY": "DATE",
     "IBAN": "IBAN",
     "BIC": "SWIFT_BIC",
     "ACCOUNTNAME": "ACCOUNT_NUMBER",
     "ACCOUNTNUM": "ACCOUNT_NUMBER",
     "ACCOUNTNUMBER": "ACCOUNT_NUMBER",
-    "AMOUNT": "AMOUNT",
-    "CURRENCY": "CURRENCY",
-    "CURRENCYSYMBOL": "CURRENCY",
-    "CURRENCYCODE": "CURRENCY",
-    "CURRENCYNAME": "CURRENCY",
     "BITCOINADDRESS": "BITCOIN_ADDRESS",
     "ETHEREUMADDRESS": "ETHEREUM_ADDRESS",
     "LITECOINADDRESS": "LITECOIN_ADDRESS",
     "PIN": "PASSWORD",
     "MASKEDNUMBER": "ACCOUNT_NUMBER",
+    "POLICYNUM": "ACCOUNT_NUMBER",
 
     # Professional
-    "JOBTITLE": "JOB_TITLE",
-    "JOBTYPE": "JOB_TITLE",
-    "JOBAREA": "JOB_TITLE",
-    "JOBTITLE_DESCRIPTOR": "JOB_TITLE",
-    "JOBDESCRIPTOR": "JOB_TITLE",
     "COMPANY": "COMPANY",
     "COMPANYNAME": "COMPANY",
 
@@ -97,7 +81,7 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "IPV4": "IP_ADDRESS",
     "IPV6": "IP_ADDRESS",
     "IMEI": "IMEI",
-    "USERAGENT": "USERAGENT",
+    "PHONEIMEI": "IMEI",
     "MACADDRESS": "MAC_ADDRESS",
 
     # Vehicle
@@ -107,52 +91,50 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     # Password / Secret
     "PASSWORD": "PASSWORD",
 
-    # Insurance / Financial extras
-    "CREDITRATING": "AMOUNT",
-    "CREDRATING": "AMOUNT",
-    "POLICYNUM": "ACCOUNT_NUMBER",
-    "SALARY": "AMOUNT",
-    "BALANCE": "AMOUNT",
-    "BANKNAME": "COMPANY",
-
-    # Misc – may or may not map cleanly
+    # Misc
     "NEARBYGPSCOORDINATE": "GPS_COORDINATE",
-    "ORDINALDIRECTION": "LOCATION_OTHER",
-    "NATIONALITY": "COUNTRY",
 }
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect
-# and should be excluded from evaluation scoring.
+# and should be excluded from evaluation scoring.  These are checked BEFORE
+# the mapping dict, so nothing listed here should also appear in the dict.
 UNMAPPED_TYPES: frozenset[str] = frozenset({
+    # Demographic – not PII in most frameworks
     "GENDER",
     "SEX",
+    # Monetary values – not PII
     "AMOUNT",
     "CURRENCY",
     "CURRENCYSYMBOL",
     "CURRENCYCODE",
     "CURRENCYNAME",
+    # Credit-card metadata (issuer name, expiry, CVV) – too generic to detect
     "CREDITCARDISSUER",
     "CREDITCARDEXPIRY",
     "CREDITCARDCVV",
+    # Job/profession titles – not PII
     "JOBTITLE",
     "JOBTYPE",
     "JOBAREA",
     "JOBTITLE_DESCRIPTOR",
     "JOBDESCRIPTOR",
+    # Financial scores / amounts
     "CREDITRATING",
     "CREDRATING",
     "SALARY",
     "BALANCE",
+    # Bank brand names
     "BANKNAME",
+    # Directional / demographic
     "ORDINALDIRECTION",
     "NATIONALITY",
+    # Browser user-agent strings
     "USERAGENT",
-    "BUILDINGNUMBER",
-    "SECONDARYADDRESS",
-    "ACCOUNTNAME",
-    "MASKEDNUMBER",
-    "POLICYNUM",
-    "PIN",
+    # Physical attributes
+    "HEIGHT",
+    "WEIGHT",
+    "EYECOLOR",
+    "HAIRCOLOR",
 })
 
 # Coarse grouping for per-category metrics.
