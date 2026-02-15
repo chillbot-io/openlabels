@@ -95,11 +95,21 @@ def _deduplicate(
 
             # accepted fully contains span
             if accepted.contains(span):
+                # If the contained span has a strictly higher tier, it
+                # should replace the containing span — e.g. a CHECKSUM
+                # credit card inside a PATTERN employer match.
+                if span.tier.value > accepted.tier.value:
+                    result[i] = span
                 absorbed = True
                 break
 
             # span fully contains accepted
             if span.contains(accepted):
+                # If the already-accepted span has a strictly higher tier,
+                # keep it instead of the larger containing span.
+                if accepted.tier.value > span.tier.value:
+                    absorbed = True
+                    break
                 result.pop(i)
                 i -= 1
                 continue

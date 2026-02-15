@@ -35,6 +35,7 @@ class DetectionConfig:
     enable_coref: bool = False
     enable_context_enhancement: bool = False
     enable_policy: bool = True
+    enable_allowlist: bool = True
 
     # Tuning
     confidence_threshold: float = 0.70
