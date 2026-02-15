@@ -114,8 +114,9 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
 
     # Log attempted open redirect attack
     logger.warning(
-        f"Blocked open redirect attempt: {redirect_uri} "
-        f"(not in allowed origins: {settings.cors.allowed_origins})"
+        "Blocked open redirect attempt: %s (not in allowed origins: %s)",
+        redirect_uri,
+        settings.cors.allowed_origins,
     )
     return "/"
 

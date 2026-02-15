@@ -317,11 +317,11 @@ async def quarantine_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Quarantined {validated_path} to {dest_path}")
+                logger.info("Quarantined %s to %s", validated_path, dest_path)
             else:
                 action.status = "failed"
                 action.error = "Failed to move file"
-                logger.error(f"Failed to quarantine {validated_path}")
+                logger.error("Failed to quarantine %s", validated_path)
 
     # Log audit event
     audit = AuditLog(
@@ -430,11 +430,11 @@ async def lockdown_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Locked down {validated_path}")
+                logger.info("Locked down %s", validated_path)
             else:
                 action.status = "failed"
                 action.error = "Failed to set permissions"
-                logger.error(f"Failed to lockdown {validated_path}")
+                logger.error("Failed to lockdown %s", validated_path)
 
     # Log audit event
     audit = AuditLog(
@@ -533,7 +533,7 @@ async def rollback_action(
                 if rollback_success:
                     rollback.status = "completed"
                     original.status = "rolled_back"
-                    logger.info(f"Rolled back quarantine: {original.dest_path} -> {original.source_path}")
+                    logger.info("Rolled back quarantine: %s -> %s", original.dest_path, original.source_path)
                 else:
                     rollback.status = "failed"
                     rollback.error = "Failed to move file back"
@@ -560,7 +560,7 @@ async def rollback_action(
                 if rollback_success:
                     rollback.status = "completed"
                     original.status = "rolled_back"
-                    logger.info(f"Rolled back lockdown: restored ACL for {original.source_path}")
+                    logger.info("Rolled back lockdown: restored ACL for %s", original.source_path)
                 else:
                     rollback.status = "failed"
                     rollback.error = "Failed to restore permissions"
