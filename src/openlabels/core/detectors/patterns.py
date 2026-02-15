@@ -349,6 +349,10 @@ _p(r'\b(\d{3})[-.](\d{3})[-.](\d{4})\b', 'PHONE', 0.85),
 # International formats - no leading \b since + isn't a word character
 _p(r'(?:^|(?<=\s))\+1[-.\s]?(\d{3})[-.\s]?(\d{3})[-.\s]?(\d{4})\b', 'PHONE', 0.90),
 _p(r'(?:^|(?<=\s))\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}\b', 'PHONE', 0.85),
+# International: parenthesized 2-digit area code (non-US)
+_p(r'\((\d{2})\)[-.\s]?\d{3,4}[-.\s]?\d{4}\b', 'PHONE', 0.82),
+# European: leading-zero area code with 8-10 total digits
+_p(r'\b(0\d{2,4})[-.\s]\d{3,4}[-.\s]?\d{3,5}\b', 'PHONE', 0.80),
 # Labeled phone - tighter pattern: only digits, spaces, dashes, parens, plus
 _p(r'(?:phone|tel|fax|call|contact)[:\s]+([()\d\s+.-]{10,20})', 'PHONE', 0.92, 1, flags=re.I),
 
@@ -1135,6 +1139,8 @@ _p(r'\b([A-Z]{3}-\d{4})\b', 'LICENSE_PLATE', 0.85, 1),
 _p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
 # Florida: ABC D12 or ABCD12 (letter-heavy)
 _p(r'\b([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.75, 1),
+# UK: AB12CDE or AB12 CDE (2 letters, 2 digits, 3 letters)
+_p(r'\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b', 'LICENSE_PLATE', 0.85, 1),
 
 
 # HEALTHCARE-SPECIFIC IDENTIFIERS
@@ -1591,10 +1597,15 @@ class PatternDetector(BaseDetector):
                         if g1.isdigit() and g2.isdigit() and g3.isdigit():
                             if len(g1) == 4:  # YYYY-MM-DD
                                 y, m, d = int(g1), int(g2), int(g3)
+                                if not _validate_date(m, d, y):
+                                    continue
                             else:  # MM/DD/YYYY or DD/MM/YYYY
                                 m, d, y = int(g1), int(g2), int(g3)
-                            if not _validate_date(m, d, y):
-                                continue
+                                if not _validate_date(m, d, y):
+                                    # Try DD/MM/YYYY interpretation
+                                    d, m = int(g1), int(g2)
+                                    if not _validate_date(m, d, y):
+                                        continue
                     except (ValueError, IndexError) as e:
                         # Date parsing failed - accept match without validation
                         # This handles edge cases where regex groups don't match expected format
