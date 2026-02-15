@@ -82,6 +82,7 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "IPV6": "IP_ADDRESS",
     "IMEI": "IMEI",
     "PHONEIMEI": "IMEI",
+    "MAC": "MAC_ADDRESS",
     "MACADDRESS": "MAC_ADDRESS",
 
     # Vehicle
@@ -188,6 +189,7 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "DATE": "dates",
     "DATE_DOB": "dates",
+    "DATETIME": "dates",
     "TIME": "dates",
     "AGE": "dates",
 
@@ -202,6 +204,7 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "JOB_TITLE": "professional",
     "COMPANY": "professional",
+    "EMPLOYER": "professional",
     "FACILITY": "professional",
 }
 
