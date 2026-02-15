@@ -53,6 +53,8 @@ def _validate_host(host: str) -> str:
     host = host.strip()
     if not host:
         raise HTTPException(status_code=400, detail="Host is required")
+    if len(host) > 253:
+        raise HTTPException(status_code=400, detail="Host is too long (max 253 chars)")
     if not _HOST_RE.match(host):
         raise HTTPException(status_code=400, detail="Host contains invalid characters")
     if ".." in host:
@@ -149,9 +151,19 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
 
     # Try smbclient -L to list shares
     try:
-        cmd = ["smbclient", "-L", f"//{host}", "-N"]
+        # SECURITY: Pass credentials via environment variable to avoid
+        # leaking them in /proc/cmdline or ps output, and to prevent
+        # shell metacharacter injection via the password value.
+        env = None
         if username:
-            cmd = ["smbclient", "-L", f"//{host}", "-U", f"{username}%{password}"]
+            cmd = ["smbclient", "-L", f"//{host}", "-U", username]
+            if password:
+                import os as _os
+                env = {**_os.environ, "PASSWD": password}
+            else:
+                cmd.append("-N")
+        else:
+            cmd = ["smbclient", "-L", f"//{host}", "-N"]
 
         result = await asyncio.to_thread(
             subprocess.run,
@@ -159,6 +171,7 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
             capture_output=True,
             text=True,
             timeout=15,
+            env=env,
         )
 
         # Parse smbclient output

@@ -32,8 +32,18 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 import httpx
+
+# Allowed domains for M365 Management Activity API content blob URIs.
+# See: https://learn.microsoft.com/en-us/office/office-365-management-api/
+_ALLOWED_CONTENT_DOMAINS = frozenset({
+    "manage.office.com",
+    "manage-gcc.office.com",
+    "manage.office365.us",        # GCC High
+    "manage.protection.outlook.com",
+})
 
 from .base import RawAccessEvent
 
@@ -370,6 +380,14 @@ class M365AuditProvider:
         content_uri: str,
     ) -> list[RawAccessEvent]:
         """Fetch a single content blob and parse audit events."""
+        # SECURITY: Validate domain to prevent SSRF via tampered API responses
+        parsed = urlparse(content_uri)
+        if parsed.hostname and parsed.hostname not in _ALLOWED_CONTENT_DOMAINS:
+            logger.warning(
+                "Blocked content blob fetch to untrusted domain: %s",
+                parsed.hostname,
+            )
+            return []
         response = await self._authorized_request(
             client, "GET", content_uri,
         )

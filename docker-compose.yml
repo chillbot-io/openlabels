@@ -90,9 +90,9 @@ services:
     # If you need direct access for debugging, use: docker exec -it <container> psql
     environment:
       - POSTGRES_USER=openlabels
-      # SECURITY: Use strong password in production - set POSTGRES_PASSWORD in .env file
-      # WARNING: The default 'changeme_dev_only' is for local development ONLY
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      # SECURITY: POSTGRES_PASSWORD is required — no default value.
+      # Create a .env file: echo "POSTGRES_PASSWORD=$(openssl rand -base64 32)" > .env
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=openlabels
       # SECURITY: Require password authentication
       - POSTGRES_HOST_AUTH_METHOD=scram-sha-256

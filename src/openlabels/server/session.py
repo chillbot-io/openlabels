@@ -5,10 +5,13 @@ Replaces in-memory session storage for production use:
 - Sessions survive server restarts
 - Sessions work across multiple workers
 - Automatic cleanup of expired sessions
+- Sensitive tokens (access_token, refresh_token, id_token) are encrypted at
+  rest when AUTH_SESSION_ENCRYPTION_KEY is configured
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +21,68 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openlabels.server.models import PendingAuth, Session
 
 logger = logging.getLogger(__name__)
+
+# Fields in the session data dict that contain bearer tokens and must be
+# encrypted at rest to limit blast radius of a database compromise.
+_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token")
+
+# Lazy-initialised Fernet cipher (None until first use, False if no key).
+_fernet: object | None = None
+
+
+def _get_fernet():
+    """Return a Fernet cipher, or None if no encryption key is configured."""
+    global _fernet
+    if _fernet is not None:
+        return _fernet if _fernet is not False else None
+
+    from openlabels.server.config import get_settings
+
+    key = get_settings().auth.session_encryption_key
+    if not key:
+        logger.warning(
+            "AUTH_SESSION_ENCRYPTION_KEY is not set — session tokens are "
+            "stored in plaintext. Set this key for production deployments."
+        )
+        _fernet = False
+        return None
+
+    from cryptography.fernet import Fernet
+
+    _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+    return _fernet
+
+
+def _encrypt_session_data(data: dict) -> dict:
+    """Encrypt sensitive token fields in session data before DB write."""
+    f = _get_fernet()
+    if f is None:
+        return data
+    encrypted = copy.copy(data)
+    for field in _SENSITIVE_FIELDS:
+        value = encrypted.get(field)
+        if value and isinstance(value, str):
+            encrypted[field] = f.encrypt(value.encode()).decode()
+    return encrypted
+
+
+def _decrypt_session_data(data: dict) -> dict:
+    """Decrypt sensitive token fields in session data after DB read."""
+    f = _get_fernet()
+    if f is None:
+        return data
+    from cryptography.fernet import InvalidToken
+
+    decrypted = copy.copy(data)
+    for field in _SENSITIVE_FIELDS:
+        value = decrypted.get(field)
+        if value and isinstance(value, str):
+            try:
+                decrypted[field] = f.decrypt(value.encode()).decode()
+            except InvalidToken:
+                # Value was stored before encryption was enabled — return as-is
+                pass
+    return decrypted
 
 
 def _sanitize_id(value: str) -> str:
@@ -62,7 +127,7 @@ class SessionStore:
         session = result.scalar_one_or_none()
 
         if session:
-            return session.data
+            return _decrypt_session_data(session.data)
         return None
 
     async def set(
@@ -85,6 +150,7 @@ class SessionStore:
         """
         session_id = _sanitize_id(session_id)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        encrypted_data = _encrypt_session_data(data)
 
         # Check if session exists
         result = await self.db.execute(
@@ -94,13 +160,13 @@ class SessionStore:
 
         if existing:
             # Update existing session
-            existing.data = data
+            existing.data = encrypted_data
             existing.expires_at = expires_at
         else:
             # Create new session
             session = Session(
                 id=session_id,
-                data=data,
+                data=encrypted_data,
                 expires_at=expires_at,
                 tenant_id=tenant_id,
                 user_id=user_id,

@@ -24,8 +24,11 @@ Security:
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
+import time
+from collections import OrderedDict
 
 from fastapi import APIRouter, Query, Request, Response, status
 
@@ -38,6 +41,59 @@ from openlabels.server.config import get_settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# SECURITY: Replay protection — in-memory dedup cache keyed by notification hash.
+# Entries expire after _REPLAY_WINDOW_SECONDS.  The cache is bounded to
+# _REPLAY_CACHE_MAX entries to prevent unbounded memory growth.
+_REPLAY_WINDOW_SECONDS = 300  # 5 minutes
+_REPLAY_CACHE_MAX = 10_000
+_seen_notifications: OrderedDict[str, float] = OrderedDict()
+
+
+def _is_replay(notification: dict, source: str) -> bool:
+    """Return True if this notification was already processed recently.
+
+    Uses a SHA-256 hash of the notification's identifying fields as the
+    dedup key, and rejects notifications seen within the replay window.
+    """
+    # Build a stable identity from the notification
+    # M365: contentUri is unique per content blob
+    # Graph: subscriptionId + resource + changeType form a unique event key
+    if source == "M365":
+        identity = notification.get("contentUri", "")
+    else:
+        identity = "|".join([
+            notification.get("subscriptionId", ""),
+            notification.get("resource", ""),
+            notification.get("changeType", ""),
+            notification.get("clientState", ""),
+        ])
+
+    if not identity:
+        return False  # can't dedup without identity — allow through
+
+    key = hashlib.sha256(identity.encode()).hexdigest()[:32]
+    now = time.monotonic()
+
+    # Evict stale entries
+    while _seen_notifications:
+        oldest_key, oldest_ts = next(iter(_seen_notifications.items()))
+        if now - oldest_ts > _REPLAY_WINDOW_SECONDS:
+            _seen_notifications.pop(oldest_key)
+        else:
+            break
+
+    if key in _seen_notifications:
+        logger.warning("%s webhook: replay detected (dedup key %s…), rejecting", source, key[:8])
+        return True
+
+    _seen_notifications[key] = now
+
+    # Enforce max size
+    while len(_seen_notifications) > _REPLAY_CACHE_MAX:
+        _seen_notifications.popitem(last=False)
+
+    return False
 
 
 def _validate_client_state(
@@ -110,6 +166,9 @@ async def m365_webhook(
         if not _validate_client_state(client_state, expected_state, "M365"):
             continue
 
+        if _is_replay(notification, "M365"):
+            continue
+
         if push_m365_notification(notification):
             accepted += 1
         else:
@@ -165,6 +224,9 @@ async def graph_webhook(
         client_state = notification.get("clientState", "")
 
         if not _validate_client_state(client_state, expected_state, "Graph"):
+            continue
+
+        if _is_replay(notification, "Graph"):
             continue
 
         if push_graph_notification(notification):
