@@ -16,6 +16,7 @@ from openlabels.server.config import get_settings
 from openlabels.server.db import close_db, ensure_partitions, init_db
 from openlabels.server.logging import setup_logging
 from openlabels.server.sentry import init_sentry
+from openlabels.server.task_manager import BackgroundTaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -135,17 +136,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.catalog_storage = None
         app.state.dashboard_service = None
 
+    # Background task manager — supervises periodic tasks, auto-restarts on crash
+    task_mgr = BackgroundTaskManager()
+    app.state.task_manager = task_mgr
+
     # Periodic event flush background task (Parquet data lake)
     flush_shutdown = asyncio.Event()
     flush_task: asyncio.Task | None = None
     try:
         from openlabels.jobs.tasks.flush import periodic_event_flush
 
-        flush_task = asyncio.create_task(
-            periodic_event_flush(
-                interval_seconds=settings.catalog.event_flush_interval_seconds,
-                shutdown_event=flush_shutdown,
-            )
+        flush_task = task_mgr.supervised_task(
+            "event_flush",
+            periodic_event_flush,
+            shutdown_event=flush_shutdown,
+            interval_seconds=settings.catalog.event_flush_interval_seconds,
         )
         logger.info(
             "Periodic event flush task started (interval=%ds)",
@@ -164,11 +169,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             from openlabels.jobs.tasks.export import periodic_siem_export
 
-            siem_task = asyncio.create_task(
-                periodic_siem_export(
-                    interval_seconds=settings.siem_export.periodic_interval_seconds,
-                    shutdown_event=siem_shutdown,
-                )
+            siem_task = task_mgr.supervised_task(
+                "siem_export",
+                periodic_siem_export,
+                shutdown_event=siem_shutdown,
+                interval_seconds=settings.siem_export.periodic_interval_seconds,
             )
             logger.info(
                 "Periodic SIEM export task started (interval=%ds)",
@@ -220,12 +225,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             from openlabels.monitoring.registry import periodic_cache_sync
 
-            monitoring_sync_task = asyncio.create_task(
-                periodic_cache_sync(
-                    tenant_id=_UUID(settings.monitoring.tenant_id),
-                    interval_seconds=settings.monitoring.cache_sync_interval_seconds,
-                    shutdown_event=monitoring_sync_shutdown,
-                )
+            monitoring_sync_task = task_mgr.supervised_task(
+                "monitoring_sync",
+                periodic_cache_sync,
+                shutdown_event=monitoring_sync_shutdown,
+                tenant_id=_UUID(settings.monitoring.tenant_id),
+                interval_seconds=settings.monitoring.cache_sync_interval_seconds,
             )
             logger.info(
                 "Monitoring cache periodic sync started (interval=%ds)",
@@ -244,14 +249,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             from openlabels.monitoring.harvester import periodic_event_harvest
 
-            harvester_task = asyncio.create_task(
-                periodic_event_harvest(
-                    interval_seconds=settings.monitoring.harvest_interval_seconds,
-                    max_events_per_cycle=settings.monitoring.max_events_per_cycle,
-                    store_raw_events=settings.monitoring.store_raw_events,
-                    enabled_providers=settings.monitoring.providers,
-                    shutdown_event=harvester_shutdown,
-                )
+            harvester_task = task_mgr.supervised_task(
+                "event_harvester",
+                periodic_event_harvest,
+                shutdown_event=harvester_shutdown,
+                interval_seconds=settings.monitoring.harvest_interval_seconds,
+                max_events_per_cycle=settings.monitoring.max_events_per_cycle,
+                store_raw_events=settings.monitoring.store_raw_events,
+                enabled_providers=settings.monitoring.providers,
             )
             logger.info(
                 "Event harvester started (interval=%ds, providers=%s)",
@@ -299,21 +304,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         _gc_err,
                     )
 
-            m365_task = asyncio.create_task(
-                periodic_m365_harvest(
-                    tenant_id=settings.auth.tenant_id,
-                    client_id=settings.auth.client_id,
-                    client_secret=settings.auth.client_secret,
-                    interval_seconds=settings.monitoring.m365_harvest_interval_seconds,
-                    max_events_per_cycle=settings.monitoring.max_events_per_cycle,
-                    store_raw_events=settings.monitoring.store_raw_events,
-                    monitored_site_urls=settings.monitoring.m365_site_urls or None,
-                    graph_client=_graph_client,
-                    webhook_url=settings.monitoring.webhook_url,
-                    webhook_client_state=settings.monitoring.webhook_client_state,
-                    enabled_providers=settings.monitoring.providers,
-                    shutdown_event=m365_shutdown,
-                )
+            m365_task = task_mgr.supervised_task(
+                "m365_harvester",
+                periodic_m365_harvest,
+                shutdown_event=m365_shutdown,
+                tenant_id=settings.auth.tenant_id,
+                client_id=settings.auth.client_id,
+                client_secret=settings.auth.client_secret,
+                interval_seconds=settings.monitoring.m365_harvest_interval_seconds,
+                max_events_per_cycle=settings.monitoring.max_events_per_cycle,
+                store_raw_events=settings.monitoring.store_raw_events,
+                monitored_site_urls=settings.monitoring.m365_site_urls or None,
+                graph_client=_graph_client,
+                webhook_url=settings.monitoring.webhook_url,
+                webhook_client_state=settings.monitoring.webhook_client_state,
+                enabled_providers=settings.monitoring.providers,
             )
             logger.info(
                 "M365 event harvester started (interval=%ds)",
@@ -392,6 +397,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     manager.run(stream_shutdown),
                     name="event-stream-manager",
                 )
+                task_mgr.register_task("event_stream", stream_task, stream_shutdown)
 
                 # Start scan trigger loop if enabled
                 if scan_trigger is not None:
@@ -399,6 +405,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         scan_trigger.run(stream_shutdown),
                         name="scan-trigger-buffer",
                     )
+                    task_mgr.register_task("scan_trigger", trigger_task, stream_shutdown)
                     app.state.scan_trigger = scan_trigger
 
                 logger.info(
@@ -466,54 +473,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Global WS pub/sub shutdown error: %s: %s", type(e).__name__, e)
 
-    # Stop real-time event streams and scan trigger
-    if stream_task and not stream_task.done():
-        stream_shutdown.set()
-        # Wait for both stream_task and trigger_task (share the same shutdown event)
-        stream_tasks_to_stop = [stream_task]
-        if trigger_task and not trigger_task.done():
-            stream_tasks_to_stop.append(trigger_task)
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*stream_tasks_to_stop, return_exceptions=True),
-                timeout=5.0,
-            )
-        except asyncio.TimeoutError:
-            for t in stream_tasks_to_stop:
-                if not t.done():
-                    t.cancel()
-            await asyncio.gather(*stream_tasks_to_stop, return_exceptions=True)
-        logger.info("EventStreamManager stopped")
+    # Stop all managed background tasks (supervised + registered)
+    await task_mgr.stop_all(timeout=10.0)
+    logger.info("Background tasks stopped")
 
     # Close fanotify fd
     if _fanotify_provider is not None:
         _fanotify_provider.close()
-
-    # Stop event harvester (OS providers)
-    if harvester_task and not harvester_task.done():
-        harvester_shutdown.set()
-        try:
-            await asyncio.wait_for(harvester_task, timeout=5.0)
-        except asyncio.TimeoutError:
-            harvester_task.cancel()
-            try:
-                await harvester_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("Event harvester stopped")
-
-    # Stop M365 event harvester and clean up providers
-    if m365_task and not m365_task.done():
-        m365_shutdown.set()
-        try:
-            await asyncio.wait_for(m365_task, timeout=5.0)
-        except asyncio.TimeoutError:
-            m365_task.cancel()
-            try:
-                await m365_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("M365 event harvester stopped")
 
     # Close GraphClient used by webhook provider (if created)
     if _graph_client is not None:
@@ -521,19 +487,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _graph_client.close()
         except Exception as e:
             logger.debug("Graph client close failed: %s", e)
-
-    # Stop periodic monitoring cache sync
-    if monitoring_sync_task and not monitoring_sync_task.done():
-        monitoring_sync_shutdown.set()
-        try:
-            await asyncio.wait_for(monitoring_sync_task, timeout=5.0)
-        except asyncio.TimeoutError:
-            monitoring_sync_task.cancel()
-            try:
-                await monitoring_sync_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("Monitoring cache periodic sync stopped")
 
     # Monitoring: sync registry cache to DB on shutdown
     if settings.monitoring.enabled and settings.monitoring.sync_cache_on_shutdown:
@@ -555,38 +508,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "Failed to sync monitoring cache to DB: %s: %s",
                 type(e).__name__, e,
             )
+
     if scheduler and scheduler.is_running:
         try:
             await scheduler.stop()
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning(f"Error stopping scheduler: {type(e).__name__}: {e}")
-
-    # Stop periodic SIEM export
-    if siem_task and not siem_task.done():
-        siem_shutdown.set()
-        try:
-            await asyncio.wait_for(siem_task, timeout=5.0)
-        except asyncio.TimeoutError:
-            siem_task.cancel()
-            try:
-                await siem_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("Periodic SIEM export stopped")
-
-    # Stop periodic event flush
-    if flush_task and not flush_task.done():
-        flush_shutdown.set()
-        try:
-            await asyncio.wait_for(flush_task, timeout=5.0)
-        except asyncio.TimeoutError:
-            flush_task.cancel()
-            try:
-                await flush_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("Periodic event flush stopped")
 
     # Close analytics engine
     if getattr(app.state, "analytics", None):

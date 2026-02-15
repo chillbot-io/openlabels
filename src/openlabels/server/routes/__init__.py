@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.exceptions import NotFoundError
+from openlabels.server.models import AuditLog
 
 _module_cache = {}
 
@@ -26,6 +27,27 @@ async def get_or_404(session: AsyncSession, model_class, entity_id: UUID, *, ten
             resource_id=str(entity_id),
         )
     return entity
+
+
+def audit_log(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID | None,
+    action: str,
+    resource_type: str | None = None,
+    resource_id: UUID | None = None,
+    details: dict | None = None,
+) -> None:
+    """Add an audit log entry to the session (flushed on next commit/flush)."""
+    session.add(AuditLog(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=details,
+    ))
 
 
 def htmx_notify(
@@ -76,6 +98,7 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "audit_log",
     "get_or_404",
     "htmx_notify",
     "audit",

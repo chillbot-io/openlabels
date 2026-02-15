@@ -79,12 +79,19 @@ async def list_audit_logs(
         VALID_AUDIT_ACTIONS = {
             'scan_started', 'scan_completed', 'scan_failed', 'scan_cancelled',
             'label_applied', 'label_removed', 'label_sync',
+            'label_rule_created', 'label_rule_deleted',
             'target_created', 'target_updated', 'target_deleted',
             'user_created', 'user_updated', 'user_deleted',
             'schedule_created', 'schedule_updated', 'schedule_deleted',
             'quarantine_executed', 'lockdown_executed', 'rollback_executed',
             'monitoring_enabled', 'monitoring_disabled',
             'policy_violation',
+            'policy_created', 'policy_updated', 'policy_deleted',
+            'settings_updated',
+            'login_success', 'login_failed', 'logout',
+            'session_revoked',
+            'report_generated', 'report_distributed',
+            'siem_exported',
         }
         if action not in VALID_AUDIT_ACTIONS:
             return PaginatedResponse[AuditLogResponse](

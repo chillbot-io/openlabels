@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import Integer, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,7 +23,7 @@ from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.core.types import JobStatus
 from openlabels.jobs.queue import JobQueue as JobQueueService
 from openlabels.server.cache import get_cache_stats
-from openlabels.server.db import get_session
+from openlabels.server.db import get_pool_stats, get_session
 from openlabels.server.models import JobQueue, ScanJob, ScanResult
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,9 @@ class HealthStatus(BaseModel):
 
     # Job metrics
     job_metrics: JobMetrics | None = None
+
+    # Database pool
+    db_pool: dict[str, int] | None = None
 
     # Optional extended info
     python_version: str | None = None
@@ -335,13 +338,55 @@ async def get_health_status(
         except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
             logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
-        # System info — only for admin users (leaks infrastructure details)
-        if hasattr(user, "role") and user.role == "admin":
-            status["python_version"] = platform.python_version()
-            status["platform"] = platform.system()
-            status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
+        # DB pool stats
+        pool_stats = get_pool_stats()
+        if pool_stats:
+            status["db_pool"] = pool_stats
+
+        # System info — only for authenticated users
+        status["python_version"] = platform.python_version()
+        status["platform"] = platform.system()
+        status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
+
+
+@router.get("/ready")
+async def readiness_probe(
+    session: AsyncSession = Depends(get_session),
+):
+    """Lightweight readiness probe for load balancers and container orchestrators.
+
+    Returns 200 if the database is reachable, 503 otherwise.
+    No authentication required.
+    """
+    try:
+        await session.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except (SQLAlchemyError, ConnectionError, OSError):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "detail": "database not reachable"},
+        )
+
+
+@router.get("/tasks")
+async def get_task_status(
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Get status of all managed background tasks.
+
+    Returns per-task health, uptime, cycle count, and error info.
+    """
+    task_mgr = getattr(request.app.state, "task_manager", None)
+    if task_mgr is None:
+        return {"tasks": [], "healthy": True}
+    return {
+        "tasks": task_mgr.get_status(),
+        "healthy": task_mgr.is_healthy(),
+    }
 
 
 class CacheStats(BaseModel):

@@ -94,6 +94,32 @@ processing_duration_seconds = Histogram(
 )
 
 
+# Database Connection Pool Metrics
+db_pool_size = Gauge(
+    "openlabels_db_pool_size",
+    "Current size of the database connection pool",
+    registry=registry,
+)
+
+db_pool_checked_in = Gauge(
+    "openlabels_db_pool_checked_in",
+    "Number of idle connections in the pool",
+    registry=registry,
+)
+
+db_pool_checked_out = Gauge(
+    "openlabels_db_pool_checked_out",
+    "Number of connections currently in use",
+    registry=registry,
+)
+
+db_pool_overflow = Gauge(
+    "openlabels_db_pool_overflow",
+    "Number of overflow connections (above pool_size)",
+    registry=registry,
+)
+
+
 # Catalog / Data Lake Metrics
 catalog_flush_lag_seconds = Gauge(
     "openlabels_catalog_flush_lag_seconds",
@@ -243,3 +269,23 @@ def update_catalog_health(storage) -> None:
 
     except Exception as e:
         logger.debug("Catalog metrics collection failed: %s", e)
+
+
+def update_db_pool_metrics() -> None:
+    """Snapshot the SQLAlchemy connection pool gauges.
+
+    Safe to call from the metrics middleware or a periodic task.
+    Does nothing if the engine hasn't been initialised yet.
+    """
+    from openlabels.server.db import get_pool_stats
+
+    try:
+        stats = get_pool_stats()
+        if stats is None:
+            return
+        db_pool_size.set(stats["pool_size"])
+        db_pool_checked_in.set(stats["checked_in"])
+        db_pool_checked_out.set(stats["checked_out"])
+        db_pool_overflow.set(stats["overflow"])
+    except Exception as e:
+        logger.debug("DB pool metrics collection failed: %s", e)
