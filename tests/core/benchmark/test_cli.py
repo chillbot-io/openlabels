@@ -35,7 +35,7 @@ def mock_load_dataset():
     """Mock dataset loading to avoid downloading."""
     with patch(
         "openlabels.core.benchmark.harness.load_dataset",
-        return_value=MOCK_SAMPLES,
+        return_value=(MOCK_SAMPLES, "mock"),
     ) as mock:
         yield mock
 
@@ -86,7 +86,7 @@ class TestBenchmarkCommand:
             "--enable-ml",
         ])
         assert result.exit_code == 0
-        assert "ML: on" in result.output
+        assert "ML: ON" in result.output
 
     def test_tiered_flag(self, runner, mock_load_dataset):
         result = runner.invoke(benchmark, [

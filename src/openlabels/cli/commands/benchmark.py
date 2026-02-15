@@ -65,17 +65,24 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
 
     click.echo(f"Benchmark: {config.name}")
     click.echo(f"Samples: {samples} | Threshold: {config.confidence_threshold}")
-    click.echo(f"ML: {'on' if config.enable_ml else 'off'} | "
+    ml_status = "ON" if config.enable_ml else "OFF"
+    click.echo(f"ML: {ml_status} | "
                f"Pipeline: {'tiered' if config.use_tiered_pipeline else 'orchestrator'}")
+    if not config.enable_ml:
+        click.echo("  (name detection requires ML; use --enable-ml or --preset with_ml)")
     click.echo("-" * 60)
 
     try:
+        from openlabels.core.benchmark.dataset import DatasetLoadError
         result = run_benchmark(
             sample_size=samples,
             config=config,
             seed=seed,
             progress_callback=_cli_progress,
         )
+    except DatasetLoadError as e:
+        click.echo(f"\nDataset error: {e}", err=True)
+        raise SystemExit(1)
     except ImportError as e:
         click.echo(f"\nError: {e}", err=True)
         return
@@ -84,6 +91,7 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
         return
 
     click.echo("")  # newline after progress
+    click.echo(f"Dataset: {result.dataset_source}")
     _print_result(result, verbose)
 
     if output:
