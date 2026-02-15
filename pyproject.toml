@@ -53,6 +53,7 @@ dependencies = [
     # Auth
     "PyJWT[crypto]>=2.8.0",
     "msal>=1.26.0",
+    "authlib>=1.3.0",  # Generic OIDC client (Okta, Google, Keycloak, etc.)
 
     # CLI
     "click>=8.1.0",
@@ -206,6 +207,7 @@ plugins = ["pydantic.mypy"]
 module = [
     # Auth / .NET interop
     "msal", "msal.*",
+    "authlib", "authlib.*",
     "pythonnet", "pythonnet.*",
     "clr", "clr.*",
     "Microsoft", "Microsoft.*",

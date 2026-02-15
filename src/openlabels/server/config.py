@@ -56,41 +56,56 @@ class DatabaseSettings(BaseSettings):
     statement_cache_size: int = 100  # asyncpg prepared statement cache (0 for PgBouncer)
 
 
-class AuthSettings(BaseSettings):
+class OIDCProviderSettings(BaseSettings):
     """
-    Authentication configuration for Azure AD / Microsoft Graph API.
+    Generic OIDC provider configuration.
 
-    Required Azure AD App Registration:
-    1. Create an App Registration in Azure Portal
-    2. Configure the following API Permissions (Application type):
-
-    SCANNING PERMISSIONS (minimum for SharePoint/OneDrive scanning):
-    - Sites.Read.All          - Read items in all site collections
-    - Files.Read.All          - Read all files that user can access
-    - User.Read.All           - Read all users' full profiles (for OneDrive)
-
-    LABELING PERMISSIONS (for applying sensitivity labels):
-    - Sites.ReadWrite.All     - Edit or delete items in all site collections
-    - Files.ReadWrite.All     - Read and write all files that user can access
-    - InformationProtectionPolicy.Read.All  - Read sensitivity labels
-
-    LABEL MANAGEMENT PERMISSIONS (for syncing labels from M365):
-    - InformationProtectionPolicy.Read.All  - Read sensitivity labels and policies
-
-    OPTIONAL PERMISSIONS (for full functionality):
-    - User.ReadBasic.All      - Read basic profiles of all users
-    - Directory.Read.All      - Read directory data
-
-    3. Grant admin consent for the permissions
-    4. Create a client secret and note the value
+    Supports any OpenID Connect-compliant provider: Okta, Google Workspace,
+    Keycloak, Auth0, PingFederate, or Azure AD via standard OIDC.
 
     Environment variables:
-    - AUTH_TENANT_ID: Azure AD tenant ID (GUID)
-    - AUTH_CLIENT_ID: App registration client/application ID (GUID)
-    - AUTH_CLIENT_SECRET: Client secret value
+    - OPENLABELS_AUTH__OIDC__DISCOVERY_URL=https://accounts.google.com/.well-known/openid-configuration
+    - OPENLABELS_AUTH__OIDC__CLIENT_ID=your-client-id
+    - OPENLABELS_AUTH__OIDC__CLIENT_SECRET=your-client-secret
     """
 
-    provider: Literal["azure_ad", "none"] = "none"
+    discovery_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: str = "openid profile email"
+
+    # Claim mapping: which token claims map to OpenLabels user fields
+    claim_sub: str = "sub"  # Unique user ID (subject)
+    claim_email: str = "email"  # User email
+    claim_name: str = "name"  # Display name
+    claim_tenant: str = ""  # Tenant/org claim (empty = single-tenant mode)
+    claim_roles: str = "roles"  # Roles claim
+
+    # Provider display name shown on login button
+    display_name: str = "SSO"
+    # Button style hint for frontend
+    button_style: str = "generic"
+
+
+class AuthSettings(BaseSettings):
+    """
+    Authentication configuration.
+
+    Supports three modes:
+    - "none": No auth (development only, requires debug=True)
+    - "azure_ad": Microsoft Entra ID via MSAL (legacy, still fully supported)
+    - "oidc": Generic OpenID Connect (works with any OIDC provider)
+
+    For Azure AD (legacy mode):
+    - AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET
+
+    For generic OIDC:
+    - OPENLABELS_AUTH__OIDC__DISCOVERY_URL=https://your-idp/.well-known/openid-configuration
+    - OPENLABELS_AUTH__OIDC__CLIENT_ID=...
+    - OPENLABELS_AUTH__OIDC__CLIENT_SECRET=...
+    """
+
+    provider: Literal["azure_ad", "oidc", "none"] = "none"
     tenant_id: str | None = None
     client_id: str | None = None
     client_secret: str | None = None

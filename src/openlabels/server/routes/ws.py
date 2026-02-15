@@ -341,7 +341,9 @@ async def authenticate_websocket(
     # auto-create users or bypass authentication entirely.
     if settings.auth.provider == "none":
         async with get_session_factory()() as session:
-            tenant_query = select(Tenant).where(Tenant.azure_tenant_id == "dev-tenant")
+            tenant_query = select(Tenant).where(
+                (Tenant.idp_tenant_id == "dev-tenant") | (Tenant.azure_tenant_id == "dev-tenant")
+            )
             result = await session.execute(tenant_query)
             tenant = result.scalars().first()
             if tenant:
@@ -390,8 +392,10 @@ async def authenticate_websocket(
             logger.warning("WebSocket connection rejected: missing claims")
             return None
 
-        # Find user and tenant
-        tenant_query = select(Tenant).where(Tenant.azure_tenant_id == tenant_azure_id)
+        # Find user and tenant (try new field first, fall back to legacy)
+        tenant_query = select(Tenant).where(
+            (Tenant.idp_tenant_id == tenant_azure_id) | (Tenant.azure_tenant_id == tenant_azure_id)
+        )
         result = await db_session.execute(tenant_query)
         tenant = result.scalars().first()
 

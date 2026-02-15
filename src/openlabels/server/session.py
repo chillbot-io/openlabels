@@ -274,11 +274,18 @@ class PendingAuthStore:
             return {
                 "redirect_uri": pending.redirect_uri,
                 "callback_url": pending.callback_url,
+                "nonce": pending.nonce,
                 "created_at": pending.created_at,
             }
         return None
 
-    async def set(self, state: str, redirect_uri: str, callback_url: str) -> None:
+    async def set(
+        self,
+        state: str,
+        redirect_uri: str,
+        callback_url: str,
+        nonce: str | None = None,
+    ) -> None:
         """
         Store pending auth state.
         """
@@ -287,6 +294,7 @@ class PendingAuthStore:
             state=state,
             redirect_uri=redirect_uri,
             callback_url=callback_url,
+            nonce=nonce,
         )
         self.db.add(pending)
         await self.db.flush()

@@ -49,6 +49,9 @@ def __getattr__(name: str):
     elif name == "get_graph_client":
         from openlabels.auth.graph import get_graph_client
         return get_graph_client
+    elif name == "OIDCTokenClaims":
+        from openlabels.auth.oidc_provider import OIDCTokenClaims
+        return OIDCTokenClaims
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
