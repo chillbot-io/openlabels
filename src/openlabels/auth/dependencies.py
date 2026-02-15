@@ -21,6 +21,7 @@ from openlabels.auth.oauth import TokenClaims, validate_token
 from openlabels.exceptions import AuthError
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
+from openlabels.server.logging import set_tenant_id, set_user_id
 from openlabels.server.models import Tenant, User
 
 logger = logging.getLogger(__name__)
@@ -232,7 +233,10 @@ async def get_current_user(
             ) from e
 
     user = await get_or_create_user(session, claims)
-    return CurrentUser.model_validate(user)
+    cu = CurrentUser.model_validate(user)
+    set_tenant_id(str(cu.tenant_id))
+    set_user_id(str(cu.id))
+    return cu
 
 
 async def get_optional_user(

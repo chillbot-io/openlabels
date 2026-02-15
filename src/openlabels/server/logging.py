@@ -27,8 +27,10 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
-# Context variable for request correlation ID
+# Context variables for request correlation
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+tenant_id_var: ContextVar[str | None] = ContextVar("tenant_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
 
 
 def get_request_id() -> str | None:
@@ -39,6 +41,26 @@ def get_request_id() -> str | None:
 def set_request_id(request_id: str) -> None:
     """Set the current request correlation ID."""
     request_id_var.set(request_id)
+
+
+def get_tenant_id() -> str | None:
+    """Get the current tenant ID from request context."""
+    return tenant_id_var.get()
+
+
+def set_tenant_id(tenant_id: str) -> None:
+    """Set the current tenant ID in request context."""
+    tenant_id_var.set(tenant_id)
+
+
+def get_user_id() -> str | None:
+    """Get the current user ID from request context."""
+    return user_id_var.get()
+
+
+def set_user_id(user_id: str) -> None:
+    """Set the current user ID in request context."""
+    user_id_var.set(user_id)
 
 
 class JSONFormatter(logging.Formatter):
@@ -65,10 +87,16 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Add request correlation ID if available
+        # Add request context if available
         request_id = get_request_id()
         if request_id:
             log_data["request_id"] = request_id
+        tenant_id = get_tenant_id()
+        if tenant_id:
+            log_data["tenant_id"] = tenant_id
+        user_id = get_user_id()
+        if user_id:
+            log_data["user_id"] = user_id
 
         # Add source location for debug/error logs
         if record.levelno >= logging.WARNING:

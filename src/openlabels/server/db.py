@@ -128,6 +128,19 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def get_pool_stats() -> dict[str, int] | None:
+    """Return current connection pool statistics, or None if the engine is not initialised."""
+    if _engine is None:
+        return None
+    pool = _engine.pool
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+    }
+
+
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Get the session factory for direct use (e.g., WebSocket handlers)."""
     if _session_factory is None:

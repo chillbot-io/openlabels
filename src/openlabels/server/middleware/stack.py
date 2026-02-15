@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse, Response
 from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels.server.config import get_settings
-from openlabels.server.logging import get_request_id, set_request_id
-from openlabels.server.metrics import http_active_connections, record_http_request
+from openlabels.server.logging import get_request_id, set_request_id, set_tenant_id, set_user_id
+from openlabels.server.metrics import http_active_connections, record_http_request, update_db_pool_metrics
 from openlabels.server.middleware.csrf import CSRFMiddleware
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,28 @@ async def add_request_id(request: Request, call_next: _CallNext) -> Response:
     return response
 
 
+async def inject_tenant_context(request: Request, call_next: _CallNext) -> Response:
+    """Extract tenant/user context from auth state and inject into logging context."""
+    response = await call_next(request)
+    # After the request has been processed, the auth dependency will have run
+    # and stored the user in the request scope. We set the context vars for
+    # any logging that happens during response streaming.
+    user = getattr(request.state, "_current_user", None)
+    if user:
+        if hasattr(user, "tenant_id"):
+            set_tenant_id(str(user.tenant_id))
+        if hasattr(user, "id"):
+            set_user_id(str(user.id))
+    return response
+
+
 async def track_metrics(request: Request, call_next: _CallNext) -> Response:
     """Track HTTP request metrics for Prometheus."""
     if request.url.path == "/metrics":
         return await call_next(request)
 
     http_active_connections.inc()
+    update_db_pool_metrics()
     start_time = time.perf_counter()
     try:
         response = await call_next(request)
@@ -212,6 +228,7 @@ def register_middleware(app: FastAPI) -> None:
     # Registered via app.middleware() which wraps them in BaseHTTPMiddleware.
     _register = app.middleware("http")
     _register(add_request_id)
+    _register(inject_tenant_context)
     _register(track_metrics)
     _register(limit_request_size)
     _register(add_security_headers)
