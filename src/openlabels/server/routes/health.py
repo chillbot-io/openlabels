@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import Integer, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -369,6 +369,24 @@ async def readiness_probe(
             status_code=503,
             content={"status": "unavailable", "detail": "database not reachable"},
         )
+
+
+@router.get("/tasks")
+async def get_task_status(
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Get status of all managed background tasks.
+
+    Returns per-task health, uptime, cycle count, and error info.
+    """
+    task_mgr = getattr(request.app.state, "task_manager", None)
+    if task_mgr is None:
+        return {"tasks": [], "healthy": True}
+    return {
+        "tasks": task_mgr.get_status(),
+        "healthy": task_mgr.is_healthy(),
+    }
 
 
 class CacheStats(BaseModel):
