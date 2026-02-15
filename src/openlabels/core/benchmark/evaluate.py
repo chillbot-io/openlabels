@@ -28,6 +28,32 @@ from openlabels.core.types import Span, normalize_entity_type
 from .dataset import GoldSpan
 from .entity_mapping import get_eval_category
 
+# Types within the same group are considered matching for evaluation.
+# This handles detector output types (NAME_PATIENT) matching gold types (FIRSTNAME).
+_TYPE_GROUPS: dict[str, str] = {}
+
+
+def _build_type_groups() -> None:
+    """Build mapping from individual types to group keys using EVAL_CATEGORIES."""
+    from .entity_mapping import EVAL_CATEGORIES
+    for etype, category in EVAL_CATEGORIES.items():
+        _TYPE_GROUPS[etype] = category
+
+
+def _types_match(gold_type: str, pred_type: str) -> bool:
+    """Check if two entity types match, including category-level matching.
+
+    Exact type match or same evaluation category (e.g. NAME_PATIENT == FIRSTNAME
+    because both are 'names').
+    """
+    if gold_type == pred_type:
+        return True
+    if not _TYPE_GROUPS:
+        _build_type_groups()
+    gold_group = _TYPE_GROUPS.get(gold_type)
+    pred_group = _TYPE_GROUPS.get(pred_type)
+    return gold_group is not None and gold_group == pred_group
+
 logger = logging.getLogger(__name__)
 
 
@@ -153,10 +179,11 @@ def evaluate_spans(
             # Determine match type
             gold_type = normalize_entity_type(gold.entity_type)
             pred_type = normalize_entity_type(pred.entity_type)
+            types_matched = _types_match(gold_type, pred_type)
 
-            if gold.start == pred.start and gold.end == pred.end and gold_type == pred_type:
+            if gold.start == pred.start and gold.end == pred.end and types_matched:
                 mtype = MatchType.EXACT
-            elif gold_type == pred_type:
+            elif types_matched:
                 mtype = MatchType.PARTIAL
             else:
                 mtype = MatchType.TYPE_MISMATCH

@@ -141,11 +141,17 @@ UNMAPPED_TYPES: frozenset[str] = frozenset({
 # Maps OpenLabels entity types to a human-readable category.
 EVAL_CATEGORIES: dict[str, str] = {
     "NAME": "names",
+    "NAME_PATIENT": "names",
+    "NAME_PROVIDER": "names",
+    "NAME_RELATIVE": "names",
     "FIRSTNAME": "names",
     "LASTNAME": "names",
     "MIDDLENAME": "names",
     "PREFIX": "names",
     "SUFFIX": "names",
+    "PERSON": "names",
+    "PATIENT": "names",
+    "FULLNAME": "names",
 
     "SSN": "government_ids",
     "DRIVER_LICENSE": "government_ids",
@@ -154,6 +160,7 @@ EVAL_CATEGORIES: dict[str, str] = {
     "TAX_ID": "government_ids",
     "UKNINUMBER": "government_ids",
     "SIN": "government_ids",
+    "MRN": "government_ids",
 
     "CREDIT_CARD": "financial",
     "IBAN": "financial",
@@ -195,6 +202,7 @@ EVAL_CATEGORIES: dict[str, str] = {
 
     "JOB_TITLE": "professional",
     "COMPANY": "professional",
+    "FACILITY": "professional",
 }
 
 
