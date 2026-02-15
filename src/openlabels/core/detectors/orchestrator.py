@@ -221,6 +221,10 @@ class DetectorOrchestrator:
 
         processed_spans = self._post_process(all_spans)
 
+        if self.config.enable_allowlist and processed_spans:
+            from .allowlist import get_allowlist
+            processed_spans = get_allowlist().filter_spans(processed_spans)
+
         if self._coref_resolver and processed_spans:
             try:
                 processed_spans = self._coref_resolver(text, processed_spans)

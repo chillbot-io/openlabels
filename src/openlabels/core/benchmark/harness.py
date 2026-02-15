@@ -169,7 +169,33 @@ class BenchmarkResult:
             "by_entity_type": {
                 et: m.to_dict() for et, m in sorted(self.by_entity_type.items())
             },
+            "failures": self._collect_failures(),
         }
+
+    def _collect_failures(self) -> list[dict[str, object]]:
+        """Collect SPURIOUS / MISS / TYPE_MISMATCH matches for failure analysis."""
+        from .evaluate import MatchType
+
+        failures: list[dict[str, object]] = []
+        error_types = {MatchType.SPURIOUS, MatchType.MISS, MatchType.TYPE_MISMATCH}
+        for sr in self.sample_results:
+            for m in sr.matches:
+                if m.match_type not in error_types:
+                    continue
+                entry: dict[str, object] = {
+                    "sample_id": sr.sample_id,
+                    "match_type": m.match_type.value,
+                }
+                if m.gold:
+                    entry["gold_type"] = m.gold.entity_type
+                    entry["gold_text"] = m.gold.text
+                if m.pred:
+                    entry["pred_type"] = m.pred.entity_type
+                    entry["pred_text"] = m.pred.text
+                if m.overlap_ratio > 0:
+                    entry["overlap"] = round(m.overlap_ratio, 3)
+                failures.append(entry)
+        return failures
 
 
 # ── Preset configurations ────────────────────────────────────────────

@@ -1333,6 +1333,21 @@ def _validate_age(value: str) -> bool:
         return False
 
 
+def _validate_sin(value: str) -> bool:
+    """Validate a Canadian Social Insurance Number.
+
+    Checks: 9 digits, first digit 1-9, not all same digit, Luhn checksum.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 9:
+        return False
+    if digits[0] == '0':
+        return False
+    if len(set(digits)) == 1:
+        return False
+    return _validate_luhn(digits)
+
+
 def _validate_luhn(number: str) -> bool:
     """
     Validate a number using the Luhn algorithm.
@@ -1508,6 +1523,10 @@ class PatternDetector(BaseDetector):
 
                 # Credit card Luhn validation
                 if pdef.entity_type == 'CREDIT_CARD' and not _validate_luhn(value):
+                    continue
+
+                # Canadian SIN validation
+                if pdef.entity_type == 'SIN' and not _validate_sin(value):
                     continue
 
                 # VIN validation (for low-confidence bare VIN matches)

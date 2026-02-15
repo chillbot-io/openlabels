@@ -1,0 +1,15 @@
+# Custom Allowlist for False Positive Suppression
+# ================================================
+#
+# Terms listed here will NOT be flagged as PII detections.
+# This file supplements the dictionary-backed suppression rules.
+#
+# Format:
+#   term                        # suppress for ALL entity types
+#   term<TAB>TYPE1,TYPE2        # suppress only for specific types
+#
+# Examples:
+#   general electric             # never flag as any PII type
+#   johnson	NAME_PATIENT        # suppress only when detected as NAME_PATIENT
+#
+# Lines starting with # are comments. Matching is case-insensitive.
