@@ -1,5 +1,6 @@
 """CLI command modules."""
 
+from openlabels.cli.commands.benchmark import benchmark
 from openlabels.cli.commands.catalog import catalog
 from openlabels.cli.commands.classify import classify
 from openlabels.cli.commands.config import config
@@ -21,6 +22,7 @@ from openlabels.cli.commands.target import target
 from openlabels.cli.commands.user import user
 
 __all__ = [
+    "benchmark",
     "serve",
     "worker",
     "db",
