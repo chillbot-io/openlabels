@@ -189,6 +189,16 @@ class AdditionalPatternDetector(BaseDetector):
                     if not value or len(value.strip()) < 2:
                         continue
 
+                    # EMPLOYER: value must start with uppercase (reject "account")
+                    if pdef.entity_type == "EMPLOYER":
+                        if value[0].isalpha() and not value[0].isupper():
+                            continue
+
+                    # HEALTH_PLAN_ID/MEMBER_ID: must contain at least one digit
+                    if pdef.entity_type in ("HEALTH_PLAN_ID", "MEMBER_ID"):
+                        if not any(c.isdigit() for c in value):
+                            continue
+
                     # Validate AGE is reasonable (0-120)
                     if pdef.entity_type == "AGE":
                         try:

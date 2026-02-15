@@ -1500,6 +1500,18 @@ _IDENTIFIER_TYPES = frozenset({
     'ACCOUNT_NUMBER', 'HEALTH_PLAN_ID', 'MEMBER_ID',
 })
 
+# Single-word ADDRESS false positives — capitalized common words that
+# follow "from", "lives in", etc. but are not place names.
+_ADDRESS_FALSE_POSITIVES = frozenset({
+    'female', 'male', 'technician', 'department', 'coordinator',
+    'specialist', 'manager', 'director', 'supervisor', 'analyst',
+    'consultant', 'engineer', 'assistant', 'representative',
+    'administrator', 'executive', 'associate', 'officer', 'president',
+    'secretary', 'treasurer', 'intern', 'volunteer', 'attorney',
+    'counsel', 'nurse', 'doctor', 'therapist', 'technologist',
+    'metical', 'dollar', 'euro', 'pound', 'franc', 'rupee', 'yen',
+})
+
 # Common English words that should never be detected as usernames.
 # The USERNAME pattern trigger "user" is too generic and matches
 # "user agent", "user feedback", "login details", etc.
@@ -1625,6 +1637,13 @@ class PatternDetector(BaseDetector):
                 # real account numbers or member IDs.
                 if pdef.entity_type in _IDENTIFIER_TYPES and not any(c.isdigit() for c in value):
                     continue
+
+                # Address false positive filter — single common words after
+                # "from"/"lives in" triggers are not place names.
+                if pdef.entity_type == 'ADDRESS':
+                    words = value.split()
+                    if len(words) == 1 and words[0].lower() in _ADDRESS_FALSE_POSITIVES:
+                        continue
 
                 # Name false positive filter
                 if pdef.entity_type in ('NAME', 'NAME_PROVIDER', 'NAME_PATIENT', 'NAME_RELATIVE'):
