@@ -87,6 +87,12 @@ def load_dataset(
     if cache_path.exists():
         logger.info("Loading cached dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
+        if not samples and _BUNDLED_PATH.exists():
+            logger.warning(
+                "Cache at %s returned 0 samples; falling back to bundled dataset",
+                cache_path,
+            )
+            samples = _load_bundled(_BUNDLED_PATH)
     elif _BUNDLED_PATH.exists():
         logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
         samples = _load_bundled(_BUNDLED_PATH)
@@ -96,17 +102,25 @@ def load_dataset(
 
     # Filter
     filtered: list[BenchmarkSample] = []
+    skipped_text_len = 0
+    skipped_min_ents = 0
     for s in samples:
         if len(s.text) > max_text_length:
+            skipped_text_len += 1
             continue
         if len(s.gold_spans) < min_entities:
+            skipped_min_ents += 1
             continue
         filtered.append(s)
 
     logger.info(
-        "Dataset: %d total English samples, %d after filtering",
+        "Dataset: %d total samples, %d after filtering "
+        "(skipped %d too-long, %d below min_entities=%d)",
         len(samples),
         len(filtered),
+        skipped_text_len,
+        skipped_min_ents,
+        min_entities,
     )
 
     if sample_size is not None and sample_size < len(filtered):
