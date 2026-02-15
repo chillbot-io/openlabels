@@ -141,6 +141,8 @@ async def _validate_azure_ad_token(token: str) -> TokenClaims:
     try:
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
+        if not kid:
+            raise TokenInvalidError("Token header missing 'kid' claim")
 
         key_data = await _find_signing_key(kid, tenant_id)
         signing_key = jwt.PyJWK(key_data)

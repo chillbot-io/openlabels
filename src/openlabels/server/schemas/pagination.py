@@ -65,7 +65,7 @@ class PaginationParams:
 
     def __init__(
         self,
-        page: int = Query(1, ge=1, le=10000, description="Page number (1-indexed)"),
+        page: int = Query(1, ge=1, le=1000, description="Page number (1-indexed, max 1000)"),
         page_size: int = Query(
             50, ge=1, le=100, alias="page_size", description="Items per page (max 100)"
         ),
@@ -243,13 +243,15 @@ def _get_cursor_secret() -> bytes:
         "OPENLABELS_SECRET_KEY", ""
     )
     if not key:
+        import secrets as _secrets
         import warnings
         warnings.warn(
-            "No OPENLABELS_SECRET_KEY configured; cursor signatures use an insecure default key. "
+            "No OPENLABELS_SECRET_KEY configured; cursor signatures use a random ephemeral key. "
+            "Cursors will not survive server restarts. "
             "Set OPENLABELS_SECRET_KEY or settings.server.secret_key for production.",
             stacklevel=2,
         )
-        key = "openlabels-cursor-default-key"
+        key = _secrets.token_hex(32)
     return key.encode() if isinstance(key, str) else key
 
 

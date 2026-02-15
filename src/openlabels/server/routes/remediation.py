@@ -261,12 +261,15 @@ async def quarantine_file(
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
 
-    # Security: Verify file belongs to the requesting tenant
+    # Security: Verify file belongs to the requesting tenant.
+    # FOR UPDATE serializes concurrent remediations on the same file,
+    # preventing TOCTOU races where a file is verified then acted on
+    # after it has already been quarantined by a parallel request.
     result = await session.execute(
         select(ScanResult).where(
             ScanResult.file_path == validated_path,
             ScanResult.tenant_id == user.tenant_id,
-        ).limit(1)
+        ).limit(1).with_for_update()
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
@@ -314,11 +317,11 @@ async def quarantine_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Quarantined {validated_path} to {dest_path}")
+                logger.info("Quarantined %s to %s", validated_path, dest_path)
             else:
                 action.status = "failed"
                 action.error = "Failed to move file"
-                logger.error(f"Failed to quarantine {validated_path}")
+                logger.error("Failed to quarantine %s", validated_path)
 
     # Log audit event
     audit = AuditLog(
@@ -372,12 +375,13 @@ async def lockdown_file(
     # Security: Validate file path to prevent path traversal
     validated_path = validate_file_path(request.file_path)
 
-    # Security: Verify file belongs to the requesting tenant
+    # Security: Verify file belongs to the requesting tenant.
+    # FOR UPDATE serializes concurrent lockdowns on the same file.
     result = await session.execute(
         select(ScanResult).where(
             ScanResult.file_path == validated_path,
             ScanResult.tenant_id == user.tenant_id,
-        ).limit(1)
+        ).limit(1).with_for_update()
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
@@ -426,11 +430,11 @@ async def lockdown_file(
 
             if success:
                 action.status = "completed"
-                logger.info(f"Locked down {validated_path}")
+                logger.info("Locked down %s", validated_path)
             else:
                 action.status = "failed"
                 action.error = "Failed to set permissions"
-                logger.error(f"Failed to lockdown {validated_path}")
+                logger.error("Failed to lockdown %s", validated_path)
 
     # Log audit event
     audit = AuditLog(
@@ -529,7 +533,7 @@ async def rollback_action(
                 if rollback_success:
                     rollback.status = "completed"
                     original.status = "rolled_back"
-                    logger.info(f"Rolled back quarantine: {original.dest_path} -> {original.source_path}")
+                    logger.info("Rolled back quarantine: %s -> %s", original.dest_path, original.source_path)
                 else:
                     rollback.status = "failed"
                     rollback.error = "Failed to move file back"
@@ -556,7 +560,7 @@ async def rollback_action(
                 if rollback_success:
                     rollback.status = "completed"
                     original.status = "rolled_back"
-                    logger.info(f"Rolled back lockdown: restored ACL for {original.source_path}")
+                    logger.info("Rolled back lockdown: restored ACL for %s", original.source_path)
                 else:
                     rollback.status = "failed"
                     rollback.error = "Failed to restore permissions"

@@ -335,10 +335,11 @@ async def get_health_status(
         except (SQLAlchemyError, ConnectionError, OSError, RuntimeError) as e:
             logger.info(f"Could not retrieve job metrics: {type(e).__name__}: {e}")
 
-        # System info — only for authenticated users
-        status["python_version"] = platform.python_version()
-        status["platform"] = platform.system()
-        status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
+        # System info — only for admin users (leaks infrastructure details)
+        if hasattr(user, "role") and user.role == "admin":
+            status["python_version"] = platform.python_version()
+            status["platform"] = platform.system()
+            status["uptime_seconds"] = int((datetime.now(timezone.utc) - _server_start_time).total_seconds())
 
     return HealthStatus(**status)
 

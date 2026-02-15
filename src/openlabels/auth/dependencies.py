@@ -184,14 +184,13 @@ async def _find_or_create_user(
         # Update name if changed
         if claims.name and user.name != claims.name:
             user.name = claims.name
-        # Sync role from claims (e.g. admin granted via IdP)
-        expected_role = "admin" if "admin" in claims.roles else user.role
-        if user.role != expected_role:
-            user.role = expected_role
-        # Backfill external_id if missing (migration from azure_oid)
-        if not user.external_id and claims.oid:
-            user.external_id = claims.oid
-            user.auth_provider = provider
+        # Sync role from Azure AD claims (both promote and demote)
+        if "admin" in claims.roles and user.role != "admin":
+            logger.info("Promoting user %s to admin (Azure AD role grant)", user.email)
+            user.role = "admin"
+        elif "admin" not in claims.roles and user.role == "admin":
+            logger.info("Demoting user %s from admin (Azure AD role revoked)", user.email)
+            user.role = "viewer"
 
     return user
 
@@ -210,6 +209,14 @@ async def get_current_user(
                 detail="Auth provider 'none' requires server.debug=True. "
                 "Set AUTH_PROVIDER=azure_ad or AUTH_PROVIDER=oidc for production or "
                 "OPENLABELS_SERVER__DEBUG=true for development.",
+            )
+        # SECURITY: Dev mode only allowed when bound to localhost
+        if settings.server.host not in ("127.0.0.1", "localhost", "0.0.0.0", "::1"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Auth provider 'none' is only allowed when server.host "
+                "is localhost/127.0.0.1. This prevents accidental exposure "
+                "of unauthenticated admin access on network-accessible servers.",
             )
         claims = _DEV_CLAIMS
     else:
@@ -284,5 +291,4 @@ def require_role(*allowed_roles: str) -> _RoleDep:
 
 # Pre-built dependencies for common roles.
 require_admin: _RoleDep = require_role("admin")
-require_operator: _RoleDep = require_role("admin")
 require_viewer: _RoleDep = require_role("admin", "viewer")

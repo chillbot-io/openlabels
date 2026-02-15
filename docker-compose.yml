@@ -16,7 +16,9 @@ services:
     ports:
       - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only, use reverse proxy for external
     environment:
-      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
+      # SECURITY: POSTGRES_PASSWORD must be set in .env or environment.
+      # docker compose will fail to start if this variable is unset.
+      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/openlabels
       - AUTH_PROVIDER=azure_ad
       - AUTH_TENANT_ID=${AUTH_TENANT_ID}
       - AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
@@ -43,9 +45,9 @@ services:
     # If you need direct access for debugging, use: docker exec -it <container> psql
     environment:
       - POSTGRES_USER=openlabels
-      # SECURITY: Use strong password in production - set POSTGRES_PASSWORD in .env file
-      # WARNING: The default 'changeme_dev_only' is for local development ONLY
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_dev_only}
+      # SECURITY: POSTGRES_PASSWORD is required — no default value.
+      # Create a .env file: echo "POSTGRES_PASSWORD=$(openssl rand -base64 32)" > .env
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=openlabels
       # SECURITY: Require password authentication
       - POSTGRES_HOST_AUTH_METHOD=scram-sha-256

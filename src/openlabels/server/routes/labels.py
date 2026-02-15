@@ -445,46 +445,50 @@ async def update_label_mappings(
             "LOW": form.get("LOW") or None,
         }
 
-    # Delete existing risk_tier rules
-    existing_query = select(LabelRule).where(
-        LabelRule.tenant_id == tenant_id,
-        LabelRule.rule_type == "risk_tier",
-    ).limit(DEFAULT_QUERY_LIMIT)
-    existing_result = await db.execute(existing_query)
-    for rule in existing_result.scalars().all():
-        await db.delete(rule)
+    # SECURITY: Wrap delete+recreate in a savepoint so that concurrent
+    # label lookups never see an empty rule set.  If the inserts fail,
+    # the savepoint rolls back and the old rules remain intact.
+    async with db.begin_nested():
+        # Delete existing risk_tier rules
+        existing_query = select(LabelRule).where(
+            LabelRule.tenant_id == tenant_id,
+            LabelRule.rule_type == "risk_tier",
+        ).limit(DEFAULT_QUERY_LIMIT)
+        existing_result = await db.execute(existing_query)
+        for rule in existing_result.scalars().all():
+            await db.delete(rule)
 
-    # Flush after deletes to avoid sentinel matching issues with asyncpg
-    await db.flush()
+        # Flush after deletes to avoid sentinel matching issues with asyncpg
+        await db.flush()
 
-    # Batch fetch all requested labels in a single query (avoids N+1)
-    requested_label_ids = [lid for lid in data.values() if lid]
-    valid_labels = {}
-    if requested_label_ids:
-        labels_query = select(SensitivityLabel).where(
-            SensitivityLabel.id.in_(requested_label_ids),
-            SensitivityLabel.tenant_id == tenant_id,
-        )
-        labels_result = await db.execute(labels_query)
-        valid_labels = {label.id: label for label in labels_result.scalars().all()}
-
-    # Create new rules for non-empty mappings using pre-fetched labels
-    priority = 100
-    for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-        label_id = data.get(risk_tier)
-        if label_id and label_id in valid_labels:
-            rule = LabelRule(
-                tenant_id=tenant_id,
-                rule_type="risk_tier",
-                match_value=risk_tier,
-                label_id=label_id,
-                priority=priority,
-                created_by=admin.user_id,
+        # Batch fetch all requested labels in a single query (avoids N+1)
+        requested_label_ids = [lid for lid in data.values() if lid]
+        valid_labels = {}
+        if requested_label_ids:
+            labels_query = select(SensitivityLabel).where(
+                SensitivityLabel.id.in_(requested_label_ids),
+                SensitivityLabel.tenant_id == tenant_id,
             )
-            db.add(rule)
-            # Flush each insert individually to avoid asyncpg sentinel matching issues
-            await db.flush()
-        priority -= 10
+            labels_result = await db.execute(labels_query)
+            valid_labels = {label.id: label for label in labels_result.scalars().all()}
+
+        # Create new rules for non-empty mappings using pre-fetched labels
+        priority = 100
+        for risk_tier in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            label_id = data.get(risk_tier)
+            if label_id and label_id in valid_labels:
+                rule = LabelRule(
+                    tenant_id=tenant_id,
+                    rule_type="risk_tier",
+                    match_value=risk_tier,
+                    label_id=label_id,
+                    priority=priority,
+                    created_by=admin.user_id,
+                )
+                db.add(rule)
+                # Flush each insert individually to avoid asyncpg sentinel matching issues
+                await db.flush()
+            priority -= 10
 
     # Invalidate cache for label mappings
     try:

@@ -69,10 +69,10 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
     # Handle relative paths - must start with single /
     if redirect_uri.startswith("/"):
         if redirect_uri.startswith("//"):
-            logger.warning(f"Blocked protocol-relative redirect: {redirect_uri}")
+            logger.warning("Blocked protocol-relative redirect: %s", redirect_uri)
             return "/"
         if ".." in redirect_uri or any(c in redirect_uri for c in "\x00\r\n"):
-            logger.warning(f"Blocked unsafe redirect path: {redirect_uri}")
+            logger.warning("Blocked unsafe redirect path: %s", redirect_uri)
             return "/"
         return redirect_uri
 
@@ -80,12 +80,12 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
         parsed = urlparse(redirect_uri)
     except (ValueError, TypeError) as e:
         logger.warning(
-            f"Failed to parse redirect URI '{redirect_uri}': {type(e).__name__}: {e}"
+            "Failed to parse redirect URI: %s: %s", type(e).__name__, e
         )
         return "/"
 
     if parsed.scheme not in ("http", "https"):
-        logger.warning(f"Blocked redirect with invalid scheme: {redirect_uri}")
+        logger.warning("Blocked redirect with invalid scheme: %s", redirect_uri)
         return "/"
 
     request_host = request.url.netloc
@@ -98,8 +98,9 @@ def validate_redirect_uri(redirect_uri: str | None, request: Request) -> str:
         return redirect_uri
 
     logger.warning(
-        f"Blocked open redirect attempt: {redirect_uri} "
-        f"(not in allowed origins: {settings.cors.allowed_origins})"
+        "Blocked open redirect attempt: %s (not in allowed origins: %s)",
+        redirect_uri,
+        settings.cors.allowed_origins,
     )
     return "/"
 
@@ -402,7 +403,9 @@ async def auth_callback(
 
     # Handle errors from IdP
     if error:
-        logger.error(f"OAuth error: {error} - {error_description}")
+        # Log detailed error server-side for debugging
+        logger.error("OAuth error: %s - %s", error, error_description)
+        # Security: Log failed authentication attempt
         log_security_event(
             event_type="oauth_error",
             details={
@@ -480,7 +483,7 @@ async def _callback_azure_ad(
             redirect_uri=callback_url,
         )
     except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-        logger.error(f"Token acquisition failed: {e}")
+        logger.error("Token acquisition failed: %s", e)
         log_security_event(
             event_type="token_acquisition_failed",
             details={**_get_request_context(request), "error_type": type(e).__name__},
@@ -492,7 +495,8 @@ async def _callback_azure_ad(
         ) from e
 
     if "error" in result:
-        logger.error(f"Token error: {result.get('error_description', result.get('error'))}")
+        # Log detailed error server-side for debugging
+        logger.error("Token error: %s", result.get('error_description', result.get('error')))
         log_security_event(
             event_type="token_exchange_failed",
             details={**_get_request_context(request), "error": result.get("error")},
@@ -755,7 +759,7 @@ async def logout(
         encoded_redirect = quote(str(request.base_url), safe="")
         logout_url = (
             f"https://login.microsoftonline.com/{settings.auth.tenant_id}"
-            f"/oauth2/v2.0/logout?post_logout_redirect_uri={encoded_redirect}"
+            f"/oauth2/v2.0/logout?post_logout_redirect_uri={quote(str(request.base_url), safe='')}"
         )
         response = RedirectResponse(url=logout_url, status_code=302)
         response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", secure=is_secure)
@@ -830,48 +834,70 @@ async def get_token(
     expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
 
     if expires_at < datetime.now(timezone.utc):
-        # Try to refresh
+        # Try to refresh — use a per-session lock to prevent concurrent
+        # refresh races (multiple requests for the same user arriving
+        # simultaneously could all attempt to refresh the same token).
+        # Per-session lock prevents concurrent refresh races.  We intentionally
+        # do NOT remove the lock after use — eagerly popping while other
+        # coroutines are waiting would let a new request create a second lock,
+        # defeating mutual exclusion.  asyncio.Lock objects are lightweight
+        # (~100 bytes) and sessions have a 7-day TTL, so growth is bounded.
         lock = _refresh_locks.setdefault(session_id, asyncio.Lock())
-        try:
-            async with lock:
-                session_data = await session_store.get(session_id)
-                if session_data is None:
-                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired, please login again")
+        async with lock:
+            # Re-read session after acquiring lock; another request may
+            # have already refreshed it.
+            session_data = await session_store.get(session_id)
+            if session_data is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session expired, please login again",
+                )
+            expires_at_str = session_data.get("expires_at")
+            expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
 
-                expires_at_str = session_data.get("expires_at")
-                expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
+            if expires_at < datetime.now(timezone.utc):
+                refresh_token = session_data.get("refresh_token")
+                if refresh_token:
+                    try:
+                        msal_app = _get_msal_app()
+                        result = msal_app.acquire_token_by_refresh_token(
+                            refresh_token,
+                            scopes=["User.Read", "openid", "profile", "email"],
+                        )
 
-                if expires_at < datetime.now(timezone.utc):
-                    refresh_token_value = session_data.get("refresh_token")
-                    if refresh_token_value:
-                        provider = session_data.get("provider", "azure_ad")
-                        try:
-                            result = await _refresh_token(provider, refresh_token_value)
+                        if "access_token" in result:
+                            new_expires_in = result.get("expires_in", 3600)
+                            session_data["access_token"] = result["access_token"]
+                            session_data["expires_at"] = (
+                                datetime.now(timezone.utc) + timedelta(seconds=new_expires_in)
+                            ).isoformat()
+                            if "refresh_token" in result:
+                                session_data["refresh_token"] = result["refresh_token"]
 
-                            if "access_token" in result:
-                                new_expires_in = result.get("expires_in", 3600)
-                                session_data["access_token"] = result["access_token"]
-                                session_data["expires_at"] = (
-                                    datetime.now(timezone.utc) + timedelta(seconds=new_expires_in)
-                                ).isoformat()
-                                if "refresh_token" in result:
-                                    session_data["refresh_token"] = result["refresh_token"]
-                                await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
-                                expires_at = datetime.fromisoformat(session_data["expires_at"])
-                            else:
-                                await session_store.delete(session_id)
-                                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired, please login again")
-                        except HTTPException:
-                            raise
-                        except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-                            logger.warning(f"Token refresh failed: {type(e).__name__}: {e}")
+                            await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+                            expires_at = datetime.fromisoformat(session_data["expires_at"])
+                        else:
                             await session_store.delete(session_id)
-                            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired, please login again") from e
-                    else:
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Session expired, please login again",
+                            )
+                    except HTTPException:
+                        raise
+                    except (ConnectionError, OSError, RuntimeError, ValueError) as e:
+                        # SECURITY: Log token refresh failures for security monitoring
+                        logger.warning("Token refresh failed during session validation: %s: %s", type(e).__name__, e)
                         await session_store.delete(session_id)
-                        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired, please login again")
-        finally:
-            _refresh_locks.pop(session_id, None)
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Session expired, please login again",
+                        ) from e
+                else:
+                    await session_store.delete(session_id)
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Session expired, please login again",
+                    )
 
     expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
 
@@ -991,7 +1017,8 @@ async def logout_all_sessions(
         return {"status": "success", "sessions_revoked": 1}
 
     count = await session_store.delete_all_for_user(user_id)
-    logger.info(f"User {user_id} logged out of {count} sessions")
+
+    logger.info("User %s logged out of %d sessions", user_id, count)
 
     return {
         "status": "success",

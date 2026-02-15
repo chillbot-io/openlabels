@@ -102,7 +102,8 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     response = await call_next(request)
     settings = get_settings()
 
-    if settings.server.environment in ("production", "staging"):
+    # HSTS for all non-development environments (any deployment behind TLS)
+    if settings.server.environment != "development":
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains"
         )
