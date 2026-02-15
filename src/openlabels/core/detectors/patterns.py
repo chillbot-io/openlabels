@@ -883,6 +883,8 @@ _p(r'\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', 'MAC_ADDRESS', 0.90),
 
 # === IMEI ===
 _p(r'(?:IMEI)[:\s]+(\d{15})', 'IMEI', 0.95, 1, flags=re.I),
+# IMEI with dashes (DD-DDDDDD-DDDDDD-D format)
+_p(r'\b(\d{2}-\d{6}-\d{6}-\d)\b', 'IMEI', 0.85),
 
 # === Device Serial Numbers (medical devices) ===
 # Labeled patterns for pacemakers, insulin pumps, hearing aids, etc.
@@ -1235,10 +1237,18 @@ def _validate_ip(ip: str) -> bool:
         parts = ip.split(':')
         if len(parts) < 3 or len(parts) > 8:
             return False
-        return all(
+        non_empty = [p for p in parts if p]
+        if not all(
             len(p) <= 4 and all(c in '0123456789abcdefABCDEF' for c in p)
-            for p in parts if p  # allow empty parts for :: compression
-        )
+            for p in non_empty
+        ):
+            return False
+        # Reject MAC-like patterns: exactly 6 groups, each exactly 2 hex chars
+        # MAC addresses use colon-separated pairs (00:1A:2B:3C:4D:5E) which
+        # the compressed IPv6 regex incorrectly matches.
+        if len(parts) == 6 and all(len(p) == 2 for p in parts):
+            return False
+        return True
     # IPv4: 4 octets 0-255
     try:
         parts = ip.split('.')
@@ -1340,6 +1350,19 @@ def _validate_age(value: str) -> bool:
     except ValueError:
         # Non-numeric age value - invalid
         return False
+
+
+def _validate_imei(value: str) -> bool:
+    """Validate an IMEI number using the Luhn algorithm.
+
+    IMEI is 15 digits with a Luhn check digit. Rejects trivial patterns.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 15:
+        return False
+    if len(set(digits)) == 1:
+        return False
+    return _validate_luhn(digits)
 
 
 def _validate_sin(value: str) -> bool:
@@ -1462,6 +1485,41 @@ def _validate_ssn_context(text: str, start: int, confidence: float) -> bool:
     return True
 
 
+# Entity types that represent proper nouns — the first letter of a detected
+# value must be uppercase.  Used to catch IGNORECASE-broken matches where
+# the regex [A-Z] class inadvertently matched lowercase text.
+_PROPER_NOUN_TYPES = frozenset({
+    'NAME', 'NAME_PATIENT', 'NAME_PROVIDER', 'NAME_RELATIVE',
+    'FACILITY', 'EMPLOYER',
+})
+
+# Identifier entity types that must contain at least one digit.
+# Pure alphabetic text like "Savings" or "Specialist" is never a real
+# account number or member ID.
+_IDENTIFIER_TYPES = frozenset({
+    'ACCOUNT_NUMBER', 'HEALTH_PLAN_ID', 'MEMBER_ID',
+})
+
+# Common English words that should never be detected as usernames.
+# The USERNAME pattern trigger "user" is too generic and matches
+# "user agent", "user feedback", "login details", etc.
+_USERNAME_FALSE_POSITIVES = frozenset({
+    'agent', 'agents', 'experience', 'interface', 'feedback',
+    'details', 'detail', 'guide', 'manual', 'profile', 'profiles',
+    'account', 'accounts', 'access', 'session', 'sessions',
+    'request', 'requests', 'settings', 'preferences', 'data',
+    'input', 'information', 'base', 'group', 'groups',
+    'defined', 'generated', 'friendly', 'facing', 'centric',
+    'name', 'names', 'level', 'space', 'story', 'stories',
+    'flow', 'mode', 'role', 'roles', 'type', 'types',
+    'error', 'errors', 'testing', 'test', 'validation',
+    'management', 'service', 'services', 'credentials',
+    'password', 'passwords', 'token', 'tokens',
+    'number', 'numbers', 'holder', 'connected', 'ending',
+    'expenses', 'online', 'physical', 'protected',
+})
+
+
 # DETECTOR
 
 @register_detector
@@ -1492,6 +1550,16 @@ class PatternDetector(BaseDetector):
                     end = match.end()
 
                 if not value or not value.strip():
+                    continue
+
+                # IGNORECASE fix: patterns with case-insensitive flag make
+                # [A-Z] match lowercase, defeating the uppercase-first-letter
+                # requirement.  For proper-noun entity types, reject matches
+                # where the captured text starts with a lowercase letter.
+                if (pdef.pattern.flags & re.IGNORECASE
+                        and pdef.entity_type in _PROPER_NOUN_TYPES
+                        and value[0].isalpha()
+                        and not value[0].isupper()):
                     continue
 
                 # Post-validation for specific types
@@ -1538,10 +1606,25 @@ class PatternDetector(BaseDetector):
                 if pdef.entity_type == 'SIN' and not _validate_sin(value):
                     continue
 
+                # IMEI validation (Luhn check)
+                if pdef.entity_type == 'IMEI' and not _validate_imei(value):
+                    continue
+
                 # VIN validation (for low-confidence bare VIN matches)
                 if pdef.entity_type == 'VIN' and pdef.confidence < 0.90:
                     if not _validate_vin(value):
                         continue
+
+                # Username false positive filter — common words after "user" or "login"
+                if pdef.entity_type == 'USERNAME':
+                    if value.lower().strip() in _USERNAME_FALSE_POSITIVES:
+                        continue
+
+                # Identifier types must contain at least one digit — pure
+                # alphabetic strings like "Savings" or "Specialist" are never
+                # real account numbers or member IDs.
+                if pdef.entity_type in _IDENTIFIER_TYPES and not any(c.isdigit() for c in value):
+                    continue
 
                 # Name false positive filter
                 if pdef.entity_type in ('NAME', 'NAME_PROVIDER', 'NAME_PATIENT', 'NAME_RELATIVE'):
