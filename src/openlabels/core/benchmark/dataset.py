@@ -56,6 +56,10 @@ class BenchmarkSample:
         return {s.entity_type for s in self.gold_spans}
 
 
+class DatasetLoadError(RuntimeError):
+    """Raised when the ai4privacy dataset cannot be loaded."""
+
+
 def load_dataset(
     *,
     sample_size: int | None = None,
@@ -63,7 +67,7 @@ def load_dataset(
     cache_dir: Path | None = None,
     min_entities: int = 1,
     max_text_length: int = 10_000,
-) -> list[BenchmarkSample]:
+) -> tuple[list[BenchmarkSample], str]:
     """Load samples from the ai4privacy PII dataset.
 
     Resolution order:
@@ -79,26 +83,45 @@ def load_dataset(
         max_text_length: Skip samples with text longer than this.
 
     Returns:
-        List of ``BenchmarkSample`` instances.
+        Tuple of (list of ``BenchmarkSample`` instances, dataset source string).
+
+    Raises:
+        DatasetLoadError: If no ai4privacy samples can be loaded from any
+            source.  This is intentionally a hard error — the benchmark must
+            run against the real ai4privacy dataset.
     """
     cache_dir = cache_dir or _CACHE_DIR
     cache_path = cache_dir / "ai4privacy_en.jsonl"
+    source = "unknown"
 
     if cache_path.exists():
         logger.info("Loading cached dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
+        source = f"cache ({cache_path})"
         if not samples and _BUNDLED_PATH.exists():
             logger.warning(
                 "Cache at %s returned 0 samples; falling back to bundled dataset",
                 cache_path,
             )
             samples = _load_bundled(_BUNDLED_PATH)
+            source = f"bundled ({_BUNDLED_PATH})"
     elif _BUNDLED_PATH.exists():
         logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
         samples = _load_bundled(_BUNDLED_PATH)
+        source = f"bundled ({_BUNDLED_PATH})"
     else:
         logger.info("Downloading ai4privacy dataset (first run)...")
         samples = _download_and_cache(cache_dir, cache_path)
+        source = f"huggingface (cached to {cache_path})"
+
+    if not samples:
+        raise DatasetLoadError(
+            f"Failed to load ai4privacy dataset from any source.\n"
+            f"  Cache path:   {cache_path} (exists={cache_path.exists()})\n"
+            f"  Bundled path: {_BUNDLED_PATH} (exists={_BUNDLED_PATH.exists()})\n"
+            f"Ensure the bundled ai4privacy.jsonl is present in the package, "
+            f"or install the 'datasets' package to download from HuggingFace."
+        )
 
     # Filter
     filtered: list[BenchmarkSample] = []
@@ -123,11 +146,19 @@ def load_dataset(
         min_entities,
     )
 
+    if not filtered:
+        raise DatasetLoadError(
+            f"ai4privacy dataset loaded {len(samples)} samples but 0 passed "
+            f"filtering (min_entities={min_entities}, "
+            f"max_text_length={max_text_length}). "
+            f"Check entity_mapping — all entity types may be unmapped."
+        )
+
     if sample_size is not None and sample_size < len(filtered):
         rng = random.Random(seed)
         filtered = rng.sample(filtered, sample_size)
 
-    return filtered
+    return filtered, source
 
 
 def _download_and_cache(

@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from openlabels.core.benchmark.dataset import BenchmarkSample, load_dataset
+from openlabels.core.benchmark.dataset import BenchmarkSample, DatasetLoadError, load_dataset
 from openlabels.core.benchmark.evaluate import (
     EvalMetrics,
     SpanMatch,
@@ -124,6 +124,7 @@ class BenchmarkResult:
     sample_results: list[SampleResult]
     total_time_s: float
     samples_evaluated: int
+    dataset_source: str = "unknown"
 
     @property
     def avg_time_per_sample_ms(self) -> float:
@@ -244,13 +245,19 @@ def run_benchmark(
         ``BenchmarkResult`` with overall and per-category metrics.
     """
     config = config or BenchmarkConfig()
+    dataset_source = "pre-loaded"
 
     # Load dataset
     if samples is None:
-        samples = load_dataset(sample_size=sample_size, seed=seed)
+        samples, dataset_source = load_dataset(
+            sample_size=sample_size, seed=seed
+        )
 
     logger.info(
-        "Running benchmark %r on %d samples", config.name, len(samples)
+        "Running benchmark %r on %d samples (source: %s)",
+        config.name,
+        len(samples),
+        dataset_source,
     )
 
     # Create detector
@@ -319,6 +326,7 @@ def run_benchmark(
         sample_results=sample_results,
         total_time_s=total_time,
         samples_evaluated=len(samples),
+        dataset_source=dataset_source,
     )
 
 
@@ -353,7 +361,7 @@ def run_sweep(
 
     # Load dataset once
     if samples is None:
-        samples = load_dataset(sample_size=sample_size, seed=seed)
+        samples, _source = load_dataset(sample_size=sample_size, seed=seed)
 
     results: list[BenchmarkResult] = []
     for cfg in configs:

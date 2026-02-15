@@ -200,13 +200,14 @@ class TestLoadDatasetFiltering:
                 for r in records:
                     f.write(json.dumps(r) + "\n")
 
-            samples = load_dataset(
+            samples, source = load_dataset(
                 cache_dir=Path(tmpdir),
                 min_entities=1,
             )
 
             assert len(samples) == 1
             assert samples[0].sample_id == 0
+            assert "cache" in source
 
     def test_max_text_length_filter(self):
         """Samples exceeding max_text_length should be filtered out."""
@@ -231,7 +232,7 @@ class TestLoadDatasetFiltering:
                 for r in records:
                     f.write(json.dumps(r) + "\n")
 
-            samples = load_dataset(
+            samples, _source = load_dataset(
                 cache_dir=Path(tmpdir),
                 max_text_length=100,
             )
@@ -256,7 +257,7 @@ class TestLoadDatasetFiltering:
                 for r in records:
                     f.write(json.dumps(r) + "\n")
 
-            samples = load_dataset(
+            samples, _source = load_dataset(
                 cache_dir=Path(tmpdir),
                 sample_size=3,
                 seed=42,
@@ -265,7 +266,7 @@ class TestLoadDatasetFiltering:
             assert len(samples) == 3
 
             # Same seed should give same samples
-            samples2 = load_dataset(
+            samples2, _source2 = load_dataset(
                 cache_dir=Path(tmpdir),
                 sample_size=3,
                 seed=42,
