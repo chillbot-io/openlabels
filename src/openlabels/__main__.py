@@ -12,6 +12,7 @@ import click
 
 from openlabels.cli.commands import (
     backup,
+    benchmark,
     catalog,
     # Standalone commands
     classify,
@@ -75,6 +76,7 @@ cli.add_command(status)
 cli.add_command(backup)
 cli.add_command(restore)
 cli.add_command(doctor)
+cli.add_command(benchmark)
 
 
 def main():
