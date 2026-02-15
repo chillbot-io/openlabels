@@ -25,14 +25,16 @@ from openlabels.core.path_validation import PathValidationError, validate_output
 @click.option("--threshold", "-t", default=None, type=float, help="Override confidence threshold")
 @click.option("--enable-ml", is_flag=True, help="Enable ML detectors")
 @click.option("--tiered", is_flag=True, help="Use tiered pipeline")
+@click.option("--model-dir", default=None, help="Path to ML model directory")
 @click.pass_context
-def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml, tiered):
+def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml, tiered, model_dir):
     """Benchmark the classification pipeline against ai4privacy dataset."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
     ctx.obj["seed"] = seed
     ctx.obj["output"] = output
     ctx.obj["verbose"] = verbose
+    ctx.obj["model_dir"] = model_dir
 
     if ctx.invoked_subcommand is not None:
         return
@@ -58,6 +60,8 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
     if tiered:
         config.use_tiered_pipeline = True
         config.auto_detect_medical = True
+    if model_dir:
+        config.ml_model_dir = model_dir
 
     click.echo(f"Benchmark: {config.name}")
     click.echo(f"Samples: {samples} | Threshold: {config.confidence_threshold}")
@@ -166,7 +170,8 @@ def tune(ctx, thresholds, enable_ml):
     if thresholds:
         threshold_list = [float(t.strip()) for t in thresholds.split(",")]
 
-    base = BenchmarkConfig(enable_ml=enable_ml)
+    model_dir = ctx.obj.get("model_dir")
+    base = BenchmarkConfig(enable_ml=enable_ml, ml_model_dir=model_dir)
 
     click.echo(f"Threshold tuning | Samples: {samples} | ML: {'on' if enable_ml else 'off'}")
     click.echo("=" * 60)

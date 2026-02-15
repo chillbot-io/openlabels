@@ -150,8 +150,12 @@ azure = [
 reports = [
     "weasyprint>=62.0",
 ]
+# Benchmarking against ai4privacy dataset
+benchmark = [
+    "datasets>=2.14.0",  # HuggingFace dataset loader
+]
 all = [
-    "openlabels[mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports]",
+    "openlabels[mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports,benchmark]",
 ]
 
 [project.scripts]

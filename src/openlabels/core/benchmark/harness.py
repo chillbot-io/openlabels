@@ -44,6 +44,7 @@ class BenchmarkConfig:
     enable_hyperscan: bool = False
     confidence_threshold: float = 0.70
     max_workers: int = 4
+    ml_model_dir: str | None = None  # None = use DEFAULT_MODELS_DIR
 
     # Pipeline config
     use_tiered_pipeline: bool = False
@@ -56,8 +57,11 @@ class BenchmarkConfig:
 
     def to_detection_config(self):
         """Convert to a DetectionConfig for the orchestrator."""
+        from pathlib import Path
+
         from openlabels.core.detectors.config import DetectionConfig
 
+        ml_dir = Path(self.ml_model_dir) if self.ml_model_dir else None
         return DetectionConfig(
             enable_checksum=self.enable_checksum,
             enable_secrets=self.enable_secrets,
@@ -68,12 +72,16 @@ class BenchmarkConfig:
             enable_hyperscan=self.enable_hyperscan,
             confidence_threshold=self.confidence_threshold,
             max_workers=self.max_workers,
+            ml_model_dir=ml_dir,
         )
 
     def to_pipeline_config(self):
         """Convert to a PipelineConfig for the tiered pipeline."""
+        from pathlib import Path
+
         from openlabels.core.pipeline.tiered import PipelineConfig
 
+        ml_dir = Path(self.ml_model_dir) if self.ml_model_dir else None
         return PipelineConfig(
             enable_checksum=self.enable_checksum,
             enable_secrets=self.enable_secrets,
@@ -85,6 +93,10 @@ class BenchmarkConfig:
             escalation_threshold=self.escalation_threshold,
             auto_detect_medical=self.auto_detect_medical,
             max_workers=self.max_workers,
+            ml_model_dir=ml_dir,
+            # Eager-load ML for benchmarks so every sample gets ML detection,
+            # not just those that trigger escalation.
+            eager_load_ml=self.enable_ml,
         )
 
 
