@@ -39,6 +39,7 @@ class DetectionConfig:
 
     # Tuning
     confidence_threshold: float = 0.70
+    ml_confidence_threshold: float = 0.85
     max_workers: int = 4
 
     @classmethod
