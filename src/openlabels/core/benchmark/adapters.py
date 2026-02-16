@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import gzip
 import json
 import logging
@@ -153,6 +154,13 @@ GRETEL_FINANCE_TO_OPENLABELS: dict[str, str] = {
     "currency_symbol": None,  # Exclude
     "job": None,  # Exclude
     "text": None,  # Exclude - free text, not PII
+    # Finance dataset uses slightly different label names
+    "swift_bic_code": "SWIFT_BIC",
+    "driver_license_number": "DRIVER_LICENSE",
+    "local_latlng": "GPS_COORDINATE",
+    "account_pin": "PASSWORD",
+    "first_name": "FIRSTNAME",
+    "last_name": "LASTNAME",
 }
 
 
@@ -226,6 +234,56 @@ def _parse_pii_spans(
     return gold
 
 
+def _resolve_entity_positions(
+    text: str,
+    entities: list[dict],
+    mapping: dict[str, str | None],
+) -> list[GoldSpan]:
+    """Resolve entities without offsets by finding them in the text.
+
+    Handles the Gretel PII format: [{entity: "value", types: ["label"]}].
+    Finds each entity value in the text and creates GoldSpan with offsets.
+    """
+    gold: list[GoldSpan] = []
+    used_ranges: list[tuple[int, int]] = []
+
+    for ent in entities:
+        value = ent.get("entity") or ent.get("value") or ""
+        types = ent.get("types") or []
+        if not value or not types:
+            continue
+
+        raw_label = types[0] if isinstance(types, list) else str(types)
+        mapped = _map_entity(raw_label, mapping)
+        if mapped is None:
+            continue
+
+        # Find the entity in text, avoiding already-used ranges
+        search_start = 0
+        while True:
+            idx = text.find(value, search_start)
+            if idx == -1:
+                break
+            end = idx + len(value)
+            # Check if this range overlaps with already-used ranges
+            overlaps = any(
+                not (end <= us or idx >= ue) for us, ue in used_ranges
+            )
+            if not overlaps:
+                used_ranges.append((idx, end))
+                gold.append(GoldSpan(
+                    start=idx,
+                    end=end,
+                    text=value,
+                    entity_type=mapped,
+                    original_label=raw_label,
+                ))
+                break
+            search_start = idx + 1
+
+    return gold
+
+
 def load_gretel_pii(
     path: str | Path,
     *,
@@ -236,20 +294,73 @@ def load_gretel_pii(
 ) -> list[BenchmarkSample]:
     """Load Gretel PII-Masking EN v1 dataset from JSONL.
 
-    Expected columns: generated_text, pii_spans (JSON string with start/end/label)
-    Also accepts: text (fallback text field)
+    Handles format: {text, entities: [{entity, types}]} where entities
+    have values but no start/end offsets (resolved by text search).
     """
-    return _load_jsonl(
-        path=path,
-        text_field="generated_text",
-        spans_field="pii_spans",
-        mapping=GRETEL_PII_TO_OPENLABELS,
-        sample_size=sample_size,
-        seed=seed,
-        min_entities=min_entities,
-        max_text_length=max_text_length,
-        dataset_name="gretel_pii",
+    path = Path(path)
+    # Auto-resolve .jsonl -> .jsonl.gz
+    if not path.exists() and path.suffix != ".gz":
+        gz_path = path.with_suffix(path.suffix + ".gz")
+        if gz_path.exists():
+            path = gz_path
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {path}")
+
+    samples: list[BenchmarkSample] = []
+    skipped = 0
+
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                skipped += 1
+                continue
+
+            text = record.get("text") or record.get("generated_text") or ""
+            if not text or len(text) > max_text_length:
+                skipped += 1
+                continue
+
+            entities_raw = record.get("entities") or []
+            if isinstance(entities_raw, str):
+                try:
+                    entities_raw = json.loads(entities_raw)
+                except json.JSONDecodeError:
+                    try:
+                        entities_raw = ast.literal_eval(entities_raw)
+                    except (ValueError, SyntaxError):
+                        entities_raw = []
+
+            gold_spans = _resolve_entity_positions(
+                text, entities_raw, GRETEL_PII_TO_OPENLABELS
+            )
+
+            if len(gold_spans) < min_entities:
+                skipped += 1
+                continue
+
+            samples.append(BenchmarkSample(
+                sample_id=idx,
+                text=text,
+                gold_spans=gold_spans,
+                language="en",
+            ))
+
+    logger.info(
+        "gretel_pii: loaded %d samples from %s (skipped %d)",
+        len(samples), path, skipped,
     )
+
+    if sample_size is not None and sample_size < len(samples):
+        rng = random.Random(seed)
+        samples = rng.sample(samples, sample_size)
+
+    return samples
 
 
 def load_gretel_finance(

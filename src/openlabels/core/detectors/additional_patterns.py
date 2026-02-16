@@ -240,6 +240,36 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\bemp(?:loyee)?\s*id\s*[:\s#]*([A-Z0-9]{4,12})\b",
         "EMPLOYEE_ID", 0.80, 1, flags=re.IGNORECASE
     ),
+
+    # EMP prefix without label: "EMP84518", "EMP730359"
+    _p(
+        r"\b(EMP\d{4,8})\b",
+        "EMPLOYEE_ID", 0.85, 1, flags=0
+    ),
+
+    # MRN - "MED" prefix: "MED15780803", "MED27468656"
+    _p(
+        r"\b(MED\d{5,10})\b",
+        "MRN", 0.88, 1, flags=0
+    ),
+
+    # UNIQUE_ID - "UID-" prefix: "UID-6NPLXDV1", "UID-O7CTTWN5"
+    _p(
+        r"\b(UID-[A-Z0-9]{4,12})\b",
+        "UNIQUE_ID", 0.88, 1, flags=0
+    ),
+
+    # UNIQUE_ID - "ID" prefix followed by alphanumeric (6+ chars total)
+    _p(
+        r"\b(ID[A-Z0-9]{4,12})\b",
+        "UNIQUE_ID", 0.78, 1, flags=0
+    ),
+
+    # UNIQUE_ID - alphanumeric dash patterns: "AF7A-BHTY-92RH", "VVKF-IAMF-LDF7"
+    _p(
+        r"\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b",
+        "UNIQUE_ID", 0.75, 1, flags=0
+    ),
 )
 
 
