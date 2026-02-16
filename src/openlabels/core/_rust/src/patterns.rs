@@ -115,6 +115,38 @@ pub static BUILTIN_PATTERNS: &[(&str, &str, Option<&str>, f64)] = &[
         0.40, // Low confidence - needs context
     ),
 
+    // US ITIN (Individual Taxpayer Identification Number)
+    (
+        "US_ITIN",
+        r"\b9\d{2}[-\s]?(?:7\d|8[0-8])[-\s]?\d{4}\b",
+        None,
+        0.72,
+    ),
+
+    // US EIN (Employer Identification Number)
+    (
+        "US_EIN",
+        r"\b\d{2}-\d{7}\b",
+        None,
+        0.60,
+    ),
+
+    // UK National Insurance Number (NINO)
+    (
+        "UK_NINO",
+        r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b",
+        None,
+        0.80,
+    ),
+
+    // Indian PAN (Permanent Account Number)
+    (
+        "IN_PAN",
+        r"\b[A-Z]{3}[ABCFGHJTLP][A-Z]\d{4}[A-Z]\b",
+        None,
+        0.78,
+    ),
+
     // === CONTACT INFORMATION ===
 
     // Email Addresses

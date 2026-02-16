@@ -22,7 +22,8 @@ lazy_static! {
         for k in &["SSN", "PASSPORT", "CREDIT_CARD", "PASSWORD", "API_KEY",
                     "PRIVATE_KEY", "AWS_ACCESS_KEY", "AWS_SECRET_KEY",
                     "DATABASE_URL", "GITHUB_TOKEN", "GITLAB_TOKEN",
-                    "SLACK_TOKEN", "STRIPE_KEY", "CRYPTO_SEED_PHRASE"] {
+                    "SLACK_TOKEN", "STRIPE_KEY", "CRYPTO_SEED_PHRASE",
+                    "VAULT_TOKEN", "OPENAI_KEY", "ANTHROPIC_KEY"] {
             m.insert(*k, 10);
         }
         // High (8-9)
@@ -30,13 +31,29 @@ lazy_static! {
         m.insert("DIAGNOSIS", 9);
         m.insert("HEALTH_PLAN_ID", 9);
         m.insert("JWT", 9);
+        m.insert("ATLASSIAN_TOKEN", 9);
         m.insert("DRIVER_LICENSE", 8);
         m.insert("NPI", 8);
         m.insert("DEA", 8);
         m.insert("TAX_ID", 8);
         m.insert("MILITARY_ID", 8);
+        m.insert("ITIN", 8);
+        m.insert("EIN", 8);
+        m.insert("UK_NINO", 8);
+        m.insert("IN_PAN", 8);
+        m.insert("SG_NRIC_FIN", 8);
+        m.insert("ES_NIE", 8);
+        m.insert("ES_NIF", 8);
+        m.insert("PL_PESEL", 8);
+        m.insert("KR_RRN", 8);
+        m.insert("IT_FISCAL_CODE", 8);
         // Elevated (6-7)
-        for k in &["BITCOIN_ADDRESS", "ETHEREUM_ADDRESS", "IBAN", "SWIFT_BIC"] {
+        for k in &["BITCOIN_ADDRESS", "ETHEREUM_ADDRESS", "IBAN", "SWIFT_BIC",
+                    "FI_HETU", "TH_TNIN", "IN_GSTIN", "IN_VOTER", "IT_VAT",
+                    "NHS_NUMBER", "SOLANA_ADDRESS", "MONERO_ADDRESS",
+                    "GOOGLE_OAUTH_TOKEN", "GRAFANA_KEY", "LINEAR_KEY",
+                    "DOPPLER_TOKEN", "VERCEL_TOKEN", "SUPABASE_KEY",
+                    "PLANETSCALE_TOKEN"] {
             m.insert(*k, 7);
         }
         for k in &["PHONE", "EMAIL", "SENDGRID_KEY", "TWILIO_KEY"] {
@@ -67,7 +84,10 @@ lazy_static! {
         let mut m = HashMap::new();
         // Direct identifiers
         for k in &["SSN", "PASSPORT", "DRIVER_LICENSE", "MILITARY_ID",
-                    "TAX_ID", "MRN", "STATE_ID"] {
+                    "TAX_ID", "MRN", "STATE_ID",
+                    "ITIN", "EIN", "UK_NINO", "IN_PAN", "SG_NRIC_FIN",
+                    "ES_NIE", "ES_NIF", "PL_PESEL", "FI_HETU",
+                    "IT_FISCAL_CODE", "KR_RRN", "TH_TNIN"] {
             m.insert(*k, "direct_identifier");
         }
         // Health info
@@ -88,7 +108,10 @@ lazy_static! {
         // Credentials
         for k in &["PASSWORD", "API_KEY", "PRIVATE_KEY", "JWT",
                     "AWS_ACCESS_KEY", "AWS_SECRET_KEY", "GITHUB_TOKEN",
-                    "GITLAB_TOKEN", "SLACK_TOKEN", "STRIPE_KEY", "DATABASE_URL"] {
+                    "GITLAB_TOKEN", "SLACK_TOKEN", "STRIPE_KEY", "DATABASE_URL",
+                    "VAULT_TOKEN", "OPENAI_KEY", "ANTHROPIC_KEY",
+                    "ATLASSIAN_TOKEN", "GRAFANA_KEY", "LINEAR_KEY",
+                    "DOPPLER_TOKEN", "VERCEL_TOKEN", "GOOGLE_OAUTH_TOKEN"] {
             m.insert(*k, "credential");
         }
         // Quasi-identifiers
