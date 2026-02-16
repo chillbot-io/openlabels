@@ -13,3 +13,28 @@
 #   johnson	NAME_PATIENT        # suppress only when detected as NAME_PATIENT
 #
 # Lines starting with # are comments. Matching is case-insensitive.
+
+# --- NAME_PROVIDER false positives ---
+# Abbreviations and fragments matched as provider names
+gmd	NAME_PROVIDER
+dr on our	NAME_PROVIDER
+
+# --- FACILITY false positives ---
+# Too-short strings matched as facility names
+wi	FACILITY
+
+# --- LICENSE_PLATE false positives ---
+# User-agent strings and tech abbreviations
+wow64	LICENSE_PLATE
+msie 10	LICENSE_PLATE
+
+# --- EMPLOYER false positives ---
+# Generic phrases matched as company names
+mental health services	EMPLOYER
+direct group	EMPLOYER
+direct solutions	EMPLOYER
+
+# --- ADDRESS false positives ---
+# Job titles and unrelated text matched as addresses
+human group coordinator	ADDRESS
+10446 and real estate	ADDRESS

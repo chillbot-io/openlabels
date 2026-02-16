@@ -102,8 +102,8 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "BIRTHDAY", "DOB", "DATEOFBIRTH", "DATE_OF_BIRTH", "BIRTH_DATE", "BIRTHDATE",
     "BIRTH_YEAR", "YEAR_OF_BIRTH", "DATE_RANGE",
 
-    # AGE
-    "AGE",
+    # AGE / BIOMETRICS
+    "AGE", "HEIGHT", "WEIGHT",
 
     # LOCATIONS
     "ADDRESS", "ZIP", "CITY", "STATE", "COUNTRY", "COUNTY",

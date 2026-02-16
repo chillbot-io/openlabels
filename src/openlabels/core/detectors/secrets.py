@@ -34,6 +34,15 @@ from .registry import register_detector
 # Pattern definitions: immutable frozen dataclass tuples
 _AWS_KEY_PREFIXES = r'(?:AKIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)'
 
+# Common words that appear after "password:" but are not actual passwords
+_PASSWORD_FP = frozenset({
+    'protected', 'required', 'encrypted', 'enabled', 'disabled',
+    'reset', 'expired', 'changed', 'updated', 'forgotten',
+    'recovery', 'policy', 'manager', 'vault', 'strength',
+    'complexity', 'requirements', 'authentication', 'security',
+    'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+})
+
 SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
     # AWS
     _p(rf'\b({_AWS_KEY_PREFIXES}[A-Z0-9]{{16}})\b', 'AWS_ACCESS_KEY', 0.99, 1),
@@ -230,6 +239,11 @@ class SecretsDetector(BaseDetector):
                 # Additional validation for JWTs
                 if pdef.entity_type == 'JWT':
                     if not self._validate_jwt(value):
+                        continue
+
+                # PASSWORD false positive filter
+                if pdef.entity_type == 'PASSWORD':
+                    if value.lower().strip() in _PASSWORD_FP:
                         continue
 
                 span = Span(

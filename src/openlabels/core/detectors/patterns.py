@@ -1235,8 +1235,9 @@ _p(r'\b(\d[A-Z]{3}\d{3})\b', 'LICENSE_PLATE', 0.82, 1),
 _p(r'\b([A-Z]{3}-\d{4})\b', 'LICENSE_PLATE', 0.85, 1),
 # Texas: ABC-1234 or ABC 1234
 _p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
-# Florida: ABC D12 or ABCD12 (letter-heavy)
-_p(r'\b([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.75, 1),
+# Florida: ABC D12 or ABCD12 (letter-heavy) — labeled only to avoid FP on
+# user-agent strings like "WOW64" or "MSIE 10"
+_p(r'(?:License\s*Plate|Plate|Tag)[:\s#]+([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.80, 1, flags=re.I),
 # UK: AB12CDE or AB12 CDE (2 letters, 2 digits, 3 letters)
 _p(r'\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b', 'LICENSE_PLATE', 0.85, 1),
 
@@ -1667,6 +1668,20 @@ _IDENTIFIER_TYPES = frozenset({
     'ACCOUNT_NUMBER', 'HEALTH_PLAN_ID', 'MEMBER_ID',
 })
 
+# PASSWORD false positives — common words that appear after "password:"
+# but are not actual password values (e.g., "password: protected").
+_PASSWORD_FALSE_POSITIVES = frozenset({
+    'protected', 'required', 'encrypted', 'enabled', 'disabled',
+    'reset', 'expired', 'changed', 'updated', 'forgotten',
+    'recovery', 'policy', 'manager', 'vault', 'strength',
+    'complexity', 'requirements', 'authentication', 'security',
+    'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+})
+
+# DRIVER_LICENSE date-like false positives — 8-digit values that look
+# like YYYYMMDD dates should not be detected as driver license numbers.
+_DL_DATE_PATTERN = re.compile(r'^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$')
+
 # Single-word ADDRESS false positives — capitalized common words that
 # follow "from", "lives in", etc. but are not place names.
 _ADDRESS_FALSE_POSITIVES = frozenset({
@@ -1801,6 +1816,17 @@ class PatternDetector(BaseDetector):
                 # VIN validation (for low-confidence bare VIN matches)
                 if pdef.entity_type == 'VIN' and pdef.confidence < 0.90:
                     if not _validate_vin(value):
+                        continue
+
+                # Password false positive filter — common words after "password:"
+                if pdef.entity_type == 'PASSWORD':
+                    if value.lower().strip() in _PASSWORD_FALSE_POSITIVES:
+                        continue
+
+                # Driver license date-like filter — reject 8-digit YYYYMMDD dates
+                if pdef.entity_type == 'DRIVER_LICENSE':
+                    digits_only = ''.join(c for c in value if c.isdigit())
+                    if len(digits_only) == 8 and _DL_DATE_PATTERN.match(digits_only):
                         continue
 
                 # Username false positive filter — common words after "user" or "login"
