@@ -34,6 +34,32 @@ from .pattern_registry import PatternDefinition, _p
 from .registry import register_detector
 
 
+# ISO 3166 alpha-2 country codes used for SWIFT/BIC validation (positions 4-5)
+_SWIFT_COUNTRY_CODES = frozenset({
+    "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",
+    "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI",
+    "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY",
+    "BZ", "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN",
+    "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM",
+    "DO", "DZ", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "FI", "FJ", "FK",
+    "FM", "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL",
+    "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HM",
+    "HN", "HR", "HT", "HU", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR",
+    "IS", "IT", "JE", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN",
+    "KP", "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS",
+    "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK",
+    "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW",
+    "MX", "MY", "MZ", "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP",
+    "NR", "NU", "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM",
+    "PN", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW",
+    "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM",
+    "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC", "TD", "TF",
+    "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW",
+    "TZ", "UA", "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI",
+    "VN", "VU", "WF", "WS", "XK", "YE", "YT", "ZA", "ZM", "ZW",
+})
+
+
 def _validate_sedol(sedol: str) -> bool:
     """Validate SEDOL check digit (7 chars)."""
     sedol = sedol.upper().replace(' ', '')
@@ -75,6 +101,27 @@ def _validate_swift(swift: str) -> bool:
         "REFERRAL", "HOSPITAL", "TERMINAL", "NATIONAL", "REGIONAL", "MATERIAL",
         "PERSONAL", "OFFICIAL", "ORIGINAL", "CARDINAL", "APPROVAL", "TROPICAL",
         "INFORMATION", "APPLICATION", "DESCRIPTION",
+        # Common financial/legal document words
+        "INTEREST", "BENEFICIARY", "DEFINITIONS", "SHAREHOLDER", "TERMINATION",
+        "MORTGAGE", "DERIVATIVES", "PROPERTY", "CUSTOMER", "BENEFITS",
+        "INDEPENDENT", "FALLBACK", "PROVIDED", "DELIVERY", "DOCUMENT",
+        "PROJECTIONS", "INVESTOR", "PARTNERSHIP", "PROCEEDS", "TRANSACTION",
+        "REFINANCING", "CAMPBELL", "OPERATING", "CORPORATE", "QUARTERLY",
+        "GUARANTEE", "DETERMINE", "AMENDMENT", "AGGREGATE", "REPRESENT",
+        "COMMITTED", "CONDITION", "SPECIFIED", "GOVERNING", "PERMITTED",
+        "PROVISION", "AGREEMENT", "PRINCIPAL", "INDENTURE", "REPAYMENT",
+        "LIABILITY", "INSURANCE", "APPRAISAL", "FINANCIAL", "COMMENCED",
+        "STATEMENT", "PORTFOLIO", "OWNERSHIP", "DIVIDENDS", "LIQUIDITY",
+        "SUBMITTED", "EXECUTIVE", "ACCORDING", "INDEMNITY", "COMMODITY",
+        "EFFECTIVE", "GUARANTEE", "DEPENDENT", "PROJECTED", "FOLLOWING",
+        "OTHERWISE", "GENERATED", "PURCHASED", "REMAINDER", "THRESHOLD",
+        "CONCLUDED", "CUSTODIAN", "CONTINUED", "REMAINDER", "DELIVERED",
+        "ESTIMATED", "IMPORTANT", "SECONDARY", "FOREGOING", "PRINCIPAL",
+        "MANDATORY", "PUBLISHED", "REPAYMENT", "BEGINNING", "CUSTODIAL",
+        "PARAGRAPH", "PRIMARILY", "MATERIALS", "RESULTING", "DESCRIBED",
+        "SELECTING", "QUARTERLY", "CONVERTED", "SUBMITTED", "MECHANISM",
+        "ALLOCATED", "INVESTORS", "DISCLOSED", "NOTIFYING", "BORROWING",
+        "COMPLIANT", "PERFORMED", "INITIALLY", "CONFIRMED", "PERMITTED",
     }
 
     if swift in SWIFT_DENY_LIST:
@@ -85,6 +132,11 @@ def _validate_swift(swift: str) -> bool:
     if not swift[6:8].isalnum():
         return False
     if len(swift) == 11 and not swift[8:11].isalnum():
+        return False
+
+    # Validate country code (positions 4-5) against ISO 3166 alpha-2
+    country = swift[4:6]
+    if country not in _SWIFT_COUNTRY_CODES:
         return False
 
     return True
@@ -323,6 +375,8 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.70, 1, _validate_sedol),
 
     _p(r'(?:SWIFT|BIC)[:\s#]+([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.98, 1, _validate_swift, flags=re.I),
+    # Standalone SWIFT/BIC (no label) — 8 or 11 uppercase alphanumeric, validated
+    _p(r'\b([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.75, 1, _validate_swift),
 
     _p(r'(?:LEI)[:\s#]+([A-Z0-9]{20})\b', 'LEI', 0.98, 1, _validate_lei, flags=re.I),
     _p(r'\b([A-Z0-9]{18}[0-9]{2})\b', 'LEI', 0.80, 1, _validate_lei),
@@ -335,6 +389,12 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
     _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
+    # Relaxed base58 patterns (no checksum) — catches addresses longer than standard
+    # 25-34 range (synthetic data often uses 35-42 chars with correct character set)
+    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+       'BITCOIN_ADDRESS', 0.78, 1),
+    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+       'BITCOIN_ADDRESS', 0.78, 1),
     _p(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
        'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
     _p(r'\b(bc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58,})\b',

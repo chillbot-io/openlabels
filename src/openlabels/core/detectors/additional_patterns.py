@@ -45,6 +45,23 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "EMPLOYER", 0.80, 1, flags=re.IGNORECASE
     ),
 
+    # COMPANY — "X and Sons", "X and Associates", "X, Y and Z" patterns
+    # Name part: handles Mc/Mac/O' prefixes (McDonald, MacArthur, O'Brien)
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:\s+(?:Mc|Mac|O')?[A-Z][a-z]+)?\s+and\s+(?:Sons|Associates|Brothers|Partners|Daughters|Company))\b",
+        "COMPANY", 0.85, 0, flags=0
+    ),
+    # "Halvorson, Streich and Beahan" — "X, Y and Z" pattern (faker-style)
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s*,\s*(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s+and\s+(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?)\b",
+        "COMPANY", 0.82, 0, flags=0
+    ),
+    # "Schaden - Wolff", "Zieme - Kutch" — hyphenated company names
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s+-\s+(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?)\b",
+        "COMPANY", 0.75, 0, flags=0
+    ),
+
     # AGE - Age Expressions (~579 missed)
     # "45 years old", "45-year-old", "45 y/o", "45yo", "45 yr old"
     _p(
@@ -74,6 +91,87 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\b(\d{1,2})\s*(?:months?\s*old|mo\.?\s*old)\b",
         "AGE", 0.85, 0, flags=re.IGNORECASE
+    ),
+
+    # "X years" without "old" — in context like "aged 58 years", "over 70 years"
+    _p(
+        r"\b(?:aged?|over|under|about|approximately|nearly)\s+(\d{1,3})\s*(?:years?|yrs?)\b",
+        "AGE", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # "X old" without "years" — grammatical shorthand: "I'm a 70 old Male"
+    _p(
+        r"\b(\d{1,3})\s+old\b",
+        "AGE", 0.80, 0, flags=re.IGNORECASE
+    ),
+
+    # "aged X" without years — "patients aged over 58", "aged 41"
+    _p(
+        r"\baged\s+(?:over\s+|under\s+|about\s+|approximately\s+)?(\d{1,3})\b",
+        "AGE", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # "X years" in demographic context — "58 years", "61 years" near demographic words
+    _p(
+        r"\b(\d{1,3})\s+(?:years?|yrs?)\b(?=\s+(?:of\s+age|male|female|man|woman|patient|old)|\s*[,.])",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # Age with "as high as", "as old as", "up to" context
+    _p(
+        r"\b(?:as\s+(?:high|old|young)\s+as|up\s+to|at\s+least)\s+(\d{1,3})\b",
+        "AGE", 0.82, 1, flags=re.IGNORECASE
+    ),
+
+    # "a 53 Female/Male" — article + age + gender (common in medical/demographic)
+    _p(
+        r"\b(?:a|an)\s+(\d{1,3})\s+(?:male|female|man|woman|patient|individual|person|child|infant)\b",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # "XX age group" — age before "age" keyword
+    _p(
+        r"\b(\d{1,3})\s+(?:age\s+group|age\s+range|age\s+bracket|age\s+category)\b",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # Demographic list: "Female, 40," or "Male, 67," — gender + age in comma list
+    _p(
+        r"\b(?:Male|Female|MTF|FTM|Transexual|Transgender|Non-binary)\s*,\s*(\d{1,3})\s*[,.]",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # "for 65 individuals" / "for 65 patients" — age before demographic word
+    _p(
+        r"\bfor\s+(\d{1,3})\s+(?:individuals?|patients?|persons?|people|adults?|seniors?|children)\b",
+        "AGE", 0.78, 1, flags=re.IGNORECASE
+    ),
+
+    # Range: "from 82 to 37 years" — age range
+    _p(
+        r"\bfrom\s+(\d{1,3})\s+to\s+\d{1,3}\s*(?:years?|yrs?)?\b",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+    _p(
+        r"\bfrom\s+\d{1,3}\s+to\s+(\d{1,3})\s*(?:years?|yrs?)?\b",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # CREDIT_CARD - Labeled context (bypasses Luhn for labeled patterns)
+    # "credit card 6245478283474037", "card number is 8801520158172514"
+    _p(
+        r"\b(?:credit\s*card|debit\s*card|card\s*number|card\s*no\.?)\s*(?:is|:)?\s*(\d{13,19})\b",
+        "CREDIT_CARD", 0.88, 1, flags=re.IGNORECASE
+    ),
+    # "charged to/through XXXX" — payment context
+    _p(
+        r"\b(?:charged?\s+to|payment\s+(?:of|through|via)|billed?\s+to|pay\s+(?:with|via|through))\s+(\d{13,19})\b",
+        "CREDIT_CARD", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # Card brand context: "jcb/visa/mastercard ... XXXX"
+    _p(
+        r"\b(?:visa|mastercard|amex|american\s+express|discover|jcb|diners[_\s]?club|unionpay|maestro)\s+\S*\s*(\d{13,19})\b",
+        "CREDIT_CARD", 0.85, 1, flags=re.IGNORECASE
     ),
 
     # HEALTH_PLAN_ID / MEMBER_ID - Insurance Identifiers (~873 missed)
@@ -141,6 +239,36 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\bemp(?:loyee)?\s*id\s*[:\s#]*([A-Z0-9]{4,12})\b",
         "EMPLOYEE_ID", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # EMP prefix without label: "EMP84518", "EMP730359"
+    _p(
+        r"\b(EMP\d{4,8})\b",
+        "EMPLOYEE_ID", 0.85, 1, flags=0
+    ),
+
+    # MRN - "MED" prefix: "MED15780803", "MED27468656"
+    _p(
+        r"\b(MED\d{5,10})\b",
+        "MRN", 0.88, 1, flags=0
+    ),
+
+    # UNIQUE_ID - "UID-" prefix: "UID-6NPLXDV1", "UID-O7CTTWN5"
+    _p(
+        r"\b(UID-[A-Z0-9]{4,12})\b",
+        "UNIQUE_ID", 0.88, 1, flags=0
+    ),
+
+    # UNIQUE_ID - "ID" prefix followed by alphanumeric (6+ chars total)
+    _p(
+        r"\b(ID[A-Z0-9]{4,12})\b",
+        "UNIQUE_ID", 0.78, 1, flags=0
+    ),
+
+    # UNIQUE_ID - alphanumeric dash patterns: "AF7A-BHTY-92RH", "VVKF-IAMF-LDF7"
+    _p(
+        r"\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b",
+        "UNIQUE_ID", 0.75, 1, flags=0
     ),
 )
 

@@ -482,8 +482,10 @@ _p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|J
 _p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December))\b', 'DATE', 0.75, flags=re.I),
 # "3rd March 1990", "1st January 2020" (ordinal without "of")
 _p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s*,?\s*\d{4})?)\b', 'DATE', 0.78, flags=re.I),
-# "the 15th of January" (with "the")
-_p(r'\b(the\s+\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December))\b', 'DATE', 0.80, flags=re.I),
+# "the 15th of January" (with "the"), optionally with year
+_p(r'\b(the\s+\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s*,?\s*\d{4})?)\b', 'DATE', 0.80, flags=re.I),
+# Legal format: "the 12th day of January, 2023"
+_p(r'\b((?:the\s+)?\d{1,2}(?:st|nd|rd|th)\s+day\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s*,?\s*\d{4})?)\b', 'DATE', 0.85, flags=re.I),
 
 # === Weekday + Date Formats ===
 # "Fri, Mar 3, 2024", "Monday, January 15, 2024"
@@ -526,6 +528,12 @@ _p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.88, 1),
 # === Clinical time contexts ===
 # "Surgery began 08:00", "procedure at 14:30"
 _p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.85, 1, flags=re.I),
+# Bare HH:MM (24-hour) — "04:52", "23:15" (two-digit hour indicates time, not arbitrary number)
+_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.78, 1),
+# Standalone AM/PM without colon: "8 AM", "12 PM", "3pm"
+_p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
+# "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
+_p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.85, 1, flags=re.I),
 
 # === Age ===
 # Standard forms: "46 years old", "46 year old"
@@ -881,6 +889,8 @@ _p(rf'(?:[Ll]ives?\s+in|[Ff]rom|[Rr]esident\s+of|[Ll]ocated\s+in|[Bb]ased\s+in|[
 
 # === ZIP Code (standalone, labeled only) ===
 _p(r'(?:ZIP|Postal|Zip\s*Code)[:\s]+(\d{5}(?:-\d{4})?)', 'ZIP', 0.95, 1, flags=re.I),
+# "zipcode (84272)", "postal code 48258", "zip code: 62701"
+_p(r'(?:zip\s*code|zipcode|postal\s*code)\s*[:\s(]+(\d{5}(?:-\d{4})?)\)?', 'ZIP', 0.92, 1, flags=re.I),
 
 # === HIPAA Safe Harbor Restricted ZIP Prefixes ===
 # These 17 prefixes have populations < 20,000 and MUST be detected even without labels
@@ -924,6 +934,22 @@ _p(r'\b(884\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
 _p(r'\b(890\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
 _p(r'\b(893\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
 
+# === ZIP+4 Format (standalone, distinctive format XXXXX-XXXX) ===
+# The dash-separated format is highly distinctive for ZIP codes
+_p(r'\b(\d{5}-\d{4})\b', 'ZIP', 0.90, 1),
+
+# === Context-based ZIP detection ===
+# 5-digit codes near geographic/area context words
+_p(r'(?:from|in|near|at|to|of|around)\s+(\d{5})\b(?!\s*[-.]?\d)', 'ZIP', 0.80, 1, flags=re.I),
+# "XXXXX area", "XXXXX region", "XXXXX district", "XXXXX zip"
+_p(r'\b(\d{5})\s+(?:area|region|district|zone|zip)\b', 'ZIP', 0.82, 1, flags=re.I),
+# Leading-zero 5-digit codes are strongly indicative of ZIPs (most numbers don't start with 0)
+_p(r'\b(0\d{4})\b(?!\s*[-.]?\d)', 'ZIP', 0.78, 1),
+# After address components: "Apt. 418, 82608", "Suite 480, 78830"
+_p(r'(?:Apt|Suite|Ste|Unit)\.?\s*#?\s*\d+\s*,\s*(\d{5})\b', 'ZIP', 0.82, 1, flags=re.I),
+# After comma-separated place/region: "Fife, 45446", "Occitanie, 42746"
+_p(r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*,\s*(\d{5})\b(?!\s*[-.]?\d)', 'ZIP', 0.78, 1),
+
 # === Standalone STATE Patterns ===
 # US full state names (standalone, not part of address — lower confidence)
 _p(rf'\b({_STATE_FULL})\b', 'STATE', 0.75, 1),
@@ -942,6 +968,52 @@ _p(r'\b(Baden-Württemberg|Saxony-Anhalt|Schleswig-Holstein|Mecklenburg-Vorpomme
    r'British\s+Columbia|Nova\s+Scotia|New\s+Brunswick|'
    r'Prince\s+Edward\s+Island|Newfoundland)\b', 'STATE', 0.78, 1),
 
+# Italian regions/provinces
+_p(r'\b(Abruzzo|Basilicata|Calabria|Campania|Emilia-Romagna|'
+   r'Friuli\s+Venezia\s+Giulia|Lazio|Liguria|Lombardy|Marche|'
+   r'Molise|Piedmont|Puglia|Apulia|Sardinia|Sicily|'
+   r'Trentino-Alto\s+Adige|Tuscany|Umbria|'
+   r'Aosta\s+Valley|Veneto)\b', 'STATE', 0.78, 1),
+
+# French regions
+_p(r'\b(Auvergne-Rhône-Alpes|Bourgogne-Franche-Comté|'
+   r'Centre-Val\s+de\s+Loire|Grand\s+Est|Hauts-de-France|'
+   r'Île-de-France|Nouvelle-Aquitaine|Occitanie|'
+   r'Pays\s+de\s+la\s+Loire|'
+   r'Picardy|Languedoc|Champagne|Lorraine|Limousin|'
+   r'Poitou-Charentes|Midi-Pyrénées)\b', 'STATE', 0.78, 1),
+
+# Additional Swiss cantons (missing from above)
+_p(r'\b(Nidwalden|Obwalden|Appenzell|Glarus|'
+   r'Schaffhausen|St\.?\s*Gallen|Neuchâtel|Jura)\b', 'STATE', 0.78, 1),
+
+# Canadian provinces and territories (full set)
+_p(r'\b(Alberta|Manitoba|Ontario|Quebec|Saskatchewan|'
+   r'Yukon|Nunavut|Northwest\s+Territories)\b', 'STATE', 0.78, 1),
+
+# Spanish autonomous communities
+_p(r'\b(Andalusia|Aragon|Asturias|Balearic\s+Islands|'
+   r'Basque\s+Country|Canary\s+Islands|Cantabria|'
+   r'Castile\s+and\s+León|Castilla-La\s+Mancha|Catalonia|'
+   r'Extremadura|Galicia|La\s+Rioja|Murcia|Navarre|Valencia)\b', 'STATE', 0.78, 1),
+
+# Dutch provinces
+_p(r'\b(Drenthe|Flevoland|Friesland|Gelderland|Groningen|'
+   r'Limburg|Noord-Brabant|Noord-Holland|Overijssel|'
+   r'Zuid-Holland|Zeeland|Utrecht)\b', 'STATE', 0.78, 1),
+
+# Belgian provinces/regions
+_p(r'\b(Wallonia|Flanders|Antwerp|Brabant|Hainaut|'
+   r'Liège|Luxembourg|Namur)\b', 'STATE', 0.78, 1),
+
+# Mexican states
+_p(r'\b(Aguascalientes|Baja\s+California\s+Sur|Baja\s+California|Campeche|'
+   r'Chiapas|Chihuahua|Coahuila|Colima|Durango|Guanajuato|Guerrero|'
+   r'Hidalgo|Jalisco|México|Michoacán|Morelos|Nayarit|'
+   r'Nuevo\s+León|Oaxaca|Puebla|Querétaro|Quintana\s+Roo|'
+   r'San\s+Luis\s+Potosí|Sinaloa|Sonora|Tabasco|Tamaulipas|'
+   r'Tlaxcala|Veracruz|Yucatán|Zacatecas)\b', 'STATE', 0.78, 1),
+
 # === Standalone COUNTY Patterns ===
 # "X County" or "County X" suffix/prefix
 _p(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+County)\b', 'COUNTY', 0.82, 1),
@@ -958,6 +1030,36 @@ _p(r'\b(Bedfordshire|Berkshire|Buckinghamshire|Cambridgeshire|Cheshire|'
    r'East\s+Yorkshire|West\s+Yorkshire|'
    r'Gwynedd|Powys|Borders|Highlands|Lothian|'
    r'Clackmannanshire|Dumfries|Fife|Angus|Perth|Argyll|Moray)\b', 'COUNTY', 0.80, 1),
+# Additional UK metropolitan counties and regions
+_p(r'\b(Greater\s+Manchester|Greater\s+London|West\s+Midlands|'
+   r'South\s+Yorkshire|Tyne\s+and\s+Wear|Merseyside|'
+   r'Avon|Cleveland|Humberside|Middlesex)\b', 'COUNTY', 0.80, 1),
+# Welsh counties
+_p(r'\b(West\s+Glamorgan|Mid\s+Glamorgan|South\s+Glamorgan|'
+   r'Gwent|Clwyd|Dyfed|'
+   r'Ceredigion|Pembrokeshire|Carmarthenshire|Swansea|'
+   r'Monmouthshire|Flintshire|Wrexham|Conwy|'
+   r'Anglesey|Neath\s+Port\s+Talbot)\b', 'COUNTY', 0.80, 1),
+# Scottish regions and counties
+_p(r'\b(Grampian|Strathclyde|Tayside|Central|'
+   r'Aberdeenshire|Ayrshire|Renfrewshire|'
+   r'Lanarkshire|Dunbartonshire|Stirlingshire|'
+   r'Inverness|Kinross|Ross\s+and\s+Cromarty|'
+   r'Caithness|Sutherland|Orkney|Shetland)\b', 'COUNTY', 0.80, 1),
+# Northern Ireland counties
+_p(r'\b(County\s+Down|County\s+Antrim|County\s+Armagh|'
+   r'County\s+Derry|County\s+Fermanagh|County\s+Tyrone|'
+   r'County\s+Londonderry)\b', 'COUNTY', 0.82, 1),
+# Republic of Ireland counties
+_p(r'\b(County\s+Cork|County\s+Dublin|County\s+Galway|'
+   r'County\s+Kerry|County\s+Kildare|County\s+Kilkenny|'
+   r'County\s+Limerick|County\s+Mayo|County\s+Meath|'
+   r'County\s+Tipperary|County\s+Waterford|County\s+Wexford|'
+   r'County\s+Wicklow|County\s+Donegal|County\s+Louth|'
+   r'County\s+Clare|County\s+Sligo|County\s+Roscommon|'
+   r'County\s+Westmeath|County\s+Offaly|County\s+Laois|'
+   r'County\s+Carlow|County\s+Longford|County\s+Cavan|'
+   r'County\s+Monaghan|County\s+Leitrim)\b', 'COUNTY', 0.82, 1),
 
 # === Standalone SECONDARY ADDRESS Patterns ===
 # "Apt. 259", "Suite 786" etc. (standalone, not part of full address)
@@ -1057,6 +1159,24 @@ _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha|parola\s
 _p(r'(?:credential|secret|auth\s+key|api\s+key|access\s+key|secret\s+key)[:\s]+([^\s]{8,100})', 'PASSWORD', 0.88, 1, flags=re.I),
 # Temp/initial password context
 _p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
+# "password is XXXX" / "pin is XXXX" — verb separator instead of colon/equals
+_p(r'(?:password|passwd|pwd|passcode)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
+# "password for X is Y" — "for" clause between password and value
+_p(r'(?:password|passwd|pwd|passcode)\s+(?:for\s+\S+(?:\s+\S+){0,4}?\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+_p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha)\s+(?:is|ist|est|es|é)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I | re.UNICODE),
+# PIN with label context: "PIN code XXXX", "PIN - XXXX", "pin XXXX", "pin: XXXX"
+_p(r'\bpin\s*[=:]\s*(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
+_p(r'\bpin\s+code\s+(\d{4,8})\b', 'PASSWORD', 0.90, 1, flags=re.I),
+_p(r'\bpin\s*[-–]\s*(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
+_p(r'\b(?:with\s+)?pin\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "enter/please enter XXXX" — action verb + value (password/code context)
+_p(r'\b(?:please\s+)?(?:enter|type|input)\s+([A-Za-z0-9_]{6,50})\b(?=\s+(?:to|into|on|at|for|when|as|in))', 'PASSWORD', 0.78, 1, flags=re.I),
+# "confirm with XXXX" — confirmation context (often passwords/codes)
+_p(r'\b(?:confirm|verify|authenticate)\s+with\s+([A-Za-z0-9_]{4,50})\b', 'PASSWORD', 0.80, 1, flags=re.I),
+# "using USERNAME and PASSWORD" — second value in auth pair
+_p(r'\busing\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "remember your XXXX for" — reminder context for codes/PINs
+_p(r'\b(?:remember|note|save)\s+(?:your\s+)?(\d{4,8})\b(?=\s+(?:for|as|when|to|during))', 'PASSWORD', 0.78, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -1222,6 +1342,10 @@ _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})', 'SSN', 0.88, 1, flags=re.I),  # spaces around hyphens
 # Bare SSN with dot separators (e.g., "756.2808.9893") - international format
 _p(r'\b(\d{3}\.\d{2,4}\.\d{3,4})\b', 'SSN', 0.72),
+# Swiss AHV/OASI numbers (756 = Swiss country prefix)
+# Format: 756.XXXX.XXXX.XX (with dots) or 756XXXXXXXXXX (without dots, 11-13 digits)
+_p(r'\b(756\d{8,10})\b', 'SSN', 0.82, 1),
+_p(r'\b(756\.\d{4}\.\d{4}\.\d{2})\b', 'SSN', 0.88, 1),
 
 # === US ITIN (Individual Taxpayer Identification Number) ===
 # Format: 9XX-[7-8]X-XXXX (starts with 9, digits 4-5 in range 70-88, 90-92, 94-99)

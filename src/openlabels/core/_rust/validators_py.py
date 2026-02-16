@@ -80,6 +80,12 @@ def validate_ssn(text: str) -> bool:
     if digits in ("078051120", "219099999"):
         return False
 
+    # Reject sequential and repeated-digit placeholders
+    if len(set(digits)) == 1:  # All same digit: 111111111, etc.
+        return False
+    if digits in ("123456789", "234567890", "987654321"):
+        return False
+
     return True
 
 
