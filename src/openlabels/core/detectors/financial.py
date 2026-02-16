@@ -323,6 +323,8 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b([B-DF-HJ-NP-TV-Z0-9]{7})\b', 'SEDOL', 0.70, 1, _validate_sedol),
 
     _p(r'(?:SWIFT|BIC)[:\s#]+([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.98, 1, _validate_swift, flags=re.I),
+    # Standalone SWIFT/BIC (no label) — 8 or 11 uppercase alphanumeric, validated
+    _p(r'\b([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b', 'SWIFT_BIC', 0.75, 1, _validate_swift),
 
     _p(r'(?:LEI)[:\s#]+([A-Z0-9]{20})\b', 'LEI', 0.98, 1, _validate_lei, flags=re.I),
     _p(r'\b([A-Z0-9]{18}[0-9]{2})\b', 'LEI', 0.80, 1, _validate_lei),
@@ -335,6 +337,12 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
     _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
+    # Relaxed base58 patterns (no checksum) — catches addresses longer than standard
+    # 25-34 range (synthetic data often uses 35-42 chars with correct character set)
+    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+       'BITCOIN_ADDRESS', 0.78, 1),
+    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+       'BITCOIN_ADDRESS', 0.78, 1),
     _p(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
        'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
     _p(r'\b(bc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58,})\b',

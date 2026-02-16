@@ -45,6 +45,23 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "EMPLOYER", 0.80, 1, flags=re.IGNORECASE
     ),
 
+    # COMPANY — "X and Sons", "X and Associates", "X, Y and Z" patterns
+    # Name part: handles Mc/Mac/O' prefixes (McDonald, MacArthur, O'Brien)
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:\s+(?:Mc|Mac|O')?[A-Z][a-z]+)?\s+and\s+(?:Sons|Associates|Brothers|Partners|Daughters|Company))\b",
+        "COMPANY", 0.85, 0, flags=0
+    ),
+    # "Halvorson, Streich and Beahan" — "X, Y and Z" pattern (faker-style)
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s*,\s*(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s+and\s+(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?)\b",
+        "COMPANY", 0.82, 0, flags=0
+    ),
+    # "Schaden - Wolff", "Zieme - Kutch" — hyphenated company names
+    _p(
+        r"\b((?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?\s+-\s+(?:Mc|Mac|O')?[A-Z][a-z]+(?:[-'](?:Mc|Mac|O')?[A-Z][a-z]+)?)\b",
+        "COMPANY", 0.75, 0, flags=0
+    ),
+
     # AGE - Age Expressions (~579 missed)
     # "45 years old", "45-year-old", "45 y/o", "45yo", "45 yr old"
     _p(
@@ -138,6 +155,23 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\bfrom\s+\d{1,3}\s+to\s+(\d{1,3})\s*(?:years?|yrs?)?\b",
         "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # CREDIT_CARD - Labeled context (bypasses Luhn for labeled patterns)
+    # "credit card 6245478283474037", "card number is 8801520158172514"
+    _p(
+        r"\b(?:credit\s*card|debit\s*card|card\s*number|card\s*no\.?)\s*(?:is|:)?\s*(\d{13,19})\b",
+        "CREDIT_CARD", 0.88, 1, flags=re.IGNORECASE
+    ),
+    # "charged to/through XXXX" — payment context
+    _p(
+        r"\b(?:charged?\s+to|payment\s+(?:of|through|via)|billed?\s+to|pay\s+(?:with|via|through))\s+(\d{13,19})\b",
+        "CREDIT_CARD", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # Card brand context: "jcb/visa/mastercard ... XXXX"
+    _p(
+        r"\b(?:visa|mastercard|amex|american\s+express|discover|jcb|diners[_\s]?club|unionpay|maestro)\s+\S*\s*(\d{13,19})\b",
+        "CREDIT_CARD", 0.85, 1, flags=re.IGNORECASE
     ),
 
     # HEALTH_PLAN_ID / MEMBER_ID - Insurance Identifiers (~873 missed)

@@ -526,6 +526,12 @@ _p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.88, 1),
 # === Clinical time contexts ===
 # "Surgery began 08:00", "procedure at 14:30"
 _p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.85, 1, flags=re.I),
+# Bare HH:MM (24-hour) — "04:52", "23:15" (two-digit hour indicates time, not arbitrary number)
+_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.78, 1),
+# Standalone AM/PM without colon: "8 AM", "12 PM", "3pm"
+_p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
+# "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
+_p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.85, 1, flags=re.I),
 
 # === Age ===
 # Standard forms: "46 years old", "46 year old"
@@ -1163,6 +1169,12 @@ _p(r'\bpin\s*[-–]\s*(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
 _p(r'\b(?:with\s+)?pin\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # "enter/please enter XXXX" — action verb + value (password/code context)
 _p(r'\b(?:please\s+)?(?:enter|type|input)\s+([A-Za-z0-9_]{6,50})\b(?=\s+(?:to|into|on|at|for|when|as|in))', 'PASSWORD', 0.78, 1, flags=re.I),
+# "confirm with XXXX" — confirmation context (often passwords/codes)
+_p(r'\b(?:confirm|verify|authenticate)\s+with\s+([A-Za-z0-9_]{4,50})\b', 'PASSWORD', 0.80, 1, flags=re.I),
+# "using USERNAME and PASSWORD" — second value in auth pair
+_p(r'\busing\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "remember your XXXX for" — reminder context for codes/PINs
+_p(r'\b(?:remember|note|save)\s+(?:your\s+)?(\d{4,8})\b(?=\s+(?:for|as|when|to|during))', 'PASSWORD', 0.78, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -1328,6 +1340,10 @@ _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})', 'SSN', 0.88, 1, flags=re.I),  # spaces around hyphens
 # Bare SSN with dot separators (e.g., "756.2808.9893") - international format
 _p(r'\b(\d{3}\.\d{2,4}\.\d{3,4})\b', 'SSN', 0.72),
+# Swiss AHV/OASI numbers (756 = Swiss country prefix)
+# Format: 756.XXXX.XXXX.XX (with dots) or 756XXXXXXXXXX (without dots, 11-13 digits)
+_p(r'\b(756\d{8,10})\b', 'SSN', 0.82, 1),
+_p(r'\b(756\.\d{4}\.\d{4}\.\d{2})\b', 'SSN', 0.88, 1),
 
 # === US ITIN (Individual Taxpayer Identification Number) ===
 # Format: 9XX-[7-8]X-XXXX (starts with 9, digits 4-5 in range 70-88, 90-92, 94-99)
