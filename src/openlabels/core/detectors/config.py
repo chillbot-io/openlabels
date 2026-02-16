@@ -31,6 +31,10 @@ class DetectionConfig:
     ml_model_dir: Path | None = None
     use_onnx: bool = True
 
+    # GLiNER settings
+    gliner_model: str = "gretelai/gretel-gliner-bi-base-v1.0"
+    gliner_threshold: float = 0.3
+
     # Post-processing
     enable_coref: bool = False
     enable_context_enhancement: bool = False

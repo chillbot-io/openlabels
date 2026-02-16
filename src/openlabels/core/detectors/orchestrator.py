@@ -97,61 +97,22 @@ class DetectorOrchestrator:
         model_dir: Path | None,
         use_onnx: bool = True
     ) -> None:
-        """Initialize ML-based detectors."""
-        if model_dir is None:
-            from openlabels.core.constants import DEFAULT_MODELS_DIR
-            model_dir = DEFAULT_MODELS_DIR
+        """Initialize ML-based detectors (GLiNER)."""
+        try:
+            from .gliner import GLiNERDetector
 
-        model_dir = Path(model_dir).expanduser()
-
-        if not model_dir.exists():
-            logger.warning(
-                "ML model directory not found: %s  "
-                "(download models with: openlabels models download ner)",
-                model_dir,
+            gliner = GLiNERDetector(
+                model_name=self.config.gliner_model,
+                threshold=self.config.gliner_threshold,
             )
-            return
+            if gliner.load():
+                self.detectors.append(gliner)
+                logger.info("GLiNER detector loaded: %s", self.config.gliner_model)
+            else:
+                logger.warning("GLiNER detector failed to load")
 
-        if use_onnx:
-            # Try ONNX detectors first (faster)
-            try:
-                from .ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
-
-                phi_bert = PHIBertONNXDetector(model_dir=model_dir)
-                if phi_bert.is_available():
-                    self.detectors.append(phi_bert)
-                    logger.info("PHI-BERT ONNX detector loaded")
-
-                pii_bert = PIIBertONNXDetector(model_dir=model_dir)
-                if pii_bert.is_available():
-                    self.detectors.append(pii_bert)
-                    logger.info("PII-BERT ONNX detector loaded")
-
-            except ImportError as e:
-                logger.warning(f"ONNX detectors not available: {e}")
-                use_onnx = False
-
-        if not use_onnx:
-            # Fall back to HuggingFace transformers
-            try:
-                from .ml import PHIBertDetector, PIIBertDetector
-
-                phi_bert_dir = model_dir / "phi_bert"
-                if phi_bert_dir.exists():
-                    phi_hf = PHIBertDetector(model_path=phi_bert_dir)
-                    if phi_hf.is_available():
-                        self.detectors.append(phi_hf)
-                        logger.info("PHI-BERT HF detector loaded")
-
-                pii_bert_dir = model_dir / "pii_bert"
-                if pii_bert_dir.exists():
-                    pii_hf = PIIBertDetector(model_path=pii_bert_dir)
-                    if pii_hf.is_available():
-                        self.detectors.append(pii_hf)
-                        logger.info("PII-BERT HF detector loaded")
-
-            except ImportError as e:
-                logger.warning(f"HuggingFace detectors not available: {e}")
+        except ImportError as e:
+            logger.warning("GLiNER detector not available: %s", e)
 
     def _init_pipeline(
         self,

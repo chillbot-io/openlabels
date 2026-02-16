@@ -9,10 +9,11 @@ Detectors:
 - HyperscanDetector: SIMD-accelerated multi-pattern matching (10-100x faster)
 
 ML Detectors (optional, require additional dependencies):
-- PHIBertDetector: Stanford Clinical PHI-BERT (HuggingFace)
-- PIIBertDetector: AI4Privacy PII-BERT (HuggingFace)
-- PHIBertONNXDetector: Stanford Clinical PHI-BERT (ONNX optimized)
-- PIIBertONNXDetector: AI4Privacy PII-BERT (ONNX optimized)
+- GLiNERDetector: Gretel GLiNER PII detector (Apache-2.0, zero-shot NER)
+- PHIBertDetector: Stanford Clinical PHI-BERT (HuggingFace) [legacy]
+- PIIBertDetector: AI4Privacy PII-BERT (HuggingFace) [legacy]
+- PHIBertONNXDetector: Stanford Clinical PHI-BERT (ONNX optimized) [legacy]
+- PIIBertONNXDetector: AI4Privacy PII-BERT (ONNX optimized) [legacy]
 """
 
 import logging
@@ -62,6 +63,13 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+# GLiNER Detector - optional (requires gliner library)
+try:
+    from .gliner import GLiNERDetector, GLINER_LABEL_MAP
+    __all__.extend(["GLiNERDetector", "GLINER_LABEL_MAP"])
+except ImportError:
+    logger.debug("GLiNER detector not available - gliner not installed")
 
 # Hyperscan Detector - optional (requires hyperscan library)
 try:

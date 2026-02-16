@@ -96,6 +96,7 @@ dependencies = [
     "transformers>=4.36.0,<5",  # NER models
     "tokenizers>=0.15.0",  # Fast tokenization
     "numpy>=1.24.0,<2",
+    "gliner>=0.2.0",  # GLiNER zero-shot NER (Gretel PII model)
 ]
 
 [project.optional-dependencies]
@@ -232,6 +233,7 @@ module = [
     "httpx", "httpx.*",
     "aiofiles", "aiofiles.*",
     # ML / ONNX / NLP
+    "gliner", "gliner.*",
     "onnxruntime", "onnxruntime.*",
     "openlabels_matcher", "openlabels_matcher.*",
     "torch", "torch.*",

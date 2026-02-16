@@ -152,8 +152,7 @@ class TieredPipeline:
         self.config = config or PipelineConfig()
         self._stage1_detectors = []
         self._ml_detectors = []
-        self._phi_bert = None
-        self._pii_bert = None
+        self._gliner = None
         self._medical_detector = None
         self._coref_resolver = None
         self._context_enhancer = None
@@ -223,111 +222,26 @@ class TieredPipeline:
     def _init_ml_detectors(self) -> None:
         """Load ML detectors (called eagerly or on first escalation).
 
-        Resolves the model directory, checks for model availability using
-        model_config, and attempts to load whichever models are present.
-        Logs clear diagnostics when models are missing.
+        Uses GLiNER (Gretel model) for NER-based PII detection.
+        The model is downloaded from HuggingFace Hub on first use.
         """
         if self._ml_detectors:
             return  # Already loaded
 
-        model_dir = self.config.ml_model_dir
-        if model_dir is None:
-            from openlabels.core.constants import DEFAULT_MODELS_DIR
-            model_dir = DEFAULT_MODELS_DIR
-        model_dir = Path(model_dir).expanduser()
-
-        if not model_dir.exists():
-            logger.warning(
-                f"ML model directory not found: {model_dir}. "
-                f"ML detectors will be unavailable. "
-                f"To enable ML detection, create this directory and place model files there. "
-                f"See openlabels.core.detectors.model_config for expected file layout."
-            )
-            return
-
-        # Check model availability and log a clear report
         try:
-            from ..detectors.model_config import check_models_available
-            report = check_models_available(
-                model_dir=model_dir, use_onnx=self.config.use_onnx
+            from ..detectors.gliner import GLiNERDetector
+
+            gliner = GLiNERDetector(
+                model_name=getattr(self.config, "gliner_model", "gretelai/gretel-gliner-bi-base-v1.0"),
+                threshold=getattr(self.config, "gliner_threshold", 0.3),
             )
-            if not report.any_available:
-                logger.warning(
-                    f"No ML models found in {model_dir}. "
-                    f"ML detectors will be unavailable. "
-                    f"Model status:\n{report.summary()}"
-                )
+            if gliner.load():
+                self._ml_detectors.append(gliner)
+                logger.info("GLiNER detector loaded for escalation: %s", gliner.model_name)
             else:
-                logger.info(f"ML model check: {report.summary()}")
-        except (ImportError, OSError, RuntimeError) as e:
-            logger.debug(f"Model availability check failed (non-fatal): {e}")
-
-        if self.config.use_onnx:
-            try:
-                from ..detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
-
-                phi_bert = PHIBertONNXDetector(model_dir=model_dir)
-                if phi_bert.is_available():
-                    self._phi_bert = phi_bert
-                    self._ml_detectors.append(phi_bert)
-                    logger.info("PHI-BERT ONNX loaded for escalation")
-                else:
-                    logger.info(
-                        f"PHI-BERT ONNX not loaded: model files not found in {model_dir}. "
-                        f"Expected phi_bert_int8.onnx or phi_bert.onnx plus tokenizer."
-                    )
-
-                pii_bert = PIIBertONNXDetector(model_dir=model_dir)
-                if pii_bert.is_available():
-                    self._pii_bert = pii_bert
-                    self._ml_detectors.append(pii_bert)
-                    logger.info("PII-BERT ONNX loaded for escalation")
-                else:
-                    logger.info(
-                        f"PII-BERT ONNX not loaded: model files not found in {model_dir}. "
-                        f"Expected pii_bert_int8.onnx or pii_bert.onnx plus tokenizer."
-                    )
-
-            except ImportError as e:
-                logger.warning(
-                    f"ONNX detectors not available (missing dependency): {e}. "
-                    f"Install onnxruntime to enable ONNX-based ML detection."
-                )
-        else:
-            try:
-                from ..detectors.ml import PHIBertDetector, PIIBertDetector
-
-                phi_bert_dir = model_dir / "phi_bert"
-                if phi_bert_dir.exists():
-                    phi_bert = PHIBertDetector(model_path=phi_bert_dir)
-                    if phi_bert.is_available():
-                        self._phi_bert = phi_bert
-                        self._ml_detectors.append(phi_bert)
-                        logger.info("PHI-BERT (HuggingFace) loaded for escalation")
-                else:
-                    logger.info(
-                        f"PHI-BERT not loaded: directory not found at {phi_bert_dir}. "
-                        f"Expected config.json and model weights."
-                    )
-
-                pii_bert_dir = model_dir / "pii_bert"
-                if pii_bert_dir.exists():
-                    pii_bert = PIIBertDetector(model_path=pii_bert_dir)
-                    if pii_bert.is_available():
-                        self._pii_bert = pii_bert
-                        self._ml_detectors.append(pii_bert)
-                        logger.info("PII-BERT (HuggingFace) loaded for escalation")
-                else:
-                    logger.info(
-                        f"PII-BERT not loaded: directory not found at {pii_bert_dir}. "
-                        f"Expected config.json and model weights."
-                    )
-
-            except ImportError as e:
-                logger.warning(
-                    f"HuggingFace detectors not available (missing dependency): {e}. "
-                    f"Install transformers and torch to enable HuggingFace-based ML detection."
-                )
+                logger.warning("GLiNER detector failed to load")
+        except ImportError as e:
+            logger.warning("GLiNER detector not available: %s", e)
 
         if self._ml_detectors:
             logger.info(
@@ -499,55 +413,23 @@ class TieredPipeline:
         all_spans = []
         detectors_used = []
 
-        # Run PII-BERT by default for general PII
-        if self._pii_bert:
+        for detector in self._ml_detectors:
             try:
-                spans = self._pii_bert.detect(text)
+                spans = detector.detect(text)
                 all_spans.extend(spans)
                 if spans:
-                    detectors_used.append(self._pii_bert.name)
+                    detectors_used.append(detector.name)
             except (RuntimeError, ValueError, OSError) as e:
-                logger.error(f"PII-BERT failed: {e}")
+                logger.error(f"ML detector {detector.name} failed: {e}")
 
         return all_spans, detectors_used
 
     def _run_deep_analysis(self, text: str) -> tuple[list[Span], list[str]]:
+        """Run Stage 3 (deep analysis) with all ML detectors.
+
+        Same as Stage 2 — GLiNER covers both clinical and general PII.
         """
-        Run Stage 3 (deep analysis) with both PHI-BERT and PII-BERT.
-
-        Medical context requires both because:
-        - PHI-BERT is trained on clinical text but misses some standard PII
-        - PII-BERT catches general PII that PHI-BERT may miss
-        """
-        all_spans = []
-        detectors_used = []
-
-        # Run both in parallel
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = []
-
-            active_detectors = []
-            if self._phi_bert:
-                futures.append(
-                    executor.submit(self._run_detector, self._phi_bert, text)
-                )
-                active_detectors.append(self._phi_bert)
-            if self._pii_bert:
-                futures.append(
-                    executor.submit(self._run_detector, self._pii_bert, text)
-                )
-                active_detectors.append(self._pii_bert)
-
-            for future, detector in zip(futures, active_detectors):
-                try:
-                    spans = future.result()
-                    all_spans.extend(spans)
-                    if spans:
-                        detectors_used.append(detector.name)
-                except (RuntimeError, ValueError, OSError) as e:
-                    logger.error(f"Deep analysis detector {detector.name} failed: {e}")
-
-        return all_spans, detectors_used
+        return self._run_stage2(text)
 
     def _run_detector(self, detector, text: str) -> list[Span]:
         """Run a single detector with error handling."""
@@ -845,23 +727,15 @@ class TieredPipeline:
 
         status = {
             "ml_loaded": bool(self._ml_detectors),
-            "phi_bert": None,
-            "pii_bert": None,
+            "gliner": None,
             "detectors": [d.name for d in self._ml_detectors],
             "model_dir": str(Path(model_dir).expanduser()),
-            "use_onnx": self.config.use_onnx,
         }
 
-        if self._phi_bert is not None:
-            status["phi_bert"] = {
-                "loaded": self._phi_bert.is_available(),
-                "name": self._phi_bert.name,
-            }
-
-        if self._pii_bert is not None:
-            status["pii_bert"] = {
-                "loaded": self._pii_bert.is_available(),
-                "name": self._pii_bert.name,
+        if self._ml_detectors:
+            status["gliner"] = {
+                "loaded": True,
+                "name": self._ml_detectors[0].name,
             }
 
         return status
