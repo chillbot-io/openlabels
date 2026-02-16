@@ -200,6 +200,7 @@ EVAL_CATEGORIES: dict[str, str] = {
     "CLAIM_NUMBER": "financial",
     "AUTH_NUMBER": "financial",
     "BANK_ROUTING": "financial",
+    "ABA_ROUTING": "financial",
     "RX_NUMBER": "financial",
     "BITCOIN_ADDRESS": "financial",
     "ETHEREUM_ADDRESS": "financial",

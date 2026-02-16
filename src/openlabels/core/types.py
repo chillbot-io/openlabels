@@ -298,6 +298,10 @@ _ENTITY_ALIASES: dict[str, str] = {
     # Passport variants
     "US_PASSPORT": "PASSPORT",
     "PASSPORT_NUMBER": "PASSPORT",
+    # Routing number variants
+    "ABA_ROUTING": "BANK_ROUTING",
+    "ROUTING": "BANK_ROUTING",
+    "ROUTING_NUMBER": "BANK_ROUTING",
     # Zip code variants
     "ZIPCODE": "ZIP",
     "ZIP_CODE": "ZIP",
