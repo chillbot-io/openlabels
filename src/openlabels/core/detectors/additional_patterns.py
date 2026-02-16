@@ -76,6 +76,70 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "AGE", 0.85, 0, flags=re.IGNORECASE
     ),
 
+    # "X years" without "old" — in context like "aged 58 years", "over 70 years"
+    _p(
+        r"\b(?:aged?|over|under|about|approximately|nearly)\s+(\d{1,3})\s*(?:years?|yrs?)\b",
+        "AGE", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # "X old" without "years" — grammatical shorthand: "I'm a 70 old Male"
+    _p(
+        r"\b(\d{1,3})\s+old\b",
+        "AGE", 0.80, 0, flags=re.IGNORECASE
+    ),
+
+    # "aged X" without years — "patients aged over 58", "aged 41"
+    _p(
+        r"\baged\s+(?:over\s+|under\s+|about\s+|approximately\s+)?(\d{1,3})\b",
+        "AGE", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # "X years" in demographic context — "58 years", "61 years" near demographic words
+    _p(
+        r"\b(\d{1,3})\s+(?:years?|yrs?)\b(?=\s+(?:of\s+age|male|female|man|woman|patient|old)|\s*[,.])",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # Age with "as high as", "as old as", "up to" context
+    _p(
+        r"\b(?:as\s+(?:high|old|young)\s+as|up\s+to|at\s+least)\s+(\d{1,3})\b",
+        "AGE", 0.82, 1, flags=re.IGNORECASE
+    ),
+
+    # "a 53 Female/Male" — article + age + gender (common in medical/demographic)
+    _p(
+        r"\b(?:a|an)\s+(\d{1,3})\s+(?:male|female|man|woman|patient|individual|person|child|infant)\b",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # "XX age group" — age before "age" keyword
+    _p(
+        r"\b(\d{1,3})\s+(?:age\s+group|age\s+range|age\s+bracket|age\s+category)\b",
+        "AGE", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # Demographic list: "Female, 40," or "Male, 67," — gender + age in comma list
+    _p(
+        r"\b(?:Male|Female|MTF|FTM|Transexual|Transgender|Non-binary)\s*,\s*(\d{1,3})\s*[,.]",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # "for 65 individuals" / "for 65 patients" — age before demographic word
+    _p(
+        r"\bfor\s+(\d{1,3})\s+(?:individuals?|patients?|persons?|people|adults?|seniors?|children)\b",
+        "AGE", 0.78, 1, flags=re.IGNORECASE
+    ),
+
+    # Range: "from 82 to 37 years" — age range
+    _p(
+        r"\bfrom\s+(\d{1,3})\s+to\s+\d{1,3}\s*(?:years?|yrs?)?\b",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+    _p(
+        r"\bfrom\s+\d{1,3}\s+to\s+(\d{1,3})\s*(?:years?|yrs?)?\b",
+        "AGE", 0.80, 1, flags=re.IGNORECASE
+    ),
+
     # HEALTH_PLAN_ID / MEMBER_ID - Insurance Identifiers (~873 missed)
     # "Member ID: ABC123456", "Subscriber ID: 123456789", "Policy #: XYZ789"
     _p(
