@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import random
@@ -325,6 +326,11 @@ def _load_jsonl(
 ) -> list[BenchmarkSample]:
     """Core JSONL loader with filtering and sampling."""
     path = Path(path)
+    # Auto-resolve: if caller passes .jsonl but only .jsonl.gz exists, use that
+    if not path.exists() and not path.suffix == ".gz":
+        gz_path = path.with_suffix(path.suffix + ".gz")
+        if gz_path.exists():
+            path = gz_path
     if not path.exists():
         raise FileNotFoundError(f"Dataset file not found: {path}")
 
@@ -334,7 +340,8 @@ def _load_jsonl(
     skipped_min_ents = 0
     skipped_parse = 0
 
-    with open(path, encoding="utf-8") as f:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as f:
         for idx, line in enumerate(f):
             line = line.strip()
             if not line:
