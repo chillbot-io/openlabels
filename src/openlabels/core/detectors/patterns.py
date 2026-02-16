@@ -773,8 +773,10 @@ _p(r'(?:Group(?:\s*(?:Number|No|#))?)[:\s#]+([A-Z0-9-]{4,15})', 'HEALTH_PLAN_ID'
 
 # Member ID with letter prefix and hyphen (e.g., BC-993812, BVH-882391)
 _p(r'(?:Member\s*ID)[:\s#]+([A-Z]{2,4}-\d{5,12})', 'MEMBER_ID', 0.92, 1, flags=re.I),
-# Bare insurance ID format: 2-4 letters, hyphen, 5-12 digits (contextual)
-_p(r'\b([A-Z]{2,4}-\d{5,12})\b', 'HEALTH_PLAN_ID', 0.70, 1),
+# NOTE: Removed bare [A-Z]{2,4}-\d{5,12} — too greedy, was stealing
+# BIOMETRIC_ID (20), MRN (15), CERTIFICATE_NUMBER (14) detections.
+# Labeled patterns in additional_patterns.py (0.88) and payer-prefix patterns
+# (0.90) provide sufficient coverage for health plan IDs.
 # Require at least one digit in the ID portion to avoid matching company names
 _p(rf'(?:{_PAYER_PREFIXES})[- ]?([A-Z]*\d[A-Z0-9]{{5,14}})', 'HEALTH_PLAN_ID', 0.90, 1, flags=re.I),
 _p(rf'((?:{_PAYER_PREFIXES})[- ]?[A-Z]*\d[A-Z0-9]{{5,14}})', 'HEALTH_PLAN_ID', 0.88, flags=re.I),
@@ -1226,8 +1228,9 @@ _p(r'\b(WDL[A-Z0-9*]{9})\b', 'DRIVER_LICENSE', 0.92, 1),
 # Hawaii: H + 8 digits (H12345678)
 _p(r'\b(H\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
 
-# Colorado: 2 letters + 3-6 digits OR 9 digits (with context)
-_p(r'\b([A-Z]{2}\d{3,6})\b', 'DRIVER_LICENSE', 0.72, 1),
+# Colorado: 9 digits (with context) or 2 letters + 3-6 digits (with context)
+# NOTE: Removed bare [A-Z]{2}\d{3,6} — too broad, matches license plates and other IDs
+_p(r'(?:CO|Colorado|DL)[:\s]+([A-Z]{2}\d{3,6})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 _p(r'(?:CO|Colorado|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 
 # Nevada: 9-12 digits, often starts with X or 9
@@ -1290,8 +1293,9 @@ _p(r'(?:TN|Tennessee|DL)[:\s]+(\d{7,9})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.
 _p(r'(?:SC|South\s+Carolina|DL)[:\s]+(\d{5,11})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
 # General formats
-# Letter(s) + 5-14 digits (many states)
-_p(r'\b([A-Z]{1,2}\d{5,14})\b', 'DRIVER_LICENSE', 0.68, 1),
+# NOTE: Removed bare [A-Z]{1,2}\d{5,14} catch-all — too greedy, was stealing
+# EMPLOYEE_ID (34), ACCOUNT_NUMBER (31), LICENSE_PLATE (27), BIOMETRIC_ID (12)
+# detections.  State-specific + labeled patterns provide sufficient DL coverage.
 
 # DL with spaces (like "99 999999" from PA sample)
 _p(r'(?:DL|DLN)[:\s#]+(\d{2}\s+\d{6})', 'DRIVER_LICENSE', 0.90, 1, flags=re.I),
@@ -1340,6 +1344,8 @@ _p(r'\b((?!000|666|9\d\d)\d{9})\b', 'SSN', 0.70),
 # SSN with unusual separators (dots, middle dots, spaces around hyphens)
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.85, 1, flags=re.I),  # dots/middle dots
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})', 'SSN', 0.88, 1, flags=re.I),  # spaces around hyphens
+# Bare SSN with space separators: "123 45 6789" (standard 3-2-4 with spaces)
+_p(r'\b(\d{3}\s\d{2}\s\d{4})\b', 'SSN', 0.72),
 # Bare SSN with dot separators (e.g., "756.2808.9893") - international format
 _p(r'\b(\d{3}\.\d{2,4}\.\d{3,4})\b', 'SSN', 0.72),
 # Swiss AHV/OASI numbers (756 = Swiss country prefix)
@@ -1364,7 +1370,7 @@ _p(r'(?:NI(?:NO)?|National\s+Insurance)[:\s#]+([A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d
 _p(r'\b([A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D])\b', 'UK_NINO', 0.82, 1, _validate_uk_nino),
 
 # === ABA Routing (labeled only) ===
-_p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'ABA_ROUTING', 0.95, 1, flags=re.I),
+_p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'BANK_ROUTING', 0.95, 1, flags=re.I),
 # Account numbers - both numeric-only and alphanumeric formats
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+([A-Z0-9][-A-Z0-9]{5,19})', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
@@ -1871,6 +1877,13 @@ _PASSWORD_FALSE_POSITIVES = frozenset({
 # like YYYYMMDD dates should not be detected as driver license numbers.
 _DL_DATE_PATTERN = re.compile(r'^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$')
 
+# LICENSE_PLATE month-name false positives — "JAN-1990", "FEB-2005" etc.
+# match the [A-Z]{3}[-\s]\d{4} plate pattern but are actually dates.
+_MONTH_ABBREVS = frozenset({
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+})
+
 # Single-word ADDRESS false positives — capitalized common words that
 # follow "from", "lives in", etc. but are not place names.
 _ADDRESS_FALSE_POSITIVES = frozenset({
@@ -1900,6 +1913,9 @@ _USERNAME_FALSE_POSITIVES = frozenset({
     'password', 'passwords', 'token', 'tokens',
     'number', 'numbers', 'holder', 'connected', 'ending',
     'expenses', 'online', 'physical', 'protected',
+    'registered', 'page', 'page.', 'required', 'provided',
+    'selected', 'submitted', 'approved', 'denied', 'blocked',
+    'disabled', 'enabled', 'updated', 'created', 'deleted',
 })
 
 
@@ -2016,6 +2032,12 @@ class PatternDetector(BaseDetector):
                 if pdef.entity_type == 'DRIVER_LICENSE':
                     digits_only = ''.join(c for c in value if c.isdigit())
                     if len(digits_only) == 8 and _DL_DATE_PATTERN.match(digits_only):
+                        continue
+
+                # License plate month-name filter — "JAN-1990" etc. are dates, not plates
+                if pdef.entity_type == 'LICENSE_PLATE':
+                    alpha_prefix = ''.join(c for c in value if c.isalpha()).upper()
+                    if alpha_prefix in _MONTH_ABBREVS:
                         continue
 
                 # Username false positive filter — common words after "user" or "login"
