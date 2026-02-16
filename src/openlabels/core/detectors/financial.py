@@ -354,6 +354,16 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(r[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,34})\b',
        'XRP_ADDRESS', 0.80, 1),
 
+    # SOLANA ADDRESS (Base58, 32-44 chars)
+    _p(r'(?:solana|SOL)\s*(?:address|addr|wallet)?[:\s]+([1-9A-HJ-NP-Za-km-z]{32,44})',
+       'SOLANA_ADDRESS', 0.88, 1, flags=re.I),
+
+    # MONERO ADDRESS (95 chars starting with 4)
+    _p(r'\b(4[0-9AB][1-9A-HJ-NP-Za-km-z]{93})\b', 'MONERO_ADDRESS', 0.92, 1),
+
+    # POLKADOT ADDRESS (SS58 format, starts with 1, 47-48 chars)
+    _p(r'\b(1[1-9A-HJ-NP-Za-km-z]{46,47})\b', 'POLKADOT_ADDRESS', 0.80, 1),
+
     # SEED PHRASES
     _p(r'(?:seed|mnemonic|recovery|backup)\s*(?:phrase|words?)?[:\s]+([a-z]+(?:\s+[a-z]+){11})\b',
        'CRYPTO_SEED_PHRASE', 0.95, 1, _validate_seed_phrase, flags=re.I),

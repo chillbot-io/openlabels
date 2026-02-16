@@ -34,6 +34,15 @@ from .registry import register_detector
 # Pattern definitions: immutable frozen dataclass tuples
 _AWS_KEY_PREFIXES = r'(?:AKIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA|AROA|ASCA|ASIA)'
 
+# Common words that appear after "password:" but are not actual passwords
+_PASSWORD_FP = frozenset({
+    'protected', 'required', 'encrypted', 'enabled', 'disabled',
+    'reset', 'expired', 'changed', 'updated', 'forgotten',
+    'recovery', 'policy', 'manager', 'vault', 'strength',
+    'complexity', 'requirements', 'authentication', 'security',
+    'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+})
+
 SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
     # AWS
     _p(rf'\b({_AWS_KEY_PREFIXES}[A-Z0-9]{{16}})\b', 'AWS_ACCESS_KEY', 0.99, 1),
@@ -74,9 +83,9 @@ SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'(?:client_secret|google_secret)["\s:=]+([a-zA-Z0-9\-_]{24})', 'GOOGLE_OAUTH_SECRET', 0.90, 1, flags=re.I),
     _p(r'(?:firebase|fcm)["\s:=_-]*(?:api[_-]?key|server[_-]?key)["\s:=]+([a-zA-Z0-9\-_]{39})', 'FIREBASE_KEY', 0.95, 1, flags=re.I),
 
-    # TWILIO
-    _p(r'\b(AC[a-f0-9]{32})\b', 'TWILIO_ACCOUNT_SID', 0.98, 1),
-    _p(r'\b(SK[a-f0-9]{32})\b', 'TWILIO_KEY', 0.98, 1),
+    # TWILIO (alphanumeric, not just hex)
+    _p(r'\b(AC[a-z0-9]{32})\b', 'TWILIO_ACCOUNT_SID', 0.98, 1),
+    _p(r'\b(SK[a-z0-9]{32})\b', 'TWILIO_KEY', 0.98, 1),
     _p(r'(?:twilio|auth)[_\s]*token["\s:=]+([a-f0-9]{32})\b', 'TWILIO_TOKEN', 0.92, 1, flags=re.I),
 
     # SENDGRID
@@ -139,6 +148,50 @@ SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'(\?sv=\d{4}-\d{2}-\d{2}&[^"\s]+sig=[a-zA-Z0-9%]+)', 'AZURE_SAS_TOKEN', 0.95, 1),
     _p(r'(Endpoint=sb://[^;]+;SharedAccessKeyName=[^;]+;SharedAccessKey=[a-zA-Z0-9+/=]+)', 'AZURE_CONNECTION_STRING', 0.98, 1),
 
+    # HASHICORP VAULT
+    _p(r'\b(hvs\.[a-zA-Z0-9_-]{24,})\b', 'VAULT_TOKEN', 0.99, 1),
+    _p(r'\b(hvb\.[a-zA-Z0-9_-]{24,})\b', 'VAULT_TOKEN', 0.99, 1),
+
+    # ATLASSIAN (Jira/Confluence)
+    _p(r'\b(ATATT[a-zA-Z0-9_-]{20,})\b', 'ATLASSIAN_TOKEN', 0.98, 1),
+
+    # GRAFANA
+    _p(r'\b(eyJrIjoi[a-zA-Z0-9_-]{40,})\b', 'GRAFANA_KEY', 0.95, 1),
+    _p(r'\b(glsa_[a-zA-Z0-9_-]{32,})\b', 'GRAFANA_KEY', 0.98, 1),
+
+    # LINEAR
+    _p(r'\b(lin_api_[a-zA-Z0-9]{40})\b', 'LINEAR_KEY', 0.99, 1),
+
+    # DOPPLER
+    _p(r'\b(dp\.(?:st|ct|sa|scim|audit)\.[a-zA-Z0-9_-]{40,})\b', 'DOPPLER_TOKEN', 0.99, 1),
+
+    # GOOGLE OAUTH ACCESS TOKEN
+    _p(r'\b(ya29\.[a-zA-Z0-9_-]{50,})\b', 'GOOGLE_OAUTH_TOKEN', 0.98, 1),
+
+    # OPENAI
+    _p(r'\b(sk-[a-zA-Z0-9]{48,})\b', 'OPENAI_KEY', 0.98, 1),
+    _p(r'\b(sk-proj-[a-zA-Z0-9_-]{48,})\b', 'OPENAI_KEY', 0.99, 1),
+
+    # ANTHROPIC
+    _p(r'\b(sk-ant-[a-zA-Z0-9_-]{90,})\b', 'ANTHROPIC_KEY', 0.99, 1),
+
+    # VERCEL
+    _p(r'\b(vercel_[a-zA-Z0-9_-]{24,})\b', 'VERCEL_TOKEN', 0.98, 1),
+
+    # SUPABASE
+    _p(r'\b(sbp_[a-f0-9]{40})\b', 'SUPABASE_KEY', 0.98, 1),
+
+    # PLANETSCALE
+    _p(r'\b(pscale_tkn_[a-zA-Z0-9_-]{40,})\b', 'PLANETSCALE_TOKEN', 0.99, 1),
+
+    # SLACK (OAuth + session tokens not covered by xoxa/xoxb/xoxp/xoxr)
+    _p(r'\b(xoxo-[0-9]+-[a-zA-Z0-9-]+)\b', 'SLACK_TOKEN', 0.95, 1),
+    _p(r'\b(xoxs-[0-9]+-[a-zA-Z0-9-]+)\b', 'SLACK_TOKEN', 0.95, 1),
+
+    # CONNECTION STRINGS (additional)
+    _p(r'(amqps?://[^:]+:[^@]+@[^\s"\'<>]+)', 'DATABASE_URL', 0.95, 1, flags=re.I),
+    _p(r'(cassandra://[^:]+:[^@]+@[^\s"\'<>]+)', 'DATABASE_URL', 0.95, 1, flags=re.I),
+
     # GENERIC SECRETS (CONTEXTUAL)
     _p(r'(?:password|passwd|pwd)["\s:=]+["\']([^"\']{8,})["\']', 'PASSWORD', 0.85, 1, flags=re.I),
     _p(r'(?:password|passwd|pwd|mot de passe|passwort|contraseña|wachtwoord|parola|senha)[:\s]+([^\s,.<>]{5,30})', 'PASSWORD', 0.80, 1, flags=re.I),
@@ -186,6 +239,11 @@ class SecretsDetector(BaseDetector):
                 # Additional validation for JWTs
                 if pdef.entity_type == 'JWT':
                     if not self._validate_jwt(value):
+                        continue
+
+                # PASSWORD false positive filter
+                if pdef.entity_type == 'PASSWORD':
+                    if value.lower().strip() in _PASSWORD_FP:
                         continue
 
                 span = Span(

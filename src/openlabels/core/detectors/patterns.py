@@ -339,6 +339,86 @@ _PHARMACY_CHAINS = (
     r'Good\s+Neighbor\s+Pharmacy|Health\s*Mart'
 )
 
+# === Validators for international government IDs ===
+# These must be defined before PATTERNS tuple since patterns reference them.
+
+
+def _validate_ein(value: str) -> bool:
+    """Validate US EIN campus code prefix (first 2 digits)."""
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 9:
+        return False
+    prefix = int(digits[:2])
+    return (
+        (1 <= prefix <= 6) or (10 <= prefix <= 16) or
+        (20 <= prefix <= 27) or (30 <= prefix <= 38) or
+        (40 <= prefix <= 48) or (50 <= prefix <= 59) or
+        (60 <= prefix <= 68) or (71 <= prefix <= 77) or
+        (80 <= prefix <= 88) or (90 <= prefix <= 93) or
+        prefix in (98, 99)
+    )
+
+
+def _validate_uk_nino(value: str) -> bool:
+    """Validate UK National Insurance Number prefix exclusions."""
+    cleaned = value.upper().replace(' ', '')
+    if len(cleaned) != 9:
+        return False
+    prefix = cleaned[:2]
+    invalid_prefixes = {'BG', 'GB', 'NK', 'KN', 'NT', 'TN', 'ZZ'}
+    return prefix not in invalid_prefixes
+
+
+def _validate_es_nie(value: str) -> bool:
+    """Validate Spanish NIE check letter (mod-23)."""
+    letters = 'TRWAGMYFPDXBNJZSQVHLCKE'
+    v = value.upper()
+    if len(v) != 9:
+        return False
+    prefix_map = {'X': '0', 'Y': '1', 'Z': '2'}
+    num_str = prefix_map.get(v[0], '') + v[1:8]
+    try:
+        return letters[int(num_str) % 23] == v[8]
+    except (ValueError, IndexError):
+        return False
+
+
+def _validate_es_nif(value: str) -> bool:
+    """Validate Spanish NIF check letter (mod-23)."""
+    letters = 'TRWAGMYFPDXBNJZSQVHLCKE'
+    v = value.upper()
+    if len(v) != 9:
+        return False
+    try:
+        return letters[int(v[:8]) % 23] == v[8]
+    except (ValueError, IndexError):
+        return False
+
+
+def _validate_pl_pesel(value: str) -> bool:
+    """Validate Polish PESEL using weighted checksum."""
+    if len(value) != 11 or not value.isdigit():
+        return False
+    weights = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]
+    total = sum(int(d) * w for d, w in zip(value[:10], weights))
+    check = (10 - (total % 10)) % 10
+    return check == int(value[10])
+
+
+def _validate_nhs(value: str) -> bool:
+    """Validate UK NHS Number using mod-11 checksum."""
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 10:
+        return False
+    total = sum(int(d) * w for d, w in zip(digits[:9], range(10, 1, -1)))
+    remainder = 11 - (total % 11)
+    if remainder == 11:
+        remainder = 0
+    if remainder == 10:
+        return False  # Invalid NHS number
+    return remainder == int(digits[9])
+
+
 PATTERNS: tuple[PatternDefinition, ...] = (
 
 
@@ -1088,6 +1168,24 @@ _p(r'\b((?!000|666|9\d\d)\d{9})\b', 'SSN', 0.70),
 # SSN with unusual separators (dots, middle dots, spaces around hyphens)
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.85, 1, flags=re.I),  # dots/middle dots
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})', 'SSN', 0.88, 1, flags=re.I),  # spaces around hyphens
+# Bare SSN with dot separators (e.g., "756.2808.9893") - international format
+_p(r'\b(\d{3}\.\d{2,4}\.\d{3,4})\b', 'SSN', 0.72),
+
+# === US ITIN (Individual Taxpayer Identification Number) ===
+# Format: 9XX-[7-8]X-XXXX (starts with 9, digits 4-5 in range 70-88, 90-92, 94-99)
+_p(r'(?:ITIN|Individual\s+Taxpayer)[:\s#]+(\d{3}[-\s]?\d{2}[-\s]?\d{4})', 'ITIN', 0.92, 1, flags=re.I),
+_p(r'\b(9\d{2}[-\s]?(?:7\d|8[0-8])[-\s]?\d{4})\b', 'ITIN', 0.72, 1),
+
+# === US EIN (Employer Identification Number) ===
+# Format: XX-XXXXXXX (2-digit campus code prefix + 7 digits)
+_p(r'(?:EIN|Employer\s+Identification|Federal\s+(?:Tax|Employer)\s+ID)[:\s#]+(\d{2}-\d{7})', 'EIN', 0.92, 1, flags=re.I),
+_p(r'(?:Tax\s+ID|TIN|Taxpayer\s+ID)[:\s#]+(\d{2}-\d{7})', 'EIN', 0.85, 1, flags=re.I),
+_p(r'\b(\d{2}-\d{7})\b', 'EIN', 0.60, 1, _validate_ein),
+
+# === UK National Insurance Number (NINO) ===
+# Format: 2 letters + 6 digits + 1 letter (A-D)
+_p(r'(?:NI(?:NO)?|National\s+Insurance)[:\s#]+([A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D])', 'UK_NINO', 0.95, 1, flags=re.I),
+_p(r'\b([A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D])\b', 'UK_NINO', 0.82, 1, _validate_uk_nino),
 
 # === ABA Routing (labeled only) ===
 _p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'ABA_ROUTING', 0.95, 1, flags=re.I),
@@ -1137,8 +1235,9 @@ _p(r'\b(\d[A-Z]{3}\d{3})\b', 'LICENSE_PLATE', 0.82, 1),
 _p(r'\b([A-Z]{3}-\d{4})\b', 'LICENSE_PLATE', 0.85, 1),
 # Texas: ABC-1234 or ABC 1234
 _p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
-# Florida: ABC D12 or ABCD12 (letter-heavy)
-_p(r'\b([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.75, 1),
+# Florida: ABC D12 or ABCD12 (letter-heavy) — labeled only to avoid FP on
+# user-agent strings like "WOW64" or "MSIE 10"
+_p(r'(?:License\s*Plate|Plate|Tag)[:\s#]+([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.80, 1, flags=re.I),
 # UK: AB12CDE or AB12 CDE (2 letters, 2 digits, 3 letters)
 _p(r'\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b', 'LICENSE_PLATE', 0.85, 1),
 
@@ -1229,6 +1328,69 @@ _p(r'(?:CURP)[:\s#]+([A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d)', 'CURP', 0.95, 1, fla
 
 # === German Sozialversicherungsnummer (12 digits) ===
 _p(r'(?:Sozialversicherungsnummer|SVNR|SV-Nummer)[:\s#]+(\d{2}\s?\d{6}\s?[A-Z]\s?\d{3})', 'SVNR', 0.92, 1, flags=re.I),
+
+# === Indian PAN (Permanent Account Number) ===
+# Format: 5 letters + 4 digits + 1 letter, 4th letter encodes entity type
+_p(r'(?:PAN|Permanent\s+Account)[:\s#]+([A-Z]{3}[ABCFGHJTLP][A-Z]\d{4}[A-Z])', 'IN_PAN', 0.95, 1, flags=re.I),
+_p(r'\b([A-Z]{3}[ABCFGHJTLP][A-Z]\d{4}[A-Z])\b', 'IN_PAN', 0.78, 1),
+
+# === Singapore NRIC/FIN ===
+# Format: Letter (S/T/F/G/M) + 7 digits + letter
+_p(r'(?:NRIC|FIN)[:\s#]+([STFGM]\d{7}[A-Z])', 'SG_NRIC_FIN', 0.92, 1, flags=re.I),
+_p(r'\b([STFGM]\d{7}[A-Z])\b', 'SG_NRIC_FIN', 0.68, 1),
+
+# === Spanish NIE (Numero de Identidad de Extranjero) ===
+# Format: X/Y/Z + 7 digits + check letter
+_p(r'(?:NIE)[:\s#]+([XYZ]\d{7}[A-Z])', 'ES_NIE', 0.92, 1, flags=re.I),
+_p(r'\b([XYZ]\d{7}[A-Z])\b', 'ES_NIE', 0.72, 1, _validate_es_nie),
+
+# === Spanish NIF (Numero de Identificacion Fiscal) ===
+# Format: 8 digits + check letter
+_p(r'(?:NIF|DNI)[:\s#]+(\d{8}[A-Z])', 'ES_NIF', 0.92, 1, flags=re.I),
+_p(r'\b(\d{8}[A-Z])\b', 'ES_NIF', 0.62, 1, _validate_es_nif),
+
+# === Polish PESEL ===
+# 11 digits: YYMMDD + serial + check digit, weighted checksum
+_p(r'(?:PESEL)[:\s#]+(\d{11})', 'PL_PESEL', 0.92, 1, flags=re.I),
+_p(r'\b(\d{2}(?:[02468][1-9]|[13579][012])(?:0[1-9]|[12]\d|3[01])\d{5})\b', 'PL_PESEL', 0.60, 1, _validate_pl_pesel),
+
+# === Finnish HETU (Henkilotunnus / Personal Identity Code) ===
+# Format: DDMMYY + century sign + 3 digits + control char
+_p(r'(?:HETU|henkilotunnus|personal\s+identity\s+code)[:\s#]+(\d{6}[+-ABCDEFYXWVU]\d{3}[0-9A-Y])', 'FI_HETU', 0.92, 1, flags=re.I),
+
+# === Italian Fiscal Code (Codice Fiscale) ===
+# 16 alphanumeric characters with complex structure
+_p(r'(?:Codice\s+Fiscale|CF)[:\s#]+([A-Z]{6}\d{2}[A-EHLMPR-T]\d{2}[A-Z]\d{3}[A-Z])', 'IT_FISCAL_CODE', 0.92, 1, flags=re.I),
+
+# === Italian VAT (Partita IVA) ===
+# 11 digits with Luhn-like checksum
+_p(r'(?:P\.?\s*IVA|Partita\s+IVA)[:\s#]+(\d{11})', 'IT_VAT', 0.90, 1, flags=re.I),
+
+# === Korean RRN (Resident Registration Number) ===
+# Format: YYMMDD-NNNNNNN
+_p(r'(?:RRN|주민등록번호|resident\s+registration)[:\s#]+(\d{6}[-\s]\d{7})', 'KR_RRN', 0.92, 1, flags=re.I),
+
+# === Thai National ID (TNIN) ===
+# 13 digits starting with 1-8
+_p(r'(?:Thai\s+(?:National\s+)?ID|TNIN|บัตรประชาชน)[:\s#]+([1-8]\d{12})', 'TH_TNIN', 0.92, 1, flags=re.I),
+
+# === Indian GSTIN (GST Identification Number) ===
+# 15 chars: 2-digit state code (01-37) + embedded PAN + registration + Z + checksum
+_p(r'(?:GSTIN|GST\s+(?:No|Number|ID))[:\s#]+((?:0[1-9]|[1-3][0-7])[A-Z0-9]{10}[A-Z0-9]Z[A-Z0-9])', 'IN_GSTIN', 0.92, 1, flags=re.I),
+
+# === Indian Voter ID (EPIC) ===
+# 3 letters + 7 digits
+_p(r'(?:Voter\s+ID|EPIC|elector\s+photo)[:\s#]+([A-Z]{3}\d{7})', 'IN_VOTER', 0.88, 1, flags=re.I),
+
+# === ADDITIONAL DATE PATTERNS ===
+# Bare European dot-separated dates: "15.03.1985", "03.15.1985"
+_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.65),
+# dd-MMM-yyyy (Oracle/DB format): "15-JAN-2024", "03-MAR-85"
+_p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b', 'DATE', 0.78, flags=re.I),
+# yyyy/mm/dd (slash variant of ISO)
+_p(r'\b(\d{4})/(\d{1,2})/(\d{1,2})\b', 'DATE', 0.70),
+# mm/yy (card expiration format, with context)
+_p(r'(?:exp(?:ir(?:y|es|ation))?|valid\s+(?:thru|through|until))[:\s]+((?:0[1-9]|1[0-2])/\d{2})\b', 'DATE', 0.82, 1, flags=re.I),
 
 
 )
@@ -1506,6 +1668,20 @@ _IDENTIFIER_TYPES = frozenset({
     'ACCOUNT_NUMBER', 'HEALTH_PLAN_ID', 'MEMBER_ID',
 })
 
+# PASSWORD false positives — common words that appear after "password:"
+# but are not actual password values (e.g., "password: protected").
+_PASSWORD_FALSE_POSITIVES = frozenset({
+    'protected', 'required', 'encrypted', 'enabled', 'disabled',
+    'reset', 'expired', 'changed', 'updated', 'forgotten',
+    'recovery', 'policy', 'manager', 'vault', 'strength',
+    'complexity', 'requirements', 'authentication', 'security',
+    'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+})
+
+# DRIVER_LICENSE date-like false positives — 8-digit values that look
+# like YYYYMMDD dates should not be detected as driver license numbers.
+_DL_DATE_PATTERN = re.compile(r'^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$')
+
 # Single-word ADDRESS false positives — capitalized common words that
 # follow "from", "lives in", etc. but are not place names.
 _ADDRESS_FALSE_POSITIVES = frozenset({
@@ -1633,9 +1809,24 @@ class PatternDetector(BaseDetector):
                 if pdef.entity_type == 'IMEI' and not _validate_imei(value):
                     continue
 
+                # NHS mod-11 checksum validation
+                if pdef.entity_type == 'NHS_NUMBER' and not _validate_nhs(value):
+                    continue
+
                 # VIN validation (for low-confidence bare VIN matches)
                 if pdef.entity_type == 'VIN' and pdef.confidence < 0.90:
                     if not _validate_vin(value):
+                        continue
+
+                # Password false positive filter — common words after "password:"
+                if pdef.entity_type == 'PASSWORD':
+                    if value.lower().strip() in _PASSWORD_FALSE_POSITIVES:
+                        continue
+
+                # Driver license date-like filter — reject 8-digit YYYYMMDD dates
+                if pdef.entity_type == 'DRIVER_LICENSE':
+                    digits_only = ''.join(c for c in value if c.isdigit())
+                    if len(digits_only) == 8 and _DL_DATE_PATTERN.match(digits_only):
                         continue
 
                 # Username false positive filter — common words after "user" or "login"
