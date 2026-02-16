@@ -1088,6 +1088,8 @@ _p(r'\b((?!000|666|9\d\d)\d{9})\b', 'SSN', 0.70),
 # SSN with unusual separators (dots, middle dots, spaces around hyphens)
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.85, 1, flags=re.I),  # dots/middle dots
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})', 'SSN', 0.88, 1, flags=re.I),  # spaces around hyphens
+# Bare SSN with dot separators (e.g., "756.2808.9893") - international format
+_p(r'\b(\d{3}\.\d{2,4}\.\d{3,4})\b', 'SSN', 0.72),
 
 # === ABA Routing (labeled only) ===
 _p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'ABA_ROUTING', 0.95, 1, flags=re.I),
