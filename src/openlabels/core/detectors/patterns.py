@@ -923,6 +923,58 @@ _p(r'\b(884\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
 # Nevada (890, 893)
 _p(r'\b(890\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
 _p(r'\b(893\d{2}(?:-\d{4})?)\b', 'ZIP', 0.88, 1),
+
+# === Standalone STATE Patterns ===
+# US full state names (standalone, not part of address — lower confidence)
+_p(rf'\b({_STATE_FULL})\b', 'STATE', 0.75, 1),
+# International state/province/region names (common in ai4privacy dataset)
+_p(r'\b(Baden-Württemberg|Saxony-Anhalt|Schleswig-Holstein|Mecklenburg-Vorpommern|'
+   r'North\s+Rhine-Westphalia|Rhineland-Palatinate|Lower\s+Saxony|'
+   r'North\s+West\s+England|North\s+East\s+England|South\s+West\s+England|'
+   r'South\s+East\s+England|East\s+Midlands|West\s+Midlands|East\s+of\s+England|'
+   r'Yorkshire\s+and\s+the\s+Humber|'
+   r'Bavaria|Saxony|Thuringia|Brandenburg|Saarland|Hesse|'
+   r'Corsica|Brittany|Normandy|Burgundy|Provence|Alsace|Aquitaine|'
+   r'Uri|Zug|Zurich|Bern|Lucerne|Basel|Geneva|Vaud|Valais|Ticino|'
+   r'Aargau|Fribourg|Graubünden|Thurgau|Solothurn|Schwyz|'
+   r'New\s+South\s+Wales|Queensland|Victoria|Tasmania|'
+   r'South\s+Australia|Western\s+Australia|Northern\s+Territory|'
+   r'British\s+Columbia|Nova\s+Scotia|New\s+Brunswick|'
+   r'Prince\s+Edward\s+Island|Newfoundland)\b', 'STATE', 0.78, 1),
+
+# === Standalone COUNTY Patterns ===
+# "X County" or "County X" suffix/prefix
+_p(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+County)\b', 'COUNTY', 0.82, 1),
+_p(r'\b(County\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', 'COUNTY', 0.82, 1),
+# UK counties/regions (shire-ending and common counties)
+_p(r'\b(Bedfordshire|Berkshire|Buckinghamshire|Cambridgeshire|Cheshire|'
+   r'Cornwall|Cumbria|Derbyshire|Devon|Dorset|Durham|'
+   r'Essex|Gloucestershire|Hampshire|Herefordshire|Hertfordshire|'
+   r'Kent|Lancashire|Leicestershire|Lincolnshire|Norfolk|'
+   r'Northamptonshire|Northumberland|Nottinghamshire|Oxfordshire|'
+   r'Rutland|Shropshire|Somerset|Staffordshire|Suffolk|Surrey|'
+   r'Sussex|West\s+Sussex|East\s+Sussex|Warwickshire|Wiltshire|'
+   r'Worcestershire|Yorkshire|North\s+Yorkshire|South\s+Yorkshire|'
+   r'East\s+Yorkshire|West\s+Yorkshire|'
+   r'Gwynedd|Powys|Borders|Highlands|Lothian|'
+   r'Clackmannanshire|Dumfries|Fife|Angus|Perth|Argyll|Moray)\b', 'COUNTY', 0.80, 1),
+
+# === Standalone SECONDARY ADDRESS Patterns ===
+# "Apt. 259", "Suite 786" etc. (standalone, not part of full address)
+_p(r'\b((?:Apt|Suite|Ste|Unit)\.?\s*#?\s*\d{1,5}[A-Z]?)\b', 'ADDRESS', 0.80, 1, flags=re.I),
+
+# === Standalone STREET Patterns ===
+# Street names with suffix but no building number: "S Broadway", "Veterans Memorial Highway"
+_p(
+    rf'\b({_DIRECTIONAL}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b(?=\s+\d)',
+    'ADDRESS', 0.78, 1
+),
+# Named street with suffix: "Wiza Spur", "Kuhlman Run", "Waters Harbors"
+_p(
+    rf'\b([A-Z][a-z]+\s+(?:{_STREET_SUFFIXES}))\b',
+    'ADDRESS', 0.75, 1
+),
+
 _p(rf'({_FACILITY_PREFIX}\s+(?:Hospital|Medical\s+Center|Health\s+Center|Clinic|Health\s+System|Healthcare|Specialty\s+Clinic|Regional\s+Medical))\b', 'FACILITY', 0.85, 1),
 _p(rf'({_FACILITY_PREFIX}\s+(?:Memorial|General|Community|University|Regional|Veterans|Children\'s)\s+Hospital)\b', 'FACILITY', 0.88, 1),
 _p(rf'({_FACILITY_PREFIX}\s+(?:Group|LLC|Ltd|Inc|Associates|Partners)\s+Hospital)\b', 'FACILITY', 0.85, 1),
@@ -1192,6 +1244,17 @@ _p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'ABA_ROUTING', 0.95, 1, flags=re.I),
 # Account numbers - both numeric-only and alphanumeric formats
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+([A-Z0-9][-A-Z0-9]{5,19})', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# Account number in parentheses: "Investment Account (number 48308813)"
+_p(r'Account\s*\(\s*(?:number|no|#)\s+(\d{6,17})\s*\)', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
+# "account number XXXXXXXX" with flexible whitespace
+_p(r'\baccount\s+(?:number|no\.?|#)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
+# "our account number XXXXXXXX" or "use account XXXXXXXX"
+_p(r'\b(?:our|your|the|use|for)\s+account\s+(?:number\s+)?(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# Account type names: "Checking Account", "Savings Account", etc.
+_p(r'\b((?:Checking|Savings|Investment|Personal\s+Loan|Auto\s+Loan|Home\s+Loan|Money\s+Market|Credit\s+Card)\s+Account)\b', 'ACCOUNT_NUMBER', 0.82, 1),
+# 16-digit numbers with context (masked/tokenized card numbers, account identifiers)
+# Lower confidence — only match when preceded by contextual words
+_p(r'(?:number|identification|assigned|use)\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 
 # === Certificate/License Numbers (Safe Harbor #11) ===
 _p(r'(?:Certificate|Certification)\s+(?:Number|No|#)[:\s]+([A-Z0-9-]{5,20})', 'CERTIFICATE_NUMBER', 0.85, 1, flags=re.I),
@@ -1297,13 +1360,15 @@ _p(r'(?:BMI|Body\s*Mass\s*Index)[:\s]+(\d{2}(?:\.\d{1,2})?)', 'BMI', 0.90, 1, fl
 
 # GEOGRAPHIC IDENTIFIERS
 # === GPS Coordinates ===
+# Bracket-enclosed: [-71.6702,-107.6572] (common in datasets and APIs)
+_p(r'(\[-?\d{1,3}\.\d{1,8},-?\d{1,3}\.\d{1,8}\])', 'GPS_COORDINATE', 0.92, 1),
 # Decimal degrees: 41.8781, -87.6298 or 41.8781° N, 87.6298° W
-_p(r'(-?\d{1,3}\.\d{4,8})[,\s]+(-?\d{1,3}\.\d{4,8})', 'GPS_COORDINATES', 0.88, 0),
-_p(r'(\d{1,3}\.\d{4,8})°?\s*[NS][,\s]+(\d{1,3}\.\d{4,8})°?\s*[EW]', 'GPS_COORDINATES', 0.92, flags=re.I),
+_p(r'(-?\d{1,3}\.\d{4,8})[,\s]+(-?\d{1,3}\.\d{4,8})', 'GPS_COORDINATE', 0.88, 0),
+_p(r'(\d{1,3}\.\d{4,8})°?\s*[NS][,\s]+(\d{1,3}\.\d{4,8})°?\s*[EW]', 'GPS_COORDINATE', 0.92, flags=re.I),
 # DMS format: 41°52'43"N 87°37'47"W
-_p(r'(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[NS])\s*(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[EW])', 'GPS_COORDINATES', 0.90, 0),
+_p(r'(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[NS])\s*(\d{1,3}°\d{1,2}[\'′]\d{1,2}[\"″]?[EW])', 'GPS_COORDINATE', 0.90, 0),
 # With label
-_p(r'(?:GPS|Coordinates?|Location|Lat(?:itude)?[/,]\s*Lon(?:gitude)?)[:\s]+(.{10,40})', 'GPS_COORDINATES', 0.85, 1, flags=re.I),
+_p(r'(?:GPS|Coordinates?|Location|Lat(?:itude)?[/,]\s*Lon(?:gitude)?)[:\s]+(.{10,40})', 'GPS_COORDINATE', 0.85, 1, flags=re.I),
 
 
 # INTERNATIONAL IDENTIFIERS (with context/checksums)

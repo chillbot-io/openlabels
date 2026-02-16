@@ -226,31 +226,10 @@ def tune(ctx, thresholds, enable_ml):
 # ── Output formatting ─────────────────────────────────────────────────
 
 def _show_model_status(config) -> None:
-    """Show ML model directory and loading status."""
-    from pathlib import Path
+    """Show ML model status."""
+    from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
 
-    from openlabels.core.constants import DEFAULT_MODELS_DIR
-
-    model_dir = Path(config.ml_model_dir) if config.ml_model_dir else DEFAULT_MODELS_DIR
-    click.echo(f"  Model dir: {model_dir}")
-
-    if not model_dir.exists():
-        click.echo("  WARNING: model directory not found")
-        click.echo("  Run: openlabels models download ner")
-        return
-
-    # Check for ONNX model files
-    for name in ("phi_bert", "pii_bert"):
-        int8 = model_dir / f"{name}_int8.onnx"
-        fp32 = model_dir / f"{name}.onnx"
-        if int8.exists():
-            size_mb = int8.stat().st_size / (1024 * 1024)
-            click.echo(f"  {name}: {int8.name} ({size_mb:.1f} MB)")
-        elif fp32.exists():
-            size_mb = fp32.stat().st_size / (1024 * 1024)
-            click.echo(f"  {name}: {fp32.name} ({size_mb:.1f} MB)")
-        else:
-            click.echo(f"  {name}: NOT FOUND")
+    click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
 
 
 def _cli_progress(current: int, total: int) -> None:
