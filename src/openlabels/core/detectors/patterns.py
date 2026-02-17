@@ -1823,11 +1823,14 @@ _p(r'(?:Voter\s+ID|EPIC|elector\s+photo)[:\s#]+([A-Z]{3}\d{7})', 'IN_VOTER', 0.8
 
 # === ADDITIONAL DATE PATTERNS ===
 # Bare European dot-separated dates: "15.03.1985", "03.15.1985"
-_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.65),
+_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.72),
 # dd-MMM-yyyy (Oracle/DB format): "15-JAN-2024", "03-MAR-85"
 _p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b', 'DATE', 0.78, flags=re.I),
 # yyyy/mm/dd (slash variant of ISO)
 _p(r'\b(\d{4})/(\d{1,2})/(\d{1,2})\b', 'DATE', 0.70),
+# yyyymmdd (compact ISO, no separators) — common in Faker/DB dumps
+# Anchored to 19xx/20xx century to avoid matching other 8-digit numbers.
+_p(r'\b((?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\b', 'DATE', 0.70),
 # mm/yy (card expiration format, with context)
 _p(r'(?:exp(?:ir(?:y|es|ation))?|valid\s+(?:thru|through|until))[:\s]+((?:0[1-9]|1[0-2])/\d{2})\b', 'DATE', 0.82, 1, flags=re.I),
 
@@ -2073,11 +2076,15 @@ def _validate_vin(vin: str) -> bool:
 _SSN_FALSE_POSITIVE_PREFIXES = frozenset([
     'page', 'pg', 'room', 'rm', 'order', 'ref', 'reference', 'invoice',
     'confirmation', 'tracking', 'case', 'ticket', 'claim', 'check',
-    'acct', 'record', 'file', 'document', 'doc',
+    'acct', 'account', 'record', 'file', 'document', 'doc',
     'no', 'num', '#', 'code', 'pin', 'serial', 'model',
     'part', 'item', 'sku', 'upc', 'isbn', 'version', 'ver',
     'batch', 'lot', 'catalog', 'product', 'unit', 'id',
-    'make', 'type', 'series',  # Added for "Model ABC-123456789"
+    'make', 'type', 'series',
+    # Financial context — digit sequences in financial text are rarely SSNs
+    'routing', 'aba', 'rtn', 'balance', 'transaction', 'payment',
+    'transfer', 'deposit', 'withdrawal', 'amount', 'total',
+    'iban', 'swift', 'bic', 'bban',
 ])
 
 # Regex to find these prefixes in a wider window
@@ -2168,11 +2175,13 @@ _MONTH_ABBREVS = frozenset({
 # DATE false positive context — words immediately before a bare numeric date
 # that indicate the date is document metadata, not personal PII.
 # Only applied to low-confidence bare patterns (≤0.70), not labeled dates.
+# NOTE: Transactional words (invoice, order, receipt, confirmation,
+# tracking, shipment, case, reference, ticket) deliberately excluded —
+# dates in these contexts ARE personal PII (transaction dates).
 _DATE_FP_PRECEDING = re.compile(
     r'(?:version|ver|rev(?:ision)?|release|build|patch|update|'
     r'edition|page|pg|section|sec|chapter|ch|item|code|'
-    r'invoice|order|receipt|confirmation|tracking|shipment|'
-    r'case|ref(?:erence)?|ticket|effective|published|filed|'
+    r'effective|published|filed|'
     r'created|modified|accessed|printed|generated|expires?|'
     r'valid\s+(?:from|until|thru|through))\s*'
     r'[#:\s.]*$',

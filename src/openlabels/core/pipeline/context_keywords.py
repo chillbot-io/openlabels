@@ -53,6 +53,8 @@ CONTEXT_RULES: dict[str, ContextRule] = {
         demote_words=frozenset({
             "order", "invoice", "tracking", "confirmation",
             "reference", "receipt",
+            "account", "routing", "transaction", "payment",
+            "balance", "transfer", "deposit", "iban", "swift",
         }),
         boost_amount=0.10,
         demote_amount=0.20,
@@ -144,9 +146,13 @@ CONTEXT_RULES: dict[str, ContextRule] = {
             "driver", "license", "licence", "dl", "dl#",
             "driver's license",
         }),
-        demote_words=frozenset(),
+        demote_words=frozenset({
+            "account", "routing", "transaction", "payment",
+            "balance", "transfer", "invoice", "iban", "swift",
+            "deposit", "credit", "debit",
+        }),
         boost_amount=0.10,
-        demote_amount=0.0,
+        demote_amount=0.15,
     ),
     "PASSPORT": ContextRule(
         boost_words=frozenset({
