@@ -385,15 +385,16 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'\b(BBG[A-Z0-9]{9})\b', 'FIGI', 0.95, 1),
 
     # CRYPTOCURRENCY
+    # Strict base58 with SHA256 checksum validation (real addresses)
     _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
     _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
-    # Relaxed base58 patterns (no checksum) — catches addresses longer than standard
-    # 25-34 range (synthetic data often uses 35-42 chars with correct character set)
-    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+    # Relaxed base58 patterns (no checksum) — catches synthetic/test addresses
+    # that have correct character set but fail checksum validation
+    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,42})\b',
        'BITCOIN_ADDRESS', 0.78, 1),
-    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{34,42})\b',
+    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,42})\b',
        'BITCOIN_ADDRESS', 0.78, 1),
     _p(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
        'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
@@ -404,8 +405,8 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
 
     _p(r'\b(addr1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{50,})\b', 'CARDANO_ADDRESS', 0.95, 1, flags=re.I),
 
-    _p(r'\b([LM][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
-       'LITECOIN_ADDRESS', 0.85, 1),
+    _p(r'\b([LM][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,42})\b',
+       'LITECOIN_ADDRESS', 0.82, 1),
     _p(r'\b(ltc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b', 'LITECOIN_ADDRESS', 0.95, 1, flags=re.I),
 
     _p(r'\b(D[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,34})\b',
