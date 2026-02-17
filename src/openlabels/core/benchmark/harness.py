@@ -47,6 +47,13 @@ class BenchmarkConfig:
     max_workers: int = 4
     ml_model_dir: str | None = None  # None = use DEFAULT_MODELS_DIR
 
+    # Post-processing / relationship graph
+    enable_coref: bool = False
+    enable_context_enhancement: bool = False
+    enable_context_keywords: bool = True
+    enable_proximity_boost: bool = False
+    proximity_window_chars: int = 500
+
     # Pipeline config
     use_tiered_pipeline: bool = False
     escalation_threshold: float = 0.70
@@ -75,6 +82,11 @@ class BenchmarkConfig:
             confidence_threshold=self.confidence_threshold,
             max_workers=self.max_workers,
             ml_model_dir=ml_dir,
+            enable_coref=self.enable_coref,
+            enable_context_enhancement=self.enable_context_enhancement,
+            enable_context_keywords=self.enable_context_keywords,
+            enable_proximity_boost=self.enable_proximity_boost,
+            proximity_window_chars=self.proximity_window_chars,
         )
 
     def to_pipeline_config(self):
@@ -99,6 +111,8 @@ class BenchmarkConfig:
             # Eager-load ML for benchmarks so every sample gets ML detection,
             # not just those that trigger escalation.
             eager_load_ml=self.enable_ml,
+            enable_coref=self.enable_coref,
+            enable_context_enhancement=self.enable_context_enhancement,
         )
 
 
@@ -232,6 +246,21 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
         use_tiered_pipeline=True,
         enable_ml=True,
         auto_detect_medical=True,
+    ),
+    "with_context": BenchmarkConfig(
+        name="with_context",
+        enable_ml=False,
+        enable_proximity_boost=True,
+        enable_context_keywords=True,
+    ),
+    "full": BenchmarkConfig(
+        name="full",
+        enable_ml=True,
+        enable_spacy_ner=True,
+        enable_proximity_boost=True,
+        enable_context_keywords=True,
+        enable_coref=True,
+        enable_context_enhancement=True,
     ),
 }
 
