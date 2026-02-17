@@ -104,6 +104,8 @@ class DetectorOrchestrator:
             gliner = GLiNERDetector(
                 model_name=self.config.gliner_model,
                 threshold=self.config.gliner_threshold,
+                use_onnx=use_onnx,
+                enable_label_selection=self.config.enable_label_selection,
             )
             if gliner.load():
                 self.detectors.append(gliner)
@@ -180,7 +182,7 @@ class DetectorOrchestrator:
             ]
             logger.error(f"Detector timeout ({DETECTOR_TIMEOUT}s): {timed_out}")
 
-        processed_spans = self._post_process(all_spans)
+        processed_spans = self._post_process(all_spans, text=text)
 
         if self.config.enable_allowlist and processed_spans:
             from .allowlist import get_allowlist
@@ -247,7 +249,11 @@ class DetectorOrchestrator:
         """Shut down the persistent thread pool."""
         self._executor.shutdown(wait=False)
 
-    def _post_process(self, spans: list[Span]) -> list[Span]:
+    def _post_process(
+        self,
+        spans: list[Span],
+        text: str | None = None,
+    ) -> list[Span]:
         """Post-process: filter by raw confidence, calibrate, deduplicate.
 
         The threshold is applied to *raw* detector confidence (does the
@@ -267,7 +273,26 @@ class DetectorOrchestrator:
             if s.confidence >= (ml_threshold if s.tier == Tier.ML else self.confidence_threshold)
         ]
         calibrated = calibrate_spans(filtered)
-        return resolve_spans(calibrated, confidence_threshold=0.0)
+        resolved = resolve_spans(
+            calibrated, confidence_threshold=0.0, source_text=text,
+        )
+
+        if self.config.enable_proximity_boost and resolved:
+            from ..pipeline.entity_proximity import analyze_proximity
+            proximity = analyze_proximity(
+                resolved,
+                proximity_chars=self.config.proximity_window_chars,
+            )
+            if proximity.boost_count:
+                logger.debug(
+                    "Proximity boosting: %d/%d spans boosted across %d clusters",
+                    proximity.boost_count,
+                    proximity.original_span_count,
+                    len(proximity.clusters),
+                )
+            resolved = proximity.boosted_spans
+
+        return resolved
 
     def add_detector(self, detector: BaseDetector) -> None:
         """Add a custom detector to the orchestrator."""

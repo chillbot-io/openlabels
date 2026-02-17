@@ -113,6 +113,12 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "SENDGRID_KEY": 6,
     "TWILIO_KEY": 6,
 
+    # High — government IDs detected by GLiNER
+    "STATE_ID": 8,
+
+    # Elevated — financial
+    "ACCOUNT_NUMBER": 7,
+
     # Moderate (4-5)
     "NAME": 5,
     "ADDRESS": 5,
@@ -123,6 +129,9 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "ISIN": 5,
     "LEI": 5,
     "DATE_DOB": 5,
+    "FIRSTNAME": 4,
+    "LASTNAME": 4,
+    "LICENSE_PLATE": 4,
     "AGE": 4,
     "CLASSIFICATION_LEVEL": 4,
     "DOD_CONTRACT": 4,
@@ -133,14 +142,17 @@ ENTITY_WEIGHTS: dict[str, int] = {
     # Low (2-3)
     "DATE": 3,
     "ZIP": 3,
+    "USERNAME": 3,
     "CITY": 2,
     "STATE": 2,
     "COUNTRY": 2,
     "TRACKING_NUMBER": 2,
+    "URL": 2,
 
     # Minimal (1)
     "FACILITY": 1,
     "ORGANIZATION": 1,
+    "COMPANY": 1,
 }
 
 DEFAULT_WEIGHT = 5  # For unknown entity types
@@ -194,6 +206,8 @@ ENTITY_CATEGORIES: dict[str, str] = {
     "ADDRESS": "contact",
     "ZIP": "contact",
     "FAX": "contact",
+    "URL": "contact",
+    "USERNAME": "contact",
 
     # Credentials
     "PASSWORD": "credential",
@@ -210,9 +224,15 @@ ENTITY_CATEGORIES: dict[str, str] = {
 
     # Quasi-identifiers
     "NAME": "quasi_identifier",
+    "FIRSTNAME": "quasi_identifier",
+    "LASTNAME": "quasi_identifier",
+    "COMPANY": "quasi_identifier",
     "DATE_DOB": "quasi_identifier",
     "AGE": "quasi_identifier",
     "DATE": "quasi_identifier",
+
+    # Direct identifier — vehicle
+    "LICENSE_PLATE": "direct_identifier",
 
     # Classification markings
     "CLASSIFICATION_LEVEL": "classification_marking",
