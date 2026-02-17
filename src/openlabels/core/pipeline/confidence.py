@@ -17,7 +17,7 @@ from ..types import Span, Tier
 # A CHECKSUM span will always score >= 0.90 after calibration,
 # so it can never be beaten by a PATTERN span at 0.85.
 _TIER_FLOORS: dict[Tier, float] = {
-    Tier.ML: 0.20,
+    Tier.ML: 0.30,
     Tier.PATTERN: 0.55,
     Tier.STRUCTURED: 0.75,
     Tier.CHECKSUM: 0.90,

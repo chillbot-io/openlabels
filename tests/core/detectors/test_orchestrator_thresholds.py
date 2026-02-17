@@ -41,14 +41,14 @@ class TestPerEntityThresholds:
         assert result is True
 
     def test_name_below_entity_threshold_filtered(self):
-        """NAME at 0.50 is below entity threshold (0.55) and filtered."""
+        """NAME at 0.40 is below entity threshold (0.45) and filtered."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
             enable_context_keywords=False,
         )
         orch = DetectorOrchestrator(config=config)
-        span = _make_span("NAME", 0.50, Tier.ML)
+        span = _make_span("NAME", 0.40, Tier.ML)
         result = orch._passes_threshold(span)
         assert result is False
 
@@ -119,7 +119,7 @@ class TestEntityThresholdsInPostProcess:
     """Test that _post_process uses per-entity thresholds for filtering."""
 
     def test_post_process_filters_by_entity_threshold(self):
-        """NAME at 0.50 and EMAIL at 0.62 — NAME filtered, EMAIL kept."""
+        """NAME at 0.40 and EMAIL at 0.62 — NAME filtered, EMAIL kept."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
@@ -128,7 +128,7 @@ class TestEntityThresholdsInPostProcess:
         orch = DetectorOrchestrator(config=config)
 
         spans = [
-            _make_span("NAME", 0.50, Tier.ML, start=0, text="John"),
+            _make_span("NAME", 0.40, Tier.ML, start=0, text="John"),
             _make_span("EMAIL", 0.62, Tier.PATTERN, start=10, text="a@b.com"),
         ]
         result = orch._post_process(spans)
@@ -143,7 +143,7 @@ class TestEntityThresholdsConfig:
     def test_default_has_name_threshold(self):
         config = DetectionConfig()
         thresholds = dict(config.entity_thresholds)
-        assert thresholds["NAME"] == 0.55
+        assert thresholds["NAME"] == 0.45
 
     def test_default_has_age_threshold(self):
         config = DetectionConfig()

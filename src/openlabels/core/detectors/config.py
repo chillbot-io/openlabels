@@ -66,11 +66,12 @@ class DetectionConfig:
         ("ADDRESS", 0.70),
         ("DATE", 0.65),
         ("DATE_DOB", 0.65),
-        # Names — ML-dependent, need lower threshold
-        ("NAME", 0.55),
-        ("FIRSTNAME", 0.55),
-        ("LASTNAME", 0.55),
-        ("PERSON", 0.55),
+        # Names — ML-dependent, need lower threshold to recover
+        # borderline GLiNER detections after Platt calibration.
+        ("NAME", 0.45),
+        ("FIRSTNAME", 0.45),
+        ("LASTNAME", 0.45),
+        ("PERSON", 0.45),
         # Ambiguous — higher threshold to reduce FP
         ("AGE", 0.80),
         ("ZIP", 0.75),

@@ -29,7 +29,7 @@ class TestTierFloors:
     """Verify tier floor values are ordered and non-overlapping."""
 
     def test_ml_floor(self):
-        assert _TIER_FLOORS[Tier.ML] == 0.20
+        assert _TIER_FLOORS[Tier.ML] == 0.30
 
     def test_pattern_floor(self):
         assert _TIER_FLOORS[Tier.PATTERN] == 0.55
@@ -64,12 +64,12 @@ class TestNextCeiling:
 
 
 class TestMLCalibration:
-    """ML tier calibration: [0.20, 0.55] band."""
+    """ML tier calibration: [0.30, 0.55] band."""
 
     def test_ml_raw_0_gives_floor(self):
-        """Raw 0.0 → floor (0.20)."""
+        """Raw 0.0 → floor (0.30)."""
         span = _make_span(0.0, Tier.ML)
-        assert calibrate_confidence(span) == pytest.approx(0.20)
+        assert calibrate_confidence(span) == pytest.approx(0.30)
 
     def test_ml_raw_1_gives_ceiling(self):
         """Raw 1.0 → ceiling (0.55)."""
@@ -77,19 +77,19 @@ class TestMLCalibration:
         assert calibrate_confidence(span) == pytest.approx(0.55)
 
     def test_ml_raw_095_competitive(self):
-        """Raw 0.95 → 0.5325, above old ceiling of 0.50."""
+        """Raw 0.95 → 0.5375, competitive with low-confidence patterns."""
         span = _make_span(0.95, Tier.ML)
         result = calibrate_confidence(span)
-        # 0.20 + 0.95 * (0.55 - 0.20) = 0.20 + 0.3325 = 0.5325
-        assert result == pytest.approx(0.5325)
-        assert result > 0.50  # Was previously capped at 0.50
+        # 0.30 + 0.95 * (0.55 - 0.30) = 0.30 + 0.2375 = 0.5375
+        assert result == pytest.approx(0.5375)
+        assert result > 0.50
 
     def test_ml_raw_050_below_pattern(self):
-        """Raw 0.50 → 0.375, safely below pattern floor."""
+        """Raw 0.50 → 0.425, safely below pattern floor."""
         span = _make_span(0.50, Tier.ML)
         result = calibrate_confidence(span)
-        # 0.20 + 0.50 * 0.35 = 0.375
-        assert result == pytest.approx(0.375)
+        # 0.30 + 0.50 * 0.25 = 0.425
+        assert result == pytest.approx(0.425)
         assert result < _TIER_FLOORS[Tier.PATTERN]
 
 
@@ -153,7 +153,8 @@ class TestCalibrateSpans:
         span = _make_span(0.5, Tier.ML)
         result = calibrate_spans([span])[0]
         assert result.confidence != span.confidence
-        assert result.confidence == pytest.approx(0.375)
+        # 0.30 + 0.50 * (0.55 - 0.30) = 0.425
+        assert result.confidence == pytest.approx(0.425)
 
 
 class TestTierHierarchy:
