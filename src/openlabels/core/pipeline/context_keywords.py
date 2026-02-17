@@ -177,6 +177,57 @@ CONTEXT_RULES: dict[str, ContextRule] = {
         boost_amount=0.10,
         demote_amount=0.15,
     ),
+    "VIN": ContextRule(
+        boost_words=frozenset({
+            "vin", "vehicle", "car", "auto", "motor", "registration",
+            "insurance", "odometer", "mileage", "dealer", "title",
+        }),
+        demote_words=frozenset({
+            "version", "vendor", "validation",
+        }),
+        boost_amount=0.12,
+        demote_amount=0.10,
+    ),
+    "LICENSE_PLATE": ContextRule(
+        boost_words=frozenset({
+            "plate", "license plate", "tag", "registration", "vehicle",
+            "car", "dmv", "motor",
+        }),
+        demote_words=frozenset({
+            "serial", "order", "part", "model",
+        }),
+        boost_amount=0.10,
+        demote_amount=0.10,
+    ),
+    "ACCOUNT_NUMBER": ContextRule(
+        boost_words=frozenset({
+            "account", "acct", "bank", "deposit", "savings", "checking",
+            "financial", "statement", "balance",
+        }),
+        demote_words=frozenset({
+            "serial", "part", "model", "version",
+        }),
+        boost_amount=0.10,
+        demote_amount=0.10,
+    ),
+    "COMPANY": ContextRule(
+        boost_words=frozenset({
+            "company", "employer", "employed", "works at", "firm",
+            "corporation", "organization", "business",
+        }),
+        demote_words=frozenset(),
+        boost_amount=0.10,
+        demote_amount=0.0,
+    ),
+    "JOB_TITLE": ContextRule(
+        boost_words=frozenset({
+            "title", "position", "role", "occupation", "employed as",
+            "works as", "job", "profession",
+        }),
+        demote_words=frozenset(),
+        boost_amount=0.10,
+        demote_amount=0.0,
+    ),
 }
 
 

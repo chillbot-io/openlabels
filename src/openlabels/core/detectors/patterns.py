@@ -2328,7 +2328,12 @@ class PatternDetector(BaseDetector):
                 # Skip validation when VIN/vehicle context is nearby
                 if pdef.entity_type == 'VIN' and pdef.confidence < 0.90:
                     surrounding = text[max(0, start - 60):min(len(text), end + 60)].lower()
-                    has_vin_context = any(w in surrounding for w in ('vin', 'vehicle', 'car', 'auto', 'motor'))
+                    has_vin_context = any(w in surrounding for w in (
+                        'vin', 'vehicle', 'car', 'auto', 'motor',
+                        'registration', 'registered', 'insurance', 'insured',
+                        'title', 'odometer', 'mileage', 'license plate',
+                        'dmv', 'dealer', 'manufacture',
+                    ))
                     if not has_vin_context and not _validate_vin(value):
                         continue
 

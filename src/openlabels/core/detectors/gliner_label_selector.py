@@ -128,26 +128,27 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "date",
         # Professional / contextual entities.
         "company name",
+        "job title",
         "age",
         # Locations: partial regex coverage; GLiNER helps with unstructured.
         "street address",
         "city",
         "country",
+        # Vehicle identifiers: pattern detectors exist but require context
+        # or checksum validation; GLiNER catches them in broader contexts
+        # (insurance, registration, personal records).
+        "vehicle identification number",
+        "license plate number",
         # Secrets: pattern detectors handle structured secrets; GLiNER
         # catches natural-language mentions like "my password is X".
         "password",
         "pin code",
-        # --- Labels OMITTED from GENERAL to keep count ≤15 ---
-        # email, phone, credit card, IBAN, IP, URL, username, VIN, etc.
+        # --- Labels OMITTED from GENERAL ---
+        # email, phone, credit card, IBAN, IP, URL, username, etc.
         # are reliably caught by pattern/checksum detectors.  Keeping
         # them out preserves GLiNER's attention budget for entities
         # where it's the only detector.  They still activate via
         # category-specific label sets when content keywords match.
-        #
-        # NOTE: "job title" and "employee id" intentionally excluded.
-        # ai4privacy marks JOBTITLE as unmapped ("not PII") and has no
-        # EMPLOYEE_ID gold labels, so detecting these generates guaranteed
-        # false positives without any possible true positives.
     ],
     ContentCategory.MEDICAL: [
         "medical record number",
@@ -173,6 +174,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "tax identification number",
         "national identity number",
         "certificate number",
+        "employee id",
     ],
     ContentCategory.CONTACT: [
         "phone number",
@@ -197,8 +199,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "api key",
     ],
     ContentCategory.GOVERNMENT: [
-        "vehicle identification number",
-        "license plate number",
+        "unique identifier",
     ],
 }
 
