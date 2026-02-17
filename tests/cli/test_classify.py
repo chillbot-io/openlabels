@@ -133,8 +133,8 @@ class TestClassifySingleFile:
         call_kwargs = mock_processor.process_file.call_args
         assert "PUBLIC" in str(call_kwargs)
 
-    def test_classify_file_with_ml_enabled(self, runner, temp_dir, mock_file_classification):
-        """Classify file with ML detectors enabled."""
+    def test_classify_file_with_ml_disabled(self, runner, temp_dir, mock_file_classification):
+        """Classify file with ML detectors disabled via --no-ml."""
         from openlabels.cli.commands.classify import classify
 
         test_file = Path(temp_dir) / "test_document.txt"
@@ -144,13 +144,13 @@ class TestClassifySingleFile:
             mock_processor.process_file = AsyncMock(return_value=mock_file_classification)
             mock_processor_cls.return_value = mock_processor
 
-            result = runner.invoke(classify, [str(test_file), "--enable-ml"])
+            result = runner.invoke(classify, [str(test_file), "--no-ml"])
 
         assert result.exit_code == 0
         call_kwargs = mock_processor_cls.call_args
         assert call_kwargs is not None
         config = call_kwargs.kwargs.get("config") or call_kwargs.args[0]
-        assert config.enable_ml is True
+        assert config.enable_ml is False
 
     def test_classify_file_nonexistent_path(self, runner):
         """Classify with non-existent path should fail."""

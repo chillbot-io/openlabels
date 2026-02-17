@@ -77,7 +77,7 @@ def collect_files(path, recursive=False):
     return files
 
 
-def scan_files(files, enable_ml=False, exposure_level=ExposureLevel.PRIVATE):
+def scan_files(files, enable_ml=True, exposure_level=ExposureLevel.PRIVATE):
     """Scan files with FileProcessor and return results as dicts.
 
     Processes each file through the classification pipeline and returns

@@ -27,7 +27,7 @@ class DetectionConfig:
     enable_hyperscan: bool = False
 
     # ML detectors
-    enable_ml: bool = False
+    enable_ml: bool = True
     ml_model_dir: Path | None = None
     use_onnx: bool = True
 
@@ -66,7 +66,7 @@ class DetectionConfig:
     @classmethod
     def patterns_only(cls) -> DetectionConfig:
         """Pattern detectors only (no ML, no acceleration)."""
-        return cls()
+        return cls(enable_ml=False)
 
     @classmethod
     def quick(cls) -> DetectionConfig:
