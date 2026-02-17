@@ -339,7 +339,19 @@ _STREET_SUFFIXES = (
     r'Glen|Ridge|View|Hill|Heights|Hts|Park|Plaza|Walk|Commons|'
     r'Expressway|Expy|Freeway|Fwy|Turnpike|Tpke|'
     # Residential
-    r'Row|Mews|Close|Gardens|Gdn|Estate|Estates'
+    r'Row|Mews|Close|Gardens|Gdn|Estate|Estates|'
+    # Additional USPS / international suffixes
+    r'Brook|Brooks|Spring|Springs|Knoll|Knolls|'
+    r'Mountain|Mountains|Extension|Ext|Gateway|Causeway|'
+    r'Stream|Junction|Junctions|Jct|Field|Fields|'
+    r'Island|Islands|Corner|Corners|Tunnel|Tun|'
+    r'Cliffs?|Oval|Shoal|Shoals|Haven|Ranch|'
+    r'Bypass|Ferry|Trace|Grove|Grv|'
+    r'Village|Villages|Vlg|Harbor|Harbors|'
+    r'Fort|Ft|Falls|Creek|Crescent|'
+    r'Meadow|Meadows|Shores?|Stravenue|Spur|'
+    r'Crossroad|Crossroads|Overpass|Camp|'
+    r'Squares|Circles|Drives|Lanes|Roads'
 )
 
 # === State Abbreviations (shared) ===
@@ -1259,9 +1271,10 @@ _p(r'(?:logged\s+in\s+as|signed\s+in\s+as|profile)[:\s]+([A-Za-z0-9_.-]{3,30})',
 _p(r'(?:login|sign[- ]?in)\s+(?:details|info|credentials?)[:\s]+([A-Za-z0-9_.-]{3,30})', 'USERNAME', 0.85, 1, flags=re.I),
 # "your X credentials" — username before 'credentials'
 _p(r'(?:your|through\s+your|with\s+your)\s+([A-Za-z0-9_.-]{3,30})\s+credentials', 'USERNAME', 0.82, 1, flags=re.I),
-# Standalone username pattern: Word_Word with optional trailing digits
-# Highly distinctive — real words rarely have underscores
-_p(r'\b([A-Z][a-z]+(?:[_.-][A-Z][a-z]+)+\d{0,3})\b', 'USERNAME', 0.80, 1),
+# Standalone username pattern: Word_Word or Word.Word with optional trailing digits
+# Highly distinctive — real words rarely have underscores or dots between parts.
+# NOTE: Hyphens excluded — "Roberts-Rolfson" etc. are hyphenated surnames, not usernames.
+_p(r'\b([A-Z][a-z]+(?:[_.][A-Z][a-z]+)+\d{0,3})\b', 'USERNAME', 0.80, 1),
 # Simple Word_word or word_Word (mixed case with underscore)
 _p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNAME', 0.78, 1),
 # "delegating/responsibility to Username" — assignment context
@@ -1269,17 +1282,17 @@ _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A
 
 # === Password ===
 # English password labels - require colon/equals separator (not just whitespace) to avoid FPs
-_p(r'(?:password|passwd|pwd|passcode|pin)\s*[=:]\s*([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s*[=:]\s*([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I),
 # International password labels (DE: Kennwort/Passwort, FR: mot de passe, ES: contraseña, IT: password, NL: wachtwoord, PT: senha)
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha|parola\s+d\'ordine)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I | re.UNICODE),
 # Authentication context: "credentials: password", "secret: xxxxx"
 _p(r'(?:credential|secret|auth\s+key|api\s+key|access\s+key|secret\s+key)[:\s]+([^\s]{8,100})', 'PASSWORD', 0.88, 1, flags=re.I),
 # Temp/initial password context
-_p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
-# "password is XXXX" / "pin is XXXX" — verb separator instead of colon/equals
-_p(r'(?:password|passwd|pwd|passcode)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
+_p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode|pin|pass)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
+# "password is XXXX" / "pin is XXXX" / "pass is XXXX" — verb separator instead of colon/equals
+_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
 # "password for X is Y" — "for" clause between password and value
-_p(r'(?:password|passwd|pwd|passcode)\s+(?:for\s+\S+(?:\s+\S+){0,4}?\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:for\s+\S+(?:\s+\S+){0,4}?\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha)\s+(?:is|ist|est|es|é)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I | re.UNICODE),
 # PIN with label context: "PIN code XXXX", "PIN - XXXX", "pin XXXX", "pin: XXXX"
 _p(r'\bpin\s*[=:]\s*(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
@@ -1299,7 +1312,7 @@ _p(r'(?:passwords?|passcodes?),?\s+(?:with|like|such\s+as|including)\s+([A-Za-z0
 # "asking for your X" — social engineering context (password)
 _p(r'(?:asking|asks)\s+for\s+your\s+([A-Za-z0-9_]{6,50})\b(?=\.\s|[\s,])', 'PASSWORD', 0.78, 1, flags=re.I),
 # "password for accessing online content: X" — colon after content context
-_p(r'(?:password|passcode|pwd)\s+for\s+\S+(?:\s+\S+){0,4}?:\s*([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+_p(r'(?:password|passcode|pwd|pass)\s+for\s+\S+(?:\s+\S+){0,4}?:\s*([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
 # "use X to access" / "use X for one-time access"
 _p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:to\s+access|for\s+(?:one-time\s+)?access)', 'PASSWORD', 0.82, 1, flags=re.I),
 # "use XXXX to access" — 4-digit PIN variant
@@ -1308,6 +1321,48 @@ _p(r'\buse\s+(\d{4,8})\s+to\s+access\b', 'PASSWORD', 0.82, 1, flags=re.I),
 _p(r'(?:log\s*in|sign\s*in)\s+and\s+use\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # "USERNAME and PASSWORD used" — auth pair in past tense
 _p(r'\b\S+\s+and\s+([A-Za-z0-9_]{6,50})\s+used\b', 'PASSWORD', 0.75, 1, flags=re.I),
+# "password changed/updated to X" — password state change
+_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:changed|updated|modified|reset|set)\s+to\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
+# "password from X" — source reference ("update their password from X to something stronger")
+_p(r'(?:password|passwd|pwd|passcode|pass)\s+from\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.85, 1, flags=re.I),
+# "change/update/modify your/their X" — possessive password change context
+# Require at least one digit to avoid matching common words (e.g. "change your password")
+_p(r'(?:change|update|modify(?:ing)?)\s+(?:your|their|his|her|my)\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.80, 1, flags=re.I),
+# "log in/sign in with X" — login-with pattern
+_p(r'(?:log\s*in|sign\s*in|login)\s+with\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "Log in with X" — 4-digit PIN variant
+_p(r'(?:log\s*in|sign\s*in|login)\s+with\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "credentials are ... and X" — credential pair after "are"
+_p(r'credentials\s+are\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "USERNAME and PASSWORD to access/join" — credential pair before access verb
+_p(r'\b\S+\s+and\s+([A-Za-z0-9_]{6,50})\s+to\s+(?:access|join|login|log\s*in|sign\s*in|enter|view)', 'PASSWORD', 0.80, 1, flags=re.I),
+# "USERNAME & PASSWORD" — ampersand credential pair (require digit to avoid FPs)
+_p(r'\b\S+\s+&\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "Use X for access" / "Use X to get access" — broader access patterns
+_p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:to\s+get\s+access|for\s+access)', 'PASSWORD', 0.82, 1, flags=re.I),
+# "Use X on DATE for access" — use with intervening context before "for access"
+_p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:\S+\s+){0,5}?for\s+access\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "remember your X for" — extend from digits-only to alphanumeric
+_p(r'\b(?:remember|note|save)\s+(?:your\s+)?([A-Za-z0-9_]{6,50})\b(?=\s+(?:for|as|when|to|during))', 'PASSWORD', 0.78, 1, flags=re.I),
+# "share your login X" — sharing context (require "login" keyword to avoid FPs like "share your details")
+_p(r'(?:share|disclose|reveal)\s+(?:your\s+)?login\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "never share your X" / "do not share your X" — warning context with digit-containing value
+_p(r'(?:never|do\s+not|don\'t|shouldn\'t)\s+share\s+(?:your\s+)?([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.80, 1, flags=re.I),
+# "as the/your password" — trailing password context
+_p(r'\b([A-Za-z0-9_]{4,50})\s+as\s+(?:the|your|a)\s+(?:password|passcode|pin|pwd)\b', 'PASSWORD', 0.85, 1, flags=re.I),
+# "gate code / access code / verification code / the code X" — code context
+_p(r'(?:gate|access|security|verification|entry|door)\s+code\s*[:\s]\s*([A-Za-z0-9_]{3,50})\b', 'PASSWORD', 0.85, 1, flags=re.I),
+_p(r'(?:use|enter|provide)\s+(?:the\s+)?code\s+([A-Za-z0-9_]{3,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "PIN is DIGITS" — ensure PIN + "is" works for digit PINs
+_p(r'\bpin\s+(?:is|was|will\s+be)\s+(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
+# "PIN ... is DIGITS" — PIN with intervening words ("security pin linked to this transaction is 0442")
+_p(r'\bpin\s+(?:\S+\s+){1,6}?(?:is|was)\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "Use X and Y" — credential pair without "using" prefix
+_p(r'\b[Uu]se\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "using your X" — using + possessive (require digit to avoid FPs like "using your profile")
+_p(r'\busing\s+(?:your|their|his|her)\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "username and X" — broader credential pair (any word before "and")
+_p(r'(?:username|user\s*name|user\s+ID)\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -2085,6 +2140,16 @@ _PASSWORD_FALSE_POSITIVES = frozenset({
     'recovery', 'policy', 'manager', 'vault', 'strength',
     'complexity', 'requirements', 'authentication', 'security',
     'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+    # Common words caught by broad contextual patterns
+    'password', 'passwords', 'username', 'usernames', 'login',
+    'provided', 'assigned', 'secure', 'secured', 'immediately',
+    'information', 'details', 'profile', 'account', 'address',
+    'contact', 'payment', 'membership', 'experience', 'success',
+    'systems', 'system', 'individuals', 'academic', 'vehicle',
+    'bank', 'banking', 'insights', 'settings', 'preferences',
+    'credentials', 'credential', 'access', 'service', 'services',
+    'number', 'code', 'previous', 'current', 'following',
+    'original', 'existing', 'default', 'temporary',
 })
 
 # DRIVER_LICENSE date-like false positives — 8-digit values that look

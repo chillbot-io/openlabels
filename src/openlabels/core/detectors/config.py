@@ -73,7 +73,7 @@ class DetectionConfig:
         ("LASTNAME", 0.45),
         ("PERSON", 0.45),
         # Ambiguous — higher threshold to reduce FP
-        ("AGE", 0.80),
+        ("AGE", 0.70),
         ("ZIP", 0.75),
     )
 

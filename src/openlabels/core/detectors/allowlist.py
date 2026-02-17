@@ -32,9 +32,12 @@ _SUPPRESSION_RULES: list[tuple[str, frozenset[str]]] = [
         "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
         "FIRSTNAME", "LASTNAME",
     })),
+    # City names overlap heavily with first/last names (Houston, Florence,
+    # Milton, Parker, Spencer, etc.).  Only suppress USERNAME (garbage like
+    # "from", "and") — name-type detections are more likely true PII than
+    # city references.  Benchmark: +22 TP, +0 FP vs suppressing all NAME types.
     ("us_cities.txt", frozenset({
-        "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
-        "FIRSTNAME", "LASTNAME", "USERNAME",
+        "USERNAME",
     })),
     ("drugs.txt", frozenset({
         "NAME", "NAME_PATIENT", "NAME_PROVIDER", "FIRSTNAME", "LASTNAME",

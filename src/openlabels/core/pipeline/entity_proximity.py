@@ -23,13 +23,25 @@ DEFAULT_PROXIMITY_CHARS = 500
 
 # Relationship map: entity type → set of types that provide boosting context.
 _BOOST_RELATIONSHIPS: dict[str, set[str]] = {
+    # Names — boosted by surrounding identifiers and contact info
     "NAME": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL", "ADDRESS", "DRIVER_LICENSE"},
-    "FIRSTNAME": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL"},
-    "LASTNAME": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL"},
+    "NAME_PATIENT": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL", "ADDRESS"},
+    "NAME_PROVIDER": {"MRN", "PHONE", "EMAIL", "NPI", "DEA"},
+    "FIRSTNAME": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL", "LASTNAME"},
+    "LASTNAME": {"SSN", "MRN", "DATE_DOB", "PHONE", "EMAIL", "FIRSTNAME"},
+    # Government IDs — boosted by names and dates
     "SSN": {"NAME", "FIRSTNAME", "LASTNAME", "DATE_DOB", "ADDRESS"},
-    "ADDRESS": {"NAME", "PHONE", "EMAIL", "SSN"},
-    "MRN": {"NAME", "DATE_DOB", "PHONE"},
+    "MRN": {"NAME", "NAME_PATIENT", "DATE_DOB", "PHONE"},
     "DATE_DOB": {"NAME", "SSN", "MRN"},
+    # Location components — boost each other (city near zip → both more likely PII)
+    "ADDRESS": {"NAME", "PHONE", "EMAIL", "SSN", "CITY", "STATE", "ZIP"},
+    "CITY": {"ADDRESS", "STATE", "ZIP", "NAME", "PHONE"},
+    "STATE": {"ADDRESS", "CITY", "ZIP"},
+    "ZIP": {"ADDRESS", "CITY", "STATE", "NAME"},
+    "COUNTY": {"ADDRESS", "CITY", "STATE"},
+    # Secrets — boosted by usernames and email context
+    "PASSWORD": {"USERNAME", "EMAIL", "URL"},
+    "USERNAME": {"PASSWORD", "EMAIL"},
 }
 
 # Maximum confidence boost a span can receive.

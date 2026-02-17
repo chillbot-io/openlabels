@@ -41,6 +41,14 @@ _PASSWORD_FP = frozenset({
     'recovery', 'policy', 'manager', 'vault', 'strength',
     'complexity', 'requirements', 'authentication', 'security',
     'hash', 'hashed', 'hashing', 'salted', 'bcrypt', 'argon2',
+    # Common words caught by broad contextual patterns
+    'password', 'passwords', 'username', 'usernames', 'login',
+    'provided', 'assigned', 'secure', 'secured', 'immediately',
+    'information', 'details', 'profile', 'account', 'address',
+    'contact', 'payment', 'membership', 'experience', 'success',
+    'systems', 'system', 'individuals', 'academic', 'vehicle',
+    'bank', 'banking', 'insights', 'settings', 'preferences',
+    'credentials', 'credential', 'access', 'service', 'services',
 })
 
 SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
