@@ -142,8 +142,8 @@ class TestConfidenceBoosting:
 
     def test_no_boost_when_anchor_low_confidence(self):
         spans = [
-            _make_span(0, 10, "NAME", confidence=0.55),
-            _make_span(20, 31, "SSN", confidence=0.50),  # Below MIN_ANCHOR_CONFIDENCE
+            _make_span(0, 10, "NAME", confidence=0.30),
+            _make_span(20, 31, "SSN", confidence=0.35),  # Below MIN_ANCHOR_CONFIDENCE (0.40)
         ]
         result = analyze_proximity(spans, enable_boosting=True)
         assert result.boost_count == 0

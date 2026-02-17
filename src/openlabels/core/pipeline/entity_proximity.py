@@ -36,7 +36,10 @@ _BOOST_RELATIONSHIPS: dict[str, set[str]] = {
 MAX_CONFIDENCE_BOOST = 0.10
 
 # Minimum confidence of the "anchor" entity for it to provide a boost.
-MIN_ANCHOR_CONFIDENCE = 0.70
+# Set to 0.40 so calibrated ML spans (range [0.10, 0.50]) with high raw
+# confidence can serve as anchors.  PATTERN spans (floor 0.50) and
+# CHECKSUM spans (floor 0.90) always exceed this threshold.
+MIN_ANCHOR_CONFIDENCE = 0.40
 
 
 @dataclass

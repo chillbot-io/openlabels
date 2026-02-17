@@ -89,7 +89,7 @@ class GLiNERDetector(BaseDetector):
     def __init__(
         self,
         model_name: str = DEFAULT_GLINER_MODEL,
-        threshold: float = 0.3,
+        threshold: float = 0.4,
         label_map: dict[str, str] | None = None,
         use_onnx: bool = False,
         enable_label_selection: bool = True,

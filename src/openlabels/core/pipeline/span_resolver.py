@@ -32,6 +32,9 @@ def resolve_spans(
         confidence_threshold: Discard spans below this threshold.
         strategy: How to break ties on partial overlap between
                   different entity types.
+        source_text: Original document text.  When provided, merged
+                     spans extract their text directly from the source
+                     instead of using heuristic concatenation.
 
     Returns:
         Deduplicated, sorted spans.

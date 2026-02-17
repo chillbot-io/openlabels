@@ -33,7 +33,7 @@ class TestGLiNERDetectorInit:
 
     def test_default_threshold(self):
         det = GLiNERDetector()
-        assert det.threshold == 0.3
+        assert det.threshold == 0.4
 
     def test_custom_threshold(self):
         det = GLiNERDetector(threshold=0.5)
