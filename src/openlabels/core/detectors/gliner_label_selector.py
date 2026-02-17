@@ -139,6 +139,10 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "country",
         "url",
         "username",
+        # Core financial labels — always relevant for PII.
+        "credit card number",
+        "bank account number",
+        "iban",
         # NOTE: "job title" and "employee id" intentionally excluded.
         # ai4privacy marks JOBTITLE as unmapped ("not PII") and has no
         # EMPLOYEE_ID gold labels, so detecting these generates guaranteed
