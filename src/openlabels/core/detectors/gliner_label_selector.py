@@ -143,8 +143,13 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "credit card number",
         "bank account number",
         "iban",
-        # Secrets — passwords and API keys can appear in any context.
+        "swift code",
+        "bank routing number",
+        "bitcoin address",
+        "ethereum address",
+        # Secrets — passwords, PINs, and API keys can appear in any context.
         "password",
+        "pin code",
         "api key",
         # Vehicle — VINs and plates are structurally distinctive.
         "vehicle identification number",

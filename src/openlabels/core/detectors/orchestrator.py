@@ -337,14 +337,21 @@ class DetectorOrchestrator:
         """Boost confidence when multiple detectors agree on the same entity.
 
         For each span, checks if a different detector produced an overlapping
-        span with a compatible entity type.  If so, the higher-confidence
-        span gets boosted (clamped to 1.0).  The corroborating span is left
-        unchanged so that the span resolver can still pick the best one.
+        span with a compatible entity type (same evaluation category, e.g.
+        FIRSTNAME and NAME are both "names").  If so, the higher-confidence
+        span gets boosted (clamped to 1.0).
 
         This rewards multi-detector agreement without adding new detections.
         """
         if len(spans) < 2:
             return spans
+
+        from ..benchmark.entity_mapping import EVAL_CATEGORIES
+
+        def _entity_group(entity_type: str) -> str:
+            """Return the category group for an entity type, or its normalized form."""
+            norm = normalize_entity_type(entity_type)
+            return EVAL_CATEGORIES.get(norm, norm)
 
         boosted_indices: set[int] = set()
         result = list(spans)
@@ -352,14 +359,14 @@ class DetectorOrchestrator:
         for i, span_a in enumerate(spans):
             if i in boosted_indices:
                 continue
-            norm_a = normalize_entity_type(span_a.entity_type)
+            group_a = _entity_group(span_a.entity_type)
             for j, span_b in enumerate(spans):
                 if i == j or span_a.detector == span_b.detector:
                     continue
                 if not span_a.overlaps(span_b):
                     continue
-                norm_b = normalize_entity_type(span_b.entity_type)
-                if norm_a != norm_b:
+                group_b = _entity_group(span_b.entity_type)
+                if group_a != group_b:
                     continue
                 # Two different detectors agree — boost the stronger one.
                 if i not in boosted_indices:
