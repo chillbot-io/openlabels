@@ -33,7 +33,8 @@ class DetectionConfig:
 
     # GLiNER settings
     gliner_model: str = "gretelai/gretel-gliner-bi-base-v1.0"
-    gliner_threshold: float = 0.3
+    gliner_threshold: float = 0.4
+    enable_label_selection: bool = True
 
     # Post-processing
     enable_coref: bool = False
@@ -41,9 +42,13 @@ class DetectionConfig:
     enable_policy: bool = True
     enable_allowlist: bool = True
 
+    # Entity proximity / co-occurrence boosting
+    enable_proximity_boost: bool = False
+    proximity_window_chars: int = 500
+
     # Tuning
     confidence_threshold: float = 0.70
-    ml_confidence_threshold: float = 0.85
+    ml_confidence_threshold: float = 0.65
     max_workers: int = 4
 
     @classmethod
@@ -55,6 +60,7 @@ class DetectionConfig:
             enable_coref=True,
             enable_context_enhancement=True,
             enable_policy=True,
+            enable_proximity_boost=True,
         )
 
     @classmethod

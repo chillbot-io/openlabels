@@ -128,8 +128,11 @@ class TestGLiNERDetectorDetect:
     """Test GLiNERDetector.detect() with mocked model."""
 
     def _make_loaded_detector(self, label_map=None):
-        """Create a detector with a mocked model."""
-        det = GLiNERDetector(label_map=label_map or GLINER_LABEL_MAP)
+        """Create a detector with a mocked model (label selection disabled)."""
+        det = GLiNERDetector(
+            label_map=label_map or GLINER_LABEL_MAP,
+            enable_label_selection=False,
+        )
         det._model = MagicMock()
         det._loaded = True
         return det

@@ -23,6 +23,7 @@ def resolve_spans(
     *,
     confidence_threshold: float = 0.0,
     strategy: OverlapStrategy = OverlapStrategy.HIGHER_CONFIDENCE,
+    source_text: str | None = None,
 ) -> list[Span]:
     """Deduplicate, filter, and sort spans.
 
@@ -39,7 +40,7 @@ def resolve_spans(
         return []
 
     filtered = [s for s in spans if s.confidence >= confidence_threshold]
-    deduped = _deduplicate(filtered, strategy)
+    deduped = _deduplicate(filtered, strategy, source_text=source_text)
     deduped.sort(key=lambda s: (s.start, -s.end))
     return deduped
 
@@ -47,6 +48,7 @@ def resolve_spans(
 def _deduplicate(
     spans: list[Span],
     strategy: OverlapStrategy = OverlapStrategy.HIGHER_CONFIDENCE,
+    source_text: str | None = None,
 ) -> list[Span]:
     """Remove duplicate/overlapping detections.
 
@@ -123,12 +125,17 @@ def _deduplicate(
                 new_start = min(accepted.start, span.start)
                 new_end = max(accepted.end, span.end)
 
-                if accepted.start <= span.start:
-                    left, right = accepted, span
+                # Re-extract text from source when available for accuracy;
+                # otherwise fall back to heuristic concatenation.
+                if source_text is not None:
+                    merged_text = source_text[new_start:new_end]
                 else:
-                    left, right = span, accepted
-                overlap_chars = left.end - right.start
-                merged_text = left.text + right.text[overlap_chars:]
+                    if accepted.start <= span.start:
+                        left, right = accepted, span
+                    else:
+                        left, right = span, accepted
+                    overlap_chars = left.end - right.start
+                    merged_text = left.text + right.text[overlap_chars:]
 
                 if (span.tier.value > accepted.tier.value
                         or (span.tier.value == accepted.tier.value

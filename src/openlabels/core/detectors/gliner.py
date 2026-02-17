@@ -91,10 +91,14 @@ class GLiNERDetector(BaseDetector):
         model_name: str = DEFAULT_GLINER_MODEL,
         threshold: float = 0.3,
         label_map: dict[str, str] | None = None,
+        use_onnx: bool = False,
+        enable_label_selection: bool = True,
     ):
         self.model_name = model_name
         self.threshold = threshold
         self.label_map = label_map or GLINER_LABEL_MAP
+        self.use_onnx = use_onnx
+        self.enable_label_selection = enable_label_selection
         self._model: Any = None
         self._loaded = False
         self._entity_labels = list(self.label_map.keys())
@@ -111,7 +115,10 @@ class GLiNERDetector(BaseDetector):
         try:
             from gliner import GLiNER
 
-            self._model = GLiNER.from_pretrained(self.model_name)
+            self._model = GLiNER.from_pretrained(
+                self.model_name,
+                load_onnx_model=self.use_onnx,
+            )
             self._loaded = True
             logger.info("GLiNER model loaded: %s", self.model_name)
             return True
@@ -125,8 +132,19 @@ class GLiNERDetector(BaseDetector):
             logger.error("Failed to load GLiNER model %s: %s", self.model_name, e)
             return False
 
+    # GLiNER token window is ~512 tokens; ~4 chars/token = ~2048 chars.
+    # Use conservative chunk size to stay well within the window.
+    _MAX_CHUNK_CHARS = 1500
+    _CHUNK_OVERLAP = 200
+
     def detect(self, text: str) -> list[Span]:
         """Detect PII entities using GLiNER.
+
+        Long texts are automatically chunked into overlapping windows
+        to avoid silent entity loss beyond the transformer window.
+
+        If ``enable_label_selection`` is True, the label set is narrowed
+        based on lightweight content profiling (keyword heuristics).
 
         Args:
             text: Input text to scan.
@@ -140,10 +158,52 @@ class GLiNERDetector(BaseDetector):
         if not text or not text.strip():
             return []
 
+        # Select labels based on content profiling
+        labels = self._select_labels(text)
+
+        # Chunk if text exceeds GLiNER's effective window
+        if len(text) > self._MAX_CHUNK_CHARS:
+            return self._detect_chunked(text, labels)
+
+        return self._detect_single(text, labels)
+
+    def _select_labels(self, text: str) -> list[str]:
+        """Select GLiNER labels based on document content profiling."""
+        if not self.enable_label_selection:
+            return self._entity_labels
+
+        try:
+            from .gliner_label_selector import profile_content
+            profile = profile_content(text)
+            logger.debug(
+                "GLiNER label selection: %d/%d labels from categories %s",
+                len(profile.selected_labels),
+                len(self._entity_labels),
+                profile.categories,
+            )
+            return profile.selected_labels
+        except Exception as e:
+            logger.warning("Label selection failed, using all labels: %s", e)
+            return self._entity_labels
+
+    def _detect_single(
+        self,
+        text: str,
+        labels: list[str],
+        offset: int = 0,
+    ) -> list[Span]:
+        """Run GLiNER on a single text segment.
+
+        Args:
+            text: Text to scan.
+            labels: GLiNER label strings to detect.
+            offset: Character offset to add to span positions
+                (used when processing chunks of a larger document).
+        """
         try:
             entities = self._model.predict_entities(
                 text,
-                self._entity_labels,
+                labels,
                 threshold=self.threshold,
                 flat_ner=True,
             )
@@ -160,9 +220,9 @@ class GLiNERDetector(BaseDetector):
 
             start = int(entity["start"])
             end = int(entity["end"])
-            score = float(entity["score"])
+            score_val = float(entity["score"])
 
-            # Validate offsets
+            # Validate offsets against the chunk text
             if start < 0 or end <= start or end > len(text):
                 continue
 
@@ -170,11 +230,11 @@ class GLiNERDetector(BaseDetector):
 
             try:
                 span = Span(
-                    start=start,
-                    end=end,
+                    start=start + offset,
+                    end=end + offset,
                     text=span_text,
                     entity_type=canonical_type,
-                    confidence=score,
+                    confidence=score_val,
                     detector=self.name,
                     tier=self.tier,
                 )
@@ -183,3 +243,48 @@ class GLiNERDetector(BaseDetector):
                 logger.debug("GLiNER: Invalid span skipped: %s", e)
 
         return spans
+
+    def _detect_chunked(self, text: str, labels: list[str]) -> list[Span]:
+        """Split text into overlapping chunks, detect per chunk, merge results."""
+        from ..pipeline.chunking import TextChunker
+
+        chunker = TextChunker(
+            max_chunk_size=self._MAX_CHUNK_CHARS,
+            overlap=self._CHUNK_OVERLAP,
+        )
+        chunks = chunker.chunk(text)
+
+        all_spans: list[Span] = []
+        for chunk in chunks:
+            chunk_spans = self._detect_single(chunk.text, labels, offset=chunk.start)
+            all_spans.extend(chunk_spans)
+
+        return self._dedup_chunk_spans(all_spans)
+
+    @staticmethod
+    def _dedup_chunk_spans(spans: list[Span]) -> list[Span]:
+        """Deduplicate overlapping spans from adjacent chunks.
+
+        Keeps the higher-confidence span when two spans overlap
+        by more than 50% of the shorter span's length.
+        """
+        if not spans:
+            return []
+
+        spans_sorted = sorted(spans, key=lambda s: (s.start, -s.confidence))
+        result = [spans_sorted[0]]
+
+        for span in spans_sorted[1:]:
+            prev = result[-1]
+            # Check for significant overlap
+            if span.start < prev.end:
+                overlap = prev.end - span.start
+                min_len = min(prev.end - prev.start, span.end - span.start)
+                if min_len > 0 and overlap > min_len * 0.5:
+                    # Keep higher confidence
+                    if span.confidence > prev.confidence:
+                        result[-1] = span
+                    continue
+            result.append(span)
+
+        return result
