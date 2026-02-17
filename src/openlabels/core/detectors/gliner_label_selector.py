@@ -117,43 +117,32 @@ _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
 
 _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
     ContentCategory.GENERAL: [
+        # --- GLiNER-essential labels: entities with NO regex equivalent ---
+        # Names: the primary reason GLiNER exists in the pipeline.
         "person name",
         "first name",
         "last name",
-        "middle name",
-        "email address",
-        "phone number",
+        # Dates: regex catches structured dates; GLiNER catches natural-language.
         "date of birth",
         "date",
-        "date and time",
-        "time",
-        "age",
+        # Professional / contextual entities.
         "company name",
-        "employer",
-        "unique identifier",
-        # Core location / contact labels — always relevant for PII.
+        "age",
+        # Locations: partial regex coverage; GLiNER helps with unstructured.
         "street address",
         "city",
-        "state",
-        "zip code",
         "country",
-        "url",
-        "username",
-        # Core financial labels — always relevant for PII.
-        "credit card number",
-        "bank account number",
-        "iban",
-        "swift code",
-        "bank routing number",
-        "bitcoin address",
-        "ethereum address",
-        # Secrets — passwords, PINs, and API keys can appear in any context.
+        # Secrets: pattern detectors handle structured secrets; GLiNER
+        # catches natural-language mentions like "my password is X".
         "password",
         "pin code",
-        "api key",
-        # Vehicle — VINs and plates are structurally distinctive.
-        "vehicle identification number",
-        "license plate number",
+        # --- Labels OMITTED from GENERAL to keep count ≤15 ---
+        # email, phone, credit card, IBAN, IP, URL, username, VIN, etc.
+        # are reliably caught by pattern/checksum detectors.  Keeping
+        # them out preserves GLiNER's attention budget for entities
+        # where it's the only detector.  They still activate via
+        # category-specific label sets when content keywords match.
+        #
         # NOTE: "job title" and "employee id" intentionally excluded.
         # ai4privacy marks JOBTITLE as unmapped ("not PII") and has no
         # EMPLOYEE_ID gold labels, so detecting these generates guaranteed
@@ -174,6 +163,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "bank routing number",
         "bitcoin address",
         "ethereum address",
+        "pin code",
     ],
     ContentCategory.PERSONAL_ID: [
         "social security number",
@@ -184,6 +174,8 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "certificate number",
     ],
     ContentCategory.CONTACT: [
+        "phone number",
+        "email address",
         "street address",
         "city",
         "state",
@@ -200,6 +192,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "device identifier",
         "imei number",
         "password",
+        "pin code",
         "api key",
     ],
     ContentCategory.GOVERNMENT: [
