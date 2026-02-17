@@ -297,6 +297,16 @@ def _show_model_status(config) -> None:
     from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
 
     click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
+    if getattr(config, "enable_spacy_ner", False):
+        try:
+            import spacy
+            model = "en_core_web_lg"
+            if spacy.util.is_package(model):
+                click.echo(f"  spaCy NER: {model}")
+            else:
+                click.echo(f"  spaCy NER: {model} (NOT INSTALLED — run: python -m spacy download {model})")
+        except ImportError:
+            click.echo("  spaCy NER: disabled (spacy not installed)")
 
 
 def _cli_progress(current: int, total: int) -> None:
