@@ -114,10 +114,14 @@ class TestLabelSelection:
     def test_general_labels_always_present(self):
         text = "Some generic text with no PII keywords at all."
         profile = profile_content(text)
-        # GENERAL labels should always be present
+        # GENERAL labels should always be present (focused set for GLiNER)
         assert "person name" in profile.selected_labels
-        assert "email address" in profile.selected_labels
+        assert "first name" in profile.selected_labels
         assert "date of birth" in profile.selected_labels
+        assert "company name" in profile.selected_labels
+        # email/phone are NOT in GENERAL — they're in CONTACT category
+        # because pattern detectors already handle them reliably
+        assert "email address" not in profile.selected_labels
 
     def test_medical_includes_mrn(self):
         text = "Patient admitted with chief complaint, diagnosis pending. Medication prescribed."

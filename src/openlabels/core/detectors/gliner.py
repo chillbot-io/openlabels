@@ -89,6 +89,7 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "biometric identifier": "BIOMETRIC_ID",
     # Secrets
     "password": "PASSWORD",
+    "pin code": "PASSWORD",
     "api key": "API_KEY",
 }
 
