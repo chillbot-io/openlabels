@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from openlabels.core.benchmark.dataset import BenchmarkSample, DatasetLoadError, load_dataset
@@ -47,17 +47,30 @@ class BenchmarkConfig:
     max_workers: int = 4
     ml_model_dir: str | None = None  # None = use DEFAULT_MODELS_DIR
 
+    # ML tuning
+    ml_confidence_threshold: float = 0.50
+    gliner_model: str = "gretelai/gretel-gliner-bi-base-v1.0"
+    gliner_threshold: float = 0.4
+    use_onnx: bool = True
+    enable_label_selection: bool = True
+
+    # Per-entity-type confidence thresholds (None = use DetectionConfig defaults)
+    entity_thresholds: tuple[tuple[str, float], ...] | None = None
+
     # Post-processing / relationship graph
     enable_coref: bool = False
     enable_context_enhancement: bool = False
     enable_context_keywords: bool = True
     enable_proximity_boost: bool = False
     proximity_window_chars: int = 500
+    enable_allowlist: bool = True
+    enable_policy: bool = True
 
     # Pipeline config
     use_tiered_pipeline: bool = False
     escalation_threshold: float = 0.70
     auto_detect_medical: bool = False
+    medical_triggers_dual_bert: bool = True
 
     # Evaluation config
     min_overlap_ratio: float = 0.5
@@ -70,7 +83,7 @@ class BenchmarkConfig:
         from openlabels.core.detectors.config import DetectionConfig
 
         ml_dir = Path(self.ml_model_dir) if self.ml_model_dir else None
-        return DetectionConfig(
+        kwargs: dict = dict(
             enable_checksum=self.enable_checksum,
             enable_secrets=self.enable_secrets,
             enable_financial=self.enable_financial,
@@ -82,12 +95,24 @@ class BenchmarkConfig:
             confidence_threshold=self.confidence_threshold,
             max_workers=self.max_workers,
             ml_model_dir=ml_dir,
+            # ML tuning
+            ml_confidence_threshold=self.ml_confidence_threshold,
+            gliner_model=self.gliner_model,
+            gliner_threshold=self.gliner_threshold,
+            use_onnx=self.use_onnx,
+            enable_label_selection=self.enable_label_selection,
+            # Post-processing
             enable_coref=self.enable_coref,
             enable_context_enhancement=self.enable_context_enhancement,
             enable_context_keywords=self.enable_context_keywords,
             enable_proximity_boost=self.enable_proximity_boost,
             proximity_window_chars=self.proximity_window_chars,
+            enable_allowlist=self.enable_allowlist,
+            enable_policy=self.enable_policy,
         )
+        if self.entity_thresholds is not None:
+            kwargs["entity_thresholds"] = self.entity_thresholds
+        return DetectionConfig(**kwargs)
 
     def to_pipeline_config(self):
         """Convert to a PipelineConfig for the tiered pipeline."""
@@ -108,6 +133,8 @@ class BenchmarkConfig:
             auto_detect_medical=self.auto_detect_medical,
             max_workers=self.max_workers,
             ml_model_dir=ml_dir,
+            use_onnx=self.use_onnx,
+            medical_triggers_dual_bert=self.medical_triggers_dual_bert,
             # Eager-load ML for benchmarks so every sample gets ML detection,
             # not just those that trigger escalation.
             eager_load_ml=self.enable_ml,
@@ -469,23 +496,7 @@ def threshold_sweep(
 
     configs = []
     for t in thresholds:
-        cfg = BenchmarkConfig(
-            name=f"threshold_{t:.2f}",
-            enable_checksum=base.enable_checksum,
-            enable_secrets=base.enable_secrets,
-            enable_financial=base.enable_financial,
-            enable_government=base.enable_government,
-            enable_patterns=base.enable_patterns,
-            enable_ml=base.enable_ml,
-            enable_hyperscan=base.enable_hyperscan,
-            confidence_threshold=t,
-            max_workers=base.max_workers,
-            use_tiered_pipeline=base.use_tiered_pipeline,
-            escalation_threshold=base.escalation_threshold,
-            auto_detect_medical=base.auto_detect_medical,
-            min_overlap_ratio=base.min_overlap_ratio,
-            strict_type_match=base.strict_type_match,
-        )
+        cfg = replace(base, name=f"threshold_{t:.2f}", confidence_threshold=t)
         configs.append(cfg)
 
     results = run_sweep(
