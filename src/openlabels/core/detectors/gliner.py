@@ -109,26 +109,56 @@ class GLiNERDetector(BaseDetector):
     def load(self) -> bool:
         """Load GLiNER model from HuggingFace Hub.
 
+        When ``use_onnx`` is True but the model has no ONNX weights,
+        automatically falls back to the PyTorch checkpoint.
+
         Returns:
             True if loaded successfully.
         """
         try:
             from gliner import GLiNER
-
-            self._model = GLiNER.from_pretrained(
-                self.model_name,
-                load_onnx_model=self.use_onnx,
-            )
-            self._loaded = True
-            logger.info("GLiNER model loaded: %s", self.model_name)
-            return True
         except ImportError:
             logger.warning(
                 "gliner library not installed — GLiNER detection disabled. "
                 "Install with: pip install gliner"
             )
             return False
+
+        try:
+            self._model = GLiNER.from_pretrained(
+                self.model_name,
+                load_onnx_model=self.use_onnx,
+            )
+            self._loaded = True
+            logger.info(
+                "GLiNER model loaded: %s (onnx=%s)",
+                self.model_name, self.use_onnx,
+            )
+            return True
         except (OSError, RuntimeError, ValueError) as e:
+            if self.use_onnx:
+                logger.warning(
+                    "ONNX load failed for %s, falling back to PyTorch: %s",
+                    self.model_name, e,
+                )
+                try:
+                    self._model = GLiNER.from_pretrained(
+                        self.model_name,
+                        load_onnx_model=False,
+                    )
+                    self.use_onnx = False
+                    self._loaded = True
+                    logger.info(
+                        "GLiNER model loaded (PyTorch fallback): %s",
+                        self.model_name,
+                    )
+                    return True
+                except (OSError, RuntimeError, ValueError) as e2:
+                    logger.error(
+                        "Failed to load GLiNER model %s: %s",
+                        self.model_name, e2,
+                    )
+                    return False
             logger.error("Failed to load GLiNER model %s: %s", self.model_name, e)
             return False
 
