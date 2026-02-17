@@ -29,6 +29,7 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "person name": "NAME",
     "first name": "FIRSTNAME",
     "last name": "LASTNAME",
+    "middle name": "MIDDLENAME",
     # Contact
     "email address": "EMAIL",
     "phone number": "PHONE",
@@ -40,9 +41,13 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "state": "STATE",
     "zip code": "ZIP",
     "country": "COUNTRY",
-    # Dates
+    "county": "COUNTY",
+    "gps coordinate": "GPS_COORDINATE",
+    # Dates / Time
     "date of birth": "DATE_DOB",
     "date": "DATE",
+    "date and time": "DATETIME",
+    "time": "TIME",
     "age": "AGE",
     # Government IDs
     "social security number": "SSN",
@@ -52,13 +57,20 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "national identity number": "STATE_ID",
     # Medical
     "medical record number": "MRN",
+    "health plan number": "HEALTH_PLAN_ID",
+    "npi number": "NPI",
+    "medical license number": "MEDICAL_LICENSE",
     # Financial
     "credit card number": "CREDIT_CARD",
     "bank account number": "ACCOUNT_NUMBER",
     "iban": "IBAN",
+    "swift code": "SWIFT_BIC",
+    "bank routing number": "BANK_ROUTING",
     # Network / Device
     "ip address": "IP_ADDRESS",
     "mac address": "MAC_ADDRESS",
+    "device identifier": "DEVICE_ID",
+    "imei number": "IMEI",
     # Vehicle
     "vehicle identification number": "VIN",
     "license plate number": "LICENSE_PLATE",
@@ -67,8 +79,16 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "ethereum address": "ETHEREUM_ADDRESS",
     # Professional
     "company name": "COMPANY",
+    "employer": "EMPLOYER",
+    "employee id": "EMPLOYEE_ID",
+    "job title": "JOB_TITLE",
+    # IDs / Certificates
+    "unique identifier": "UNIQUE_ID",
+    "certificate number": "CERTIFICATE_NUMBER",
+    "biometric identifier": "BIOMETRIC_ID",
     # Secrets
     "password": "PASSWORD",
+    "api key": "API_KEY",
 }
 
 
