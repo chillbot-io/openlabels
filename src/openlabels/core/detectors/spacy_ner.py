@@ -25,10 +25,13 @@ logger = logging.getLogger(__name__)
 SPACY_ENTITY_MAP: dict[str, str] = {
     "PERSON": "NAME",
     "GPE": "CITY",         # Geopolitical entity (city, country, state)
-    "ORG": "COMPANY",
     "DATE": "DATE",
     "LOC": "ADDRESS",      # Non-GPE locations
-    "FAC": "FACILITY",
+    # NOTE: ORG and FAC intentionally excluded — spaCy's ORG entity is
+    # too broad (tags government agencies, universities, sports teams,
+    # etc.) causing massive false positives in the "professional"
+    # category.  GLiNER already handles company/facility detection with
+    # its more precise zero-shot "company name" / "employer" labels.
 }
 
 # Default confidence for spaCy entities.
