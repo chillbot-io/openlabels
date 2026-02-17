@@ -103,9 +103,9 @@ _CATEGORY_PATTERNS: dict[ContentCategory, list[tuple[re.Pattern[str], float]]] =
 
 _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
     ContentCategory.MEDICAL: 2.0,
-    ContentCategory.FINANCIAL: 1.0,
+    ContentCategory.FINANCIAL: 0.5,
     ContentCategory.PERSONAL_ID: 1.5,
-    ContentCategory.CONTACT: 1.0,
+    ContentCategory.CONTACT: 0.5,
     ContentCategory.TECHNICAL: 2.0,
     ContentCategory.GOVERNMENT: 2.0,
 }
@@ -122,6 +122,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "person name",
         "first name",
         "last name",
+        "middle name",
         # Dates: regex catches structured dates; GLiNER catches natural-language.
         "date of birth",
         "date",
