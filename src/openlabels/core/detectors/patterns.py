@@ -1188,16 +1188,23 @@ _p(r'\b(?:remember|note|save)\s+(?:your\s+)?(\d{4,8})\b(?=\s+(?:for|as|when|to|d
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
 
-# === Driver's License - State-specific formats (bare patterns) ===
-# These catch DL numbers even without labels, based on known state formats
+# === Driver's License - State-specific formats ===
+# IMPORTANT: Bare (context-free) DL patterns use LOW confidence (< 0.70)
+# because their formats overlap heavily with employee IDs, account numbers,
+# license plates, and biometric IDs.  Industry best practice (Presidio,
+# AWS Macie, Google DLP) requires context for DL detection.
+# Labeled patterns above (0.88) and context-required patterns below handle
+# the cases where DL context IS present.
 
 # Florida: Letter + 3-3-2-3-1 with dashes (W426-545-30-761-0)
+# Very specific format — keep high confidence
 _p(r'\b([A-Z]\d{3}-\d{3}-\d{2}-\d{3}-\d)\b', 'DRIVER_LICENSE', 0.95, 1),
 # Florida without dashes (OCR may miss them): W4265453076110
-_p(r'\b([A-Z]\d{12}0)\b', 'DRIVER_LICENSE', 0.85, 1),
+_p(r'\b([A-Z]\d{12}0)\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # California: Letter + 7 digits (A1234567)
-_p(r'\b([A-Z]\d{7})\b', 'DRIVER_LICENSE', 0.72, 1),
+# LOW: overlaps with employee IDs, generic alphanumeric codes
+_p(r'\b([A-Z]\d{7})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # New York: 9 digits OR Letter + 7 digits + space + 3 digits
 # Note: 9 digit overlaps with SSN, so need context
@@ -1207,31 +1214,37 @@ _p(r'(?:DL|License)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.85, 1, flags=re.I),
 _p(r'\b(\d{8})\b(?=.*(?:PA|Pennsylvania|DL|License))', 'DRIVER_LICENSE', 0.75, 1, flags=re.I),
 
 # Illinois: Letter + 11-12 digits (A12345678901)
-_p(r'\b([A-Z]\d{11,12})\b', 'DRIVER_LICENSE', 0.82, 1),
+# LOW: overlaps with account numbers, biometric IDs
+_p(r'\b([A-Z]\d{11,12})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # Ohio: 2 letters + 6 digits (AB123456) OR 8 digits
-_p(r'\b([A-Z]{2}\d{6})\b', 'DRIVER_LICENSE', 0.78, 1),
+# LOW: overlaps with many ID formats
+_p(r'\b([A-Z]{2}\d{6})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # Michigan: Letter + 10-12 digits
-_p(r'\b([A-Z]\d{10,12})\b', 'DRIVER_LICENSE', 0.80, 1),
+# LOW: overlaps with account numbers, biometric IDs
+_p(r'\b([A-Z]\d{10,12})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # New Jersey: Letter + 14 digits
-_p(r'\b([A-Z]\d{14})\b', 'DRIVER_LICENSE', 0.85, 1),
+_p(r'\b([A-Z]\d{14})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Virginia: Letter + 8-9 digits OR 9 digits (with context)
-_p(r'\b([A-Z]\d{8,9})\b', 'DRIVER_LICENSE', 0.75, 1),
+# LOW: overlaps with license plates, health plan IDs
+_p(r'\b([A-Z]\d{8,9})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # Maryland: Letter + 12 digits
 # (Covered by Michigan pattern above)
 
 # Wisconsin: Letter + 13 digits
-_p(r'\b([A-Z]\d{13})\b', 'DRIVER_LICENSE', 0.82, 1),
+_p(r'\b([A-Z]\d{13})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Washington: WDL prefix + alphanumeric (12 chars total like WDL*ABC1234D)
+# Very specific prefix — keep high confidence
 _p(r'\b(WDL[A-Z0-9*]{9})\b', 'DRIVER_LICENSE', 0.92, 1),
 
 # Hawaii: H + 8 digits (H12345678)
-_p(r'\b(H\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
+# LOW: single letter prefix too broad
+_p(r'\b(H\d{8})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Colorado: 9 digits (with context) or 2 letters + 3-6 digits (with context)
 # NOTE: Removed bare [A-Z]{2}\d{3,6} — too broad, matches license plates and other IDs
@@ -1239,23 +1252,29 @@ _p(r'(?:CO|Colorado|DL)[:\s]+([A-Z]{2}\d{3,6})\b', 'DRIVER_LICENSE', 0.78, 1, fl
 _p(r'(?:CO|Colorado|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 
 # Nevada: 9-12 digits, often starts with X or 9
-_p(r'\b(X\d{8,11})\b', 'DRIVER_LICENSE', 0.85, 1),
+# LOW: X-prefix overlaps with other IDs
+_p(r'\b(X\d{8,11})\b', 'DRIVER_LICENSE', 0.60, 1),
 _p(r'(?:NV|Nevada|DL)[:\s]+(\d{9,12})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
 # New Hampshire: 2 digits + 3 letters + 5 digits (12ABC34567)
+# Interleaved format — specific enough to keep
 _p(r'\b(\d{2}[A-Z]{3}\d{5})\b', 'DRIVER_LICENSE', 0.88, 1),
 
 # North Dakota: 3 letters + 6 digits (ABC123456)
-_p(r'\b([A-Z]{3}\d{6})\b', 'DRIVER_LICENSE', 0.82, 1),
+# LOW: 3-letter prefix overlaps with other IDs
+_p(r'\b([A-Z]{3}\d{6})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Iowa: 3 digits + 2 letters + 4 digits (123AB4567) OR 9 digits
+# Interleaved format — specific enough to keep
 _p(r'\b(\d{3}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
 
 # Kansas: K + 8 digits (K12345678)
-_p(r'\b(K\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
+# LOW: single letter prefix too broad (matches license plates)
+_p(r'\b(K\d{8})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Massachusetts: S + 8 digits (S12345678)
-_p(r'\b(S\d{8})\b', 'DRIVER_LICENSE', 0.85, 1),
+# LOW: single letter prefix too broad (matches license plates)
+_p(r'\b(S\d{8})\b', 'DRIVER_LICENSE', 0.60, 1),
 
 # Arizona: Letter + 8 digits OR 9 digits with context
 _p(r'(?:AZ|Arizona|DL)[:\s]+([A-Z]?\d{8,9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
@@ -1267,14 +1286,16 @@ _p(r'(?:AZ|Arizona|DL)[:\s]+([A-Z]?\d{8,9})\b', 'DRIVER_LICENSE', 0.80, 1, flags
 # (Covered by Virginia pattern: Letter + 8-9 digits)
 
 # Louisiana: 8 digits, often starts with 00
-_p(r'\b(00\d{6})\b', 'DRIVER_LICENSE', 0.80, 1),
+_p(r'\b(00\d{6})\b', 'DRIVER_LICENSE', 0.65, 1),
 
 # Indiana: 4 digits + 2 letters + 4 digits (1234AB5678) OR 10 digits
+# Interleaved format — specific enough to keep
 _p(r'\b(\d{4}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
 _p(r'(?:IN|Indiana|DL)[:\s]+(\d{10})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
 # Oregon: 1-7 digits OR Letter + 6 digits
-_p(r'\b([A-Z]\d{6})\b', 'DRIVER_LICENSE', 0.72, 1),
+# LOW: single letter prefix too broad
+_p(r'\b([A-Z]\d{6})\b', 'DRIVER_LICENSE', 0.55, 1),
 
 # Connecticut: 9 digits (with context, overlaps SSN)
 _p(r'(?:CT|Connecticut|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
@@ -1343,8 +1364,12 @@ _p(r'(?:Refill|Fill)\s+#[:\s]*(\d{1,3})\s+of\s+(\d{1,3})', 'RX_NUMBER', 0.75, fl
 # === SSN (labeled) - higher confidence than unlabeled ===
 _p(r'(?:SSN|Social\s*Security(?:\s*(?:Number|No|#))?)[:\s#]+(\d{3}[-\s]?\d{2}[-\s]?\d{4})', 'SSN', 0.96, 1, flags=re.I),
 _p(r'(?:last\s*4|last\s*four)[:\s]+(\d{4})\b', 'SSN_PARTIAL', 0.80, 1, flags=re.I),
-# Bare 9-digit - LOW confidence (0.70) so labeled MRN/Account patterns (0.95) win
-_p(r'\b((?!000|666|9\d\d)\d{9})\b', 'SSN', 0.70),
+# Bare 9-digit - LOW confidence so labeled MRN/Account/Routing patterns win.
+# At 0.65, this stays below the default 0.70 threshold, preventing bare
+# 9-digit numbers from being classified as SSN when they're actually bank
+# routing numbers (29 mismatches) or other IDs. Labeled SSN patterns (0.96)
+# and checksum-validated SSN (Tier 4, 0.99) still catch real SSNs.
+_p(r'\b((?!000|666|9\d\d)\d{9})\b', 'SSN', 0.65),
 
 # SSN with unusual separators (dots, middle dots, spaces around hyphens)
 _p(r'(?:SSN|Social\s*Security)[:\s#]+(\d{3}[.\xb7]\d{2}[.\xb7]\d{4})', 'SSN', 0.85, 1, flags=re.I),  # dots/middle dots

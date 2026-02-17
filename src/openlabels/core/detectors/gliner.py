@@ -52,13 +52,16 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "national identity number": "STATE_ID",
     # Medical
     "medical record number": "MRN",
+    "health plan number": "HEALTH_PLAN_ID",
     # Financial
     "credit card number": "CREDIT_CARD",
     "bank account number": "ACCOUNT_NUMBER",
+    "bank routing number": "BANK_ROUTING",
     "iban": "IBAN",
     # Network / Device
     "ip address": "IP_ADDRESS",
     "mac address": "MAC_ADDRESS",
+    "device identifier": "DEVICE_ID",
     # Vehicle
     "vehicle identification number": "VIN",
     "license plate number": "LICENSE_PLATE",
@@ -67,6 +70,11 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "ethereum address": "ETHEREUM_ADDRESS",
     # Professional
     "company name": "COMPANY",
+    "employee identifier": "EMPLOYEE_ID",
+    # Biometric
+    "biometric identifier": "BIOMETRIC_ID",
+    # IDs / Certificates
+    "certificate number": "CERTIFICATE_NUMBER",
     # Secrets
     "password": "PASSWORD",
 }
