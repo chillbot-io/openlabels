@@ -70,6 +70,34 @@ FALSE_POSITIVE_NAMES: set[str] = {
     "GENTILE", "CHER", "CHERS", "LIEBER", "LIEBE",  # Greeting words
     "HELLO", "DEAR", "REGARDS", "SINCERELY", "THANKS",
     "HALLO", "BONJOUR", "HOLA", "CIAO", "GUTEN",
+
+    # Transition words/adverbs that start sentences (capitalized after periods)
+    "ALSO", "HENCE", "SPECIFICALLY", "ADDITIONALLY", "FURTHERMORE",
+    "MOREOVER", "HOWEVER", "THEREFORE", "MEANWHILE", "CONSEQUENTLY",
+    "NEVERTHELESS", "OTHERWISE", "ACCORDINGLY", "SUBSEQUENTLY",
+
+    # Job titles, departments, roles
+    "STAFF", "DEPARTMENT", "STUDENTS", "PARENTS", "CLIENT", "CLIENTS",
+    "ENGINEER", "DEVELOPER", "LIAISON", "PLANNER", "MANAGER", "DIRECTOR",
+    "ANALYST", "SPECIALIST", "COORDINATOR", "ADMINISTRATOR", "OFFICER",
+    "CONSULTANT", "ARCHITECT", "DESIGNER", "TECHNICIAN", "ASSISTANT",
+    "SUPERVISOR", "INTERN", "VOLUNTEER", "NURSE", "THERAPIST",
+    "COUNSELOR", "INSTRUCTOR", "PROFESSOR", "TEACHER", "TUTOR",
+    "ATTENTION", "POSITION", "OPERATIONS", "BRANDING",
+    "NEUROPSYCHOLOGISTS", "NEUROPSYCHOLOGIST",
+    "PARENT", "GUARDIAN", "STUDENT",
+
+    # Currencies (appear capitalized in "form of X Dollar")
+    "DOLLAR", "DINAR", "RIAL", "EURO", "POUND", "FRANC", "YEN",
+    "WON", "PESO", "RUPEE", "LIRA", "KRONA", "KRONE", "BAHT",
+    "YUAN", "RUBLE", "RAND", "RINGGIT", "SHEKEL",
+
+    # Greeting words that shouldn't be detected as names themselves
+    "HEY", "YO", "SUP",
+
+    # Other common capitalized words
+    "CRITICAL", "FORWARD", "LEGACY", "MOBILITY", "CREATIVE",
+    "INFRASTRUCTURE", "TRANS",
 }
 
 # Compile into lowercase set for case-insensitive matching
@@ -91,6 +119,27 @@ def _is_false_positive_name(value: str) -> bool:
 
     # If ALL words are false positives, reject
     if all(w.upper() in FALSE_POSITIVE_NAMES for w in words):
+        return True
+
+    # If ANY word is a currency, reject (catches "Bahraini Dinar", "Singapore Dollar")
+    _CURRENCY_WORDS = {
+        "DOLLAR", "DINAR", "RIAL", "EURO", "POUND", "FRANC", "YEN", "WON",
+        "PESO", "RUPEE", "LIRA", "KRONA", "KRONE", "BAHT", "YUAN", "RUBLE",
+        "RAND", "RINGGIT", "SHEKEL", "OMANI", "BAHRAINI", "SINGAPORE",
+        "ZIMBABWE", "CURRENCY",
+    }
+    if any(w.upper() in _CURRENCY_WORDS for w in words):
+        return True
+
+    # If ANY word is a common non-name word (job titles, departments, roles)
+    # and the match has multiple words, reject
+    _ROLE_WORDS = {
+        "STAFF", "DEPARTMENT", "ENGINEER", "DEVELOPER", "PLANNER", "MANAGER",
+        "DIRECTOR", "ANALYST", "SPECIALIST", "COORDINATOR", "NURSE", "CARE",
+        "MOBILITY", "CREATIVE", "INFRASTRUCTURE", "NEUROPSYCHOLOGISTS",
+        "NEUROPSYCHOLOGIST",
+    }
+    if len(words) >= 2 and any(w.upper() in _ROLE_WORDS for w in words):
         return True
 
     # If first word is a common document term (not a name), likely FP
@@ -435,6 +484,8 @@ _p(r'\((\d{2})\)[-.\s]?\d{3,4}[-.\s]?\d{4}\b', 'PHONE', 0.82),
 _p(r'\b(0\d{2,4})[-.\s]\d{3,4}[-.\s]?\d{3,5}\b', 'PHONE', 0.80),
 # Labeled phone - tighter pattern: only digits, spaces, dashes, parens, plus
 _p(r'(?:phone|tel|fax|call|contact)[:\s]+([()\d\s+.-]{10,20})', 'PHONE', 0.92, 1, flags=re.I),
+# "Reach us at" / "Call us at" / "Contact us at" — context indicating phone
+_p(r'(?:reach|call|contact)\s+(?:us|me|them)\s+at\s+([()\d\s+.-]{7,20})', 'PHONE', 0.85, 1, flags=re.I),
 
 # === OCR-Aware Phone Patterns ===
 # Common OCR substitutions in phone numbers: l/I→1, O→0, S→5, B→8
@@ -549,6 +600,8 @@ _p(r'\b(\d{1,3})[-‐‑–—]\s*(?:year|yr)s?[-‐‑–—]\s*old\b', 'AGE', 
 _p(r'\b(\d{1,3})\s*y/?o\b', 'AGE', 0.88, 1, flags=re.I),
 # Labeled: "age 46", "aged 46"
 _p(r'\b(?:age|aged)[:\s]+(\d{1,3})\b', 'AGE', 0.92, 1, flags=re.I),  # \b prevents matching "Page 123"
+# "age (X)" — parenthetical age (e.g., "your age (40)")
+_p(r'\bage\s*\((\d{1,3})\)', 'AGE', 0.92, 1, flags=re.I),
 
 # === Room/Bed Numbers (facility location identifiers) ===
 # "Room: 625", "Rm: 302A", "Room 101"
@@ -687,9 +740,14 @@ _p(rf'(?:prescribed|ordered|given|administered|dispensed)\s+(?:to|for)\s+({_NAME
 # Inline names: "the patient, John Smith, arrived" - comma-delimited name
 _p(rf'(?:(?:the)\s+)?(?:patient),\s+({_NAME}(?:[ \t]+{_NAME}){{1,2}}),', 'NAME_PATIENT', 0.78, 1, flags=re.I),
 
+# "Patient X" or "Patient X Y" — without colon (common in medical notes)
+_p(rf'\bPatient\s+({_NAME}(?:[ \t]+{_NAME}){{0,2}})(?=[,.\s])', 'NAME_PATIENT', 0.82, 1),
+
 # Patient patterns - Mr/Mrs/Ms/Miss indicate patient (non-provider) in clinical context
 # NOTE: \b required to prevent "symptoms" matching as "Ms" + name
 _p(rf'\b(?:Mr\.?|Mrs\.?|Ms\.?|Miss)[ \t]+({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME_PATIENT', 0.90, 1, flags=re.I),
+# Mr./Ms./Dr. WITHOUT space before name: "Mr.Kerluke", "Ms.North"
+_p(rf'\b(?:Mr|Mrs|Ms|Dr)\.({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME_PATIENT', 0.90, 1),
 
 # === INTERNATIONAL HONORIFIC/TITLE PATTERNS ===
 # German: Herr, Frau, Fräulein
@@ -736,12 +794,53 @@ _p(rf'\b{_CLINICAL_VERBS_PAST}[ \t]+({_NAME})\b', 'NAME_PATIENT', 0.82, 1),
 _p(rf'\b(?i:spoke|met|talked|visited|checked|followed\s+up)[ \t]+(?i:with|to)[ \t]+({_NAME})\b', 'NAME_PATIENT', 0.80, 1),
 _p(rf"\b({_NAME})'s[ \t]+{_CLINICAL_NOUNS}\b", 'NAME_PATIENT', 0.82, 1),
 
-# NOTE: Removed aggressive standalone name patterns to improve precision:
-# - "Name + verb" patterns (John said, Mary has)
-# - Greeting/closing patterns (Hi John, Thanks Mary)
-# - Direct address patterns (John, please...)
-# - Transport patterns (bring John to)
-# These caused too many false positives. Keep only labeled/contextual patterns.
+# === GREETING / DIRECT ADDRESS NAME PATTERNS ===
+# These patterns detect names in common conversational contexts.
+# High precision because they require specific greeting words + Capitalized name.
+# NOTE: NO re.I flag on _NAME to preserve proper-noun requirement.
+
+# "Dear X" / "Dear X Y" — salutation (nearly always a name)
+_p(rf'\b(?i:Dear)[ \t]+({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME', 0.90, 1),
+# "Hi X" / "Hey X" / "Hello X" — informal greeting + name
+_p(rf'\b(?i:Hi|Hey|Hello)[ \t]+({_NAME}(?:[ \t]+{_NAME}){{0,1}})\b', 'NAME', 0.88, 1),
+# "Good Morning/Afternoon/Evening X" — formal greeting
+_p(rf'\b(?i:Good\s+(?:Morning|Afternoon|Evening|Day))[,.]?[ \t]+({_NAME})\b', 'NAME', 0.88, 1),
+# "Thanks X" / "Thank you X" — closing with name
+_p(rf'\b(?i:Thanks|Thank\s+you)[,]?[ \t]+({_NAME})\b', 'NAME', 0.82, 1),
+
+# "for First Last" — referring to a person (requires 2-word name)
+_p(rf'\bfor[ \t]+({_NAME}[ \t]+{_NAME})\b', 'NAME', 0.80, 1),
+# "of First Last" — referring to a person (requires 2-word name)
+_p(rf'\bof[ \t]+({_NAME}[ \t]+{_NAME})\b', 'NAME', 0.78, 1),
+# "to First Last" — writing/sending to a person (requires 2-word name)
+_p(rf'\bto[ \t]+({_NAME}[ \t]+{_NAME})\b', 'NAME', 0.78, 1),
+# "Contact X" — instruction to reach someone
+_p(rf'\b(?i:Contact)[ \t]+({_NAME})\b', 'NAME', 0.80, 1),
+# "Attention X Y" — formal address
+_p(rf'\b(?i:Attention)\s+({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME', 0.88, 1),
+# "Connect with X" / "Requested X to" / "Appointment reminder for X"
+_p(rf'\b(?i:Connect\s+with|Requested|Remind(?:er)?\s+for|Consult(?:ation)?\s+(?:reminder\s+)?for)\s+({_NAME})\b', 'NAME', 0.80, 1),
+# "for X on DATE" — single name + date context (e.g., "Appointment reminder for Stephen on 10/03/1976")
+_p(rf'\bfor\s+({_NAME})\s+on\s+\d', 'NAME', 0.82, 1),
+# "Hello/Dear Dr./Mr./Mrs. X" — greeting + honorific + name
+_p(rf'\b(?i:Hello|Dear|Hi|Hey)\s+(?:Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Miss|Prof\.?)[,.]?\s+({_NAME}(?:[ \t]+{_NAME}){{0,1}})\b', 'NAME', 0.88, 1),
+
+# Direct address at start: "Name," followed by space + lowercase continuation
+# "Delta, as per..." / "Jimmie, your understanding..."
+_p(rf'(?:^|[.!?]\s+)({_NAME}),[ \t]+(?=[a-z])', 'NAME', 0.82, 1, flags=re.MULTILINE),
+# "Name, your/you/we/please/could/can/would/as/this/the/a/our" — strong direct address signals
+_p(rf'\b({_NAME}),[ \t]+(?:your|you(?:r|\b)|we\b|I\b|please\b|could\b|can\b|would\b|as\b|this\b|the\b|a\b|an\b|our\b)', 'NAME', 0.82, 1),
+# Quoted direct address: '"Name, ...' at start of quote
+_p(rf'["\u201c]({_NAME}),[ \t]', 'NAME', 0.82, 1),
+
+# === NAME PREFIX / HONORIFIC PATTERNS ===
+# Standalone prefixes — entity type PREFIX (matches ai4privacy ground truth)
+# Require lookahead for capitalized word (likely a name)
+_p(r'\b(Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)\b(?=[ \t]+[A-ZÀ-ÖØ-Þ])', 'PREFIX', 0.88, 1),
+# Prefix WITHOUT space directly before name: "Mr.Kerluke", "Ms.North", "Dr.Feeney"
+_p(r'\b(Mr|Mrs|Ms|Dr)\.(?=[A-ZÀ-ÖØ-Þ])', 'PREFIX', 0.88, 1),
+# Prefix at start of greeting context: "Hello Mr.", "Dear Dr."
+_p(r'(?:Hello|Dear|Hi)\s+(Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)\b', 'PREFIX', 0.85, 1, flags=re.I),
 
 # MEDICAL IDENTIFIERS
 
@@ -1152,10 +1251,21 @@ _p(r'(?:DICOM|Study|Series|Image)\s+(?:UID|ID)[:\s]+([0-9.]{10,64})', 'IMAGE_ID'
 _p(r'(?:username|user|login|userid)[:\s]+([A-Za-z0-9_.-]{3,30})', 'USERNAME', 0.85, 1, flags=re.I),
 # International username labels (FR: nom d'utilisateur, DE: Benutzername, ES: usuario, NL: gebruikersnaam, IT: nome utente, PT: usuário)
 _p(r'(?:nom d\'utilisateur|benutzername|usuario|gebruikersnaam|nome utente|usuário|utilisateur)[:\s]+([\w._-]{3,30})', 'USERNAME', 0.85, 1, flags=re.I | re.UNICODE),
-# NOTE: Removed @ mention and greeting patterns - too many false positives
+# "Username is X" — verb separator instead of colon
+_p(r'(?:username|user\s*name)\s+(?:is|was|will\s+be)\s+([A-Za-z0-9_.-]{3,30})', 'USERNAME', 0.85, 1, flags=re.I),
 # Login context: "logged in as username", "signed in as username"
-# NOTE: Removed "account" - it matches account numbers, not usernames
 _p(r'(?:logged\s+in\s+as|signed\s+in\s+as|profile)[:\s]+([A-Za-z0-9_.-]{3,30})', 'USERNAME', 0.82, 1, flags=re.I),
+# Login details / credentials context
+_p(r'(?:login|sign[- ]?in)\s+(?:details|info|credentials?)[:\s]+([A-Za-z0-9_.-]{3,30})', 'USERNAME', 0.85, 1, flags=re.I),
+# "your X credentials" — username before 'credentials'
+_p(r'(?:your|through\s+your|with\s+your)\s+([A-Za-z0-9_.-]{3,30})\s+credentials', 'USERNAME', 0.82, 1, flags=re.I),
+# Standalone username pattern: Word_Word with optional trailing digits
+# Highly distinctive — real words rarely have underscores
+_p(r'\b([A-Z][a-z]+(?:[_.-][A-Z][a-z]+)+\d{0,3})\b', 'USERNAME', 0.80, 1),
+# Simple Word_word or word_Word (mixed case with underscore)
+_p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNAME', 0.78, 1),
+# "delegating/responsibility to Username" — assignment context
+_p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
 
 # === Password ===
 # English password labels - require colon/equals separator (not just whitespace) to avoid FPs
@@ -1184,6 +1294,20 @@ _p(r'\b(?:confirm|verify|authenticate)\s+with\s+([A-Za-z0-9_]{4,50})\b', 'PASSWO
 _p(r'\busing\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
 # "remember your XXXX for" — reminder context for codes/PINs
 _p(r'\b(?:remember|note|save)\s+(?:your\s+)?(\d{4,8})\b(?=\s+(?:for|as|when|to|during))', 'PASSWORD', 0.78, 1, flags=re.I),
+# "passwords, with X being" — password enumeration/listing context
+_p(r'(?:passwords?|passcodes?),?\s+(?:with|like|such\s+as|including)\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "asking for your X" — social engineering context (password)
+_p(r'(?:asking|asks)\s+for\s+your\s+([A-Za-z0-9_]{6,50})\b(?=\.\s|[\s,])', 'PASSWORD', 0.78, 1, flags=re.I),
+# "password for accessing online content: X" — colon after content context
+_p(r'(?:password|passcode|pwd)\s+for\s+\S+(?:\s+\S+){0,4}?:\s*([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+# "use X to access" / "use X for one-time access"
+_p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:to\s+access|for\s+(?:one-time\s+)?access)', 'PASSWORD', 0.82, 1, flags=re.I),
+# "use XXXX to access" — 4-digit PIN variant
+_p(r'\buse\s+(\d{4,8})\s+to\s+access\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "log in and use X for" — login + use context
+_p(r'(?:log\s*in|sign\s*in)\s+and\s+use\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "USERNAME and PASSWORD used" — auth pair in past tense
+_p(r'\b\S+\s+and\s+([A-Za-z0-9_]{6,50})\s+used\b', 'PASSWORD', 0.75, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -1415,6 +1539,22 @@ _p(r'\b((?:Checking|Savings|Investment|Personal\s+Loan|Auto\s+Loan|Home\s+Loan|M
 # 16-digit numbers with context (masked/tokenized card numbers, account identifiers)
 # Lower confidence — only match when preceded by contextual words
 _p(r'(?:number|identification|assigned|use)\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "with number XXXXXXXX" — account with explicit number label
+_p(r'(?:with\s+number)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
+# "via XXXXXXXX" or "using XXXXXXXX" near financial context
+_p(r'(?:transaction|transfer|payment)\s+(?:\S+\s+)?(?:using|via)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "card ending with XXXX" / "card ending in XXXX" — 16-digit (account-number labeled)
+_p(r'(?:card\s+ending\s+(?:with|in))\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
+# "from XXXXXXXX" — payment source context (8-digit account)
+_p(r'(?:payment|made|be\s+made)\s+from\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "account number is XXXXXXXX" / "changed account number is XXXXXXXX"
+_p(r'account\s+number\s+is\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
+# "Number: XXXXXXXX" after account-type context (e.g., "Personal Loan Account - Number: 20227980")
+_p(r'Account\s*[-–—]\s*Number:\s*(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
+# "information such as XXXX" — sensitive data enumeration
+_p(r'(?:information|data|details)\s+such\s+as\s+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.75, 1, flags=re.I),
+# "process it through your mastercard card ending with XXXX"
+_p(r'(?:through\s+your)\s+\w+\s+card\s+ending\s+with\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.80, 1, flags=re.I),
 
 # === Certificate/License Numbers (Safe Harbor #11) ===
 _p(r'(?:Certificate|Certification)\s+(?:Number|No|#)[:\s]+([A-Z0-9-]{5,20})', 'CERTIFICATE_NUMBER', 0.85, 1, flags=re.I),
@@ -1437,6 +1577,23 @@ _p(r'(?:Card|Credit\s*Card|CC|Payment)[:\s#]+(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\
 # Bare credit card patterns (with separators to distinguish from random numbers)
 _p(r'\b(\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4})\b', 'CREDIT_CARD', 0.88, 1),
 _p(r'\b(\d{4}[\s-]\d{6}[\s-]\d{5})\b', 'CREDIT_CARD', 0.88, 1),  # Amex format
+# Context-based 16-digit card number: "XXXX issued by issuer", "XXXX, issuer X"
+# These may fail Luhn (synthetic data) but context makes detection reliable.
+# Uses entity type CREDIT_CARD_NOLUHN to bypass Luhn validation in detect().
+_p(r'\b(\d{16})\b(?=[\s,]*(?:issu(?:er|ed)|maestro|visa|mastercard|amex|american.express|discover|diners|jcb))', 'CREDIT_CARD_NOLUHN', 0.82, 1, flags=re.I),
+_p(r'(?:issu(?:er|ed)\s+(?:by\s+)?(?:\w+\s+)?|via\s+)(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.82, 1, flags=re.I),
+# "card XXXX" / "card number XXXX" / "card ending in XXXX" — card context before 16-digit
+_p(r'(?:card|credit\s*card)\s+(?:number\s+)?(?:ending\s+(?:in|with)\s+)?(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.84, 1, flags=re.I),
+# "numbers like XXXX" — near card issuer context
+_p(r'(?:numbers?\s+(?:like|such\s+as|including))\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
+# "digits of your card are XXXX" / "last four digits...XXXX"
+_p(r'(?:digits\s+(?:of\s+)?(?:your\s+)?(?:card\s+)?(?:are|is))\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.82, 1, flags=re.I),
+# 16-digit number followed by "will cover" / "will be charged" / "for processing"
+_p(r'\b(\d{16})\b(?=\s+(?:will\s+(?:cover|be\s+charged)|for\s+(?:processing|verification|payment)))', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
+# "charged to the company card XXXX" / "company card XXXX"
+_p(r'(?:company|corporate|business)\s+card\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.84, 1, flags=re.I),
+# Broad: "payment via NNN, XXXX" — 16-digit after payment context
+_p(r'(?:payment|paid)\s+(?:via|through|using)\s+\S+\s+(?:number\s+(?:ending\s+)?(?:in\s+)?)?(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.80, 1, flags=re.I),
 # Last 4 of card
 _p(r'(?:ending\s+in|last\s+4|xxxx)[:\s]*(\d{4})\b', 'CREDIT_CARD_PARTIAL', 0.82, 1, flags=re.I),
 # VEHICLE IDENTIFIERS (HIPAA Required)
@@ -1457,7 +1614,7 @@ _p(r'\b(\d[A-Z]{3}\d{3})\b', 'LICENSE_PLATE', 0.82, 1),
 # New York: ABC-1234 (3 letters, 4 digits with dash)
 _p(r'\b([A-Z]{3}-\d{4})\b', 'LICENSE_PLATE', 0.85, 1),
 # Texas: ABC-1234 or ABC 1234
-_p(r'\b([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
+_p(r'\b(?!PIN|VIN)([A-Z]{3}[-\s]\d{4})\b', 'LICENSE_PLATE', 0.82, 1),
 # Florida: ABC D12 or ABCD12 (letter-heavy) — labeled only to avoid FP on
 # user-agent strings like "WOW64" or "MSIE 10"
 _p(r'(?:License\s*Plate|Plate|Tag)[:\s#]+([A-Z]{3,4}\s?[A-Z]?\d{2})\b', 'LICENSE_PLATE', 0.80, 1, flags=re.I),
@@ -1618,6 +1775,31 @@ _p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b',
 _p(r'\b(\d{4})/(\d{1,2})/(\d{1,2})\b', 'DATE', 0.70),
 # mm/yy (card expiration format, with context)
 _p(r'(?:exp(?:ir(?:y|es|ation))?|valid\s+(?:thru|through|until))[:\s]+((?:0[1-9]|1[0-2])/\d{2})\b', 'DATE', 0.82, 1, flags=re.I),
+
+# === SHORT DATE PATTERNS (M/YY or MM/YY with preposition context) ===
+# Dates like "on 3/69", "by 10/17", "before 5/14" — preposition context is key
+_p(r'(?:on|by|before|after|until|since|from|starting|ending|moved\s+to)\s+(\d{1,2}/\d{2})\b', 'DATE', 0.78, 1, flags=re.I),
+# "birth date 9/59", "date of birth 5/05", "DOB 6/87" — DOB context
+_p(r'(?:birth\s*(?:date)?|date\s+of\s+birth|DOB)[:\s]+(\d{1,2}/\d{2})\b', 'DATE_DOB', 0.82, 1, flags=re.I),
+# "process by M/YY" / "initiate by M/YY" / "the process by M/YY"
+_p(r'(?:process|initiate|complete|register|submit|validate)\s+(?:\S+\s+)?by\s+(\d{1,2}/\d{2})\b', 'DATE', 0.75, 1, flags=re.I),
+
+# === AGE PATTERNS ===
+# "X years old", "X years", "X-year-old"
+_p(r'\b(\d{1,3})\s+years?\s+old\b', 'AGE', 0.88, 1, flags=re.I),
+_p(r'\b(\d{1,3})\s+years?\b(?=\s+(?:old|of\s+age))', 'AGE', 0.85, 1, flags=re.I),
+_p(r'\b(\d{1,3})\s+years?\b', 'AGE', 0.72, 1, flags=re.I),
+_p(r'\b(\d{1,3})-year-old\b', 'AGE', 0.88, 1, flags=re.I),
+# "age (X)" — parenthetical age
+_p(r'\bage\s*\((\d{1,3})\)', 'AGE', 0.90, 1, flags=re.I),
+# "of age X years" / "of age X"
+_p(r'\bof\s+age\s+(\d{1,3})\b', 'AGE', 0.88, 1, flags=re.I),
+# "Patient of X" / "individuals of X" — age in "of" context after person-word
+_p(r'(?:patient|individual|person|child|adult|male|female)\s+of\s+(\d{1,3})\b', 'AGE', 0.82, 1, flags=re.I),
+# "age group of X" — statistical/demographic
+_p(r'\bage\s+group\s+of\s+(\d{1,3})\b', 'AGE', 0.88, 1, flags=re.I),
+# "above/over/under X" — age threshold
+_p(r'(?:individuals?|people|persons?|patients?|those)\s+(?:above|over|under|below)\s+(\d{1,3})\b', 'AGE', 0.80, 1, flags=re.I),
 
 
 )
@@ -1964,6 +2146,9 @@ _USERNAME_FALSE_POSITIVES = frozenset({
     'registered', 'page', 'page.', 'required', 'provided',
     'selected', 'submitted', 'approved', 'denied', 'blocked',
     'disabled', 'enabled', 'updated', 'created', 'deleted',
+    # Brand names / technical terms with underscores
+    'american_express', 'wi-fi', 'wi_fi', 'e-mail', 'e_mail',
+    'pre-paid', 'pre_paid', 'co-pay', 'co_pay',
 })
 
 
@@ -2058,7 +2243,7 @@ class PatternDetector(BaseDetector):
                 if pdef.entity_type == 'SSN' and not _validate_ssn_context(text, start, pdef.confidence):
                     continue
 
-                # Credit card Luhn validation
+                # Credit card Luhn validation (skip for CREDIT_CARD_NOLUHN)
                 if pdef.entity_type == 'CREDIT_CARD' and not _validate_luhn(value):
                     continue
 
@@ -2075,8 +2260,11 @@ class PatternDetector(BaseDetector):
                     continue
 
                 # VIN validation (for low-confidence bare VIN matches)
+                # Skip validation when VIN/vehicle context is nearby
                 if pdef.entity_type == 'VIN' and pdef.confidence < 0.90:
-                    if not _validate_vin(value):
+                    surrounding = text[max(0, start - 60):min(len(text), end + 60)].lower()
+                    has_vin_context = any(w in surrounding for w in ('vin', 'vehicle', 'car', 'auto', 'motor'))
+                    if not has_vin_context and not _validate_vin(value):
                         continue
 
                 # Password false positive filter — common words after "password:"
@@ -2104,8 +2292,10 @@ class PatternDetector(BaseDetector):
                 # Identifier types must contain at least one digit — pure
                 # alphabetic strings like "Savings" or "Specialist" are never
                 # real account numbers or member IDs.
+                # Exception: explicit account type name patterns (e.g., "Savings Account")
                 if pdef.entity_type in _IDENTIFIER_TYPES and not any(c.isdigit() for c in value):
-                    continue
+                    if not (pdef.entity_type == 'ACCOUNT_NUMBER' and 'account' in value.lower()):
+                        continue
 
                 # Address false positive filter — single common words after
                 # "from"/"lives in" triggers are not place names.
@@ -2119,8 +2309,13 @@ class PatternDetector(BaseDetector):
                     if _is_false_positive_name(value):
                         continue
 
+                # Remap internal-only entity types to canonical types
+                entity_type = pdef.entity_type
+                if entity_type == 'CREDIT_CARD_NOLUHN':
+                    entity_type = 'CREDIT_CARD'
+
                 # Deduplication: skip if same span already seen with equal or higher confidence
-                key = (start, end, pdef.entity_type)
+                key = (start, end, entity_type)
                 if key in seen:
                     existing_idx = seen[key]
                     if pdef.confidence <= spans[existing_idx].confidence:
@@ -2130,7 +2325,7 @@ class PatternDetector(BaseDetector):
                         start=start,
                         end=end,
                         text=value,
-                        entity_type=pdef.entity_type,
+                        entity_type=entity_type,
                         confidence=pdef.confidence,
                         detector=self.name,
                         tier=self.tier,
@@ -2141,7 +2336,7 @@ class PatternDetector(BaseDetector):
                     start=start,
                     end=end,
                     text=value,
-                    entity_type=pdef.entity_type,
+                    entity_type=entity_type,
                     confidence=pdef.confidence,
                     detector=self.name,
                     tier=self.tier,
