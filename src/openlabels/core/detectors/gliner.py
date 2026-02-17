@@ -184,9 +184,10 @@ class GLiNERDetector(BaseDetector):
             logger.error("Failed to load GLiNER model %s: %s", self.model_name, e)
             return False
 
-    # GLiNER token window is ~512 tokens; ~4 chars/token = ~2048 chars.
-    # Use conservative chunk size to stay well within the window.
-    _MAX_CHUNK_CHARS = 1500
+    # GLiNER token window is ~512 tokens.  Character-per-token ratios vary
+    # by content: prose ≈ 4 chars/token, dense financial/numeric text ≈ 2–2.5.
+    # Use 1024 chars to stay safely under 512 tokens even for the worst case.
+    _MAX_CHUNK_CHARS = 1024
     _CHUNK_OVERLAP = 200
 
     def detect(self, text: str) -> list[Span]:
