@@ -243,10 +243,16 @@ def _resolve_entity_positions(
 
     Handles the Gretel PII format: [{entity: "value", types: ["label"]}].
     Finds each entity value in the text and creates GoldSpan with offsets.
+
+    When the same entity value appears multiple times in the entity list,
+    each occurrence is matched to a separate position in the text (if
+    available), so duplicate mentions are correctly grounded.
     """
     gold: list[GoldSpan] = []
     used_ranges: list[tuple[int, int]] = []
 
+    # Count how many times each (value, label) pair appears so we can
+    # resolve duplicates to distinct text positions.
     for ent in entities:
         value = ent.get("entity") or ent.get("value") or ""
         types = ent.get("types") or []
@@ -258,8 +264,9 @@ def _resolve_entity_positions(
         if mapped is None:
             continue
 
-        # Find the entity in text, avoiding already-used ranges
+        # Find the next non-overlapping occurrence in text
         search_start = 0
+        found = False
         while True:
             idx = text.find(value, search_start)
             if idx == -1:
@@ -278,8 +285,24 @@ def _resolve_entity_positions(
                     entity_type=mapped,
                     original_label=raw_label,
                 ))
+                found = True
                 break
             search_start = idx + 1
+
+        # If no non-overlapping position found, try to find ANY position
+        # (the value may be a substring of an already-matched longer span)
+        if not found:
+            idx = text.find(value)
+            if idx != -1:
+                end = idx + len(value)
+                used_ranges.append((idx, end))
+                gold.append(GoldSpan(
+                    start=idx,
+                    end=end,
+                    text=value,
+                    entity_type=mapped,
+                    original_label=raw_label,
+                ))
 
     return gold
 
