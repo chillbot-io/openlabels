@@ -28,6 +28,7 @@ class DetectionConfig:
 
     # ML detectors
     enable_ml: bool = True
+    enable_spacy_ner: bool = False
     ml_model_dir: Path | None = None
     use_onnx: bool = True
 
@@ -39,6 +40,7 @@ class DetectionConfig:
     # Post-processing
     enable_coref: bool = False
     enable_context_enhancement: bool = False
+    enable_context_keywords: bool = True
     enable_policy: bool = True
     enable_allowlist: bool = True
 
@@ -51,14 +53,39 @@ class DetectionConfig:
     ml_confidence_threshold: float = 0.50
     max_workers: int = 4
 
+    # Per-entity-type confidence thresholds (overrides global threshold)
+    entity_thresholds: tuple[tuple[str, float], ...] = (
+        # Structural — regex is reliable, lower threshold
+        ("EMAIL", 0.60),
+        ("CREDIT_CARD", 0.60),
+        ("SSN", 0.60),
+        ("IBAN", 0.60),
+        ("IP_ADDRESS", 0.60),
+        # Contextual — standard threshold
+        ("PHONE", 0.70),
+        ("ADDRESS", 0.70),
+        ("DATE", 0.65),
+        ("DATE_DOB", 0.65),
+        # Names — ML-dependent, need lower threshold
+        ("NAME", 0.55),
+        ("FIRSTNAME", 0.55),
+        ("LASTNAME", 0.55),
+        ("PERSON", 0.55),
+        # Ambiguous — higher threshold to reduce FP
+        ("AGE", 0.80),
+        ("ZIP", 0.75),
+    )
+
     @classmethod
     def full(cls) -> DetectionConfig:
         """All detectors and post-processing enabled."""
         return cls(
             enable_hyperscan=True,
             enable_ml=True,
+            enable_spacy_ner=True,
             enable_coref=True,
             enable_context_enhancement=True,
+            enable_context_keywords=True,
             enable_policy=True,
             enable_proximity_boost=True,
         )
