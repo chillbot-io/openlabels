@@ -72,6 +72,9 @@ class DetectionConfig:
         ("FIRSTNAME", 0.45),
         ("LASTNAME", 0.45),
         ("PERSON", 0.45),
+        # Professional — ML-dependent, similar to names.
+        ("COMPANY", 0.50),
+        ("JOB_TITLE", 0.50),
         # Ambiguous — higher threshold to reduce FP
         ("AGE", 0.70),
         ("ZIP", 0.75),

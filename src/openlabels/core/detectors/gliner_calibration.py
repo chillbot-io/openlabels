@@ -73,6 +73,10 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Professional ───────────────────────────────────────
     "company name": (1.35, 0.08),  # Often confused with person names
     "job title": (1.40, 0.10),
+    "employee id": (1.15, 0.04),
+    # ── Vehicle ──────────────────────────────────────────
+    "vehicle identification number": (1.10, 0.02),  # Structural, well-calibrated
+    "license plate number": (1.20, 0.05),  # Variable formats
 }
 
 
