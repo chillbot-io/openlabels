@@ -84,24 +84,12 @@ def validate_ssn(ssn: str) -> tuple[bool, float]:
     return True, confidence
 
 
-def validate_credit_card(cc: str) -> tuple[bool, float]:
-    """
-    Validate credit card using Luhn + prefix check.
-
-    Confidence levels:
-    - 0.99: Valid prefix AND valid Luhn
-    - 0.87: Valid prefix but invalid Luhn (possible typo)
-    """
-    digits = re.sub(r'\D', '', cc)
-
-    if len(digits) < 13 or len(digits) > 19:
-        return False, 0.0
-
+def _has_cc_prefix(digits: str) -> bool:
+    """Check whether *digits* starts with a known card-network prefix."""
     prefix2 = int(digits[:2]) if len(digits) >= 2 else 0
     prefix3 = int(digits[:3]) if len(digits) >= 3 else 0
     prefix4 = int(digits[:4]) if len(digits) >= 4 else 0
-
-    valid_prefix = (
+    return (
         digits.startswith('4') or                    # Visa
         (51 <= prefix2 <= 55) or                     # Mastercard
         (2221 <= prefix4 <= 2720) or                 # Mastercard (new)
@@ -115,11 +103,46 @@ def validate_credit_card(cc: str) -> tuple[bool, float]:
         digits.startswith(('38', '39'))              # Diners Club
     )
 
-    if not valid_prefix:
+
+def validate_credit_card(cc: str) -> tuple[bool, float]:
+    """
+    Validate credit card using Luhn + prefix check.
+
+    Confidence levels:
+    - 0.99: Valid prefix AND valid Luhn
+    - 0.87: Valid prefix but invalid Luhn (possible typo)
+    """
+    digits = re.sub(r'\D', '', cc)
+
+    if len(digits) < 13 or len(digits) > 19:
+        return False, 0.0
+
+    if not _has_cc_prefix(digits):
         return False, 0.0
 
     if not luhn_check(digits):
         return True, 0.87  # Still detect for safety
+
+    return True, 0.99
+
+
+def validate_credit_card_strict(cc: str) -> tuple[bool, float]:
+    """Strict credit card validation requiring BOTH prefix AND Luhn.
+
+    Used for bare digit-only patterns (no separators) where false positives
+    are more likely — device IDs, tracking numbers, etc. that coincidentally
+    start with a card prefix.
+    """
+    digits = re.sub(r'\D', '', cc)
+
+    if len(digits) < 13 or len(digits) > 19:
+        return False, 0.0
+
+    if not _has_cc_prefix(digits):
+        return False, 0.0
+
+    if not luhn_check(digits):
+        return False, 0.0  # Reject — bare digits without Luhn are likely not cards
 
     return True, 0.99
 
@@ -452,10 +475,17 @@ CHECKSUM_PATTERNS: tuple[tuple[re.Pattern[str], str, object], ...] = (
     (re.compile(r'(?<![A-Za-z-])(\d{3}\s*-\s*\d{2}\s*-\s*\d{4})(?![A-Za-z])'), 'SSN', validate_ssn),
     (re.compile(r'(?:SSN|social\s*security)[:\s#]*(\d{9})\b', re.I), 'SSN', validate_ssn),
 
+    # ABA routing number — bare 9-digit numbers checked against the ABA
+    # prefix list + mod-10 checksum.  Tier 4 beats the PATTERN-tier SSN
+    # detection for the same 9 digits, fixing routing→SSN mismatches.
+    (re.compile(r'\b(\d{9})\b'), 'BANK_ROUTING', validate_aba_routing),
+
     # Credit Card - various formats
     (re.compile(r'\b(\d{4}[-\s._]?\d{4}[-\s._]?\d{4}[-\s._]?\d{4})\b'), 'CREDIT_CARD', validate_credit_card),
     (re.compile(r'\b(\d{4}[-\s._]?\d{6}[-\s._]?\d{5})\b'), 'CREDIT_CARD', validate_credit_card),
-    (re.compile(r'\b(\d{13,19})\b'), 'CREDIT_CARD', validate_credit_card),
+    # Bare digits: strict validation (Luhn required) to avoid false positives
+    # on device IDs, tracking numbers, etc. that happen to start with a card prefix
+    (re.compile(r'\b(\d{13,19})\b'), 'CREDIT_CARD', validate_credit_card_strict),
 
     # NPI - 10 digits starting with 1 or 2
     (re.compile(r'\b([12]\d{9})\b'), 'NPI', validate_npi),

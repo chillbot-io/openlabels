@@ -473,6 +473,8 @@ _p(r'\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{
 # DOB with abbreviated months
 _p(r'(?:DOB|Date\s+of\s+Birth|Birth\s*date)[:\s]+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2},?\s+\d{4})', 'DATE_DOB', 0.95, 1, flags=re.I),
 _p(r'(?:DOB|Date\s+of\s+Birth|Birth\s*date)[:\s]+(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})', 'DATE_DOB', 0.95, 1, flags=re.I),
+# DOB in YYYY-MM-DD format (ISO): "DOB 1976-10-31", "Date of Birth: 2001-02-15"
+_p(r'(?:DOB|Date\s+of\s+Birth|Birth\s*date)[:\s]+(\d{4}[/\-]\d{1,2}[/\-]\d{1,2})', 'DATE_DOB', 0.95, 1, flags=re.I),
 _p(r'(?:admission|admit|discharge)[:\s]+(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})', 'DATE', 0.90, 1, flags=re.I),
 
 # === Ordinal Date Formats ===
@@ -528,8 +530,11 @@ _p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.88, 1),
 # === Clinical time contexts ===
 # "Surgery began 08:00", "procedure at 14:30"
 _p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.85, 1, flags=re.I),
-# Bare HH:MM (24-hour) — "04:52", "23:15" (two-digit hour indicates time, not arbitrary number)
-_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.78, 1),
+# Bare HH:MM (24-hour) — "04:52", "23:15"
+# Lowered to 0.68 (below default 0.70 threshold): bare HH:MM is ambiguous
+# (scores, verse refs, ratios).  Times with AM/PM, seconds, labels, or
+# context words ("at", "began", "Time:") are still caught at 0.82–0.90.
+_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.68, 1),
 # Standalone AM/PM without colon: "8 AM", "12 PM", "3pm"
 _p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
 # "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
@@ -1369,7 +1374,7 @@ _p(r'\b(\d{2}-\d{7})\b', 'EIN', 0.60, 1, _validate_ein),
 _p(r'(?:NI(?:NO)?|National\s+Insurance)[:\s#]+([A-CEGHJ-PR-TW-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D])', 'UK_NINO', 0.95, 1, flags=re.I),
 _p(r'\b([A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D])\b', 'UK_NINO', 0.82, 1, _validate_uk_nino),
 
-# === ABA Routing (labeled only) ===
+# === ABA Routing ===
 _p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'BANK_ROUTING', 0.95, 1, flags=re.I),
 # Account numbers - both numeric-only and alphanumeric formats
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
@@ -1458,7 +1463,9 @@ _p(r'(?:Pager|Beeper|Pgr\.?)[:\s#]+(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})', 'PAGER', 0.
 _p(r'(?:Pager|Pgr\.?)[:\s#]+(\d{4,7})\b', 'PAGER', 0.85, 1, flags=re.I),  # Short pager codes
 
 # === Extension Numbers ===
-_p(r'(?:ext\.?|extension|x)[:\s#]*(\d{3,6})\b', 'PHONE_EXT', 0.85, 1, flags=re.I),
+_p(r'(?:ext\.?|extension)[:\s#]*(\d{3,6})\b', 'PHONE_EXT', 0.85, 1, flags=re.I),
+# Bare "x" trigger only after a phone-like number (avoids "x100", "x1024", etc.)
+_p(r'\d{4}\s*x\s*(\d{3,6})\b', 'PHONE_EXT', 0.80, 1),
 # Phone with extension: "555-1234 ext 567"
 _p(r'(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})\s*(?:ext\.?|x)\s*(\d{3,6})', 'PHONE', 0.90, flags=re.I),
 
@@ -1882,7 +1889,23 @@ _DL_DATE_PATTERN = re.compile(r'^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01]
 _MONTH_ABBREVS = frozenset({
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
     'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+    # Date-context prefixes that match [A-Z]{3}[-\s]\d{4} plate pattern
+    'DOB', 'DOD', 'DOS',  # Date of Birth/Death/Service
 })
+
+# DATE false positive context — words immediately before a bare numeric date
+# that indicate the date is document metadata, not personal PII.
+# Only applied to low-confidence bare patterns (≤0.70), not labeled dates.
+_DATE_FP_PRECEDING = re.compile(
+    r'(?:version|ver|rev(?:ision)?|release|build|patch|update|'
+    r'edition|page|pg|section|sec|chapter|ch|item|code|'
+    r'invoice|order|receipt|confirmation|tracking|shipment|'
+    r'case|ref(?:erence)?|ticket|effective|published|filed|'
+    r'created|modified|accessed|printed|generated|expires?|'
+    r'valid\s+(?:from|until|thru|through))\s*'
+    r'[#:\s.]*$',
+    re.I,
+)
 
 # Single-word ADDRESS false positives — capitalized common words that
 # follow "from", "lives in", etc. but are not place names.
@@ -1993,6 +2016,14 @@ class PatternDetector(BaseDetector):
                         logger.debug(
                             f"Date validation skipped for '{value}': {type(e).__name__}: {e}"
                         )
+
+                # DATE context false positive filter — bare numeric dates
+                # preceded by document-metadata keywords are not personal PII.
+                # Only applied to low-confidence bare patterns (≤0.70).
+                if pdef.entity_type in ('DATE', 'DATE_DOB') and pdef.confidence <= 0.70:
+                    preceding = text[max(0, start - 40):start]
+                    if _DATE_FP_PRECEDING.search(preceding):
+                        continue
 
                 # Age validation - reject impossible ages
                 if pdef.entity_type == 'AGE' and not _validate_age(value):
