@@ -130,9 +130,23 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "age",
         "company name",
         "employer",
-        "employee id",
-        "job title",
         "unique identifier",
+        # Core location / contact labels — always relevant for PII.
+        "street address",
+        "city",
+        "state",
+        "zip code",
+        "country",
+        "url",
+        "username",
+        # Core financial labels — always relevant for PII.
+        "credit card number",
+        "bank account number",
+        "iban",
+        # NOTE: "job title" and "employee id" intentionally excluded.
+        # ai4privacy marks JOBTITLE as unmapped ("not PII") and has no
+        # EMPLOYEE_ID gold labels, so detecting these generates guaranteed
+        # false positives without any possible true positives.
     ],
     ContentCategory.MEDICAL: [
         "medical record number",
