@@ -97,6 +97,7 @@ dependencies = [
     "tokenizers>=0.15.0",  # Fast tokenization
     "numpy>=1.24.0,<2",
     "gliner>=0.2.0",  # GLiNER zero-shot NER (Gretel PII model)
+    "spacy>=3.7.0,<4",  # spaCy NER for ensemble detection
 ]
 
 [project.optional-dependencies]
@@ -234,6 +235,7 @@ module = [
     "aiofiles", "aiofiles.*",
     # ML / ONNX / NLP
     "gliner", "gliner.*",
+    "spacy", "spacy.*",
     "onnxruntime", "onnxruntime.*",
     "openlabels_matcher", "openlabels_matcher.*",
     "torch", "torch.*",

@@ -41,6 +41,7 @@ class BenchmarkConfig:
     enable_government: bool = True
     enable_patterns: bool = True
     enable_ml: bool = False
+    enable_spacy_ner: bool = False
     enable_hyperscan: bool = False
     confidence_threshold: float = 0.70
     max_workers: int = 4
@@ -69,6 +70,7 @@ class BenchmarkConfig:
             enable_government=self.enable_government,
             enable_patterns=self.enable_patterns,
             enable_ml=self.enable_ml,
+            enable_spacy_ner=self.enable_spacy_ner,
             enable_hyperscan=self.enable_hyperscan,
             confidence_threshold=self.confidence_threshold,
             max_workers=self.max_workers,
@@ -218,6 +220,7 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
     "with_ml": BenchmarkConfig(
         name="with_ml",
         enable_ml=True,
+        enable_spacy_ner=True,
     ),
     "tiered": BenchmarkConfig(
         name="tiered",
