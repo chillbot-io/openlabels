@@ -1,0 +1,1547 @@
+{
+  "summary": {
+    "config": "gretel_pii_1k_patterns",
+    "samples": 1000,
+    "precision": 0.7919,
+    "recall": 0.5847,
+    "f1": 0.6727,
+    "exact_matches": 2173,
+    "partial_matches": 316,
+    "type_mismatches": 270,
+    "true_positives": 2489,
+    "false_positives": 654,
+    "false_negatives": 1768,
+    "avg_time_ms": 3.74,
+    "throughput_sps": 265.1,
+    "total_time_s": 3.77
+  },
+  "type_mismatches": {
+    "total": 270,
+    "pairs": [
+      {
+        "gold": "EMPLOYEE_ID",
+        "pred": "DRIVER_LICENSE",
+        "count": 34,
+        "examples": [
+          {
+            "gold_text": "I5255275",
+            "pred_text": "I5255275",
+            "sample_id": 3112
+          },
+          {
+            "gold_text": "X1549513",
+            "pred_text": "X1549513",
+            "sample_id": 4522
+          },
+          {
+            "gold_text": "P7258903",
+            "pred_text": "P7258903",
+            "sample_id": 1907
+          }
+        ]
+      },
+      {
+        "gold": "ACCOUNT_NUMBER",
+        "pred": "DRIVER_LICENSE",
+        "count": 31,
+        "examples": [
+          {
+            "gold_text": "G50145241932",
+            "pred_text": "G50145241932",
+            "sample_id": 1716
+          },
+          {
+            "gold_text": "B12972198932",
+            "pred_text": "B12972198932",
+            "sample_id": 4089
+          },
+          {
+            "gold_text": "U849236-Sr",
+            "pred_text": "U849236",
+            "sample_id": 3241
+          }
+        ]
+      },
+      {
+        "gold": "BANK_ROUTING",
+        "pred": "SSN",
+        "count": 29,
+        "examples": [
+          {
+            "gold_text": "028080202",
+            "pred_text": "028080202",
+            "sample_id": 3436
+          },
+          {
+            "gold_text": "397714915",
+            "pred_text": "397714915",
+            "sample_id": 3436
+          },
+          {
+            "gold_text": "437674759",
+            "pred_text": "437674759",
+            "sample_id": 2584
+          }
+        ]
+      },
+      {
+        "gold": "LICENSE_PLATE",
+        "pred": "DRIVER_LICENSE",
+        "count": 27,
+        "examples": [
+          {
+            "gold_text": "S47037185",
+            "pred_text": "S47037185",
+            "sample_id": 827
+          },
+          {
+            "gold_text": "F07065025",
+            "pred_text": "F07065025",
+            "sample_id": 2193
+          },
+          {
+            "gold_text": "K91912937",
+            "pred_text": "K91912937",
+            "sample_id": 4646
+          }
+        ]
+      },
+      {
+        "gold": "DEVICE_ID",
+        "pred": "CREDIT_CARD",
+        "count": 21,
+        "examples": [
+          {
+            "gold_text": "439500268375457",
+            "pred_text": "439500268375457",
+            "sample_id": 482
+          },
+          {
+            "gold_text": "549390283049103",
+            "pred_text": "549390283049103",
+            "sample_id": 3976
+          },
+          {
+            "gold_text": "456411121193308",
+            "pred_text": "456411121193308",
+            "sample_id": 1936
+          }
+        ]
+      },
+      {
+        "gold": "BIOMETRIC_ID",
+        "pred": "DRIVER_LICENSE",
+        "count": 12,
+        "examples": [
+          {
+            "gold_text": "L31075732993",
+            "pred_text": "L31075732993",
+            "sample_id": 759
+          },
+          {
+            "gold_text": "U95091509013",
+            "pred_text": "U95091509013",
+            "sample_id": 4729
+          },
+          {
+            "gold_text": "P8208596180",
+            "pred_text": "P8208596180",
+            "sample_id": 3271
+          }
+        ]
+      },
+      {
+        "gold": "SSN",
+        "pred": "DEVICE_ID",
+        "count": 12,
+        "examples": [
+          {
+            "gold_text": "ZZ255436T",
+            "pred_text": "ZZ255436T",
+            "sample_id": 2940
+          },
+          {
+            "gold_text": "ZZ796232T",
+            "pred_text": "ZZ796232T",
+            "sample_id": 3104
+          },
+          {
+            "gold_text": "ZZ402375T",
+            "pred_text": "ZZ402375T",
+            "sample_id": 3589
+          }
+        ]
+      },
+      {
+        "gold": "ADDRESS",
+        "pred": "NAME",
+        "count": 11,
+        "examples": [
+          {
+            "gold_text": "75 Tara Roads, East Sandraberg",
+            "pred_text": "East Sandraberg",
+            "sample_id": 898
+          },
+          {
+            "gold_text": "2999 Stephen Summit",
+            "pred_text": "Stephen Summit",
+            "sample_id": 1323
+          },
+          {
+            "gold_text": "Chambers Common, Michellemouth",
+            "pred_text": "Chambers Common",
+            "sample_id": 2016
+          }
+        ]
+      },
+      {
+        "gold": "ADDRESS",
+        "pred": "NAME_PATIENT",
+        "count": 10,
+        "examples": [
+          {
+            "gold_text": "2645 Wendy Island, Krystalbury",
+            "pred_text": "Island, Krystalbury",
+            "sample_id": 375
+          },
+          {
+            "gold_text": "3 Owens vista, W1 1ZQ, Robinsonborough",
+            "pred_text": "Q, Robinsonborough",
+            "sample_id": 871
+          },
+          {
+            "gold_text": "6094 Michael Lock, Bryanmouth",
+            "pred_text": "Lock, Bryanmouth",
+            "sample_id": 4647
+          }
+        ]
+      },
+      {
+        "gold": "SSN",
+        "pred": "PHONE",
+        "count": 8,
+        "examples": [
+          {
+            "gold_text": "068 148 535",
+            "pred_text": "068 148 535",
+            "sample_id": 3727
+          },
+          {
+            "gold_text": "058 137 621",
+            "pred_text": "058 137 621",
+            "sample_id": 2573
+          },
+          {
+            "gold_text": "018 655 621",
+            "pred_text": "018 655 621",
+            "sample_id": 3296
+          }
+        ]
+      },
+      {
+        "gold": "HEALTH_PLAN_ID",
+        "pred": "DRIVER_LICENSE",
+        "count": 7,
+        "examples": [
+          {
+            "gold_text": "HPBN-68005262",
+            "pred_text": "68005262",
+            "sample_id": 3334
+          },
+          {
+            "gold_text": "F836983081",
+            "pred_text": "F836983081",
+            "sample_id": 3334
+          },
+          {
+            "gold_text": "HPBN-11321118",
+            "pred_text": "11321118",
+            "sample_id": 806
+          }
+        ]
+      },
+      {
+        "gold": "LASTNAME",
+        "pred": "COMPANY",
+        "count": 7,
+        "examples": [
+          {
+            "gold_text": "Golla",
+            "pred_text": "Golla\n- Phone",
+            "sample_id": 3531
+          },
+          {
+            "gold_text": "Clay",
+            "pred_text": "Clay\n- Address",
+            "sample_id": 17
+          },
+          {
+            "gold_text": "Spencer",
+            "pred_text": "Spencer\n- Date",
+            "sample_id": 1221
+          }
+        ]
+      },
+      {
+        "gold": "EMPLOYEE_ID",
+        "pred": "CUSIP",
+        "count": 6,
+        "examples": [
+          {
+            "gold_text": "EMP505503",
+            "pred_text": "EMP505503",
+            "sample_id": 3561
+          },
+          {
+            "gold_text": "EMP469981",
+            "pred_text": "EMP469981",
+            "sample_id": 4820
+          },
+          {
+            "gold_text": "EMP974105",
+            "pred_text": "EMP974105",
+            "sample_id": 4211
+          }
+        ]
+      },
+      {
+        "gold": "FIRSTNAME",
+        "pred": "COMPANY",
+        "count": 5,
+        "examples": [
+          {
+            "gold_text": "Courtney",
+            "pred_text": "Courtney\n- Last",
+            "sample_id": 3531
+          },
+          {
+            "gold_text": "Louise",
+            "pred_text": "Louise\n- Last",
+            "sample_id": 17
+          },
+          {
+            "gold_text": "Brandon",
+            "pred_text": "Brandon\n- Last",
+            "sample_id": 2282
+          }
+        ]
+      },
+      {
+        "gold": "MRN",
+        "pred": "HEALTH_PLAN_ID",
+        "count": 4,
+        "examples": [
+          {
+            "gold_text": "MED25323278",
+            "pred_text": "MED25323278",
+            "sample_id": 4467
+          },
+          {
+            "gold_text": "MED7422798",
+            "pred_text": "MED7422798",
+            "sample_id": 1310
+          },
+          {
+            "gold_text": "MED42643514",
+            "pred_text": "MED42643514",
+            "sample_id": 2044
+          }
+        ]
+      },
+      {
+        "gold": "LICENSE_PLATE",
+        "pred": "CUSIP",
+        "count": 4,
+        "examples": [
+          {
+            "gold_text": "X65240693",
+            "pred_text": "X65240693",
+            "sample_id": 53
+          },
+          {
+            "gold_text": "B46085617",
+            "pred_text": "B46085617",
+            "sample_id": 4881
+          },
+          {
+            "gold_text": "R20918901",
+            "pred_text": "R20918901",
+            "sample_id": 1806
+          }
+        ]
+      },
+      {
+        "gold": "CREDIT_CARD",
+        "pred": "PHONE",
+        "count": 3,
+        "examples": [
+          {
+            "gold_text": "3440-0993-1648-563",
+            "pred_text": "0993-1648-563",
+            "sample_id": 3533
+          },
+          {
+            "gold_text": "3464-0566-6552-155",
+            "pred_text": "0566-6552-155",
+            "sample_id": 237
+          },
+          {
+            "gold_text": "5868 0711 7598 2169",
+            "pred_text": "0711 7598 2169",
+            "sample_id": 834
+          }
+        ]
+      },
+      {
+        "gold": "BANK_ROUTING",
+        "pred": "CUSIP",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "241318237",
+            "pred_text": "241318237",
+            "sample_id": 4398
+          },
+          {
+            "gold_text": "229214036",
+            "pred_text": "229214036",
+            "sample_id": 991
+          }
+        ]
+      },
+      {
+        "gold": "FIRSTNAME",
+        "pred": "ADDRESS",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "Jordan",
+            "pred_text": "Jordan Glen Kapadia",
+            "sample_id": 1352
+          },
+          {
+            "gold_text": "Betty",
+            "pred_text": "Betty Hill",
+            "sample_id": 2317
+          }
+        ]
+      },
+      {
+        "gold": "ACCOUNT_NUMBER",
+        "pred": "ISIN",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "CUST94287823",
+            "pred_text": "CUST94287823",
+            "sample_id": 257
+          },
+          {
+            "gold_text": "CUST49375368",
+            "pred_text": "CUST49375368",
+            "sample_id": 1964
+          }
+        ]
+      },
+      {
+        "gold": "ADDRESS",
+        "pred": "LICENSE_PLATE",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "8 Riley Link, Thomasfort, NSW 2687",
+            "pred_text": "NSW 2687",
+            "sample_id": 2569
+          },
+          {
+            "gold_text": "5 Nguyen Track, Susanview, QLD 2625",
+            "pred_text": "QLD 2625",
+            "sample_id": 3572
+          }
+        ]
+      },
+      {
+        "gold": "ACCOUNT_NUMBER",
+        "pred": "CUSIP",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "Z7455Z745",
+            "pred_text": "Z7455Z745",
+            "sample_id": 325
+          },
+          {
+            "gold_text": "ACCT-911155810",
+            "pred_text": "911155810",
+            "sample_id": 64
+          }
+        ]
+      },
+      {
+        "gold": "FIRSTNAME",
+        "pred": "STATE",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "Victoria",
+            "pred_text": "Victoria",
+            "sample_id": 3745
+          },
+          {
+            "gold_text": "Brittany",
+            "pred_text": "Brittany",
+            "sample_id": 4082
+          }
+        ]
+      },
+      {
+        "gold": "NAME",
+        "pred": "USERNAME",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "Erica A. Hebert",
+            "pred_text": "Erica",
+            "sample_id": 2452
+          },
+          {
+            "gold_text": "Blake J. Curtis",
+            "pred_text": "Blake",
+            "sample_id": 2286
+          }
+        ]
+      },
+      {
+        "gold": "CITY",
+        "pred": "NAME",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "West Simonhaven",
+            "pred_text": "West Simonhaven",
+            "sample_id": 2099
+          },
+          {
+            "gold_text": "South Ashley",
+            "pred_text": "South Ashley",
+            "sample_id": 3608
+          }
+        ]
+      },
+      {
+        "gold": "NAME",
+        "pred": "ADDRESS",
+        "count": 2,
+        "examples": [
+          {
+            "gold_text": "Andrea Murray-Turner",
+            "pred_text": "Andrea Murray",
+            "sample_id": 4750
+          },
+          {
+            "gold_text": "Yochana K. Sami",
+            "pred_text": "Yochana",
+            "sample_id": 1192
+          }
+        ]
+      },
+      {
+        "gold": "NAME",
+        "pred": "STATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "Brittany D. Mccullough",
+            "pred_text": "Brittany",
+            "sample_id": 217
+          }
+        ]
+      },
+      {
+        "gold": "MRN",
+        "pred": "GPS_COORDINATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "J5735006",
+            "pred_text": "Substation J5735006. Equipment/Area Insp",
+            "sample_id": 3112
+          }
+        ]
+      },
+      {
+        "gold": "DATE",
+        "pred": "GPS_COORDINATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "1995.09.25",
+            "pred_text": "on 1995.09.25.",
+            "sample_id": 3108
+          }
+        ]
+      },
+      {
+        "gold": "BIOMETRIC_ID",
+        "pred": "CUSIP",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "BIO-584349070",
+            "pred_text": "584349070",
+            "sample_id": 1799
+          }
+        ]
+      },
+      {
+        "gold": "PHONE",
+        "pred": "NPI",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "+44(0)2074960495",
+            "pred_text": "2074960495",
+            "sample_id": 4780
+          }
+        ]
+      },
+      {
+        "gold": "CITY",
+        "pred": "NAME_PATIENT",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "Bellmouth",
+            "pred_text": "Din, Bellmouth",
+            "sample_id": 871
+          }
+        ]
+      },
+      {
+        "gold": "ACCOUNT_NUMBER",
+        "pred": "USERNAME",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "C356-1469-971",
+            "pred_text": "C356-1469-971.",
+            "sample_id": 3698
+          }
+        ]
+      },
+      {
+        "gold": "EMPLOYEE_ID",
+        "pred": "ZIP",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "Dv-10274",
+            "pred_text": "10274",
+            "sample_id": 600
+          }
+        ]
+      },
+      {
+        "gold": "IP_ADDRESS",
+        "pred": "GPS_COORDINATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "68.224.37.28",
+            "pred_text": "68.224.37.28, Type: Cyber, Description: ",
+            "sample_id": 2983
+          }
+        ]
+      },
+      {
+        "gold": "MRN",
+        "pred": "LICENSE_PLATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "MRN-5292",
+            "pred_text": "MRN-5292",
+            "sample_id": 2672
+          }
+        ]
+      },
+      {
+        "gold": "MRN",
+        "pred": "ACCOUNT_NUMBER",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "J99630",
+            "pred_text": "J99630",
+            "sample_id": 1592
+          }
+        ]
+      },
+      {
+        "gold": "LICENSE_PLATE",
+        "pred": "ACCOUNT_NUMBER",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "AW67505623",
+            "pred_text": "AW67505623",
+            "sample_id": 3116
+          }
+        ]
+      },
+      {
+        "gold": "PHONE",
+        "pred": "SEDOL",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "0161 4960713",
+            "pred_text": "4960713",
+            "sample_id": 220
+          }
+        ]
+      },
+      {
+        "gold": "NAME",
+        "pred": "COMPANY",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "Jennifer Price-Black",
+            "pred_text": "Price-Black\n- Address",
+            "sample_id": 2795
+          }
+        ]
+      },
+      {
+        "gold": "MRN",
+        "pred": "SEDOL",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "X519666",
+            "pred_text": "X519666",
+            "sample_id": 2956
+          }
+        ]
+      },
+      {
+        "gold": "PHONE",
+        "pred": "DRIVER_LICENSE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "99689387",
+            "pred_text": "99689387",
+            "sample_id": 4726
+          }
+        ]
+      },
+      {
+        "gold": "EMPLOYEE_ID",
+        "pred": "USERNAME",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "EMP506306",
+            "pred_text": "EMP506306.",
+            "sample_id": 658
+          }
+        ]
+      },
+      {
+        "gold": "IP_ADDRESS",
+        "pred": "URL",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "24.102.248.120",
+            "pred_text": "http://24.102.248.120.",
+            "sample_id": 1960
+          }
+        ]
+      },
+      {
+        "gold": "CERTIFICATE_NUMBER",
+        "pred": "NAME_PROVIDER",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "CERT-2662017",
+            "pred_text": "CERT",
+            "sample_id": 962
+          }
+        ]
+      },
+      {
+        "gold": "BIOMETRIC_ID",
+        "pred": "SSN",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "BIO-696292951",
+            "pred_text": "696292951",
+            "sample_id": 816
+          }
+        ]
+      },
+      {
+        "gold": "LASTNAME",
+        "pred": "GPS_COORDINATE",
+        "count": 1,
+        "examples": [
+          {
+            "gold_text": "Martinez-Cordova",
+            "pred_text": "Martinez-Cordova Residence",
+            "sample_id": 1972
+          }
+        ]
+      }
+    ]
+  },
+  "by_category": {
+    "government_ids": {
+      "precision": 0.9527,
+      "recall": 0.8173,
+      "f1": 0.8798,
+      "true_positives": 765,
+      "false_positives": 38,
+      "false_negatives": 171,
+      "exact_matches": 750,
+      "partial_matches": 15,
+      "type_mismatches": 29,
+      "total_gold": 936,
+      "total_pred": 803
+    },
+    "dates": {
+      "precision": 0.7932,
+      "recall": 0.9077,
+      "f1": 0.8466,
+      "true_positives": 698,
+      "false_positives": 182,
+      "false_negatives": 71,
+      "exact_matches": 674,
+      "partial_matches": 24,
+      "type_mismatches": 1,
+      "total_gold": 769,
+      "total_pred": 880
+    },
+    "financial": {
+      "precision": 0.6344,
+      "recall": 0.3207,
+      "f1": 0.426,
+      "true_positives": 144,
+      "false_positives": 83,
+      "false_negatives": 305,
+      "exact_matches": 143,
+      "partial_matches": 1,
+      "type_mismatches": 77,
+      "total_gold": 449,
+      "total_pred": 227
+    },
+    "locations": {
+      "precision": 0.6747,
+      "recall": 0.4308,
+      "f1": 0.5258,
+      "true_positives": 168,
+      "false_positives": 81,
+      "false_negatives": 222,
+      "exact_matches": 30,
+      "partial_matches": 138,
+      "type_mismatches": 26,
+      "total_gold": 390,
+      "total_pred": 249
+    },
+    "names": {
+      "precision": 0.5191,
+      "recall": 0.1099,
+      "f1": 0.1813,
+      "true_positives": 68,
+      "false_positives": 63,
+      "false_negatives": 551,
+      "exact_matches": 15,
+      "partial_matches": 53,
+      "type_mismatches": 23,
+      "total_gold": 619,
+      "total_pred": 131
+    },
+    "contact": {
+      "precision": 0.9239,
+      "recall": 0.7736,
+      "f1": 0.8421,
+      "true_positives": 328,
+      "false_positives": 27,
+      "false_negatives": 96,
+      "exact_matches": 284,
+      "partial_matches": 44,
+      "type_mismatches": 3,
+      "total_gold": 424,
+      "total_pred": 355
+    },
+    "network": {
+      "precision": 0.748,
+      "recall": 0.6835,
+      "f1": 0.7143,
+      "true_positives": 190,
+      "false_positives": 64,
+      "false_negatives": 88,
+      "exact_matches": 190,
+      "partial_matches": 0,
+      "type_mismatches": 37,
+      "total_gold": 278,
+      "total_pred": 254
+    },
+    "vehicle": {
+      "precision": 0.4868,
+      "recall": 0.2517,
+      "f1": 0.3318,
+      "true_positives": 37,
+      "false_positives": 39,
+      "false_negatives": 110,
+      "exact_matches": 4,
+      "partial_matches": 33,
+      "type_mismatches": 32,
+      "total_gold": 147,
+      "total_pred": 76
+    },
+    "professional": {
+      "precision": 0.5235,
+      "recall": 0.3467,
+      "f1": 0.4171,
+      "true_positives": 78,
+      "false_positives": 71,
+      "false_negatives": 147,
+      "exact_matches": 78,
+      "partial_matches": 0,
+      "type_mismatches": 42,
+      "total_gold": 225,
+      "total_pred": 149
+    },
+    "secrets": {
+      "precision": 0.6842,
+      "recall": 0.65,
+      "f1": 0.6667,
+      "true_positives": 13,
+      "false_positives": 6,
+      "false_negatives": 7,
+      "exact_matches": 5,
+      "partial_matches": 8,
+      "type_mismatches": 0,
+      "total_gold": 20,
+      "total_pred": 19
+    }
+  },
+  "by_entity_type": {
+    "MRN": {
+      "precision": 0.9838,
+      "recall": 0.953,
+      "f1": 0.9682,
+      "true_positives": 487,
+      "false_positives": 8,
+      "false_negatives": 24,
+      "exact_matches": 487,
+      "partial_matches": 0,
+      "type_mismatches": 8,
+      "total_gold": 511,
+      "total_pred": 495
+    },
+    "DATE_DOB": {
+      "precision": 1.0,
+      "recall": 0.9956,
+      "f1": 0.9978,
+      "true_positives": 452,
+      "false_positives": 0,
+      "false_negatives": 2,
+      "exact_matches": 451,
+      "partial_matches": 1,
+      "type_mismatches": 0,
+      "total_gold": 454,
+      "total_pred": 452
+    },
+    "SSN": {
+      "precision": 0.912,
+      "recall": 0.6571,
+      "f1": 0.7638,
+      "true_positives": 228,
+      "false_positives": 22,
+      "false_negatives": 119,
+      "exact_matches": 228,
+      "partial_matches": 0,
+      "type_mismatches": 20,
+      "total_gold": 347,
+      "total_pred": 250
+    },
+    "HEALTH_PLAN_ID": {
+      "precision": 0.125,
+      "recall": 0.0833,
+      "f1": 0.1,
+      "true_positives": 1,
+      "false_positives": 7,
+      "false_negatives": 11,
+      "exact_matches": 1,
+      "partial_matches": 0,
+      "type_mismatches": 7,
+      "total_gold": 12,
+      "total_pred": 8
+    },
+    "DATE": {
+      "precision": 0.5755,
+      "recall": 0.7379,
+      "f1": 0.6466,
+      "true_positives": 183,
+      "false_positives": 135,
+      "false_negatives": 65,
+      "exact_matches": 183,
+      "partial_matches": 0,
+      "type_mismatches": 1,
+      "total_gold": 248,
+      "total_pred": 318
+    },
+    "ADDRESS": {
+      "precision": 0.726,
+      "recall": 0.4763,
+      "f1": 0.5752,
+      "true_positives": 151,
+      "false_positives": 57,
+      "false_negatives": 166,
+      "exact_matches": 19,
+      "partial_matches": 132,
+      "type_mismatches": 23,
+      "total_gold": 317,
+      "total_pred": 208
+    },
+    "CREDIT_CARD": {
+      "precision": 0.9677,
+      "recall": 0.7317,
+      "f1": 0.8333,
+      "true_positives": 90,
+      "false_positives": 3,
+      "false_negatives": 33,
+      "exact_matches": 90,
+      "partial_matches": 0,
+      "type_mismatches": 3,
+      "total_gold": 123,
+      "total_pred": 93
+    },
+    "NAME": {
+      "precision": 0.7619,
+      "recall": 0.1502,
+      "f1": 0.251,
+      "true_positives": 32,
+      "false_positives": 10,
+      "false_negatives": 181,
+      "exact_matches": 14,
+      "partial_matches": 18,
+      "type_mismatches": 6,
+      "total_gold": 213,
+      "total_pred": 42
+    },
+    "PHONE": {
+      "precision": 0.9565,
+      "recall": 0.763,
+      "f1": 0.8489,
+      "true_positives": 132,
+      "false_positives": 6,
+      "false_negatives": 41,
+      "exact_matches": 92,
+      "partial_matches": 40,
+      "type_mismatches": 3,
+      "total_gold": 173,
+      "total_pred": 138
+    },
+    "EMAIL": {
+      "precision": 0.9891,
+      "recall": 1.0,
+      "f1": 0.9945,
+      "true_positives": 182,
+      "false_positives": 2,
+      "false_negatives": 0,
+      "exact_matches": 182,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 182,
+      "total_pred": 184
+    },
+    "DEVICE_ID": {
+      "precision": 0.2105,
+      "recall": 0.1333,
+      "f1": 0.1633,
+      "true_positives": 8,
+      "false_positives": 30,
+      "false_negatives": 52,
+      "exact_matches": 8,
+      "partial_matches": 0,
+      "type_mismatches": 21,
+      "total_gold": 60,
+      "total_pred": 38
+    },
+    "ACCOUNT_NUMBER": {
+      "precision": 0.3091,
+      "recall": 0.07,
+      "f1": 0.1141,
+      "true_positives": 17,
+      "false_positives": 38,
+      "false_negatives": 226,
+      "exact_matches": 16,
+      "partial_matches": 1,
+      "type_mismatches": 36,
+      "total_gold": 243,
+      "total_pred": 55
+    },
+    "SWIFT_BIC": {
+      "precision": 0.6364,
+      "recall": 1.0,
+      "f1": 0.7778,
+      "true_positives": 7,
+      "false_positives": 4,
+      "false_negatives": 0,
+      "exact_matches": 7,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 7,
+      "total_pred": 11
+    },
+    "FIRSTNAME": {
+      "precision": 0.7805,
+      "recall": 0.1524,
+      "f1": 0.255,
+      "true_positives": 32,
+      "false_positives": 9,
+      "false_negatives": 178,
+      "exact_matches": 1,
+      "partial_matches": 31,
+      "type_mismatches": 9,
+      "total_gold": 210,
+      "total_pred": 41
+    },
+    "LASTNAME": {
+      "precision": 0.3333,
+      "recall": 0.0204,
+      "f1": 0.0385,
+      "true_positives": 4,
+      "false_positives": 8,
+      "false_negatives": 192,
+      "exact_matches": 0,
+      "partial_matches": 4,
+      "type_mismatches": 8,
+      "total_gold": 196,
+      "total_pred": 12
+    },
+    "LICENSE_PLATE": {
+      "precision": 0.4783,
+      "recall": 0.2538,
+      "f1": 0.3317,
+      "true_positives": 33,
+      "false_positives": 36,
+      "false_negatives": 97,
+      "exact_matches": 0,
+      "partial_matches": 33,
+      "type_mismatches": 32,
+      "total_gold": 130,
+      "total_pred": 69
+    },
+    "COMPANY": {
+      "precision": 0.5429,
+      "recall": 0.7308,
+      "f1": 0.623,
+      "true_positives": 19,
+      "false_positives": 16,
+      "false_negatives": 7,
+      "exact_matches": 19,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 26,
+      "total_pred": 35
+    },
+    "BANK_ROUTING": {
+      "precision": 0.4833,
+      "recall": 0.4531,
+      "f1": 0.4677,
+      "true_positives": 29,
+      "false_positives": 31,
+      "false_negatives": 35,
+      "exact_matches": 29,
+      "partial_matches": 0,
+      "type_mismatches": 31,
+      "total_gold": 64,
+      "total_pred": 60
+    },
+    "EMPLOYEE_ID": {
+      "precision": 0.5842,
+      "recall": 0.2965,
+      "f1": 0.3933,
+      "true_positives": 59,
+      "false_positives": 42,
+      "false_negatives": 140,
+      "exact_matches": 59,
+      "partial_matches": 0,
+      "type_mismatches": 42,
+      "total_gold": 199,
+      "total_pred": 101
+    },
+    "IP_ADDRESS": {
+      "precision": 0.9192,
+      "recall": 0.9838,
+      "f1": 0.9504,
+      "true_positives": 182,
+      "false_positives": 16,
+      "false_negatives": 3,
+      "exact_matches": 182,
+      "partial_matches": 0,
+      "type_mismatches": 2,
+      "total_gold": 185,
+      "total_pred": 198
+    },
+    "DATETIME": {
+      "precision": 0.9074,
+      "recall": 0.98,
+      "f1": 0.9423,
+      "true_positives": 49,
+      "false_positives": 5,
+      "false_negatives": 1,
+      "exact_matches": 28,
+      "partial_matches": 21,
+      "type_mismatches": 0,
+      "total_gold": 50,
+      "total_pred": 54
+    },
+    "CITY": {
+      "precision": 0.25,
+      "recall": 0.0345,
+      "f1": 0.0606,
+      "true_positives": 1,
+      "false_positives": 3,
+      "false_negatives": 28,
+      "exact_matches": 1,
+      "partial_matches": 0,
+      "type_mismatches": 3,
+      "total_gold": 29,
+      "total_pred": 4
+    },
+    "TIME": {
+      "precision": 0.28,
+      "recall": 0.8235,
+      "f1": 0.4179,
+      "true_positives": 14,
+      "false_positives": 36,
+      "false_negatives": 3,
+      "exact_matches": 12,
+      "partial_matches": 2,
+      "type_mismatches": 0,
+      "total_gold": 17,
+      "total_pred": 50
+    },
+    "STATE": {
+      "precision": 0.1176,
+      "recall": 0.3333,
+      "f1": 0.1739,
+      "true_positives": 2,
+      "false_positives": 15,
+      "false_negatives": 4,
+      "exact_matches": 2,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 6,
+      "total_pred": 17
+    },
+    "BIOMETRIC_ID": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 18,
+      "false_negatives": 33,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 14,
+      "total_gold": 33,
+      "total_pred": 18
+    },
+    "API_KEY": {
+      "precision": 1.0,
+      "recall": 0.625,
+      "f1": 0.7692,
+      "true_positives": 5,
+      "false_positives": 0,
+      "false_negatives": 3,
+      "exact_matches": 2,
+      "partial_matches": 3,
+      "type_mismatches": 0,
+      "total_gold": 8,
+      "total_pred": 5
+    },
+    "USERNAME": {
+      "precision": 0.4091,
+      "recall": 0.1406,
+      "f1": 0.2093,
+      "true_positives": 9,
+      "false_positives": 13,
+      "false_negatives": 55,
+      "exact_matches": 7,
+      "partial_matches": 2,
+      "type_mismatches": 0,
+      "total_gold": 64,
+      "total_pred": 22
+    },
+    "CERTIFICATE_NUMBER": {
+      "precision": 0.9375,
+      "recall": 0.5357,
+      "f1": 0.6818,
+      "true_positives": 15,
+      "false_positives": 1,
+      "false_negatives": 13,
+      "exact_matches": 0,
+      "partial_matches": 15,
+      "type_mismatches": 1,
+      "total_gold": 28,
+      "total_pred": 16
+    },
+    "NAME_PATIENT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 18,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 18
+    },
+    "NAME_PROVIDER": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 18,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 18
+    },
+    "PASSWORD": {
+      "precision": 0.6154,
+      "recall": 0.6667,
+      "f1": 0.64,
+      "true_positives": 8,
+      "false_positives": 5,
+      "false_negatives": 4,
+      "exact_matches": 3,
+      "partial_matches": 5,
+      "type_mismatches": 0,
+      "total_gold": 12,
+      "total_pred": 13
+    },
+    "UNIQUE_ID": {
+      "precision": 0.9688,
+      "recall": 0.7381,
+      "f1": 0.8378,
+      "true_positives": 31,
+      "false_positives": 1,
+      "false_negatives": 11,
+      "exact_matches": 31,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 42,
+      "total_pred": 32
+    },
+    "PHONE_EXT": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 6,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 6
+    },
+    "DRIVER_LICENSE": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 6,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 6
+    },
+    "COUNTY": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 2,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 2
+    },
+    "GPS_COORDINATE": {
+      "precision": 0.9091,
+      "recall": 0.9091,
+      "f1": 0.9091,
+      "true_positives": 10,
+      "false_positives": 1,
+      "false_negatives": 1,
+      "exact_matches": 5,
+      "partial_matches": 5,
+      "type_mismatches": 0,
+      "total_gold": 11,
+      "total_pred": 11
+    },
+    "COUNTRY": {
+      "precision": 1.0,
+      "recall": 0.25,
+      "f1": 0.4,
+      "true_positives": 3,
+      "false_positives": 0,
+      "false_negatives": 9,
+      "exact_matches": 2,
+      "partial_matches": 1,
+      "type_mismatches": 0,
+      "total_gold": 12,
+      "total_pred": 3
+    },
+    "EMPLOYER": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 12,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 12
+    },
+    "VIN": {
+      "precision": 0.5714,
+      "recall": 0.2353,
+      "f1": 0.3333,
+      "true_positives": 4,
+      "false_positives": 3,
+      "false_negatives": 13,
+      "exact_matches": 4,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 17,
+      "total_pred": 7
+    },
+    "AGE": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 6,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 6
+    },
+    "ZIP": {
+      "precision": 0.3333,
+      "recall": 0.0667,
+      "f1": 0.1111,
+      "true_positives": 1,
+      "false_positives": 2,
+      "false_negatives": 14,
+      "exact_matches": 1,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 15,
+      "total_pred": 3
+    },
+    "URL": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positives": 5,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "exact_matches": 3,
+      "partial_matches": 2,
+      "type_mismatches": 0,
+      "total_gold": 5,
+      "total_pred": 5
+    },
+    "STATE_ID": {
+      "precision": 1.0,
+      "recall": 0.25,
+      "f1": 0.4,
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 3,
+      "exact_matches": 1,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 4,
+      "total_pred": 1
+    },
+    "BED_NUMBER": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 1
+    },
+    "TAX_ID": {
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571,
+      "true_positives": 3,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "exact_matches": 3,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 4,
+      "total_pred": 3
+    },
+    "PRIVATE_KEY": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 1
+    },
+    "FACILITY": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "exact_matches": 0,
+      "partial_matches": 0,
+      "type_mismatches": 0,
+      "total_gold": 0,
+      "total_pred": 1
+    }
+  }
+}
