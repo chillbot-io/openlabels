@@ -63,6 +63,7 @@ GLINER_LABEL_MAP: dict[str, str] = {
     # Financial
     "credit card number": "CREDIT_CARD",
     "bank account number": "ACCOUNT_NUMBER",
+    "bank routing number": "BANK_ROUTING",
     "iban": "IBAN",
     "swift code": "SWIFT_BIC",
     "bank routing number": "BANK_ROUTING",
