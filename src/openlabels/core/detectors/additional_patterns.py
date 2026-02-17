@@ -266,8 +266,10 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # UNIQUE_ID - alphanumeric dash patterns: "AF7A-BHTY-92RH", "VVKF-IAMF-LDF7"
+    # Requires at least one letter to avoid matching pure digit dashed sequences
+    # (like credit card fragments "4012-8888-8888").
     _p(
-        r"\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b",
+        r"\b((?=[A-Z0-9]*[A-Z])[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b",
         "UNIQUE_ID", 0.75, 1, flags=0
     ),
 )
