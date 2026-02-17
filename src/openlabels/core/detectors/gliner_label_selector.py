@@ -103,7 +103,7 @@ _CATEGORY_PATTERNS: dict[ContentCategory, list[tuple[re.Pattern[str], float]]] =
 
 _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
     ContentCategory.MEDICAL: 2.0,
-    ContentCategory.FINANCIAL: 1.5,
+    ContentCategory.FINANCIAL: 1.0,
     ContentCategory.PERSONAL_ID: 1.5,
     ContentCategory.CONTACT: 1.0,
     ContentCategory.TECHNICAL: 2.0,
@@ -143,6 +143,12 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "credit card number",
         "bank account number",
         "iban",
+        # Secrets — passwords and API keys can appear in any context.
+        "password",
+        "api key",
+        # Vehicle — VINs and plates are structurally distinctive.
+        "vehicle identification number",
+        "license plate number",
         # NOTE: "job title" and "employee id" intentionally excluded.
         # ai4privacy marks JOBTITLE as unmapped ("not PII") and has no
         # EMPLOYEE_ID gold labels, so detecting these generates guaranteed

@@ -281,19 +281,23 @@ class DetectorOrchestrator:
             return span.confidence >= self.config.ml_confidence_threshold
         return span.confidence >= self.confidence_threshold
 
+    # Ensemble boost amount when 2+ detectors agree on the same span.
+    _ENSEMBLE_BOOST = 0.15
+
     def _post_process(
         self,
         spans: list[Span],
         text: str | None = None,
     ) -> list[Span]:
-        """Post-process: filter, context-adjust, calibrate, deduplicate.
+        """Post-process: filter, context-adjust, calibrate, ensemble, deduplicate.
 
         Pipeline order:
         1. Filter by per-entity / per-tier raw confidence threshold
         2. Apply context keyword boost/demote (on raw confidence)
         3. Calibrate into unified tier bands
-        4. Resolve overlapping spans
-        5. Proximity boost (optional)
+        4. Ensemble boost (when 2+ detectors agree)
+        5. Resolve overlapping spans
+        6. Proximity boost (optional)
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -303,6 +307,11 @@ class DetectorOrchestrator:
             filtered = apply_context_keywords(filtered, text)
 
         calibrated = calibrate_spans(filtered)
+
+        # Ensemble boost: when multiple detectors agree on overlapping
+        # spans with the same entity type, boost the best span's confidence.
+        calibrated = self._apply_ensemble_boost(calibrated)
+
         resolved = resolve_spans(
             calibrated, confidence_threshold=0.0, source_text=text,
         )
@@ -323,6 +332,60 @@ class DetectorOrchestrator:
             resolved = proximity.boosted_spans
 
         return resolved
+
+    def _apply_ensemble_boost(self, spans: list[Span]) -> list[Span]:
+        """Boost confidence when multiple detectors agree on the same entity.
+
+        For each span, checks if a different detector produced an overlapping
+        span with a compatible entity type.  If so, the higher-confidence
+        span gets boosted (clamped to 1.0).  The corroborating span is left
+        unchanged so that the span resolver can still pick the best one.
+
+        This rewards multi-detector agreement without adding new detections.
+        """
+        if len(spans) < 2:
+            return spans
+
+        boosted_indices: set[int] = set()
+        result = list(spans)
+
+        for i, span_a in enumerate(spans):
+            if i in boosted_indices:
+                continue
+            norm_a = normalize_entity_type(span_a.entity_type)
+            for j, span_b in enumerate(spans):
+                if i == j or span_a.detector == span_b.detector:
+                    continue
+                if not span_a.overlaps(span_b):
+                    continue
+                norm_b = normalize_entity_type(span_b.entity_type)
+                if norm_a != norm_b:
+                    continue
+                # Two different detectors agree — boost the stronger one.
+                if i not in boosted_indices:
+                    new_conf = min(1.0, span_a.confidence + self._ENSEMBLE_BOOST)
+                    result[i] = Span(
+                        start=span_a.start,
+                        end=span_a.end,
+                        text=span_a.text,
+                        entity_type=span_a.entity_type,
+                        confidence=new_conf,
+                        detector=span_a.detector,
+                        tier=span_a.tier,
+                        context=span_a.context,
+                        needs_review=span_a.needs_review,
+                        review_reason=span_a.review_reason,
+                        coref_anchor_value=span_a.coref_anchor_value,
+                    )
+                    boosted_indices.add(i)
+                    logger.debug(
+                        "Ensemble boost: %s %r %.3f→%.3f (corroborated by %s)",
+                        span_a.entity_type, span_a.text,
+                        span_a.confidence, new_conf, span_b.detector,
+                    )
+                break  # Only boost once per span
+
+        return result
 
     def add_detector(self, detector: BaseDetector) -> None:
         """Add a custom detector to the orchestrator."""
