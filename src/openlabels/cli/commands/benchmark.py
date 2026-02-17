@@ -1,24 +1,34 @@
 """CLI command for benchmarking the classification pipeline.
 
 Usage:
-    openlabels benchmark                        # Default: 500 samples, patterns_only
-    openlabels benchmark --samples 1000         # More samples
-    openlabels benchmark --preset with_ml       # With ML detectors
-    openlabels benchmark sweep                  # Compare all presets
-    openlabels benchmark tune                   # Threshold sweep
+    openlabels benchmark                                    # Default: 500 samples, ai4privacy
+    openlabels benchmark --samples 1000                     # More samples
+    openlabels benchmark --preset with_ml                   # With ML detectors
+    openlabels benchmark --dataset gretel_pii -n 1000       # Gretel PII 1k
+    openlabels benchmark --dataset gretel_finance --enable-ml
+    openlabels benchmark sweep                              # Compare all presets
+    openlabels benchmark tune                               # Threshold sweep
     openlabels benchmark tune --output tuning.json
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import click
 
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
+DATASET_CHOICES = ["ai4privacy", "gretel_pii", "gretel_finance"]
+
+
 @click.group(invoke_without_command=True)
 @click.option("--samples", "-n", default=500, type=int, help="Number of samples to evaluate")
 @click.option("--preset", "-p", default="patterns_only", help="Config preset name")
+@click.option("--dataset", "-d", default="ai4privacy",
+              type=click.Choice(DATASET_CHOICES, case_sensitive=False),
+              help="Dataset to benchmark against")
 @click.option("--seed", default=42, type=int, help="Random seed for reproducibility")
 @click.option("--output", "-o", default=None, help="Save results to JSON file")
 @click.option("--verbose", "-v", is_flag=True, help="Show per-category breakdown")
@@ -27,14 +37,16 @@ from openlabels.core.path_validation import PathValidationError, validate_output
 @click.option("--tiered", is_flag=True, help="Use tiered pipeline")
 @click.option("--model-dir", default=None, help="Path to ML model directory")
 @click.pass_context
-def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml, tiered, model_dir):
-    """Benchmark the classification pipeline against ai4privacy dataset."""
+def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
+              enable_ml, tiered, model_dir):
+    """Benchmark the classification pipeline against PII datasets."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
     ctx.obj["seed"] = seed
     ctx.obj["output"] = output
     ctx.obj["verbose"] = verbose
     ctx.obj["model_dir"] = model_dir
+    ctx.obj["dataset"] = dataset
 
     if ctx.invoked_subcommand is not None:
         return
@@ -70,7 +82,8 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
     if tiered and "tiered" not in config.name:
         config_desc = f"{config_desc}+tiered"
     click.echo(f"Benchmark: {config_desc}")
-    click.echo(f"Samples: {samples} | Threshold: {config.confidence_threshold}")
+    click.echo(f"Dataset: {dataset} | Samples: {samples} | "
+               f"Threshold: {config.confidence_threshold}")
     ml_status = "ON" if config.enable_ml else "OFF"
     click.echo(f"ML: {ml_status} | "
                f"Pipeline: {'tiered' if config.use_tiered_pipeline else 'orchestrator'}")
@@ -80,14 +93,25 @@ def benchmark(ctx, samples, preset, seed, output, verbose, threshold, enable_ml,
         click.echo("  (name detection requires ML; use --enable-ml or --preset with_ml)")
     click.echo("-" * 60)
 
+    # Load dataset
+    loaded_samples = _load_dataset_samples(dataset, samples, seed)
+
     try:
         from openlabels.core.benchmark.dataset import DatasetLoadError
-        result = run_benchmark(
-            sample_size=samples,
-            config=config,
-            seed=seed,
-            progress_callback=_cli_progress,
-        )
+        if loaded_samples is not None:
+            result = run_benchmark(
+                samples=loaded_samples,
+                config=config,
+                seed=seed,
+                progress_callback=_cli_progress,
+            )
+        else:
+            result = run_benchmark(
+                sample_size=samples,
+                config=config,
+                seed=seed,
+                progress_callback=_cli_progress,
+            )
     except DatasetLoadError as e:
         click.echo(f"\nDataset error: {e}", err=True)
         raise SystemExit(1)
@@ -126,6 +150,7 @@ def sweep(ctx, presets):
     seed = ctx.obj["seed"]
     output = ctx.obj["output"]
     verbose = ctx.obj["verbose"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
 
     if presets:
         preset_names = [p.strip() for p in presets.split(",")]
@@ -133,12 +158,15 @@ def sweep(ctx, presets):
         preset_names = ["patterns_relaxed", "patterns_only", "patterns_strict"]
 
     click.echo(f"Sweep: {', '.join(preset_names)}")
-    click.echo(f"Samples: {samples}")
+    click.echo(f"Dataset: {dataset} | Samples: {samples}")
     click.echo("=" * 60)
+
+    loaded_samples = _load_dataset_samples(dataset, samples, seed)
 
     try:
         results = run_sweep(
-            sample_size=samples,
+            samples=loaded_samples,
+            sample_size=samples if loaded_samples is None else None,
             preset_names=preset_names,
             seed=seed,
         )
@@ -181,6 +209,7 @@ def tune(ctx, thresholds, enable_ml):
     samples = ctx.obj["samples"]
     seed = ctx.obj["seed"]
     output = ctx.obj["output"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
 
     threshold_list = None
     if thresholds:
@@ -189,12 +218,16 @@ def tune(ctx, thresholds, enable_ml):
     model_dir = ctx.obj.get("model_dir")
     base = BenchmarkConfig(enable_ml=enable_ml, ml_model_dir=model_dir)
 
-    click.echo(f"Threshold tuning | Samples: {samples} | ML: {'on' if enable_ml else 'off'}")
+    click.echo(f"Threshold tuning | Dataset: {dataset} | Samples: {samples} | "
+               f"ML: {'on' if enable_ml else 'off'}")
     click.echo("=" * 60)
+
+    loaded_samples = _load_dataset_samples(dataset, samples, seed)
 
     try:
         results = threshold_sweep(
-            sample_size=samples,
+            samples=loaded_samples,
+            sample_size=samples if loaded_samples is None else None,
             thresholds=threshold_list,
             base_config=base,
             seed=seed,
@@ -221,6 +254,40 @@ def tune(ctx, thresholds, enable_ml):
             return
         save_results(results, validated)
         click.echo(f"\nResults saved to: {validated}")
+
+
+# ── Dataset loading ───────────────────────────────────────────────────
+
+# Bundled Gretel dataset paths (relative to benchmark package)
+_BENCHMARK_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "core" / "benchmark"
+
+
+def _load_dataset_samples(dataset: str, sample_size: int, seed: int):
+    """Load samples for the chosen dataset.
+
+    Returns a list of BenchmarkSample for Gretel datasets, or None for
+    ai4privacy (which is handled by the harness's default load_dataset).
+    """
+    if dataset == "ai4privacy":
+        return None
+
+    if dataset == "gretel_pii":
+        from openlabels.core.benchmark.adapters import load_gretel_pii
+
+        path = _BENCHMARK_DATA_DIR / "gretel_pii_test.jsonl"
+        samples = load_gretel_pii(path, sample_size=sample_size, seed=seed)
+        click.echo(f"Loaded {len(samples)} samples from gretel_pii")
+        return samples
+
+    if dataset == "gretel_finance":
+        from openlabels.core.benchmark.adapters import load_gretel_finance
+
+        path = _BENCHMARK_DATA_DIR / "gretel_finance_test.jsonl"
+        samples = load_gretel_finance(path, sample_size=sample_size, seed=seed)
+        click.echo(f"Loaded {len(samples)} samples from gretel_finance")
+        return samples
+
+    raise click.BadParameter(f"Unknown dataset: {dataset}")
 
 
 # ── Output formatting ─────────────────────────────────────────────────
