@@ -298,11 +298,11 @@ class TestOrchestratorMLWiring:
 
         assert "openlabels models download" in caplog.text
 
-    def test_ml_disabled_by_default(self):
-        """Default DetectionConfig has enable_ml=False."""
+    def test_ml_enabled_by_default(self):
+        """Default DetectionConfig has enable_ml=True."""
         from openlabels.core.detectors.config import DetectionConfig
         config = DetectionConfig()
-        assert config.enable_ml is False
+        assert config.enable_ml is True
 
     def test_full_config_enables_ml(self):
         """DetectionConfig.full() enables ML."""

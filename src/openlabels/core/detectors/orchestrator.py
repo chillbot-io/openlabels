@@ -38,6 +38,9 @@ class DetectorOrchestrator:
         self.detectors: list[BaseDetector] = []
         self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
         self._using_hyperscan = False
+        self._entity_threshold_map: dict[str, float] = dict(
+            self.config.entity_thresholds
+        )
 
         if self.config.enable_hyperscan:
             self._init_hyperscan_detector()
@@ -60,6 +63,9 @@ class DetectorOrchestrator:
 
         if self.config.enable_ml:
             self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
+
+        if self.config.enable_spacy_ner:
+            self._init_spacy_ner()
 
         self._coref_resolver: Callable[..., list[Span]] | None = None
         self._context_enhancer: Any = None
@@ -115,6 +121,20 @@ class DetectorOrchestrator:
 
         except ImportError as e:
             logger.warning("GLiNER detector not available: %s", e)
+
+    def _init_spacy_ner(self) -> None:
+        """Initialize spaCy NER detector for ensemble."""
+        try:
+            from .spacy_ner import SpacyNERDetector
+
+            spacy_det = SpacyNERDetector()
+            if spacy_det.load():
+                self.detectors.append(spacy_det)
+                logger.info("spaCy NER detector loaded")
+            else:
+                logger.warning("spaCy NER detector failed to load")
+        except ImportError as e:
+            logger.warning("spaCy NER detector not available: %s", e)
 
     def _init_pipeline(
         self,
@@ -249,29 +269,39 @@ class DetectorOrchestrator:
         """Shut down the persistent thread pool."""
         self._executor.shutdown(wait=False)
 
+    def _passes_threshold(self, span: Span) -> bool:
+        """Check if a span meets its confidence threshold.
+
+        Per-entity thresholds take priority, then ML vs global threshold.
+        """
+        entity_thresh = self._entity_threshold_map.get(span.entity_type)
+        if entity_thresh is not None:
+            return span.confidence >= entity_thresh
+        if span.tier == Tier.ML:
+            return span.confidence >= self.config.ml_confidence_threshold
+        return span.confidence >= self.confidence_threshold
+
     def _post_process(
         self,
         spans: list[Span],
         text: str | None = None,
     ) -> list[Span]:
-        """Post-process: filter by raw confidence, calibrate, deduplicate.
+        """Post-process: filter, context-adjust, calibrate, deduplicate.
 
-        The threshold is applied to *raw* detector confidence (does the
-        detector trust this match?).  Calibration is then applied only for
-        cross-tier overlap resolution — a checksum match should beat a
-        pattern match at the same position, but calibration must never
-        silently discard a span that passed the raw threshold.
-
-        ML tier uses a separate (higher) threshold because ML models are
-        probabilistic classifiers where 0.70 means "30% chance of error",
-        unlike pattern confidence which is an author-assigned reliability
-        weight.
+        Pipeline order:
+        1. Filter by per-entity / per-tier raw confidence threshold
+        2. Apply context keyword boost/demote (on raw confidence)
+        3. Calibrate into unified tier bands
+        4. Resolve overlapping spans
+        5. Proximity boost (optional)
         """
-        ml_threshold = self.config.ml_confidence_threshold
-        filtered = [
-            s for s in spans
-            if s.confidence >= (ml_threshold if s.tier == Tier.ML else self.confidence_threshold)
-        ]
+        filtered = [s for s in spans if self._passes_threshold(s)]
+
+        # Context keyword adjustment (before calibration)
+        if self.config.enable_context_keywords and text and filtered:
+            from ..pipeline.context_keywords import apply_context_keywords
+            filtered = apply_context_keywords(filtered, text)
+
         calibrated = calibrate_spans(filtered)
         resolved = resolve_spans(
             calibrated, confidence_threshold=0.0, source_text=text,

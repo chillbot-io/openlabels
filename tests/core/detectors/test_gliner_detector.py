@@ -157,7 +157,9 @@ class TestGLiNERDetectorDetect:
         assert spans[0].text == "John Smith"
         assert spans[0].start == 0
         assert spans[0].end == 10
-        assert spans[0].confidence == 0.95
+        # Confidence is adjusted by Platt scaling calibration
+        # (raw 0.95 with "person name" temp=1.25, bias=0.05 → ~0.91)
+        assert 0.85 < spans[0].confidence < 0.95
         assert spans[0].detector == "gliner"
         assert spans[0].tier == Tier.ML
 
