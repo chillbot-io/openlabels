@@ -22,6 +22,7 @@ from .additional_patterns import AdditionalPatternDetector
 from .base import BaseDetector
 from .checksum import ChecksumDetector
 from .config import DetectionConfig
+from .dictionary_names import DictionaryNameDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
 from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
@@ -54,6 +55,7 @@ __all__ = [
     "GovernmentDetector",
     "PatternDetector",
     "AdditionalPatternDetector",
+    "DictionaryNameDetector",
     # Orchestration
     "DetectorOrchestrator",
     "detect",

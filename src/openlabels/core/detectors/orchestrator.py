@@ -51,6 +51,7 @@ class DetectorOrchestrator:
             ("enable_financial", ["financial"]),
             ("enable_government", ["government"]),
             ("enable_patterns", ["pattern", "additional_patterns"]),
+            ("enable_dictionary_names", ["dictionary_names"]),
         ]
 
         for flag, names in _CONFIG_TO_DETECTORS:

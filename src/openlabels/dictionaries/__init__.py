@@ -65,6 +65,8 @@ class DictionaryLoader:
         "regional_patterns": "regional_patterns.txt",
         "clinical_workflow": "clinical_workflow.txt",
         "clinical_stopwords": "clinical_stopwords.txt",
+        "first_names": "first_names.txt",
+        "last_names": "last_names.txt",
     }
 
     # Dictionaries that indicate medical/healthcare context

@@ -22,6 +22,7 @@ class DetectionConfig:
     enable_financial: bool = True
     enable_government: bool = True
     enable_patterns: bool = True
+    enable_dictionary_names: bool = True
 
     # Accelerated detection
     enable_hyperscan: bool = False
@@ -49,7 +50,7 @@ class DetectionConfig:
     proximity_window_chars: int = 500
 
     # Tuning
-    confidence_threshold: float = 0.70
+    confidence_threshold: float = 0.65
     ml_confidence_threshold: float = 0.50
     max_workers: int = 4
 
@@ -75,6 +76,8 @@ class DetectionConfig:
         # Professional — ML-dependent, similar to names.
         ("COMPANY", 0.50),
         ("JOB_TITLE", 0.50),
+        # Honorifics — structurally reliable when detected
+        ("PREFIX", 0.65),
         # Ambiguous — higher threshold to reduce FP
         ("AGE", 0.70),
         ("ZIP", 0.75),
