@@ -27,6 +27,53 @@ from .dataset import BenchmarkSample, GoldSpan
 
 logger = logging.getLogger(__name__)
 
+# Full language name → ISO 639-1 code mapping for multilingual datasets.
+# Gretel Finance uses full English names ("English", "Spanish", etc.).
+_LANGUAGE_NAME_TO_CODE: dict[str, str] = {
+    "english": "en",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "dutch": "nl",
+    "russian": "ru",
+    "chinese": "zh",
+    "japanese": "ja",
+    "korean": "ko",
+    "arabic": "ar",
+    "hindi": "hi",
+    "turkish": "tr",
+    "polish": "pl",
+    "swedish": "sv",
+    "norwegian": "no",
+    "danish": "da",
+    "finnish": "fi",
+    "czech": "cs",
+    "romanian": "ro",
+    "hungarian": "hu",
+    "greek": "el",
+    "thai": "th",
+    "vietnamese": "vi",
+    "indonesian": "id",
+    "malay": "ms",
+    "tagalog": "tl",
+    "ukrainian": "uk",
+    "hebrew": "he",
+    "persian": "fa",
+    "bengali": "bn",
+    "tamil": "ta",
+    "catalan": "ca",
+    "croatian": "hr",
+    "slovak": "sk",
+    "slovenian": "sl",
+    "bulgarian": "bg",
+    "serbian": "sr",
+    "latvian": "lv",
+    "lithuanian": "lt",
+    "estonian": "et",
+}
+
 
 # ── Entity type mappings ────────────────────────────────────────────────
 # Each dataset uses its own naming convention.  We map to OpenLabels types.
@@ -517,7 +564,9 @@ def _load_jsonl(
             if language_field:
                 raw_lang = record.get(language_field, "en")
                 if isinstance(raw_lang, str):
-                    lang = raw_lang[:2].lower()
+                    lang = _LANGUAGE_NAME_TO_CODE.get(
+                        raw_lang.strip().lower(), raw_lang[:2].lower()
+                    )
 
             samples.append(BenchmarkSample(
                 sample_id=idx,
