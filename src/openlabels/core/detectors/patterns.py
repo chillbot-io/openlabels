@@ -86,6 +86,15 @@ FALSE_POSITIVE_NAMES: set[str] = {
     "ATTENTION", "POSITION", "OPERATIONS", "BRANDING",
     "NEUROPSYCHOLOGISTS", "NEUROPSYCHOLOGIST",
     "PARENT", "GUARDIAN", "STUDENT",
+    # Additional job/role words from FP analysis
+    "AGENT", "SOLICITOR", "REPRESENTATIVE", "INTEGRATION",
+    "MARKETING", "RESEARCH", "DISTRICT", "INTERNAL", "EXTERNAL",
+    "PRINCIPAL", "SENIOR", "JUNIOR", "LEAD", "CHIEF", "HEAD",
+    "EXECUTIVE", "ASSOCIATE", "CAPTAIN", "SERGEANT", "LIEUTENANT",
+    "DETECTIVE", "INSPECTOR", "DEPUTY", "GENERAL", "VICE",
+    "STRATEGIC", "GLOBAL", "REGIONAL", "NATIONAL", "INTERNATIONAL",
+    "COMPLIANCE", "LEGAL", "HUMAN", "PHYSICAL", "TECHNICAL",
+    "DIVISION", "CORPORATE", "CENTRAL",
 
     # Currencies (appear capitalized in "form of X Dollar")
     "DOLLAR", "DINAR", "RIAL", "EURO", "POUND", "FRANC", "YEN",
@@ -98,6 +107,44 @@ FALSE_POSITIVE_NAMES: set[str] = {
     # Other common capitalized words
     "CRITICAL", "FORWARD", "LEGACY", "MOBILITY", "CREATIVE",
     "INFRASTRUCTURE", "TRANS",
+
+    # Common nouns/verbs from FP analysis (detected as names at sentence start)
+    "TEAM", "PLEASE", "REMEMBER", "CONSIDER", "NOTICE",
+    "STRATEGIST", "MEDICINE", "GERIATRIC", "PSYCHOLOGY",
+    "PEDIATRIC", "CARDIOLOGY", "ONCOLOGY", "RADIOLOGY",
+    "ORTHOPEDIC", "NEUROLOGY", "DERMATOLOGY", "PATHOLOGY",
+    "SCIENCES", "SCIENCE", "TECHNOLOGY", "ENGINEERING",
+    "TOGETHER", "EVERYONE", "SOMEONE", "WELCOME",
+    "CERTAIN", "THROUGH", "WITHIN", "WITHOUT",
+    "SEVERAL", "VARIOUS", "ANOTHER", "WHETHER",
+    "CONTINUE", "FOLLOWING", "REGARDING", "INCLUDING",
+    "PROVIDED", "AVAILABLE", "IMPORTANT", "NECESSARY",
+    "POSSIBLE", "EXPECTED", "REQUIRED", "EXISTING",
+    "SCHEDULED", "APPROVED", "RECOMMENDED", "EFFECTIVE",
+    "LOCATED", "ASSIGNED", "RECEIVED", "PREPARED",
+    "ATTACHED", "ENCLOSED", "REFERENCE", "REFERRAL",
+
+    # County/geographic false positives
+    "COUNTY", "TOWNSHIP", "BOROUGH", "PARISH", "PROVINCE",
+    "TERRITORY", "MUNICIPALITY", "PREFECTURE",
+    "SAFARI", "MOZILLA", "GECKO", "WEBKIT",
+
+    # Financial/account terms (prevent "Savings Account" -> NAME)
+    "SAVINGS", "CHECKING", "INVESTMENT", "MORTGAGE", "PROPERTY",
+    "LOAN", "DEPOSIT", "WITHDRAWAL", "TRANSFER", "PREMIUM",
+    "BALANCE", "CREDIT", "DEBIT", "INTEREST", "DIVIDEND",
+
+    # Common phrases/words from remaining FP analysis
+    "DISTANCE", "LEARNING", "ADVOCACY", "JUSTICE",
+    "HOWDY", "CURRENTLY", "YESTERDAY", "KINDLY",
+    "GREETINGS", "NEITHER", "PRODUCT", "PRODUCTS",
+    "ARTS", "EDUCATION", "ENGLISH", "COMPOSITION",
+    "SPECIAL", "SECURITIES", "HEALTH", "ACADEMIC",
+    "BITCOIN", "LITECOIN", "ETHEREUM", "CRYPTO",
+    "TRANSGENDER", "NONBINARY", "FUTURES", "INTERACTIONS",
+    "VERDE", "GUILDER", "KORUNA", "SHILLING",
+    "DESIGNER", "SOLUTIONS", "TECHNICIAN",
+    "PROGRAM", "PROGRAMMES", "INITIATIVE",
 }
 
 # Compile into lowercase set for case-insensitive matching
@@ -605,6 +652,8 @@ _p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.68, 1),
 _p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
 # "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
 _p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.85, 1, flags=re.I),
+# "N o'clock" — informal time expression
+_p(r"\b(\d{1,2}\s*o'?\s*clock)\b", 'TIME', 0.88, 1, flags=re.I),
 
 # === Age ===
 # Standard forms: "46 years old", "46 year old"
@@ -856,6 +905,11 @@ _p(r'\b(Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)\b(?=[ \t]+[A-ZÀ-ÖØ-Þ])', 'PRE
 _p(r'\b(Mr|Mrs|Ms|Dr)\.(?=[A-ZÀ-ÖØ-Þ])', 'PREFIX', 0.88, 1),
 # Prefix at start of greeting context: "Hello Mr.", "Dear Dr."
 _p(r'(?:Hello|Dear|Hi)\s+(Mr\.?|Mrs\.?|Ms\.?|Miss|Dr\.?|Prof\.?)\b', 'PREFIX', 0.85, 1, flags=re.I),
+# Standalone bare prefix (no name following) — lower confidence
+# Catches "Mr." / "Mrs." / "Dr." at end of fragment or before comma/period
+_p(r'\b(Mr\.|Mrs\.|Ms\.|Miss|Dr\.)\s*(?=[,;:\.\)\]\n]|$)', 'PREFIX', 0.72, 1),
+# Bare prefix followed by lowercase (likely sentence continuation): "Mr. said"
+_p(r'\b(Mr\.|Mrs\.|Ms\.|Dr\.)\s+(?=[a-z])', 'PREFIX', 0.68, 1),
 
 # MEDICAL IDENTIFIERS
 
@@ -1282,6 +1336,9 @@ _p(r'\b([A-Z][a-z]+(?:[_.][A-Z][a-z]+)+\d{0,3})\b', 'USERNAME', 0.80, 1),
 _p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNAME', 0.78, 1),
 # "delegating/responsibility to Username" — assignment context
 _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
+# Bare Name+Digits usernames: "Eugenia10", "Geovany30", "Jonatan78"
+# Require 3+ alpha chars + 1-3 digits, title-case (not common words)
+_p(r'\b([A-Z][a-z]{2,15}\d{1,3})\b', 'USERNAME', 0.72, 1),
 
 # === Password ===
 # English password labels - require colon/equals separator (not just whitespace) to avoid FPs
@@ -1392,8 +1449,9 @@ _p(r'\b([A-Z]\d{7})\b', 'DRIVER_LICENSE', 0.55, 1),
 # Note: 9 digit overlaps with SSN, so need context
 _p(r'(?:DL|License)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.85, 1, flags=re.I),
 
-# Pennsylvania: 8 digits
-_p(r'\b(\d{8})\b(?=.*(?:PA|Pennsylvania|DL|License))', 'DRIVER_LICENSE', 0.75, 1, flags=re.I),
+# Pennsylvania: 8 digits — require nearby context (within 60 chars) to avoid
+# false-matching account numbers or other 8-digit identifiers.
+_p(r'(?:PA|Pennsylvania|DL|Driver.?s?\s*License)\s*[:#]?\s*(\d{8})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 
 # Illinois: Letter + 11-12 digits (A12345678901)
 # LOW: overlaps with account numbers, biometric IDs
@@ -1613,6 +1671,12 @@ _p(r'Account\s*[-–—]\s*Number:\s*(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, f
 _p(r'(?:information|data|details)\s+such\s+as\s+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.75, 1, flags=re.I),
 # "process it through your mastercard card ending with XXXX"
 _p(r'(?:through\s+your)\s+\w+\s+card\s+ending\s+with\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.80, 1, flags=re.I),
+# "monitor <number>" — account monitoring context
+_p(r'(?:monitor|deposit|withdraw|debit|credited?\s+to|charged?\s+to)\s+(\d{7,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# Broader: "<number> is your account" or "account <number>"
+_p(r'\b(\d{7,17})\s+(?:is\s+(?:your|the)\s+(?:account|acct))', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "routing number XXXX" / "sort code XXXX"
+_p(r'(?:routing\s+number|sort\s+code|BSB)\s*[:\s#]+(\d{6,9})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 
 # === Certificate/License Numbers (Safe Harbor #11) ===
 _p(r'(?:Certificate|Certification)\s+(?:Number|No|#)[:\s]+([A-Z0-9-]{5,20})', 'CERTIFICATE_NUMBER', 0.85, 1, flags=re.I),
@@ -2227,6 +2291,13 @@ _USERNAME_FALSE_POSITIVES = frozenset({
     # Brand names / technical terms with underscores
     'american_express', 'wi-fi', 'wi_fi', 'e-mail', 'e_mail',
     'pre-paid', 'pre_paid', 'co-pay', 'co_pay',
+    # Additional FP words from benchmark analysis
+    'diners_club', 'below', 'above', 'attempts', 'attempt',
+    'login', 'logins', 'logout', 'signup', 'sign_up',
+    'checkout', 'check_out', 'setup', 'set_up',
+    'within', 'without', 'between', 'through',
+    'policy', 'policies', 'report', 'reports',
+    'process', 'processes', 'activity', 'activities',
 })
 
 
@@ -2316,6 +2387,14 @@ class PatternDetector(BaseDetector):
                     preceding = text[max(0, start - 40):start]
                     if _DATE_FP_PRECEDING.search(preceding):
                         continue
+                    # Compact YYYYMMDD dates in user-agent strings (Gecko/20100101)
+                    if start >= 6 and text[start - 6:start] == 'Gecko/':
+                        continue
+                    if start >= 1 and text[start - 1] == '/':
+                        # General: date immediately after '/' is likely a version/build token
+                        before_slash = text[max(0, start - 20):start - 1].lower()
+                        if any(w in before_slash for w in ('gecko', 'webkit', 'mozilla', 'chrome', 'safari', 'applewebkit')):
+                            continue
 
                 # Age validation - reject impossible ages
                 if pdef.entity_type == 'AGE' and not _validate_age(value):

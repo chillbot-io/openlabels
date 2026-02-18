@@ -89,6 +89,7 @@ class BenchmarkConfig:
             enable_financial=self.enable_financial,
             enable_government=self.enable_government,
             enable_patterns=self.enable_patterns,
+            enable_dictionary_names=self.enable_patterns,  # follows patterns flag
             enable_ml=self.enable_ml,
             enable_spacy_ner=self.enable_spacy_ner,
             enable_hyperscan=self.enable_hyperscan,
