@@ -526,6 +526,8 @@ _p(r'\b(\d{1,2}-\d{1,2}-\d{2})\b', 'DATE', 0.65),
 
 # Date with dots (European format): "15.03.1985" or "03.15.1985"
 _p(r'(?:DOB|Date)[:\s]+(\d{1,2}\.\d{1,2}\.\d{4})', 'DATE', 0.85, 1, flags=re.I),
+# Standalone dot-separated date (no label prefix): "15.03.1985", "03.15.2024"
+_p(r'\b(\d{1,2}\.\d{1,2}\.\d{4})\b', 'DATE', 0.70),
 _p(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
 _p(r'\b\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
 # Edge case: "November 3., 1986" - day with period before comma/year (evasion pattern)

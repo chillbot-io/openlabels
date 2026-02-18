@@ -51,22 +51,23 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "date and time": (1.15, 0.04),
     "age": (1.50, 0.12),  # Very noisy; any 2-digit number matches
     # ── Government IDs ─────────────────────────────────────
-    # Structured patterns; GLiNER is reasonably calibrated.
+    # Structured patterns exist for most of these.  GLiNER over-fires on
+    # alphanumeric codes common in financial / EDI documents.
     "social security number": (1.05, 0.01),
-    "driver license number": (1.15, 0.04),
-    "passport number": (1.15, 0.04),
-    "tax identification number": (1.10, 0.03),
-    "national identity number": (1.10, 0.03),
+    "driver license number": (1.35, 0.08),   # confused with reference codes
+    "passport number": (1.30, 0.07),          # confused with short alphanumeric IDs
+    "tax identification number": (1.25, 0.06),
+    "national identity number": (1.30, 0.07),
     # ── Medical ────────────────────────────────────────────
     "medical record number": (1.25, 0.06),
     "health plan number": (1.20, 0.05),
     "npi number": (1.10, 0.02),
     # ── Financial ──────────────────────────────────────────
     "credit card number": (0.95, -0.02),  # Well-calibrated (Luhn structure)
-    "bank account number": (1.20, 0.05),
+    "bank account number": (1.35, 0.08),  # Random numbers in finance text
     "iban": (0.95, -0.02),
     "swift code": (1.00, 0.00),
-    "bank routing number": (1.10, 0.03),
+    "bank routing number": (1.25, 0.06),  # Caught well by pattern detectors
     # ── Network ────────────────────────────────────────────
     "ip address": (0.90, -0.05),  # Very structural
     "mac address": (0.90, -0.05),
@@ -75,8 +76,12 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "job title": (1.40, 0.10),
     "employee id": (1.15, 0.04),
     # ── Vehicle ──────────────────────────────────────────
-    "vehicle identification number": (1.10, 0.02),  # Structural, well-calibrated
-    "license plate number": (1.20, 0.05),  # Variable formats
+    # VIN has checksum detector; GLiNER hallucinates on alphanumeric codes.
+    "vehicle identification number": (1.45, 0.12),
+    "license plate number": (1.40, 0.10),
+    # ── Secrets (when detected via GLiNER in GENERAL label set) ─────
+    "password": (1.35, 0.08),
+    "pin code": (1.40, 0.10),  # Very noisy; short digit sequences
 }
 
 
