@@ -129,6 +129,14 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "IT_FISCAL_CODE", "IT_VAT",
     "KR_RRN",
     "TH_TNIN",
+    # EU multilingual IDs
+    "FR_NIR", "FR_SIRET",
+    "DE_STEUER_ID", "DE_PERSONALAUSWEIS",
+    "NL_BSN",
+    "PT_NIF", "PT_CC",
+    "BR_CPF", "BR_CNPJ",
+    "EL_AMKA", "EL_AFM",
+    "SI_EMSO", "SI_DAVCNA",
 
     # IDENTIFIERS - Medical
     "MRN", "MEDICAL_RECORD", "MEDICALRECORD",

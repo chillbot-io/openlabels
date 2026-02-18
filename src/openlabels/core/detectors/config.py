@@ -38,6 +38,11 @@ class DetectionConfig:
     gliner_threshold: float = 0.4
     enable_label_selection: bool = True
 
+    # Multilingual GLiNER (9 languages: EN, ES, FR, PT, DE, IT, EL, NL, SL)
+    enable_multilingual: bool = False
+    multilingual_gliner_model: str = "E3-JSI/gliner-multi-pii-domains-v1"
+    multilingual_gliner_threshold: float = 0.4
+
     # Post-processing
     enable_coref: bool = False
     enable_context_enhancement: bool = False
@@ -89,6 +94,7 @@ class DetectionConfig:
         return cls(
             enable_hyperscan=True,
             enable_ml=True,
+            enable_multilingual=True,
             enable_spacy_ner=True,
             enable_coref=True,
             enable_context_enhancement=True,

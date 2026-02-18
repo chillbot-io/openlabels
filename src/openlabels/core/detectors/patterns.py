@@ -527,6 +527,204 @@ def _validate_nhs(value: str) -> bool:
     return remainder == int(digits[9])
 
 
+# ---------------------------------------------------------------------------
+# EU MULTILINGUAL VALIDATORS
+# ---------------------------------------------------------------------------
+
+def _validate_nl_bsn(value: str) -> bool:
+    """Validate Dutch BSN (Burgerservicenummer) using 11-proof checksum.
+
+    The BSN is 9 digits where:
+    9*d1 + 8*d2 + 7*d3 + 6*d4 + 5*d5 + 4*d6 + 3*d7 + 2*d8 - 1*d9
+    must be divisible by 11 and != 0.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 9:
+        return False
+    d = [int(c) for c in digits]
+    total = 9*d[0] + 8*d[1] + 7*d[2] + 6*d[3] + 5*d[4] + 4*d[5] + 3*d[6] + 2*d[7] - 1*d[8]
+    return total % 11 == 0 and total != 0
+
+
+def _validate_fr_nir(value: str) -> bool:
+    """Validate French NIR (Numero d'Inscription au Repertoire) / INSEE number.
+
+    15 digits: sex(1) + birth_year(2) + birth_month(2) + dept(2-3) +
+    commune(2-3) + order(3) + key(2).  Key = 97 - (number mod 97).
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 15:
+        return False
+    # Sex digit must be 1 or 2
+    if digits[0] not in ('1', '2'):
+        return False
+    # Month 01-12 (or 20-42 for overseas/special)
+    month = int(digits[3:5])
+    if not (1 <= month <= 12 or 20 <= month <= 42):
+        return False
+    # Mod-97 key check
+    number = int(digits[:13])
+    key = int(digits[13:15])
+    return 97 - (number % 97) == key
+
+
+def _validate_de_steuer_id(value: str) -> bool:
+    """Validate German Steuerliche Identifikationsnummer (Tax ID).
+
+    11 digits: first digit != 0, exactly one digit appears twice,
+    exactly one digit is missing from 0-9, last digit is a check digit.
+    Uses modified ISO 7064 Mod 11,10 algorithm.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 11:
+        return False
+    if digits[0] == '0':
+        return False
+    # Check digit validation (ISO 7064 Mod 11,10)
+    product = 10
+    for i in range(10):
+        s = (int(digits[i]) + product) % 10
+        if s == 0:
+            s = 10
+        product = (s * 2) % 11
+    check = (11 - product) % 10
+    return check == int(digits[10])
+
+
+def _validate_el_amka(value: str) -> bool:
+    """Validate Greek AMKA (social security number).
+
+    11 digits: DDMMYY + 5-digit serial.  Uses Luhn checksum.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 11:
+        return False
+    # Basic date validation (DDMMYY)
+    day, month = int(digits[0:2]), int(digits[2:4])
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return False
+    # Luhn checksum
+    total = 0
+    for i, d in enumerate(digits):
+        n = int(d)
+        if i % 2 == 1:  # 0-indexed, so odd positions are doubled
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
+
+def _validate_el_afm(value: str) -> bool:
+    """Validate Greek AFM (tax identification number).
+
+    9 digits with weighted checksum. Last digit is check digit.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 9:
+        return False
+    # Weights: 256, 128, 64, 32, 16, 8, 4, 2 for positions 0-7
+    total = sum(int(digits[i]) * (1 << (8 - i)) for i in range(8))
+    check = (total % 11) % 10
+    return check == int(digits[8])
+
+
+def _validate_br_cpf(value: str) -> bool:
+    """Validate Brazilian CPF (Cadastro de Pessoa Fisica).
+
+    11 digits with two check digits.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 11:
+        return False
+    # Reject known invalid sequences (all same digit)
+    if digits == digits[0] * 11:
+        return False
+    # First check digit
+    total = sum(int(digits[i]) * (10 - i) for i in range(9))
+    remainder = (total * 10) % 11
+    if remainder == 10:
+        remainder = 0
+    if remainder != int(digits[9]):
+        return False
+    # Second check digit
+    total = sum(int(digits[i]) * (11 - i) for i in range(10))
+    remainder = (total * 10) % 11
+    if remainder == 10:
+        remainder = 0
+    return remainder == int(digits[10])
+
+
+def _validate_br_cnpj(value: str) -> bool:
+    """Validate Brazilian CNPJ (Cadastro Nacional da Pessoa Juridica).
+
+    14 digits with two check digits.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 14:
+        return False
+    if digits == digits[0] * 14:
+        return False
+    # First check digit
+    weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    total = sum(int(digits[i]) * weights1[i] for i in range(12))
+    remainder = total % 11
+    check1 = 0 if remainder < 2 else 11 - remainder
+    if check1 != int(digits[12]):
+        return False
+    # Second check digit
+    weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    total = sum(int(digits[i]) * weights2[i] for i in range(13))
+    remainder = total % 11
+    check2 = 0 if remainder < 2 else 11 - remainder
+    return check2 == int(digits[13])
+
+
+def _validate_pt_nif(value: str) -> bool:
+    """Validate Portuguese NIF (Numero de Identificacao Fiscal).
+
+    9 digits.  First digit indicates entity type (1-3: individual, 5: legal, etc.).
+    Mod-11 checksum.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 9:
+        return False
+    # Valid first digits
+    if digits[0] not in ('1', '2', '3', '5', '6', '7', '8', '9'):
+        return False
+    # Mod-11 checksum
+    total = sum(int(digits[i]) * (9 - i) for i in range(8))
+    remainder = total % 11
+    check = 0 if remainder < 2 else 11 - remainder
+    return check == int(digits[8])
+
+
+def _validate_si_emso(value: str) -> bool:
+    """Validate Slovenian EMSO (Enotna Maticna Stevilka Obcana).
+
+    13 digits: DDMMYYY + RR + SSS + C (same as former Yugoslav JMBG).
+    Uses mod-11 weighted checksum.
+    """
+    digits = ''.join(c for c in value if c.isdigit())
+    if len(digits) != 13:
+        return False
+    # Basic date validation
+    day, month = int(digits[0:2]), int(digits[2:4])
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return False
+    # Mod-11 checksum
+    weights = [7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+    total = sum(int(digits[i]) * weights[i] for i in range(12))
+    remainder = total % 11
+    if remainder == 0:
+        check = 0
+    elif remainder == 1:
+        return False  # Invalid EMSO
+    else:
+        check = 11 - remainder
+    return check == int(digits[12])
+
+
 PATTERNS: tuple[PatternDefinition, ...] = (
 
 
@@ -1871,6 +2069,114 @@ _p(r'(?:Codice\s+Fiscale|CF)[:\s#]+([A-Z]{6}\d{2}[A-EHLMPR-T]\d{2}[A-Z]\d{3}[A-Z
 # === Italian VAT (Partita IVA) ===
 # 11 digits with Luhn-like checksum
 _p(r'(?:P\.?\s*IVA|Partita\s+IVA)[:\s#]+(\d{11})', 'IT_VAT', 0.90, 1, flags=re.I),
+
+# ---------------------------------------------------------------------------
+# EU MULTILINGUAL PATTERNS (9-language GLiNER companion)
+# ---------------------------------------------------------------------------
+
+# === French NIR / Numero de Securite Sociale ===
+# 15 digits: sex(1) + birth_year(2) + month(2) + dept(2) + commune(3) + order(3) + key(2)
+_p(r'(?:NIR|INSEE|num[ée]ro\s+de\s+s[ée]curit[ée]\s+sociale|s[ée]curit[ée]\s+sociale)[:\s#]+([12]\s?\d{2}\s?\d{2}\s?\d{2,3}\s?\d{3}\s?\d{3}\s?\d{2})',
+   'FR_NIR', 0.92, 1, flags=re.I),
+# Bare 15-digit NIR starting with 1 or 2 (with checksum validation)
+_p(r'\b([12]\d{14})\b', 'FR_NIR', 0.55, 1, _validate_fr_nir),
+
+# === French SIRET (Business ID) ===
+# 14 digits: SIREN(9) + NIC(5)
+_p(r'(?:SIRET)[:\s#]+(\d{3}\s?\d{3}\s?\d{3}\s?\d{5})', 'FR_SIRET', 0.92, 1, flags=re.I),
+_p(r'(?:SIREN)[:\s#]+(\d{3}\s?\d{3}\s?\d{3})', 'FR_SIRET', 0.90, 1, flags=re.I),
+
+# === German Steuerliche Identifikationsnummer (Tax ID) ===
+# 11 digits, first digit != 0, ISO 7064 Mod 11,10 checksum
+_p(r'(?:Steuer[-\s]?(?:ID|Identifikationsnummer|Nr)|IdNr|St(?:euer)?[-\s]?Nr)[:\s#]+(\d{11})',
+   'DE_STEUER_ID', 0.92, 1, flags=re.I),
+# Bare 11-digit with checksum (lower confidence due to overlap with phone numbers)
+_p(r'(?:Identifikationsnummer|Steueridentifikationsnummer)[:\s#]+(\d{11})',
+   'DE_STEUER_ID', 0.88, 1, flags=re.I),
+
+# === German Personalausweis (Identity Card Number) ===
+# Format: L + 8 alphanumeric + D (since Nov 2010) or 10-digit (older format)
+_p(r'(?:Personalausweis|Ausweis(?:nummer)?|Identit[aä]tskarte)[:\s#]+([CFGHJKLMNPRTVWXYZ]\d{8}[A-Z0-9])',
+   'DE_PERSONALAUSWEIS', 0.90, 1, flags=re.I),
+
+# === Dutch BSN (Burgerservicenummer) ===
+# 9 digits with 11-proof checksum
+_p(r'(?:BSN|Burgerservicenummer|burger\s*service\s*nummer|sofinummer|sofi[-\s]?nummer)[:\s#]+(\d{9})',
+   'NL_BSN', 0.92, 1, flags=re.I),
+# Bare 9 digits with checksum (lower confidence — overlaps with other 9-digit IDs)
+_p(r'(?:BSN|Burgerservicenummer)[:\s]+(\d{3}[-.\s]?\d{3}[-.\s]?\d{3})',
+   'NL_BSN', 0.88, 1, flags=re.I),
+
+# === Portuguese NIF (Numero de Identificacao Fiscal) ===
+# 9 digits with mod-11 checksum
+_p(r'(?:NIF|N[uú]mero\s+de\s+Identifica[cç][aã]o\s+Fiscal|contribuinte)[:\s#]+(\d{9})',
+   'PT_NIF', 0.92, 1, flags=re.I),
+_p(r'(?:NIF|contribuinte)[:\s]+(\d{3}\s?\d{3}\s?\d{3})',
+   'PT_NIF', 0.88, 1, flags=re.I),
+
+# === Portuguese CC (Cartao de Cidadao) ===
+# 12 alphanumeric characters
+_p(r'(?:Cart[aã]o\s+de\s+Cidad[aã]o|CC|BI)[:\s#]+(\d{8}\s?\d\s?[A-Z]{2}\d)',
+   'PT_CC', 0.90, 1, flags=re.I),
+
+# === Brazilian CPF (Cadastro de Pessoa Fisica) ===
+# 11 digits, commonly formatted as XXX.XXX.XXX-XX
+_p(r'(?:CPF)[:\s#]+(\d{3}\.?\d{3}\.?\d{3}[-.]?\d{2})', 'BR_CPF', 0.92, 1, flags=re.I),
+_p(r'\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b', 'BR_CPF', 0.78, 1, _validate_br_cpf),
+
+# === Brazilian CNPJ (Cadastro Nacional da Pessoa Juridica) ===
+# 14 digits, commonly formatted as XX.XXX.XXX/XXXX-XX
+_p(r'(?:CNPJ)[:\s#]+(\d{2}\.?\d{3}\.?\d{3}/??\d{4}[-.]?\d{2})', 'BR_CNPJ', 0.92, 1, flags=re.I),
+_p(r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b', 'BR_CNPJ', 0.80, 1, _validate_br_cnpj),
+
+# === Greek AMKA (Social Security Number) ===
+# 11 digits: DDMMYY + 5-digit serial, Luhn checksum
+_p(r'(?:AMKA|Α\.?Μ\.?Κ\.?Α|Αριθμ[οό]ς\s+Μητρ[ωώ]ου\s+Κοινωνικ[ηή]ς\s+Ασφ[αά]λισης)[:\s#]+(\d{11})',
+   'EL_AMKA', 0.92, 1, flags=re.I),
+_p(r'(?:AMKA)[:\s]+(\d{2}\d{2}\d{2}\d{5})', 'EL_AMKA', 0.88, 1, flags=re.I),
+
+# === Greek AFM (Tax Identification Number) ===
+# 9 digits with weighted checksum
+_p(r'(?:AFM|Α\.?Φ\.?Μ|ΑΦΜ|Αριθμ[οό]ς\s+Φορολογικο[υύ]\s+Μητρ[ωώ]ου)[:\s#]+(\d{9})',
+   'EL_AFM', 0.92, 1, flags=re.I),
+_p(r'(?:AFM|ΑΦΜ)[:\s]+(\d{9})', 'EL_AFM', 0.88, 1, flags=re.I),
+
+# === Slovenian EMSO (Enotna Maticna Stevilka Obcana) ===
+# 13 digits: DDMMYYY + RR + SSS + C (mod-11 checksum)
+_p(r'(?:EMŠO|EMSO|Enotna\s+Mati[cč]na\s+[SŠ]tevilka)[:\s#]+(\d{13})',
+   'SI_EMSO', 0.92, 1, flags=re.I),
+_p(r'(?:EMŠO|EMSO)[:\s]+(\d{13})', 'SI_EMSO', 0.88, 1, flags=re.I),
+
+# === Slovenian Davcna Stevilka (Tax Number) ===
+# 8 digits
+_p(r'(?:dav[cč]na\s+[sš]tevilka|Dav[cč]na\s+[SŠ]t)[:\s#]+(\d{8})',
+   'SI_DAVCNA', 0.90, 1, flags=re.I),
+
+# === EU Country Phone Number Formats ===
+# French phone: +33 or 0X XX XX XX XX
+_p(r'(?:^|(?<=\s))\+33[-.\s]?\d[-.\s]?\d{2}[-.\s]?\d{2}[-.\s]?\d{2}[-.\s]?\d{2}\b',
+   'PHONE', 0.88),
+_p(r'(?:t[ée]l(?:[ée]phone)?|num[ée]ro)[:\s]+(0[1-9](?:[-.\s]?\d{2}){4})', 'PHONE', 0.88, 1, flags=re.I),
+# German phone: +49 or 0XXX-XXXXXXX
+_p(r'(?:^|(?<=\s))\+49[-.\s]?\d{2,4}[-.\s]?\d{3,8}\b', 'PHONE', 0.88),
+_p(r'(?:Telefon|Tel|Rufnummer|Handy)[:\s]+(0\d{2,4}[-.\s/]?\d{3,8})', 'PHONE', 0.88, 1, flags=re.I),
+# Dutch phone: +31 or 0X-XXXXXXXX
+_p(r'(?:^|(?<=\s))\+31[-.\s]?\d[-.\s]?\d{3,4}[-.\s]?\d{4}\b', 'PHONE', 0.88),
+_p(r'(?:telefoon|tel|bel)[:\s]+(0\d[-.\s]?\d{3,4}[-.\s]?\d{4})', 'PHONE', 0.85, 1, flags=re.I),
+# Italian phone: +39 or 0XX-XXXXXXX / 3XX-XXXXXXX (mobile)
+_p(r'(?:^|(?<=\s))\+39[-.\s]?\d{2,3}[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b', 'PHONE', 0.88),
+_p(r'(?:telefono|tel|cellulare)[:\s]+((?:0\d{1,3}|3\d{2})[-.\s/]?\d{3,4}[-.\s]?\d{3,4})', 'PHONE', 0.85, 1, flags=re.I),
+# Portuguese phone: +351 or 9XX-XXX-XXX (mobile) / 2XX-XXX-XXX (landline)
+_p(r'(?:^|(?<=\s))\+351[-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{3}\b', 'PHONE', 0.88),
+_p(r'(?:telefone|tel|telem[oó]vel)[:\s]+([239]\d{2}[-.\s]?\d{3}[-.\s]?\d{3})', 'PHONE', 0.85, 1, flags=re.I),
+# Spanish phone: +34 or 6XX-XXX-XXX (mobile) / 9XX-XXX-XXX (landline)
+_p(r'(?:^|(?<=\s))\+34[-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{3}\b', 'PHONE', 0.88),
+_p(r'(?:tel[ée]fono|tel|m[oó]vil)[:\s]+([69]\d{2}[-.\s]?\d{3}[-.\s]?\d{3})', 'PHONE', 0.85, 1, flags=re.I),
+# Greek phone: +30 or 2X-XXXX-XXXX / 69X-XXX-XXXX (mobile)
+_p(r'(?:^|(?<=\s))\+30[-.\s]?\d{3,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b', 'PHONE', 0.88),
+_p(r'(?:τηλ[εέ]φωνο|τηλ)[:\s]+((?:2\d|69\d)[-.\s]?\d{3,4}[-.\s]?\d{4})', 'PHONE', 0.85, 1, flags=re.I),
+# Slovenian phone: +386 or 0X-XXX-XXXX
+_p(r'(?:^|(?<=\s))\+386[-.\s]?\d{1,2}[-.\s]?\d{3}[-.\s]?\d{2,4}\b', 'PHONE', 0.88),
 
 # === Korean RRN (Resident Registration Number) ===
 # Format: YYMMDD-NNNNNNN

@@ -73,6 +73,13 @@ try:
 except ImportError:
     logger.debug("GLiNER detector not available - gliner not installed")
 
+# Multilingual GLiNER Detector - optional (requires gliner library)
+try:
+    from .multilingual_gliner import MultilingualGLiNERDetector
+    __all__.append("MultilingualGLiNERDetector")
+except ImportError:
+    logger.debug("Multilingual GLiNER detector not available - gliner not installed")
+
 # Hyperscan Detector - optional (requires hyperscan library)
 try:
     from .hyperscan import HyperscanDetector, is_hyperscan_available
