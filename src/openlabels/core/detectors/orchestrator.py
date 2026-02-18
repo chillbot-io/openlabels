@@ -64,6 +64,9 @@ class DetectorOrchestrator:
         if self.config.enable_ml:
             self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
 
+        if self.config.enable_multilingual:
+            self._init_multilingual_gliner()
+
         if self.config.enable_spacy_ner:
             self._init_spacy_ner()
 
@@ -121,6 +124,29 @@ class DetectorOrchestrator:
 
         except ImportError as e:
             logger.warning("GLiNER detector not available: %s", e)
+
+    def _init_multilingual_gliner(self) -> None:
+        """Initialize multilingual GLiNER detector (9 EU languages)."""
+        try:
+            from .multilingual_gliner import MultilingualGLiNERDetector
+
+            ml_gliner = MultilingualGLiNERDetector(
+                model_name=self.config.multilingual_gliner_model,
+                threshold=self.config.multilingual_gliner_threshold,
+                use_onnx=self.config.use_onnx,
+                enable_label_selection=self.config.enable_label_selection,
+            )
+            if ml_gliner.load():
+                self.detectors.append(ml_gliner)
+                logger.info(
+                    "Multilingual GLiNER detector loaded: %s",
+                    self.config.multilingual_gliner_model,
+                )
+            else:
+                logger.warning("Multilingual GLiNER detector failed to load")
+
+        except ImportError as e:
+            logger.warning("Multilingual GLiNER detector not available: %s", e)
 
     def _init_spacy_ner(self) -> None:
         """Initialize spaCy NER detector for ensemble."""
