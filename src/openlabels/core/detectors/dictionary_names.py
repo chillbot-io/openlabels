@@ -136,6 +136,12 @@ _AMBIGUOUS_FIRST = frozenset({
     "paid", "told", "left", "held", "done",
     "born", "lost", "found", "gone", "came",
     "went", "fell", "kept", "meant", "brought",
+    # AI4Privacy 10k FP analysis — top repeat offenders
+    "more", "link", "english", "fair", "company",
+    "read", "arts", "producer", "forward", "human",
+    "york", "ireland", "france", "berlin", "london",
+    "giulia", "eden", "madera", "lancaster", "colton",
+    "bryan", "devon", "shannon", "montana", "virginia",
 })
 
 # Common English words that are also last names — more aggressive
@@ -194,6 +200,12 @@ _AMBIGUOUS_LAST = frozenset({
     # More Gretel FP words
     "line", "carrier", "amble", "christian", "woods",
     "nagar", "hanna", "reserved",
+    # AI4Privacy 10k FP analysis
+    "more", "link", "english", "fair", "company",
+    "read", "arts", "producer", "forward", "human",
+    "york", "ireland", "france", "berlin", "london",
+    "giulia", "eden", "madera", "lancaster", "colton",
+    "bryan", "devon", "shannon", "montana", "virginia",
 })
 
 # Words that should NEVER match as names regardless of dictionary presence.

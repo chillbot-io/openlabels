@@ -154,6 +154,19 @@ FALSE_POSITIVE_NAMES: set[str] = {
     "REASON", "MARINE", "SUMMIT", "AVIATION", "LOGISTICS",
     "INDUSTRIAL", "COMMERCIAL", "RESIDENTIAL",
     "MUNICIPAL", "REGULATORY", "JUDICIAL",
+
+    # AI4Privacy 10k FP analysis — gender identity terms detected as names
+    "CISGENDER", "TRANSEXUAL", "TRANSSEXUAL", "NEUTROIS",
+    "GENDERQUEER", "GENDERFLUID", "AGENDER", "BIGENDER",
+    "PANGENDER", "ANDROGYNOUS", "INTERSEX",
+    # Common words/phrases detected as names at scale
+    "PRODUCER", "PARTICULARLY", "NOTABLY", "LASTLY",
+    "ALTERNATIVELY", "CONSEQUENTLY", "SUBSEQUENTLY",
+    "ADDITIONALLY", "FURTHERMORE", "MEANWHILE",
+    "PREVIOUSLY", "PRIMARILY", "ESSENTIALLY",
+    "NOW", "THIS", "FORWARD", "HUMAN", "SAMPLE",
+    "COLLECTION", "TERMINATION", "MEMORIAL",
+    "VETERAN", "VETERANS", "PRAIRIE", "COUNTY",
 }
 
 # Compile into lowercase set for case-insensitive matching
@@ -1020,6 +1033,11 @@ _p(rf'\b(?:Mr\.?|Mrs\.?|Ms\.?|Miss)[ \t]+({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NA
 # Mr./Ms./Dr. WITHOUT space before name: "Mr.Kerluke", "Ms.North"
 _p(rf'\b(?:Mr|Mrs|Ms|Dr)\.({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME_PATIENT', 0.90, 1),
 
+# === NAME PREFIX PATTERNS ===
+# Standalone honorific prefixes: "Mr.", "Ms.", "Mrs.", "Miss", "Dr."
+# These are labeled as PREFIX in AI4Privacy and map to the "names" category.
+_p(r'\b(Mr\.|Mrs\.|Ms\.|Miss|Dr\.)\s', 'PREFIX', 0.75, 1),
+
 # === INTERNATIONAL HONORIFIC/TITLE PATTERNS ===
 # German: Herr, Frau, Fräulein
 _p(rf'\b(?:Herr|Frau|Fräulein|Hr\.|Fr\.)[ \t]+({_NAME}(?:[ \t]+{_NAME}){{0,2}})', 'NAME', 0.88, 1),
@@ -1442,6 +1460,17 @@ _p(r'\b(County\s+Cork|County\s+Dublin|County\s+Galway|'
    r'County\s+Westmeath|County\s+Offaly|County\s+Laois|'
    r'County\s+Carlow|County\s+Longford|County\s+Cavan|'
    r'County\s+Monaghan|County\s+Leitrim)\b', 'COUNTY', 0.82, 1),
+
+# === Standalone CITY Patterns ===
+# City-suffix heuristic: words ending in common city suffixes are likely city names.
+# Matches Faker-generated cities (Pfefferton, Langoshburgh, Strackeview) and real cities.
+_p(r'\b([A-Z][a-z]{2,}(?:ton|burgh|burg|boro|borough|ville|field|ford|port|mouth|'
+   r'worth|stead|minster|chester|cester|haven|dale|berg|heim|dorf|'
+   r'stad|view|side|land|wood|woods|lake|bridge|gate|shire))\b', 'CITY', 0.72, 1),
+
+# City-prefix heuristic: "New/Port/Lake/Fort/Mount/Saint + CapitalizedWord" or compound
+_p(r'\b((?:New|Port|Lake|Fort|Mount|Saint|San|Santa|Los|Las|El|Cape|Palm)\s+[A-Z][a-z]+(?:[a-z]+)?)\b',
+   'CITY', 0.72, 1),
 
 # === Standalone SECONDARY ADDRESS Patterns ===
 # "Apt. 259", "Suite 786" etc. (standalone, not part of full address)
@@ -2784,6 +2813,13 @@ class PatternDetector(BaseDetector):
                     words = value.split()
                     if len(words) == 1 and words[0].lower() in _ADDRESS_FALSE_POSITIVES:
                         continue
+                    # Suppress "Dear Dr" / "Hello Dr" matched as address
+                    # ("Dr" = Drive street suffix, but preceded by greeting = Doctor)
+                    val_lower = value.lower().strip()
+                    if val_lower.endswith((' dr', ' dr.')):
+                        before_addr = text[max(0, start - 10):start].lower().strip()
+                        if before_addr.endswith(('dear', 'hello', 'hi', 'hey', 'welcome')):
+                            continue
 
                 # Name false positive filter
                 if pdef.entity_type in ('NAME', 'NAME_PROVIDER', 'NAME_PATIENT', 'NAME_RELATIVE'):
