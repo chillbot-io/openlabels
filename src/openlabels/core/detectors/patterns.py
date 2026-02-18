@@ -145,6 +145,15 @@ FALSE_POSITIVE_NAMES: set[str] = {
     "VERDE", "GUILDER", "KORUNA", "SHILLING",
     "DESIGNER", "SOLUTIONS", "TECHNICIAN",
     "PROGRAM", "PROGRAMMES", "INITIATIVE",
+
+    # Gretel PII FP analysis — domain phrases detected as names
+    "ROOM", "TYPE", "ACCESS", "LEVEL", "ENERGY", "UTILITIES",
+    "DEFENDANT", "NUMBERS", "RECORD", "RECORDS", "SYSTEM",
+    "AVIONICS", "ROTTERDAM", "NETHERLANDS", "AMSTERDAM",
+    "PLAINTIFF", "HOLDER", "AUTHOR", "LOAN",
+    "REASON", "MARINE", "SUMMIT", "AVIATION", "LOGISTICS",
+    "INDUSTRIAL", "COMMERCIAL", "RESIDENTIAL",
+    "MUNICIPAL", "REGULATORY", "JUDICIAL",
 }
 
 # Compile into lowercase set for case-insensitive matching

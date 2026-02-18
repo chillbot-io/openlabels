@@ -27,6 +27,29 @@ logger = logging.getLogger(__name__)
 # apostrophes (O'Brien), and hyphens (Anne-Marie).
 _WORD_RE = re.compile(r"\b([A-Z\u00C0-\u024F][a-z\u00C0-\u024F''\-]{1,30})\b")
 
+# Address suffixes — when a title-case word is followed by one of these,
+# it's likely a street/place name, not a person name.
+_ADDRESS_SUFFIXES = frozenset({
+    "street", "st", "road", "rd", "avenue", "ave", "boulevard", "blvd",
+    "drive", "dr", "lane", "ln", "court", "ct", "place", "pl",
+    "way", "circle", "cir", "terrace", "ter", "trail", "trl",
+    "parkway", "pkwy", "highway", "hwy", "pike", "turnpike",
+    "alley", "loop", "run", "pass", "crossing", "crescent",
+    "commons", "common", "square", "plaza", "mall",
+    "ridge", "heights", "hills", "springs", "meadows",
+    "summit", "view", "vista", "point", "landing",
+    "creek", "cove", "glen", "grove", "hollow",
+    "junction", "fork", "forks", "bend", "rapids",
+    "beach", "island", "isle", "harbor", "port",
+    "bridge", "dam", "falls", "lake", "mount",
+    "garden", "gardens", "park", "ranch", "estates",
+    "station", "depot", "terminal",
+    # Indian/South Asian suffixes
+    "nagar", "puram", "pur", "abad", "ganj", "khel",
+    # Apartment/unit suffixes
+    "apt", "suite", "ste", "unit", "floor",
+})
+
 # Common English words that are also first names — suppress at low
 # confidence to avoid flooding results with "May", "Art", "Joy", etc.
 # Expanded from FP analysis on ai4privacy benchmark.
@@ -88,6 +111,31 @@ _AMBIGUOUS_FIRST = frozenset({
     "manor", "ranch", "villa", "lodge", "haven",
     "isle", "cove", "mesa", "glen", "dale",
     "ridge", "creek", "grove", "knoll",
+    # Gretel PII FP analysis — common words detected as names
+    "loan", "reason", "room", "holder", "must",
+    "case", "author", "price", "marine", "foster",
+    "lead", "chief", "judge", "bond", "major",
+    "bond", "chase", "cruz", "duke", "ember",
+    "haven", "journey", "justice", "liberty", "mason",
+    "nelson", "porter", "ranger", "reign", "royal",
+    "scout", "sterling", "stone", "summit", "texas",
+    "titan", "urban", "valor", "virtue", "walker",
+    "warren", "wren", "drake", "genesis", "roman",
+    "smith", "john", "jane", "gates", "bell",
+    "parks", "numbers", "access", "level", "record",
+    "energy", "system", "defendant", "type",
+    "region", "domain", "sector", "zone", "area",
+    "status", "phase", "stage", "grade", "rank",
+    "note", "item", "unit", "part", "role",
+    "cause", "issue", "event", "fact", "term",
+    "feature", "point", "state", "form", "kind",
+    # More Gretel FP words
+    "line", "carrier", "amble", "christian", "woods",
+    "nagar", "hanna", "reserved", "return", "miss",
+    "given", "taken", "shown", "known", "sent",
+    "paid", "told", "left", "held", "done",
+    "born", "lost", "found", "gone", "came",
+    "went", "fell", "kept", "meant", "brought",
 })
 
 # Common English words that are also last names — more aggressive
@@ -132,6 +180,20 @@ _AMBIGUOUS_LAST = frozenset({
     "county", "isle", "cove", "mesa", "ridge",
     "creek", "grove", "knoll", "manor", "ranch",
     "villa", "lodge", "haven", "league",
+    # Gretel PII FP analysis — common words detected as lastnames
+    "loan", "reason", "room", "holder", "must",
+    "case", "author", "price", "marine", "foster",
+    "parks", "gates", "bell", "smith", "john", "jane",
+    "numbers", "access", "level", "record", "energy",
+    "system", "defendant", "type", "summit",
+    "region", "domain", "sector", "zone", "area",
+    "status", "phase", "stage", "grade", "rank",
+    "note", "item", "unit", "part", "role",
+    "cause", "issue", "event", "fact", "term",
+    "feature", "point", "state", "form", "kind",
+    # More Gretel FP words
+    "line", "carrier", "amble", "christian", "woods",
+    "nagar", "hanna", "reserved",
 })
 
 # Words that should NEVER match as names regardless of dictionary presence.
@@ -194,6 +256,17 @@ _NEVER_NAMES = frozenset({
     "secure", "separate", "service", "session", "simple",
     "single", "social", "source", "status", "target",
     "total", "typical", "unique", "universal", "valid",
+    # Gretel PII FP analysis — more structural/domain words
+    "avionics", "defendant", "plaintiff", "utilities",
+    "aviation", "automotive", "logistics", "maritime",
+    "industrial", "commercial", "residential", "municipal",
+    "regulatory", "judicial", "legislative", "diplomatic",
+    "wholesale", "retail", "consumer", "vendor", "supplier",
+    "inventory", "warehouse", "shipping", "delivery",
+    "revenue", "portfolio", "advisory", "brokerage",
+    "diagnostic", "surgical", "pharmaceutical", "veterinary",
+    "academic", "scholarly", "tutorial", "curriculum",
+    "garrison", "sentinel", "outpost", "barracks",
 })
 
 
@@ -268,6 +341,27 @@ class DictionaryNameDetector(BaseDetector):
                                           'cape', 'new', 'old', 'saint', 'san',
                                           'santa', 'los', 'las', 'el')):
                     continue
+
+            # Suppress names followed by address suffixes (e.g., "Turner Street")
+            after = text[end:end + 20].lstrip()
+            after_word = after.split()[0].lower().rstrip('.,;:') if after.split() else ''
+            if after_word in _ADDRESS_SUFFIXES:
+                continue
+
+            # Suppress names preceded by street numbers (e.g., "123 Michael Ave")
+            if start >= 2:
+                before_text = text[max(0, start - 8):start].rstrip()
+                if before_text and before_text[-1].isdigit():
+                    # Check if followed by address suffix too
+                    if after_word in _ADDRESS_SUFFIXES:
+                        continue
+                    # Or check if word after THIS word is an address suffix
+                    remaining = text[end:end + 40]
+                    remaining_words = remaining.split()
+                    if len(remaining_words) >= 2:
+                        second_word = remaining_words[1].lower().rstrip('.,;:')
+                        if second_word in _ADDRESS_SUFFIXES:
+                            continue
 
             key = (start, end)
             if key in seen:
