@@ -21,6 +21,23 @@ logger = logging.getLogger(__name__)
 # Default model — Gretel's PII-tuned GLiNER (Apache-2.0)
 DEFAULT_GLINER_MODEL = "gretelai/gretel-gliner-bi-base-v1.0"
 
+# Minimum span text length for structured entity types.
+# GLiNER often hallucinates these types on short alphanumeric fragments
+# (transaction codes, reference numbers, EDI segment IDs) that are far
+# too short to be the claimed entity.  Pattern / checksum detectors
+# already catch real instances of these types reliably.
+_MIN_SPAN_LENGTHS: dict[str, int] = {
+    "VIN": 11,               # Real VINs are 17 chars
+    "LICENSE_PLATE": 4,      # Plates are 4-8 chars
+    "IBAN": 15,              # Minimum IBAN length
+    "CREDIT_CARD": 12,       # Minimum CC length (with spaces)
+    "SWIFT_BIC": 8,          # SWIFT/BIC is 8 or 11 chars
+    "BANK_ROUTING": 9,       # US ABA routing is 9 digits
+    "ACCOUNT_NUMBER": 5,     # Must be at least 5 chars
+    "IP_ADDRESS": 7,         # Minimum "0.0.0.0"
+    "MAC_ADDRESS": 12,       # "AA:BB:CC:DD:EE:FF" minimum with separators
+}
+
 # Entity labels we ask GLiNER to detect, mapped to OpenLabels canonical types.
 # Keys are the natural-language labels passed to predict_entities().
 # Values are the OpenLabels entity type strings.
@@ -285,6 +302,11 @@ class GLiNERDetector(BaseDetector):
                 continue
 
             span_text = text[start:end]
+
+            # Reject spans that are too short for their entity type.
+            min_len = _MIN_SPAN_LENGTHS.get(canonical_type)
+            if min_len is not None and len(span_text.strip()) < min_len:
+                continue
 
             try:
                 span = Span(

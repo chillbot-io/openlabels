@@ -24,6 +24,7 @@ class ContentCategory(Flag):
     CONTACT = auto()
     TECHNICAL = auto()
     GOVERNMENT = auto()
+    VEHICLE = auto()
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,16 @@ _CATEGORY_PATTERNS: dict[ContentCategory, list[tuple[re.Pattern[str], float]]] =
         ), 2.0),
         (re.compile(r"\b(CAGE|DUNS|UEI|DOD|military|ITAR|EAR)\b", re.I), 1.5),
     ],
+    ContentCategory.VEHICLE: [
+        (re.compile(
+            r"\b(VIN|vehicle identification|license plate|registration number|"
+            r"DMV|motor vehicle|vehicle title|odometer)\b", re.I,
+        ), 2.0),
+        (re.compile(
+            r"\b(automobile|car insurance|auto insurance|fleet|mileage|"
+            r"make and model)\b", re.I,
+        ), 1.5),
+    ],
 }
 
 _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
@@ -108,6 +119,7 @@ _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
     ContentCategory.CONTACT: 0.5,
     ContentCategory.TECHNICAL: 2.0,
     ContentCategory.GOVERNMENT: 2.0,
+    ContentCategory.VEHICLE: 2.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -134,11 +146,9 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "street address",
         "city",
         "country",
-        # Vehicle identifiers: pattern detectors exist but require context
-        # or checksum validation; GLiNER catches them in broader contexts
-        # (insurance, registration, personal records).
-        "vehicle identification number",
-        "license plate number",
+        # Vehicle identifiers moved to VEHICLE category — they require
+        # explicit vehicle context keywords to activate, preventing false
+        # positives on alphanumeric codes in finance/EDI text.
         # Secrets: pattern detectors handle structured secrets; GLiNER
         # catches natural-language mentions like "my password is X".
         "password",
@@ -200,6 +210,10 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
     ],
     ContentCategory.GOVERNMENT: [
         "unique identifier",
+    ],
+    ContentCategory.VEHICLE: [
+        "vehicle identification number",
+        "license plate number",
     ],
 }
 
