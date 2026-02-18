@@ -83,7 +83,6 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "bank routing number": "BANK_ROUTING",
     "iban": "IBAN",
     "swift code": "SWIFT_BIC",
-    "bank routing number": "BANK_ROUTING",
     # Network / Device
     "ip address": "IP_ADDRESS",
     "mac address": "MAC_ADDRESS",

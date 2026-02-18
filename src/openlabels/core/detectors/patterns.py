@@ -527,7 +527,8 @@ _p(r'\b(\d{1,2}-\d{1,2}-\d{2})\b', 'DATE', 0.65),
 # Date with dots (European format): "15.03.1985" or "03.15.1985"
 _p(r'(?:DOB|Date)[:\s]+(\d{1,2}\.\d{1,2}\.\d{4})', 'DATE', 0.85, 1, flags=re.I),
 # Standalone dot-separated date (no label prefix): "15.03.1985", "03.15.2024"
-_p(r'\b(\d{1,2}\.\d{1,2}\.\d{4})\b', 'DATE', 0.70),
+# NOTE: Handled by the 3-group capture pattern in ADDITIONAL DATE PATTERNS
+# section below, which enables proper date validation (month/day checking).
 _p(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
 _p(r'\b\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
 # Edge case: "November 3., 1986" - day with period before comma/year (evasion pattern)
@@ -1825,7 +1826,8 @@ _p(r'(?:Voter\s+ID|EPIC|elector\s+photo)[:\s#]+([A-Z]{3}\d{7})', 'IN_VOTER', 0.8
 
 # === ADDITIONAL DATE PATTERNS ===
 # Bare European dot-separated dates: "15.03.1985", "03.15.1985"
-_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.72),
+# Uses 3 capture groups to enable date validation (month/day range checking).
+_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.70),
 # dd-MMM-yyyy (Oracle/DB format): "15-JAN-2024", "03-MAR-85"
 _p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b', 'DATE', 0.78, flags=re.I),
 # yyyy/mm/dd (slash variant of ISO)
@@ -2258,6 +2260,10 @@ class PatternDetector(BaseDetector):
                     end = match.end()
 
                 if not value or not value.strip():
+                    continue
+
+                # Run pattern-specific validator (e.g., checksum, format checks)
+                if pdef.validator is not None and not pdef.validator(value):
                     continue
 
                 # IGNORECASE fix: patterns with case-insensitive flag make
