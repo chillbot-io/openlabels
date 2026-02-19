@@ -52,40 +52,44 @@ class LanguageResult:
 
 
 # Lazy-loaded detector singleton (lingua is heavy on first import)
-_detector = None
+_UNSET = object()  # sentinel distinguishing "not tried" from "tried and failed"
+_detector = _UNSET
 
 
 def _get_detector():
     """Get or create the lingua LanguageDetector singleton."""
     global _detector
-    if _detector is None:
-        try:
-            from lingua import Language, LanguageDetectorBuilder
+    if _detector is not _UNSET:
+        return _detector
 
-            # Build a detector for languages we care about + a few common extras.
-            # Using a focused set is faster and more accurate than ALL.
-            languages = [
-                Language.ENGLISH, Language.SPANISH, Language.FRENCH,
-                Language.PORTUGUESE, Language.GERMAN, Language.ITALIAN,
-                Language.GREEK, Language.DUTCH, Language.SLOVENE,
-                # Common extras for accurate differentiation
-                Language.CHINESE, Language.JAPANESE, Language.KOREAN,
-                Language.RUSSIAN, Language.ARABIC, Language.HINDI,
-                Language.TURKISH, Language.POLISH, Language.SWEDISH,
-                Language.DANISH, Language.BOKMAL,
-            ]
-            _detector = (
-                LanguageDetectorBuilder
-                .from_languages(*languages)
-                .with_preloaded_language_models()
-                .build()
-            )
-            logger.debug("Lingua language detector initialised")
-        except ImportError:
-            logger.warning(
-                "lingua-language-detector not installed; "
-                "language detection disabled (treating all text as English)"
-            )
+    try:
+        from lingua import Language, LanguageDetectorBuilder
+
+        # Build a detector for languages we care about + a few common extras.
+        # Using a focused set is faster and more accurate than ALL.
+        languages = [
+            Language.ENGLISH, Language.SPANISH, Language.FRENCH,
+            Language.PORTUGUESE, Language.GERMAN, Language.ITALIAN,
+            Language.GREEK, Language.DUTCH, Language.SLOVENE,
+            # Common extras for accurate differentiation
+            Language.CHINESE, Language.JAPANESE, Language.KOREAN,
+            Language.RUSSIAN, Language.ARABIC, Language.HINDI,
+            Language.TURKISH, Language.POLISH, Language.SWEDISH,
+            Language.DANISH, Language.BOKMAL,
+        ]
+        _detector = (
+            LanguageDetectorBuilder
+            .from_languages(*languages)
+            .with_preloaded_language_models()
+            .build()
+        )
+        logger.debug("Lingua language detector initialised")
+    except ImportError:
+        _detector = None
+        logger.warning(
+            "lingua-language-detector not installed; "
+            "language detection disabled (treating all text as English)"
+        )
     return _detector
 
 
