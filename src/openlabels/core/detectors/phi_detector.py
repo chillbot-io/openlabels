@@ -49,19 +49,20 @@ STANFORD_PHI_LABEL_MAP: dict[str, str] = {
     "EMAIL": "EMAIL",
     "WEB": "URL",
     # Identifiers
-    "ID": "ID",
     "MRN": "MRN",
     "SSN": "SSN",
     "LICENSE": "DRIVER_LICENSE",
     "ACCOUNT": "ACCOUNT_NUMBER",
-    "PLAN": "HEALTH_PLAN",
     "VIN": "VIN",
     "DEVICE": "DEVICE_ID",
     # Other HIPAA categories
     "GEO": "ADDRESS",
-    "BIOMETRIC": "BIOMETRIC",
-    "PHOTO": "PHOTO_ID",
-    "UNIQUE": "ID",
+    # Suppressed — too generic for general-purpose PII detection; no matching
+    # gold labels in non-clinical benchmarks (AI4Privacy), producing only FPs:
+    #   ID, UNIQUE  -> generic "ID" (no eval category)
+    #   PLAN        -> HEALTH_PLAN  (no eval category)
+    #   BIOMETRIC   -> BIOMETRIC    (no eval category)
+    #   PHOTO       -> PHOTO_ID     (no eval category)
 }
 
 # Chunk size for long texts (characters). The model's token limit is 512;
@@ -198,7 +199,7 @@ class StanfordPHIDetector(BaseDetector):
             span_text = text[start - offset:end - offset]
 
             # Filter product codes
-            if canonical in ("ID", "MRN"):
+            if canonical == "MRN":
                 first_part = span_text.split("-")[0].split("_")[0].split("#")[0].lower()
                 if first_part in PRODUCT_CODE_PREFIXES:
                     continue
