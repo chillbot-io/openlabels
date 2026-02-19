@@ -77,9 +77,6 @@ class DetectorOrchestrator:
         ):
             self._init_multilingual_gliner()
 
-        if self.config.enable_spacy_ner:
-            self._init_spacy_ner()
-
         self._coref_resolver: Callable[..., list[Span]] | None = None
         self._context_enhancer: Any = None
         if self.config.enable_coref or self.config.enable_context_enhancement:
@@ -174,20 +171,6 @@ class DetectorOrchestrator:
 
         except ImportError as e:
             logger.warning("Multilingual GLiNER detector not available: %s", e)
-
-    def _init_spacy_ner(self) -> None:
-        """Initialize spaCy NER detector for ensemble."""
-        try:
-            from .spacy_ner import SpacyNERDetector
-
-            spacy_det = SpacyNERDetector()
-            if spacy_det.load():
-                self.detectors.append(spacy_det)
-                logger.info("spaCy NER detector loaded")
-            else:
-                logger.warning("spaCy NER detector failed to load")
-        except ImportError as e:
-            logger.warning("spaCy NER detector not available: %s", e)
 
     def _init_pipeline(
         self,

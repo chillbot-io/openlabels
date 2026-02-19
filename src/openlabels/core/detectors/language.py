@@ -2,7 +2,7 @@
 
 Detects the language of input text and determines which detectors should
 fire for that language. This avoids running English-only detectors (Stanford
-PHI, spaCy NER, dictionary names) on non-English text where they would
+PHI, dictionary names) on non-English text where they would
 produce false positives, and ensures the multilingual GLiNER model is
 activated for supported non-English languages.
 
@@ -157,7 +157,6 @@ def detect_language(text: str, *, min_length: int = 20) -> LanguageResult:
 # Detector names that are English-only and should be skipped for non-English text.
 ENGLISH_ONLY_DETECTORS = frozenset({
     "stanford_phi",
-    "spacy_ner",
     "dictionary_names",
 })
 
@@ -172,7 +171,7 @@ def should_run_detector(detector_name: str, lang_result: LanguageResult) -> bool
 
     Rules:
     - Pattern/checksum detectors: always run (language-agnostic)
-    - English-only ML detectors (PHI, spaCy, dictionary names): English only
+    - English-only ML detectors (PHI, dictionary names): English only
     - GLiNER (English): English only
     - Multilingual GLiNER: non-English multilingual-supported languages only
       (for English, the English GLiNER is better)
