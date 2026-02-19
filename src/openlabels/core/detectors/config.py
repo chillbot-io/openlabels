@@ -46,7 +46,7 @@ class DetectionConfig:
     # Stanford PHI detection (clinical de-identification)
     enable_phi: bool = True
     phi_model: str = "StanfordAIMI/stanford-deidentifier-base"
-    phi_threshold: float = 0.5
+    phi_threshold: float = 0.65
 
     # Post-processing
     enable_coref: bool = False
@@ -86,6 +86,13 @@ class DetectionConfig:
         # Professional — ML-dependent, similar to names.
         ("COMPANY", 0.50),
         ("JOB_TITLE", 0.50),
+        # FACILITY from PHI model — trained on clinical text where every
+        # hospital name is PHI; massively over-fires on general-purpose text.
+        ("FACILITY", 0.80),
+        # PHI name types — clinical model's priors don't match general text;
+        # require higher confidence than GLiNER name types.
+        ("NAME_PATIENT", 0.60),
+        ("NAME_PROVIDER", 0.60),
         # Honorifics — structurally reliable when detected
         ("PREFIX", 0.65),
         # Ambiguous — higher threshold to reduce FP
