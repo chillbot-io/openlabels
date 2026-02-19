@@ -5,7 +5,7 @@ Usage:
     openlabels benchmark --samples 1000                     # More samples
     openlabels benchmark --preset with_ml                   # With ML detectors
     openlabels benchmark --dataset gretel_pii -n 1000       # Gretel PII 1k
-    openlabels benchmark --dataset gretel_finance --enable-ml
+    openlabels benchmark --dataset gretel_finance --enable-ml --enable-phi
     openlabels benchmark sweep                              # Compare all presets
     openlabels benchmark tune                               # Threshold sweep
     openlabels benchmark tune --output tuning.json
@@ -33,12 +33,13 @@ DATASET_CHOICES = ["ai4privacy", "gretel_pii", "gretel_finance"]
 @click.option("--output", "-o", default=None, help="Save results to JSON file")
 @click.option("--verbose", "-v", is_flag=True, help="Show per-category breakdown")
 @click.option("--threshold", "-t", default=None, type=float, help="Override confidence threshold")
-@click.option("--enable-ml", is_flag=True, help="Enable ML detectors")
+@click.option("--enable-ml", is_flag=True, help="Enable ML detectors (GLiNER)")
+@click.option("--enable-phi", is_flag=True, help="Enable Stanford PHI detector")
 @click.option("--tiered", is_flag=True, help="Use tiered pipeline")
 @click.option("--model-dir", default=None, help="Path to ML model directory")
 @click.pass_context
 def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
-              enable_ml, tiered, model_dir):
+              enable_ml, enable_phi, tiered, model_dir):
     """Benchmark the classification pipeline against PII datasets."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
@@ -69,6 +70,8 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
         config.confidence_threshold = threshold
     if enable_ml:
         config.enable_ml = True
+    if enable_phi:
+        config.enable_phi = True
     if tiered:
         config.use_tiered_pipeline = True
         config.auto_detect_medical = True
@@ -79,18 +82,21 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     config_desc = config.name
     if enable_ml and "ml" not in config.name:
         config_desc = f"{config.name}+ml"
+    if enable_phi and "phi" not in config.name:
+        config_desc = f"{config_desc}+phi"
     if tiered and "tiered" not in config.name:
         config_desc = f"{config_desc}+tiered"
     click.echo(f"Benchmark: {config_desc}")
     click.echo(f"Dataset: {dataset} | Samples: {samples} | "
                f"Threshold: {config.confidence_threshold}")
     ml_status = "ON" if config.enable_ml else "OFF"
-    click.echo(f"ML: {ml_status} | "
+    phi_status = "ON" if config.enable_phi else "OFF"
+    click.echo(f"ML: {ml_status} | PHI: {phi_status} | "
                f"Pipeline: {'tiered' if config.use_tiered_pipeline else 'orchestrator'}")
-    if config.enable_ml:
+    if config.enable_ml or config.enable_phi:
         _show_model_status(config)
     else:
-        click.echo("  (name detection requires ML; use --enable-ml or --preset with_ml)")
+        click.echo("  (name/PHI detection requires ML; use --enable-ml --enable-phi or --preset with_ml)")
     click.echo("-" * 60)
 
     # Load dataset
@@ -197,8 +203,9 @@ def sweep(ctx, presets):
 @benchmark.command()
 @click.option("--thresholds", default=None, help="Comma-separated thresholds (e.g. 0.3,0.5,0.7,0.9)")
 @click.option("--enable-ml", is_flag=True, help="Enable ML detectors for tuning")
+@click.option("--enable-phi", is_flag=True, help="Enable Stanford PHI detector for tuning")
 @click.pass_context
-def tune(ctx, thresholds, enable_ml):
+def tune(ctx, thresholds, enable_ml, enable_phi):
     """Sweep confidence thresholds to find the optimal operating point."""
     from openlabels.core.benchmark.harness import (
         BenchmarkConfig,
@@ -216,10 +223,10 @@ def tune(ctx, thresholds, enable_ml):
         threshold_list = [float(t.strip()) for t in thresholds.split(",")]
 
     model_dir = ctx.obj.get("model_dir")
-    base = BenchmarkConfig(enable_ml=enable_ml, ml_model_dir=model_dir)
+    base = BenchmarkConfig(enable_ml=enable_ml, enable_phi=enable_phi, ml_model_dir=model_dir)
 
     click.echo(f"Threshold tuning | Dataset: {dataset} | Samples: {samples} | "
-               f"ML: {'on' if enable_ml else 'off'}")
+               f"ML: {'on' if enable_ml else 'off'} | PHI: {'on' if enable_phi else 'off'}")
     click.echo("=" * 60)
 
     loaded_samples = _load_dataset_samples(dataset, samples, seed)
@@ -294,9 +301,11 @@ def _load_dataset_samples(dataset: str, sample_size: int, seed: int):
 
 def _show_model_status(config) -> None:
     """Show ML model status."""
-    from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
-
-    click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
+    if getattr(config, "enable_ml", False):
+        from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
+        click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
+    if getattr(config, "enable_phi", False):
+        click.echo(f"  Stanford PHI: {getattr(config, 'phi_model', 'StanfordAIMI/stanford-deidentifier-base')}")
     if getattr(config, "enable_spacy_ner", False):
         try:
             import spacy

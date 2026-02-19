@@ -41,6 +41,7 @@ class BenchmarkConfig:
     enable_government: bool = True
     enable_patterns: bool = True
     enable_ml: bool = False
+    enable_phi: bool = False
     enable_spacy_ner: bool = False
     enable_hyperscan: bool = False
     confidence_threshold: float = 0.70
@@ -53,6 +54,10 @@ class BenchmarkConfig:
     gliner_threshold: float = 0.4
     use_onnx: bool = True
     enable_label_selection: bool = True
+
+    # Stanford PHI detector
+    phi_model: str = "StanfordAIMI/stanford-deidentifier-base"
+    phi_threshold: float = 0.5
 
     # Per-entity-type confidence thresholds (None = use DetectionConfig defaults)
     entity_thresholds: tuple[tuple[str, float], ...] | None = None
@@ -91,6 +96,7 @@ class BenchmarkConfig:
             enable_patterns=self.enable_patterns,
             enable_dictionary_names=self.enable_patterns,  # follows patterns flag
             enable_ml=self.enable_ml,
+            enable_phi=self.enable_phi,
             enable_spacy_ner=self.enable_spacy_ner,
             enable_hyperscan=self.enable_hyperscan,
             confidence_threshold=self.confidence_threshold,
@@ -102,6 +108,9 @@ class BenchmarkConfig:
             gliner_threshold=self.gliner_threshold,
             use_onnx=self.use_onnx,
             enable_label_selection=self.enable_label_selection,
+            # Stanford PHI
+            phi_model=self.phi_model,
+            phi_threshold=self.phi_threshold,
             # Post-processing
             enable_coref=self.enable_coref,
             enable_context_enhancement=self.enable_context_enhancement,
@@ -262,6 +271,7 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
     "with_ml": BenchmarkConfig(
         name="with_ml",
         enable_ml=True,
+        enable_phi=True,
         enable_spacy_ner=True,
     ),
     "tiered": BenchmarkConfig(
@@ -273,6 +283,7 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
         name="tiered_with_ml",
         use_tiered_pipeline=True,
         enable_ml=True,
+        enable_phi=True,
         auto_detect_medical=True,
     ),
     "with_context": BenchmarkConfig(
@@ -284,6 +295,7 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
     "full": BenchmarkConfig(
         name="full",
         enable_ml=True,
+        enable_phi=True,
         enable_spacy_ner=True,
         enable_proximity_boost=True,
         enable_context_keywords=True,
