@@ -373,10 +373,12 @@ class ContextEnhancer:
         if COMPANY_PATTERN.match(span_text):
             return (f"company_pattern:{span_text}", None, 0)
 
-        # Contains digits (likely username)
-        if HAS_DIGITS_PATTERN.search(span_text):
-            if not re.search(r'\s+(II|III|IV|V|VI|Jr\.?|Sr\.?)$', span_text, re.I):
-                return (f"contains_digits:{span_text}", None, 0)
+        # Contains digits (likely username) — skip for MRN/ID types that
+        # inherently contain digits (e.g. "MRN-293104", "MED15780803")
+        if span.entity_type.upper() not in ("MRN", "HEALTH_PLAN_ID", "EMPLOYEE_ID", "DEVICE_ID"):
+            if HAS_DIGITS_PATTERN.search(span_text):
+                if not re.search(r'\s+(II|III|IV|V|VI|Jr\.?|Sr\.?)$', span_text, re.I):
+                    return (f"contains_digits:{span_text}", None, 0)
 
         # Possessive + product
         context_around = text[max(0, span.start):min(len(text), span.end + 50)]
