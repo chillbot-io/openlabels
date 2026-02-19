@@ -36,9 +36,11 @@ STANFORD_PHI_LABEL_MAP: dict[str, str] = {
     # Names
     "PATIENT": "NAME_PATIENT",
     "HCW": "NAME_PROVIDER",
-    # Institutions
-    "HOSPITAL": "FACILITY",
-    "VENDOR": "FACILITY",
+    # Suppressed — clinical model sees every institution name as PHI;
+    # on general-purpose text FACILITY has ~78% FP rate even at 0.80.
+    # GLiNER COMPANY already covers professional entities well.
+    #   HOSPITAL -> FACILITY  (suppressed)
+    #   VENDOR   -> FACILITY  (suppressed)
     # Dates / age
     "DATE": "DATE",
     "DATES": "DATE",
