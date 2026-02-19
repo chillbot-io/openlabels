@@ -188,31 +188,28 @@ async def get_health_status(
     if user is not None:
         # Check ML models
         try:
-            from openlabels.core.detectors.ml_onnx import PHIBertONNXDetector, PIIBertONNXDetector
             models_available = []
             try:
-                detector = PIIBertONNXDetector()
-                if detector._session is not None:
-                    models_available.append("PII-BERT")
-            except (OSError, RuntimeError, ValueError) as e:
-                logger.info(f"PII-BERT model not available: {type(e).__name__}: {e}")
+                from openlabels.core.detectors.gliner import GLiNERDetector
+                models_available.append("GLiNER")
+            except ImportError:
+                logger.info("GLiNER detector not available")
 
             try:
-                detector = PHIBertONNXDetector()
-                if detector._session is not None:
-                    models_available.append("PHI-BERT")
-            except (OSError, RuntimeError, ValueError) as e:
-                logger.info(f"PHI-BERT model not available: {type(e).__name__}: {e}")
+                from openlabels.core.detectors.phi_detector import StanfordPHIDetector  # noqa: F811
+                from openlabels.core.constants import DEFAULT_MODELS_DIR
+                phi_dir = DEFAULT_MODELS_DIR / "stanford_phi"
+                if phi_dir.is_dir() and (phi_dir / "config.json").exists():
+                    models_available.append("Stanford-PHI")
+            except ImportError:
+                logger.info("Stanford PHI detector not available")
 
             if models_available:
                 status["ml"] = "healthy"
-                status["ml_text"] = f"{len(models_available)} models"
+                status["ml_text"] = ", ".join(models_available)
             else:
                 status["ml"] = "warning"
                 status["ml_text"] = "No models"
-        except ImportError:
-            status["ml"] = "warning"
-            status["ml_text"] = "Not installed"
         except (OSError, RuntimeError, ValueError) as e:
             logger.warning(f"ML health check failed: {type(e).__name__}: {e}")
             status["ml"] = "warning"

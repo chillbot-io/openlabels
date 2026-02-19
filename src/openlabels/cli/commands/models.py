@@ -4,9 +4,8 @@ Usage:
     openlabels models list              # Show installed / available models
     openlabels models check             # Diagnose missing files
     openlabels models download all      # Download everything
-    openlabels models download ner      # PHI-BERT + PII-BERT only
+    openlabels models download phi      # Stanford PHI detector only
     openlabels models download ocr      # OCR models only
-    openlabels models download phi_bert # Single model
 """
 
 from __future__ import annotations
@@ -120,14 +119,13 @@ def check(models_dir: Path | None, use_onnx: bool):
 def download(names: tuple[str, ...], models_dir: Path | None, force: bool):
     """Download models from HuggingFace Hub.
 
-    NAMES can be model names (phi_bert, pii_bert, ocr) or aliases (all, ner).
+    NAMES can be model names (phi, ocr) or aliases (all, ml).
 
     \b
     Examples:
-        openlabels models download all         # Everything
-        openlabels models download ner         # PHI-BERT + PII-BERT
-        openlabels models download ocr         # OCR models
-        openlabels models download phi_bert    # Single model
+        openlabels models download all     # Everything
+        openlabels models download phi     # Stanford PHI detector
+        openlabels models download ocr     # OCR models
     """
     from openlabels.core.constants import DEFAULT_MODELS_DIR
     from openlabels.core.detectors.model_registry import (

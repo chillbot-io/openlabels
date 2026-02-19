@@ -3,12 +3,12 @@ Tiered detection pipeline for efficient PII/PHI detection.
 
 Implements a multi-stage detection strategy:
 - Stage 1 (Fast Triage): Pattern/checksum detectors only
-- Stage 2 (ML Escalation): ML detectors when needed
-- Stage 3 (Deep Analysis): PHI-BERT + PII-BERT for medical context
+- Stage 2 (ML Escalation): GLiNER PII + Stanford PHI detectors when needed
+- Stage 3 (Deep Analysis): Full ML suite for medical context
 
 Key features:
 - Avoids running ML on every document (saves compute)
-- Medical context auto-detection triggers PHI+PII dual analysis
+- Medical context auto-detection triggers deep analysis
 - Confidence-based escalation (< 0.7 triggers ML)
 - OCR text detection before full pipeline
 - Coreference resolution (disabled by default, available if needed)
@@ -63,7 +63,7 @@ class PipelineStage(Enum):
     """Pipeline execution stages."""
     FAST_TRIAGE = "fast_triage"       # Pattern/checksum only
     ML_ESCALATION = "ml_escalation"   # Add ML detectors
-    DEEP_ANALYSIS = "deep_analysis"   # PHI-BERT + PII-BERT
+    DEEP_ANALYSIS = "deep_analysis"   # GLiNER + Stanford PHI
 
 
 @dataclass
@@ -73,7 +73,7 @@ class PipelineConfig:
     # Escalation settings
     escalation_threshold: float = ESCALATION_THRESHOLD
     auto_detect_medical: bool = True
-    medical_triggers_dual_bert: bool = True  # PHI + PII when medical
+    medical_triggers_deep_analysis: bool = True  # Full ML suite when medical
 
     # Stage enablement
     enable_checksum: bool = True
@@ -137,9 +137,9 @@ class TieredPipeline:
         - Specific entity types need refinement
 
     Stage 3 (Deep Analysis) - for medical context:
-        - PHI-BERT for clinical entities
-        - PII-BERT for general PII
-        - Both run together (PHI-BERT alone misses PII in medical docs)
+        - GLiNER for general PII entities
+        - Stanford PHI for clinical de-identification
+        - Both run together for comprehensive coverage
     """
 
     def __init__(self, config: PipelineConfig | None = None):
@@ -322,8 +322,8 @@ class TieredPipeline:
             escalation_reason = reason
             self._init_ml_detectors()
 
-            if medical_context and self.config.medical_triggers_dual_bert:
-                # Deep analysis: both PHI-BERT and PII-BERT
+            if medical_context and self.config.medical_triggers_deep_analysis:
+                # Deep analysis: GLiNER + Stanford PHI
                 stage3_spans, stage3_detectors = self._run_deep_analysis(text)
                 all_spans.extend(stage3_spans)
                 all_detectors.extend(stage3_detectors)
@@ -427,7 +427,7 @@ class TieredPipeline:
     def _run_deep_analysis(self, text: str) -> tuple[list[Span], list[str]]:
         """Run Stage 3 (deep analysis) with all ML detectors.
 
-        Same as Stage 2 — GLiNER covers both clinical and general PII.
+        Uses GLiNER for PII and Stanford PHI for clinical entities.
         """
         return self._run_stage2(text)
 
@@ -714,11 +714,9 @@ class TieredPipeline:
         Returns:
             Dict with keys:
                 - ml_loaded: bool, whether any ML detectors are loaded
-                - phi_bert: dict with 'loaded' and 'name' keys (or None)
-                - pii_bert: dict with 'loaded' and 'name' keys (or None)
+                - gliner: dict with 'loaded' and 'name' keys (or None)
                 - detectors: list of loaded detector names
                 - model_dir: str, the resolved model directory path
-                - use_onnx: bool, whether ONNX backend is configured
         """
         model_dir = self.config.ml_model_dir
         if model_dir is None:

@@ -13,7 +13,7 @@ Usage:
         print(f"{model.name}: {'installed' if model.is_installed else 'missing'}")
 
     # Download a specific model
-    download_model("phi_bert")
+    download_model("phi")
 
     # Download everything
     for model in list_models():
@@ -83,7 +83,7 @@ class ModelSpec:
             target = install_dir / mf.filename
             if not target.exists():
                 # Check alternatives — if any alternative exists, this file
-                # is optional (e.g. phi_bert.onnx when phi_bert_int8.onnx exists)
+                # is optional (e.g. model.safetensors when pytorch_model.bin exists)
                 if self._has_alternative(mf.filename, install_dir):
                     continue
                 return False
@@ -111,34 +111,18 @@ class ModelSpec:
 # HuggingFace repo IDs are placeholders until the user publishes models.
 # The download logic works with any valid HF repo.
 
-_PHI_BERT_SPEC = ModelSpec(
-    name="phi_bert",
-    description="Stanford Clinical PHI-BERT NER (ONNX, INT8 quantized)",
-    repo_id="bturner4/openlabels-phi-bert",
+_PHI_SPEC = ModelSpec(
+    name="phi",
+    description="Stanford Clinical De-identifier (PubMedBERT, token classification)",
+    repo_id="StanfordAIMI/stanford-deidentifier-base",
+    install_subdir="stanford_phi",
     files=[
-        ModelFile("phi_bert_int8.onnx", size_bytes=111_000_000),
-        ModelFile("phi_bert.onnx", size_bytes=111_000_000),
-        ModelFile("phi_bert.tokenizer.json", size_bytes=706_000),
-        ModelFile("phi_bert.labels.json", size_bytes=500),
+        ModelFile("pytorch_model.bin", size_bytes=438_000_000),
+        ModelFile("config.json", size_bytes=1_200),
+        ModelFile("vocab.txt", size_bytes=226_000),
+        ModelFile("special_tokens_map.json", size_bytes=112),
+        ModelFile("tokenizer_config.json", size_bytes=29),
     ],
-    alternatives={
-        "onnx_model": ["phi_bert_int8.onnx", "phi_bert.onnx"],
-    },
-)
-
-_PII_BERT_SPEC = ModelSpec(
-    name="pii_bert",
-    description="PII-BERT general NER (ONNX, INT8 quantized)",
-    repo_id="bturner4/openlabels-pii-bert",
-    files=[
-        ModelFile("pii_bert_int8.onnx", size_bytes=111_000_000),
-        ModelFile("pii_bert.onnx", size_bytes=111_000_000),
-        ModelFile("pii_bert.tokenizer.json", size_bytes=712_000),
-        ModelFile("pii_bert.labels.json", size_bytes=600),
-    ],
-    alternatives={
-        "onnx_model": ["pii_bert_int8.onnx", "pii_bert.onnx"],
-    },
 )
 
 _OCR_SPEC = ModelSpec(
@@ -154,14 +138,13 @@ _OCR_SPEC = ModelSpec(
 )
 
 _REGISTRY: dict[str, ModelSpec] = {
-    spec.name: spec for spec in [_PHI_BERT_SPEC, _PII_BERT_SPEC, _OCR_SPEC]
+    spec.name: spec for spec in [_PHI_SPEC, _OCR_SPEC]
 }
 
 # Convenience aliases
 MODEL_ALIASES: dict[str, list[str]] = {
     "all": list(_REGISTRY.keys()),
-    "ner": ["phi_bert", "pii_bert"],
-    "bert": ["phi_bert", "pii_bert"],
+    "ml": ["phi"],
 }
 
 
@@ -218,7 +201,7 @@ def download_model(
     """Download a model from HuggingFace Hub.
 
     Args:
-        name: Model name (e.g. "phi_bert", "pii_bert", "ocr").
+        name: Model name (e.g. "phi", "ocr").
         models_dir: Target directory. Defaults to DEFAULT_MODELS_DIR.
         force: Re-download even if already installed.
         progress_callback: Optional (filename, downloaded, total) callback.

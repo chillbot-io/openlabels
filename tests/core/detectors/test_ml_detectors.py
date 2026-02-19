@@ -4,7 +4,6 @@ Comprehensive tests for ML-based detectors (ml.py and ml_onnx.py).
 Tests cover:
 - Device detection (get_device, get_device_info)
 - MLDetector model loading and inference with mocked transformers
-- PHIBertDetector / PIIBertDetector label mapping and initialization
 - ONNXDetector chunking, deduplication, word boundaries, span conversion
 - Edge cases: empty text, null bytes, special characters, very long text
 - Bug-catching scenarios: chunk boundary entities, partial word spans,
@@ -23,17 +22,12 @@ from openlabels.core.detectors.ml import (
     get_device,
     get_device_info,
     MLDetector,
-    PHIBertDetector,
-    PIIBertDetector,
 )
 from openlabels.core.detectors.ml_onnx import (
     ONNXDetector,
     build_word_boundaries,
     expand_to_word_boundary,
-    PHIBertONNXDetector,
-    PIIBertONNXDetector,
 )
-from openlabels.core.detectors.labels import PHI_BERT_LABELS, PII_BERT_LABELS
 
 
 # =============================================================================
@@ -447,7 +441,7 @@ class TestMLDetectorDetect:
     def test_detect_span_attributes(self):
         """Spans have correct detector name and tier."""
         detector = self._make_loaded_detector(label_map={"NAME": "NAME"})
-        detector.name = "phi_bert"
+        detector.name = "test_ml"
         detector.tier = Tier.ML
         detector._pipeline.return_value = [
             {"entity_group": "NAME", "start": 0, "end": 4, "score": 0.92}
@@ -455,66 +449,9 @@ class TestMLDetectorDetect:
         text = "John is here"
         spans = detector.detect(text)
         assert len(spans) == 1
-        assert spans[0].detector == "phi_bert"
+        assert spans[0].detector == "test_ml"
         assert spans[0].tier == Tier.ML
         assert 0.0 <= spans[0].confidence <= 1.0
-
-
-# =============================================================================
-# PHI/PII BERT DETECTOR TESTS (ml.py subclasses)
-# =============================================================================
-
-class TestPHIBertDetector:
-    """Test PHIBertDetector initialization and label mapping."""
-
-    def test_name(self):
-        """PHIBertDetector has name 'phi_bert'."""
-        det = PHIBertDetector(model_path=None)
-        assert det.name == "phi_bert"
-
-    def test_label_map_is_phi_bert_labels(self):
-        """PHIBertDetector uses PHI_BERT_LABELS mapping."""
-        det = PHIBertDetector(model_path=None)
-        assert det.label_map is PHI_BERT_LABELS
-
-    def test_tier_is_ml(self):
-        """PHIBertDetector tier is Tier.ML."""
-        det = PHIBertDetector(model_path=None)
-        assert det.tier == Tier.ML
-
-    def test_no_auto_load_without_path(self):
-        """PHIBertDetector does not auto-load when model_path is None."""
-        det = PHIBertDetector(model_path=None)
-        assert det.is_available() is False
-
-    def test_auto_load_with_path(self, tmp_path):
-        """PHIBertDetector calls load() when model_path is provided."""
-        # Create minimal directory (load will fail, but we verify it was called)
-        model_dir = tmp_path / "phi"
-        model_dir.mkdir()
-        det = PHIBertDetector(model_path=model_dir)
-        # load() was called but returned False due to missing files
-        assert det.is_available() is False
-
-
-class TestPIIBertDetector:
-    """Test PIIBertDetector initialization and label mapping."""
-
-    def test_name(self):
-        """PIIBertDetector has name 'pii_bert'."""
-        det = PIIBertDetector(model_path=None)
-        assert det.name == "pii_bert"
-
-    def test_label_map_is_pii_bert_labels(self):
-        """PIIBertDetector uses PII_BERT_LABELS mapping."""
-        det = PIIBertDetector(model_path=None)
-        assert det.label_map is PII_BERT_LABELS
-
-    def test_label_map_has_bio_tags(self):
-        """PII_BERT_LABELS has BIO-style tags."""
-        assert "B-NAME" in PII_BERT_LABELS
-        assert "I-NAME" in PII_BERT_LABELS
-        assert "B-SSN" in PII_BERT_LABELS
 
 
 # =============================================================================
@@ -1383,42 +1320,6 @@ class TestProcessChunk:
 
         # After clamping, start and end are both 2, so start >= end -> dropped
         assert len(result) == 0
-
-
-# =============================================================================
-# ONNX SUBCLASS TESTS
-# =============================================================================
-
-class TestPHIBertONNXDetector:
-    """Test PHIBertONNXDetector initialization."""
-
-    def test_name(self):
-        det = PHIBertONNXDetector(model_dir=None)
-        assert det.name == "phi_bert_onnx"
-
-    def test_label_map(self):
-        det = PHIBertONNXDetector(model_dir=None)
-        assert det.label_map is PHI_BERT_LABELS
-
-    def test_model_name(self):
-        det = PHIBertONNXDetector(model_dir=None)
-        assert det.model_name == "phi_bert"
-
-
-class TestPIIBertONNXDetector:
-    """Test PIIBertONNXDetector initialization."""
-
-    def test_name(self):
-        det = PIIBertONNXDetector(model_dir=None)
-        assert det.name == "pii_bert_onnx"
-
-    def test_label_map(self):
-        det = PIIBertONNXDetector(model_dir=None)
-        assert det.label_map is PII_BERT_LABELS
-
-    def test_model_name(self):
-        det = PIIBertONNXDetector(model_dir=None)
-        assert det.model_name == "pii_bert"
 
 
 # =============================================================================

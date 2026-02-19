@@ -1,7 +1,6 @@
-"""Tier 1: ML-based detectors for NER using HuggingFace transformers.
+"""ML-based detectors for NER using HuggingFace transformers.
 
-Supports loading PyTorch models for NER inference.
-For production use with ONNX models, see ml_onnx.py.
+Provides the MLDetector base class and device detection utilities.
 """
 
 from __future__ import annotations
@@ -14,8 +13,6 @@ from typing import Any
 from ..constants import PRODUCT_CODE_PREFIXES
 from ..types import Span, Tier
 from .base import BaseDetector
-from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
-from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
@@ -312,39 +309,3 @@ class MLDetector(BaseDetector):
                 logger.debug(f"{self.name}: Invalid span skipped: {e}")
 
         return spans
-
-
-@register_detector
-class PHIBertDetector(MLDetector):
-    """Stanford Clinical PHI-BERT detector for healthcare NER."""
-
-    name = "phi_bert"
-    label_map = PHI_BERT_LABELS
-
-    def __init__(
-        self,
-        model_path: Path | None = None,
-        device: str = "auto",
-        cuda_device_id: int = 0,
-    ):
-        super().__init__(model_path, device, cuda_device_id)
-        if model_path:
-            self.load()
-
-
-@register_detector
-class PIIBertDetector(MLDetector):
-    """Custom PII-BERT detector (AI4Privacy trained) for general PII."""
-
-    name = "pii_bert"
-    label_map = PII_BERT_LABELS
-
-    def __init__(
-        self,
-        model_path: Path | None = None,
-        device: str = "auto",
-        cuda_device_id: int = 0,
-    ):
-        super().__init__(model_path, device, cuda_device_id)
-        if model_path:
-            self.load()

@@ -38,7 +38,7 @@ class Tier(IntEnum):
     When multiple detectors find the same entity at the same position,
     the detection with the higher tier takes precedence.
     """
-    ML = 1          # Machine learning models (PHI-BERT, PII-BERT)
+    ML = 1          # Machine learning models (GLiNER, Stanford PHI)
     PATTERN = 2     # Regex patterns with validation
     STRUCTURED = 3  # Label-based extraction (DOB:, NAME:, etc.)
     CHECKSUM = 4    # Algorithmically validated (Luhn, mod-97, etc.)
@@ -90,7 +90,7 @@ class JobStatus(str, Enum):
 # ENTITY TYPES
 # Known entity types - used for validation
 # Categories: Names, Dates, Locations, IDs, Contact, Financial, Medical, Secrets, Government
-# Sources: HIPAA Safe Harbor, i2b2 2014, AI4Privacy, Stanford PHI-BERT, custom detectors
+# Sources: HIPAA Safe Harbor, i2b2 2014, AI4Privacy, Stanford de-identifier, custom detectors
 KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     # NAMES
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
