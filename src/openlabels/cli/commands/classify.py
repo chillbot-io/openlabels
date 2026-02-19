@@ -20,11 +20,11 @@ from openlabels.core.types import ExposureLevel
 @click.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--exposure", default=ExposureLevel.PRIVATE, type=click.Choice([e.value for e in ExposureLevel]))
-@click.option("--no-ml", is_flag=True, help="Disable ML-based detectors")
+@click.option("--ml/--no-ml", default=True, help="Enable/disable ML-based detectors")
 @click.option("--recursive", "-r", is_flag=True, help="Scan directories recursively")
 @click.option("--output", "-o", help="Output file for results (JSON)")
 @click.option("--min-score", default=0, type=int, help="Minimum risk score to report")
-def classify(path: str, exposure: str, no_ml: bool, recursive: bool, output: str | None, min_score: int):
+def classify(path: str, exposure: str, ml: bool, recursive: bool, output: str | None, min_score: int):
     """Classify files locally (no server required).
 
     Can classify a single file or a directory of files.
@@ -44,7 +44,7 @@ def classify(path: str, exposure: str, no_ml: bool, recursive: bool, output: str
         from openlabels.core.detectors.config import DetectionConfig
         from openlabels.core.processor import FileProcessor
 
-        processor = FileProcessor(config=DetectionConfig(enable_ml=not no_ml))
+        processor = FileProcessor(config=DetectionConfig(enable_ml=ml, enable_phi=ml))
         results = []
 
         async def process_all():

@@ -20,6 +20,7 @@ from ..policies.schema import EntityMatch
 from ..types import DetectionResult, Span, Tier, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
+from .language import LanguageResult, detect_language, should_run_detector
 from .registry import create_detector
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,12 @@ class DetectorOrchestrator:
         if self.config.enable_phi:
             self._init_phi_detector()
 
-        if self.config.enable_multilingual:
+        # Load multilingual GLiNER if explicitly enabled, or if ML + language
+        # detection are both on (so the gating logic can route non-English text
+        # to the multilingual model).
+        if self.config.enable_multilingual or (
+            self.config.enable_ml and self.config.enable_language_detection
+        ):
             self._init_multilingual_gliner()
 
         if self.config.enable_spacy_ner:
@@ -223,12 +229,39 @@ class DetectorOrchestrator:
                 text_length=0,
             )
 
+        # Language-gated detection: determine which detectors to run.
+        lang_result: LanguageResult | None = None
+        if self.config.enable_language_detection:
+            lang_result = detect_language(text)
+            logger.debug(
+                "Language detection: %s (%.2f, %s)",
+                lang_result.language_code,
+                lang_result.confidence,
+                lang_result.tier.value,
+            )
+
+        # Select detectors based on detected language.
+        if lang_result is not None:
+            active_detectors = [
+                d for d in self.detectors
+                if should_run_detector(d.name, lang_result)
+            ]
+            skipped = set(d.name for d in self.detectors) - set(d.name for d in active_detectors)
+            if skipped:
+                logger.info(
+                    "Language gating (%s): skipped detectors %s",
+                    lang_result.language_code,
+                    sorted(skipped),
+                )
+        else:
+            active_detectors = self.detectors
+
         all_spans: list[Span] = []
         detectors_used: list[str] = []
 
         future_to_detector = {
             self._executor.submit(self._run_detector, detector, text): detector
-            for detector in self.detectors
+            for detector in active_detectors
         }
 
         try:
@@ -260,6 +293,12 @@ class DetectorOrchestrator:
                 processed_spans = self._coref_resolver(text, processed_spans)
             except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Coreference resolution failed: {e}")
+
+        # Suppress pronouns detected as NAME-family entities.  The PHI model
+        # (trained for Safe Harbor de-identification) and the coref resolver
+        # both produce pronoun spans — but bare pronouns are not PII.
+        if processed_spans:
+            processed_spans = _suppress_pronoun_names(processed_spans)
 
         if self._context_enhancer and processed_spans:
             try:
@@ -459,6 +498,50 @@ class DetectorOrchestrator:
     def detector_names(self) -> list[str]:
         """Get list of active detector names."""
         return [d.name for d in self.detectors]
+
+
+# ---------------------------------------------------------------------------
+# Pronoun suppression
+# ---------------------------------------------------------------------------
+
+# NAME-family types that can be false-positively assigned to pronouns.
+_NAME_FAMILY = frozenset({
+    "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
+    "FIRSTNAME", "LASTNAME",
+})
+
+# Personal pronouns (lower-cased) that are never PII by themselves.
+# Covers English + the 8 other multilingual-supported languages.
+_PRONOUNS = frozenset({
+    # English
+    "he", "him", "his", "she", "her", "hers",
+    "they", "them", "their", "theirs",
+    # Spanish
+    "él", "ella", "ellos", "ellas",
+    # French
+    "il", "elle", "ils", "elles", "lui",
+    # Portuguese
+    "ele", "ela", "eles", "elas",
+    # German
+    "er", "sie", "es", "ihr", "ihm", "ihn",
+    # Italian
+    "egli", "essa", "esso", "loro",
+    # Dutch
+    "hij", "zij", "hen", "hun",
+    # Greek
+    "αυτός", "αυτή", "αυτό", "αυτοί", "αυτές", "αυτά",
+})
+
+
+def _suppress_pronoun_names(spans: list[Span]) -> list[Span]:
+    """Remove NAME-family spans whose text is just a pronoun."""
+    result: list[Span] = []
+    for span in spans:
+        if span.entity_type in _NAME_FAMILY and span.text.strip().lower() in _PRONOUNS:
+            logger.debug("Pronoun suppressed: %s %r", span.entity_type, span.text)
+            continue
+        result.append(span)
+    return result
 
 
 def detect(

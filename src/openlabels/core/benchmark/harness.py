@@ -59,6 +59,9 @@ class BenchmarkConfig:
     phi_model: str = "StanfordAIMI/stanford-deidentifier-base"
     phi_threshold: float = 0.5
 
+    # Language-gated detection
+    enable_language_detection: bool = True
+
     # Per-entity-type confidence thresholds (None = use DetectionConfig defaults)
     entity_thresholds: tuple[tuple[str, float], ...] | None = None
 
@@ -95,6 +98,7 @@ class BenchmarkConfig:
             enable_government=self.enable_government,
             enable_patterns=self.enable_patterns,
             enable_dictionary_names=self.enable_patterns,  # follows patterns flag
+            enable_language_detection=self.enable_language_detection,
             enable_ml=self.enable_ml,
             enable_phi=self.enable_phi,
             enable_spacy_ner=self.enable_spacy_ner,

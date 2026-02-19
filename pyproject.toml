@@ -98,6 +98,7 @@ dependencies = [
     "numpy>=1.24.0,<2",
     "gliner>=0.2.0",  # GLiNER zero-shot NER (Gretel PII model)
     "spacy>=3.7.0,<4",  # spaCy NER for ensemble detection
+    "lingua-language-detector>=2.0.0,<3",  # Language detection for multilingual routing
 ]
 
 [project.optional-dependencies]
@@ -245,6 +246,7 @@ module = [
     "optimum", "optimum.*",
     "numpy", "numpy.*",
     "hyperscan", "hyperscan.*",
+    "lingua", "lingua.*",
     # Document extraction
     "docx", "docx.*",
     "pptx", "pptx.*",

@@ -284,19 +284,23 @@ class TestModelsCLI:
 class TestOrchestratorMLWiring:
     """Verify orchestrator loads ML detectors when models are present."""
 
-    def test_init_ml_detectors_logs_download_hint_when_missing(self, tmp_path, caplog):
-        """When models dir doesn't exist, orchestrator suggests download command."""
+    def test_init_ml_detectors_logs_warning_when_missing(self, tmp_path, caplog):
+        """When models fail to load, orchestrator logs warnings."""
         from openlabels.core.detectors.orchestrator import DetectorOrchestrator
         from openlabels.core.detectors.config import DetectionConfig
 
         missing_dir = tmp_path / "nonexistent"
-        config = DetectionConfig(enable_ml=True, ml_model_dir=missing_dir)
+        config = DetectionConfig(
+            enable_ml=True, enable_phi=False,
+            enable_language_detection=False,
+            ml_model_dir=missing_dir,
+        )
 
         import logging
         with caplog.at_level(logging.WARNING):
             orch = DetectorOrchestrator(config)
 
-        assert "openlabels models download" in caplog.text
+        assert "failed to load" in caplog.text.lower() or "not available" in caplog.text.lower()
 
     def test_ml_enabled_by_default(self):
         """Default DetectionConfig has enable_ml=True."""

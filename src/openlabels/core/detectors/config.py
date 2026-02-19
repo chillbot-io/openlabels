@@ -27,6 +27,11 @@ class DetectionConfig:
     # Accelerated detection
     enable_hyperscan: bool = False
 
+    # Language-gated detection: auto-detect language and route to
+    # the appropriate detector subset (skip English-only models on
+    # non-English text, activate multilingual GLiNER where appropriate).
+    enable_language_detection: bool = True
+
     # ML detectors
     enable_ml: bool = True
     enable_spacy_ner: bool = False
