@@ -91,8 +91,8 @@ class DetectionConfig:
         ("FACILITY", 0.80),
         # PHI name types — clinical model's priors don't match general text;
         # require higher confidence than GLiNER name types.
-        ("NAME_PATIENT", 0.60),
-        ("NAME_PROVIDER", 0.60),
+        ("NAME_PATIENT", 0.70),
+        ("NAME_PROVIDER", 0.70),
         # Honorifics — structurally reliable when detected
         ("PREFIX", 0.65),
         # Ambiguous — higher threshold to reduce FP
