@@ -65,6 +65,9 @@ class DetectorOrchestrator:
         if self.config.enable_ml:
             self._init_ml_detectors(self.config.ml_model_dir, self.config.use_onnx)
 
+        if self.config.enable_phi:
+            self._init_phi_detector()
+
         if self.config.enable_multilingual:
             self._init_multilingual_gliner()
 
@@ -125,6 +128,23 @@ class DetectorOrchestrator:
 
         except ImportError as e:
             logger.warning("GLiNER detector not available: %s", e)
+
+    def _init_phi_detector(self) -> None:
+        """Initialize Stanford PHI de-identification detector."""
+        try:
+            from .phi_detector import StanfordPHIDetector
+
+            phi = StanfordPHIDetector(
+                threshold=self.config.phi_threshold,
+            )
+            if phi.load():
+                self.detectors.append(phi)
+                logger.info("Stanford PHI detector loaded: %s", self.config.phi_model)
+            else:
+                logger.warning("Stanford PHI detector failed to load")
+
+        except ImportError as e:
+            logger.warning("Stanford PHI detector not available: %s", e)
 
     def _init_multilingual_gliner(self) -> None:
         """Initialize multilingual GLiNER detector (9 EU languages)."""

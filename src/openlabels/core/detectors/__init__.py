@@ -10,10 +10,7 @@ Detectors:
 
 ML Detectors (optional, require additional dependencies):
 - GLiNERDetector: Gretel GLiNER PII detector (Apache-2.0, zero-shot NER)
-- PHIBertDetector: Stanford Clinical PHI-BERT (HuggingFace) [legacy]
-- PIIBertDetector: AI4Privacy PII-BERT (HuggingFace) [legacy]
-- PHIBertONNXDetector: Stanford Clinical PHI-BERT (ONNX optimized) [legacy]
-- PIIBertONNXDetector: AI4Privacy PII-BERT (ONNX optimized) [legacy]
+- StanfordPHIDetector: Stanford Clinical De-identifier (PubMedBERT, PHI NER)
 """
 
 import logging
@@ -25,7 +22,6 @@ from .config import DetectionConfig
 from .dictionary_names import DictionaryNameDetector
 from .financial import FinancialDetector
 from .government import GovernmentDetector
-from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
 from .orchestrator import DetectorOrchestrator, detect
 from .patterns import PatternDetector
 from .registry import (
@@ -59,9 +55,6 @@ __all__ = [
     # Orchestration
     "DetectorOrchestrator",
     "detect",
-    # Labels
-    "PHI_BERT_LABELS",
-    "PII_BERT_LABELS",
 ]
 
 logger = logging.getLogger(__name__)
@@ -88,40 +81,22 @@ except ImportError:
     # Hyperscan not installed - SIMD acceleration unavailable
     logger.debug("Hyperscan library not available - using standard pattern matching")
 
-# ML Detectors - optional imports (require numpy, onnxruntime, transformers)
-# Import these explicitly when needed, e.g.:
-#   from openlabels.core.detectors.ml import PHIBertDetector
-#   from openlabels.core.detectors.ml_onnx import PHIBertONNXDetector
+# Stanford PHI Detector - optional (requires transformers)
 try:
-    from .ml import (
-        MLDetector,
-        PHIBertDetector,
-        PIIBertDetector,
-        get_device,
-        get_device_info,
-    )
-    __all__.extend([
-        "MLDetector",
-        "PHIBertDetector",
-        "PIIBertDetector",
-        "get_device",
-        "get_device_info",
-    ])
+    from .phi_detector import StanfordPHIDetector
+    __all__.append("StanfordPHIDetector")
 except ImportError:
-    # ML detectors require transformers/torch - optional feature
-    logger.debug("ML detectors not available - transformers/torch not installed")
+    logger.debug("Stanford PHI detector not available - transformers not installed")
+
+# ML utilities - optional (require onnxruntime)
+try:
+    from .ml import MLDetector, get_device, get_device_info
+    __all__.extend(["MLDetector", "get_device", "get_device_info"])
+except ImportError:
+    logger.debug("ML utilities not available - onnxruntime not installed")
 
 try:
-    from .ml_onnx import (
-        ONNXDetector,
-        PHIBertONNXDetector,
-        PIIBertONNXDetector,
-    )
-    __all__.extend([
-        "ONNXDetector",
-        "PHIBertONNXDetector",
-        "PIIBertONNXDetector",
-    ])
+    from .ml_onnx import ONNXDetector
+    __all__.append("ONNXDetector")
 except ImportError:
-    # ONNX detectors require onnxruntime - optional feature
-    logger.debug("ONNX detectors not available - onnxruntime not installed")
+    logger.debug("ONNX detector base not available - onnxruntime not installed")

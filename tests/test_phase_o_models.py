@@ -26,14 +26,13 @@ class TestModelRegistry:
     def test_registry_has_expected_models(self):
         from openlabels.core.detectors.model_registry import get_registry
         registry = get_registry()
-        assert "phi_bert" in registry
-        assert "pii_bert" in registry
+        assert "phi" in registry
         assert "ocr" in registry
 
     def test_model_spec_fields(self):
         from openlabels.core.detectors.model_registry import get_model_spec
-        spec = get_model_spec("phi_bert")
-        assert spec.name == "phi_bert"
+        spec = get_model_spec("phi")
+        assert spec.name == "phi"
         assert spec.repo_id  # Non-empty HuggingFace repo ID
         assert len(spec.files) > 0
         assert spec.description
@@ -45,27 +44,25 @@ class TestModelRegistry:
 
     def test_resolve_names_concrete(self):
         from openlabels.core.detectors.model_registry import resolve_names
-        assert resolve_names(["phi_bert"]) == ["phi_bert"]
-        assert resolve_names(["phi_bert", "ocr"]) == ["phi_bert", "ocr"]
+        assert resolve_names(["phi"]) == ["phi"]
+        assert resolve_names(["phi", "ocr"]) == ["phi", "ocr"]
 
     def test_resolve_names_alias_all(self):
         from openlabels.core.detectors.model_registry import resolve_names
         resolved = resolve_names(["all"])
-        assert "phi_bert" in resolved
-        assert "pii_bert" in resolved
+        assert "phi" in resolved
         assert "ocr" in resolved
 
-    def test_resolve_names_alias_ner(self):
+    def test_resolve_names_alias_ml(self):
         from openlabels.core.detectors.model_registry import resolve_names
-        resolved = resolve_names(["ner"])
-        assert "phi_bert" in resolved
-        assert "pii_bert" in resolved
+        resolved = resolve_names(["ml"])
+        assert "phi" in resolved
         assert "ocr" not in resolved
 
     def test_resolve_names_deduplicates(self):
         from openlabels.core.detectors.model_registry import resolve_names
-        resolved = resolve_names(["ner", "phi_bert"])
-        assert resolved.count("phi_bert") == 1
+        resolved = resolve_names(["ml", "phi"])
+        assert resolved.count("phi") == 1
 
     def test_resolve_names_unknown_raises(self):
         from openlabels.core.detectors.model_registry import resolve_names
@@ -74,37 +71,41 @@ class TestModelRegistry:
 
     def test_is_installed_empty_dir(self, tmp_path):
         from openlabels.core.detectors.model_registry import get_model_spec
-        spec = get_model_spec("phi_bert")
+        spec = get_model_spec("phi")
         assert not spec.is_installed(tmp_path)
 
     def test_is_installed_with_files(self, tmp_path):
         from openlabels.core.detectors.model_registry import get_model_spec
-        spec = get_model_spec("phi_bert")
-        # Create all required files (using alternatives — INT8 covers the ONNX group)
-        (tmp_path / "phi_bert_int8.onnx").write_bytes(b"fake")
-        (tmp_path / "phi_bert.tokenizer.json").write_text("{}")
-        (tmp_path / "phi_bert.labels.json").write_text("{}")
+        spec = get_model_spec("phi")
+        # Create the stanford_phi/ subdirectory with required files
+        phi_dir = tmp_path / "stanford_phi"
+        phi_dir.mkdir()
+        (phi_dir / "pytorch_model.bin").write_bytes(b"fake")
+        (phi_dir / "config.json").write_text("{}")
+        (phi_dir / "vocab.txt").write_text("vocab")
+        (phi_dir / "special_tokens_map.json").write_text("{}")
+        (phi_dir / "tokenizer_config.json").write_text("{}")
         assert spec.is_installed(tmp_path)
 
-    def test_is_installed_alternative_satisfied(self, tmp_path):
-        """INT8 model satisfies the ONNX model alternative group."""
+    def test_is_installed_missing_weights(self, tmp_path):
+        """Missing weight files means not installed."""
         from openlabels.core.detectors.model_registry import get_model_spec
-        spec = get_model_spec("phi_bert")
-        # Only INT8 present (not full-precision)
-        (tmp_path / "phi_bert_int8.onnx").write_bytes(b"fake")
-        (tmp_path / "phi_bert.tokenizer.json").write_text("{}")
-        (tmp_path / "phi_bert.labels.json").write_text("{}")
-        assert spec.is_installed(tmp_path)
+        spec = get_model_spec("phi")
+        phi_dir = tmp_path / "stanford_phi"
+        phi_dir.mkdir()
+        (phi_dir / "config.json").write_text("{}")
+        (phi_dir / "vocab.txt").write_text("vocab")
+        # No pytorch_model.bin
+        assert not spec.is_installed(tmp_path)
 
     def test_get_missing_files(self, tmp_path):
         from openlabels.core.detectors.model_registry import get_model_spec
-        spec = get_model_spec("phi_bert")
+        spec = get_model_spec("phi")
         missing = spec.get_missing_files(tmp_path)
         assert len(missing) > 0
-        # Should mention at least the ONNX model and tokenizer
+        # Should mention model weights and config
         filenames = " ".join(missing)
-        assert "onnx" in filenames
-        assert "tokenizer" in filenames
+        assert "pytorch_model.bin" in filenames or "config.json" in filenames
 
     def test_ocr_install_dir(self, tmp_path):
         from openlabels.core.detectors.model_registry import get_model_spec
@@ -245,8 +246,7 @@ class TestModelsCLI:
 
         result = cli_runner.invoke(models, ["list", "--models-dir", str(tmp_path)])
         assert result.exit_code == 0
-        assert "phi_bert" in result.output
-        assert "pii_bert" in result.output
+        assert "phi" in result.output
         assert "ocr" in result.output
         assert "MISSING" in result.output
 
@@ -361,9 +361,8 @@ class TestPhaseOSourceChecks:
         assert "huggingface_hub" in src
 
     def test_model_registry_has_all_models(self):
-        """Registry includes phi_bert, pii_bert, ocr."""
+        """Registry includes phi and ocr."""
         src = Path("src/openlabels/core/detectors/model_registry.py").read_text()
-        assert '"phi_bert"' in src
-        assert '"pii_bert"' in src
+        assert '"phi"' in src
         assert '"ocr"' in src
-        assert "chillbot-io" in src  # HF org prefix
+        assert "StanfordAIMI" in src or "stanford" in src.lower()  # HF repo

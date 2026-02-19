@@ -264,8 +264,8 @@ class TestDetectEscalationFlow:
         stage1_spans: List[Span],
         ml_spans: List[Span] = None,
         medical: bool = False,
-        phi_spans: List[Span] = None,
-        pii_spans: List[Span] = None,
+        stanford_phi_spans: List[Span] = None,
+        gliner_spans: List[Span] = None,
     ) -> TieredPipeline:
         """Build a pipeline with fully mocked Stage 1 + ML detectors."""
         p = _minimal_pipeline(auto_detect_medical=medical, enable_policy_evaluation=False)
@@ -278,17 +278,16 @@ class TestDetectEscalationFlow:
         if ml_spans is not None:
             mock_ml = _make_mock_detector("mock_ml", ml_spans)
             p._ml_detectors = [mock_ml]
-            p._pii_bert = mock_ml
 
-        if phi_spans is not None:
-            p._phi_bert = _make_mock_detector("mock_phi_bert", phi_spans)
-            if p._phi_bert not in p._ml_detectors:
-                p._ml_detectors.append(p._phi_bert)
+        if stanford_phi_spans is not None:
+            mock_phi = _make_mock_detector("mock_stanford_phi", stanford_phi_spans)
+            if mock_phi not in p._ml_detectors:
+                p._ml_detectors.append(mock_phi)
 
-        if pii_spans is not None:
-            p._pii_bert = _make_mock_detector("mock_pii_bert", pii_spans)
-            if p._pii_bert not in p._ml_detectors:
-                p._ml_detectors.append(p._pii_bert)
+        if gliner_spans is not None:
+            mock_gliner = _make_mock_detector("mock_gliner", gliner_spans)
+            if mock_gliner not in p._ml_detectors:
+                p._ml_detectors.append(mock_gliner)
 
         return p
 
@@ -315,7 +314,6 @@ class TestDetectEscalationFlow:
         p = _minimal_pipeline()
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span])]
         p._ml_detectors = [ml_detector]
-        p._pii_bert = ml_detector
 
         result = p.detect("SSN: 123-45-6789")
         assert PipelineStage.ML_ESCALATION not in result.stages_executed
@@ -324,28 +322,28 @@ class TestDetectEscalationFlow:
         ml_detector.detect.assert_not_called()
 
     def test_medical_context_triggers_deep_analysis(self):
-        """When medical context is detected and dual BERT is enabled, Stage 3 runs."""
+        """When medical context is detected and deep analysis is enabled, Stage 3 runs."""
         s1_span = _make_span("123-45-6789", confidence=0.99, entity_type="SSN")
-        phi_span = _make_span("John Smith", start=15, entity_type="NAME_PATIENT", confidence=0.91, detector="phi_bert", tier=Tier.ML)
-        pii_span = _make_span("john@email.com", start=30, entity_type="EMAIL", confidence=0.88, detector="pii_bert", tier=Tier.ML)
+        phi_span = _make_span("John Smith", start=15, entity_type="NAME_PATIENT", confidence=0.91, detector="stanford_phi", tier=Tier.ML)
+        gliner_span = _make_span("john@email.com", start=30, entity_type="EMAIL", confidence=0.88, detector="gliner", tier=Tier.ML)
 
         text = "SSN: 123-45-6789 John Smith john@email.com patient diagnosis"
         p = self._pipeline_with_mock_stages(
             [s1_span],
             medical=True,
-            phi_spans=[phi_span],
-            pii_spans=[pii_span],
+            stanford_phi_spans=[phi_span],
+            gliner_spans=[gliner_span],
         )
         p._medical_detector = MagicMock()
         p._medical_detector.has_medical_context.return_value = True
-        p.config.medical_triggers_dual_bert = True
+        p.config.medical_triggers_deep_analysis = True
 
         result = p.detect(text)
         assert result.medical_context_detected is True
         assert PipelineStage.DEEP_ANALYSIS in result.stages_executed
 
-    def test_medical_context_without_dual_bert_uses_stage2(self):
-        """When medical_triggers_dual_bert=False, standard ML escalation is used instead."""
+    def test_medical_context_without_deep_analysis_uses_stage2(self):
+        """When medical_triggers_deep_analysis=False, standard ML escalation is used instead."""
         s1_span = _make_span("test", entity_type="EMAIL", confidence=0.99, detector="pattern", tier=Tier.PATTERN)
         ml_span = _make_span("John", start=10, entity_type="NAME", confidence=0.85, detector="ml", tier=Tier.ML)
 
@@ -353,11 +351,10 @@ class TestDetectEscalationFlow:
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span])]
         p._medical_detector = MagicMock()
         p._medical_detector.has_medical_context.return_value = True
-        p.config.medical_triggers_dual_bert = False
+        p.config.medical_triggers_deep_analysis = False
 
         mock_ml = _make_mock_detector("mock_ml", [ml_span])
         p._ml_detectors = [mock_ml]
-        p._pii_bert = mock_ml
 
         result = p.detect("test text  John")
         assert result.medical_context_detected is True
@@ -608,8 +605,7 @@ class TestMLLoading:
         """Without eager_load_ml, ML detectors are empty at init."""
         p = _minimal_pipeline(eager_load_ml=False)
         assert p._ml_detectors == []
-        assert p._phi_bert is None
-        assert p._pii_bert is None
+        assert p._gliner is None
 
     def test_eager_load_calls_init_ml_at_startup(self):
         """With eager_load_ml=True, _init_ml_detectors is called during __init__."""
@@ -807,7 +803,6 @@ class TestPipelineResult:
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span])]
         mock_ml = _make_mock_detector("mock_ml", [ml_span])
         p._ml_detectors = [mock_ml]
-        p._pii_bert = mock_ml
 
         result = p.detect("test text John")
         assert PipelineStage.FAST_TRIAGE in result.stages_executed
@@ -864,7 +859,6 @@ class TestErrorHandling:
         p = _minimal_pipeline()
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span])]
         p._ml_detectors = [broken_ml]
-        p._pii_bert = broken_ml
 
         result = p.detect("x")
         # Pipeline should not crash; Stage 1 + escalation attempted
@@ -1005,8 +999,7 @@ class TestConvenienceFunctions:
         p = _minimal_pipeline()
         status = p.get_ml_status()
         assert status["ml_loaded"] is False
-        assert status["phi_bert"] is None
-        assert status["pii_bert"] is None
+        assert status["gliner"] is None
         assert status["detectors"] == []
 
 
@@ -1083,7 +1076,6 @@ class TestRegressionBugs:
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span, s1_span_low])]
         mock_ml = _make_mock_detector("ml", [ml_span])
         p._ml_detectors = [mock_ml]
-        p._pii_bert = mock_ml
 
         result = p.detect("SSN: 123-45-6789    maybe-name Definitely Name")
         entity_types = {s.entity_type for s in result.spans}
@@ -1136,35 +1128,32 @@ class TestRegressionBugs:
         p._stage1_detectors = [_make_mock_detector("s1", [span])]
         ml_det = _make_mock_detector("shouldnt_run")
         p._ml_detectors = [ml_det]
-        p._pii_bert = ml_det
 
         result = p.detect("sk_test_abc123")
         assert PipelineStage.ML_ESCALATION not in result.stages_executed
         ml_det.detect.assert_not_called()
 
-    def test_deep_analysis_runs_both_phi_and_pii_bert(self):
+    def test_deep_analysis_runs_all_ml_detectors(self):
         """
-        Both PHI-BERT and PII-BERT must be invoked during deep analysis.
-        A bug could skip one of them.
+        All ML detectors (e.g., GLiNER, Stanford PHI) must be invoked during
+        deep analysis. A bug could skip one of them.
         """
         s1_span = _make_span("test", entity_type="SSN", confidence=0.99)
-        phi_span = _make_span("Patient", start=10, entity_type="NAME_PATIENT", confidence=0.92, detector="phi_bert", tier=Tier.ML)
-        pii_span = _make_span("john@x.com", start=25, entity_type="EMAIL", confidence=0.88, detector="pii_bert", tier=Tier.ML)
+        phi_span = _make_span("Patient", start=10, entity_type="NAME_PATIENT", confidence=0.92, detector="stanford_phi", tier=Tier.ML)
+        gliner_span = _make_span("john@x.com", start=25, entity_type="EMAIL", confidence=0.88, detector="gliner", tier=Tier.ML)
 
-        phi_det = _make_mock_detector("phi_bert_onnx", [phi_span])
-        pii_det = _make_mock_detector("pii_bert_onnx", [pii_span])
+        phi_det = _make_mock_detector("stanford_phi", [phi_span])
+        gliner_det = _make_mock_detector("gliner", [gliner_span])
 
         p = _minimal_pipeline(auto_detect_medical=True, enable_policy_evaluation=False, confidence_threshold=0.0)
         p._stage1_detectors = [_make_mock_detector("s1", [s1_span])]
-        p._phi_bert = phi_det
-        p._pii_bert = pii_det
-        p._ml_detectors = [phi_det, pii_det]
+        p._ml_detectors = [phi_det, gliner_det]
         p._medical_detector = MagicMock()
         p._medical_detector.has_medical_context.return_value = True
-        p.config.medical_triggers_dual_bert = True
+        p.config.medical_triggers_deep_analysis = True
 
         result = p.detect("test data Patient Name john@x.com")
         assert PipelineStage.DEEP_ANALYSIS in result.stages_executed
         # Both detectors should have been called
         phi_det.detect.assert_called_once()
-        pii_det.detect.assert_called_once()
+        gliner_det.detect.assert_called_once()

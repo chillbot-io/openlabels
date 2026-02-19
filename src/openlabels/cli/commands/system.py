@@ -126,18 +126,15 @@ def status(server: str, token: str | None) -> None:
 
         # Check ML models
         from openlabels.core.constants import DEFAULT_MODELS_DIR
-        phi_bert = (DEFAULT_MODELS_DIR / "phi_bert_int8.onnx").exists() or \
-                   (DEFAULT_MODELS_DIR / "phi_bert.onnx").exists()
-        pii_bert = (DEFAULT_MODELS_DIR / "pii_bert_int8.onnx").exists() or \
-                   (DEFAULT_MODELS_DIR / "pii_bert.onnx").exists()
+        phi_dir = DEFAULT_MODELS_DIR / "stanford_phi"
+        stanford_phi = phi_dir.is_dir() and (phi_dir / "config.json").exists()
         rapidocr = (DEFAULT_MODELS_DIR / "rapidocr" / "det.onnx").exists()
 
         check = "\u2713"
         cross = "\u2717"
         click.echo("\nML Models:")
-        click.echo(f"  PHI-BERT:  {check if phi_bert else cross}")
-        click.echo(f"  PII-BERT:  {check if pii_bert else cross}")
-        click.echo(f"  RapidOCR:  {check if rapidocr else cross}")
+        click.echo(f"  Stanford PHI:  {check if stanford_phi else cross}")
+        click.echo(f"  RapidOCR:      {check if rapidocr else cross}")
 
 
 @click.command()

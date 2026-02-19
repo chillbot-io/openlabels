@@ -134,9 +134,7 @@ OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
 # Structure:
 #   <project_root>/.openlabels/
 #     models/
-#       phi_bert_int8.onnx, phi_bert.tokenizer.json, phi_bert_tokenizer/
-#       pii_bert_int8.onnx, pii_bert.tokenizer.json, pii_bert_tokenizer/
-#       fastcoref.onnx, fastcoref.tokenizer.json, fastcoref_tokenizer/
+#       stanford_phi/ (pytorch_model.bin, config.json, vocab.txt, ...)
 #       rapidocr/ (det.onnx, rec.onnx, cls.onnx)
 #     dictionaries/
 #       diagnoses.txt, drugs.txt, facilities.txt, etc.

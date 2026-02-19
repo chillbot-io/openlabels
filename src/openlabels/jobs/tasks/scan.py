@@ -1161,7 +1161,7 @@ async def _detect_and_score(
     - Secrets detectors (API keys, tokens, credentials)
     - Financial detectors (crypto addresses, securities)
     - Government detectors (classification markings)
-    - Optional ML detectors (PHI-BERT, PII-BERT)
+    - Optional ML detectors (GLiNER, Stanford PHI)
 
     Args:
         content: Raw file bytes

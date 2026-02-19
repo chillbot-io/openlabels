@@ -70,7 +70,7 @@ class BenchmarkConfig:
     use_tiered_pipeline: bool = False
     escalation_threshold: float = 0.70
     auto_detect_medical: bool = False
-    medical_triggers_dual_bert: bool = True
+    medical_triggers_deep_analysis: bool = True
 
     # Evaluation config
     min_overlap_ratio: float = 0.5
@@ -135,7 +135,7 @@ class BenchmarkConfig:
             max_workers=self.max_workers,
             ml_model_dir=ml_dir,
             use_onnx=self.use_onnx,
-            medical_triggers_dual_bert=self.medical_triggers_dual_bert,
+            medical_triggers_deep_analysis=self.medical_triggers_deep_analysis,
             # Eager-load ML for benchmarks so every sample gets ML detection,
             # not just those that trigger escalation.
             eager_load_ml=self.enable_ml,

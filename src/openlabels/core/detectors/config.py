@@ -33,7 +33,7 @@ class DetectionConfig:
     ml_model_dir: Path | None = None
     use_onnx: bool = True
 
-    # GLiNER settings
+    # GLiNER settings (PII detection)
     gliner_model: str = "gretelai/gretel-gliner-bi-base-v1.0"
     gliner_threshold: float = 0.4
     enable_label_selection: bool = True
@@ -42,6 +42,11 @@ class DetectionConfig:
     enable_multilingual: bool = False
     multilingual_gliner_model: str = "E3-JSI/gliner-multi-pii-domains-v1"
     multilingual_gliner_threshold: float = 0.4
+
+    # Stanford PHI detection (clinical de-identification)
+    enable_phi: bool = True
+    phi_model: str = "StanfordAIMI/stanford-deidentifier-base"
+    phi_threshold: float = 0.5
 
     # Post-processing
     enable_coref: bool = False
@@ -94,6 +99,7 @@ class DetectionConfig:
         return cls(
             enable_hyperscan=True,
             enable_ml=True,
+            enable_phi=True,
             enable_multilingual=True,
             enable_spacy_ner=True,
             enable_coref=True,

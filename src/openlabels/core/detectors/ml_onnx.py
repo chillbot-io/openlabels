@@ -26,8 +26,6 @@ from openlabels.exceptions import DetectionError
 from ..constants import BERT_MAX_LENGTH, NAME_CONNECTORS, NON_NAME_WORDS, PRODUCT_CODE_PREFIXES
 from ..types import Span, Tier
 from .base import BaseDetector
-from .labels import PHI_BERT_LABELS, PII_BERT_LABELS
-from .registry import register_detector
 
 logger = logging.getLogger(__name__)
 
@@ -768,27 +766,3 @@ class ONNXDetector(BaseDetector):
         )
 
 
-@register_detector
-class PHIBertONNXDetector(ONNXDetector):
-    """Stanford Clinical PHI-BERT detector (ONNX-optimized)."""
-
-    name = "phi_bert_onnx"
-    label_map = PHI_BERT_LABELS
-
-    def __init__(self, model_dir: Path | None = None):
-        super().__init__(model_dir, model_name="phi_bert")
-        if model_dir:
-            self.load()
-
-
-@register_detector
-class PIIBertONNXDetector(ONNXDetector):
-    """Custom PII-BERT detector (ONNX-optimized)."""
-
-    name = "pii_bert_onnx"
-    label_map = PII_BERT_LABELS
-
-    def __init__(self, model_dir: Path | None = None):
-        super().__init__(model_dir, model_name="pii_bert")
-        if model_dir:
-            self.load()

@@ -6,53 +6,27 @@ for checking which models are present and ready for inference.
 Expected directory layout under the models directory (DEFAULT_MODELS_DIR):
 
     models/
-        phi_bert_int8.onnx          # ONNX model (INT8 quantized, preferred)
-        phi_bert.onnx               # ONNX model (full precision, fallback)
-        phi_bert.tokenizer.json     # Standalone fast tokenizer
-        phi_bert.labels.json        # Label ID to name mapping
-        phi_bert_tokenizer/         # HuggingFace tokenizer dir (fallback)
-            tokenizer.json
-            tokenizer_config.json
+        stanford_phi/                   # Stanford Clinical De-identifier
+            pytorch_model.bin           # Model weights (~438 MB)
+            config.json                 # Model config
+            vocab.txt                   # WordPiece vocabulary
             special_tokens_map.json
-            vocab.txt
-
-        pii_bert_int8.onnx
-        pii_bert.onnx
-        pii_bert.tokenizer.json
-        pii_bert.labels.json
-        pii_bert_tokenizer/
-            tokenizer.json
-            tokenizer_config.json
-            special_tokens_map.json
-            vocab.txt
-
-    For HuggingFace transformers (non-ONNX) mode, each model needs
-    a subdirectory with standard HuggingFace model files:
-
-        phi_bert/
-            config.json
-            pytorch_model.bin or model.safetensors
-            tokenizer.json
             tokenizer_config.json
 
-        pii_bert/
-            config.json
-            pytorch_model.bin or model.safetensors
-            tokenizer.json
-            tokenizer_config.json
+        rapidocr/                       # RapidOCR (PaddleOCR ONNX)
+            det.onnx
+            rec.onnx
+            cls.onnx
 
 How to obtain models:
     Models are not distributed with the package. To use ML detectors:
 
-    1. Download the fine-tuned BERT NER models (PHI-BERT and PII-BERT).
-    2. If using ONNX mode (recommended), export them with:
-           python -m optimum.exporters.onnx --model <model_dir> <output_dir>
-       Then quantize to INT8 with:
-           python -m onnxruntime.quantization.preprocess <model.onnx> <preprocessed.onnx>
-           python scripts/quantize_onnx.py <preprocessed.onnx> <model_int8.onnx>
-    3. Export standalone tokenizers with:
-           python scripts/export_tokenizers.py
-    4. Place all files under DEFAULT_MODELS_DIR (typically .openlabels/models/).
+    1. Download models via CLI:
+           openlabels models download all
+           openlabels models download phi     # Stanford PHI detector only
+           openlabels models download ocr     # OCR models only
+    2. Models are fetched from HuggingFace Hub and placed under
+       DEFAULT_MODELS_DIR (typically .openlabels/models/).
 """
 
 from __future__ import annotations
@@ -66,33 +40,11 @@ from ..constants import DEFAULT_MODELS_DIR
 logger = logging.getLogger(__name__)
 
 
-# Model names and their required files for each backend
-ONNX_MODEL_SPECS = {
-    "phi_bert": {
-        "onnx_files": ["phi_bert_int8.onnx", "phi_bert.onnx"],  # first found wins
-        "tokenizer_files": ["phi_bert.tokenizer.json"],  # standalone fast tokenizer
-        "tokenizer_dir": "phi_bert_tokenizer",  # fallback HF tokenizer dir
-        "labels_file": "phi_bert.labels.json",
-    },
-    "pii_bert": {
-        "onnx_files": ["pii_bert_int8.onnx", "pii_bert.onnx"],
-        "tokenizer_files": ["pii_bert.tokenizer.json"],
-        "tokenizer_dir": "pii_bert_tokenizer",
-        "labels_file": "pii_bert.labels.json",
-    },
-}
-
-HF_MODEL_SPECS = {
-    "phi_bert": {
-        "subdir": "phi_bert",
-        "required_files": ["config.json"],
-        "weight_files": ["pytorch_model.bin", "model.safetensors"],  # any one
-    },
-    "pii_bert": {
-        "subdir": "pii_bert",
-        "required_files": ["config.json"],
-        "weight_files": ["pytorch_model.bin", "model.safetensors"],
-    },
+# Model specs for availability checking
+PHI_MODEL_SPEC = {
+    "subdir": "stanford_phi",
+    "required_files": ["config.json", "vocab.txt"],
+    "weight_files": ["pytorch_model.bin", "model.safetensors"],
 }
 
 
@@ -103,7 +55,7 @@ class ModelStatus:
     available: bool
     path: Path | None = None
     missing_files: list[str] = field(default_factory=list)
-    backend: str = "unknown"  # "onnx" or "hf"
+    backend: str = "unknown"
 
 
 @dataclass
@@ -133,42 +85,16 @@ class ModelsReport:
         return "\n".join(lines)
 
 
-def get_model_paths(
-    model_dir: Path | None = None,
-) -> dict[str, Path]:
-    """Return expected paths for phi_bert and pii_bert model directories.
-
-    Args:
-        model_dir: Base models directory. Defaults to DEFAULT_MODELS_DIR.
-
-    Returns:
-        Dict mapping model name to its expected path. For ONNX mode, this
-        is the base model_dir (models are flat files). For HF mode, this
-        is the model subdirectory.
-    """
-    base = Path(model_dir) if model_dir else DEFAULT_MODELS_DIR
-
-    return {
-        "phi_bert": base,  # ONNX files are flat in models dir
-        "pii_bert": base,
-        "phi_bert_hf": base / "phi_bert",   # HF subdirectory
-        "pii_bert_hf": base / "pii_bert",
-    }
-
-
 def check_models_available(
     model_dir: Path | None = None,
     use_onnx: bool = True,
 ) -> ModelsReport:
     """Check which ML models are present and ready for use.
 
-    Inspects the model directory for expected files and reports
-    which models are available and which files are missing.
-
     Args:
         model_dir: Base models directory. Defaults to DEFAULT_MODELS_DIR.
-        use_onnx: If True, check for ONNX model files. If False, check
-                  for HuggingFace transformers model files.
+        use_onnx: Ignored (kept for API compatibility). PHI model uses
+                  HuggingFace transformers backend.
 
     Returns:
         ModelsReport with per-model availability status.
@@ -182,67 +108,38 @@ def check_models_available(
     )
 
     if not base.exists():
-        # Report all models as missing with the directory itself as the issue
-        for name in ["phi_bert", "pii_bert"]:
-            report.models[name] = ModelStatus(
-                name=name,
-                available=False,
-                missing_files=[f"directory {base} does not exist"],
-                backend="onnx" if use_onnx else "hf",
-            )
+        report.models["phi"] = ModelStatus(
+            name="phi",
+            available=False,
+            missing_files=[f"directory {base} does not exist"],
+            backend="hf",
+        )
         return report
 
-    if use_onnx:
-        specs = ONNX_MODEL_SPECS
-        for name, spec in specs.items():
-            missing = []
+    # Check Stanford PHI model
+    spec = PHI_MODEL_SPEC
+    missing = []
+    subdir = base / spec["subdir"]
 
-            # Check ONNX model file (any variant)
-            has_onnx = any((base / f).exists() for f in spec["onnx_files"])
-            if not has_onnx:
-                missing.append(f"model file (one of: {', '.join(spec['onnx_files'])})")
-
-            # Check tokenizer (standalone or HF dir)
-            has_tokenizer = any((base / f).exists() for f in spec["tokenizer_files"])
-            has_tokenizer_dir = (base / spec["tokenizer_dir"]).is_dir()
-            if not has_tokenizer and not has_tokenizer_dir:
-                missing.append(
-                    f"tokenizer ({' or '.join(spec['tokenizer_files'])} "
-                    f"or {spec['tokenizer_dir']}/ directory)"
-                )
-
-            report.models[name] = ModelStatus(
-                name=name,
-                available=len(missing) == 0,
-                path=base if len(missing) == 0 else None,
-                missing_files=missing,
-                backend="onnx",
-            )
+    if not subdir.is_dir():
+        missing.append(f"directory {subdir}")
     else:
-        specs = HF_MODEL_SPECS
-        for name, spec in specs.items():
-            missing = []
-            subdir = base / spec["subdir"]
+        for req in spec["required_files"]:
+            if not (subdir / req).exists():
+                missing.append(req)
 
-            if not subdir.is_dir():
-                missing.append(f"directory {subdir}")
-            else:
-                for req in spec["required_files"]:
-                    if not (subdir / req).exists():
-                        missing.append(req)
-
-                has_weights = any((subdir / w).exists() for w in spec["weight_files"])
-                if not has_weights:
-                    missing.append(
-                        f"weights (one of: {', '.join(spec['weight_files'])})"
-                    )
-
-            report.models[name] = ModelStatus(
-                name=name,
-                available=len(missing) == 0,
-                path=subdir if len(missing) == 0 else None,
-                missing_files=missing,
-                backend="hf",
+        has_weights = any((subdir / w).exists() for w in spec["weight_files"])
+        if not has_weights:
+            missing.append(
+                f"weights (one of: {', '.join(spec['weight_files'])})"
             )
+
+    report.models["phi"] = ModelStatus(
+        name="phi",
+        available=len(missing) == 0,
+        path=subdir if len(missing) == 0 else None,
+        missing_files=missing,
+        backend="hf",
+    )
 
     return report

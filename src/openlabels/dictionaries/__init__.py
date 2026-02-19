@@ -188,7 +188,7 @@ class DictionaryLoader:
         Check if text contains indicators of medical/healthcare context.
 
         This is used by the tiered pipeline to determine when to escalate
-        to PHI-BERT + PII-BERT processing.
+        to ML-based PHI/PII processing.
 
         Args:
             text: Text to analyze

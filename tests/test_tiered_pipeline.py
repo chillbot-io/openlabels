@@ -44,7 +44,7 @@ def medical_config():
     """Configuration with medical detection enabled."""
     return PipelineConfig(
         auto_detect_medical=True,
-        medical_triggers_dual_bert=True,
+        medical_triggers_deep_analysis=True,
         enable_coref=False,
     )
 
@@ -97,7 +97,7 @@ class TestPipelineConfig:
 
         assert config.escalation_threshold == ESCALATION_THRESHOLD
         assert config.auto_detect_medical is True
-        assert config.medical_triggers_dual_bert is True
+        assert config.medical_triggers_deep_analysis is True
         assert config.enable_checksum is True
         assert config.enable_secrets is True
         assert config.enable_financial is True
@@ -418,8 +418,8 @@ class TestSpanValidation:
         # Known detector names from the orchestrator
         known_detectors = {
             "checksum", "secrets", "financial", "government",
-            "pattern", "patterns", "ml", "ner", "onnx",
-            "phi_bert_onnx", "pii_bert_onnx", "hyperscan",
+            "pattern", "patterns", "ml", "onnx",
+            "stanford_phi", "gliner", "hyperscan",
             "additional_patterns",
         }
 
