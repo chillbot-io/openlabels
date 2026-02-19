@@ -261,6 +261,12 @@ class DetectorOrchestrator:
             except (RuntimeError, ValueError, IndexError) as e:
                 logger.error(f"Coreference resolution failed: {e}")
 
+        # Suppress pronouns detected as NAME-family entities.  The PHI model
+        # (trained for Safe Harbor de-identification) and the coref resolver
+        # both produce pronoun spans — but bare pronouns are not PII.
+        if processed_spans:
+            processed_spans = _suppress_pronoun_names(processed_spans)
+
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
@@ -459,6 +465,35 @@ class DetectorOrchestrator:
     def detector_names(self) -> list[str]:
         """Get list of active detector names."""
         return [d.name for d in self.detectors]
+
+
+# ---------------------------------------------------------------------------
+# Pronoun suppression
+# ---------------------------------------------------------------------------
+
+# NAME-family types that can be false-positively assigned to pronouns.
+_NAME_FAMILY = frozenset({
+    "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
+    "FIRSTNAME", "LASTNAME",
+})
+
+# English personal pronouns (lower-cased).  These are never PII by themselves.
+_PRONOUNS = frozenset({
+    "he", "him", "his",
+    "she", "her", "hers",
+    "they", "them", "their", "theirs",
+})
+
+
+def _suppress_pronoun_names(spans: list[Span]) -> list[Span]:
+    """Remove NAME-family spans whose text is just a pronoun."""
+    result: list[Span] = []
+    for span in spans:
+        if span.entity_type in _NAME_FAMILY and span.text.strip().lower() in _PRONOUNS:
+            logger.debug("Pronoun suppressed: %s %r", span.entity_type, span.text)
+            continue
+        result.append(span)
+    return result
 
 
 def detect(
