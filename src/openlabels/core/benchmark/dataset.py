@@ -201,7 +201,14 @@ def _load_multilingual(
     cache_dir: Path,
     cache_path: Path,
 ) -> tuple[list[BenchmarkSample], str]:
-    """Load multilingual samples from HuggingFace, caching locally."""
+    """Load multilingual samples from HuggingFace, caching locally.
+
+    Fallback chain:
+    1. JSONL cache (``ai4privacy_multilingual.jsonl``)
+    2. Download from HuggingFace (requires ``datasets`` package)
+    3. Bundled English-only dataset (partial coverage, with warning)
+    """
+    # 1. Try cache
     if cache_path.exists():
         logger.info("Loading cached multilingual dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
@@ -209,15 +216,41 @@ def _load_multilingual(
             lang_counts = _count_languages(samples)
             logger.info("Multilingual cache: %s", lang_counts)
             return samples, f"cache ({cache_path})"
+        # Cache file exists but is empty/corrupt — remove it so a future
+        # run can re-download cleanly.
+        logger.warning(
+            "Cache at %s returned 0 samples; removing stale file", cache_path,
+        )
+        cache_path.unlink(missing_ok=True)
 
-    logger.info("Downloading ai4privacy multilingual dataset...")
-    samples = _download_and_cache(
-        cache_dir, cache_path, languages=SUPPORTED_LANGUAGES,
-    )
-    if samples:
-        lang_counts = _count_languages(samples)
-        logger.info("Downloaded multilingual dataset: %s", lang_counts)
-    return samples, f"huggingface multilingual (cached to {cache_path})"
+    # 2. Try downloading from HuggingFace
+    try:
+        logger.info("Downloading ai4privacy multilingual dataset...")
+        samples = _download_and_cache(
+            cache_dir, cache_path, languages=SUPPORTED_LANGUAGES,
+        )
+        if samples:
+            lang_counts = _count_languages(samples)
+            logger.info("Downloaded multilingual dataset: %s", lang_counts)
+        return samples, f"huggingface multilingual (cached to {cache_path})"
+    except ImportError:
+        logger.warning(
+            "The 'datasets' package is not installed — cannot download "
+            "multilingual data from HuggingFace. Install with: "
+            "pip install 'openlabels[benchmark]'"
+        )
+
+    # 3. Fall back to bundled English-only dataset
+    if _BUNDLED_PATH.exists():
+        logger.warning(
+            "Falling back to bundled English-only dataset for multilingual "
+            "benchmark.  Install 'openlabels[benchmark]' and re-run to get "
+            "full multilingual coverage."
+        )
+        samples = _load_bundled(_BUNDLED_PATH)
+        return samples, f"bundled-en-fallback ({_BUNDLED_PATH})"
+
+    return [], "none"
 
 
 def _count_languages(samples: list[BenchmarkSample]) -> dict[str, int]:

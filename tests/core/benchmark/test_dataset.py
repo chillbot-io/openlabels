@@ -13,6 +13,7 @@ import pytest
 from openlabels.core.benchmark.dataset import (
     BenchmarkSample,
     GoldSpan,
+    _load_multilingual,
     _parse_annotations,
     _load_from_cache,
     load_dataset,
@@ -272,3 +273,84 @@ class TestLoadDatasetFiltering:
                 seed=42,
             )
             assert [s.sample_id for s in samples] == [s.sample_id for s in samples2]
+
+
+class TestMultilingualFallback:
+    """Test _load_multilingual fallback chain."""
+
+    def test_multilingual_loads_from_cache(self):
+        """Valid multilingual cache should be loaded directly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            cache_path = cache_dir / "ai4privacy_multilingual.jsonl"
+
+            records = [
+                {
+                    "id": 0,
+                    "text": "Jean Dupont habite à Paris",
+                    "language": "fr",
+                    "spans": [{"start": 0, "end": 11, "text": "Jean Dupont",
+                              "entity_type": "NAME", "original_label": "FIRSTNAME"}],
+                },
+                {
+                    "id": 1,
+                    "text": "John Smith lives in NYC",
+                    "language": "en",
+                    "spans": [{"start": 0, "end": 10, "text": "John Smith",
+                              "entity_type": "NAME", "original_label": "FIRSTNAME"}],
+                },
+            ]
+            with open(cache_path, "w") as f:
+                for r in records:
+                    f.write(json.dumps(r) + "\n")
+
+            samples, source = _load_multilingual(cache_dir, cache_path)
+
+            assert len(samples) == 2
+            assert "cache" in source
+            assert samples[0].language == "fr"
+            assert samples[1].language == "en"
+
+    def test_multilingual_removes_empty_cache(self):
+        """Empty cache file should be removed so re-download can succeed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            cache_path = cache_dir / "ai4privacy_multilingual.jsonl"
+
+            # Create empty cache file
+            cache_path.touch()
+            assert cache_path.exists()
+
+            # _load_multilingual should remove the empty cache and fall back
+            # to bundled English data (since datasets isn't installed)
+            samples, source = _load_multilingual(cache_dir, cache_path)
+
+            assert not cache_path.exists(), "Empty cache file should have been removed"
+            assert len(samples) > 0, "Should fall back to bundled English data"
+            assert "bundled" in source
+
+    def test_multilingual_falls_back_to_bundled_without_datasets(self):
+        """Without datasets package and no cache, should fall back to bundled."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            cache_path = cache_dir / "ai4privacy_multilingual.jsonl"
+            # No cache file exists, datasets not installed → bundled fallback
+
+            samples, source = _load_multilingual(cache_dir, cache_path)
+
+            assert len(samples) > 0, "Should fall back to bundled English data"
+            assert "bundled" in source
+
+    def test_multilingual_fallback_integrates_with_load_dataset(self):
+        """load_dataset(multilingual=True) should not crash without datasets."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # No cache, no datasets package → should fall back to bundled
+            samples, source = load_dataset(
+                cache_dir=Path(tmpdir),
+                multilingual=True,
+                sample_size=5,
+            )
+
+            assert len(samples) == 5
+            # All samples from bundled are English
+            assert all(s.language == "en" for s in samples)
