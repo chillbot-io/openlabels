@@ -196,7 +196,7 @@ async def get_health_status(
                 logger.info("GLiNER detector not available")
 
             try:
-                from openlabels.core.detectors.phi_detector import StanfordPHIDetector  # noqa: F811
+                from openlabels.core.detectors.phi_detector import StanfordPHIDetector  # noqa: F401
                 from openlabels.core.constants import DEFAULT_MODELS_DIR
                 phi_dir = DEFAULT_MODELS_DIR / "stanford_phi"
                 if phi_dir.is_dir() and (phi_dir / "config.json").exists():

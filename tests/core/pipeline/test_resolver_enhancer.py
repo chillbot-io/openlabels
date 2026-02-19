@@ -1049,18 +1049,19 @@ class TestEnhanceBatchOrchestration:
         kept = enhancer.enhance(text, [span])
         assert len(kept) == 0
 
-    def test_ml_tier_mrn_with_digits_rejected_by_patterns(self):
-        """ML-tier numeric MRN is rejected by contains_digits pattern.
+    def test_ml_tier_mrn_with_digits_not_rejected(self):
+        """ML-tier numeric MRN is NOT rejected by contains_digits pattern.
 
-        This verifies the actual production behaviour: numeric MRNs at ML tier
-        are caught by the pattern stage because the digit check was designed
-        to filter NAMEs but applies to all enhanced types.
+        MRN, HEALTH_PLAN_ID, EMPLOYEE_ID, DEVICE_ID inherently contain digits,
+        so the digit-check (designed to filter NAME-like entities) is skipped
+        for these types.
         """
         enhancer = ContextEnhancer()
         span = make_span("789012", entity_type="MRN", confidence=0.90, tier=Tier.ML)
         text = "Record 789012 found"
         kept = enhancer.enhance(text, [span])
-        assert len(kept) == 0
+        assert len(kept) == 1
+        assert kept[0].entity_type == "MRN"
 
 
 class TestContextEnhancerEdgeCases:
