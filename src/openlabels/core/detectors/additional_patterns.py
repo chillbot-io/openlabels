@@ -300,9 +300,17 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(CERT-\d{4,12})\b",
         "CERTIFICATE_NUMBER", 0.90, 1, flags=0
     ),
-    # CERTIFICATE_NUMBER — labeled context
+    # CERTIFICATE_NUMBER — "LIC-" prefix: "LIC-R7875623", "LIC-C721226"
     _p(
-        r"\b(?:certificate|cert)\s*(?:#|no\.?|number)?\s*[:\s#]*([A-Z0-9]{5,15})\b",
+        r"\b(LIC-[A-Z]?\d{5,12})\b",
+        "CERTIFICATE_NUMBER", 0.88, 1, flags=0
+    ),
+    # CERTIFICATE_NUMBER — labeled context
+    # Require mandatory keyword (number/#/no.) to prevent matching "certificate <word>".
+    # Use \b after "cert" to prevent matching prefix of "certificate".
+    # Lookahead requires at least one digit in the value to exclude plain words.
+    _p(
+        r"\b(?:certificate|cert\b)\.?\s*(?:#|no\.?|number)\s*[:\s#]*((?=[A-Z0-9-]*\d)[A-Z0-9][-A-Z0-9]{4,19})\b",
         "CERTIFICATE_NUMBER", 0.82, 1, flags=re.IGNORECASE
     ),
 
@@ -330,13 +338,14 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
 
     # DEVICE_ID — labeled context for numeric device identifiers
     # Prevents 15-digit device IDs from being misclassified as CREDIT_CARD
+    # Use identifier|id\b (longest first + word boundary) to prevent "id" matching prefix of "identifier"
     _p(
-        r"\b(?:device\s+(?:id|identifier|serial)|serial\s+(?:number|#|no\.?))\s*[:\s#]*(\d{10,20})\b",
+        r"\b(?:device\s+(?:identifier|serial|id\b)|serial\s+(?:number|#|no\.?))\s*[:\s#]*(\d{10,20})\b",
         "DEVICE_ID", 0.88, 1, flags=re.IGNORECASE
     ),
     # DEVICE_ID — labeled context for alphanumeric
     _p(
-        r"\b(?:device\s+(?:id|identifier)|hardware\s+id)\s*[:\s#]*([A-Z0-9]{8,20})\b",
+        r"\b(?:device\s+(?:identifier|id\b)|hardware\s+id\b)\s*[:\s#]*([A-Z0-9]{8,20})\b",
         "DEVICE_ID", 0.85, 1, flags=re.IGNORECASE
     ),
 )
