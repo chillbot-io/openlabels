@@ -351,16 +351,6 @@ def _show_model_status(config) -> None:
         click.echo(f"  Multilingual GLiNER: E3-JSI/gliner-multi-pii-domains-v1 (language-gated)")
     if getattr(config, "enable_phi", False):
         click.echo(f"  Stanford PHI: {getattr(config, 'phi_model', 'StanfordAIMI/stanford-deidentifier-base')} (English-gated)")
-    if getattr(config, "enable_spacy_ner", False):
-        try:
-            import spacy
-            model = "en_core_web_lg"
-            if spacy.util.is_package(model):
-                click.echo(f"  spaCy NER: {model}")
-            else:
-                click.echo(f"  spaCy NER: {model} (NOT INSTALLED — run: python -m spacy download {model})")
-        except ImportError:
-            click.echo("  spaCy NER: disabled (spacy not installed)")
 
 
 def _cli_progress(current: int, total: int) -> None:

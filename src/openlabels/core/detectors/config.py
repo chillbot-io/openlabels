@@ -34,7 +34,6 @@ class DetectionConfig:
 
     # ML detectors
     enable_ml: bool = True
-    enable_spacy_ner: bool = False
     ml_model_dir: Path | None = None
     use_onnx: bool = True
 
@@ -113,7 +112,6 @@ class DetectionConfig:
             enable_ml=True,
             enable_phi=True,
             enable_multilingual=True,
-            enable_spacy_ner=True,
             enable_coref=True,
             enable_context_enhancement=True,
             enable_context_keywords=True,

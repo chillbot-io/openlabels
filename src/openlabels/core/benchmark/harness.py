@@ -42,7 +42,6 @@ class BenchmarkConfig:
     enable_patterns: bool = True
     enable_ml: bool = False
     enable_phi: bool = False
-    enable_spacy_ner: bool = False
     enable_hyperscan: bool = False
     confidence_threshold: float = 0.70
     max_workers: int = 4
@@ -101,7 +100,6 @@ class BenchmarkConfig:
             enable_language_detection=self.enable_language_detection,
             enable_ml=self.enable_ml,
             enable_phi=self.enable_phi,
-            enable_spacy_ner=self.enable_spacy_ner,
             enable_hyperscan=self.enable_hyperscan,
             confidence_threshold=self.confidence_threshold,
             max_workers=self.max_workers,
@@ -276,7 +274,6 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
         name="with_ml",
         enable_ml=True,
         enable_phi=True,
-        enable_spacy_ner=True,
     ),
     "tiered": BenchmarkConfig(
         name="tiered",
@@ -300,7 +297,6 @@ PRESET_CONFIGS: dict[str, BenchmarkConfig] = {
         name="full",
         enable_ml=True,
         enable_phi=True,
-        enable_spacy_ner=True,
         enable_proximity_boost=True,
         enable_context_keywords=True,
         enable_coref=True,
