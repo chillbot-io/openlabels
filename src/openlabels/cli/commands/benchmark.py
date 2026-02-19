@@ -4,10 +4,11 @@ Usage:
     openlabels benchmark                                    # Default: 500 samples, ai4privacy
     openlabels benchmark --samples 1000                     # More samples
     openlabels benchmark --preset with_ml                   # With ML detectors
+    openlabels benchmark --ml                               # Enable full ML stack
     openlabels benchmark --dataset gretel_pii -n 1000       # Gretel PII 1k
-    openlabels benchmark --dataset gretel_finance --enable-ml --enable-phi
+    openlabels benchmark --dataset gretel_finance --ml      # Full ML on Gretel finance
     openlabels benchmark sweep                              # Compare all presets
-    openlabels benchmark tune                               # Threshold sweep
+    openlabels benchmark tune --ml                          # Threshold sweep with ML
     openlabels benchmark tune --output tuning.json
 """
 
@@ -20,7 +21,7 @@ import click
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
-DATASET_CHOICES = ["ai4privacy", "gretel_pii", "gretel_finance"]
+DATASET_CHOICES = ["ai4privacy", "ai4privacy_multilingual", "gretel_pii", "gretel_finance"]
 
 
 @click.group(invoke_without_command=True)
@@ -33,13 +34,16 @@ DATASET_CHOICES = ["ai4privacy", "gretel_pii", "gretel_finance"]
 @click.option("--output", "-o", default=None, help="Save results to JSON file")
 @click.option("--verbose", "-v", is_flag=True, help="Show per-category breakdown")
 @click.option("--threshold", "-t", default=None, type=float, help="Override confidence threshold")
-@click.option("--enable-ml", is_flag=True, help="Enable ML detectors (GLiNER)")
-@click.option("--enable-phi", is_flag=True, help="Enable Stanford PHI detector")
+@click.option("--ml", is_flag=True, help="Enable all ML detectors (GLiNER + PHI + multilingual)")
+@click.option("--enable-ml", is_flag=True, hidden=True, help="[Deprecated] Use --ml instead")
+@click.option("--enable-phi", is_flag=True, hidden=True, help="[Deprecated] Use --ml instead")
 @click.option("--tiered", is_flag=True, help="Use tiered pipeline")
 @click.option("--model-dir", default=None, help="Path to ML model directory")
+@click.option("--language", "-l", default=None,
+              help="Filter to a specific language (ISO 639-1 code, e.g. 'fr')")
 @click.pass_context
 def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
-              enable_ml, enable_phi, tiered, model_dir):
+              ml, enable_ml, enable_phi, tiered, model_dir, language):
     """Benchmark the classification pipeline against PII datasets."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
@@ -48,6 +52,7 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     ctx.obj["verbose"] = verbose
     ctx.obj["model_dir"] = model_dir
     ctx.obj["dataset"] = dataset
+    ctx.obj["language"] = language
 
     if ctx.invoked_subcommand is not None:
         return
@@ -65,12 +70,16 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
         click.echo(f"Error: {e}", err=True)
         return
 
+    # --ml enables the full ML stack; legacy flags still work
+    use_ml = ml or enable_ml
+    use_phi = ml or enable_phi
+
     # Apply overrides
     if threshold is not None:
         config.confidence_threshold = threshold
-    if enable_ml:
+    if use_ml:
         config.enable_ml = True
-    if enable_phi:
+    if use_phi:
         config.enable_phi = True
     if tiered:
         config.use_tiered_pipeline = True
@@ -80,10 +89,8 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
 
     # Show config name reflecting overrides
     config_desc = config.name
-    if enable_ml and "ml" not in config.name:
+    if use_ml and "ml" not in config.name:
         config_desc = f"{config.name}+ml"
-    if enable_phi and "phi" not in config.name:
-        config_desc = f"{config_desc}+phi"
     if tiered and "tiered" not in config.name:
         config_desc = f"{config_desc}+tiered"
     click.echo(f"Benchmark: {config_desc}")
@@ -96,11 +103,11 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     if config.enable_ml or config.enable_phi:
         _show_model_status(config)
     else:
-        click.echo("  (name/PHI detection requires ML; use --enable-ml --enable-phi or --preset with_ml)")
+        click.echo("  (name/PHI detection requires ML; use --ml or --preset with_ml)")
     click.echo("-" * 60)
 
     # Load dataset
-    loaded_samples = _load_dataset_samples(dataset, samples, seed)
+    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
 
     try:
         from openlabels.core.benchmark.dataset import DatasetLoadError
@@ -163,11 +170,13 @@ def sweep(ctx, presets):
     else:
         preset_names = ["patterns_relaxed", "patterns_only", "patterns_strict"]
 
+    language = ctx.obj.get("language")
+
     click.echo(f"Sweep: {', '.join(preset_names)}")
     click.echo(f"Dataset: {dataset} | Samples: {samples}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed)
+    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
 
     try:
         results = run_sweep(
@@ -202,10 +211,11 @@ def sweep(ctx, presets):
 
 @benchmark.command()
 @click.option("--thresholds", default=None, help="Comma-separated thresholds (e.g. 0.3,0.5,0.7,0.9)")
-@click.option("--enable-ml", is_flag=True, help="Enable ML detectors for tuning")
-@click.option("--enable-phi", is_flag=True, help="Enable Stanford PHI detector for tuning")
+@click.option("--ml", is_flag=True, help="Enable all ML detectors for tuning")
+@click.option("--enable-ml", is_flag=True, hidden=True, help="[Deprecated] Use --ml instead")
+@click.option("--enable-phi", is_flag=True, hidden=True, help="[Deprecated] Use --ml instead")
 @click.pass_context
-def tune(ctx, thresholds, enable_ml, enable_phi):
+def tune(ctx, thresholds, ml, enable_ml, enable_phi):
     """Sweep confidence thresholds to find the optimal operating point."""
     from openlabels.core.benchmark.harness import (
         BenchmarkConfig,
@@ -218,18 +228,24 @@ def tune(ctx, thresholds, enable_ml, enable_phi):
     output = ctx.obj["output"]
     dataset = ctx.obj.get("dataset", "ai4privacy")
 
+    # --ml enables the full ML stack; legacy flags still work
+    use_ml = ml or enable_ml
+    use_phi = ml or enable_phi
+
     threshold_list = None
     if thresholds:
         threshold_list = [float(t.strip()) for t in thresholds.split(",")]
 
     model_dir = ctx.obj.get("model_dir")
-    base = BenchmarkConfig(enable_ml=enable_ml, enable_phi=enable_phi, ml_model_dir=model_dir)
+    base = BenchmarkConfig(enable_ml=use_ml, enable_phi=use_phi, ml_model_dir=model_dir)
+
+    language = ctx.obj.get("language")
 
     click.echo(f"Threshold tuning | Dataset: {dataset} | Samples: {samples} | "
-               f"ML: {'on' if enable_ml else 'off'} | PHI: {'on' if enable_phi else 'off'}")
+               f"ML: {'on' if use_ml else 'off'} | PHI: {'on' if use_phi else 'off'}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed)
+    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
 
     try:
         results = threshold_sweep(
@@ -269,14 +285,42 @@ def tune(ctx, thresholds, enable_ml, enable_phi):
 _BENCHMARK_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "core" / "benchmark"
 
 
-def _load_dataset_samples(dataset: str, sample_size: int, seed: int):
+def _load_dataset_samples(
+    dataset: str,
+    sample_size: int,
+    seed: int,
+    *,
+    language: str | None = None,
+):
     """Load samples for the chosen dataset.
 
-    Returns a list of BenchmarkSample for Gretel datasets, or None for
-    ai4privacy (which is handled by the harness's default load_dataset).
+    Returns a list of BenchmarkSample for Gretel/multilingual datasets,
+    or None for default ai4privacy (handled by the harness's load_dataset).
     """
-    if dataset == "ai4privacy":
+    if dataset == "ai4privacy" and language is None:
         return None
+
+    if dataset == "ai4privacy" and language is not None:
+        # ai4privacy with language filter → use multilingual download
+        from openlabels.core.benchmark.dataset import load_dataset as load_ai4privacy
+
+        samples, source = load_ai4privacy(
+            sample_size=sample_size, seed=seed,
+            language=language, multilingual=True,
+        )
+        click.echo(f"Loaded {len(samples)} samples from ai4privacy [{language}] ({source})")
+        return samples
+
+    if dataset == "ai4privacy_multilingual":
+        from openlabels.core.benchmark.dataset import load_dataset as load_ai4privacy
+
+        samples, source = load_ai4privacy(
+            sample_size=sample_size, seed=seed,
+            language=language, multilingual=True,
+        )
+        lang_info = f" [{language}]" if language else " [all languages]"
+        click.echo(f"Loaded {len(samples)} samples from ai4privacy{lang_info} ({source})")
+        return samples
 
     if dataset == "gretel_pii":
         from openlabels.core.benchmark.adapters import load_gretel_pii
@@ -304,8 +348,9 @@ def _show_model_status(config) -> None:
     if getattr(config, "enable_ml", False):
         from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
         click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
+        click.echo(f"  Multilingual GLiNER: E3-JSI/gliner-multi-pii-domains-v1 (language-gated)")
     if getattr(config, "enable_phi", False):
-        click.echo(f"  Stanford PHI: {getattr(config, 'phi_model', 'StanfordAIMI/stanford-deidentifier-base')}")
+        click.echo(f"  Stanford PHI: {getattr(config, 'phi_model', 'StanfordAIMI/stanford-deidentifier-base')} (English-gated)")
     if getattr(config, "enable_spacy_ner", False):
         try:
             import spacy

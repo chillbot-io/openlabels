@@ -1,8 +1,8 @@
 """Loader for the ai4privacy pii-masking-400k dataset.
 
-Downloads and caches the dataset from Hugging Face, filters to English,
-and converts annotations to a format compatible with the OpenLabels
-evaluation harness.
+Downloads and caches the dataset from Hugging Face.  Supports both
+English-only mode (default, backwards-compatible) and multilingual mode
+which preserves the language field for benchmarking language-gated detection.
 
 The dataset ``privacy_mask`` field is a JSON-encoded list of dicts::
 
@@ -29,6 +29,11 @@ _CACHE_DIR = Path.home() / ".cache" / "openlabels" / "benchmark"
 
 # Bundled dataset shipped with the package
 _BUNDLED_PATH = Path(__file__).parent / "ai4privacy.jsonl"
+
+# Languages in the ai4privacy dataset that the multilingual GLiNER supports.
+SUPPORTED_LANGUAGES = frozenset({
+    "en", "es", "fr", "pt", "de", "it", "el", "nl", "sl",
+})
 
 
 @dataclass(frozen=True)
@@ -67,12 +72,14 @@ def load_dataset(
     cache_dir: Path | None = None,
     min_entities: int = 1,
     max_text_length: int = 10_000,
+    language: str | None = None,
+    multilingual: bool = False,
 ) -> tuple[list[BenchmarkSample], str]:
     """Load samples from the ai4privacy PII dataset.
 
     Resolution order:
-    1. HuggingFace cache (``~/.cache/openlabels/benchmark/ai4privacy_en.jsonl``)
-    2. Bundled dataset shipped with the package
+    1. HuggingFace cache (``~/.cache/openlabels/benchmark/ai4privacy_*.jsonl``)
+    2. Bundled dataset shipped with the package (English only)
     3. Download from HuggingFace Hub (requires ``datasets`` package)
 
     Args:
@@ -81,38 +88,33 @@ def load_dataset(
         cache_dir: Override default cache directory.
         min_entities: Minimum number of *mapped* gold entities per sample.
         max_text_length: Skip samples with text longer than this.
+        language: Filter to a specific ISO 639-1 language code (e.g. "fr").
+            ``None`` with ``multilingual=False`` defaults to English.
+        multilingual: If True, load all supported languages from HuggingFace.
+            The bundled dataset only contains English, so multilingual mode
+            requires the ``datasets`` package for first-time download.
 
     Returns:
         Tuple of (list of ``BenchmarkSample`` instances, dataset source string).
 
     Raises:
         DatasetLoadError: If no ai4privacy samples can be loaded from any
-            source.  This is intentionally a hard error — the benchmark must
-            run against the real ai4privacy dataset.
+            source.
     """
     cache_dir = cache_dir or _CACHE_DIR
-    cache_path = cache_dir / "ai4privacy_en.jsonl"
-    source = "unknown"
 
-    if cache_path.exists():
-        logger.info("Loading cached dataset from %s", cache_path)
-        samples = _load_from_cache(cache_path)
-        source = f"cache ({cache_path})"
-        if not samples and _BUNDLED_PATH.exists():
-            logger.warning(
-                "Cache at %s returned 0 samples; falling back to bundled dataset",
-                cache_path,
-            )
-            samples = _load_bundled(_BUNDLED_PATH)
-            source = f"bundled ({_BUNDLED_PATH})"
-    elif _BUNDLED_PATH.exists():
-        logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
-        samples = _load_bundled(_BUNDLED_PATH)
-        source = f"bundled ({_BUNDLED_PATH})"
+    if multilingual or (language is not None and language != "en"):
+        # Multilingual path — download all supported languages from HF
+        cache_path = cache_dir / "ai4privacy_multilingual.jsonl"
+        samples, source = _load_multilingual(cache_dir, cache_path)
+        # Filter to specific language if requested
+        if language is not None:
+            samples = [s for s in samples if s.language == language]
+            source = f"{source} [lang={language}]"
     else:
-        logger.info("Downloading ai4privacy dataset (first run)...")
-        samples = _download_and_cache(cache_dir, cache_path)
-        source = f"huggingface (cached to {cache_path})"
+        # English-only path (backwards compatible)
+        cache_path = cache_dir / "ai4privacy_en.jsonl"
+        samples, source = _load_english(cache_dir, cache_path)
 
     if not samples:
         raise DatasetLoadError(
@@ -120,7 +122,8 @@ def load_dataset(
             f"  Cache path:   {cache_path} (exists={cache_path.exists()})\n"
             f"  Bundled path: {_BUNDLED_PATH} (exists={_BUNDLED_PATH.exists()})\n"
             f"Ensure the bundled ai4privacy.jsonl is present in the package, "
-            f"or install the 'datasets' package to download from HuggingFace."
+            f"or install the 'datasets' package to download from HuggingFace:\n"
+            f"  pip install 'openlabels[benchmark]'"
         )
 
     # Filter
@@ -161,17 +164,92 @@ def load_dataset(
     return filtered, source
 
 
+# ── English-only loading (backwards compatible) ─────────────────────
+
+
+def _load_english(
+    cache_dir: Path,
+    cache_path: Path,
+) -> tuple[list[BenchmarkSample], str]:
+    """Load English-only samples with fallback chain."""
+    if cache_path.exists():
+        logger.info("Loading cached dataset from %s", cache_path)
+        samples = _load_from_cache(cache_path)
+        source = f"cache ({cache_path})"
+        if not samples and _BUNDLED_PATH.exists():
+            logger.warning(
+                "Cache at %s returned 0 samples; falling back to bundled dataset",
+                cache_path,
+            )
+            samples = _load_bundled(_BUNDLED_PATH)
+            source = f"bundled ({_BUNDLED_PATH})"
+    elif _BUNDLED_PATH.exists():
+        logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
+        samples = _load_bundled(_BUNDLED_PATH)
+        source = f"bundled ({_BUNDLED_PATH})"
+    else:
+        logger.info("Downloading ai4privacy dataset (first run)...")
+        samples = _download_and_cache(cache_dir, cache_path, languages={"en"})
+        source = f"huggingface (cached to {cache_path})"
+    return samples, source
+
+
+# ── Multilingual loading ────────────────────────────────────────────
+
+
+def _load_multilingual(
+    cache_dir: Path,
+    cache_path: Path,
+) -> tuple[list[BenchmarkSample], str]:
+    """Load multilingual samples from HuggingFace, caching locally."""
+    if cache_path.exists():
+        logger.info("Loading cached multilingual dataset from %s", cache_path)
+        samples = _load_from_cache(cache_path)
+        if samples:
+            lang_counts = _count_languages(samples)
+            logger.info("Multilingual cache: %s", lang_counts)
+            return samples, f"cache ({cache_path})"
+
+    logger.info("Downloading ai4privacy multilingual dataset...")
+    samples = _download_and_cache(
+        cache_dir, cache_path, languages=SUPPORTED_LANGUAGES,
+    )
+    if samples:
+        lang_counts = _count_languages(samples)
+        logger.info("Downloaded multilingual dataset: %s", lang_counts)
+    return samples, f"huggingface multilingual (cached to {cache_path})"
+
+
+def _count_languages(samples: list[BenchmarkSample]) -> dict[str, int]:
+    """Count samples per language."""
+    counts: dict[str, int] = {}
+    for s in samples:
+        counts[s.language] = counts.get(s.language, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+# ── Download and cache ──────────────────────────────────────────────
+
+
 def _download_and_cache(
     cache_dir: Path,
     cache_path: Path,
+    *,
+    languages: set[str] | None = None,
 ) -> list[BenchmarkSample]:
-    """Download dataset from Hugging Face and write English-only cache."""
+    """Download dataset from Hugging Face and write cache.
+
+    Args:
+        cache_dir: Directory for cache files.
+        cache_path: Path to the JSONL cache file.
+        languages: Set of ISO 639-1 codes to include.  ``None`` = all.
+    """
     try:
         from datasets import load_dataset as hf_load
     except ImportError as exc:
         raise ImportError(
-            "The 'datasets' package is required for benchmarking. "
-            "Install it with: pip install datasets"
+            "The 'datasets' package is required for downloading benchmark data. "
+            "Install it with: pip install 'openlabels[benchmark]'"
         ) from exc
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +259,8 @@ def _download_and_cache(
     idx = 0
 
     for row in ds:
-        if row.get("language") != "en":
+        lang = row.get("language", "en")
+        if languages is not None and lang not in languages:
             continue
 
         text = row.get("unmasked_text", "")
@@ -205,7 +284,7 @@ def _download_and_cache(
             sample_id=idx,
             text=text,
             gold_spans=gold_spans,
-            language="en",
+            language=lang,
         ))
         idx += 1
 
@@ -215,6 +294,7 @@ def _download_and_cache(
             record = {
                 "id": s.sample_id,
                 "text": s.text,
+                "language": s.language,
                 "spans": [
                     {
                         "start": g.start,
@@ -228,7 +308,7 @@ def _download_and_cache(
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    logger.info("Cached %d English samples to %s", len(samples), cache_path)
+    logger.info("Cached %d samples to %s", len(samples), cache_path)
     return samples
 
 
@@ -254,7 +334,7 @@ def _load_bundled(path: Path) -> list[BenchmarkSample]:
                 sample_id=idx,
                 text=text,
                 gold_spans=gold_spans,
-                language="en",
+                language=record.get("language", "en"),
             ))
     return samples
 
@@ -282,7 +362,7 @@ def _load_from_cache(cache_path: Path) -> list[BenchmarkSample]:
                 sample_id=record["id"],
                 text=record["text"],
                 gold_spans=gold_spans,
-                language="en",
+                language=record.get("language", "en"),
             ))
     return samples
 

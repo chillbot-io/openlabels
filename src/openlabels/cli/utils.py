@@ -86,7 +86,7 @@ def scan_files(files, enable_ml=True, exposure_level=ExposureLevel.PRIVATE):
 
     Args:
         files: List of Path objects to scan.
-        enable_ml: Enable ML-based detectors.
+        enable_ml: Enable ML-based detectors (also enables PHI when True).
         exposure_level: Exposure level for classification.
 
     Returns:
@@ -95,7 +95,7 @@ def scan_files(files, enable_ml=True, exposure_level=ExposureLevel.PRIVATE):
     """
     from openlabels.core.detectors.config import DetectionConfig
     from openlabels.core.processor import FileProcessor
-    processor = FileProcessor(config=DetectionConfig(enable_ml=enable_ml))
+    processor = FileProcessor(config=DetectionConfig(enable_ml=enable_ml, enable_phi=enable_ml))
 
     async def _process_all():
         all_results = []

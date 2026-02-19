@@ -20,6 +20,7 @@ from ..policies.schema import EntityMatch
 from ..types import DetectionResult, Span, Tier, normalize_entity_type
 from .base import BaseDetector
 from .config import DetectionConfig
+from .language import LanguageResult, detect_language, should_run_detector
 from .registry import create_detector
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,12 @@ class DetectorOrchestrator:
         if self.config.enable_phi:
             self._init_phi_detector()
 
-        if self.config.enable_multilingual:
+        # Load multilingual GLiNER if explicitly enabled, or if ML + language
+        # detection are both on (so the gating logic can route non-English text
+        # to the multilingual model).
+        if self.config.enable_multilingual or (
+            self.config.enable_ml and self.config.enable_language_detection
+        ):
             self._init_multilingual_gliner()
 
         if self.config.enable_spacy_ner:
@@ -223,12 +229,39 @@ class DetectorOrchestrator:
                 text_length=0,
             )
 
+        # Language-gated detection: determine which detectors to run.
+        lang_result: LanguageResult | None = None
+        if self.config.enable_language_detection:
+            lang_result = detect_language(text)
+            logger.debug(
+                "Language detection: %s (%.2f, %s)",
+                lang_result.language_code,
+                lang_result.confidence,
+                lang_result.tier.value,
+            )
+
+        # Select detectors based on detected language.
+        if lang_result is not None:
+            active_detectors = [
+                d for d in self.detectors
+                if should_run_detector(d.name, lang_result)
+            ]
+            skipped = set(d.name for d in self.detectors) - set(d.name for d in active_detectors)
+            if skipped:
+                logger.info(
+                    "Language gating (%s): skipped detectors %s",
+                    lang_result.language_code,
+                    sorted(skipped),
+                )
+        else:
+            active_detectors = self.detectors
+
         all_spans: list[Span] = []
         detectors_used: list[str] = []
 
         future_to_detector = {
             self._executor.submit(self._run_detector, detector, text): detector
-            for detector in self.detectors
+            for detector in active_detectors
         }
 
         try:
@@ -477,11 +510,26 @@ _NAME_FAMILY = frozenset({
     "FIRSTNAME", "LASTNAME",
 })
 
-# English personal pronouns (lower-cased).  These are never PII by themselves.
+# Personal pronouns (lower-cased) that are never PII by themselves.
+# Covers English + the 8 other multilingual-supported languages.
 _PRONOUNS = frozenset({
-    "he", "him", "his",
-    "she", "her", "hers",
+    # English
+    "he", "him", "his", "she", "her", "hers",
     "they", "them", "their", "theirs",
+    # Spanish
+    "él", "ella", "ellos", "ellas",
+    # French
+    "il", "elle", "ils", "elles", "lui",
+    # Portuguese
+    "ele", "ela", "eles", "elas",
+    # German
+    "er", "sie", "es", "ihr", "ihm", "ihn",
+    # Italian
+    "egli", "essa", "esso", "loro",
+    # Dutch
+    "hij", "zij", "hen", "hun",
+    # Greek
+    "αυτός", "αυτή", "αυτό", "αυτοί", "αυτές", "αυτά",
 })
 
 
