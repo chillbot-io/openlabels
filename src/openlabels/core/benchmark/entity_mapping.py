@@ -99,6 +99,15 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect
 # and should be excluded from evaluation scoring.  These are checked BEFORE
 # the mapping dict, so nothing listed here should also appear in the dict.
+# Predicted entity types to exclude from scoring.
+# When a gold label is unmapped (e.g. JOBTITLE), the corresponding predicted
+# OpenLabels type (JOB_TITLE) should also be excluded — otherwise every
+# detection counts as a spurious FP even though the benchmark considers
+# the underlying text non-PII.
+UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
+    "JOB_TITLE",   # ai4privacy JOBTITLE / JOBTYPE / JOBAREA are unmapped
+})
+
 UNMAPPED_TYPES: frozenset[str] = frozenset({
     # Demographic – not PII in most frameworks
     "GENDER",

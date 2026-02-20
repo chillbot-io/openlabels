@@ -16,6 +16,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from openlabels.core.benchmark.dataset import BenchmarkSample, DatasetLoadError, load_dataset
+from openlabels.core.benchmark.entity_mapping import UNMAPPED_PRED_TYPES
+from openlabels.core.types import normalize_entity_type
 from openlabels.core.benchmark.evaluate import (
     EvalMetrics,
     SpanMatch,
@@ -383,9 +385,16 @@ def run_benchmark(
         detection_result = detect_fn(sample.text)
         elapsed_ms = (time.monotonic() - t0) * 1000
 
+        # Exclude predicted types whose gold counterparts are unmapped
+        # (e.g. JOB_TITLE when JOBTITLE is not scored as PII).
+        pred_spans = [
+            s for s in detection_result.spans
+            if normalize_entity_type(s.entity_type) not in UNMAPPED_PRED_TYPES
+        ]
+
         metrics, matches = evaluate_spans(
             sample.gold_spans,
-            detection_result.spans,
+            pred_spans,
             min_overlap_ratio=config.min_overlap_ratio,
             strict_type_match=config.strict_type_match,
         )
@@ -397,7 +406,7 @@ def run_benchmark(
             processing_time_ms=elapsed_ms,
             text_length=len(sample.text),
             gold_count=len(sample.gold_spans),
-            pred_count=len(detection_result.spans),
+            pred_count=len(pred_spans),
         ))
         per_sample_metrics.append(metrics)
         all_matches.extend(matches)

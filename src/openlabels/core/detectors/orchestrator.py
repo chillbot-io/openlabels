@@ -524,6 +524,55 @@ _ML_PRIMARY_TYPES = frozenset({
 # is too uncertain to trust without pattern corroboration.
 _ML_UNCORROBORATED_MIN = 0.48
 
+# Broad groups for corroboration matching.  A pattern span only
+# corroborates an ML span if they share the same group.  This prevents
+# e.g. an ADDRESS pattern from falsely corroborating a COMPANY ML span
+# just because they overlap positionally.  Types not listed here each
+# get their own unique group (i.e. only corroborate same-type spans).
+_CORROBORATION_GROUP: dict[str, str] = {
+    # Names
+    "NAME": "names", "FIRSTNAME": "names", "LASTNAME": "names",
+    "MIDDLENAME": "names", "PREFIX": "names", "SUFFIX": "names",
+    "PERSON": "names", "FULLNAME": "names", "PATIENT": "names",
+    "NAME_PATIENT": "names", "NAME_PROVIDER": "names",
+    "NAME_RELATIVE": "names",
+    # Professional
+    "COMPANY": "professional", "EMPLOYER": "professional",
+    "JOB_TITLE": "professional", "FACILITY": "professional",
+    "EMPLOYEE_ID": "professional",
+    # Locations
+    "ADDRESS": "locations", "CITY": "locations", "STATE": "locations",
+    "COUNTY": "locations", "COUNTRY": "locations", "ZIP": "locations",
+    "GPS_COORDINATE": "locations", "GPS_COORDINATES": "locations",
+    # Financial
+    "CREDIT_CARD": "financial", "IBAN": "financial",
+    "SWIFT_BIC": "financial", "ACCOUNT_NUMBER": "financial",
+    "BANK_ROUTING": "financial", "ABA_ROUTING": "financial",
+    # Contact
+    "EMAIL": "contact", "PHONE": "contact", "URL": "contact",
+    "USERNAME": "contact", "FAX": "contact",
+    # Dates
+    "DATE": "dates", "DATE_DOB": "dates", "TIME": "dates",
+    "DATETIME": "dates", "AGE": "dates",
+    # Government IDs
+    "SSN": "gov_ids", "DRIVER_LICENSE": "gov_ids",
+    "PASSPORT": "gov_ids", "STATE_ID": "gov_ids", "TAX_ID": "gov_ids",
+    # Network
+    "IP_ADDRESS": "network", "MAC_ADDRESS": "network", "IMEI": "network",
+    # Secrets
+    "PASSWORD": "secrets", "API_KEY": "secrets", "SECRET": "secrets",
+    "PRIVATE_KEY": "secrets", "JWT": "secrets",
+}
+
+
+def _corroboration_group(entity_type: str) -> str:
+    """Return the corroboration group for an entity type.
+
+    Types in the same group can corroborate each other.  Types not
+    in the mapping get their own unique group (the type name itself).
+    """
+    return _CORROBORATION_GROUP.get(entity_type, entity_type)
+
 
 def _suppress_uncorroborated_ml(
     resolved: list[Span],
@@ -545,11 +594,12 @@ def _suppress_uncorroborated_ml(
     if not resolved:
         return resolved
 
-    # Collect character ranges covered by non-ML spans (before dedup).
-    pattern_ranges: list[tuple[int, int]] = []
+    # Collect character ranges and groups covered by non-ML spans (before dedup).
+    pattern_ranges: list[tuple[int, int, str]] = []
     for s in all_calibrated:
         if s.tier != Tier.ML:
-            pattern_ranges.append((s.start, s.end))
+            ptype = normalize_entity_type(s.entity_type)
+            pattern_ranges.append((s.start, s.end, _corroboration_group(ptype)))
 
     result: list[Span] = []
     for span in resolved:
@@ -564,10 +614,13 @@ def _suppress_uncorroborated_ml(
             result.append(span)
             continue
 
-        # Check if a pattern detector also fired at (roughly) the same position
+        # Check if a pattern detector of the *same category* also fired nearby.
+        # A pattern detecting ADDRESS does not corroborate an ML COMPANY span.
+        ml_group = _corroboration_group(etype)
         corroborated = any(
             _ranges_overlap(span.start, span.end, ps, pe)
-            for ps, pe in pattern_ranges
+            and pg == ml_group
+            for ps, pe, pg in pattern_ranges
         )
         if corroborated:
             result.append(span)
