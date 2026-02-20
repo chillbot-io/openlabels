@@ -296,7 +296,8 @@ def _download_and_cache(
         if languages is not None and lang not in languages:
             continue
 
-        text = row.get("unmasked_text", "")
+        # The 400k dataset renamed "unmasked_text" → "source_text"
+        text = row.get("source_text") or row.get("unmasked_text", "")
         if not text:
             continue
 
@@ -321,7 +322,16 @@ def _download_and_cache(
         ))
         idx += 1
 
-    # Persist cache
+    # Persist cache (only if we got samples — avoid creating empty files
+    # that would block future re-downloads)
+    if not samples:
+        logger.warning(
+            "HuggingFace download returned 0 samples for languages=%s; "
+            "skipping cache write",
+            languages,
+        )
+        return samples
+
     with open(cache_path, "w", encoding="utf-8") as f:
         for s in samples:
             record = {
