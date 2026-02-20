@@ -747,6 +747,9 @@ def _validate_si_emso(value: str) -> bool:
     return check == int(digits[12])
 
 
+# Company name fragment: handles Mc/Mac/O' prefixes (McGlynn, O'Reilly, MacDonald)
+_COMPANY_NAME = r"(?:Mc|Mac|O')?[A-Z][a-z]+"
+
 PATTERNS: tuple[PatternDefinition, ...] = (
 
 
@@ -1542,13 +1545,13 @@ _p(rf'\b((?:{_PHARMACY_CHAINS})\s+Pharmacy(?:\s*#\d{{3,6}})?)(?:\s|,|$)', 'FACIL
 
 # === Company Names ===
 # "Name LLC", "Name Ltd", "Name Inc", "Name Corp", "Name Co."
-_p(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:LLC|Ltd\.?|Inc\.?|Corp\.?|Co\.?|PLC|GmbH|AG|S\.?A\.?))\b', 'COMPANY', 0.85, 1),
+_p(rf'\b((?:{_COMPANY_NAME})(?:\s+(?:{_COMPANY_NAME}))?\s+(?:LLC|Ltd\.?|Inc\.?|Corp\.?|Co\.?|PLC|GmbH|AG|S\.?A\.?))\b', 'COMPANY', 0.85, 1),
 # "Name Group", "Name Partners", "Name Associates", "Name Foundation"
-_p(r'\b([A-Z][a-z]+\s+(?:Group|Partners|Associates|Foundation|Enterprises|Solutions|Industries|Holdings|Services|International|Consulting|Technologies))\b', 'COMPANY', 0.78, 1),
+_p(rf'\b((?:{_COMPANY_NAME})\s+(?:Group|Partners|Associates|Foundation|Enterprises|Solutions|Industries|Holdings|Services|International|Consulting|Technologies))\b', 'COMPANY', 0.78, 1),
 # "Name, Name and Name" (law firm / partnership style)
-_p(r'\b([A-Z][a-z]+,\s+[A-Z][a-z]+\s+and\s+[A-Z][a-z]+)\b', 'COMPANY', 0.80, 1),
+_p(rf'\b((?:{_COMPANY_NAME}),\s+(?:{_COMPANY_NAME})\s+and\s+(?:{_COMPANY_NAME}))\b', 'COMPANY', 0.80, 1),
 # "Name - Name" (hyphenated company name)
-_p(r'\b([A-Z][a-z]+\s+-\s+[A-Z][a-z]+)\b', 'COMPANY', 0.72, 1),
+_p(rf'\b((?:{_COMPANY_NAME})\s+-\s+(?:{_COMPANY_NAME}))\b', 'COMPANY', 0.72, 1),
 
 # NETWORK/DEVICE IDENTIFIERS
 # === IP Address ===

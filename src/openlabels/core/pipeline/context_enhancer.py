@@ -73,6 +73,18 @@ NAME_DENY_LIST: set[str] = {
     # Relational terms (not PII by themselves)
     "mother", "father", "brother", "sister", "daughter", "son",
     "husband", "wife", "spouse", "partner", "parent", "child",
+    # Gender/sexuality terms (not PII)
+    "sex", "gender", "non-binary", "transgender", "transgender person",
+    "cisgender", "intersex", "queer",
+    # Nationalities/demonyms (not PII)
+    "aruban", "tanzanian", "czech", "omani", "thai", "irish", "welsh",
+    "swiss", "dutch", "french", "german", "indian", "american",
+    "british", "canadian", "australian", "european", "african",
+    # Generic words from FP analysis
+    "afterwards", "securities", "principal", "future", "law",
+    "interactions", "technician", "life", "group", "inc",
+    "guilder", "koruna", "shilling", "lira", "rand",
+    "county", "ed", "llc", "ltd", "corp",
 }
 
 # Common words that get falsely detected as USERNAMEs
