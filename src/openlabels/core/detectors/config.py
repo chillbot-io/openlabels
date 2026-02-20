@@ -85,14 +85,16 @@ class DetectionConfig:
         ("COUNTRY", 0.70),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # Raised from 0.45 to reduce spurious FIRSTNAME/LASTNAME FPs
-        # (80 FIRSTNAME + 34 LASTNAME spurious on 1k-sample benchmark).
+        # Raised from 0.48 to 0.52 to reduce spurious FIRSTNAME/LASTNAME
+        # FPs (42 FIRSTNAME + 13 LASTNAME spurious on 10k benchmark).
         ("NAME", 0.45),
-        ("FIRSTNAME", 0.48),
-        ("LASTNAME", 0.48),
+        ("FIRSTNAME", 0.52),
+        ("LASTNAME", 0.52),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
-        ("COMPANY", 0.50),
+        # COMPANY raised from 0.50 to 0.55 to reduce 32 spurious on
+        # 10k benchmark (professional category P=0.588).
+        ("COMPANY", 0.55),
         ("JOB_TITLE", 0.50),
         # FACILITY from PHI model — trained on clinical text where every
         # hospital name is PHI; massively over-fires on general-purpose text.
@@ -103,6 +105,8 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
+        # Time — lower than global to capture "4 PM" style detections
+        ("TIME", 0.62),
         # Honorifics — 10 spurious vs 6 misses; slightly tighter
         ("PREFIX", 0.68),
         # Ambiguous — higher threshold to reduce FP

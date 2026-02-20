@@ -138,8 +138,13 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         # Dates: regex catches structured dates; GLiNER catches natural-language.
         "date of birth",
         "date",
+        "date and time",
+        # Time: pattern detectors cover structured times but GLiNER catches
+        # natural-language references ("around noon", "4 PM").
+        "time",
         # Professional / contextual entities.
         "company name",
+        "employer",
         "job title",
         "age",
         # Locations: partial regex coverage; GLiNER helps with unstructured.
@@ -198,6 +203,7 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "gps coordinate",
         "url",
         "username",
+        "imei number",
     ],
     ContentCategory.TECHNICAL: [
         "ip address",
