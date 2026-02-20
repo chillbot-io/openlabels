@@ -394,8 +394,8 @@ class DetectorOrchestrator:
         # Suppress uncorroborated ML detections: ML spans for entity types
         # that patterns handle well (dates, addresses, financial, etc.) are
         # suppressed unless they were ensemble-boosted or have high confidence.
-        # ML should primarily contribute names and professional entities —
-        # things patterns cannot detect.
+        # ML should primarily contribute names and rare professional
+        # entities — things patterns cannot detect.
         resolved = _suppress_uncorroborated_ml(resolved, calibrated)
 
         if self.config.enable_proximity_boost and resolved:
@@ -507,9 +507,12 @@ _ML_PRIMARY_TYPES = frozenset({
     "NAME", "FIRSTNAME", "LASTNAME", "MIDDLENAME",
     "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
     "PERSON", "PATIENT", "FULLNAME",
-    # Professional: hard for patterns to detect
-    "COMPANY", "EMPLOYER", "JOB_TITLE", "EMPLOYEE_ID",
-    "FACILITY",
+    # Professional: keep only types with zero pattern coverage.
+    # COMPANY and JOB_TITLE removed — they generate too many FPs and
+    # should be held to the corroboration / uncorroborated-confidence
+    # bar instead.  EMPLOYER has keyword-context patterns that
+    # corroborate well; EMPLOYEE_ID / FACILITY are rare enough to keep.
+    "EMPLOYER", "EMPLOYEE_ID", "FACILITY",
     # Medical identifiers: benefit from ML context
     "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
     # Age: patterns miss natural-language age references
@@ -534,8 +537,10 @@ def _suppress_uncorroborated_ml(
     financial, etc.), these uncorroborated ML spans are often false
     positives.  Suppress them unless confidence is high enough.
 
-    ML-primary types (names, companies, etc.) are always kept — these
-    are the entities that only ML can detect.
+    ML-primary types (names, employers, etc.) are always kept — these
+    are the entities that only ML can detect.  COMPANY and JOB_TITLE
+    are intentionally *not* ML-primary so that low-confidence
+    detections are suppressed when no pattern fires nearby.
     """
     if not resolved:
         return resolved
