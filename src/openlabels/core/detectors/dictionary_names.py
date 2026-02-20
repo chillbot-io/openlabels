@@ -335,11 +335,20 @@ class DictionaryNameDetector(BaseDetector):
             if not word[0].isupper() or word.isupper():
                 continue
 
+            # Strip possessive suffixes so "Bobby's" → "Bobby"
+            bare_word = word
+            bare_end = end
+            for suffix in ("\u2019s", "'s", "\u2019", "'"):
+                if bare_word.endswith(suffix):
+                    bare_word = bare_word[:-len(suffix)]
+                    bare_end = start + len(bare_word)
+                    break
+
             # Short words are too ambiguous for dictionary-only matching
-            if len(word) < 4:
+            if len(bare_word) < 4:
                 continue
 
-            lower = word.lower()
+            lower = bare_word.lower()
 
             # Absolute exclusions
             if lower in _NEVER_NAMES:
@@ -355,7 +364,7 @@ class DictionaryNameDetector(BaseDetector):
                     continue
 
             # Suppress names followed by address suffixes (e.g., "Turner Street")
-            after = text[end:end + 20].lstrip()
+            after = text[bare_end:bare_end + 20].lstrip()
             after_word = after.split()[0].lower().rstrip('.,;:') if after.split() else ''
             if after_word in _ADDRESS_SUFFIXES:
                 continue
@@ -368,14 +377,14 @@ class DictionaryNameDetector(BaseDetector):
                     if after_word in _ADDRESS_SUFFIXES:
                         continue
                     # Or check if word after THIS word is an address suffix
-                    remaining = text[end:end + 40]
+                    remaining = text[bare_end:bare_end + 40]
                     remaining_words = remaining.split()
                     if len(remaining_words) >= 2:
                         second_word = remaining_words[1].lower().rstrip('.,;:')
                         if second_word in _ADDRESS_SUFFIXES:
                             continue
 
-            key = (start, end)
+            key = (start, bare_end)
             if key in seen:
                 continue
 
@@ -386,8 +395,8 @@ class DictionaryNameDetector(BaseDetector):
                 seen.add(key)
                 spans.append(Span(
                     start=start,
-                    end=end,
-                    text=word,
+                    end=bare_end,
+                    text=bare_word,
                     entity_type="FIRSTNAME",
                     confidence=0.60,
                     detector=self.name,
@@ -397,8 +406,8 @@ class DictionaryNameDetector(BaseDetector):
                 seen.add(key)
                 spans.append(Span(
                     start=start,
-                    end=end,
-                    text=word,
+                    end=bare_end,
+                    text=bare_word,
                     entity_type="LASTNAME",
                     confidence=0.55,
                     detector=self.name,

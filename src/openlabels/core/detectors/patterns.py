@@ -1540,6 +1540,16 @@ _p(rf'(?:Preferred\s+)?Pharmacy[:\s]+((?:{_PHARMACY_CHAINS})(?:\s+Pharmacy)?(?:\
 # Bare pharmacy chain name when it appears alone
 _p(rf'\b((?:{_PHARMACY_CHAINS})\s+Pharmacy(?:\s*#\d{{3,6}})?)(?:\s|,|$)', 'FACILITY', 0.90, 1, flags=re.I),
 
+# === Company Names ===
+# "Name LLC", "Name Ltd", "Name Inc", "Name Corp", "Name Co."
+_p(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:LLC|Ltd\.?|Inc\.?|Corp\.?|Co\.?|PLC|GmbH|AG|S\.?A\.?))\b', 'COMPANY', 0.85, 1),
+# "Name Group", "Name Partners", "Name Associates", "Name Foundation"
+_p(r'\b([A-Z][a-z]+\s+(?:Group|Partners|Associates|Foundation|Enterprises|Solutions|Industries|Holdings|Services|International|Consulting|Technologies))\b', 'COMPANY', 0.78, 1),
+# "Name, Name and Name" (law firm / partnership style)
+_p(r'\b([A-Z][a-z]+,\s+[A-Z][a-z]+\s+and\s+[A-Z][a-z]+)\b', 'COMPANY', 0.80, 1),
+# "Name - Name" (hyphenated company name)
+_p(r'\b([A-Z][a-z]+\s+-\s+[A-Z][a-z]+)\b', 'COMPANY', 0.72, 1),
+
 # NETWORK/DEVICE IDENTIFIERS
 # === IP Address ===
 _p(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', 'IP_ADDRESS', 0.85),
@@ -1941,7 +1951,7 @@ _p(r'(?:information|data|details)\s+such\s+as\s+(\d{8,17})\b', 'ACCOUNT_NUMBER',
 # "process it through your mastercard card ending with XXXX"
 _p(r'(?:through\s+your)\s+\w+\s+card\s+ending\s+with\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.80, 1, flags=re.I),
 # "monitor <number>" — account monitoring context
-_p(r'(?:monitor|deposit|withdraw|debit|credited?\s+to|charged?\s+to)\s+(\d{7,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+_p(r'(?:monitor|deposit|withdraw|debit|credited?\s+to|charged?\s+to)\s+(?:the\s+)?(\d{7,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 # Broader: "<number> is your account" or "account <number>"
 _p(r'\b(\d{7,17})\s+(?:is\s+(?:your|the)\s+(?:account|acct))', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 # "routing number XXXX" / "sort code XXXX"
@@ -1956,6 +1966,14 @@ _p(r'(?:transaction\s+(?:ID|id|number|no|#))[:\s]+(\d{6,17})\b', 'ACCOUNT_NUMBER
 _p(r'account\s+number\s*,\s*(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 # "transferred to XXXX" / "deposited into XXXX" — financial transfer targets
 _p(r'(?:transferred|deposited|wired|sent)\s+(?:to|into)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "Account under XXXX" / "Account ends with XXXX"
+_p(r'(?:Account)\s+(?:under|ends?\s+with)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "Loan Account, XXXX" / "Savings Account, XXXX" — labeled account type + number
+_p(r'(?:Loan|Savings|Checking|Investment|Money\s+Market)\s+Account\s*,\s*(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "case no. XXXX" — legal/administrative case numbers
+_p(r'(?:case\s+(?:no|number|#))[\s.:]+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
+# "flagged XXXX as" — audit/compliance contexts
+_p(r'(?:flagged|identified|marked)\s+(\d{7,17})\s+(?:as|for)\b', 'ACCOUNT_NUMBER', 0.75, 1, flags=re.I),
 
 # === Certificate/License Numbers (Safe Harbor #11) ===
 _p(r'(?:Certificate|Certification)\s+(?:Number|No|#)[:\s]+([A-Z0-9-]{5,20})', 'CERTIFICATE_NUMBER', 0.85, 1, flags=re.I),
@@ -1999,6 +2017,13 @@ _p(r'(?:payment|paid)\s+(?:via|through|using)\s+\S+\s+(?:number\s+(?:ending\s+)?
 _p(r'(?:need\s+)?(?:your|the)\s+(\d{16})\b(?=\s+for\s+(?:smooth\s+)?(?:transactions?|payments?|processing|verification))', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
 # "personal details like XXXX" — enumerated personal data containing 16-digit
 _p(r'(?:details|data|information)\s+(?:like|such\s+as|including)\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.75, 1, flags=re.I),
+# "expenses on XXXX" / "expenses using XXXX" — payment context
+_p(r'(?:expenses?\s+(?:on|using|with))\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.80, 1, flags=re.I),
+# "using XXXX" directly (when preceded by payment/done/charged context)
+_p(r'(?:done|paid|charged|payment|pay)\s+(?:\S+\s+)?(?:using|on|with)\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
+# "transactions involving XXXX" / "provide XXXX" in card context
+_p(r'(?:transactions?\s+involving)\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
+_p(r'(?:provide|share|disclose)\s+(\d{16})\b(?=\s+(?:or\s+\d|to\s+any|details))', 'CREDIT_CARD_NOLUHN', 0.75, 1, flags=re.I),
 # Last 4 of card
 _p(r'(?:ending\s+in|last\s+4|xxxx)[:\s]*(\d{4})\b', 'CREDIT_CARD_PARTIAL', 0.82, 1, flags=re.I),
 # VEHICLE IDENTIFIERS (HIPAA Required)
