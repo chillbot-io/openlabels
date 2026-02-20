@@ -78,9 +78,11 @@ class DetectionConfig:
         ("IP_ADDRESS", 0.60),
         # Contextual — standard threshold
         ("PHONE", 0.70),
-        ("ADDRESS", 0.70),
+        ("ADDRESS", 0.68),
         ("DATE", 0.65),
         ("DATE_DOB", 0.65),
+        # Country names: 6 spurious on ai4privacy, 0 misses
+        ("COUNTRY", 0.70),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
         # Raised from 0.45 to reduce spurious FIRSTNAME/LASTNAME FPs
@@ -101,8 +103,8 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Honorifics — structurally reliable when detected
-        ("PREFIX", 0.65),
+        # Honorifics — 10 spurious vs 6 misses; slightly tighter
+        ("PREFIX", 0.68),
         # Ambiguous — higher threshold to reduce FP
         ("AGE", 0.70),
         ("ZIP", 0.75),

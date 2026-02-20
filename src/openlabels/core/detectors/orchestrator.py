@@ -520,10 +520,14 @@ _ML_PRIMARY_TYPES = frozenset({
     "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
     "PERSON", "PATIENT", "FULLNAME",
     # Professional: keep only types with zero pattern coverage.
-    # COMPANY and JOB_TITLE removed — they generate too many FPs and
-    # should be held to the corroboration / uncorroborated-confidence
-    # bar instead.  EMPLOYER has keyword-context patterns that
-    # corroborate well; EMPLOYEE_ID / FACILITY are rare enough to keep.
+    # COMPANY moved here from strict corroboration — strict was
+    # suppressing 17 real companies on ai4privacy (100% recall at 62%
+    # precision).  With ML-primary + solo-min gating, high-confidence
+    # GLiNER COMPANY detections survive solo while low-confidence ones
+    # still require corroboration, balancing recall vs FP.
+    # JOB_TITLE remains strict — it has no pattern coverage and
+    # generates FPs without corroboration.
+    "COMPANY",
     "EMPLOYER", "EMPLOYEE_ID", "FACILITY",
     # Medical identifiers: benefit from ML context
     "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
@@ -541,7 +545,7 @@ _ML_UNCORROBORATED_MIN = 0.52
 # Types that ALWAYS require pattern corroboration, regardless of
 # confidence.  These are known false-positive generators — even
 # high-confidence ML detections are unreliable without a pattern echo.
-_STRICT_CORROBORATION_TYPES = frozenset({"COMPANY", "JOB_TITLE"})
+_STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE"})
 
 # Minimum calibrated confidence for ML-primary spans (names, etc.)
 # to survive *without* any corroboration from another detector.

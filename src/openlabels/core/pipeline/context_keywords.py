@@ -89,9 +89,11 @@ CONTEXT_RULES: dict[str, ContextRule] = {
             "product", "brand", "model", "version",
             "city", "town", "village", "county", "state", "province",
             "country", "located", "shipped", "delivered",
+            "street", "road", "avenue", "drive", "lane", "court",
+            "zip", "postal", "borough", "district", "region",
         }),
         boost_amount=0.10,
-        demote_amount=0.12,
+        demote_amount=0.15,
     ),
     "LASTNAME": ContextRule(
         boost_words=frozenset({
@@ -102,9 +104,25 @@ CONTEXT_RULES: dict[str, ContextRule] = {
             "product", "brand", "model", "version",
             "city", "town", "village", "county", "state", "province",
             "country", "located", "shipped", "delivered",
+            "street", "road", "avenue", "drive", "lane", "court",
+            "zip", "postal", "borough", "district", "region",
         }),
         boost_amount=0.10,
-        demote_amount=0.12,
+        demote_amount=0.15,
+    ),
+    "DATE": ContextRule(
+        boost_words=frozenset({
+            "born", "birth", "dob", "birthday", "admitted", "hired",
+            "appointment", "incident", "occurred", "signed",
+        }),
+        demote_words=frozenset({
+            "version", "ver", "revision", "rev", "release", "build",
+            "page", "section", "chapter", "created", "modified",
+            "published", "edition", "updated", "generated", "printed",
+            "effective", "copyright", "filed", "expires",
+        }),
+        boost_amount=0.08,
+        demote_amount=0.15,
     ),
     "EMAIL": ContextRule(
         boost_words=frozenset({
