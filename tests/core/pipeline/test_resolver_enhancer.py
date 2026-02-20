@@ -937,11 +937,18 @@ class TestEnhanceSpanOrchestration:
     def test_non_enhanced_type_always_kept(self):
         """Entity types not in enhanced_types are always kept."""
         enhancer = ContextEnhancer()
-        span = make_span("will", entity_type="NAME", confidence=0.70, tier=Tier.ML)
-        result = enhancer.enhance_span("I will call you", span)
-        # NAME is not in enhanced_types, so it passes through
+        span = make_span("test@example.com", entity_type="EMAIL", confidence=0.70, tier=Tier.ML)
+        result = enhancer.enhance_span("Send to test@example.com", span)
+        # EMAIL is not in enhanced_types, so it passes through
         assert result.action == "keep"
         assert "non_enhanced_type" in result.reasons
+
+    def test_name_now_enhanced_rejects_deny_list(self):
+        """NAME is now in enhanced_types — 'will' hits the deny list."""
+        enhancer = ContextEnhancer()
+        span = make_span("will", entity_type="NAME", confidence=0.70, tier=Tier.ML)
+        result = enhancer.enhance_span("I will call you", span)
+        assert result.action == "reject"
 
     def test_high_tier_bypasses_patterns_and_hotwords(self):
         """High-tier (STRUCTURED+) spans bypass pattern and hotword checks."""

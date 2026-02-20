@@ -22,7 +22,9 @@ from openlabels.core.benchmark.evaluate import (
     EvalMetrics,
     SpanMatch,
     aggregate_metrics,
+    confusion_matrix,
     evaluate_spans,
+    non_identification_rate,
     per_category_metrics,
     per_entity_type_metrics,
 )
@@ -182,6 +184,14 @@ class BenchmarkResult:
     total_time_s: float
     samples_evaluated: int
     dataset_source: str = "unknown"
+    # Confusion matrix: (gold_type, pred_type) -> count of misclassifications
+    type_confusion: dict[tuple[str, str], int] | None = None
+    # Non-identification rate per gold entity type (fraction of missed spans)
+    miss_rates: dict[str, float] | None = None
+    # Per-language metrics (language code -> EvalMetrics)
+    by_language: dict[str, EvalMetrics] | None = None
+    # Per-NER-difficulty-dimension metrics (Singh & Narayanan 2025)
+    by_dimension: dict[str, EvalMetrics] | None = None
 
     @property
     def avg_time_per_sample_ms(self) -> float:
@@ -218,7 +228,7 @@ class BenchmarkResult:
 
     def to_dict(self) -> dict[str, object]:
         """Full serialisable result."""
-        return {
+        result: dict[str, object] = {
             "summary": self.summary(),
             "by_category": {
                 cat: m.to_dict() for cat, m in sorted(self.by_category.items())
@@ -228,6 +238,28 @@ class BenchmarkResult:
             },
             "failures": self._collect_failures(),
         }
+        if self.type_confusion:
+            result["confusion_matrix"] = {
+                f"{g}->{p}": cnt
+                for (g, p), cnt in sorted(
+                    self.type_confusion.items(), key=lambda x: -x[1]
+                )
+            }
+        if self.miss_rates:
+            result["non_identification_rates"] = {
+                k: round(v, 4) for k, v in self.miss_rates.items()
+            }
+        if self.by_language:
+            result["by_language"] = {
+                lang: m.to_dict()
+                for lang, m in sorted(self.by_language.items())
+            }
+        if self.by_dimension:
+            result["by_dimension"] = {
+                dim: m.to_dict()
+                for dim, m in sorted(self.by_dimension.items())
+            }
+        return result
 
     def _collect_failures(self) -> list[dict[str, object]]:
         """Collect SPURIOUS / MISS / TYPE_MISMATCH matches for failure analysis."""
@@ -421,6 +453,61 @@ def run_benchmark(
     by_category = per_category_metrics(all_matches)
     by_entity_type = per_entity_type_metrics(all_matches)
 
+    # Confusion matrix & non-identification rates (Singh & Narayanan 2025)
+    type_confusion = confusion_matrix(all_matches)
+    miss_rates = non_identification_rate(all_matches)
+
+    # Per-dimension metrics (Singh & Narayanan 2025 NER difficulty dimensions)
+    from openlabels.core.benchmark.dimensions import classify_samples
+    dim_to_sample_ids = classify_samples(samples)
+    sample_id_to_result: dict[int, SampleResult] = {
+        sr.sample_id: sr for sr in sample_results
+    }
+    by_dimension: dict[str, EvalMetrics] = {}
+    for dim, sample_ids in dim_to_sample_ids.items():
+        if not sample_ids:
+            continue
+        dim_metrics_list = [
+            sample_id_to_result[sid].metrics
+            for sid in sample_ids
+            if sid in sample_id_to_result
+        ]
+        if dim_metrics_list:
+            by_dimension[dim.value] = aggregate_metrics(dim_metrics_list)
+
+    # Per-language metrics — build a mapping from sample_id to language,
+    # then bucket the per-sample matches by language.
+    sample_lang: dict[int, str] = {s.sample_id: s.language for s in samples}
+    lang_matches: dict[str, list[SpanMatch]] = {}
+    for sr in sample_results:
+        lang = sample_lang.get(sr.sample_id, "en")
+        if lang not in lang_matches:
+            lang_matches[lang] = []
+        lang_matches[lang].extend(sr.matches)
+
+    by_language: dict[str, EvalMetrics] | None = None
+    if len(lang_matches) > 1:
+        by_language = {}
+        for lang, matches in sorted(lang_matches.items()):
+            lm = EvalMetrics()
+            for m in matches:
+                from .evaluate import MatchType
+                if m.match_type in (MatchType.EXACT, MatchType.PARTIAL):
+                    lm.true_positives += 1
+                    if m.match_type == MatchType.EXACT:
+                        lm.exact_matches += 1
+                    else:
+                        lm.partial_matches += 1
+                elif m.match_type == MatchType.TYPE_MISMATCH:
+                    lm.type_mismatches += 1
+                    lm.false_positives += 1
+                    lm.false_negatives += 1
+                elif m.match_type == MatchType.MISS:
+                    lm.false_negatives += 1
+                elif m.match_type == MatchType.SPURIOUS:
+                    lm.false_positives += 1
+            by_language[lang] = lm
+
     # Cleanup
     if not config.use_tiered_pipeline:
         orchestrator.shutdown()
@@ -434,6 +521,10 @@ def run_benchmark(
         total_time_s=total_time,
         samples_evaluated=len(samples),
         dataset_source=dataset_source,
+        type_confusion=type_confusion or None,
+        miss_rates=miss_rates or None,
+        by_language=by_language,
+        by_dimension=by_dimension or None,
     )
 
 

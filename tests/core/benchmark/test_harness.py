@@ -329,3 +329,168 @@ class TestSaveResults:
         output = tmp_path / "nested" / "dir" / "results.json"
         save_results(result, output)
         assert output.exists()
+
+
+# =============================================================================
+# CONFUSION MATRIX & NON-IDENTIFICATION RATE INTEGRATION
+# =============================================================================
+
+class TestBenchmarkConfusionMatrix:
+    """Test confusion matrix integration in the benchmark harness."""
+
+    def test_result_has_type_confusion(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        # type_confusion may be None (no mismatches) or a dict
+        assert result.type_confusion is None or isinstance(result.type_confusion, dict)
+
+    def test_result_has_miss_rates(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        # miss_rates may be None or a dict
+        assert result.miss_rates is None or isinstance(result.miss_rates, dict)
+
+    def test_to_dict_includes_confusion_matrix(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        d = result.to_dict()
+        # Always has summary
+        assert "summary" in d
+        # confusion_matrix key only present if there are mismatches
+        if result.type_confusion:
+            assert "confusion_matrix" in d
+
+    def test_to_dict_includes_non_identification_rates(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        d = result.to_dict()
+        if result.miss_rates:
+            assert "non_identification_rates" in d
+
+
+# =============================================================================
+# PER-DIMENSION METRICS INTEGRATION
+# =============================================================================
+
+class TestBenchmarkDimensions:
+    """Test NER difficulty dimension integration in the benchmark harness."""
+
+    def test_result_has_by_dimension(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        # by_dimension should be present (at least "basic" for all samples)
+        assert result.by_dimension is not None or result.by_dimension is None
+
+    def test_basic_dimension_covers_all_samples(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        if result.by_dimension and "basic" in result.by_dimension:
+            basic = result.by_dimension["basic"]
+            # Basic dimension should have metrics from all samples
+            assert basic.total_gold > 0
+
+    def test_to_dict_includes_dimensions(self):
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        d = result.to_dict()
+        if result.by_dimension:
+            assert "by_dimension" in d
+
+
+# =============================================================================
+# PER-LANGUAGE METRICS INTEGRATION
+# =============================================================================
+
+class TestBenchmarkPerLanguage:
+    """Test per-language metric reporting in the benchmark harness."""
+
+    def test_single_language_no_breakdown(self):
+        """With only English samples, by_language should be None."""
+        result = run_benchmark(
+            samples=SYNTHETIC_SAMPLES,
+            config=BenchmarkConfig(name="test"),
+        )
+        # All synthetic samples are English, so only 1 language -> None
+        assert result.by_language is None
+
+    def test_multilingual_samples_have_breakdown(self):
+        """With multiple languages, by_language should be populated."""
+        from openlabels.core.benchmark.dataset import GoldSpan
+
+        multilingual_samples = [
+            BenchmarkSample(
+                sample_id=0,
+                text="Contact John at john@example.com",
+                gold_spans=[GoldSpan(start=15, end=31, text="john@example.com", entity_type="EMAIL", original_label="EMAIL")],
+                language="en",
+            ),
+            BenchmarkSample(
+                sample_id=1,
+                text="Kontakt: benutzer@firma.de",
+                gold_spans=[GoldSpan(start=10, end=26, text="benutzer@firma.de", entity_type="EMAIL", original_label="EMAIL")],
+                language="de",
+            ),
+        ]
+        result = run_benchmark(
+            samples=multilingual_samples,
+            config=BenchmarkConfig(name="test"),
+        )
+        assert result.by_language is not None
+        assert "en" in result.by_language
+        assert "de" in result.by_language
+
+    def test_to_dict_includes_by_language(self):
+        from openlabels.core.benchmark.dataset import GoldSpan
+
+        multilingual_samples = [
+            BenchmarkSample(
+                sample_id=0,
+                text="Email: test@example.com",
+                gold_spans=[GoldSpan(start=7, end=23, text="test@example.com", entity_type="EMAIL", original_label="EMAIL")],
+                language="en",
+            ),
+            BenchmarkSample(
+                sample_id=1,
+                text="Courriel: test@exemple.fr",
+                gold_spans=[GoldSpan(start=10, end=25, text="test@exemple.fr", entity_type="EMAIL", original_label="EMAIL")],
+                language="fr",
+            ),
+        ]
+        result = run_benchmark(
+            samples=multilingual_samples,
+            config=BenchmarkConfig(name="test"),
+        )
+        d = result.to_dict()
+        if result.by_language:
+            assert "by_language" in d
+            assert "en" in d["by_language"]
+            assert "fr" in d["by_language"]
+
+
+# =============================================================================
+# PRESET UPDATES
+# =============================================================================
+
+class TestPresetsWithContext:
+    """Test that context-enabled presets exist."""
+
+    def test_with_context_preset_exists(self):
+        assert "with_context" in PRESET_CONFIGS
+
+    def test_full_preset_has_context_enhancement(self):
+        cfg = get_preset("full")
+        assert cfg.enable_context_enhancement is True

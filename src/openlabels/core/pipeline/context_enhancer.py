@@ -189,6 +189,63 @@ NAME_NEGATIVE_HOTWORDS: list[HotwordRule] = [
     ),
 ]
 
+# ADDRESS hotwords — boost confidence when labelling context is present,
+# reduce when the text is generic or clearly a business name.
+ADDRESS_POSITIVE_HOTWORDS: list[HotwordRule] = [
+    HotwordRule(
+        re.compile(r'\b(address|mailing|shipping|billing|residence|home|deliver(?:y|ed)?)\s*:?\s*$', re.I),
+        confidence_delta=0.20,
+        window_before=30, window_after=0,
+        description="Address label before"
+    ),
+    HotwordRule(
+        re.compile(r'\b(lives?\s+at|located\s+at|resides?\s+at)\s+$', re.I),
+        confidence_delta=0.20,
+        window_before=40, window_after=0,
+        description="Residence phrase before"
+    ),
+]
+
+ADDRESS_NEGATIVE_HOTWORDS: list[HotwordRule] = [
+    HotwordRule(
+        re.compile(r'\b(website|url|email|domain|server|endpoint)\s*:?\s*$', re.I),
+        confidence_delta=-0.25,
+        window_before=30, window_after=0,
+        description="Digital context before"
+    ),
+    HotwordRule(
+        re.compile(r'^\s*(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?)\b', re.I),
+        confidence_delta=-0.25,
+        window_before=0, window_after=30,
+        description="Company suffix after address"
+    ),
+]
+
+# USERNAME hotwords
+USERNAME_POSITIVE_HOTWORDS: list[HotwordRule] = [
+    HotwordRule(
+        re.compile(r'\b(username|user\s*name|user\s*id|handle|login|screen\s*name|account)\s*:?\s*$', re.I),
+        confidence_delta=0.25,
+        window_before=30, window_after=0,
+        description="Username label before"
+    ),
+    HotwordRule(
+        re.compile(r'\b(profile|@)\s*$', re.I),
+        confidence_delta=0.15,
+        window_before=15, window_after=0,
+        description="Profile/@ prefix"
+    ),
+]
+
+USERNAME_NEGATIVE_HOTWORDS: list[HotwordRule] = [
+    HotwordRule(
+        re.compile(r'\b(function|variable|class|method|module|import|package)\s+$', re.I),
+        confidence_delta=-0.30,
+        window_before=30, window_after=0,
+        description="Code context before"
+    ),
+]
+
 
 # PATTERN EXCLUSIONS
 # Pattern: "X, Y and Z" or "X and Y" - likely a company/firm name
@@ -282,9 +339,16 @@ class ContextEnhancer:
         self.enable_hotwords = enable_hotwords
         self.enable_patterns = enable_patterns
 
-        # Entity types to apply enhancement to
-        # SURGICAL: Only filter MRN for now (dollar amounts like 440060.24)
-        self.enhanced_types = {"MRN"}
+        # Entity types to apply enhancement to.
+        # Expanded per Singh & Narayanan 2025 findings — contextual
+        # disambiguation is the #1 failure mode for NER-based PII detectors.
+        self.enhanced_types = {
+            "MRN",
+            "NAME", "PERSON", "PER",
+            "USERNAME",
+            "ADDRESS",
+            "MEDICATION",
+        }
 
     def _get_context_window(
         self,
@@ -373,9 +437,10 @@ class ContextEnhancer:
         if COMPANY_PATTERN.match(span_text):
             return (f"company_pattern:{span_text}", None, 0)
 
-        # Contains digits (likely username) — skip for MRN/ID types that
-        # inherently contain digits (e.g. "MRN-293104", "MED15780803")
-        if span.entity_type.upper() not in ("MRN", "HEALTH_PLAN_ID", "EMPLOYEE_ID", "DEVICE_ID"):
+        # Contains digits — skip for types that inherently contain digits
+        # (e.g. "MRN-293104", "123 Main St", "jdoe42").
+        _DIGITS_OK_TYPES = ("MRN", "HEALTH_PLAN_ID", "EMPLOYEE_ID", "DEVICE_ID", "ADDRESS", "USERNAME")
+        if span.entity_type.upper() not in _DIGITS_OK_TYPES:
             if HAS_DIGITS_PATTERN.search(span_text):
                 if not re.search(r'\s+(II|III|IV|V|VI|Jr\.?|Sr\.?)$', span_text, re.I):
                     return (f"contains_digits:{span_text}", None, 0)
@@ -423,7 +488,14 @@ class ContextEnhancer:
         if entity_type in ("NAME", "PERSON", "PER"):
             positive_rules = NAME_POSITIVE_HOTWORDS
             negative_rules = NAME_NEGATIVE_HOTWORDS
+        elif entity_type == "ADDRESS":
+            positive_rules = ADDRESS_POSITIVE_HOTWORDS
+            negative_rules = ADDRESS_NEGATIVE_HOTWORDS
+        elif entity_type == "USERNAME":
+            positive_rules = USERNAME_POSITIVE_HOTWORDS
+            negative_rules = USERNAME_NEGATIVE_HOTWORDS
         else:
+            # MRN, MEDICATION — rely on deny-list + pattern stages only
             return confidence, reasons
 
         # Apply positive hotwords
