@@ -94,9 +94,11 @@ class DetectionConfig:
         # hospital name is PHI; massively over-fires on general-purpose text.
         ("FACILITY", 0.80),
         # PHI name types — clinical model's priors don't match general text;
-        # require higher confidence than GLiNER name types.
-        ("NAME_PATIENT", 0.70),
-        ("NAME_PROVIDER", 0.70),
+        # require higher confidence than GLiNER name types.  At 0.80,
+        # only strong PHI detections enter the pipeline; borderline ones
+        # are filtered before they can become false positives.
+        ("NAME_PATIENT", 0.80),
+        ("NAME_PROVIDER", 0.80),
         # Honorifics — structurally reliable when detected
         ("PREFIX", 0.65),
         # Ambiguous — higher threshold to reduce FP

@@ -522,7 +522,23 @@ _ML_PRIMARY_TYPES = frozenset({
 # Minimum calibrated confidence for ML-only spans on types where
 # patterns are the primary detector.  Below this, the ML detection
 # is too uncertain to trust without pattern corroboration.
-_ML_UNCORROBORATED_MIN = 0.48
+# At 0.52, an ML span needs raw confidence ≥ 0.88 to survive
+# without any pattern backup (calibrated ML range is [0.30, 0.55]).
+_ML_UNCORROBORATED_MIN = 0.52
+
+# Types that ALWAYS require pattern corroboration, regardless of
+# confidence.  These are known false-positive generators — even
+# high-confidence ML detections are unreliable without a pattern echo.
+_STRICT_CORROBORATION_TYPES = frozenset({"COMPANY", "JOB_TITLE"})
+
+# Minimum calibrated confidence for ML-primary spans (names, etc.)
+# to survive *without* any corroboration from another detector.
+# Below this, at least one other detector (pattern or a different ML
+# model) must agree on an overlapping same-group span.  This catches
+# borderline single-detector name hallucinations while preserving
+# high-confidence or multi-detector-agreed detections.
+# At 0.44, GLiNER names need raw ≥ 0.56 to stand alone.
+_ML_PRIMARY_SOLO_MIN = 0.44
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -578,18 +594,23 @@ def _suppress_uncorroborated_ml(
     resolved: list[Span],
     all_calibrated: list[Span],
 ) -> list[Span]:
-    """Suppress ML-only detections for pattern-covered entity types.
+    """Suppress ML-only detections that lack corroboration.
 
-    After span resolution, an ML span that survived at a position where
-    no pattern/checksum/structured detector fired is "uncorroborated".
-    For entity types that patterns handle well (dates, addresses, IPs,
-    financial, etc.), these uncorroborated ML spans are often false
-    positives.  Suppress them unless confidence is high enough.
+    Three-tier suppression logic, from strictest to most permissive:
 
-    ML-primary types (names, employers, etc.) are always kept — these
-    are the entities that only ML can detect.  COMPANY and JOB_TITLE
-    are intentionally *not* ML-primary so that low-confidence
-    detections are suppressed when no pattern fires nearby.
+    1. **Strict-corroboration types** (COMPANY, JOB_TITLE): always
+       suppressed unless a pattern detector in the same category fired
+       at the same position.  These types are prolific FP generators.
+
+    2. **Non-ML-primary types** (dates, locations, financial, …): kept
+       if corroborated by a same-group pattern, or if calibrated
+       confidence ≥ ``_ML_UNCORROBORATED_MIN``.
+
+    3. **ML-primary types** (names, employers, …): kept unconditionally
+       when calibrated confidence ≥ ``_ML_PRIMARY_SOLO_MIN``.  Below
+       that threshold, at least one *other* detector (pattern or a
+       different ML model) must produce an overlapping same-group span.
+       This catches borderline single-model name hallucinations.
     """
     if not resolved:
         return resolved
@@ -608,15 +629,48 @@ def _suppress_uncorroborated_ml(
             continue
 
         etype = normalize_entity_type(span.entity_type)
+        ml_group = _corroboration_group(etype)
 
-        # ML-primary types always survive
-        if etype in _ML_PRIMARY_TYPES:
-            result.append(span)
+        # ── 1. Strict-corroboration types ──────────────────────────
+        if etype in _STRICT_CORROBORATION_TYPES:
+            corroborated = any(
+                _ranges_overlap(span.start, span.end, ps, pe)
+                and pg == ml_group
+                for ps, pe, pg in pattern_ranges
+            )
+            if corroborated:
+                result.append(span)
+            else:
+                logger.debug(
+                    "ML suppressed (strict): %s %r conf=%.3f",
+                    span.entity_type, span.text, span.confidence,
+                )
             continue
 
-        # Check if a pattern detector of the *same category* also fired nearby.
-        # A pattern detecting ADDRESS does not corroborate an ML COMPANY span.
-        ml_group = _corroboration_group(etype)
+        # ── 2. ML-primary types ────────────────────────────────────
+        if etype in _ML_PRIMARY_TYPES:
+            # High confidence: keep unconditionally
+            if span.confidence >= _ML_PRIMARY_SOLO_MIN:
+                result.append(span)
+                continue
+            # Low confidence: require any same-group agreement from
+            # another detector (pattern tier OR a different ML model).
+            any_agreement = any(
+                _ranges_overlap(span.start, span.end, s.start, s.end)
+                and _corroboration_group(normalize_entity_type(s.entity_type)) == ml_group
+                and s.detector != span.detector
+                for s in all_calibrated
+            )
+            if any_agreement:
+                result.append(span)
+            else:
+                logger.debug(
+                    "ML suppressed (primary, solo low-conf): %s %r conf=%.3f",
+                    span.entity_type, span.text, span.confidence,
+                )
+            continue
+
+        # ── 3. Non-ML-primary types ────────────────────────────────
         corroborated = any(
             _ranges_overlap(span.start, span.end, ps, pe)
             and pg == ml_group
@@ -626,8 +680,6 @@ def _suppress_uncorroborated_ml(
             result.append(span)
             continue
 
-        # Uncorroborated ML span for a pattern-covered type:
-        # only keep if confidence exceeds the higher bar.
         if span.confidence >= _ML_UNCORROBORATED_MIN:
             result.append(span)
         else:
