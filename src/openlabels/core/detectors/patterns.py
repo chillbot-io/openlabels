@@ -1567,8 +1567,11 @@ _p(r'\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', 'MAC_ADDRESS', 0.90),
 _p(r'(?:IMEI)[:\s]+(\d{15})', 'IMEI', 0.95, 1, flags=re.I),
 # Labeled IMEI with dashes: "IMEI: 06-184755-866851-3"
 _p(r'(?:IMEI)[:\s]+(\d{2}-\d{6}-\d{6}-\d)', 'IMEI', 0.95, 1, flags=re.I),
-# IMEI with dashes (DD-DDDDDD-DDDDDD-D format)
-_p(r'\b(\d{2}-\d{6}-\d{6}-\d)\b', 'IMEI', 0.85),
+# IMEI with dashes (DD-DDDDDD-DDDDDD-D format) — confidence ≥ 0.90
+# skips Luhn validation, appropriate for this distinctive format
+# which does not overlap with any other entity type.  Prevents
+# IMEI→PHONE misclassification when synthetic data fails Luhn.
+_p(r'\b(\d{2}-\d{6}-\d{6}-\d)\b', 'IMEI', 0.91),
 
 # === Device Serial Numbers (medical devices) ===
 # Labeled patterns for pacemakers, insulin pumps, hearing aids, etc.

@@ -533,6 +533,12 @@ _ML_PRIMARY_TYPES = frozenset({
     "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
     # Age: patterns miss natural-language age references
     "AGE",
+    # Addresses: pattern detectors catch structured formats but miss
+    # unstructured addresses (street names, building numbers without
+    # city/state/zip context).  52 ADDRESS misses on ai4privacy 10k;
+    # many are GLiNER detections suppressed because ADDRESS was non-
+    # ML-primary (required raw ≥ 0.94 to survive uncorroborated).
+    "ADDRESS",
 })
 
 # Minimum calibrated confidence for ML-only spans on types where
@@ -553,8 +559,10 @@ _STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE"})
 # model) must agree on an overlapping same-group span.  This catches
 # borderline single-detector name hallucinations while preserving
 # high-confidence or multi-detector-agreed detections.
-# At 0.47, GLiNER names need raw ≥ 0.62 to stand alone.
-_ML_PRIMARY_SOLO_MIN = 0.47
+# At 0.49, GLiNER names need raw ≥ 0.66 to stand alone (raised
+# from 0.47 to reduce 42 FIRSTNAME + 13 LASTNAME spurious on
+# ai4privacy 10k benchmark).
+_ML_PRIMARY_SOLO_MIN = 0.49
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents

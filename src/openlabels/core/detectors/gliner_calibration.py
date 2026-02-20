@@ -24,10 +24,11 @@ import math
 GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Names ──────────────────────────────────────────────
     # Names are the most frequent entity and GLiNER tends to be
-    # slightly overconfident on partial matches.
-    "person name": (1.25, 0.05),
-    "first name": (1.20, 0.04),
-    "last name": (1.20, 0.04),
+    # overconfident on partial matches.  Increased temperature to
+    # spread scores and reduce 42 FIRSTNAME + 13 LASTNAME spurious.
+    "person name": (1.35, 0.06),
+    "first name": (1.28, 0.05),
+    "last name": (1.28, 0.05),
     "middle name": (1.30, 0.08),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.
@@ -39,7 +40,10 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Locations ──────────────────────────────────────────
     # Addresses span multiple tokens and GLiNER sometimes
     # underestimates boundaries, leading to partial matches.
-    "street address": (1.30, 0.08),
+    # Reduced temperature from 1.30 to preserve more confidence
+    # for unstructured addresses that patterns miss (52 ADDRESS
+    # misses on ai4privacy 10k).
+    "street address": (1.15, 0.04),
     "city": (1.15, 0.03),
     "state": (1.15, 0.03),
     "zip code": (1.10, 0.02),
@@ -49,6 +53,7 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "date of birth": (1.10, 0.03),
     "date": (1.15, 0.04),
     "date and time": (1.15, 0.04),
+    "time": (1.10, 0.02),  # Slight correction for time expressions
     "age": (1.50, 0.12),  # Very noisy; any 2-digit number matches
     # ── Government IDs ─────────────────────────────────────
     # Structured patterns exist for most of these.  GLiNER over-fires on
@@ -72,7 +77,9 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "ip address": (0.90, -0.05),  # Very structural
     "mac address": (0.90, -0.05),
     # ── Professional ───────────────────────────────────────
-    "company name": (1.35, 0.08),  # Often confused with person names
+    # COMPANY raised from 1.35 to 1.45 — 32 spurious on 10k benchmark;
+    # GLiNER frequently confuses common words with company names.
+    "company name": (1.45, 0.10),
     "job title": (1.40, 0.10),
     "employee id": (1.15, 0.04),
     # ── Vehicle ──────────────────────────────────────────
