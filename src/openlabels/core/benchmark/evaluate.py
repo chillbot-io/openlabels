@@ -336,6 +336,60 @@ def per_entity_type_metrics(
     return buckets
 
 
+def confusion_matrix(
+    all_matches: list[SpanMatch],
+) -> dict[tuple[str, str], int]:
+    """Build a confusion matrix from type-mismatch matches.
+
+    Returns a dict mapping ``(gold_type, pred_type)`` to the number of
+    times that specific misclassification occurred.  Only TYPE_MISMATCH
+    entries are included — exact/partial matches are not errors.
+
+    This directly addresses Singh & Narayanan 2025 ("Unmasking the Reality
+    of PII Masking Models") which found that misclassification patterns
+    (e.g. UPI → EMAIL) reveal training-data gaps rather than context issues.
+    """
+    matrix: dict[tuple[str, str], int] = {}
+    for m in all_matches:
+        if m.match_type != MatchType.TYPE_MISMATCH:
+            continue
+        if m.gold is None or m.pred is None:
+            continue
+        gold_type = normalize_entity_type(m.gold.entity_type)
+        pred_type = normalize_entity_type(m.pred.entity_type)
+        key = (gold_type, pred_type)
+        matrix[key] = matrix.get(key, 0) + 1
+    return matrix
+
+
+def non_identification_rate(
+    all_matches: list[SpanMatch],
+) -> dict[str, float]:
+    """Compute non-identification rate per gold entity type.
+
+    For each gold entity type, returns the fraction of gold spans that were
+    completely missed (no overlapping prediction at all).  This is the key
+    metric from Singh & Narayanan 2025 — models failed to recognise *any*
+    PII in 28% of their test predictions.
+    """
+    gold_counts: dict[str, int] = {}
+    miss_counts: dict[str, int] = {}
+
+    for m in all_matches:
+        if m.gold is None:
+            continue
+        etype = normalize_entity_type(m.gold.entity_type)
+        gold_counts[etype] = gold_counts.get(etype, 0) + 1
+        if m.match_type == MatchType.MISS:
+            miss_counts[etype] = miss_counts.get(etype, 0) + 1
+
+    rates: dict[str, float] = {}
+    for etype, total in sorted(gold_counts.items()):
+        missed = miss_counts.get(etype, 0)
+        rates[etype] = missed / total if total > 0 else 0.0
+    return rates
+
+
 def _overlap_chars(s1: int, e1: int, s2: int, e2: int) -> int:
     """Return number of overlapping characters between two ranges."""
     return max(0, min(e1, e2) - max(s1, s2))

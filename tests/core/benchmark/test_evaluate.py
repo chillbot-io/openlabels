@@ -8,7 +8,9 @@ from openlabels.core.benchmark.evaluate import (
     MatchType,
     SpanMatch,
     aggregate_metrics,
+    confusion_matrix,
     evaluate_spans,
+    non_identification_rate,
     per_category_metrics,
     per_entity_type_metrics,
     _overlap_chars,
@@ -315,3 +317,175 @@ class TestPerEntityTypeMetrics:
         assert "NAME" in types
         assert types["NAME"].true_positives == 1
         assert types["NAME"].false_negatives == 1
+
+
+class TestConfusionMatrix:
+    """Test the confusion matrix for type misclassifications.
+
+    Implements the analysis from Singh & Narayanan 2025 to track
+    which entity types get confused with which.
+    """
+
+    def test_empty_matches(self):
+        assert confusion_matrix([]) == {}
+
+    def test_no_mismatches(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.EXACT,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="NAME"),
+                overlap_ratio=1.0,
+            ),
+        ]
+        assert confusion_matrix(matches) == {}
+
+    def test_single_mismatch(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.TYPE_MISMATCH,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="ADDRESS"),
+                overlap_ratio=1.0,
+            ),
+        ]
+        cm = confusion_matrix(matches)
+        assert cm == {("NAME", "ADDRESS"): 1}
+
+    def test_multiple_mismatches_aggregated(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.TYPE_MISMATCH,
+                gold=_gold(0, 16, "user@example.com", entity_type="EMAIL"),
+                pred=_pred(0, 16, "user@example.com", entity_type="USERNAME"),
+                overlap_ratio=1.0,
+            ),
+            SpanMatch(
+                match_type=MatchType.TYPE_MISMATCH,
+                gold=_gold(30, 44, "admin@test.com", entity_type="EMAIL"),
+                pred=_pred(30, 44, "admin@test.com", entity_type="USERNAME"),
+                overlap_ratio=1.0,
+            ),
+        ]
+        cm = confusion_matrix(matches)
+        assert cm == {("EMAIL", "USERNAME"): 2}
+
+    def test_different_mismatches(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.TYPE_MISMATCH,
+                gold=_gold(0, 4, "test", entity_type="NAME"),
+                pred=_pred(0, 4, "test", entity_type="ADDRESS"),
+                overlap_ratio=1.0,
+            ),
+            SpanMatch(
+                match_type=MatchType.TYPE_MISMATCH,
+                gold=_gold(10, 21, "12345678901", entity_type="SSN"),
+                pred=_pred(10, 21, "12345678901", entity_type="PHONE"),
+                overlap_ratio=1.0,
+            ),
+        ]
+        cm = confusion_matrix(matches)
+        assert ("NAME", "ADDRESS") in cm
+        assert ("SSN", "PHONE") in cm
+
+    def test_ignores_exact_and_partial_matches(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.EXACT,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="NAME"),
+                overlap_ratio=1.0,
+            ),
+            SpanMatch(
+                match_type=MatchType.PARTIAL,
+                gold=_gold(10, 20, "John Smith", entity_type="NAME"),
+                pred=_pred(10, 14, "John", entity_type="NAME"),
+                overlap_ratio=0.8,
+            ),
+        ]
+        assert confusion_matrix(matches) == {}
+
+
+class TestNonIdentificationRate:
+    """Test non-identification rate computation.
+
+    Singh & Narayanan 2025 found a 28% non-identification rate across
+    51k predictions — this metric tracks how many gold spans are completely
+    missed per entity type.
+    """
+
+    def test_empty_matches(self):
+        assert non_identification_rate([]) == {}
+
+    def test_perfect_detection(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.EXACT,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="NAME"),
+                overlap_ratio=1.0,
+            ),
+        ]
+        rates = non_identification_rate(matches)
+        assert rates["NAME"] == 0.0
+
+    def test_complete_miss(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.MISS,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+            ),
+        ]
+        rates = non_identification_rate(matches)
+        assert rates["NAME"] == 1.0
+
+    def test_partial_miss_rate(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.EXACT,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="NAME"),
+                overlap_ratio=1.0,
+            ),
+            SpanMatch(
+                match_type=MatchType.MISS,
+                gold=_gold(10, 14, "Jane", entity_type="NAME"),
+            ),
+        ]
+        rates = non_identification_rate(matches)
+        assert rates["NAME"] == pytest.approx(0.5)
+
+    def test_multiple_entity_types(self):
+        matches = [
+            SpanMatch(
+                match_type=MatchType.EXACT,
+                gold=_gold(0, 4, "John", entity_type="NAME"),
+                pred=_pred(0, 4, "John", entity_type="NAME"),
+                overlap_ratio=1.0,
+            ),
+            SpanMatch(
+                match_type=MatchType.MISS,
+                gold=_gold(10, 21, "123-45-6789", entity_type="SSN"),
+            ),
+            SpanMatch(
+                match_type=MatchType.MISS,
+                gold=_gold(30, 43, "test@test.com", entity_type="EMAIL"),
+            ),
+        ]
+        rates = non_identification_rate(matches)
+        assert rates["NAME"] == 0.0
+        assert rates["SSN"] == 1.0
+        assert rates["EMAIL"] == 1.0
+
+    def test_spurious_preds_not_counted(self):
+        """Spurious predictions (no gold span) don't affect the rate."""
+        matches = [
+            SpanMatch(
+                match_type=MatchType.SPURIOUS,
+                pred=_pred(0, 4, "test", entity_type="NAME"),
+            ),
+        ]
+        rates = non_identification_rate(matches)
+        # No gold spans, so no rates
+        assert rates == {}
