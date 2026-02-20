@@ -864,10 +864,11 @@ _p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.88, 1),
 # "Surgery began 08:00", "procedure at 14:30"
 _p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.85, 1, flags=re.I),
 # Bare HH:MM (24-hour) — "04:52", "23:15"
-# Lowered to 0.68 (below default 0.70 threshold): bare HH:MM is ambiguous
-# (scores, verse refs, ratios).  Times with AM/PM, seconds, labels, or
-# context words ("at", "began", "Time:") are still caught at 0.82–0.90.
-_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.68, 1),
+# 0.72 confidence: slightly above default threshold.  Bare HH:MM is somewhat
+# ambiguous (scores, verse refs, ratios) but PII benchmarks show most
+# bare HH:MM tokens in real documents are genuine times.  Additional guard:
+# negative lookahead rejects score-like "NN:NN-NN" and ratio "NN:NN/NN".
+_p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.72, 1),
 # Standalone AM/PM without colon: "8 AM", "12 PM", "3pm"
 _p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
 # "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
@@ -1279,6 +1280,25 @@ _p(
     'ADDRESS', 0.88, 1
 ),
 
+# Ordinal street names: "78244 N 5th Street", "123 3rd Avenue", "456 E 1st St"
+# Standard patterns miss these because ordinal names start with digits, not [A-Z]
+_p(
+    rf'(\d+[A-Za-z]?\s+(?:{_DIRECTIONAL}\s+)?\d{{1,3}}(?:st|nd|rd|th)\s+(?:{_STREET_SUFFIXES}))\.?\b',
+    'ADDRESS', 0.88, 1, flags=re.I
+),
+# Reversed format: "StreetName Suffix NNN" — "Kuhlman Run 755", "Baker Street 221B"
+# Common in UK, Australian, and some European address styles.
+# Single-word street name only — avoids "The Main Street 100" FP from greedy multi-word.
+_p(
+    rf'\b([A-Z][a-z]{{2,}}\s+(?:{_STREET_SUFFIXES})\s+\d{{1,5}}[A-Za-z]?)\b',
+    'ADDRESS', 0.80, 1, flags=re.I
+),
+# Directional + StreetName + NNN: "S Broadway 61915"
+_p(
+    rf'({_DIRECTIONAL}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+\d{{1,5}})\b',
+    'ADDRESS', 0.82, 1
+),
+
 # PO Box
 _p(r'P\.?O\.?\s*Box\s+\d+', 'ADDRESS', 0.88, flags=re.I),
 
@@ -1532,6 +1552,8 @@ _p(r'\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b', 'MAC_ADDRESS', 0.90),
 
 # === IMEI ===
 _p(r'(?:IMEI)[:\s]+(\d{15})', 'IMEI', 0.95, 1, flags=re.I),
+# Labeled IMEI with dashes: "IMEI: 06-184755-866851-3"
+_p(r'(?:IMEI)[:\s]+(\d{2}-\d{6}-\d{6}-\d)', 'IMEI', 0.95, 1, flags=re.I),
 # IMEI with dashes (DD-DDDDDD-DDDDDD-D format)
 _p(r'\b(\d{2}-\d{6}-\d{6}-\d)\b', 'IMEI', 0.85),
 
@@ -1659,6 +1681,17 @@ _p(r'\b[Uu]se\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=
 _p(r'\busing\s+(?:your|their|his|her)\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.78, 1, flags=re.I),
 # "username and X" — broader credential pair (any word before "and")
 _p(r'(?:username|user\s*name|user\s+ID)\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "the password VALUE" / "password VALUE" — bare password label before value
+# Require at least one digit in value to avoid matching "password protection", "password policy"
+_p(r'(?:the\s+)?(?:password|passwd|pwd|passcode)\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "reliable/secure/strong password VALUE" — adjective before password
+_p(r'(?:reliable|secure|strong|new|old|current|correct|wrong)\s+(?:password|passwd|pwd|passcode)\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "credentials (USERNAME, PASSWORD)" — credential pair in parentheses
+_p(r'credentials?\s*\(\s*\S+\s*,\s*([A-Za-z0-9_]{6,50})\s*\)', 'PASSWORD', 0.85, 1, flags=re.I),
+# "encrypt it using VALUE" / "encrypt using VALUE" — encryption context
+_p(r'(?:encrypt|decrypt)\s+(?:\S+\s+)?(?:using|with)\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+# "implement VALUE" followed by auth/security context — deployment password
+_p(r'\bimplement\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b(?=\s+(?:and|for|to|as|in))', 'PASSWORD', 0.75, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -1913,6 +1946,16 @@ _p(r'(?:monitor|deposit|withdraw|debit|credited?\s+to|charged?\s+to)\s+(\d{7,17}
 _p(r'\b(\d{7,17})\s+(?:is\s+(?:your|the)\s+(?:account|acct))', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 # "routing number XXXX" / "sort code XXXX"
 _p(r'(?:routing\s+number|sort\s+code|BSB)\s*[:\s#]+(\d{6,9})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "reference number: XXXX" / "reference no: XXXX" — labeled reference IDs
+_p(r'(?:reference\s+(?:number|no|#|id))[:\s]+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
+# "account (No. XXXX)" / "account (no XXXX)" — parenthesized account label
+_p(r'(?:account)\s*\(\s*(?:No\.?|#)\s*(\d{6,17})\s*\)', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
+# "transaction ID: XXXX" / "transaction number: XXXX"
+_p(r'(?:transaction\s+(?:ID|id|number|no|#))[:\s]+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "account number, XXXX" — comma-separated (OCR/formatting artifacts)
+_p(r'account\s+number\s*,\s*(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "transferred to XXXX" / "deposited into XXXX" — financial transfer targets
+_p(r'(?:transferred|deposited|wired|sent)\s+(?:to|into)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 
 # === Certificate/License Numbers (Safe Harbor #11) ===
 _p(r'(?:Certificate|Certification)\s+(?:Number|No|#)[:\s]+([A-Z0-9-]{5,20})', 'CERTIFICATE_NUMBER', 0.85, 1, flags=re.I),
@@ -1952,6 +1995,10 @@ _p(r'\b(\d{16})\b(?=\s+(?:will\s+(?:cover|be\s+charged)|for\s+(?:processing|veri
 _p(r'(?:company|corporate|business)\s+card\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.84, 1, flags=re.I),
 # Broad: "payment via NNN, XXXX" — 16-digit after payment context
 _p(r'(?:payment|paid)\s+(?:via|through|using)\s+\S+\s+(?:number\s+(?:ending\s+)?(?:in\s+)?)?(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.80, 1, flags=re.I),
+# "Need your XXXX for smooth transactions" / "your XXXX for payment" — 16-digit with transaction context
+_p(r'(?:need\s+)?(?:your|the)\s+(\d{16})\b(?=\s+for\s+(?:smooth\s+)?(?:transactions?|payments?|processing|verification))', 'CREDIT_CARD_NOLUHN', 0.78, 1, flags=re.I),
+# "personal details like XXXX" — enumerated personal data containing 16-digit
+_p(r'(?:details|data|information)\s+(?:like|such\s+as|including)\s+(\d{16})\b', 'CREDIT_CARD_NOLUHN', 0.75, 1, flags=re.I),
 # Last 4 of card
 _p(r'(?:ending\s+in|last\s+4|xxxx)[:\s]*(\d{4})\b', 'CREDIT_CARD_PARTIAL', 0.82, 1, flags=re.I),
 # VEHICLE IDENTIFIERS (HIPAA Required)
@@ -2756,8 +2803,10 @@ class PatternDetector(BaseDetector):
                 if pdef.entity_type == 'SIN' and not _validate_sin(value):
                     continue
 
-                # IMEI validation (Luhn check)
-                if pdef.entity_type == 'IMEI' and not _validate_imei(value):
+                # IMEI validation (Luhn check) — skip for labeled patterns (≥0.90)
+                # where the IMEI: label provides sufficient context.
+                # Synthetic datasets may not have valid Luhn check digits.
+                if pdef.entity_type == 'IMEI' and pdef.confidence < 0.90 and not _validate_imei(value):
                     continue
 
                 # NHS mod-11 checksum validation

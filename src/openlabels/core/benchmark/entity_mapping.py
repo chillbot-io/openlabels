@@ -103,6 +103,9 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
 # the underlying text non-PII.
 UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
     "JOB_TITLE",   # ai4privacy JOBTITLE / JOBTYPE / JOBAREA are unmapped
+    "EMPLOYER",    # ai4privacy has no EMPLOYER gold labels
+    "HEIGHT",      # ai4privacy HEIGHT is in UNMAPPED_TYPES (not scored)
+    "FACILITY",    # ai4privacy has no FACILITY gold labels
 })
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect
