@@ -366,7 +366,8 @@ class DetectorOrchestrator:
         3. Calibrate into unified tier bands
         4. Ensemble boost (when 2+ detectors agree)
         5. Resolve overlapping spans
-        6. Proximity boost (optional)
+        6. Suppress uncorroborated ML detections for pattern-covered types
+        7. Proximity boost (optional)
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -381,9 +382,21 @@ class DetectorOrchestrator:
         # spans with the same entity type, boost the best span's confidence.
         calibrated = self._apply_ensemble_boost(calibrated)
 
+        from ..pipeline.span_resolver import OverlapStrategy
+
         resolved = resolve_spans(
-            calibrated, confidence_threshold=0.0, source_text=text,
+            calibrated,
+            confidence_threshold=0.0,
+            strategy=OverlapStrategy.HIGHER_TIER,
+            source_text=text,
         )
+
+        # Suppress uncorroborated ML detections: ML spans for entity types
+        # that patterns handle well (dates, addresses, financial, etc.) are
+        # suppressed unless they were ensemble-boosted or have high confidence.
+        # ML should primarily contribute names and professional entities —
+        # things patterns cannot detect.
+        resolved = _suppress_uncorroborated_ml(resolved, calibrated)
 
         if self.config.enable_proximity_boost and resolved:
             from ..pipeline.entity_proximity import analyze_proximity
@@ -481,6 +494,96 @@ class DetectorOrchestrator:
     def detector_names(self) -> list[str]:
         """Get list of active detector names."""
         return [d.name for d in self.detectors]
+
+
+# ---------------------------------------------------------------------------
+# ML corroboration filter
+# ---------------------------------------------------------------------------
+
+# Entity types where ML adds unique value (patterns cannot detect them).
+# ML spans for these types survive unconditionally after dedup.
+_ML_PRIMARY_TYPES = frozenset({
+    # Names: the main reason ML exists in the pipeline
+    "NAME", "FIRSTNAME", "LASTNAME", "MIDDLENAME",
+    "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
+    "PERSON", "PATIENT", "FULLNAME",
+    # Professional: hard for patterns to detect
+    "COMPANY", "EMPLOYER", "JOB_TITLE", "EMPLOYEE_ID",
+    "FACILITY",
+    # Medical identifiers: benefit from ML context
+    "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
+    # Age: patterns miss natural-language age references
+    "AGE",
+})
+
+# Minimum calibrated confidence for ML-only spans on types where
+# patterns are the primary detector.  Below this, the ML detection
+# is too uncertain to trust without pattern corroboration.
+_ML_UNCORROBORATED_MIN = 0.48
+
+
+def _suppress_uncorroborated_ml(
+    resolved: list[Span],
+    all_calibrated: list[Span],
+) -> list[Span]:
+    """Suppress ML-only detections for pattern-covered entity types.
+
+    After span resolution, an ML span that survived at a position where
+    no pattern/checksum/structured detector fired is "uncorroborated".
+    For entity types that patterns handle well (dates, addresses, IPs,
+    financial, etc.), these uncorroborated ML spans are often false
+    positives.  Suppress them unless confidence is high enough.
+
+    ML-primary types (names, companies, etc.) are always kept — these
+    are the entities that only ML can detect.
+    """
+    if not resolved:
+        return resolved
+
+    # Collect character ranges covered by non-ML spans (before dedup).
+    pattern_ranges: list[tuple[int, int]] = []
+    for s in all_calibrated:
+        if s.tier != Tier.ML:
+            pattern_ranges.append((s.start, s.end))
+
+    result: list[Span] = []
+    for span in resolved:
+        if span.tier != Tier.ML:
+            result.append(span)
+            continue
+
+        etype = normalize_entity_type(span.entity_type)
+
+        # ML-primary types always survive
+        if etype in _ML_PRIMARY_TYPES:
+            result.append(span)
+            continue
+
+        # Check if a pattern detector also fired at (roughly) the same position
+        corroborated = any(
+            _ranges_overlap(span.start, span.end, ps, pe)
+            for ps, pe in pattern_ranges
+        )
+        if corroborated:
+            result.append(span)
+            continue
+
+        # Uncorroborated ML span for a pattern-covered type:
+        # only keep if confidence exceeds the higher bar.
+        if span.confidence >= _ML_UNCORROBORATED_MIN:
+            result.append(span)
+        else:
+            logger.debug(
+                "ML suppressed (uncorroborated): %s %r conf=%.3f",
+                span.entity_type, span.text, span.confidence,
+            )
+
+    return result
+
+
+def _ranges_overlap(s1: int, e1: int, s2: int, e2: int) -> bool:
+    """Return True if two character ranges overlap at all."""
+    return s1 < e2 and s2 < e1
 
 
 # ---------------------------------------------------------------------------
