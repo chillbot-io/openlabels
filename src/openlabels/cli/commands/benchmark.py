@@ -379,6 +379,7 @@ def _print_result(result, verbose: bool = False) -> None:
 
     if verbose:
         _print_categories(result)
+        _print_type_mismatches(result)
 
 
 def _print_categories(result) -> None:
@@ -393,6 +394,46 @@ def _print_categories(result) -> None:
             f"{cat:<20} {m.precision:>6.3f} {m.recall:>6.3f} {m.f1:>6.3f} "
             f"{m.true_positives:>5} {m.false_positives:>5} {m.false_negatives:>5}"
         )
+
+
+def _print_type_mismatches(result) -> None:
+    """Print type mismatch details when there are any."""
+    from collections import Counter
+
+    from openlabels.core.benchmark.evaluate import MatchType
+    from openlabels.core.types import normalize_entity_type
+
+    mismatch_pairs: Counter = Counter()
+    miss_types: Counter = Counter()
+    spurious_types: Counter = Counter()
+
+    for sr in result.sample_results:
+        for m in sr.matches:
+            if m.match_type == MatchType.TYPE_MISMATCH and m.gold and m.pred:
+                gold_t = normalize_entity_type(m.gold.entity_type)
+                pred_t = normalize_entity_type(m.pred.entity_type)
+                mismatch_pairs[(gold_t, pred_t)] += 1
+            elif m.match_type == MatchType.MISS and m.gold:
+                miss_types[m.gold.entity_type] += 1
+            elif m.match_type == MatchType.SPURIOUS and m.pred:
+                spurious_types[normalize_entity_type(m.pred.entity_type)] += 1
+
+    if mismatch_pairs:
+        click.echo(f"\nType mismatches ({sum(mismatch_pairs.values())} total):")
+        click.echo(f"  {'Gold Type':<22} {'Pred Type':<22} {'Count':>5}")
+        click.echo("  " + "-" * 52)
+        for (gold, pred), count in mismatch_pairs.most_common(20):
+            click.echo(f"  {gold:<22} -> {pred:<22} {count:>5}")
+
+    if miss_types:
+        click.echo(f"\nMisses by gold type ({sum(miss_types.values())} total):")
+        for t, c in miss_types.most_common(15):
+            click.echo(f"  {t:<25} {c:>4}")
+
+    if spurious_types:
+        click.echo(f"\nSpurious by pred type ({sum(spurious_types.values())} total):")
+        for t, c in spurious_types.most_common(15):
+            click.echo(f"  {t:<25} {c:>4}")
 
 
 def _print_comparison(results) -> None:
