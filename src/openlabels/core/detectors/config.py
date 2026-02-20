@@ -54,7 +54,7 @@ class DetectionConfig:
 
     # Post-processing
     enable_coref: bool = False
-    enable_context_enhancement: bool = False
+    enable_context_enhancement: bool = True
     enable_context_keywords: bool = True
     enable_policy: bool = True
     enable_allowlist: bool = True

@@ -70,7 +70,7 @@ class BenchmarkConfig:
 
     # Post-processing / relationship graph
     enable_coref: bool = False
-    enable_context_enhancement: bool = False
+    enable_context_enhancement: bool = True
     enable_context_keywords: bool = True
     enable_proximity_boost: bool = False
     proximity_window_chars: int = 500
