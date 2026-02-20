@@ -59,6 +59,20 @@ NAME_DENY_LIST: set[str] = {
     "krona", "krone", "dinar", "dirham", "riyal", "ringgit", "baht",
     # Gender identities (not PII)
     "pangender", "agender", "bigender", "genderfluid", "genderqueer",
+    # Day names (capitalized in text, never PII)
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    # Common nouns frequently capitalized at sentence start
+    "the", "this", "that", "these", "those", "there", "here",
+    "new", "old", "first", "last", "next", "previous",
+    "total", "general", "national", "international", "standard",
+    "information", "description", "report", "note", "update",
+    "review", "process", "system", "service", "program", "plan",
+    "type", "case", "state", "status", "level", "rate", "data",
+    # Ordinal / positional words
+    "senior", "junior", "associate", "assistant", "chief",
+    # Relational terms (not PII by themselves)
+    "mother", "father", "brother", "sister", "daughter", "son",
+    "husband", "wife", "spouse", "partner", "parent", "child",
 }
 
 # Common words that get falsely detected as USERNAMEs
@@ -342,9 +356,13 @@ class ContextEnhancer:
         # Entity types to apply enhancement to.
         # Expanded per Singh & Narayanan 2025 findings — contextual
         # disambiguation is the #1 failure mode for NER-based PII detectors.
+        # Includes name sub-types (FIRSTNAME, LASTNAME, MIDDLENAME) because
+        # _split_name_spans converts NAME → FIRSTNAME + LASTNAME before
+        # context enhancement runs.
         self.enhanced_types = {
             "MRN",
             "NAME", "PERSON", "PER",
+            "FIRSTNAME", "LASTNAME", "MIDDLENAME",
             "USERNAME",
             "ADDRESS",
             "MEDICATION",
@@ -371,7 +389,8 @@ class ContextEnhancer:
         text_normalized = text_lower.rstrip('.,;:!?')
 
         # Select appropriate deny list
-        if entity_type in ("NAME", "PERSON", "PER"):
+        _NAME_TYPES = ("NAME", "PERSON", "PER", "FIRSTNAME", "LASTNAME", "MIDDLENAME")
+        if entity_type in _NAME_TYPES:
             deny_list = NAME_DENY_LIST
         elif entity_type == "USERNAME":
             deny_list = USERNAME_DENY_LIST
@@ -395,7 +414,7 @@ class ContextEnhancer:
             return f"deny_list:{text_normalized}"
 
         # For NAME types, check company suffixes
-        if entity_type in ("NAME", "PERSON", "PER"):
+        if entity_type in _NAME_TYPES:
             for suffix in COMPANY_SUFFIXES:
                 if text_lower.endswith(suffix) or text_lower.endswith(f" {suffix}"):
                     return f"company_suffix:{suffix}"
@@ -485,7 +504,8 @@ class ContextEnhancer:
 
         entity_type = span.entity_type.upper()
 
-        if entity_type in ("NAME", "PERSON", "PER"):
+        _NAME_TYPES = ("NAME", "PERSON", "PER", "FIRSTNAME", "LASTNAME", "MIDDLENAME")
+        if entity_type in _NAME_TYPES:
             positive_rules = NAME_POSITIVE_HOTWORDS
             negative_rules = NAME_NEGATIVE_HOTWORDS
         elif entity_type == "ADDRESS":

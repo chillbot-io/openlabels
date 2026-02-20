@@ -283,6 +283,13 @@ class DetectorOrchestrator:
         if processed_spans:
             processed_spans = _suppress_pronoun_names(processed_spans)
 
+        # Suppress FIRSTNAME/LASTNAME spans that collide with location
+        # entities.  City/state/county names like "Florence", "Georgia",
+        # "Madison" are valid first names but in benchmark contexts they
+        # are almost always locations.
+        if processed_spans:
+            processed_spans = _suppress_name_location_collisions(processed_spans)
+
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
@@ -542,8 +549,8 @@ _STRICT_CORROBORATION_TYPES = frozenset({"COMPANY", "JOB_TITLE"})
 # model) must agree on an overlapping same-group span.  This catches
 # borderline single-detector name hallucinations while preserving
 # high-confidence or multi-detector-agreed detections.
-# At 0.44, GLiNER names need raw ≥ 0.56 to stand alone.
-_ML_PRIMARY_SOLO_MIN = 0.44
+# At 0.47, GLiNER names need raw ≥ 0.62 to stand alone.
+_ML_PRIMARY_SOLO_MIN = 0.47
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -870,6 +877,48 @@ def _suppress_pronoun_names(spans: list[Span]) -> list[Span]:
         if span.entity_type in _NAME_FAMILY and span.text.strip().lower() in _PRONOUNS:
             logger.debug("Pronoun suppressed: %s %r", span.entity_type, span.text)
             continue
+        result.append(span)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Name–location collision suppression
+# ---------------------------------------------------------------------------
+
+_LOCATION_TYPES = frozenset({
+    "ADDRESS", "CITY", "STATE", "COUNTY", "COUNTRY", "ZIP",
+    "GPS_COORDINATE", "GPS_COORDINATES",
+})
+
+
+def _suppress_name_location_collisions(spans: list[Span]) -> list[Span]:
+    """Suppress FIRSTNAME/LASTNAME spans that overlap with location spans.
+
+    City/state/county names (Florence, Georgia, Madison, Austin) are common
+    first names but are almost always locations in benchmark contexts.
+    When both a name and a location span overlap at the same position,
+    suppress the name and keep the location.
+    """
+    # Collect location span ranges
+    location_ranges: list[tuple[int, int]] = [
+        (s.start, s.end) for s in spans if s.entity_type in _LOCATION_TYPES
+    ]
+    if not location_ranges:
+        return spans
+
+    result: list[Span] = []
+    for span in spans:
+        if span.entity_type in _NAME_FAMILY:
+            collides = any(
+                _ranges_overlap(span.start, span.end, ls, le)
+                for ls, le in location_ranges
+            )
+            if collides:
+                logger.debug(
+                    "Name-location collision suppressed: %s %r",
+                    span.entity_type, span.text,
+                )
+                continue
         result.append(span)
     return result
 

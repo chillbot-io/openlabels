@@ -83,23 +83,28 @@ CONTEXT_RULES: dict[str, ContextRule] = {
     "FIRSTNAME": ContextRule(
         boost_words=frozenset({
             "name", "first name", "given name", "patient", "mr",
-            "mrs", "ms", "dr",
+            "mrs", "ms", "dr", "dear", "sincerely", "regards",
         }),
         demote_words=frozenset({
             "product", "brand", "model", "version",
+            "city", "town", "village", "county", "state", "province",
+            "country", "located", "shipped", "delivered",
         }),
         boost_amount=0.10,
-        demote_amount=0.10,
+        demote_amount=0.12,
     ),
     "LASTNAME": ContextRule(
         boost_words=frozenset({
             "name", "last name", "surname", "family name", "patient",
+            "dear", "sincerely", "regards",
         }),
         demote_words=frozenset({
             "product", "brand", "model", "version",
+            "city", "town", "village", "county", "state", "province",
+            "country", "located", "shipped", "delivered",
         }),
         boost_amount=0.10,
-        demote_amount=0.10,
+        demote_amount=0.12,
     ),
     "EMAIL": ContextRule(
         boost_words=frozenset({

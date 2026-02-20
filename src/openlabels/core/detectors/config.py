@@ -83,9 +83,11 @@ class DetectionConfig:
         ("DATE_DOB", 0.65),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
+        # Raised from 0.45 to reduce spurious FIRSTNAME/LASTNAME FPs
+        # (80 FIRSTNAME + 34 LASTNAME spurious on 1k-sample benchmark).
         ("NAME", 0.45),
-        ("FIRSTNAME", 0.45),
-        ("LASTNAME", 0.45),
+        ("FIRSTNAME", 0.48),
+        ("LASTNAME", 0.48),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
         ("COMPANY", 0.50),
