@@ -11,16 +11,15 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import require_admin
 from openlabels.server.db import get_session
 from openlabels.server.models import TenantSettings
-from openlabels.server.routes import audit_log, htmx_notify
+from openlabels.server.routes import audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +67,10 @@ class AllSettingsResponse(BaseModel):
 
 class AzureSettingsRequest(BaseModel):
     """Request to update Azure AD settings."""
-    tenant_id: str = ""
-    client_id: str = ""
-    client_secret: str = ""
+    model_config = ConfigDict(extra="forbid")
+    azure_tenant_id: str = ""
+    azure_client_id: str = ""
+    azure_client_secret: str = ""
 
 
 class ScanSettingsRequest(BaseModel):
@@ -83,7 +83,8 @@ class ScanSettingsRequest(BaseModel):
 
 class EntitySettingsRequest(BaseModel):
     """Request to update entity detection settings."""
-    entities: list[str] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+    enabled_entities: list[str] = Field(default_factory=list)
 
 
 class SettingsUpdateResponse(BaseModel):
@@ -177,16 +178,16 @@ async def update_azure_settings(
     """
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.azure_tenant_id = request.tenant_id or None
-    settings.azure_client_id = request.client_id or None
-    if request.client_secret:
+    settings.azure_tenant_id = request.azure_tenant_id or None
+    settings.azure_client_id = request.azure_client_id or None
+    if request.azure_client_secret:
         settings.azure_client_secret_set = True
     settings.updated_by = user.id
 
     audit_log(
         session, tenant_id=user.tenant_id, user_id=user.id,
         action="settings_updated", resource_type="settings",
-        details={"section": "azure", "client_id": request.client_id or None},
+        details={"section": "azure", "client_id": request.azure_client_id or None},
     )
 
     return SettingsUpdateResponse(message="Azure settings updated")
@@ -235,42 +236,42 @@ async def update_entity_settings(
     """
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.enabled_entities = request.entities
+    settings.enabled_entities = request.enabled_entities
     settings.updated_by = user.id
 
     audit_log(
         session, tenant_id=user.tenant_id, user_id=user.id,
         action="settings_updated", resource_type="settings",
-        details={"section": "entities", "enabled_entities": request.entities},
+        details={"section": "entities", "enabled_entities": request.enabled_entities},
     )
 
     return SettingsUpdateResponse(message="Entity detection settings updated")
 
 
-@router.post("/fanout", response_class=HTMLResponse)
+class FanoutSettingsRequest(BaseModel):
+    """Request to update fan-out and pipeline settings."""
+    model_config = ConfigDict(extra="forbid")
+    fanout_enabled: bool = True
+    fanout_threshold: int = Field(default=10000, ge=100, le=1_000_000)
+    fanout_max_partitions: int = Field(default=16, ge=1, le=128)
+    pipeline_max_concurrent_files: int = Field(default=8, ge=1, le=64)
+    pipeline_memory_budget_mb: int = Field(default=512, ge=64, le=8192)
+
+
+@router.post("/fanout", response_model=SettingsUpdateResponse)
 async def update_fanout_settings(
-    fanout_enabled: str | None = Form(None),
-    fanout_threshold: int = Form(10000),
-    fanout_max_partitions: int = Form(16),
-    pipeline_max_concurrent_files: int = Form(8),
-    pipeline_memory_budget_mb: int = Form(512),
+    request: FanoutSettingsRequest,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> SettingsUpdateResponse:
     """Update fan-out and pipeline parallelism configuration."""
-    # Validate bounds
-    fanout_threshold = max(100, min(fanout_threshold, 1_000_000))
-    fanout_max_partitions = max(1, min(fanout_max_partitions, 128))
-    pipeline_max_concurrent_files = max(1, min(pipeline_max_concurrent_files, 64))
-    pipeline_memory_budget_mb = max(64, min(pipeline_memory_budget_mb, 8192))
-
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
-    settings.fanout_enabled = fanout_enabled == "on"
-    settings.fanout_threshold = fanout_threshold
-    settings.fanout_max_partitions = fanout_max_partitions
-    settings.pipeline_max_concurrent_files = pipeline_max_concurrent_files
-    settings.pipeline_memory_budget_mb = pipeline_memory_budget_mb
+    settings.fanout_enabled = request.fanout_enabled
+    settings.fanout_threshold = request.fanout_threshold
+    settings.fanout_max_partitions = request.fanout_max_partitions
+    settings.pipeline_max_concurrent_files = request.pipeline_max_concurrent_files
+    settings.pipeline_memory_budget_mb = request.pipeline_memory_budget_mb
     settings.updated_by = user.id
 
     audit_log(
@@ -278,48 +279,44 @@ async def update_fanout_settings(
         action="settings_updated", resource_type="settings",
         details={
             "section": "fanout",
-            "fanout_enabled": settings.fanout_enabled,
-            "fanout_threshold": fanout_threshold,
-            "fanout_max_partitions": fanout_max_partitions,
+            "fanout_enabled": request.fanout_enabled,
+            "fanout_threshold": request.fanout_threshold,
+            "fanout_max_partitions": request.fanout_max_partitions,
         },
     )
 
-    return htmx_notify("Performance settings updated")
+    return SettingsUpdateResponse(message="Performance settings updated")
 
 
-@router.post("/adapters", response_class=HTMLResponse)
+class AdapterDefaultsRequest(BaseModel):
+    """Request to update global adapter filter defaults."""
+    model_config = ConfigDict(extra="forbid")
+    exclude_extensions: list[str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
+    exclude_accounts: list[str] = Field(default_factory=list)
+    min_size_bytes: int = Field(default=0, ge=0, le=1_073_741_824)
+    max_size_bytes: int = Field(default=0, ge=0, le=10_737_418_240)
+    exclude_temp_files: bool = False
+    exclude_system_dirs: bool = False
+
+
+@router.post("/adapters", response_model=SettingsUpdateResponse)
 async def update_adapter_defaults(
-    exclude_extensions: str = Form(""),
-    exclude_patterns: str = Form(""),
-    exclude_accounts: str = Form(""),
-    min_size_bytes: int = Form(0),
-    max_size_bytes: int = Form(0),
-    exclude_temp_files: str | None = Form(None),
-    exclude_system_dirs: str | None = Form(None),
+    request: AdapterDefaultsRequest,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
-):
+) -> SettingsUpdateResponse:
     """Update global adapter filter defaults."""
-    # Validate bounds
-    min_size_bytes = max(0, min(min_size_bytes, 1_073_741_824))  # 0 – 1 GB
-    max_size_bytes = max(0, min(max_size_bytes, 10_737_418_240))  # 0 – 10 GB
-
     settings = await _get_or_create_settings(session, user.tenant_id, user.id)
 
     settings.adapter_defaults = {
-        "exclude_extensions": [
-            e.strip() for e in exclude_extensions.split(",") if e.strip()
-        ],
-        "exclude_patterns": [
-            p.strip() for p in exclude_patterns.split(",") if p.strip()
-        ],
-        "exclude_accounts": [
-            a.strip() for a in exclude_accounts.split(",") if a.strip()
-        ],
-        "min_size_bytes": min_size_bytes if min_size_bytes > 0 else None,
-        "max_size_bytes": max_size_bytes if max_size_bytes > 0 else None,
-        "exclude_temp_files": exclude_temp_files == "on",
-        "exclude_system_dirs": exclude_system_dirs == "on",
+        "exclude_extensions": request.exclude_extensions,
+        "exclude_patterns": request.exclude_patterns,
+        "exclude_accounts": request.exclude_accounts,
+        "min_size_bytes": request.min_size_bytes if request.min_size_bytes > 0 else None,
+        "max_size_bytes": request.max_size_bytes if request.max_size_bytes > 0 else None,
+        "exclude_temp_files": request.exclude_temp_files,
+        "exclude_system_dirs": request.exclude_system_dirs,
     }
     settings.updated_by = user.id
 
@@ -329,12 +326,11 @@ async def update_adapter_defaults(
         details={"section": "adapters"},
     )
 
-    return htmx_notify("Adapter defaults updated")
+    return SettingsUpdateResponse(message="Adapter defaults updated")
 
 
 @router.post("/reset")
 async def reset_settings(
-    request: Request,
     user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -353,8 +349,5 @@ async def reset_settings(
         action="settings_updated", resource_type="settings",
         details={"section": "reset", "action": "reset_to_defaults"},
     )
-
-    if request.headers.get("HX-Request"):
-        return htmx_notify("Settings reset to defaults")
 
     return SettingsUpdateResponse(message="Settings reset to defaults")

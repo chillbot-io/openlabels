@@ -31,7 +31,7 @@ from openlabels.server.dependencies import (
     TenantContextDep,
 )
 from openlabels.server.errors import ErrorCode, raise_database_error
-from openlabels.server.routes import audit_log, htmx_notify
+from openlabels.server.routes import audit_log
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -528,9 +528,5 @@ async def update_label_mappings(
         logger.debug(f"Invalidated label mappings cache for tenant: {tenant_id}")
     except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Failed to invalidate label mappings cache: {e}")
-
-    # Check if HTMX request
-    if request.headers.get("HX-Request"):
-        return htmx_notify("Label mappings saved")
 
     return {"message": "Label mappings updated"}

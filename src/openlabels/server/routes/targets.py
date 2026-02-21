@@ -15,7 +15,7 @@ import re
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,7 +26,7 @@ from openlabels.core.types import AdapterType
 from openlabels.server.db import get_session
 from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
-from openlabels.server.routes import audit_log, get_or_404, htmx_notify
+from openlabels.server.routes import audit_log, get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -505,7 +505,6 @@ async def update_target(
 @router.delete("/{target_id}")
 async def delete_target(
     target_id: UUID,
-    request: Request,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
 ):
@@ -521,11 +520,6 @@ async def delete_target(
         )
         await session.delete(target)
 
-        # Check if this is an HTMX request
-        if request.headers.get("HX-Request"):
-            return htmx_notify(f'Target "{target_name}" deleted', refreshTargets=True)
-
-        # Regular REST response
         return Response(status_code=204)
     except SQLAlchemyError as e:
         raise_database_error("deleting target", e)

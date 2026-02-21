@@ -357,9 +357,11 @@ async def publish_scan_progress(
     """Publish scan progress to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "scan_progress",
-        "scan_id": str(scan_id),
-        "status": status_value,
-        "progress": progress,
+        "data": {
+            "scan_id": str(scan_id),
+            "status": status_value,
+            "progress": progress,
+        },
     })
 
 
@@ -372,9 +374,11 @@ async def publish_scan_completed(
     """Publish scan completion to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "scan_completed",
-        "scan_id": str(scan_id),
-        "status": status_value,
-        "summary": summary,
+        "data": {
+            "scan_id": str(scan_id),
+            "status": status_value,
+            "summary": summary,
+        },
     })
 
 
@@ -386,8 +390,10 @@ async def publish_scan_failed(
     """Publish scan failure to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "scan_failed",
-        "scan_id": str(scan_id),
-        "error": error,
+        "data": {
+            "scan_id": str(scan_id),
+            "error": error,
+        },
     })
 
 
@@ -399,8 +405,10 @@ async def publish_label_applied(
     """Publish label application to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "label_applied",
-        "result_id": str(result_id),
-        "label_name": label_name,
+        "data": {
+            "result_id": str(result_id),
+            "label_name": label_name,
+        },
     })
 
 
@@ -413,9 +421,11 @@ async def publish_remediation_completed(
     """Publish remediation completion to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "remediation_completed",
-        "action_id": str(action_id),
-        "action_type": action_type,
-        "status": action_status,
+        "data": {
+            "action_id": str(action_id),
+            "action_type": action_type,
+            "status": action_status,
+        },
     })
 
 
@@ -427,8 +437,10 @@ async def publish_job_status(
     """Publish job status change to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "job_status",
-        "job_id": str(job_id),
-        "status": job_status,
+        "data": {
+            "job_id": str(job_id),
+            "status": job_status,
+        },
     })
 
 
@@ -442,10 +454,12 @@ async def publish_file_access(
     """Publish file access event to global event stream."""
     await global_broadcaster.publish(tenant_id, {
         "type": "file_access",
-        "file_path": file_path,
-        "user_name": user_name,
-        "action": action,
-        "event_time": event_time,
+        "data": {
+            "file_path": file_path,
+            "user_name": user_name,
+            "action": action,
+            "event_time": event_time,
+        },
     })
 
 
@@ -456,6 +470,8 @@ async def publish_health_update(
     """Publish health update to ALL tenants."""
     await global_broadcaster.publish_to_all({
         "type": "health_update",
-        "component": component,
-        "status": health_status,
+        "data": {
+            "component": component,
+            "status": health_status,
+        },
     })

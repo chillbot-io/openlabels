@@ -24,7 +24,6 @@ from openlabels.server.dependencies import (
 )
 from openlabels.server.routes import audit_log
 from openlabels.server.errors import ErrorCode, raise_database_error
-from openlabels.server.routes import htmx_notify
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -152,16 +151,12 @@ async def cancel_scan(
 
     await scan_service.cancel_scan(scan_id)
 
-    if request.headers.get("HX-Request"):
-        return htmx_notify("Scan cancelled", refreshScans=True)
-
     return {"message": "Scan cancelled", "scan_id": str(scan_id)}
 
 
 @router.post("/{scan_id}/retry")
 async def retry_scan(
     scan_id: UUID,
-    request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
     db: DbSessionDep,
@@ -175,9 +170,6 @@ async def retry_scan(
             action="scan_started", resource_type="scan", resource_id=new_job.id,
             details={"retry_of": str(scan_id)},
         )
-
-        if request.headers.get("HX-Request"):
-            return htmx_notify("Scan retry queued", refreshScans=True)
 
         return {"message": "Scan retry created", "new_job_id": str(new_job.id)}
     except (NotFoundError, BadRequestError):

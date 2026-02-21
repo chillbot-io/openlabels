@@ -20,7 +20,6 @@ from openlabels.server.dependencies import (
     TenantContextDep,
 )
 from openlabels.server.errors import ErrorCode, raise_database_error
-from openlabels.server.routes import htmx_notify
 from openlabels.server.utils import get_client_ip
 
 from slowapi import Limiter
@@ -336,9 +335,6 @@ async def clear_all_results(
     """Clear all scan results for the tenant."""
     deleted_count = await result_service.delete_results(job_id=None)
 
-    if request.headers.get("HX-Request"):
-        return htmx_notify(f"{deleted_count} results cleared")
-
     return {"deleted_count": deleted_count}
 
 
@@ -365,16 +361,12 @@ async def delete_result(
     await db.delete(result)
     await db.commit()
 
-    if request.headers.get("HX-Request"):
-        return htmx_notify(f'Result for "{file_name}" deleted', refreshResults=True)
-
     return JSONResponse(status_code=200, content={"message": f'Result for "{file_name}" deleted'})
 
 
 @router.post("/{result_id}/apply-label")
 async def apply_recommended_label(
     result_id: UUID,
-    request: Request,
     db: DbSessionDep,
     result_service: ResultServiceDep,
     admin: AdminContextDep,
@@ -408,9 +400,6 @@ async def apply_recommended_label(
             priority=60,
         )
 
-        if request.headers.get("HX-Request"):
-            return htmx_notify("Label application queued")
-
         return {"message": "Label application queued", "job_id": str(job_id)}
     except (NotFoundError, BadRequestError):
         raise
@@ -421,7 +410,6 @@ async def apply_recommended_label(
 @router.post("/{result_id}/rescan")
 async def rescan_file(
     result_id: UUID,
-    request: Request,
     db: DbSessionDep,
     result_service: ResultServiceDep,
     admin: AdminContextDep,
@@ -474,8 +462,5 @@ async def rescan_file(
         },
         priority=70,  # Higher priority for single file rescan
     )
-
-    if request.headers.get("HX-Request"):
-        return htmx_notify("Rescan queued")
 
     return {"message": "Rescan queued", "job_id": str(new_job.id)}
