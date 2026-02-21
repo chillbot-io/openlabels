@@ -109,17 +109,21 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Time — removed from GLiNER GENERAL labels.  Pattern detectors
-        # have 100% date/time recall.  High threshold for category-
-        # activated cases only.
-        ("TIME", 0.85),
-        # Honorifics — 7 spurious at 0.72 on ai4privacy 400k
-        ("PREFIX", 0.75),
-        # AGE — removed from GLiNER GENERAL labels and ML-primary.
-        # Pattern detectors handle structured ages; GLiNER only fires
-        # via CONTACT category activation.
+        # Time — removed from GLiNER GENERAL.  6 spurious at 0.85.
+        # Only labeled TIME patterns ("time: HH:MM") at 0.90+ survive.
+        ("TIME", 0.91),
+        # Honorifics — name-splitting PREFIX removed; only pattern
+        # PREFIX survives.  Raise to suppress low-confidence patterns.
+        ("PREFIX", 0.80),
+        # AGE — removed from GLiNER GENERAL and ML-primary.
         ("AGE", 0.82),
         ("ZIP", 0.75),
+        # LICENSE_PLATE — 2 spurious from generic state-format patterns.
+        # Only labeled ("License Plate: XXX") at 0.88 survives.
+        ("LICENSE_PLATE", 0.87),
+        # SWIFT_BIC — 2 spurious from standalone 8-char pattern (0.75).
+        # Only labeled ("SWIFT: XXXX") at 0.98 survives.
+        ("SWIFT_BIC", 0.80),
     )
 
     @classmethod

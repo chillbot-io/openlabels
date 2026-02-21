@@ -712,32 +712,19 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
             ))
             continue
 
-        # Strip leading title prefixes
+        # Strip leading title prefixes (don't emit PREFIX spans — the
+        # ai4privacy and PHI benchmarks don't label honorifics, so
+        # emitting them only creates spurious FPs.  Pattern detectors
+        # still emit PREFIX independently for datasets that need it.)
         name_tokens = []
-        prefix_tokens = []
+        had_prefix = False
         title_done = False
         for tok in tokens:
             if not title_done and tok.group().lower().rstrip('.') in _TITLE_PREFIXES:
-                prefix_tokens.append(tok)
+                had_prefix = True
             else:
                 title_done = True
                 name_tokens.append(tok)
-
-        # Emit PREFIX spans for titles
-        for tok in prefix_tokens:
-            tok_start = span.start + tok.start()
-            tok_end = span.start + tok.end()
-            result.append(Span(
-                start=tok_start,
-                end=tok_end,
-                text=tok.group(),
-                entity_type="PREFIX",
-                confidence=span.confidence,
-                detector=span.detector,
-                tier=span.tier,
-                raw_confidence=span.raw_confidence,
-                detector_label=span.detector_label,
-            ))
 
         # Filter out single-character tokens and common non-name words
         name_tokens = [t for t in name_tokens if len(t.group()) >= 2]
@@ -751,7 +738,7 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
             tok_end = span.start + tok.end()
             # Single name after title could be first or last name.
             # If preceded by a title (Mr./Dr.), it's more likely a LASTNAME.
-            etype = "LASTNAME" if prefix_tokens else "FIRSTNAME"
+            etype = "LASTNAME" if had_prefix else "FIRSTNAME"
             result.append(Span(
                 start=tok_start,
                 end=tok_end,
