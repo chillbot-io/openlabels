@@ -102,10 +102,16 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
 # detection counts as a spurious FP even though the benchmark considers
 # the underlying text non-PII.
 UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
-    "JOB_TITLE",   # ai4privacy JOBTITLE / JOBTYPE / JOBAREA are unmapped
-    "EMPLOYER",    # ai4privacy has no EMPLOYER gold labels
-    "HEIGHT",      # ai4privacy HEIGHT is in UNMAPPED_TYPES (not scored)
-    "FACILITY",    # ai4privacy has no FACILITY gold labels
+    "JOB_TITLE",      # ai4privacy JOBTITLE / JOBTYPE / JOBAREA are unmapped
+    "EMPLOYER",       # ai4privacy has no EMPLOYER gold labels
+    "HEIGHT",         # ai4privacy HEIGHT is in UNMAPPED_TYPES (not scored)
+    "FACILITY",       # ai4privacy has no FACILITY gold labels
+    # Gretel PII 1K analysis: these predicted types have 0 gold labels and
+    # generate pure false positives.
+    "NAME_PATIENT",   # PHI model type; ai4privacy uses FIRSTNAME/LASTNAME (18 FP)
+    "NAME_PROVIDER",  # PHI model type; ai4privacy uses FIRSTNAME/LASTNAME (18 FP)
+    "PHONE_EXT",      # No gold labels in ai4privacy/gretel (6 FP)
+    "BED_NUMBER",     # No gold labels in ai4privacy/gretel (1 FP)
 })
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect

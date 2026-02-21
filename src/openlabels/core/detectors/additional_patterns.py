@@ -247,6 +247,18 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "EMPLOYEE_ID", 0.85, 1, flags=0
     ),
 
+    # EMPLOYEE_ID — broader context: "agent/representative/associate ID"
+    _p(
+        r"\b(?:agent|representative|associate|contractor|intern)\s*(?:id|#|number|no\.?)\s*[:\s#]*([A-Z0-9]{4,15})\b",
+        "EMPLOYEE_ID", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # EMPLOYEE_ID — "identification number" + alphanumeric (employee context nearby)
+    _p(
+        r"\b(?:employee|staff|personnel)\s+(?:identification\s+)?(?:number|code)\s*[:\s#]*([A-Z]\d{5,12})\b",
+        "EMPLOYEE_ID", 0.82, 1, flags=re.IGNORECASE
+    ),
+
     # MRN - "MED" prefix: "MED15780803", "MED27468656"
     _p(
         r"\b(MED\d{5,10})\b",
@@ -334,6 +346,19 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\b(?:account|acct|customer)\s*(?:#|no\.?|number|id)\s*[:\s#]*([A-Z]?\d{6,15})\b",
         "ACCOUNT_NUMBER", 0.82, 1, flags=re.IGNORECASE
+    ),
+
+    # ACCOUNT_NUMBER — alphanumeric format with context: "account G50145241932"
+    # Catches letter+digit account numbers that would otherwise be missed
+    _p(
+        r"\b(?:account|acct|customer)\s*(?:#|no\.?|number|id)?\s*[:\s#]+([A-Z][A-Z0-9]{7,15})\b",
+        "ACCOUNT_NUMBER", 0.80, 1, flags=re.IGNORECASE
+    ),
+
+    # ACCOUNT_NUMBER — "assigned/designated/allocated number XXXX"
+    _p(
+        r"\b(?:assigned|designated|allocated)\s+(?:account\s+)?(?:number|id)\s*[:\s#]*([A-Z0-9]{6,17})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
     ),
 
     # DEVICE_ID — labeled context for numeric device identifiers

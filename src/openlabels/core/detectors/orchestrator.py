@@ -551,7 +551,12 @@ _ML_UNCORROBORATED_MIN = 0.52
 # Types that ALWAYS require pattern corroboration, regardless of
 # confidence.  These are known false-positive generators — even
 # high-confidence ML detections are unreliable without a pattern echo.
-_STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE"})
+# DRIVER_LICENSE: GLiNER confuses employee IDs, account numbers, license
+# plates, and biometric IDs with driver licenses (112 type mismatches on
+# Gretel PII 1K).  Bare DL patterns are below threshold (0.55 < 0.70),
+# so only labeled "DL:", "Driver's License:" patterns provide
+# corroboration — matching industry practice (Presidio, AWS Macie).
+_STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE", "DRIVER_LICENSE"})
 
 # Minimum calibrated confidence for ML-primary spans (names, etc.)
 # to survive *without* any corroboration from another detector.
