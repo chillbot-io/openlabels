@@ -21,13 +21,13 @@ class TestPlattScalingIdentity:
 
     def test_identity_at_half(self):
         """Score 0.5 with identity params returns 0.5."""
-        result = calibrate_gliner_score("swift code", 0.5)
+        result = calibrate_gliner_score("phone number", 0.5)
         assert result == pytest.approx(0.5, abs=1e-6)
 
     def test_identity_preserves_score(self):
         """Identity transform (1.0, 0.0) should preserve any score."""
         for score in [0.1, 0.3, 0.5, 0.7, 0.9]:
-            result = calibrate_gliner_score("swift code", score)
+            result = calibrate_gliner_score("phone number", score)
             assert result == pytest.approx(score, abs=1e-6)
 
 
@@ -36,9 +36,9 @@ class TestPlattScalingTemperature:
 
     def test_high_temperature_reduces_confidence(self):
         """Temperature > 1 should reduce overconfident scores toward 0.5."""
-        # "phone number" has temp=1.40, bias=0.10
+        # "person name" has temp=1.35, bias=0.06
         raw = 0.90
-        result = calibrate_gliner_score("phone number", raw)
+        result = calibrate_gliner_score("person name", raw)
         assert result < raw  # Tempered overconfidence
 
     def test_low_temperature_sharpens_confidence(self):
@@ -50,10 +50,10 @@ class TestPlattScalingTemperature:
 
     def test_temperature_on_low_score(self):
         """High temperature on a low score pushes it toward 0.5."""
-        # "age" has temp=1.50, bias=0.12
+        # "first name" has temp=2.00, bias=0.185
         raw = 0.45
-        result = calibrate_gliner_score("age", raw)
-        # Bias shifts down, temperature spreads → should be near or above 0.5
+        result = calibrate_gliner_score("first name", raw)
+        # High temp + positive bias → spreads and shifts down
         assert 0.0 < result < 1.0
 
 

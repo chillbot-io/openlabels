@@ -36,37 +36,43 @@ logger = logging.getLogger(__name__)
 GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Names ──────────────────────────────────────────────
     # Names are the most frequent entity and GLiNER tends to be
-    # overconfident on partial matches.  Increased temperature to
-    # spread scores and reduce 42 FIRSTNAME + 13 LASTNAME spurious.
+    # overconfident on partial matches.
     "person name": (1.35, 0.06),
-    "first name": (1.28, 0.05),
-    "last name": (1.28, 0.05),
+    # FIRSTNAME: 7 TP / 22 FP on 1k benchmark — 76% FP rate.
+    # Max suppression to filter unreliable GLiNER name predictions;
+    # pattern + ML detectors handle name recall.
+    "first name": (2.00, 0.185),
+    # LASTNAME: 1 TP / 11 FP on 1k benchmark — 92% FP rate.
+    "last name": (2.00, 0.185),
     "middle name": (1.30, 0.08),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.
     "email address": (0.90, -0.05),
-    # Phone numbers are often confused with other digit sequences.
-    "phone number": (1.40, 0.10),
+    # Phone: 0 TP / 1 FP on 1k — too few samples; identity transform.
+    "phone number": (1.00, 0.00),
     "url": (0.95, -0.03),
-    "username": (1.30, 0.06),
+    # Username: 0 TP / 1 FP on 1k — too few samples; identity transform.
+    "username": (1.00, 0.00),
     # ── Locations ──────────────────────────────────────────
-    # Addresses span multiple tokens and GLiNER sometimes
-    # underestimates boundaries, leading to partial matches.
-    # Reduced temperature from 1.30 to preserve more confidence
-    # for unstructured addresses that patterns miss (52 ADDRESS
-    # misses on ai4privacy 10k).
-    "street address": (1.15, 0.04),
-    "city": (1.15, 0.03),
+    # Street address: 2 TP / 0 FP on 1k — too few samples; identity.
+    "street address": (1.00, 0.00),
+    # City: 18 TP / 4 FP on 1k — 18% FP rate.  Max suppression
+    # to reduce spurious city detections on common words.
+    "city": (2.00, 0.185),
     "state": (1.15, 0.03),
-    "zip code": (1.10, 0.02),
-    "country": (1.10, 0.02),
+    # Zip code: 6 TP / 0 FP on 1k — identity (reliable).
+    "zip code": (1.00, 0.00),
+    # Country: 1 TP / 13 FP on 1k — 93% FP rate.  Heavy suppression.
+    "country": (2.00, 0.185),
     "county": (1.20, 0.05),
     # ── Dates ──────────────────────────────────────────────
     "date of birth": (1.10, 0.03),
     "date": (1.15, 0.04),
     "date and time": (1.15, 0.04),
-    "time": (1.10, 0.02),  # Slight correction for time expressions
-    "age": (1.50, 0.12),  # Very noisy; any 2-digit number matches
+    # Time: 1 TP / 0 FP on 1k — too few samples; identity.
+    "time": (1.00, 0.00),
+    # Age: 2 TP / 0 FP on 1k — too few samples; identity.
+    "age": (1.00, 0.00),
     # ── Government IDs ─────────────────────────────────────
     # Structured patterns exist for most of these.  GLiNER over-fires on
     # alphanumeric codes common in financial / EDI documents.
@@ -80,14 +86,19 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "health plan number": (1.20, 0.05),
     "npi number": (1.10, 0.02),
     # ── Financial ──────────────────────────────────────────
-    "credit card number": (0.95, -0.02),  # Well-calibrated (Luhn structure)
+    # Credit card: 80 TP / 0 FP on 1k — 100% precision.
+    # Boost confidence; GLiNER excels at Luhn-structured numbers.
+    "credit card number": (0.60, -0.185),
     "bank account number": (1.35, 0.08),  # Random numbers in finance text
     "iban": (0.95, -0.02),
-    "swift code": (1.00, 0.00),
+    # SWIFT code: 0 TP / 17 FP on 1k — 100% FP rate.  Max suppression.
+    "swift code": (2.00, 0.185),
     "bank routing number": (1.25, 0.06),  # Caught well by pattern detectors
     # ── Network ────────────────────────────────────────────
     "ip address": (0.90, -0.05),  # Very structural
     "mac address": (0.90, -0.05),
+    # IMEI: 0 TP / 1 FP on 1k — too few samples; identity.
+    "imei number": (1.00, 0.00),
     # ── Professional ───────────────────────────────────────
     # COMPANY raised from 1.35 to 1.45 — 32 spurious on 10k benchmark;
     # GLiNER frequently confuses common words with company names.
@@ -99,8 +110,10 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "vehicle identification number": (1.45, 0.12),
     "license plate number": (1.40, 0.10),
     # ── Secrets (when detected via GLiNER in GENERAL label set) ─────
-    "password": (1.35, 0.08),
-    "pin code": (1.40, 0.10),  # Very noisy; short digit sequences
+    # Password: 1 TP / 0 FP on 1k — too few samples; identity.
+    "password": (1.00, 0.00),
+    # Pin code: 0 TP / 3 FP on 1k — too few samples; identity.
+    "pin code": (1.00, 0.00),
 }
 
 # Module-level override: when set, ``calibrate_gliner_score`` uses this
