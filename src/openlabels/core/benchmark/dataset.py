@@ -114,9 +114,7 @@ def load_dataset(
     else:
         # English-only path (backwards compatible)
         cache_path = cache_dir / "ai4privacy_en.jsonl"
-        samples, source = _load_english(
-            cache_dir, cache_path, needed_samples=sample_size,
-        )
+        samples, source = _load_english(cache_dir, cache_path)
 
     if not samples:
         raise DatasetLoadError(
@@ -180,59 +178,49 @@ def load_dataset(
 def _load_english(
     cache_dir: Path,
     cache_path: Path,
-    *,
-    needed_samples: int | None = None,
 ) -> tuple[list[BenchmarkSample], str]:
-    """Load English-only samples with fallback chain.
+    """Load English-only samples, always preferring the full 400 k dataset.
 
-    Args:
-        needed_samples: Hint for how many samples the caller needs.  When the
-            bundled dataset (≈1 k) is insufficient, the full 400 k dataset is
-            downloaded automatically from HuggingFace.
+    Resolution order:
+    1. JSONL cache (full dataset, written after first download).
+    2. Download from HuggingFace Hub (requires ``datasets`` package).
+    3. Bundled ≈1 k sample dataset (last-resort fallback).
     """
+    # 1. Cached full dataset
     if cache_path.exists():
         logger.info("Loading cached dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
-        source = f"cache ({cache_path})"
-        if not samples and _BUNDLED_PATH.exists():
-            logger.warning(
-                "Cache at %s returned 0 samples; falling back to bundled dataset",
-                cache_path,
-            )
-            samples = _load_bundled(_BUNDLED_PATH)
-            source = f"bundled ({_BUNDLED_PATH})"
-    elif _BUNDLED_PATH.exists():
-        logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
-        samples = _load_bundled(_BUNDLED_PATH)
-        source = f"bundled ({_BUNDLED_PATH})"
-        # If we need more samples than the bundled set provides, try
-        # downloading the full 400k dataset from HuggingFace.
-        if needed_samples is not None and needed_samples > len(samples):
-            logger.info(
-                "Requested %d samples but bundled dataset only has %d; "
-                "downloading full dataset from HuggingFace...",
-                needed_samples,
-                len(samples),
-            )
-            try:
-                downloaded = _download_and_cache(
-                    cache_dir, cache_path, languages={"en"},
-                )
-                if downloaded:
-                    samples = downloaded
-                    source = f"huggingface (cached to {cache_path})"
-            except ImportError:
-                logger.warning(
-                    "Cannot download full dataset (missing 'datasets' package). "
-                    "Using bundled %d samples.  Install with: "
-                    "pip install 'openlabels[benchmark]'",
-                    len(samples),
-                )
-    else:
-        logger.info("Downloading ai4privacy dataset (first run)...")
+        if samples:
+            return samples, f"cache ({cache_path})"
+        logger.warning(
+            "Cache at %s returned 0 samples; will re-download", cache_path,
+        )
+        cache_path.unlink(missing_ok=True)
+
+    # 2. Download full 400k from HuggingFace
+    try:
+        logger.info("Downloading full ai4privacy dataset from HuggingFace...")
         samples = _download_and_cache(cache_dir, cache_path, languages={"en"})
-        source = f"huggingface (cached to {cache_path})"
-    return samples, source
+        if samples:
+            return samples, f"huggingface (cached to {cache_path})"
+    except ImportError:
+        logger.warning(
+            "The 'datasets' package is not installed — cannot download "
+            "full dataset from HuggingFace.  Install with: "
+            "pip install 'openlabels[benchmark]'"
+        )
+
+    # 3. Bundled fallback
+    if _BUNDLED_PATH.exists():
+        logger.warning(
+            "Falling back to bundled dataset (%s). Install "
+            "'openlabels[benchmark]' to download the full 400k dataset.",
+            _BUNDLED_PATH,
+        )
+        samples = _load_bundled(_BUNDLED_PATH)
+        return samples, f"bundled ({_BUNDLED_PATH})"
+
+    return [], "none"
 
 
 # ── Multilingual loading ────────────────────────────────────────────
