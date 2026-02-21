@@ -333,6 +333,8 @@ def apply_context_keywords(
             needs_review=span.needs_review,
             review_reason=span.review_reason,
             coref_anchor_value=span.coref_anchor_value,
+            raw_confidence=span.raw_confidence,
+            detector_label=span.detector_label,
         ))
 
     return result

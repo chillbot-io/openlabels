@@ -390,6 +390,8 @@ class Span:
     needs_review: bool = False
     review_reason: str | None = None
     coref_anchor_value: str | None = None  # Link to coreference anchor for entity grouping
+    raw_confidence: float | None = None  # Pre-calibration score (set by ML detectors)
+    detector_label: str | None = None  # Detector-specific label (e.g. GLiNER label string)
 
     def __post_init__(self) -> None:
         """Validate span attributes."""

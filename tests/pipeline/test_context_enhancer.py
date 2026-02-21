@@ -438,11 +438,11 @@ class TestContextEnhancerEnhanceSpan:
 
     def test_non_enhanced_type_passes(self, enhancer, make_span):
         """Non-enhanced types pass through with 'keep'."""
-        span = make_span("John Smith", entity_type="NAME", confidence=0.7)
+        span = make_span("test@example.com", entity_type="EMAIL", confidence=0.7)
 
-        result = enhancer.enhance_span("Hello John Smith", span)
+        result = enhancer.enhance_span("Contact: test@example.com", span)
 
-        # NAME is not in enhanced_types (only MRN is)
+        # EMAIL is not in enhanced_types
         assert result.action == "keep"
         assert "non_enhanced_type" in result.reasons
 
@@ -516,23 +516,23 @@ class TestContextEnhancerEdgeCases:
     """Edge case tests for ContextEnhancer."""
 
     def test_unicode_text(self, enhancer, make_span):
-        """Handles Unicode text: valid NAME passes through as non-enhanced type."""
-        span = make_span("José García", entity_type="NAME")
+        """Handles Unicode text: non-enhanced type passes through."""
+        span = make_span("José García", entity_type="EMAIL")
 
         result = enhancer.enhance_span("Hello José García!", span)
 
-        # NAME is not in enhanced_types, so it should be kept
+        # EMAIL is not in enhanced_types, so it should be kept
         assert result.action == "keep"
         assert "non_enhanced_type" in result.reasons
 
     def test_span_at_text_boundary(self, enhancer, make_span):
-        """Handles span at text boundaries: valid NAME passes through."""
+        """Handles span at text boundaries: non-enhanced type passes through."""
         text = "John"
-        span = make_span("John", start=0, entity_type="NAME")
+        span = make_span("John", start=0, entity_type="PHONE")
 
         result = enhancer.enhance_span(text, span)
 
-        # NAME is not in enhanced_types, so it should be kept
+        # PHONE is not in enhanced_types, so it should be kept
         assert result.action == "keep"
 
     def test_case_insensitive_deny_list(self, enhancer, make_span):
@@ -563,9 +563,9 @@ class TestContextEnhancerPerformance:
     def test_handles_long_text(self, enhancer, make_span):
         """Handles long text efficiently."""
         long_text = "Word " * 10000
-        span = make_span("John", start=50, entity_type="NAME")
+        span = make_span("test@example.com", start=50, entity_type="EMAIL")
 
-        # Should not timeout; NAME is non-enhanced type, so passes through
+        # Should not timeout; EMAIL is non-enhanced type, so passes through
         result = enhancer.enhance_span(long_text, span)
 
         assert result.action == "keep"
@@ -573,12 +573,12 @@ class TestContextEnhancerPerformance:
     def test_handles_many_spans(self, enhancer, make_span):
         """Handles many spans efficiently."""
         spans = [
-            make_span(f"Name{i}", start=i*10, entity_type="NAME")
+            make_span(f"test{i}@ex.com", start=i*14, entity_type="EMAIL")
             for i in range(100)
         ]
-        text = " ".join(f"Name{i}" for i in range(100))
+        text = " ".join(f"test{i}@ex.com" for i in range(100))
 
-        # Should not timeout
+        # Should not timeout; EMAIL is non-enhanced, all pass through
         result = enhancer.enhance(text, spans)
 
         assert len(result) == 100
