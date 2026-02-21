@@ -357,8 +357,11 @@ class DetectorOrchestrator:
             return span.confidence >= self.config.ml_confidence_threshold
         return span.confidence >= self.confidence_threshold
 
-    # Ensemble boost amount when 2+ detectors agree on the same span.
-    _ENSEMBLE_BOOST = 0.15
+    # Ensemble boost range when 2+ detectors agree on the same span.
+    # Actual boost is scaled by the minimum raw confidence of the
+    # agreeing detectors — well-calibrated agreement gets a larger boost.
+    _ENSEMBLE_BOOST_MIN = 0.10
+    _ENSEMBLE_BOOST_MAX = 0.20
 
     def _post_process(
         self,
@@ -435,7 +438,12 @@ class DetectorOrchestrator:
         FIRSTNAME and NAME are both "names").  If so, the higher-confidence
         span gets boosted (clamped to 1.0).
 
-        This rewards multi-detector agreement without adding new detections.
+        The boost scales with the minimum raw confidence of the agreeing
+        pair — strong agreement from both detectors earns up to
+        ``_ENSEMBLE_BOOST_MAX``, while marginal agreement earns
+        ``_ENSEMBLE_BOOST_MIN``.  This implicitly uses calibration: labels
+        whose raw scores were dampened by high calibration temperature
+        will have lower raw confidence, producing a smaller boost.
         """
         if len(spans) < 2:
             return spans
@@ -464,7 +472,14 @@ class DetectorOrchestrator:
                     continue
                 # Two different detectors agree — boost the stronger one.
                 if i not in boosted_indices:
-                    new_conf = min(1.0, span_a.confidence + self._ENSEMBLE_BOOST)
+                    # Scale boost by minimum raw confidence of the pair.
+                    raw_a = span_a.raw_confidence if span_a.raw_confidence is not None else span_a.confidence
+                    raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
+                    min_raw = min(raw_a, raw_b)
+                    # Interpolate: raw ≤ 0.5 → min boost, raw ≥ 0.9 → max boost
+                    t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
+                    boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
+                    new_conf = min(1.0, span_a.confidence + boost)
                     result[i] = Span(
                         start=span_a.start,
                         end=span_a.end,
@@ -480,9 +495,9 @@ class DetectorOrchestrator:
                     )
                     boosted_indices.add(i)
                     logger.debug(
-                        "Ensemble boost: %s %r %.3f→%.3f (corroborated by %s)",
+                        "Ensemble boost: %s %r %.3f→%.3f (+%.3f, corroborated by %s)",
                         span_a.entity_type, span_a.text,
-                        span_a.confidence, new_conf, span_b.detector,
+                        span_a.confidence, new_conf, boost, span_b.detector,
                     )
                 break  # Only boost once per span
 
@@ -541,33 +556,46 @@ _ML_PRIMARY_TYPES = frozenset({
     "ADDRESS",
 })
 
-# Minimum calibrated confidence for ML-only spans on types where
-# patterns are the primary detector.  Below this, the ML detection
-# is too uncertain to trust without pattern corroboration.
-# At 0.52, an ML span needs raw confidence ≥ 0.88 to survive
-# without any pattern backup (calibrated ML range is [0.30, 0.55]).
-_ML_UNCORROBORATED_MIN = 0.52
+# Default minimum calibrated confidence for ML-only spans on types where
+# patterns are the primary detector (used when calibration data is absent).
+_ML_UNCORROBORATED_MIN_DEFAULT = 0.52
 
-# Types that ALWAYS require pattern corroboration, regardless of
-# confidence.  These are known false-positive generators — even
-# high-confidence ML detections are unreliable without a pattern echo.
-# DRIVER_LICENSE: GLiNER confuses employee IDs, account numbers, license
-# plates, and biometric IDs with driver licenses (112 type mismatches on
-# Gretel PII 1K).  Bare DL patterns are below threshold (0.55 < 0.70),
-# so only labeled "DL:", "Driver's License:" patterns provide
-# corroboration — matching industry practice (Presidio, AWS Macie).
+# Types that require pattern corroboration unless the span's calibrated
+# confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
+# these types are allowed through solo — the calibration temperature
+# already dampened unreliable scores, so survivors are trustworthy.
 _STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE", "DRIVER_LICENSE"})
+_STRICT_SOLO_MIN = 0.55
 
-# Minimum calibrated confidence for ML-primary spans (names, etc.)
-# to survive *without* any corroboration from another detector.
-# Below this, at least one other detector (pattern or a different ML
-# model) must agree on an overlapping same-group span.  This catches
-# borderline single-detector name hallucinations while preserving
-# high-confidence or multi-detector-agreed detections.
-# At 0.49, GLiNER names need raw ≥ 0.66 to stand alone (raised
-# from 0.47 to reduce 42 FIRSTNAME + 13 LASTNAME spurious on
-# ai4privacy 10k benchmark).
-_ML_PRIMARY_SOLO_MIN = 0.49
+# Default minimum calibrated confidence for ML-primary spans to
+# survive solo (used when calibration data is absent).
+_ML_PRIMARY_SOLO_MIN_DEFAULT = 0.49
+
+
+def _calibrated_threshold(span: Span, base: float) -> float:
+    """Derive a per-span suppression threshold from calibration data.
+
+    Labels with high calibration temperature (>1.0) are overconfident
+    and need a *higher* calibrated confidence to survive solo.
+    Well-calibrated labels (temperature ≤ 1.0) use the base threshold.
+
+    Formula: ``min(0.55, base + max(0, temperature - 1.0) * 0.08)``
+
+    Falls back to *base* when the span has no calibration metadata.
+    """
+    label = span.detector_label
+    if label is None:
+        return base
+
+    from .gliner_calibration import get_active_calibration
+
+    table = get_active_calibration()
+    params = table.get(label)
+    if params is None:
+        return base
+
+    temperature = params[0]
+    return min(0.55, base + max(0.0, temperature - 1.0) * 0.08)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -762,21 +790,23 @@ def _suppress_uncorroborated_ml(
 ) -> list[Span]:
     """Suppress ML-only detections that lack corroboration.
 
-    Three-tier suppression logic, from strictest to most permissive:
+    Three-tier suppression logic, from strictest to most permissive.
+    Thresholds are derived per-span from calibration data via
+    :func:`_calibrated_threshold` — labels with high calibration
+    temperature (overconfident) require stricter thresholds, while
+    well-calibrated labels can survive at lower confidence.
 
-    1. **Strict-corroboration types** (COMPANY, JOB_TITLE): always
-       suppressed unless a pattern detector in the same category fired
-       at the same position.  These types are prolific FP generators.
+    1. **Strict-corroboration types** (JOB_TITLE, DRIVER_LICENSE):
+       suppressed unless pattern-corroborated OR calibrated confidence
+       ≥ ``_STRICT_SOLO_MIN`` (high-confidence override).
 
     2. **Non-ML-primary types** (dates, locations, financial, …): kept
-       if corroborated by a same-group pattern, or if calibrated
-       confidence ≥ ``_ML_UNCORROBORATED_MIN``.
+       if pattern-corroborated, or if calibrated confidence ≥ the
+       per-span threshold derived from calibration.
 
-    3. **ML-primary types** (names, employers, …): kept unconditionally
-       when calibrated confidence ≥ ``_ML_PRIMARY_SOLO_MIN``.  Below
-       that threshold, at least one *other* detector (pattern or a
-       different ML model) must produce an overlapping same-group span.
-       This catches borderline single-model name hallucinations.
+    3. **ML-primary types** (names, employers, …): kept when calibrated
+       confidence ≥ per-span threshold.  Below that, require any
+       other detector to agree.
     """
     if not resolved:
         return resolved
@@ -806,6 +836,14 @@ def _suppress_uncorroborated_ml(
             )
             if corroborated:
                 result.append(span)
+            elif span.confidence >= _STRICT_SOLO_MIN:
+                # High-confidence override: calibration already dampened
+                # unreliable scores, so survivors are trustworthy.
+                result.append(span)
+                logger.debug(
+                    "ML strict override (high-conf solo): %s %r conf=%.3f",
+                    span.entity_type, span.text, span.confidence,
+                )
             else:
                 logger.debug(
                     "ML suppressed (strict): %s %r conf=%.3f",
@@ -815,8 +853,9 @@ def _suppress_uncorroborated_ml(
 
         # ── 2. ML-primary types ────────────────────────────────────
         if etype in _ML_PRIMARY_TYPES:
+            solo_min = _calibrated_threshold(span, _ML_PRIMARY_SOLO_MIN_DEFAULT)
             # High confidence: keep unconditionally
-            if span.confidence >= _ML_PRIMARY_SOLO_MIN:
+            if span.confidence >= solo_min:
                 result.append(span)
                 continue
             # Low confidence: require any same-group agreement from
@@ -831,8 +870,8 @@ def _suppress_uncorroborated_ml(
                 result.append(span)
             else:
                 logger.debug(
-                    "ML suppressed (primary, solo low-conf): %s %r conf=%.3f",
-                    span.entity_type, span.text, span.confidence,
+                    "ML suppressed (primary, solo low-conf): %s %r conf=%.3f (min=%.3f)",
+                    span.entity_type, span.text, span.confidence, solo_min,
                 )
             continue
 
@@ -846,12 +885,13 @@ def _suppress_uncorroborated_ml(
             result.append(span)
             continue
 
-        if span.confidence >= _ML_UNCORROBORATED_MIN:
+        uncorr_min = _calibrated_threshold(span, _ML_UNCORROBORATED_MIN_DEFAULT)
+        if span.confidence >= uncorr_min:
             result.append(span)
         else:
             logger.debug(
-                "ML suppressed (uncorroborated): %s %r conf=%.3f",
-                span.entity_type, span.text, span.confidence,
+                "ML suppressed (uncorroborated): %s %r conf=%.3f (min=%.3f)",
+                span.entity_type, span.text, span.confidence, uncorr_min,
             )
 
     return result
