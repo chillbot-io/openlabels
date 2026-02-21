@@ -22,15 +22,16 @@ from .registry import register_detector
 
 # Pattern definitions: frozen tuple of PatternDefinition objects
 ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
-    # EMPLOYER - Company/Organization Names (~773 missed)
-    # Company names with common suffixes
+    # COMPANY - Company/Organization Names with legal suffixes
+    # Detected as COMPANY (not EMPLOYER) so the type is not filtered out
+    # by UNMAPPED_PRED_TYPES in benchmark scoring.
     _p(
         r"\b([A-Z][A-Za-z0-9&'\-]*(?:\s+[A-Z][A-Za-z0-9&'\-]*){0,5})\s+"
         r"(Inc\.?|Corp\.?|Corporation|Company|Co\.?|LLC|L\.L\.C\.?|"
         r"Ltd\.?|Limited|LP|L\.P\.?|LLP|L\.L\.P\.?|PLC|P\.L\.C\.?|NA|N\.A\.?|"
         r"Group|Holdings|Partners|Associates|Services|Solutions|"
         r"Industries|Enterprises|International|Consulting|Technologies|Tech)\b",
-        "EMPLOYER", 0.85, 0, flags=0
+        "COMPANY", 0.85, 0, flags=0
     ),
 
     # "employer: Company Name" or "works at Company Name"
@@ -248,8 +249,9 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # EMPLOYEE_ID — broader context: "agent/representative/associate ID"
+    # \b after id/number prevents matching "identified" as "id" + "entified"
     _p(
-        r"\b(?:agent|representative|associate|contractor|intern)\s*(?:id|#|number|no\.?)\s*[:\s#]*([A-Z0-9]{4,15})\b",
+        r"\b(?:agent|representative|associate|contractor|intern)\s*(?:id\b|#|number|no\.?)\s*[:\s#]*([A-Z0-9]{4,15})\b",
         "EMPLOYEE_ID", 0.80, 1, flags=re.IGNORECASE
     ),
 
@@ -295,9 +297,9 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(BIO-\d{6,12})\b",
         "BIOMETRIC_ID", 0.90, 1, flags=0
     ),
-    # BIOMETRIC_ID — labeled context
+    # BIOMETRIC_ID — labeled context (require digit in value to avoid matching "device")
     _p(
-        r"\b(?:biometric|biometric\s+(?:id|identifier)|fingerprint\s+(?:id|identifier))\s*[:\s#]*([A-Z0-9]{6,15})\b",
+        r"\b(?:biometric\s+(?:id\b|identifier)|fingerprint\s+(?:id\b|identifier))\s*[:\s#]*((?=[A-Z0-9]*\d)[A-Z0-9]{6,15})\b",
         "BIOMETRIC_ID", 0.85, 1, flags=re.IGNORECASE
     ),
 
@@ -349,9 +351,11 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # ACCOUNT_NUMBER — alphanumeric format with context: "account G50145241932"
-    # Catches letter+digit account numbers that would otherwise be missed
+    # Catches letter+digit account numbers that would otherwise be missed.
+    # Lookahead requires at least one digit to exclude pure-alpha words
+    # like "expenses", "security", "connected", "Marketing".
     _p(
-        r"\b(?:account|acct|customer)\s*(?:#|no\.?|number|id)?\s*[:\s#]+([A-Z][A-Z0-9]{7,15})\b",
+        r"\b(?:account|acct|customer)\s*(?:#|no\.?|number|id)?\s*[:\s#]+(?=[A-Z0-9]*\d)([A-Z][A-Z0-9]{7,15})\b",
         "ACCOUNT_NUMBER", 0.80, 1, flags=re.IGNORECASE
     ),
 

@@ -60,49 +60,50 @@ class TestEmployerDetection:
         text = "She works for Acme Corporation Inc."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
-        assert any("Acme Corporation Inc" in s.text for s in employer_spans)
+        # Company-name-with-suffix patterns produce COMPANY entity type
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
+        assert any("Acme Corporation Inc" in s.text for s in company_spans)
 
     def test_detect_company_corp(self, detector):
         """Test detecting company with 'Corp.' suffix."""
         text = "Filed by Microsoft Corp on Tuesday."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_company_llc(self, detector):
         """Test detecting company with 'LLC' suffix."""
         text = "Contact Smith & Associates LLC for details."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_company_ltd(self, detector):
         """Test detecting company with 'Ltd.' suffix."""
         text = "Purchased from Johnson Trading Ltd last week."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_company_group(self, detector):
         """Test detecting company with 'Group' suffix."""
         text = "Financed by Goldman Sachs Group this quarter."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_company_holdings(self, detector):
         """Test detecting company with 'Holdings' suffix."""
         text = "Owned by Berkshire Hathaway Holdings."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_employer_label(self, detector):
         """Test detecting employer with label prefix."""
@@ -133,16 +134,16 @@ class TestEmployerDetection:
         text = "Represented by Johnson & Johnson Corp."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
     def test_detect_company_technologies(self, detector):
         """Test detecting company with 'Technologies' suffix."""
         text = "Developed by Apple Technologies."
         spans = detector.detect(text)
 
-        employer_spans = [s for s in spans if s.entity_type == "EMPLOYER"]
-        assert len(employer_spans) >= 1
+        company_spans = [s for s in spans if s.entity_type == "COMPANY"]
+        assert len(company_spans) >= 1
 
 
 # =============================================================================
@@ -528,7 +529,7 @@ class TestAdditionalPatternIntegration:
 
         entity_types = {s.entity_type for s in spans}
         assert "AGE" in entity_types
-        assert "EMPLOYER" in entity_types
+        assert "COMPANY" in entity_types or "EMPLOYER" in entity_types
         # Member ID might be HEALTH_PLAN_ID or MEMBER_ID
         assert "HEALTH_PLAN_ID" in entity_types or "MEMBER_ID" in entity_types
         assert "NPI" in entity_types
@@ -571,7 +572,7 @@ class TestAdditionalPatternIntegration:
 
         # Standard sentence shouldn't match our patterns
         entity_types = {s.entity_type for s in spans}
-        core_types = {"EMPLOYER", "AGE", "HEALTH_PLAN_ID", "MEMBER_ID", "NPI", "BANK_ROUTING", "EMPLOYEE_ID"}
+        core_types = {"EMPLOYER", "COMPANY", "AGE", "HEALTH_PLAN_ID", "MEMBER_ID", "NPI", "BANK_ROUTING", "EMPLOYEE_ID"}
 
         # Should not find these specific entity types in random sentence
         assert len(entity_types.intersection(core_types)) == 0
