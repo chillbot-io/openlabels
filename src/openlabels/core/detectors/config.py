@@ -105,8 +105,10 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Time — lower than global to capture "4 PM" style detections
-        ("TIME", 0.62),
+        # Time — raised from 0.62 to 0.72 to reduce 36 spurious FPs on
+        # Gretel PII 1K (precision was 0.28 at 0.62).  Labeled time
+        # patterns ("at 4 PM", "time: 14:30") have confidence ≥ 0.80.
+        ("TIME", 0.72),
         # Honorifics — 10 spurious vs 6 misses; slightly tighter
         ("PREFIX", 0.68),
         # Ambiguous — higher threshold to reduce FP
