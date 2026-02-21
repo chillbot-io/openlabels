@@ -266,7 +266,10 @@ class ONNXDetector(BaseDetector):
         """Load HuggingFace tokenizer (fallback, requires transformers)."""
         try:
             from transformers import AutoTokenizer
-            self._tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                str(tokenizer_dir),
+                model_max_length=self._max_length,
+            )
             self._use_fast_tokenizer = False
             logger.info(f"{self.name}: Loaded HF tokenizer from {tokenizer_dir}")
         except ImportError:

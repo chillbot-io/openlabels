@@ -158,8 +158,19 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         # catches natural-language mentions like "my password is X".
         "password",
         "pin code",
+        # --- Labels that MUST be in GENERAL ---
+        # These lack reliable pattern coverage or cause type confusion
+        # when absent (GLiNER maps entities to the nearest available
+        # label, e.g. SSN→PHONE when "social security number" is
+        # missing from the label set).
+        "username",                   # No regex pattern for usernames
+        "social security number",     # Prevents SSN→PHONE misclassification
+        "national identity number",   # Prevents STATE_ID→BANK_ROUTING
+        "driver license number",      # Pattern coverage is incomplete
+        "tax identification number",  # Missed without explicit label
+        "zip code",                   # Pattern coverage is partial
         # --- Labels OMITTED from GENERAL ---
-        # email, phone, credit card, IBAN, IP, URL, username, etc.
+        # email, phone, credit card, IBAN, IP, URL, etc.
         # are reliably caught by pattern/checksum detectors.  Keeping
         # them out preserves GLiNER's attention budget for entities
         # where it's the only detector.  They still activate via

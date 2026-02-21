@@ -79,17 +79,19 @@ class DetectionConfig:
         # Contextual — standard threshold
         ("PHONE", 0.70),
         ("ADDRESS", 0.68),
-        ("DATE", 0.65),
+        # DATE raised from 0.65 to 0.72: 10 spurious on ai4privacy 100.
+        ("DATE", 0.72),
         ("DATE_DOB", 0.65),
-        # Country names: 6 spurious on ai4privacy, 0 misses
-        ("COUNTRY", 0.70),
+        ("DATETIME", 0.72),
+        # Country names: 6 spurious on ai4privacy 100, 0 misses
+        ("COUNTRY", 0.76),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # Raised from 0.48 to 0.52 to reduce spurious FIRSTNAME/LASTNAME
-        # FPs (42 FIRSTNAME + 13 LASTNAME spurious on 10k benchmark).
+        # Raised from 0.52 to 0.55: still 12 FIRSTNAME + 7 LASTNAME
+        # spurious on ai4privacy 100 at 0.52.
         ("NAME", 0.45),
-        ("FIRSTNAME", 0.52),
-        ("LASTNAME", 0.52),
+        ("FIRSTNAME", 0.55),
+        ("LASTNAME", 0.55),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
         # COMPANY raised from 0.50 to 0.55 to reduce 32 spurious on
@@ -105,14 +107,13 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Time — raised from 0.62 to 0.72 to reduce 36 spurious FPs on
-        # Gretel PII 1K (precision was 0.28 at 0.62).  Labeled time
-        # patterns ("at 4 PM", "time: 14:30") have confidence ≥ 0.80.
-        ("TIME", 0.72),
-        # Honorifics — 10 spurious vs 6 misses; slightly tighter
-        ("PREFIX", 0.68),
-        # Ambiguous — higher threshold to reduce FP
-        ("AGE", 0.70),
+        # Time — raised from 0.72 to 0.78: still 11 spurious at 0.72
+        # on ai4privacy 100.  Real labeled times have confidence ≥ 0.85.
+        ("TIME", 0.78),
+        # Honorifics — raised from 0.68 to 0.72: 7 spurious at 0.68
+        ("PREFIX", 0.72),
+        # AGE raised from 0.70 to 0.76: 6 spurious at 0.70
+        ("AGE", 0.76),
         ("ZIP", 0.75),
     )
 

@@ -69,10 +69,12 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "date of birth": (1.10, 0.03),
     "date": (1.15, 0.04),
     "date and time": (1.15, 0.04),
-    # Time: 1 TP / 0 FP on 1k — too few samples; identity.
-    "time": (1.00, 0.00),
-    # Age: 2 TP / 0 FP on 1k — too few samples; identity.
-    "age": (1.00, 0.00),
+    # Time: 0 TP / 11 FP on ai4privacy 100 — near-100% FP rate.
+    # The 1k benchmark had too few samples.  Heavy suppression.
+    "time": (1.80, 0.15),
+    # Age: on ai4privacy 100, 6 spurious at identity transform.
+    # Moderate suppression to reduce FP on bare numbers.
+    "age": (1.50, 0.10),
     # ── Government IDs ─────────────────────────────────────
     # Structured patterns exist for most of these.  GLiNER over-fires on
     # alphanumeric codes common in financial / EDI documents.
