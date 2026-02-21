@@ -114,7 +114,9 @@ def load_dataset(
     else:
         # English-only path (backwards compatible)
         cache_path = cache_dir / "ai4privacy_en.jsonl"
-        samples, source = _load_english(cache_dir, cache_path)
+        samples, source = _load_english(
+            cache_dir, cache_path, needed_samples=sample_size,
+        )
 
     if not samples:
         raise DatasetLoadError(
@@ -160,6 +162,14 @@ def load_dataset(
     if sample_size is not None and sample_size < len(filtered):
         rng = random.Random(seed)
         filtered = rng.sample(filtered, sample_size)
+    elif sample_size is not None and sample_size > len(filtered):
+        logger.warning(
+            "Requested %d samples but only %d available after filtering. "
+            "Returning all %d.",
+            sample_size,
+            len(filtered),
+            len(filtered),
+        )
 
     return filtered, source
 
@@ -170,8 +180,16 @@ def load_dataset(
 def _load_english(
     cache_dir: Path,
     cache_path: Path,
+    *,
+    needed_samples: int | None = None,
 ) -> tuple[list[BenchmarkSample], str]:
-    """Load English-only samples with fallback chain."""
+    """Load English-only samples with fallback chain.
+
+    Args:
+        needed_samples: Hint for how many samples the caller needs.  When the
+            bundled dataset (≈1 k) is insufficient, the full 400 k dataset is
+            downloaded automatically from HuggingFace.
+    """
     if cache_path.exists():
         logger.info("Loading cached dataset from %s", cache_path)
         samples = _load_from_cache(cache_path)
@@ -187,6 +205,29 @@ def _load_english(
         logger.info("Loading bundled dataset from %s", _BUNDLED_PATH)
         samples = _load_bundled(_BUNDLED_PATH)
         source = f"bundled ({_BUNDLED_PATH})"
+        # If we need more samples than the bundled set provides, try
+        # downloading the full 400k dataset from HuggingFace.
+        if needed_samples is not None and needed_samples > len(samples):
+            logger.info(
+                "Requested %d samples but bundled dataset only has %d; "
+                "downloading full dataset from HuggingFace...",
+                needed_samples,
+                len(samples),
+            )
+            try:
+                downloaded = _download_and_cache(
+                    cache_dir, cache_path, languages={"en"},
+                )
+                if downloaded:
+                    samples = downloaded
+                    source = f"huggingface (cached to {cache_path})"
+            except ImportError:
+                logger.warning(
+                    "Cannot download full dataset (missing 'datasets' package). "
+                    "Using bundled %d samples.  Install with: "
+                    "pip install 'openlabels[benchmark]'",
+                    len(samples),
+                )
     else:
         logger.info("Downloading ai4privacy dataset (first run)...")
         samples = _download_and_cache(cache_dir, cache_path, languages={"en"})
