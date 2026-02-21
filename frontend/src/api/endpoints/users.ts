@@ -17,7 +17,7 @@ export const usersApi = {
     apiFetch<User>(`/users/${id}`),
 
   create: (payload: CreateUserPayload) =>
-    apiFetch<User>('/users', { method: 'POST', body: JSON.stringify(payload) }),
+    apiFetch<User>('/users', { method: 'POST', body: payload }),
 
   delete: (id: string) =>
     apiFetch<void>(`/users/${id}`, { method: 'DELETE' }),

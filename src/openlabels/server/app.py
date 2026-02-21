@@ -57,7 +57,6 @@ from openlabels.server.routes import (
     ws_events,
 )
 from openlabels.server.utils import get_client_ip
-from openlabels.web import router as web_router
 
 # API version constants
 API_V1_PREFIX = "/api/v1"
@@ -126,9 +125,6 @@ def _include_routes(app: FastAPI) -> None:
     # WebSocket (not versioned)
     app.include_router(ws.router, tags=["WebSocket"])
     app.include_router(ws_events.router, tags=["WebSocket"])
-
-    # Web UI
-    app.include_router(web_router, prefix="/ui", tags=["Web UI"])
 
 
 def _register_root_endpoints(app: FastAPI) -> None:

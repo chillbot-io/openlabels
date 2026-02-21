@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,7 +19,7 @@ from openlabels.core.types import JobStatus
 from openlabels.jobs import JobQueue, parse_cron_expression
 from openlabels.server.db import get_session
 from openlabels.server.models import ScanJob, ScanSchedule, ScanTarget
-from openlabels.server.routes import audit_log, get_or_404, htmx_notify
+from openlabels.server.routes import audit_log, get_or_404
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -169,7 +169,6 @@ async def update_schedule(
 @router.delete("/{schedule_id}")
 async def delete_schedule(
     schedule_id: UUID,
-    request: Request,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
 ):
@@ -185,11 +184,6 @@ async def delete_schedule(
     await session.delete(schedule)
     await session.flush()
 
-    # Check if this is an HTMX request
-    if request.headers.get("HX-Request"):
-        return htmx_notify(f'Schedule "{schedule_name}" deleted', refreshSchedules=True)
-
-    # Regular REST response
     return Response(status_code=204)
 
 
