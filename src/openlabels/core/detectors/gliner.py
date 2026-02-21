@@ -345,10 +345,10 @@ class GLiNERDetector(BaseDetector):
 
             start = int(entity["start"])
             end = int(entity["end"])
-            score_val = float(entity["score"])
+            raw_score = float(entity["score"])
 
             # Apply Platt scaling calibration
-            score_val = calibrate_gliner_score(label, score_val)
+            score_val = calibrate_gliner_score(label, raw_score)
 
             # Validate offsets against the chunk text
             if start < 0 or end <= start or end > len(text):
@@ -370,6 +370,8 @@ class GLiNERDetector(BaseDetector):
                     confidence=score_val,
                     detector=self.name,
                     tier=self.tier,
+                    raw_confidence=raw_score,
+                    detector_label=label,
                 )
                 spans.append(span)
             except ValueError as e:

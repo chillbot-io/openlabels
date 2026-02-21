@@ -279,6 +279,158 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
         click.echo(f"\nResults saved to: {validated}")
 
 
+@benchmark.command()
+@click.option("--output", "-o", default="calibration.json", help="Save fitted calibration to JSON")
+@click.option("--apply", "apply_cal", is_flag=True,
+              help="Apply the fitted calibration as the active table")
+@click.pass_context
+def calibrate(ctx, output, apply_cal):
+    """Fit GLiNER Platt scaling calibration from benchmark data.
+
+    Runs the ML benchmark, collects (label, raw_score, is_correct) triples
+    from the evaluation matches, and fits per-label Platt parameters using
+    grid search to minimise log-loss.
+
+    Example:
+        openlabels benchmark calibrate -n 10000
+        openlabels benchmark calibrate -n 10000 --apply
+    """
+    from openlabels.core.benchmark.evaluate import MatchType
+    from openlabels.core.benchmark.harness import BenchmarkConfig, run_benchmark
+    from openlabels.core.detectors.gliner_calibration import (
+        GLINER_CALIBRATION,
+        fit_calibration,
+        load_calibration,
+        reset_calibration,
+        save_calibration,
+    )
+    from openlabels.core.types import normalize_entity_type
+
+    samples_n = ctx.obj["samples"]
+    seed = ctx.obj["seed"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
+    language = ctx.obj.get("language")
+    model_dir = ctx.obj.get("model_dir")
+
+    click.echo(f"Calibration fitting | Dataset: {dataset} | Samples: {samples_n}")
+    click.echo("=" * 60)
+
+    # Build reverse map: canonical entity type -> primary GLiNER label
+    from openlabels.core.detectors.gliner import GLINER_LABEL_MAP
+    reverse_map: dict[str, str] = {}
+    for gliner_label, canonical_type in GLINER_LABEL_MAP.items():
+        if canonical_type not in reverse_map:
+            reverse_map[canonical_type] = gliner_label
+
+    # Configure: enable ML, lower thresholds to capture full score distribution.
+    # Entity thresholds set to empty so only ml_confidence_threshold applies.
+    config = BenchmarkConfig(
+        name="calibrate",
+        enable_ml=True,
+        enable_phi=True,
+        gliner_threshold=0.4,
+        ml_confidence_threshold=0.01,
+        confidence_threshold=0.01,
+        entity_thresholds=(),
+        enable_context_keywords=False,  # No score modification for clean raw data
+        enable_proximity_boost=False,
+        ml_model_dir=model_dir,
+    )
+
+    loaded_samples = _load_dataset_samples(dataset, samples_n, seed, language=language)
+
+    click.echo("Running benchmark with ML enabled...")
+    try:
+        result = run_benchmark(
+            samples=loaded_samples,
+            sample_size=samples_n if loaded_samples is None else None,
+            config=config,
+            seed=seed,
+            progress_callback=_cli_progress,
+        )
+    except Exception as e:
+        click.echo(f"\nError during benchmark: {e}", err=True)
+        return
+
+    click.echo("")
+
+    # Collect calibration triples from evaluation matches
+    labels: list[str] = []
+    raw_scores: list[float] = []
+    is_correct: list[bool] = []
+    skipped = 0
+
+    for sr in result.sample_results:
+        for m in sr.matches:
+            if m.pred is None:
+                continue
+            # Only GLiNER spans have raw_confidence set
+            if m.pred.raw_confidence is None or m.pred.detector_label is None:
+                continue
+
+            labels.append(m.pred.detector_label)
+            raw_scores.append(m.pred.raw_confidence)
+
+            if m.match_type in (MatchType.EXACT, MatchType.PARTIAL):
+                is_correct.append(True)
+            else:
+                is_correct.append(False)
+
+    if not labels:
+        click.echo("No GLiNER predictions found — cannot fit calibration.", err=True)
+        return
+
+    # Count TP/FP per label for diagnostics
+    tp_count: dict[str, int] = {}
+    fp_count: dict[str, int] = {}
+    for lbl, correct in zip(labels, is_correct):
+        if correct:
+            tp_count[lbl] = tp_count.get(lbl, 0) + 1
+        else:
+            fp_count[lbl] = fp_count.get(lbl, 0) + 1
+
+    click.echo(f"Collected {len(labels)} predictions from GLiNER "
+               f"({sum(1 for c in is_correct if c)} TP, "
+               f"{sum(1 for c in is_correct if not c)} FP)")
+
+    # Fit Platt parameters
+    new_params = fit_calibration(labels, raw_scores, is_correct)
+
+    # Save to JSON
+    try:
+        validated = validate_output_path(output, create_parent=True)
+    except PathValidationError as e:
+        click.echo(f"Error: Invalid output path: {e}", err=True)
+        return
+    save_calibration(new_params, validated)
+
+    # Print comparison: old vs new
+    click.echo(f"\nFitted {len(new_params)} labels | Saved to: {validated}")
+    click.echo(f"\n{'Label':<30} {'Old T':>6} {'Old B':>7}  {'New T':>6} {'New B':>7}"
+               f"  {'TP':>5} {'FP':>5}")
+    click.echo("-" * 82)
+    for label in sorted(new_params):
+        old = GLINER_CALIBRATION.get(label, (1.0, 0.0))
+        new = new_params[label]
+        tp = tp_count.get(label, 0)
+        fp = fp_count.get(label, 0)
+        # Highlight labels with significant parameter changes
+        t_delta = abs(new[0] - old[0])
+        b_delta = abs(new[1] - old[1])
+        marker = " *" if t_delta > 0.1 or b_delta > 0.05 else ""
+        click.echo(f"{label:<30} {old[0]:>6.3f} {old[1]:>+7.4f}  "
+                   f"{new[0]:>6.3f} {new[1]:>+7.4f}  {tp:>5} {fp:>5}{marker}")
+
+    click.echo("\n  * = significant parameter shift (|dT|>0.1 or |dB|>0.05)")
+
+    if apply_cal:
+        load_calibration(validated)
+        click.echo(f"\nApplied fitted calibration ({len(new_params)} labels active)")
+    else:
+        click.echo(f"\nTo apply: openlabels benchmark calibrate -n {samples_n} --apply")
+        click.echo("To load manually: load_calibration('{output}')")
+
+
 # ── Dataset loading ───────────────────────────────────────────────────
 
 # Bundled Gretel dataset paths (relative to benchmark package)

@@ -672,6 +672,8 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
                 confidence=span.confidence,
                 detector=span.detector,
                 tier=span.tier,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
             ))
             continue
 
@@ -698,6 +700,8 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
                 confidence=span.confidence,
                 detector=span.detector,
                 tier=span.tier,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
             ))
 
         # Filter out single-character tokens and common non-name words
@@ -721,6 +725,8 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
                 confidence=span.confidence,
                 detector=span.detector,
                 tier=span.tier,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
             ))
             continue
 
@@ -743,6 +749,8 @@ def _split_name_spans(spans: list[Span]) -> list[Span]:
                 confidence=span.confidence,
                 detector=span.detector,
                 tier=span.tier,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
             ))
 
     return result

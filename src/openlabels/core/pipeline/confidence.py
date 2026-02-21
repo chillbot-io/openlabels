@@ -53,6 +53,8 @@ def calibrate_spans(spans: list[Span]) -> list[Span]:
             needs_review=s.needs_review,
             review_reason=s.review_reason,
             coref_anchor_value=s.coref_anchor_value,
+            raw_confidence=s.raw_confidence,
+            detector_label=s.detector_label,
         )
         for s in spans
     ]

@@ -751,9 +751,12 @@ def _link_partial_names(spans: list[Span], min_confidence: float = 0.70) -> list
                 confidence=span.confidence,
                 detector=span.detector,
                 tier=span.tier,
+                context=span.context,
                 needs_review=span.needs_review,
                 review_reason=span.review_reason,
                 coref_anchor_value=anchor_span.text,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
             )
 
     return result
