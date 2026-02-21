@@ -216,10 +216,10 @@ class MultilingualGLiNERDetector(GLiNERDetector):
 
             start = int(entity["start"])
             end = int(entity["end"])
-            score_val = float(entity["score"])
+            raw_score = float(entity["score"])
 
             # Apply multilingual-specific calibration
-            score_val = _calibrate_multilingual_score(label, score_val)
+            score_val = _calibrate_multilingual_score(label, raw_score)
 
             if start < 0 or end <= start or end > len(text):
                 continue
@@ -239,6 +239,8 @@ class MultilingualGLiNERDetector(GLiNERDetector):
                     confidence=score_val,
                     detector=self.name,
                     tier=self.tier,
+                    raw_confidence=raw_score,
+                    detector_label=label,
                 )
                 spans.append(span)
             except ValueError as e:
