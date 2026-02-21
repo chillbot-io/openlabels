@@ -124,7 +124,7 @@ class TestCacheRoundTrip:
                 sample_id=0,
                 text="John Smith lives at 123 Main St",
                 gold_spans=[
-                    GoldSpan(0, 10, "John Smith", "NAME", "FIRSTNAME"),
+                    GoldSpan(0, 10, "John Smith", "FIRSTNAME", "FIRSTNAME"),
                     GoldSpan(20, 31, "123 Main St", "ADDRESS", "STREETADDRESS"),
                 ],
             ),
@@ -166,7 +166,7 @@ class TestCacheRoundTrip:
             assert loaded[0].sample_id == 0
             assert loaded[0].text == "John Smith lives at 123 Main St"
             assert len(loaded[0].gold_spans) == 2
-            assert loaded[0].gold_spans[0].entity_type == "NAME"
+            assert loaded[0].gold_spans[0].entity_type == "FIRSTNAME"
             assert loaded[0].gold_spans[0].start == 0
             assert loaded[0].gold_spans[0].end == 10
 
@@ -189,7 +189,7 @@ class TestLoadDatasetFiltering:
                     "id": 0,
                     "text": "John Smith",
                     "spans": [{"start": 0, "end": 10, "text": "John Smith",
-                              "entity_type": "NAME", "original_label": "FIRSTNAME"}],
+                              "entity_type": "FIRSTNAME", "original_label": "FIRSTNAME"}],
                 },
                 {
                     "id": 1,
@@ -290,14 +290,14 @@ class TestMultilingualFallback:
                     "text": "Jean Dupont habite à Paris",
                     "language": "fr",
                     "spans": [{"start": 0, "end": 11, "text": "Jean Dupont",
-                              "entity_type": "NAME", "original_label": "FIRSTNAME"}],
+                              "entity_type": "FIRSTNAME", "original_label": "FIRSTNAME"}],
                 },
                 {
                     "id": 1,
                     "text": "John Smith lives in NYC",
                     "language": "en",
                     "spans": [{"start": 0, "end": 10, "text": "John Smith",
-                              "entity_type": "NAME", "original_label": "FIRSTNAME"}],
+                              "entity_type": "FIRSTNAME", "original_label": "FIRSTNAME"}],
                 },
             ]
             with open(cache_path, "w") as f:
