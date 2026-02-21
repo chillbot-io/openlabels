@@ -111,20 +111,12 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
 
     try:
         from openlabels.core.benchmark.dataset import DatasetLoadError
-        if loaded_samples is not None:
-            result = run_benchmark(
-                samples=loaded_samples,
-                config=config,
-                seed=seed,
-                progress_callback=_cli_progress,
-            )
-        else:
-            result = run_benchmark(
-                sample_size=samples,
-                config=config,
-                seed=seed,
-                progress_callback=_cli_progress,
-            )
+        result = run_benchmark(
+            samples=loaded_samples,
+            config=config,
+            seed=seed,
+            progress_callback=_cli_progress,
+        )
     except DatasetLoadError as e:
         click.echo(f"\nDataset error: {e}", err=True)
         raise SystemExit(1)
@@ -181,7 +173,6 @@ def sweep(ctx, presets):
     try:
         results = run_sweep(
             samples=loaded_samples,
-            sample_size=samples if loaded_samples is None else None,
             preset_names=preset_names,
             seed=seed,
         )
@@ -250,7 +241,6 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
     try:
         results = threshold_sweep(
             samples=loaded_samples,
-            sample_size=samples if loaded_samples is None else None,
             thresholds=threshold_list,
             base_config=base,
             seed=seed,
@@ -343,7 +333,6 @@ def calibrate(ctx, output, apply_cal):
     try:
         result = run_benchmark(
             samples=loaded_samples,
-            sample_size=samples_n if loaded_samples is None else None,
             config=config,
             seed=seed,
             progress_callback=_cli_progress,
@@ -444,13 +433,18 @@ def _load_dataset_samples(
     *,
     language: str | None = None,
 ):
-    """Load samples for the chosen dataset.
+    """Load and return samples for the chosen dataset.
 
-    Returns a list of BenchmarkSample for Gretel/multilingual datasets,
-    or None for default ai4privacy (handled by the harness's load_dataset).
+    Always returns a list of BenchmarkSample.  For ai4privacy, if more
+    samples are requested than the bundled 1 k dataset provides, the full
+    400 k dataset is automatically downloaded from HuggingFace.
     """
     if dataset == "ai4privacy" and language is None:
-        return None
+        from openlabels.core.benchmark.dataset import load_dataset as load_ai4privacy
+
+        samples, source = load_ai4privacy(sample_size=sample_size, seed=seed)
+        click.echo(f"Loaded {len(samples)} samples from ai4privacy ({source})")
+        return samples
 
     if dataset == "ai4privacy" and language is not None:
         # ai4privacy with language filter → use multilingual download
