@@ -270,6 +270,150 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
 
 
 @benchmark.command()
+@click.option("--top", default=30, type=int, help="Number of top entries to show")
+@click.pass_context
+def diagnose(ctx, top):
+    """Diagnose F1 score issues: find unmapped labels, phantom gold entities, and distribution gaps.
+
+    This command loads the dataset and checks for:
+    1. Labels that fall through the mapping (guaranteed false negatives)
+    2. Gold entity type distribution
+    3. Labels that detectors can never produce
+    4. Comparison with EVAL_CATEGORIES coverage
+
+    Example:
+        openlabels benchmark diagnose -n 1000
+        openlabels benchmark diagnose -n 5000 --top 50
+    """
+    from collections import Counter
+
+    from openlabels.core.benchmark.entity_mapping import (
+        AI4PRIVACY_TO_OPENLABELS,
+        EVAL_CATEGORIES,
+        UNMAPPED_PRED_TYPES,
+        UNMAPPED_TYPES,
+        audit_labels,
+    )
+
+    samples_n = ctx.obj["samples"]
+    seed = ctx.obj["seed"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
+    language = ctx.obj.get("language")
+
+    click.echo(f"Diagnosing label mapping: {dataset} | {samples_n} samples")
+    click.echo("=" * 70)
+
+    loaded_samples = _load_dataset_samples(dataset, samples_n, seed, language=language)
+
+    # 1. Collect ALL original labels and mapped types
+    original_labels: Counter = Counter()
+    mapped_types: Counter = Counter()
+    passthrough_labels: Counter = Counter()
+    total_gold = 0
+
+    for sample in loaded_samples:
+        for g in sample.gold_spans:
+            original_labels[g.original_label] += 1
+            mapped_types[g.entity_type] += 1
+            total_gold += 1
+            # Check if this was a passthrough (not explicitly mapped)
+            upper = g.original_label.upper().replace(" ", "").replace("-", "")
+            if upper not in AI4PRIVACY_TO_OPENLABELS and upper not in UNMAPPED_TYPES:
+                passthrough_labels[g.original_label] += 1
+
+    click.echo(f"\nTotal gold spans: {total_gold}")
+    click.echo(f"Unique original labels: {len(original_labels)}")
+    click.echo(f"Unique mapped types: {len(mapped_types)}")
+
+    # 2. CRITICAL: Show passthrough labels (guaranteed FN)
+    if passthrough_labels:
+        passthrough_total = sum(passthrough_labels.values())
+        passthrough_pct = passthrough_total / total_gold * 100 if total_gold else 0
+        click.echo(f"\n{'!'*70}")
+        click.echo(f"CRITICAL: {len(passthrough_labels)} label(s) FALL THROUGH the mapping!")
+        click.echo(f"These create {passthrough_total} guaranteed false negatives "
+                   f"({passthrough_pct:.1f}% of all gold spans)")
+        click.echo(f"{'!'*70}")
+        click.echo(f"\n  {'Label':<30} {'Count':>6} {'% of Gold':>9}  Suggested fix")
+        click.echo("  " + "-" * 75)
+        for label, count in passthrough_labels.most_common():
+            pct = count / total_gold * 100
+            # Suggest the most likely mapping
+            upper = label.upper().replace(" ", "").replace("-", "")
+            suggestion = _suggest_mapping(upper)
+            click.echo(f"  {label:<30} {count:>6} {pct:>8.1f}%  → {suggestion}")
+        click.echo(f"\n  Fix: Add these to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py")
+    else:
+        click.echo(f"\n✓ All labels are mapped (no passthrough labels)")
+
+    # 3. Show gold entity type distribution
+    click.echo(f"\nGold entity type distribution (top {top}):")
+    click.echo(f"  {'Type':<25} {'Count':>6} {'% Gold':>7}  {'In EVAL_CAT':>11}")
+    click.echo("  " + "-" * 55)
+    for etype, count in mapped_types.most_common(top):
+        pct = count / total_gold * 100
+        in_eval = "✓" if etype in EVAL_CATEGORIES else "✗ MISSING"
+        click.echo(f"  {etype:<25} {count:>6} {pct:>6.1f}%  {in_eval:>11}")
+
+    # 4. Check for gold types not in EVAL_CATEGORIES
+    missing_eval = {t for t in mapped_types if t not in EVAL_CATEGORIES}
+    if missing_eval:
+        missing_count = sum(mapped_types[t] for t in missing_eval)
+        missing_pct = missing_count / total_gold * 100 if total_gold else 0
+        click.echo(f"\nWARNING: {len(missing_eval)} gold type(s) not in EVAL_CATEGORIES "
+                   f"({missing_count} spans, {missing_pct:.1f}% of gold)")
+        click.echo("  These types cannot benefit from category-level type matching.")
+        for t in sorted(missing_eval):
+            click.echo(f"    {t} ({mapped_types[t]} spans)")
+
+    # 5. Label audit summary
+    all_original = list(original_labels.keys())
+    audit = audit_labels(all_original)
+    click.echo(f"\nLabel audit summary:")
+    click.echo(f"  Mapped:      {len(audit['mapped'])} labels")
+    click.echo(f"  Unmapped:    {len(audit['unmapped'])} labels (excluded from scoring)")
+    click.echo(f"  Passthrough: {len(audit['passthrough'])} labels (NEEDS FIXING)")
+
+    # 6. Check UNMAPPED_PRED_TYPES coverage
+    click.echo(f"\nFiltered prediction types (UNMAPPED_PRED_TYPES):")
+    for t in sorted(UNMAPPED_PRED_TYPES):
+        click.echo(f"  {t}")
+
+    click.echo(f"\nDone. Use 'openlabels benchmark -v' for per-category F1 breakdown.")
+
+
+def _suggest_mapping(upper_label: str) -> str:
+    """Suggest a likely OpenLabels mapping for an unmapped label."""
+    suggestions = {
+        "PASSPORTNUM": "PASSPORT",
+        "CREDITCARDNUM": "CREDIT_CARD",
+        "VEHICLEREGISTRATION": "LICENSE_PLATE",
+        "BANKACCOUNTNUMBER": "ACCOUNT_NUMBER",
+        "INSURANCENUMBER": "ACCOUNT_NUMBER",
+        "INSURANCENUM": "ACCOUNT_NUMBER",
+        "MORTGAGENUMBER": "ACCOUNT_NUMBER",
+        "INVESTMENTACCOUNTNUMBER": "ACCOUNT_NUMBER",
+        "LOANNUM": "ACCOUNT_NUMBER",
+        "MEMBERID": "ACCOUNT_NUMBER",
+        "MASKNUM": "ACCOUNT_NUMBER",
+        "LICENSENUM": "DRIVER_LICENSE",
+        "BROKERAGE": "COMPANY",
+    }
+    if upper_label in suggestions:
+        return suggestions[upper_label]
+    # Pattern-based guessing
+    if "PHONE" in upper_label:
+        return "PHONE"
+    if "NAME" in upper_label and "COMPANY" not in upper_label:
+        return "NAME (check if first/last)"
+    if "ADDRESS" in upper_label:
+        return "ADDRESS"
+    if "NUM" in upper_label:
+        return "(needs manual review — likely an ID type)"
+    return "(unknown — needs manual review)"
+
+
+@benchmark.command()
 @click.option("--output", "-o", default="calibration.json", help="Save fitted calibration to JSON")
 @click.option("--apply", "apply_cal", is_flag=True,
               help="Apply the fitted calibration as the active table")

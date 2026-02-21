@@ -559,9 +559,11 @@ _ML_PRIMARY_TYPES = frozenset({
 
 # Default minimum calibrated confidence for ML-only spans on types where
 # patterns are the primary detector (used when calibration data is absent).
-# Raised from 0.52 to 0.60: GLiNER produces high-confidence FPs that
-# survived the old threshold on ai4privacy 400k.
-_ML_UNCORROBORATED_MIN_DEFAULT = 0.60
+# Lowered from 0.60 back to 0.55: the 0.60 threshold (raised to fight
+# GLiNER FPs on ai4privacy 400k) also kills recall on entity types where
+# patterns miss due to different PII formats in the 400k dataset.  The net
+# effect was worse F1 (recall dropped more than precision improved).
+_ML_UNCORROBORATED_MIN_DEFAULT = 0.55
 
 # Types that require pattern corroboration unless the span's calibrated
 # confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
@@ -598,11 +600,11 @@ def _calibrated_threshold(span: Span, base: float) -> float:
         return base
 
     temperature = params[0]
-    # Cap raised from 0.55 to 0.70, scale from 0.08 to 0.12:
-    # GLiNER produces high-confidence FPs on ai4privacy 400k that
-    # survived the old ceiling.  Overconfident labels (temp >> 1.0)
-    # now need much higher calibrated confidence to pass solo.
-    return min(0.70, base + max(0.0, temperature - 1.0) * 0.12)
+    # Scale: overconfident labels (temp >> 1.0) need higher confidence to
+    # survive solo.  Cap at 0.62 — the previous 0.70 cap suppressed too
+    # many valid ML detections on the 400k dataset where patterns miss
+    # more entities due to different PII formats, tanking recall.
+    return min(0.62, base + max(0.0, temperature - 1.0) * 0.08)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -813,6 +815,9 @@ def _suppress_uncorroborated_ml(
             pattern_ranges.append((s.start, s.end, _corroboration_group(ptype)))
 
     result: list[Span] = []
+    suppressed_count = 0
+    suppressed_types: dict[str, int] = {}
+
     for span in resolved:
         if span.tier != Tier.ML:
             result.append(span)
@@ -839,6 +844,8 @@ def _suppress_uncorroborated_ml(
                     span.entity_type, span.text, span.confidence,
                 )
             else:
+                suppressed_count += 1
+                suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
                 logger.debug(
                     "ML suppressed (strict): %s %r conf=%.3f",
                     span.entity_type, span.text, span.confidence,
@@ -863,6 +870,8 @@ def _suppress_uncorroborated_ml(
             if any_agreement:
                 result.append(span)
             else:
+                suppressed_count += 1
+                suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
                 logger.debug(
                     "ML suppressed (primary, solo low-conf): %s %r conf=%.3f (min=%.3f)",
                     span.entity_type, span.text, span.confidence, solo_min,
@@ -883,10 +892,28 @@ def _suppress_uncorroborated_ml(
         if span.confidence >= uncorr_min:
             result.append(span)
         else:
+            suppressed_count += 1
+            suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
             logger.debug(
                 "ML suppressed (uncorroborated): %s %r conf=%.3f (min=%.3f)",
                 span.entity_type, span.text, span.confidence, uncorr_min,
             )
+
+    if suppressed_count:
+        ml_total = sum(1 for s in resolved if s.tier == Tier.ML)
+        top_types = ", ".join(
+            f"{t}({c})" for t, c in sorted(
+                suppressed_types.items(), key=lambda x: -x[1]
+            )[:5]
+        )
+        logger.info(
+            "ML corroboration: suppressed %d/%d ML spans (%.0f%%). "
+            "Top suppressed types: %s",
+            suppressed_count,
+            ml_total,
+            suppressed_count / ml_total * 100 if ml_total else 0,
+            top_types,
+        )
 
     return result
 

@@ -29,7 +29,7 @@ class TestPerEntityThresholds:
     """Test that per-entity thresholds override global thresholds."""
 
     def test_name_below_global_passes_entity_threshold(self):
-        """NAME at 0.56 passes entity threshold (0.55) even below global (0.70)."""
+        """NAME at 0.56 passes entity threshold (0.50) even below global (0.70)."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
@@ -41,7 +41,7 @@ class TestPerEntityThresholds:
         assert result is True
 
     def test_name_below_entity_threshold_filtered(self):
-        """NAME at 0.40 is below entity threshold (0.45) and filtered."""
+        """NAME at 0.40 is below entity threshold (0.50) and filtered."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
@@ -65,14 +65,14 @@ class TestPerEntityThresholds:
         assert result is False
 
     def test_age_above_entity_threshold_passes(self):
-        """AGE at 0.75 is above entity threshold (0.70) and passes."""
+        """AGE at 0.85 is above entity threshold (0.82) and passes."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
             enable_context_keywords=False,
         )
         orch = DetectorOrchestrator(config=config)
-        span = _make_span("AGE", 0.75, Tier.ML)
+        span = _make_span("AGE", 0.85, Tier.ML)
         result = orch._passes_threshold(span)
         assert result is True
 
@@ -143,12 +143,12 @@ class TestEntityThresholdsConfig:
     def test_default_has_name_threshold(self):
         config = DetectionConfig()
         thresholds = dict(config.entity_thresholds)
-        assert thresholds["NAME"] == 0.45
+        assert thresholds["NAME"] == 0.50
 
     def test_default_has_age_threshold(self):
         config = DetectionConfig()
         thresholds = dict(config.entity_thresholds)
-        assert thresholds["AGE"] == 0.70
+        assert thresholds["AGE"] == 0.82
 
     def test_custom_entity_thresholds(self):
         """Custom entity_thresholds can be passed."""
