@@ -546,8 +546,9 @@ _ML_PRIMARY_TYPES = frozenset({
     "EMPLOYER", "EMPLOYEE_ID", "FACILITY",
     # Medical identifiers: benefit from ML context
     "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
-    # Age: patterns miss natural-language age references
-    "AGE",
+    # AGE removed from ML-primary: 4 spurious on ai4privacy 100,
+    # pattern detectors handle structured age references.  Natural-
+    # language ages ("25 years old") activate via CONTACT category.
     # Addresses: pattern detectors catch structured formats but miss
     # unstructured addresses (street names, building numbers without
     # city/state/zip context).  52 ADDRESS misses on ai4privacy 10k;
@@ -558,18 +559,20 @@ _ML_PRIMARY_TYPES = frozenset({
 
 # Default minimum calibrated confidence for ML-only spans on types where
 # patterns are the primary detector (used when calibration data is absent).
-_ML_UNCORROBORATED_MIN_DEFAULT = 0.52
+# Raised from 0.52 to 0.60: GLiNER produces high-confidence FPs that
+# survived the old threshold on ai4privacy 400k.
+_ML_UNCORROBORATED_MIN_DEFAULT = 0.60
 
 # Types that require pattern corroboration unless the span's calibrated
 # confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
 # these types are allowed through solo — the calibration temperature
 # already dampened unreliable scores, so survivors are trustworthy.
 _STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE", "DRIVER_LICENSE"})
-_STRICT_SOLO_MIN = 0.55
+_STRICT_SOLO_MIN = 0.62
 
 # Default minimum calibrated confidence for ML-primary spans to
 # survive solo (used when calibration data is absent).
-_ML_PRIMARY_SOLO_MIN_DEFAULT = 0.49
+_ML_PRIMARY_SOLO_MIN_DEFAULT = 0.52
 
 
 def _calibrated_threshold(span: Span, base: float) -> float:
@@ -579,7 +582,7 @@ def _calibrated_threshold(span: Span, base: float) -> float:
     and need a *higher* calibrated confidence to survive solo.
     Well-calibrated labels (temperature ≤ 1.0) use the base threshold.
 
-    Formula: ``min(0.55, base + max(0, temperature - 1.0) * 0.08)``
+    Formula: ``min(0.70, base + max(0, temperature - 1.0) * 0.12)``
 
     Falls back to *base* when the span has no calibration metadata.
     """
@@ -595,7 +598,11 @@ def _calibrated_threshold(span: Span, base: float) -> float:
         return base
 
     temperature = params[0]
-    return min(0.55, base + max(0.0, temperature - 1.0) * 0.08)
+    # Cap raised from 0.55 to 0.70, scale from 0.08 to 0.12:
+    # GLiNER produces high-confidence FPs on ai4privacy 400k that
+    # survived the old ceiling.  Overconfident labels (temp >> 1.0)
+    # now need much higher calibrated confidence to pass solo.
+    return min(0.70, base + max(0.0, temperature - 1.0) * 0.12)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents

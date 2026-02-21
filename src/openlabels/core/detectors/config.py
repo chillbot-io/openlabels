@@ -79,19 +79,21 @@ class DetectionConfig:
         # Contextual — standard threshold
         ("PHONE", 0.70),
         ("ADDRESS", 0.68),
-        # DATE raised from 0.65 to 0.72: 10 spurious on ai4privacy 100.
-        ("DATE", 0.72),
-        ("DATE_DOB", 0.65),
-        ("DATETIME", 0.72),
-        # Country names: 6 spurious on ai4privacy 100, 0 misses
-        ("COUNTRY", 0.76),
+        # DATE/TIME/AGE removed from GLiNER GENERAL labels (patterns
+        # have 100% recall).  Higher thresholds here only affect the
+        # rare case where a category-specific label set activates.
+        ("DATE", 0.78),
+        ("DATE_DOB", 0.72),
+        ("DATETIME", 0.78),
+        # Country: 93% FP rate from GLiNER, removed from GENERAL.
+        ("COUNTRY", 0.82),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # Raised from 0.52 to 0.55: still 12 FIRSTNAME + 7 LASTNAME
-        # spurious on ai4privacy 100 at 0.52.
-        ("NAME", 0.45),
-        ("FIRSTNAME", 0.55),
-        ("LASTNAME", 0.55),
+        # Raised from 0.55 to 0.58: 12 FIRSTNAME + 6 LASTNAME
+        # spurious on ai4privacy 400k at 0.55.
+        ("NAME", 0.50),
+        ("FIRSTNAME", 0.58),
+        ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
         # COMPANY raised from 0.50 to 0.55 to reduce 32 spurious on
@@ -107,13 +109,16 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Time — raised from 0.72 to 0.78: still 11 spurious at 0.72
-        # on ai4privacy 100.  Real labeled times have confidence ≥ 0.85.
-        ("TIME", 0.78),
-        # Honorifics — raised from 0.68 to 0.72: 7 spurious at 0.68
-        ("PREFIX", 0.72),
-        # AGE raised from 0.70 to 0.76: 6 spurious at 0.70
-        ("AGE", 0.76),
+        # Time — removed from GLiNER GENERAL labels.  Pattern detectors
+        # have 100% date/time recall.  High threshold for category-
+        # activated cases only.
+        ("TIME", 0.85),
+        # Honorifics — 7 spurious at 0.72 on ai4privacy 400k
+        ("PREFIX", 0.75),
+        # AGE — removed from GLiNER GENERAL labels and ML-primary.
+        # Pattern detectors handle structured ages; GLiNER only fires
+        # via CONTACT category activation.
+        ("AGE", 0.82),
         ("ZIP", 0.75),
     )
 

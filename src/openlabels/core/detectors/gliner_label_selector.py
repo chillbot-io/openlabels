@@ -129,52 +129,37 @@ _CATEGORY_THRESHOLDS: dict[ContentCategory, float] = {
 
 _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
     ContentCategory.GENERAL: [
-        # --- GLiNER-essential labels: entities with NO regex equivalent ---
-        # Names: the primary reason GLiNER exists in the pipeline.
+        # --- Names: the primary reason GLiNER exists in the pipeline ---
         "person name",
         "first name",
         "last name",
         "middle name",
-        # Dates: regex catches structured dates; GLiNER catches natural-language.
-        "date of birth",
-        "date",
-        "date and time",
-        # Time: pattern detectors cover structured times but GLiNER catches
-        # natural-language references ("around noon", "4 PM").
-        "time",
-        # Professional / contextual entities.
+        # --- Professional: no pattern coverage ---
         "company name",
-        "employer",
-        "job title",
-        "age",
-        # Locations: partial regex coverage; GLiNER helps with unstructured.
+        # --- Locations: partial pattern coverage ---
         "street address",
         "city",
-        "country",
-        # Vehicle identifiers moved to VEHICLE category — they require
-        # explicit vehicle context keywords to activate, preventing false
-        # positives on alphanumeric codes in finance/EDI text.
-        # Secrets: pattern detectors handle structured secrets; GLiNER
-        # catches natural-language mentions like "my password is X".
+        # --- Government IDs: prevents type confusion ---
+        # Without these, GLiNER maps SSN→PHONE, STATE_ID→BANK_ROUTING.
+        "social security number",
+        "national identity number",
+        "driver license number",
+        "tax identification number",
+        # --- Contact: no reliable pattern alternative ---
+        "username",
+        # --- Secrets: contextual ("my password is X") ---
         "password",
-        "pin code",
-        # --- Labels that MUST be in GENERAL ---
-        # These lack reliable pattern coverage or cause type confusion
-        # when absent (GLiNER maps entities to the nearest available
-        # label, e.g. SSN→PHONE when "social security number" is
-        # missing from the label set).
-        "username",                   # No regex pattern for usernames
-        "social security number",     # Prevents SSN→PHONE misclassification
-        "national identity number",   # Prevents STATE_ID→BANK_ROUTING
-        "driver license number",      # Pattern coverage is incomplete
-        "tax identification number",  # Missed without explicit label
-        "zip code",                   # Pattern coverage is partial
-        # --- Labels OMITTED from GENERAL ---
-        # email, phone, credit card, IBAN, IP, URL, etc.
-        # are reliably caught by pattern/checksum detectors.  Keeping
-        # them out preserves GLiNER's attention budget for entities
-        # where it's the only detector.  They still activate via
-        # category-specific label sets when content keywords match.
+        # --- Labels REMOVED from GENERAL ---
+        # date, date of birth, date and time, time, age:
+        #   Pattern detectors achieve 100% recall on dates/times.
+        #   GLiNER adds 26+ spurious FPs and 0 additional TP.
+        # country: 93% FP rate on 1k benchmark, 6 spurious on 100.
+        # employer, job title: generate FPs without corroboration.
+        # pin code, zip code: redundant with pattern detectors.
+        #
+        # These labels still activate via category-specific sets
+        # (FINANCIAL, CONTACT, PERSONAL_ID) when content keywords
+        # are present.
     ],
     ContentCategory.MEDICAL: [
         "medical record number",
