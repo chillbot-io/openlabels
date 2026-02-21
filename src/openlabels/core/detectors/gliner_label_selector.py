@@ -149,17 +149,22 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "username",
         # --- Secrets: contextual ("my password is X") ---
         "password",
+        # --- Dates: only DOB — GLiNER catches "born on March 5" etc. ---
+        # Generic "date"/"time"/"age" removed: pattern detectors have
+        # 100% recall on structured dates/times, and GLiNER adds only
+        # FPs for those.  But "date of birth" is semantically distinct
+        # and produces real TPs that patterns miss.
+        "date of birth",
+        # --- Zip codes: partial pattern coverage ---
+        # Pattern detectors handle US ZIP but miss international postal
+        # codes.  GLiNER adds marginal recall here.
+        "zip code",
         # --- Labels REMOVED from GENERAL ---
-        # date, date of birth, date and time, time, age:
-        #   Pattern detectors achieve 100% recall on dates/times.
+        # date, date and time, time, age:
+        #   Pattern detectors achieve 100% recall on structured dates/times.
         #   GLiNER adds 26+ spurious FPs and 0 additional TP.
-        # country: 93% FP rate on 1k benchmark, 6 spurious on 100.
+        # country: 93% FP rate, 6 spurious on 100 samples.
         # employer, job title: generate FPs without corroboration.
-        # pin code, zip code: redundant with pattern detectors.
-        #
-        # These labels still activate via category-specific sets
-        # (FINANCIAL, CONTACT, PERSONAL_ID) when content keywords
-        # are present.
     ],
     ContentCategory.MEDICAL: [
         "medical record number",
