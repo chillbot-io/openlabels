@@ -127,7 +127,6 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(ws_events.router, tags=["WebSocket"])
 
 
-
 def _register_root_endpoints(app: FastAPI) -> None:
     """Register endpoints that live outside the versioned API prefix."""
 

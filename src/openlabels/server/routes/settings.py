@@ -75,6 +75,7 @@ class AzureSettingsRequest(BaseModel):
 
 class ScanSettingsRequest(BaseModel):
     """Request to update scan settings."""
+    model_config = ConfigDict(extra="forbid")
     max_file_size_mb: int = Field(default=100, ge=1, le=10000)
     concurrent_files: int = Field(default=10, ge=1, le=100)
     enable_ocr: bool = False

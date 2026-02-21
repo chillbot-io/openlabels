@@ -48,7 +48,6 @@ def audit_log(
     ))
 
 
-
 def __getattr__(name: str):
     """Lazy import route modules to avoid circular imports."""
     if name in _module_cache:
