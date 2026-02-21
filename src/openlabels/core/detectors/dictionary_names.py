@@ -44,6 +44,14 @@ _ADDRESS_SUFFIXES = frozenset({
     "bridge", "dam", "falls", "lake", "mount",
     "garden", "gardens", "park", "ranch", "estates",
     "station", "depot", "terminal",
+    # Additional faker-style / UK / AU street suffixes
+    "trace", "club", "extension", "oval", "close",
+    "mews", "row", "rise", "dell", "dell's",
+    "walk", "path", "gate", "fort", "loaf",
+    "meadow", "passage", "dell",
+    # Administrative divisions — suppress "Wayne" in "Wayne County"
+    "county", "county's", "township", "borough", "parish",
+    "province", "district", "municipality",
     # Indian/South Asian suffixes
     "nagar", "puram", "pur", "abad", "ganj", "khel",
     # Apartment/unit suffixes
@@ -110,7 +118,7 @@ _AMBIGUOUS_FIRST = frozenset({
     "county", "advisory", "league", "guild", "forum",
     "manor", "ranch", "villa", "lodge", "haven",
     "isle", "cove", "mesa", "glen", "dale",
-    "ridge", "creek", "grove", "knoll",
+    "ridge", "creek", "grove", "knoll", "trace",
     # Gretel PII FP analysis — common words detected as names
     "loan", "reason", "room", "holder", "must",
     "case", "author", "price", "marine", "foster",
@@ -360,7 +368,8 @@ class DictionaryNameDetector(BaseDetector):
                 before_lower = before.lower()
                 if before_lower.endswith(('fort', 'lake', 'port', 'mount',
                                           'cape', 'new', 'old', 'saint', 'san',
-                                          'santa', 'los', 'las', 'el')):
+                                          'santa', 'los', 'las', 'el',
+                                          'west', 'east', 'north', 'south')):
                     continue
 
             # Suppress names followed by address suffixes (e.g., "Turner Street")

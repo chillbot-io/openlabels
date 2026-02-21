@@ -1305,6 +1305,9 @@ _p(
 # PO Box
 _p(r'P\.?O\.?\s*Box\s+\d+', 'ADDRESS', 0.88, flags=re.I),
 
+# Building/facility number context: "building 47817", "building number 7663"
+_p(r'(?:building|bldg)\.?\s+(?:number\s+|no\.?\s+|#\s*)?(\d{2,6})\b', 'ADDRESS', 0.82, 1, flags=re.I),
+
 # Context-based location: "lives in Springfield", "from Chicago"
 # NOTE: No re.I flag - _CITY_NAME requires capitalized words to avoid matching
 # everything after "from" (e.g., "from Los Angeles treated" would match too much)
@@ -1869,7 +1872,7 @@ _p(r'\b([A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D])\b', 'UK_NINO', 0.82, 1, _validate_uk_nin
 _p(r'(?:Routing|ABA|RTN)[:\s#]+(\d{9})\b', 'BANK_ROUTING', 0.95, 1, flags=re.I),
 # Account numbers - both numeric-only and alphanumeric formats
 _p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+(\d{8,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
-_p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+([A-Z0-9][-A-Z0-9]{5,19})', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+_p(r'(?:Account)\s*(?:Number|No|#)?[:\s#]+(?=[A-Z0-9]*\d)([A-Z0-9][-A-Z0-9]{5,19})', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 # Account number in parentheses: "Investment Account (number 48308813)"
 _p(r'Account\s*\(\s*(?:number|no|#)\s+(\d{6,17})\s*\)', 'ACCOUNT_NUMBER', 0.88, 1, flags=re.I),
 # "account number XXXXXXXX" with flexible whitespace
@@ -1877,6 +1880,8 @@ _p(r'\baccount\s+(?:number|no\.?|#)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, 
 # "our account number XXXXXXXX" or "use account XXXXXXXX"
 _p(r'\b(?:our|your|the|use|for)\s+account\s+(?:number\s+)?(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 # Account type names: "Checking Account", "Savings Account", etc.
+# Confidence kept moderate since these are labels, not identifiers;
+# they must be near an actual account number to be meaningful.
 _p(r'\b((?:Checking|Savings|Investment|Personal\s+Loan|Auto\s+Loan|Home\s+Loan|Money\s+Market|Credit\s+Card)\s+Account)\b', 'ACCOUNT_NUMBER', 0.82, 1),
 # 16-digit numbers with context (masked/tokenized card numbers, account identifiers)
 # Lower confidence — only match when preceded by contextual words
@@ -2631,6 +2636,26 @@ _ADDRESS_FALSE_POSITIVES = frozenset({
     'metical', 'dollar', 'euro', 'pound', 'franc', 'rupee', 'yen',
 })
 
+# Common English words that match city suffix patterns but are not cities.
+# Prevents "Iceland" (-land), "Transport" (-port), "Waterford" (real city
+# but also common word) etc. from being detected as standalone CITY.
+_CITY_FALSE_POSITIVES = frozenset({
+    'iceland', 'ireland', 'scotland', 'england', 'holland',
+    'finland', 'greenland', 'swaziland', 'switzerland',
+    'newfoundland', 'queensland', 'maryland', 'homeland',
+    'farmland', 'woodland', 'grassland', 'marshland', 'wasteland',
+    'transport', 'passport', 'airport', 'support', 'report',
+    'import', 'export', 'comfort', 'effort', 'standford',
+    'oxford', 'bedford', 'bradford', 'clifford', 'stratford',
+    'hartford', 'crawford', 'stafford',
+    'background', 'playground', 'underground',
+    'highland', 'lowland', 'midland', 'overland',
+    'understand', 'withstand', 'command',
+    'sunderland', 'cumberland', 'northumberland',
+    # Words ending in -worth, -field
+    'worthwhile', 'noteworthy',
+})
+
 # Common English words that should never be detected as usernames.
 # The USERNAME pattern trigger "user" is too generic and matches
 # "user agent", "user feedback", "login details", etc.
@@ -2841,6 +2866,10 @@ class PatternDetector(BaseDetector):
                         before_addr = text[max(0, start - 10):start].lower().strip()
                         if before_addr.endswith(('dear', 'hello', 'hi', 'hey', 'welcome')):
                             continue
+
+                # City false positive filter — common words matching city suffixes
+                if pdef.entity_type == 'CITY' and value.lower() in _CITY_FALSE_POSITIVES:
+                    continue
 
                 # Name false positive filter
                 if pdef.entity_type in ('NAME', 'NAME_PROVIDER', 'NAME_PATIENT', 'NAME_RELATIVE'):
