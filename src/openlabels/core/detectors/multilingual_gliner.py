@@ -88,23 +88,68 @@ MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
 }
 
 
+# Module-level override for multilingual calibration (same pattern as
+# gliner_calibration._custom_calibration).
+_custom_multilingual_calibration: dict[str, tuple[float, float]] | None = None
+
+
 def _calibrate_multilingual_score(label: str, raw_score: float) -> float:
     """Apply Platt scaling for the multilingual GLiNER model.
 
-    Uses the multilingual-specific calibration table rather than the
-    English-tuned parameters from gliner_calibration.py.
+    Uses any custom multilingual calibration loaded via
+    :func:`load_multilingual_calibration`, falling back to the
+    built-in ``MULTILINGUAL_CALIBRATION`` table.
     """
-    import math
+    from .gliner_calibration import _platt_transform
 
-    params = MULTILINGUAL_CALIBRATION.get(label)
+    table = (
+        _custom_multilingual_calibration
+        if _custom_multilingual_calibration is not None
+        else MULTILINGUAL_CALIBRATION
+    )
+    params = table.get(label)
     if params is None:
         return raw_score
 
-    temperature, bias = params
-    clamped = max(1e-7, min(1.0 - 1e-7, raw_score))
-    logit = math.log(clamped / (1.0 - clamped))
-    scaled = (logit - bias) / temperature
-    return 1.0 / (1.0 + math.exp(-scaled))
+    return _platt_transform(raw_score, *params)
+
+
+def load_multilingual_calibration(
+    path: str | "Path",
+) -> dict[str, tuple[float, float]]:
+    """Load custom multilingual calibration from a JSON file.
+
+    Same format as :func:`gliner_calibration.load_calibration`.
+    """
+    import json
+    from pathlib import Path as _Path
+
+    global _custom_multilingual_calibration
+
+    path = _Path(path)
+    with open(path) as f:
+        data = json.load(f)
+
+    calibration: dict[str, tuple[float, float]] = {}
+    for label, params in data.items():
+        if not isinstance(params, (list, tuple)) or len(params) != 2:
+            raise ValueError(
+                f"Label {label!r}: expected [temperature, bias], got {params!r}"
+            )
+        calibration[label] = (float(params[0]), float(params[1]))
+
+    _custom_multilingual_calibration = calibration
+    logger.info(
+        "Loaded custom multilingual calibration from %s (%d labels)",
+        path, len(calibration),
+    )
+    return calibration
+
+
+def reset_multilingual_calibration() -> None:
+    """Reset to built-in multilingual calibration."""
+    global _custom_multilingual_calibration
+    _custom_multilingual_calibration = None
 
 
 @register_detector

@@ -803,15 +803,19 @@ class TestDedupeSpans:
         assert len(result) == 1
         assert result[0].entity_type == "PHONE"
 
-    def test_overlapping_different_type_keeps_lower_start_higher_conf(self, detector):
-        """When different-type spans overlap, higher confidence replaces."""
+    def test_overlapping_different_type_prefers_longer_span(self, detector):
+        """When different-type spans overlap, optimal selection prefers
+        the span with higher weight (confidence * length)."""
         spans = [
             _make_span(0, 8, "John Doe", entity_type="NAME", confidence=0.6),
             _make_span(5, 8, "Doe", entity_type="NAME_PATIENT", confidence=0.95),
         ]
         result = detector._dedupe_spans(spans)
         assert len(result) == 1
-        assert result[0].confidence == 0.95
+        # Longer span [0,8] (weight=4.8) beats shorter [5,8] (weight=2.85)
+        assert result[0].start == 0
+        assert result[0].end == 8
+        assert result[0].confidence == 0.6
 
     def test_chunk_boundary_entity_merged(self, detector):
         """Entity split across chunk boundary gets merged from overlapping chunks."""
@@ -1564,3 +1568,166 @@ class TestEdgeCases:
         spans = detector.detect(text)
         assert len(spans) == 1
         assert spans[0].confidence == pytest.approx(0.8765)
+
+
+# =============================================================================
+# OPTIMAL DEDUP TESTS (new cluster-based deduplication)
+# =============================================================================
+
+class TestOptimalDedup:
+    """Test cluster-based deduplication with weighted interval scheduling."""
+
+    @pytest.fixture
+    def detector(self):
+        return ONNXDetector()
+
+    def test_non_overlapping_different_types_both_kept(self, detector):
+        """Non-overlapping spans of different types are all preserved."""
+        spans = [
+            _make_span(0, 10, "John Smith", entity_type="NAME", confidence=0.9),
+            _make_span(15, 26, "555-12-3456", entity_type="SSN", confidence=0.85),
+        ]
+        result = detector._dedupe_spans(spans)
+        assert len(result) == 2
+
+    def test_overlapping_different_types_both_fit(self, detector):
+        """Two different-type spans that don't actually overlap should
+        both be kept even if they are in the same cluster."""
+        # Adjacent but not overlapping
+        full_text = "John 555-12-3456 end"
+        spans = [
+            _make_span(0, 4, "John", entity_type="NAME", confidence=0.9),
+            _make_span(5, 16, "555-12-3456", entity_type="SSN", confidence=0.85),
+        ]
+        result = detector._dedupe_spans(spans, full_text=full_text)
+        assert len(result) == 2
+
+    def test_three_way_overlap_optimal_selection(self, detector):
+        """Three overlapping spans: optimal selection picks best pair."""
+        # A:[0,10] NAME, B:[5,15] PHONE, C:[12,22] EMAIL
+        # A and C don't overlap → both can be selected (weight = 9+9.5 = 18.5)
+        # B overlaps both → only B alone (weight = 8.5)
+        full_text = "0123456789abcde012345678"
+        spans = [
+            _make_span(0, 10, full_text[0:10], entity_type="NAME", confidence=0.9),
+            _make_span(5, 15, full_text[5:15], entity_type="PHONE", confidence=0.85),
+            _make_span(12, 22, full_text[12:22], entity_type="EMAIL", confidence=0.95),
+        ]
+        result = detector._dedupe_spans(spans, full_text=full_text)
+        # Should select A and C (non-overlapping, higher total weight)
+        assert len(result) == 2
+        starts = {s.start for s in result}
+        assert 0 in starts
+        assert 12 in starts
+
+    def test_same_type_merge_in_cluster(self, detector):
+        """Same-type spans in a cluster are merged before selection."""
+        full_text = "John Michael Smith was here"
+        spans = [
+            _make_span(0, 12, "John Michael", entity_type="NAME", confidence=0.88),
+            _make_span(5, 18, "Michael Smith", entity_type="NAME", confidence=0.92),
+        ]
+        result = detector._dedupe_spans(spans, full_text=full_text)
+        assert len(result) == 1
+        assert result[0].start == 0
+        assert result[0].end == 18
+        assert result[0].text == "John Michael Smith"
+        assert result[0].confidence == 0.92
+
+    def test_weighted_interval_select_basic(self):
+        """Static method selects non-overlapping set maximising weight."""
+        # Span A: [0,10] conf 0.5 → weight 5.0
+        # Span B: [0,5] conf 0.9 → weight 4.5
+        # Span C: [6,10] conf 0.8 → weight 3.2
+        # B+C = 7.7 > A = 5.0 → pick B and C
+        spans = [
+            _make_span(0, 10, "0123456789", confidence=0.5),
+            _make_span(0, 5, "01234", confidence=0.9),
+            _make_span(6, 10, "6789", confidence=0.8),
+        ]
+        result = ONNXDetector._weighted_interval_select(spans)
+        assert len(result) == 2
+        assert result[0].start == 0
+        assert result[0].end == 5
+        assert result[1].start == 6
+        assert result[1].end == 10
+
+
+# =============================================================================
+# TOKENIZER-AWARE CHUNKING TESTS
+# =============================================================================
+
+class TestTokenizerAwareChunking:
+    """Test dynamic chunk sizing based on tokenizer measurements."""
+
+    def test_compute_chunk_params_no_tokenizer(self):
+        """Without tokenizer, returns class-level defaults."""
+        det = ONNXDetector()
+        max_c, stride, overlap = det._compute_chunk_params("test text")
+        assert max_c == det.CHUNK_MAX_CHARS
+        assert stride == det.CHUNK_STRIDE
+        assert overlap == det.CHUNK_MIN_OVERLAP
+
+    def test_estimate_chars_per_token_no_tokenizer(self):
+        """Without tokenizer, returns 4.0 fallback."""
+        det = ONNXDetector()
+        assert det._estimate_chars_per_token("hello world") == 4.0
+
+    def test_estimate_chars_per_token_with_fast_tokenizer(self):
+        """With fast tokenizer, measures actual ratio."""
+        det = ONNXDetector()
+        det._use_fast_tokenizer = True
+
+        mock_encoding = MagicMock()
+        # 100 chars → 22 tokens (incl 2 special) = 20 real tokens → 5.0 cpt
+        mock_encoding.ids = list(range(22))
+        det._tokenizer = MagicMock()
+        det._tokenizer.encode.return_value = mock_encoding
+
+        cpt = det._estimate_chars_per_token("x" * 100)
+        assert cpt == pytest.approx(5.0, abs=0.1)
+
+    def test_compute_chunk_params_with_tokenizer(self):
+        """With tokenizer, chunk sizes adapt to content."""
+        det = ONNXDetector()
+        det._use_fast_tokenizer = True
+
+        # Simulate dense text: 2.0 chars/token
+        mock_encoding = MagicMock()
+        mock_encoding.ids = list(range(252))  # 500 chars → 250 tokens
+        det._tokenizer = MagicMock()
+        det._tokenizer.encode.return_value = mock_encoding
+
+        max_c, stride, overlap = det._compute_chunk_params("x" * 1000)
+        # 450 target tokens * 2.0 cpt = 900 chars
+        assert max_c == pytest.approx(900, abs=10)
+        # Smaller than default 1500 because text is token-dense
+        assert max_c < det.CHUNK_MAX_CHARS
+
+    def test_compute_chunk_params_with_sparse_text(self):
+        """Sparse text (high cpt) gets larger chunk sizes."""
+        det = ONNXDetector()
+        det._use_fast_tokenizer = True
+
+        # Simulate sparse text: 6.0 chars/token
+        mock_encoding = MagicMock()
+        mock_encoding.ids = list(range(85))  # 500 chars → 83 tokens
+        det._tokenizer = MagicMock()
+        det._tokenizer.encode.return_value = mock_encoding
+
+        max_c, stride, overlap = det._compute_chunk_params("x" * 1000)
+        # 450 target tokens * ~6.0 cpt ≈ 2700 chars
+        assert max_c > det.CHUNK_MAX_CHARS
+
+    def test_chunk_text_accepts_params(self):
+        """_chunk_text uses passed parameters instead of defaults."""
+        det = ONNXDetector()
+        text = "word " * 400  # 2000 chars
+
+        # With large max_chars, should be single chunk
+        chunks = det._chunk_text(text, max_chars=3000, stride=2800, min_overlap=200)
+        assert len(chunks) == 1
+
+        # With small max_chars, should be multiple chunks
+        chunks = det._chunk_text(text, max_chars=500, stride=400, min_overlap=100)
+        assert len(chunks) > 1

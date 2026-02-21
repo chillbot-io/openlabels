@@ -202,15 +202,66 @@ class GLiNERDetector(BaseDetector):
 
     # GLiNER token window is ~512 tokens.  Character-per-token ratios vary
     # by content: prose ≈ 4 chars/token, dense financial/numeric text ≈ 2–2.5.
-    # Use 1024 chars to stay safely under 512 tokens even for the worst case.
+    # These are fallback defaults; when a model is loaded the actual
+    # chars-per-token ratio is measured and chunk sizes are scaled.
     _MAX_CHUNK_CHARS = 1024
     _CHUNK_OVERLAP = 200
+    _CHUNK_TARGET_TOKENS = 420  # leaves headroom for special tokens
+
+    def _estimate_chars_per_token(self, text: str, sample_size: int = 500) -> float:
+        """Estimate chars-per-token for *text* using the model's tokenizer.
+
+        Falls back to 4.0 (typical English prose) when no tokenizer is
+        accessible.
+        """
+        if not self._model:
+            return 4.0
+
+        sample = text[:sample_size]
+        try:
+            tokenizer = getattr(self._model, "data_processor", None)
+            if tokenizer is None:
+                tokenizer = getattr(self._model, "tokenizer", None)
+            if tokenizer is None:
+                return 4.0
+
+            # The GLiNER data_processor / tokenizer exposes a tokenize method
+            tok_fn = getattr(tokenizer, "tokenize", None)
+            if tok_fn is not None:
+                tokens = tok_fn(sample)
+                n_tokens = max(len(tokens) - 2, 1)
+            else:
+                # Try encode
+                enc_fn = getattr(tokenizer, "encode", None)
+                if enc_fn is not None:
+                    encoded = enc_fn(sample)
+                    if hasattr(encoded, "ids"):
+                        n_tokens = max(len(encoded.ids) - 2, 1)
+                    elif isinstance(encoded, list):
+                        n_tokens = max(len(encoded) - 2, 1)
+                    else:
+                        return 4.0
+                else:
+                    return 4.0
+
+            return len(sample) / n_tokens
+        except Exception:
+            return 4.0
+
+    def _compute_chunk_params(self, text: str) -> tuple[int, int]:
+        """Return (max_chars, overlap) tuned for *text*."""
+        cpt = self._estimate_chars_per_token(text)
+        max_chars = max(400, int(self._CHUNK_TARGET_TOKENS * cpt))
+        overlap = max(80, int(max_chars * 0.15))
+        return max_chars, overlap
 
     def detect(self, text: str) -> list[Span]:
         """Detect PII entities using GLiNER.
 
         Long texts are automatically chunked into overlapping windows
         to avoid silent entity loss beyond the transformer window.
+        Chunk sizes are computed dynamically based on the tokenizer's
+        actual chars-per-token ratio for the input text.
 
         If ``enable_label_selection`` is True, the label set is narrowed
         based on lightweight content profiling (keyword heuristics).
@@ -230,9 +281,12 @@ class GLiNERDetector(BaseDetector):
         # Select labels based on content profiling
         labels = self._select_labels(text)
 
+        # Compute tokenizer-aware chunk sizes
+        max_chars, overlap = self._compute_chunk_params(text)
+
         # Chunk if text exceeds GLiNER's effective window
-        if len(text) > self._MAX_CHUNK_CHARS:
-            return self._detect_chunked(text, labels)
+        if len(text) > max_chars:
+            return self._detect_chunked(text, labels, max_chars, overlap)
 
         return self._detect_single(text, labels)
 
@@ -323,13 +377,19 @@ class GLiNERDetector(BaseDetector):
 
         return spans
 
-    def _detect_chunked(self, text: str, labels: list[str]) -> list[Span]:
+    def _detect_chunked(
+        self,
+        text: str,
+        labels: list[str],
+        max_chars: int = 0,
+        overlap: int = 0,
+    ) -> list[Span]:
         """Split text into overlapping chunks, detect per chunk, merge results."""
         from ..pipeline.chunking import TextChunker
 
         chunker = TextChunker(
-            max_chunk_size=self._MAX_CHUNK_CHARS,
-            overlap=self._CHUNK_OVERLAP,
+            max_chunk_size=max_chars or self._MAX_CHUNK_CHARS,
+            overlap=overlap or self._CHUNK_OVERLAP,
         )
         chunks = chunker.chunk(text)
 
@@ -344,26 +404,101 @@ class GLiNERDetector(BaseDetector):
     def _dedup_chunk_spans(spans: list[Span]) -> list[Span]:
         """Deduplicate overlapping spans from adjacent chunks.
 
-        Keeps the higher-confidence span when two spans overlap
-        by more than 50% of the shorter span's length.
+        Uses cluster-based deduplication with weighted interval
+        scheduling to select the optimal non-overlapping set.
+        Same-type overlapping spans are merged; different-type
+        overlaps are resolved by choosing the combination that
+        maximises total (confidence * length).
         """
         if not spans:
             return []
 
         spans_sorted = sorted(spans, key=lambda s: (s.start, -s.confidence))
-        result = [spans_sorted[0]]
+
+        # Group overlapping spans into clusters
+        clusters: list[list[Span]] = []
+        cluster: list[Span] = [spans_sorted[0]]
+        cluster_end = spans_sorted[0].end
 
         for span in spans_sorted[1:]:
-            prev = result[-1]
-            # Check for significant overlap
-            if span.start < prev.end:
-                overlap = prev.end - span.start
-                min_len = min(prev.end - prev.start, span.end - span.start)
-                if min_len > 0 and overlap > min_len * 0.5:
-                    # Keep higher confidence
-                    if span.confidence > prev.confidence:
-                        result[-1] = span
-                    continue
-            result.append(span)
+            if span.start < cluster_end:
+                cluster.append(span)
+                cluster_end = max(cluster_end, span.end)
+            else:
+                clusters.append(cluster)
+                cluster = [span]
+                cluster_end = span.end
+        clusters.append(cluster)
+
+        result: list[Span] = []
+        for grp in clusters:
+            if len(grp) == 1:
+                result.extend(grp)
+                continue
+
+            # Merge same-type overlapping spans
+            by_type: dict[str, list[Span]] = {}
+            for s in grp:
+                by_type.setdefault(s.entity_type, []).append(s)
+
+            merged: list[Span] = []
+            for etype, type_spans in by_type.items():
+                type_spans.sort(key=lambda s: s.start)
+                cur = type_spans[0]
+                for s in type_spans[1:]:
+                    overlap = cur.end - s.start
+                    min_len = min(cur.end - cur.start, s.end - s.start)
+                    if min_len > 0 and overlap > min_len * 0.5:
+                        # Merge: widen extent, keep max confidence
+                        new_conf = max(cur.confidence, s.confidence)
+                        best = cur if cur.confidence >= s.confidence else s
+                        cur = Span(
+                            start=min(cur.start, s.start),
+                            end=max(cur.end, s.end),
+                            text=best.text,
+                            entity_type=etype,
+                            confidence=new_conf,
+                            detector=best.detector,
+                            tier=best.tier,
+                        )
+                    else:
+                        merged.append(cur)
+                        cur = s
+                merged.append(cur)
+
+            merged.sort(key=lambda s: s.end)
+
+            if len(merged) == 1:
+                result.extend(merged)
+                continue
+
+            # Weighted interval scheduling for optimal selection
+            n = len(merged)
+            weights = [s.confidence * (s.end - s.start) for s in merged]
+
+            p = [-1] * n
+            for i in range(n):
+                for j in range(i - 1, -1, -1):
+                    if merged[j].end <= merged[i].start:
+                        p[i] = j
+                        break
+
+            dp = [0.0] * n
+            dp[0] = weights[0]
+            for i in range(1, n):
+                include = weights[i] + (dp[p[i]] if p[i] >= 0 else 0)
+                dp[i] = max(dp[i - 1], include)
+
+            selected: list[Span] = []
+            i = n - 1
+            while i >= 0:
+                include = weights[i] + (dp[p[i]] if p[i] >= 0 else 0)
+                if i == 0 or include >= dp[i - 1]:
+                    selected.append(merged[i])
+                    i = p[i]
+                else:
+                    i -= 1
+            selected.reverse()
+            result.extend(selected)
 
         return result
