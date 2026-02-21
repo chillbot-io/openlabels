@@ -12,9 +12,11 @@ from __future__ import annotations
 
 # ── ai4privacy label  ->  OpenLabels entity_type ──────────────────────
 AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
-    # Names
+    # Names — bundled 1k uses FIRSTNAME/LASTNAME; HF 400k uses GIVENNAME/SURNAME
     "FIRSTNAME": "FIRSTNAME",
+    "GIVENNAME": "FIRSTNAME",
     "LASTNAME": "LASTNAME",
+    "SURNAME": "LASTNAME",
     "MIDDLENAME": "MIDDLENAME",
     "PREFIX": "PREFIX",
     "SUFFIX": "SUFFIX",
@@ -29,30 +31,37 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     # Age
     "AGE": "AGE",
 
-    # Location
+    # Location — HF 400k uses BUILDINGNUM alongside BUILDINGNUMBER
     "CITY": "CITY",
     "STATE": "STATE",
     "COUNTY": "COUNTY",
     "COUNTRY": "COUNTRY",
     "ZIPCODE": "ZIP",
+    "ZIP": "ZIP",
     "STREETADDRESS": "ADDRESS",
     "STREET": "ADDRESS",
     "BUILDINGNUMBER": "ADDRESS",
+    "BUILDINGNUM": "ADDRESS",
     "SECONDARYADDRESS": "ADDRESS",
 
-    # Contact
+    # Contact — HF 400k uses TELEPHONENUM alongside PHONENUMBER
     "EMAIL": "EMAIL",
     "PHONENUMBER": "PHONE",
+    "TELEPHONENUM": "PHONE",
     "URL": "URL",
     "USERNAME": "USERNAME",
 
-    # Government IDs
+    # Government IDs — HF 400k uses SOCIALNUM, DRIVERLICENSENUM, IDCARDNUM, TAXNUM
     "SSN": "SSN",
     "SOCIALSECURITYNUMBER": "SSN",
+    "SOCIALNUM": "SSN",
     "DRIVERSLICENSE": "DRIVER_LICENSE",
+    "DRIVERLICENSENUM": "DRIVER_LICENSE",
     "PASSPORT": "PASSPORT",
     "IDCARD": "STATE_ID",
+    "IDCARDNUM": "STATE_ID",
     "TAXNUMBER": "TAX_ID",
+    "TAXNUM": "TAX_ID",
     "NATIONALID": "STATE_ID",
     "UKNINUMBER": "UKNINUMBER",
     "SIN": "SIN",

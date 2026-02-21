@@ -412,7 +412,12 @@ def _load_bundled(path: Path) -> list[BenchmarkSample]:
 
 
 def _load_from_cache(cache_path: Path) -> list[BenchmarkSample]:
-    """Read the JSONL cache file."""
+    """Read the JSONL cache file.
+
+    Re-applies ``map_entity_type`` from ``original_label`` so that mapping
+    updates (e.g. adding GIVENNAME→FIRSTNAME) take effect without needing
+    to delete the cache.
+    """
     samples: list[BenchmarkSample] = []
     with open(cache_path, encoding="utf-8") as f:
         for line in f:
@@ -420,16 +425,20 @@ def _load_from_cache(cache_path: Path) -> list[BenchmarkSample]:
             if not line:
                 continue
             record = json.loads(line)
-            gold_spans = [
-                GoldSpan(
+            gold_spans: list[GoldSpan] = []
+            for s in record["spans"]:
+                # Re-map from original_label so updated mappings take effect
+                original = s.get("original_label", "")
+                mapped = map_entity_type(original) if original else s["entity_type"]
+                if mapped is None:
+                    continue  # now-unmapped type
+                gold_spans.append(GoldSpan(
                     start=s["start"],
                     end=s["end"],
                     text=s["text"],
-                    entity_type=s["entity_type"],
-                    original_label=s["original_label"],
-                )
-                for s in record["spans"]
-            ]
+                    entity_type=mapped,
+                    original_label=original,
+                ))
             samples.append(BenchmarkSample(
                 sample_id=record["id"],
                 text=record["text"],
