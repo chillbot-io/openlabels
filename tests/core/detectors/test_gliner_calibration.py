@@ -1,5 +1,6 @@
 """Tests for GLiNER Platt scaling confidence calibration."""
 
+import json
 import math
 
 import pytest
@@ -7,6 +8,11 @@ import pytest
 from openlabels.core.detectors.gliner_calibration import (
     GLINER_CALIBRATION,
     calibrate_gliner_score,
+    fit_calibration,
+    get_active_calibration,
+    load_calibration,
+    reset_calibration,
+    save_calibration,
 )
 
 
@@ -130,3 +136,141 @@ class TestPlattScalingMonotonicity:
                 f"Non-monotonic for {label}: "
                 f"{scores[i]}→{calibrated[i]} vs {scores[i+1]}→{calibrated[i+1]}"
             )
+
+
+class TestCustomCalibration:
+    """Test load/save/reset of custom calibration tables."""
+
+    def setup_method(self):
+        """Reset calibration before each test."""
+        reset_calibration()
+
+    def teardown_method(self):
+        """Reset after each test."""
+        reset_calibration()
+
+    def test_load_calibration_overrides_builtin(self, tmp_path):
+        """Custom calibration overrides built-in table."""
+        cal_file = tmp_path / "cal.json"
+        cal_file.write_text(json.dumps({
+            "person name": [1.0, 0.0],
+            "email address": [1.0, 0.0],
+        }))
+        load_calibration(cal_file)
+
+        # With identity params, score should pass through
+        result = calibrate_gliner_score("person name", 0.80)
+        assert result == pytest.approx(0.80, abs=1e-6)
+
+    def test_reset_restores_builtin(self, tmp_path):
+        """reset_calibration() restores built-in parameters."""
+        cal_file = tmp_path / "cal.json"
+        cal_file.write_text(json.dumps({"person name": [1.0, 0.0]}))
+        load_calibration(cal_file)
+
+        # Identity produces raw score
+        assert calibrate_gliner_score("person name", 0.80) == pytest.approx(0.80, abs=1e-6)
+
+        reset_calibration()
+        # Built-in has temp > 1 → score is reduced
+        assert calibrate_gliner_score("person name", 0.80) < 0.80
+
+    def test_save_and_reload(self, tmp_path):
+        """Save then load produces identical calibration."""
+        params = {"test_label": (1.25, 0.05), "other_label": (0.9, -0.03)}
+        out = tmp_path / "saved.json"
+        save_calibration(params, out)
+
+        loaded = load_calibration(out)
+        assert loaded["test_label"] == pytest.approx((1.25, 0.05))
+        assert loaded["other_label"] == pytest.approx((0.9, -0.03))
+
+    def test_get_active_calibration_default(self):
+        """get_active_calibration returns built-in when no custom loaded."""
+        active = get_active_calibration()
+        assert active == GLINER_CALIBRATION
+
+    def test_get_active_calibration_custom(self, tmp_path):
+        """get_active_calibration returns custom table after load."""
+        cal_file = tmp_path / "cal.json"
+        cal_file.write_text(json.dumps({"person name": [1.5, 0.1]}))
+        load_calibration(cal_file)
+
+        active = get_active_calibration()
+        assert active == {"person name": (1.5, 0.1)}
+
+    def test_load_invalid_json_raises(self, tmp_path):
+        """Loading malformed JSON raises ValueError."""
+        cal_file = tmp_path / "bad.json"
+        cal_file.write_text(json.dumps({"person name": [1.0]}))  # missing bias
+        with pytest.raises(ValueError, match="expected.*temperature.*bias"):
+            load_calibration(cal_file)
+
+    def test_load_negative_temperature_raises(self, tmp_path):
+        """Temperature <= 0 raises ValueError."""
+        cal_file = tmp_path / "bad.json"
+        cal_file.write_text(json.dumps({"person name": [-1.0, 0.0]}))
+        with pytest.raises(ValueError, match="temperature must be > 0"):
+            load_calibration(cal_file)
+
+    def test_load_nonexistent_file_raises(self):
+        """Loading a non-existent file raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            load_calibration("/tmp/does_not_exist_calibration.json")
+
+
+class TestFitCalibration:
+    """Test fitting Platt scaling from labeled data."""
+
+    def test_fit_identity_on_perfect_predictions(self):
+        """Perfect predictions (all correct at high conf) → near identity."""
+        labels = ["test"] * 50
+        scores = [0.9] * 50
+        correct = [True] * 50
+        result = fit_calibration(labels, scores, correct)
+        assert "test" in result
+        temp, bias = result["test"]
+        # Should be near identity since model is already well-calibrated
+        assert 0.5 < temp < 2.0
+        assert -0.5 < bias < 0.5
+
+    def test_fit_with_mixed_correct_incorrect(self):
+        """Mixed predictions produce reasonable parameters."""
+        labels = ["label_a"] * 100
+        scores = [0.9] * 50 + [0.3] * 50
+        correct = [True] * 50 + [False] * 50
+        result = fit_calibration(labels, scores, correct)
+        assert "label_a" in result
+        temp, bias = result["label_a"]
+        assert temp > 0
+
+    def test_fit_insufficient_samples_defaults_to_identity(self):
+        """Labels with < min_samples get identity params."""
+        labels = ["rare_label"] * 5
+        scores = [0.8] * 5
+        correct = [True] * 5
+        result = fit_calibration(labels, scores, correct, min_samples=10)
+        assert result["rare_label"] == (1.0, 0.0)
+
+    def test_fit_multiple_labels(self):
+        """Multiple labels each get their own parameters."""
+        labels = ["a"] * 20 + ["b"] * 20
+        scores = [0.9] * 20 + [0.5] * 20
+        correct = [True] * 20 + [False] * 20
+        result = fit_calibration(labels, scores, correct)
+        assert "a" in result
+        assert "b" in result
+        # They should have different parameters
+        assert result["a"] != result["b"]
+
+    def test_fit_result_can_be_saved_and_loaded(self, tmp_path):
+        """Fitted params can round-trip through save/load."""
+        labels = ["x"] * 30
+        scores = [0.8] * 15 + [0.3] * 15
+        correct = [True] * 15 + [False] * 15
+        params = fit_calibration(labels, scores, correct)
+
+        out = tmp_path / "fitted.json"
+        save_calibration(params, out)
+        loaded = load_calibration(out)
+        assert loaded["x"] == pytest.approx(params["x"])

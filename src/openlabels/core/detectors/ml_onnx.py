@@ -112,12 +112,16 @@ class ONNXDetector(BaseDetector):
     label_map: dict[str, str] = {}  # Override in subclass
 
     # Chunking configuration
-    # BERT has 512 token limit, ~4 chars/token average
-    # Use conservative estimates to avoid truncation
-    CHUNK_MAX_CHARS = 1500      # ~375 tokens, leaves room for special tokens
-    CHUNK_STRIDE = 1200         # 300 char overlap to catch boundary entities
+    # BERT has 512 token limit.  When a tokenizer is loaded, chunk sizes
+    # are computed dynamically from the measured chars-per-token ratio
+    # (see _compute_chunk_params).  These class-level defaults are used
+    # only as fallbacks when the tokenizer is unavailable.
+    CHUNK_MAX_CHARS = 1500      # ~375 tokens at 4 chars/token (fallback)
+    CHUNK_STRIDE = 1200         # 300 char overlap (fallback)
     CHUNK_MIN_OVERLAP = 200     # Minimum overlap to ensure entity capture
     CHUNK_PARALLEL_WORKERS = 4  # Max parallel chunk processing threads
+    # Target token budget per chunk (leaves room for [CLS]/[SEP])
+    _CHUNK_TARGET_TOKENS = 450
 
     def __init__(self, model_dir: Path | None = None, model_name: str = "model"):
         self.model_dir = model_dir
@@ -298,10 +302,68 @@ class ONNXDetector(BaseDetector):
 
             return inputs['input_ids'], inputs['attention_mask'], offset_mapping
 
+    def _estimate_chars_per_token(self, text: str, sample_size: int = 500) -> float:
+        """Estimate the chars-per-token ratio for *text*.
+
+        Tokenises a prefix sample and returns ``len(sample) / n_tokens``.
+        Falls back to 4.0 (typical English prose) when no tokenizer is
+        available.
+        """
+        if not self._tokenizer:
+            return 4.0
+
+        sample = text[:sample_size]
+        try:
+            if self._use_fast_tokenizer:
+                encoded = self._tokenizer.encode(sample)
+                n_tokens = len(encoded.ids)
+            else:
+                inputs = self._tokenizer(
+                    sample,
+                    return_tensors="np",
+                    padding=False,
+                    truncation=False,
+                )
+                n_tokens = int(inputs["input_ids"].shape[1])
+
+            # Subtract special tokens ([CLS], [SEP])
+            n_tokens = max(n_tokens - 2, 1)
+            return len(sample) / n_tokens
+        except Exception:
+            return 4.0
+
+    def _compute_chunk_params(self, text: str) -> tuple[int, int, int]:
+        """Return (max_chars, stride, min_overlap) tuned for *text*.
+
+        When a tokenizer is loaded the chunk size is derived from the
+        measured chars-per-token ratio so that each chunk stays within
+        ``_CHUNK_TARGET_TOKENS``.  Otherwise the class-level fallback
+        constants are used.
+        """
+        if not self._tokenizer:
+            return self.CHUNK_MAX_CHARS, self.CHUNK_STRIDE, self.CHUNK_MIN_OVERLAP
+
+        cpt = self._estimate_chars_per_token(text)
+        max_chars = max(400, int(self._CHUNK_TARGET_TOKENS * cpt))
+        min_overlap = max(80, int(max_chars * 0.13))
+        stride = max_chars - min_overlap
+        return max_chars, stride, min_overlap
+
     # CHUNKING FOR LONG DOCUMENTS
-    def _chunk_text(self, text: str) -> list[tuple[int, str]]:
-        """Split long text into overlapping chunks for processing."""
-        if len(text) <= self.CHUNK_MAX_CHARS:
+    def _chunk_text(self, text: str, max_chars: int = 0,
+                    stride: int = 0, min_overlap: int = 0) -> list[tuple[int, str]]:
+        """Split long text into overlapping chunks for processing.
+
+        When *max_chars*, *stride*, and *min_overlap* are provided
+        (non-zero) they override the class-level defaults, allowing
+        the caller to pass tokenizer-aware values from
+        ``_compute_chunk_params``.
+        """
+        _max = max_chars or self.CHUNK_MAX_CHARS
+        _stride = stride or self.CHUNK_STRIDE
+        _overlap = min_overlap or self.CHUNK_MIN_OVERLAP
+
+        if len(text) <= _max:
             return [(0, text)]
 
         chunks = []
@@ -309,21 +371,23 @@ class ONNXDetector(BaseDetector):
         text_len = len(text)
 
         while pos < text_len:
-            chunk_end = min(pos + self.CHUNK_MAX_CHARS, text_len)
+            chunk_end = min(pos + _max, text_len)
 
             # Try to break at a good boundary
             if chunk_end < text_len:
-                chunk_end = self._find_chunk_boundary(text, pos, chunk_end)
+                chunk_end = self._find_chunk_boundary(
+                    text, pos, chunk_end, _stride,
+                )
 
             chunk_text = text[pos:chunk_end]
             chunks.append((pos, chunk_text))
 
             # Move forward, but ensure overlap
-            next_pos = chunk_end - self.CHUNK_MIN_OVERLAP
+            next_pos = chunk_end - _overlap
 
             # Ensure we make progress
             if next_pos <= pos:
-                next_pos = pos + self.CHUNK_STRIDE
+                next_pos = pos + _stride
 
             pos = next_pos
 
@@ -333,9 +397,10 @@ class ONNXDetector(BaseDetector):
         logger.debug(f"{self.name}: Split {text_len} chars into {len(chunks)} chunks")
         return chunks
 
-    def _find_chunk_boundary(self, text: str, start: int, end: int) -> int:
+    def _find_chunk_boundary(self, text: str, start: int, end: int,
+                             stride: int = 0) -> int:
         """Find a good boundary point for chunk splitting."""
-        min_pos = start + self.CHUNK_STRIDE
+        min_pos = start + (stride or self.CHUNK_STRIDE)
         search_text = text[min_pos:end]
 
         # Try paragraph boundary first
@@ -363,53 +428,151 @@ class ONNXDetector(BaseDetector):
         return end
 
     def _dedupe_spans(self, spans: list[Span], full_text: str = "") -> list[Span]:
-        """Remove duplicate/overlapping spans from chunk boundaries."""
+        """Remove duplicate/overlapping spans from chunk boundaries.
+
+        Uses a cluster-based approach:
+        1. Group overlapping spans into connected clusters.
+        2. Within each cluster, merge same-type overlapping spans.
+        3. Select the optimal non-overlapping subset via weighted
+           interval scheduling (maximises confidence * length).
+        """
         if not spans:
             return []
 
         # Sort by start position, then by confidence (descending)
         spans = sorted(spans, key=lambda s: (s.start, -s.confidence))
 
-        result = []
-        for span in spans:
-            if not result:
-                result.append(span)
-                continue
+        # Step 1: Group overlapping spans into clusters
+        clusters: list[list[Span]] = []
+        cluster: list[Span] = [spans[0]]
+        cluster_end = spans[0].end
 
-            last = result[-1]
-
-            # Check for overlap
-            if span.start < last.end:
-                if span.entity_type == last.entity_type:
-                    # Same type - merge or keep higher confidence
-                    if span.end > last.end:
-                        # Span extends further - merge
-                        merged_start = last.start
-                        merged_end = span.end
-                        if full_text and merged_end <= len(full_text):
-                            merged_text = full_text[merged_start:merged_end]
-                        else:
-                            merged_text = span.text if span.confidence > last.confidence else last.text
-                        merged = Span(
-                            start=merged_start,
-                            end=merged_end,
-                            text=merged_text,
-                            entity_type=last.entity_type,
-                            confidence=max(last.confidence, span.confidence),
-                            detector=last.detector,
-                            tier=last.tier,
-                        )
-                        result[-1] = merged
-                    elif span.confidence > last.confidence:
-                        result[-1] = span
-                else:
-                    # Different types - keep higher confidence
-                    if span.confidence > last.confidence:
-                        result[-1] = span
+        for span in spans[1:]:
+            if span.start < cluster_end:
+                cluster.append(span)
+                cluster_end = max(cluster_end, span.end)
             else:
-                result.append(span)
+                clusters.append(cluster)
+                cluster = [span]
+                cluster_end = span.end
+        clusters.append(cluster)
+
+        # Step 2: Resolve each cluster
+        result: list[Span] = []
+        for grp in clusters:
+            result.extend(self._resolve_span_cluster(grp, full_text))
 
         return result
+
+    def _resolve_span_cluster(
+        self, cluster: list[Span], full_text: str = ""
+    ) -> list[Span]:
+        """Resolve a cluster of overlapping spans into an optimal set.
+
+        Merges same-type spans first, then selects the best
+        non-overlapping subset using weighted interval scheduling.
+        """
+        if len(cluster) == 1:
+            return cluster
+
+        # Merge same-type overlapping spans
+        merged = self._merge_same_type_spans(cluster, full_text)
+
+        if len(merged) == 1:
+            return merged
+
+        # Optimal non-overlapping selection (weighted interval scheduling)
+        return self._weighted_interval_select(merged)
+
+    def _merge_same_type_spans(
+        self, spans: list[Span], full_text: str = ""
+    ) -> list[Span]:
+        """Merge overlapping spans that share the same entity type."""
+        by_type: dict[str, list[Span]] = {}
+        for s in spans:
+            by_type.setdefault(s.entity_type, []).append(s)
+
+        merged: list[Span] = []
+        for etype, type_spans in by_type.items():
+            type_spans.sort(key=lambda s: (s.start, -s.confidence))
+            current = type_spans[0]
+
+            for s in type_spans[1:]:
+                if s.start < current.end:
+                    # Overlapping same-type spans — merge
+                    new_start = min(current.start, s.start)
+                    new_end = max(current.end, s.end)
+                    new_conf = max(current.confidence, s.confidence)
+                    if full_text and new_end <= len(full_text):
+                        new_text = full_text[new_start:new_end]
+                    else:
+                        new_text = (
+                            current.text
+                            if current.confidence >= s.confidence
+                            else s.text
+                        )
+                    current = Span(
+                        start=new_start,
+                        end=new_end,
+                        text=new_text,
+                        entity_type=etype,
+                        confidence=new_conf,
+                        detector=current.detector,
+                        tier=current.tier,
+                    )
+                else:
+                    merged.append(current)
+                    current = s
+
+            merged.append(current)
+
+        merged.sort(key=lambda s: (s.start, -s.confidence))
+        return merged
+
+    @staticmethod
+    def _weighted_interval_select(spans: list[Span]) -> list[Span]:
+        """Select optimal non-overlapping spans via weighted interval scheduling.
+
+        Weight = confidence * span_length, so longer high-confidence
+        spans are preferred over shorter or lower-confidence ones.
+        """
+        if len(spans) <= 1:
+            return list(spans)
+
+        # Sort by end position for the DP
+        by_end = sorted(spans, key=lambda s: s.end)
+        n = len(by_end)
+        weights = [s.confidence * (s.end - s.start) for s in by_end]
+
+        # p[i] = index of latest span that ends at or before span i starts
+        p = [-1] * n
+        for i in range(n):
+            for j in range(i - 1, -1, -1):
+                if by_end[j].end <= by_end[i].start:
+                    p[i] = j
+                    break
+
+        # dp[i] = best total weight using spans 0..i
+        dp = [0.0] * n
+        dp[0] = weights[0]
+
+        for i in range(1, n):
+            include = weights[i] + (dp[p[i]] if p[i] >= 0 else 0)
+            dp[i] = max(dp[i - 1], include)
+
+        # Backtrack to find selected spans
+        selected: list[Span] = []
+        i = n - 1
+        while i >= 0:
+            include = weights[i] + (dp[p[i]] if p[i] >= 0 else 0)
+            if i == 0 or include >= dp[i - 1]:
+                selected.append(by_end[i])
+                i = p[i]
+            else:
+                i -= 1
+
+        selected.reverse()
+        return selected
 
     def _process_chunk(
         self,
@@ -461,12 +624,15 @@ class ONNXDetector(BaseDetector):
             raise ValueError("Text contains null bytes which are not allowed")
 
         try:
+            # Compute tokenizer-aware chunk sizes
+            max_chars, stride, min_overlap = self._compute_chunk_params(text)
+
             # Fast path for short texts
-            if len(text) <= self.CHUNK_MAX_CHARS:
+            if len(text) <= max_chars:
                 return self._detect_single(text)
 
             # Long text: chunk and process in parallel
-            chunks = self._chunk_text(text)
+            chunks = self._chunk_text(text, max_chars, stride, min_overlap)
             full_text_len = len(text)
 
             num_workers = min(
