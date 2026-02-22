@@ -89,4 +89,31 @@ export const monitoringApi = {
 
   wefGpoConfig: () =>
     apiFetch<{ gpo_path: string; value: string }>('/monitoring/wef/gpo-config'),
+
+  // Service identity / gMSA
+  serviceIdentity: () =>
+    apiFetch<{
+      account_name: string;
+      domain: string | null;
+      is_gmsa: boolean;
+      is_local_system: boolean;
+      is_network_service: boolean;
+      sid: string | null;
+    }>('/monitoring/identity'),
+
+  gmsaSetupScript: (payload?: {
+    account_name?: string;
+    server_group?: string;
+    domain?: string;
+  }) =>
+    apiFetch<{ script: string }>('/monitoring/gmsa/setup-script', {
+      method: 'POST',
+      body: payload ?? {},
+    }),
+
+  auditPolicyScript: (payload?: { share_paths?: string[] }) =>
+    apiFetch<{ script: string }>('/monitoring/audit-policy/script', {
+      method: 'POST',
+      body: payload ?? {},
+    }),
 };

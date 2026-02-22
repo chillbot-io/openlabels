@@ -789,3 +789,86 @@ async def get_wef_gpo_config(
             use_https=settings.monitoring.wef_use_https,
         ),
     }
+
+
+# ── Service identity / gMSA endpoints ───────────────────────────────
+
+class ServiceIdentityResponse(BaseModel):
+    """Current process identity information."""
+    account_name: str
+    domain: str | None = None
+    is_gmsa: bool
+    is_local_system: bool
+    is_network_service: bool
+    sid: str | None = None
+
+
+class GmsaSetupScriptRequest(BaseModel):
+    """Parameters for generating a gMSA setup script."""
+    account_name: str = Field("svc-openlabels", pattern=r'^[\w\-]+$')
+    server_group: str = Field("OpenLabels-Servers", pattern=r'^[\w\- ]+$')
+    domain: str = Field("", description="Domain DNS name (blank = auto-detect)")
+
+
+class AuditPolicyScriptRequest(BaseModel):
+    """Parameters for generating an audit policy GPO script."""
+    share_paths: list[str] = Field(default_factory=list, description="File share paths to audit")
+
+
+@router.get("/identity", response_model=ServiceIdentityResponse)
+async def get_service_identity(
+    _user=Depends(require_admin),
+) -> ServiceIdentityResponse:
+    """Detect the Windows account running the OpenLabels process.
+
+    Returns whether the service is running as a gMSA, Local System,
+    Network Service, or a regular account.  Useful for the setup wizard
+    to guide admins toward the recommended gMSA configuration.
+    """
+    from openlabels.monitoring.gmsa import detect_service_identity
+
+    identity = detect_service_identity()
+    return ServiceIdentityResponse(
+        account_name=identity.account_name,
+        domain=identity.domain,
+        is_gmsa=identity.is_gmsa,
+        is_local_system=identity.is_local_system,
+        is_network_service=identity.is_network_service,
+        sid=identity.sid,
+    )
+
+
+@router.post("/gmsa/setup-script")
+async def generate_gmsa_script(
+    body: GmsaSetupScriptRequest,
+    _user=Depends(require_admin),
+) -> dict:
+    """Generate a PowerShell script to create a gMSA for OpenLabels.
+
+    The admin copies this script and runs it on a Domain Controller
+    (or any machine with the AD PowerShell module).
+    """
+    from openlabels.monitoring.gmsa import generate_gmsa_setup_script
+
+    script = generate_gmsa_setup_script(
+        account_name=body.account_name,
+        server_group=body.server_group,
+        domain=body.domain,
+    )
+    return {"script": script}
+
+
+@router.post("/audit-policy/script")
+async def generate_audit_policy_script(
+    body: AuditPolicyScriptRequest,
+    _user=Depends(require_admin),
+) -> dict:
+    """Generate a PowerShell script to configure file access audit policy.
+
+    Enables 'Audit File System' and sets SACLs on the specified share
+    paths.  Deploy via GPO startup script or run directly on file servers.
+    """
+    from openlabels.monitoring.gmsa import generate_audit_gpo_script
+
+    script = generate_audit_gpo_script(share_paths=body.share_paths or None)
+    return {"script": script}

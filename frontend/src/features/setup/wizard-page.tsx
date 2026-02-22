@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import {
   Check, ArrowRight, ArrowLeft, FolderOpen, Globe, Cloud,
   SkipForward, Loader2, Search, Server, Eye, EyeOff, Shield,
-  Plus, X, Copy, Radio, Plug,
+  Plus, X, Copy, FileCode, Terminal,
 } from 'lucide-react';
 import { m365Api } from '@/api/endpoints/m365.ts';
 import { enumerateApi } from '@/api/endpoints/enumerate.ts';
@@ -801,6 +801,33 @@ function AddMoreStep({
 
 type CollectionMethod = 'wef' | 'winrm' | null;
 
+function ScriptBlock({ script, label }: { script: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(script).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">{label}</span>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+          onClick={handleCopy}
+        >
+          {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+        </button>
+      </div>
+      <pre className="max-h-48 overflow-auto rounded-md bg-gray-900 p-3 text-xs text-green-400 leading-relaxed">
+        {script}
+      </pre>
+    </div>
+  );
+}
+
 function MonitoringStep({
   enabled,
   onToggle,
@@ -818,6 +845,12 @@ function MonitoringStep({
   onBack: () => void;
   smbConfig: SmbConfig | null;
 }) {
+  // Service identity
+  const [identity, setIdentity] = useState<{
+    account_name: string;
+    domain: string | null;
+    is_gmsa: boolean;
+  } | null>(null);
 
   // WEF state
   const [wefIniting, setWefIniting] = useState(false);
@@ -826,23 +859,21 @@ function MonitoringStep({
   const [wefCreated, setWefCreated] = useState(false);
   const [gpoConfig, setGpoConfig] = useState<string | null>(null);
   const [wefError, setWefError] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copiedGpo, setCopiedGpo] = useState(false);
 
-  // WinRM state
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-    hostname?: string;
-    has_audit_privilege?: boolean;
-  } | null>(null);
-  const [configuring, setConfiguring] = useState(false);
-  const [configResult, setConfigResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
+  // Script generation
+  const [gmsaScript, setGmsaScript] = useState<string | null>(null);
+  const [auditScript, setAuditScript] = useState<string | null>(null);
+  const [loadingScript, setLoadingScript] = useState('');
 
-  const hasSmbTarget = smbConfig && smbConfig.host.trim().length > 0;
+  // Detect service identity on mount
+  useEffect(() => {
+    if (enabled && !identity) {
+      monitoringApi.serviceIdentity()
+        .then(setIdentity)
+        .catch(() => {});
+    }
+  }, [enabled, identity]);
 
   // WEF handlers
   const handleWefInit = async () => {
@@ -883,61 +914,31 @@ function MonitoringStep({
   const handleCopyGpo = () => {
     if (!gpoConfig) return;
     navigator.clipboard.writeText(gpoConfig).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedGpo(true);
+      setTimeout(() => setCopiedGpo(false), 2000);
     }).catch(() => {});
   };
 
-  // WinRM handlers
-  const handleTestConnection = async () => {
-    if (!smbConfig) return;
-    setTesting(true);
-    setTestResult(null);
+  const handleGenerateGmsaScript = async () => {
+    setLoadingScript('gmsa');
     try {
-      const resp = await monitoringApi.testRemote({
-        host: smbConfig.host,
-        username: smbConfig.username,
-        password: smbConfig.password,
-      });
-      setTestResult({
-        success: resp.success,
-        message: resp.message,
-        hostname: resp.hostname ?? undefined,
-        has_audit_privilege: resp.has_audit_privilege ?? undefined,
-      });
-    } catch (e) {
-      setTestResult({
-        success: false,
-        message: e instanceof Error ? e.message : 'Connection test failed',
-      });
-    } finally {
-      setTesting(false);
+      const resp = await monitoringApi.gmsaSetupScript();
+      setGmsaScript(resp.script);
+    } catch { /* ignore */ } finally {
+      setLoadingScript('');
     }
   };
 
-  const handleConfigureAudit = async () => {
-    if (!smbConfig) return;
-    setConfiguring(true);
-    setConfigResult(null);
+  const handleGenerateAuditScript = async () => {
+    setLoadingScript('audit');
     try {
-      const sharePaths = smbConfig.selectedShares.map(s => s.path);
-      const resp = await monitoringApi.configureRemote({
-        host: smbConfig.host,
-        username: smbConfig.username,
-        password: smbConfig.password,
-        share_paths: sharePaths,
+      const paths = smbConfig?.selectedShares.map(s => s.path) ?? [];
+      const resp = await monitoringApi.auditPolicyScript({
+        share_paths: paths,
       });
-      setConfigResult({
-        success: resp.success,
-        message: resp.message,
-      });
-    } catch (e) {
-      setConfigResult({
-        success: false,
-        message: e instanceof Error ? e.message : 'Configuration failed',
-      });
-    } finally {
-      setConfiguring(false);
+      setAuditScript(resp.script);
+    } catch { /* ignore */ } finally {
+      setLoadingScript('');
     }
   };
 
@@ -947,8 +948,9 @@ function MonitoringStep({
         <div>
           <h2 className="text-xl font-bold">Event Monitoring</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Monitor file access events in real-time to detect
-            suspicious activity and track who accesses sensitive files.
+            Track who accesses sensitive files using Windows Event
+            Forwarding. File servers push events to this collector
+            automatically — no polling, no stored passwords.
           </p>
         </div>
 
@@ -960,13 +962,13 @@ function MonitoringStep({
               'flex w-full items-start gap-4 rounded-lg border-2 p-4 text-left transition-colors',
               enabled ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-400',
             )}
-            onClick={() => onToggle(true)}
+            onClick={() => { onToggle(true); onMethodChange('wef'); }}
           >
             <Shield className="mt-0.5 h-6 w-6 text-blue-600" />
             <div>
               <span className="text-sm font-medium">Enable monitoring</span>
               <p className="text-xs text-[var(--muted-foreground)]">
-                Collect file access events from your Windows file servers.
+                Configure WEF event collection from your file servers.
               </p>
             </div>
           </button>
@@ -988,207 +990,170 @@ function MonitoringStep({
           </button>
         </div>
 
-        {/* Collection method picker — shown when monitoring is enabled */}
+        {/* WEF setup flow — shown when monitoring is enabled */}
         {enabled && (
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Collection method</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                className={cn(
-                  'rounded-lg border-2 p-4 text-left transition-colors',
-                  method === 'wef' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-400',
-                )}
-                onClick={() => onMethodChange('wef')}
-              >
-                <Radio className="mb-2 h-5 w-5 text-blue-600" />
-                <span className="text-sm font-medium block">Event Forwarding</span>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  File servers push events to this collector via WEF. Recommended for production.
-                </p>
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  'rounded-lg border-2 p-4 text-left transition-colors',
-                  method === 'winrm' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-400',
-                  !hasSmbTarget && 'opacity-50 cursor-not-allowed',
-                )}
-                onClick={() => hasSmbTarget && onMethodChange('winrm')}
-              >
-                <Plug className="mb-2 h-5 w-5 text-gray-500" />
-                <span className="text-sm font-medium block">WinRM (Direct)</span>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  OpenLabels pulls events from each server.
-                  {!hasSmbTarget && ' Requires an SMB target.'}
-                </p>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* WEF setup flow */}
-        {enabled && method === 'wef' && (
-          <div className="space-y-3 rounded-lg border p-4">
-            <p className="text-sm font-medium">Windows Event Forwarding Setup</p>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              This configures OpenLabels as a Windows Event Collector.
-              File servers will push Security events here automatically
-              once you deploy the GPO.
-            </p>
-
-            {/* Step 1: Init collector */}
-            <div className="flex items-center gap-3">
+          <div className="space-y-4">
+            {/* Service identity banner */}
+            {identity && (
               <div className={cn(
-                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
-                wefInited ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
+                'flex items-center gap-3 rounded-lg border px-4 py-2.5',
+                identity.is_gmsa ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50',
               )}>
-                {wefInited ? <Check className="h-3.5 w-3.5" /> : '1'}
-              </div>
-              {wefInited ? (
-                <span className="text-xs text-green-600">Collector service initialized</span>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleWefInit}
-                  disabled={wefIniting}
-                >
-                  {wefIniting ? (
-                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Initializing...</>
-                  ) : (
-                    <>Initialize Collector Service</>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {/* Step 2: Create subscription */}
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
-                wefCreated ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
-              )}>
-                {wefCreated ? <Check className="h-3.5 w-3.5" /> : '2'}
-              </div>
-              {wefCreated ? (
-                <span className="text-xs text-green-600">Subscription created</span>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleWefCreate}
-                  disabled={!wefInited || wefCreating}
-                >
-                  {wefCreating ? (
-                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating...</>
-                  ) : (
-                    <>Create Subscription</>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {/* Step 3: GPO config */}
-            {gpoConfig && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
-                    3
-                  </div>
+                <Shield className={cn('h-4 w-4', identity.is_gmsa ? 'text-green-600' : 'text-amber-600')} />
+                <div className="min-w-0 flex-1">
                   <span className="text-xs font-medium">
-                    Deploy this GPO value to your file servers:
+                    Running as: {identity.domain ? `${identity.domain}\\` : ''}{identity.account_name}
                   </span>
+                  {identity.is_gmsa ? (
+                    <p className="text-xs text-green-600">gMSA detected — passwords managed by AD</p>
+                  ) : (
+                    <p className="text-xs text-amber-600">
+                      Consider running as a gMSA for automatic password management
+                    </p>
+                  )}
                 </div>
-                <div className="relative rounded-md bg-gray-900 p-3">
-                  <code className="block break-all text-xs text-green-400">
-                    {gpoConfig}
-                  </code>
-                  <button
-                    type="button"
-                    className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-white"
-                    onClick={handleCopyGpo}
+                {!identity.is_gmsa && !gmsaScript && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateGmsaScript}
+                    disabled={loadingScript === 'gmsa'}
                   >
-                    {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Paste into: Computer Configuration &gt; Policies &gt;
-                  Administrative Templates &gt; Windows Components &gt;
-                  Event Forwarding &gt; Configure target Subscription Manager
-                </p>
+                    {loadingScript === 'gmsa' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <><Terminal className="mr-1.5 h-3.5 w-3.5" /> Setup Script</>
+                    )}
+                  </Button>
+                )}
               </div>
             )}
 
-            {wefError && (
-              <p className="text-xs text-red-600">{wefError}</p>
+            {/* gMSA setup script (expanded) */}
+            {gmsaScript && (
+              <ScriptBlock script={gmsaScript} label="gMSA Setup — run on a Domain Controller" />
             )}
-          </div>
-        )}
 
-        {/* WinRM configuration panel */}
-        {enabled && method === 'winrm' && hasSmbTarget && (
-          <div className="space-y-3 rounded-lg border p-4">
-            <p className="text-sm font-medium">Configure {smbConfig.host}</p>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Test WinRM connectivity to your file server, then configure
-              audit policies on the selected shares. The service account
-              needs SeSecurityPrivilege on the target server.
-            </p>
+            {/* WEF collector setup */}
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="text-sm font-medium">Collector Setup</p>
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTestConnection}
-                disabled={testing}
-              >
-                {testing ? (
-                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Testing...</>
+              {/* Step 1: Init collector */}
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                  wefInited ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
+                )}>
+                  {wefInited ? <Check className="h-3.5 w-3.5" /> : '1'}
+                </div>
+                {wefInited ? (
+                  <span className="text-xs text-green-600">Collector service initialized</span>
                 ) : (
-                  <>Test Connection</>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleWefInit}
+                    disabled={wefIniting}
+                  >
+                    {wefIniting ? (
+                      <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Initializing...</>
+                    ) : (
+                      <>Initialize Collector Service</>
+                    )}
+                  </Button>
                 )}
-              </Button>
+              </div>
 
-              {testResult?.success && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleConfigureAudit}
-                  disabled={configuring}
-                >
-                  {configuring ? (
-                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Configuring...</>
-                  ) : (
-                    <>Configure Audit Policy</>
-                  )}
-                </Button>
+              {/* Step 2: Create subscription */}
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                  wefCreated ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
+                )}>
+                  {wefCreated ? <Check className="h-3.5 w-3.5" /> : '2'}
+                </div>
+                {wefCreated ? (
+                  <span className="text-xs text-green-600">Subscription created</span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleWefCreate}
+                    disabled={!wefInited || wefCreating}
+                  >
+                    {wefCreating ? (
+                      <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating...</>
+                    ) : (
+                      <>Create Subscription</>
+                    )}
+                  </Button>
+                )}
+              </div>
+
+              {/* Step 3: GPO config for WEF forwarding */}
+              {gpoConfig && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
+                      3
+                    </div>
+                    <span className="text-xs font-medium">
+                      Deploy this GPO value to your file servers:
+                    </span>
+                  </div>
+                  <div className="relative rounded-md bg-gray-900 p-3">
+                    <code className="block break-all text-xs text-green-400">
+                      {gpoConfig}
+                    </code>
+                    <button
+                      type="button"
+                      className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-white"
+                      onClick={handleCopyGpo}
+                    >
+                      {copiedGpo ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Computer Configuration &gt; Administrative Templates &gt;
+                    Windows Components &gt; Event Forwarding &gt;
+                    Configure target Subscription Manager
+                  </p>
+                </div>
+              )}
+
+              {wefError && (
+                <p className="text-xs text-red-600">{wefError}</p>
               )}
             </div>
 
-            {testResult && (
-              <p className={cn(
-                'text-xs',
-                testResult.success ? 'text-green-600' : 'text-red-600',
-              )}>
-                {testResult.success ? (
-                  <>Connected to {testResult.hostname || smbConfig.host}
-                    {testResult.has_audit_privilege === false && (
-                      <span className="text-amber-600"> (warning: account lacks SeSecurityPrivilege)</span>
+            {/* Audit policy script */}
+            <div className="space-y-2 rounded-lg border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Audit Policy</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Enable file access auditing on your file servers via GPO.
+                  </p>
+                </div>
+                {!auditScript && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateAuditScript}
+                    disabled={loadingScript === 'audit'}
+                  >
+                    {loadingScript === 'audit' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <><FileCode className="mr-1.5 h-3.5 w-3.5" /> Generate Script</>
                     )}
-                  </>
-                ) : testResult.message}
-              </p>
-            )}
-
-            {configResult && (
-              <p className={cn(
-                'text-xs',
-                configResult.success ? 'text-green-600' : 'text-red-600',
-              )}>
-                {configResult.message}
-              </p>
-            )}
+                  </Button>
+                )}
+              </div>
+              {auditScript && (
+                <ScriptBlock script={auditScript} label="Audit Policy — deploy via GPO or run on file servers" />
+              )}
+            </div>
           </div>
         )}
 
