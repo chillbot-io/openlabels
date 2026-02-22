@@ -681,6 +681,16 @@ class MonitoringSettings(BaseSettings):
     scan_trigger_cooldown_seconds: float = 60.0
     scan_trigger_min_risk_tier: str = "MEDIUM"
 
+    # Windows Event Forwarding (WEF) — push-based event collection
+    # from remote Windows file servers.  Requires the OpenLabels host
+    # to be a Windows machine running the Windows Event Collector service.
+    # Add "wef" to the providers list to activate.
+    wef_subscription_name: str = "OpenLabels-FileAccess"
+    # FQDN of this collector (used to generate GPO config for admins)
+    wef_collector_fqdn: str = ""
+    # Use HTTPS for WEF transport (requires cert on collector)
+    wef_use_https: bool = False
+
     # Graph webhooks
     webhook_enabled: bool = False
     # Public HTTPS URL for Graph change notification subscriptions.

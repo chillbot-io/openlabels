@@ -624,3 +624,163 @@ async def configure_remote_audit(
         paths=data.get("paths"),
         error=result.error,
     )
+
+
+# ── Windows Event Forwarding (WEF) endpoints ────────────────────────
+
+class WEFSubscriptionResponse(BaseModel):
+    """WEF subscription status."""
+    name: str
+    enabled: bool
+    source_count: int
+    delivery_mode: str
+    status: str
+    error: str | None = None
+
+
+class WEFSetupResponse(BaseModel):
+    """Result of WEF setup operation."""
+    success: bool
+    message: str
+    gpo_config: str | None = None
+
+
+class WEFCreateRequest(BaseModel):
+    """Request to create a WEF subscription."""
+    subscription_name: str = Field("OpenLabels-FileAccess", description="Subscription identifier")
+    transport: str = Field("HTTP", description="Transport: HTTP or HTTPS")
+
+
+@router.post("/wef/init", response_model=WEFSetupResponse)
+async def init_wef_collector(
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Initialize the Windows Event Collector service.
+
+    Must be run once before creating subscriptions.  Equivalent to
+    ``wecutil qc`` — enables and starts the WEC service.
+    """
+    from openlabels.monitoring.wef_setup import init_collector
+
+    success, message = await init_collector()
+    return WEFSetupResponse(success=success, message=message)
+
+
+@router.post("/wef/subscriptions", response_model=WEFSetupResponse)
+async def create_wef_subscription(
+    body: WEFCreateRequest,
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Create a WEF source-initiated subscription for file access events.
+
+    After creating the subscription, deploy the GPO config returned in
+    ``gpo_config`` to your file servers so they start pushing events
+    to this collector.
+    """
+    from openlabels.monitoring.wef_setup import create_subscription, get_gpo_config
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+
+    success, message = await create_subscription(
+        subscription_name=body.subscription_name,
+        transport=body.transport,
+    )
+
+    gpo = None
+    if success:
+        fqdn = settings.monitoring.wef_collector_fqdn
+        if not fqdn:
+            import socket
+            fqdn = socket.getfqdn()
+        gpo = get_gpo_config(
+            collector_fqdn=fqdn,
+            use_https=body.transport.upper() == "HTTPS",
+        )
+
+    return WEFSetupResponse(success=success, message=message, gpo_config=gpo)
+
+
+@router.get("/wef/subscriptions", response_model=list[WEFSubscriptionResponse])
+async def list_wef_subscriptions(
+    _user=Depends(require_admin),
+) -> list[WEFSubscriptionResponse]:
+    """List all WEF subscriptions and their status."""
+    from openlabels.monitoring.wef_setup import get_subscription_status, list_subscriptions
+
+    names = await list_subscriptions()
+    results = []
+    for name in names:
+        info = await get_subscription_status(name)
+        results.append(WEFSubscriptionResponse(
+            name=info.name,
+            enabled=info.enabled,
+            source_count=info.source_count,
+            delivery_mode=info.delivery_mode,
+            status=info.status,
+            error=info.error,
+        ))
+    return results
+
+
+@router.get("/wef/subscriptions/{name}", response_model=WEFSubscriptionResponse)
+async def get_wef_subscription(
+    name: str,
+    _user=Depends(require_admin),
+) -> WEFSubscriptionResponse:
+    """Get status of a specific WEF subscription."""
+    from openlabels.monitoring.wef_setup import get_subscription_status
+
+    info = await get_subscription_status(name)
+    return WEFSubscriptionResponse(
+        name=info.name,
+        enabled=info.enabled,
+        source_count=info.source_count,
+        delivery_mode=info.delivery_mode,
+        status=info.status,
+        error=info.error,
+    )
+
+
+@router.delete("/wef/subscriptions/{name}", response_model=WEFSetupResponse)
+async def delete_wef_subscription(
+    name: str,
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Delete a WEF subscription."""
+    from openlabels.monitoring.wef_setup import delete_subscription
+
+    success, message = await delete_subscription(name)
+    return WEFSetupResponse(success=success, message=message)
+
+
+@router.get("/wef/gpo-config")
+async def get_wef_gpo_config(
+    _user=Depends(require_admin),
+) -> dict:
+    """Get the GPO configuration string to deploy to file servers.
+
+    Paste this value into:
+    Computer Configuration > Policies > Administrative Templates >
+    Windows Components > Event Forwarding > Configure target
+    Subscription Manager
+    """
+    from openlabels.monitoring.wef_setup import get_gpo_config
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    fqdn = settings.monitoring.wef_collector_fqdn
+    if not fqdn:
+        import socket
+        fqdn = socket.getfqdn()
+
+    return {
+        "gpo_path": (
+            "Computer Configuration > Policies > Administrative Templates > "
+            "Windows Components > Event Forwarding > Configure target Subscription Manager"
+        ),
+        "value": get_gpo_config(
+            collector_fqdn=fqdn,
+            use_https=settings.monitoring.wef_use_https,
+        ),
+    }

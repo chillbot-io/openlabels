@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import {
   Check, ArrowRight, ArrowLeft, FolderOpen, Globe, Cloud,
   SkipForward, Loader2, Search, Server, Eye, EyeOff, Shield,
-  Plus, X,
+  Plus, X, Copy, Radio, Plug,
 } from 'lucide-react';
 import { m365Api } from '@/api/endpoints/m365.ts';
 import { enumerateApi } from '@/api/endpoints/enumerate.ts';
@@ -799,19 +799,36 @@ function AddMoreStep({
 
 // ── Monitoring step ─────────────────────────────────────────────────
 
+type CollectionMethod = 'wef' | 'winrm' | null;
+
 function MonitoringStep({
   enabled,
   onToggle,
+  method,
+  onMethodChange,
   onNext,
   onBack,
   smbConfig,
 }: {
   enabled: boolean;
   onToggle: (v: boolean) => void;
+  method: CollectionMethod;
+  onMethodChange: (m: CollectionMethod) => void;
   onNext: () => void;
   onBack: () => void;
   smbConfig: SmbConfig | null;
 }) {
+
+  // WEF state
+  const [wefIniting, setWefIniting] = useState(false);
+  const [wefInited, setWefInited] = useState(false);
+  const [wefCreating, setWefCreating] = useState(false);
+  const [wefCreated, setWefCreated] = useState(false);
+  const [gpoConfig, setGpoConfig] = useState<string | null>(null);
+  const [wefError, setWefError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  // WinRM state
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -827,6 +844,51 @@ function MonitoringStep({
 
   const hasSmbTarget = smbConfig && smbConfig.host.trim().length > 0;
 
+  // WEF handlers
+  const handleWefInit = async () => {
+    setWefIniting(true);
+    setWefError('');
+    try {
+      const resp = await monitoringApi.wefInit();
+      if (resp.success) {
+        setWefInited(true);
+      } else {
+        setWefError(resp.message);
+      }
+    } catch (e) {
+      setWefError(e instanceof Error ? e.message : 'Failed to initialize collector');
+    } finally {
+      setWefIniting(false);
+    }
+  };
+
+  const handleWefCreate = async () => {
+    setWefCreating(true);
+    setWefError('');
+    try {
+      const resp = await monitoringApi.wefCreateSubscription();
+      if (resp.success) {
+        setWefCreated(true);
+        setGpoConfig(resp.gpo_config);
+      } else {
+        setWefError(resp.message);
+      }
+    } catch (e) {
+      setWefError(e instanceof Error ? e.message : 'Failed to create subscription');
+    } finally {
+      setWefCreating(false);
+    }
+  };
+
+  const handleCopyGpo = () => {
+    if (!gpoConfig) return;
+    navigator.clipboard.writeText(gpoConfig).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+
+  // WinRM handlers
   const handleTestConnection = async () => {
     if (!smbConfig) return;
     setTesting(true);
@@ -890,6 +952,7 @@ function MonitoringStep({
           </p>
         </div>
 
+        {/* Enable / skip toggle */}
         <div className="space-y-3">
           <button
             type="button"
@@ -903,8 +966,7 @@ function MonitoringStep({
             <div>
               <span className="text-sm font-medium">Enable monitoring</span>
               <p className="text-xs text-[var(--muted-foreground)]">
-                OpenLabels will configure audit logging on your file servers
-                via WinRM and stream access events for analysis.
+                Collect file access events from your Windows file servers.
               </p>
             </div>
           </button>
@@ -914,7 +976,7 @@ function MonitoringStep({
               'flex w-full items-start gap-4 rounded-lg border-2 p-4 text-left transition-colors',
               !enabled ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-400',
             )}
-            onClick={() => onToggle(false)}
+            onClick={() => { onToggle(false); onMethodChange(null); }}
           >
             <X className="mt-0.5 h-6 w-6 text-gray-400" />
             <div>
@@ -926,8 +988,146 @@ function MonitoringStep({
           </button>
         </div>
 
-        {/* WinRM configuration panel — shown when monitoring is enabled and SMB target exists */}
-        {enabled && hasSmbTarget && (
+        {/* Collection method picker — shown when monitoring is enabled */}
+        {enabled && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Collection method</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className={cn(
+                  'rounded-lg border-2 p-4 text-left transition-colors',
+                  method === 'wef' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-400',
+                )}
+                onClick={() => onMethodChange('wef')}
+              >
+                <Radio className="mb-2 h-5 w-5 text-blue-600" />
+                <span className="text-sm font-medium block">Event Forwarding</span>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  File servers push events to this collector via WEF. Recommended for production.
+                </p>
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'rounded-lg border-2 p-4 text-left transition-colors',
+                  method === 'winrm' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-400',
+                  !hasSmbTarget && 'opacity-50 cursor-not-allowed',
+                )}
+                onClick={() => hasSmbTarget && onMethodChange('winrm')}
+              >
+                <Plug className="mb-2 h-5 w-5 text-gray-500" />
+                <span className="text-sm font-medium block">WinRM (Direct)</span>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  OpenLabels pulls events from each server.
+                  {!hasSmbTarget && ' Requires an SMB target.'}
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* WEF setup flow */}
+        {enabled && method === 'wef' && (
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">Windows Event Forwarding Setup</p>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              This configures OpenLabels as a Windows Event Collector.
+              File servers will push Security events here automatically
+              once you deploy the GPO.
+            </p>
+
+            {/* Step 1: Init collector */}
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                wefInited ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
+              )}>
+                {wefInited ? <Check className="h-3.5 w-3.5" /> : '1'}
+              </div>
+              {wefInited ? (
+                <span className="text-xs text-green-600">Collector service initialized</span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleWefInit}
+                  disabled={wefIniting}
+                >
+                  {wefIniting ? (
+                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Initializing...</>
+                  ) : (
+                    <>Initialize Collector Service</>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {/* Step 2: Create subscription */}
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                wefCreated ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600',
+              )}>
+                {wefCreated ? <Check className="h-3.5 w-3.5" /> : '2'}
+              </div>
+              {wefCreated ? (
+                <span className="text-xs text-green-600">Subscription created</span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleWefCreate}
+                  disabled={!wefInited || wefCreating}
+                >
+                  {wefCreating ? (
+                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Creating...</>
+                  ) : (
+                    <>Create Subscription</>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {/* Step 3: GPO config */}
+            {gpoConfig && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
+                    3
+                  </div>
+                  <span className="text-xs font-medium">
+                    Deploy this GPO value to your file servers:
+                  </span>
+                </div>
+                <div className="relative rounded-md bg-gray-900 p-3">
+                  <code className="block break-all text-xs text-green-400">
+                    {gpoConfig}
+                  </code>
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-white"
+                    onClick={handleCopyGpo}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Paste into: Computer Configuration &gt; Policies &gt;
+                  Administrative Templates &gt; Windows Components &gt;
+                  Event Forwarding &gt; Configure target Subscription Manager
+                </p>
+              </div>
+            )}
+
+            {wefError && (
+              <p className="text-xs text-red-600">{wefError}</p>
+            )}
+          </div>
+        )}
+
+        {/* WinRM configuration panel */}
+        {enabled && method === 'winrm' && hasSmbTarget && (
           <div className="space-y-3 rounded-lg border p-4">
             <p className="text-sm font-medium">Configure {smbConfig.host}</p>
             <p className="text-xs text-[var(--muted-foreground)]">
@@ -1012,6 +1212,7 @@ function ReviewStep({
   siteSelections,
   smbConfig,
   monitoringEnabled,
+  monitoringMethod,
   onBack,
   onFinish,
   submitting,
@@ -1020,6 +1221,7 @@ function ReviewStep({
   siteSelections: SiteSelection[];
   smbConfig: SmbConfig | null;
   monitoringEnabled: boolean;
+  monitoringMethod: CollectionMethod;
   onBack: () => void;
   onFinish: () => void;
   submitting: boolean;
@@ -1076,7 +1278,11 @@ function ReviewStep({
           <div className="flex items-center justify-between rounded-md bg-[var(--muted)] px-4 py-3">
             <span className="text-sm font-medium">Event Monitoring</span>
             <span className={cn('text-sm', monitoringEnabled ? 'text-green-600' : 'text-gray-400')}>
-              {monitoringEnabled ? 'Enabled' : 'Disabled'}
+              {monitoringEnabled
+                ? monitoringMethod === 'wef' ? 'WEF (Event Forwarding)'
+                  : monitoringMethod === 'winrm' ? 'WinRM (Direct)'
+                  : 'Enabled'
+                : 'Disabled'}
             </span>
           </div>
         </div>
@@ -1130,6 +1336,7 @@ export function Component() {
 
   // Monitoring
   const [monitoringEnabled, setMonitoringEnabled] = useState(false);
+  const [monitoringMethod, setMonitoringMethod] = useState<CollectionMethod>(null);
 
   // Submit state
   const [submitting, setSubmitting] = useState(false);
@@ -1357,6 +1564,8 @@ export function Component() {
           <MonitoringStep
             enabled={monitoringEnabled}
             onToggle={setMonitoringEnabled}
+            method={monitoringMethod}
+            onMethodChange={setMonitoringMethod}
             onNext={() => setStep('review')}
             onBack={() => setStep('add_more')}
             smbConfig={smbConfig.host ? smbConfig : null}
@@ -1369,6 +1578,7 @@ export function Component() {
             siteSelections={siteSelections}
             smbConfig={smbConfig.host ? smbConfig : null}
             monitoringEnabled={monitoringEnabled}
+            monitoringMethod={monitoringMethod}
             onBack={() => setStep('monitoring')}
             onFinish={handleFinish}
             submitting={submitting}

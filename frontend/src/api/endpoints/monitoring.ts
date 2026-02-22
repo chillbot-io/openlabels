@@ -18,6 +18,21 @@ export interface RemoteConfigureResponse {
   error: string | null;
 }
 
+export interface WEFSetupResponse {
+  success: boolean;
+  message: string;
+  gpo_config: string | null;
+}
+
+export interface WEFSubscriptionResponse {
+  name: string;
+  enabled: boolean;
+  source_count: number;
+  delivery_mode: string;
+  status: string;
+  error: string | null;
+}
+
 export const monitoringApi = {
   health: () =>
     apiFetch<HealthStatus>('/health/status'),
@@ -50,4 +65,28 @@ export const monitoringApi = {
       method: 'POST',
       body: payload,
     }),
+
+  // WEF (Windows Event Forwarding)
+  wefInit: () =>
+    apiFetch<WEFSetupResponse>('/monitoring/wef/init', { method: 'POST' }),
+
+  wefCreateSubscription: (payload?: {
+    subscription_name?: string;
+    transport?: string;
+  }) =>
+    apiFetch<WEFSetupResponse>('/monitoring/wef/subscriptions', {
+      method: 'POST',
+      body: payload ?? {},
+    }),
+
+  wefListSubscriptions: () =>
+    apiFetch<WEFSubscriptionResponse[]>('/monitoring/wef/subscriptions'),
+
+  wefDeleteSubscription: (name: string) =>
+    apiFetch<WEFSetupResponse>(`/monitoring/wef/subscriptions/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+
+  wefGpoConfig: () =>
+    apiFetch<{ gpo_path: string; value: string }>('/monitoring/wef/gpo-config'),
 };
