@@ -85,11 +85,42 @@ class DetectorOrchestrator:
                 self.config.enable_context_enhancement,
             )
 
+        self._ml_loaded = any(
+            d.name in ("gliner", "multilingual_gliner") for d in self.detectors
+        )
+        self._phi_loaded = any(d.name == "phi" for d in self.detectors)
+
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "
             f"{[d.name for d in self.detectors]}"
             f"{' (Hyperscan accelerated)' if self._using_hyperscan else ''}"
         )
+
+        # Loud warnings when requested detectors failed to load
+        if self.config.enable_ml and not self._ml_loaded:
+            logger.warning(
+                "ML was requested but NO ML detectors loaded! "
+                "Results will use pattern-only detection."
+            )
+        if self.config.enable_phi and not self._phi_loaded:
+            logger.warning(
+                "PHI was requested but PHI detector failed to load!"
+            )
+
+    @property
+    def ml_loaded(self) -> bool:
+        """True if at least one ML detector is active."""
+        return self._ml_loaded
+
+    @property
+    def phi_loaded(self) -> bool:
+        """True if the PHI detector is active."""
+        return self._phi_loaded
+
+    @property
+    def detector_names(self) -> list[str]:
+        """Names of all active detectors."""
+        return [d.name for d in self.detectors]
 
     def _init_hyperscan_detector(self) -> None:
         """Initialize Hyperscan-accelerated detector."""
