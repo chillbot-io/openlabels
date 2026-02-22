@@ -89,11 +89,11 @@ class DetectionConfig:
         ("COUNTRY", 0.82),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # Raised from 0.55 to 0.58: 12 FIRSTNAME + 6 LASTNAME
-        # spurious on ai4privacy 400k at 0.55.
+        # Raised from 0.58 to 0.60: reduces marginal GLiNER FPs
+        # (12 FIRSTNAME + 6 LASTNAME spurious on ai4privacy 400k).
         ("NAME", 0.50),
-        ("FIRSTNAME", 0.58),
-        ("LASTNAME", 0.58),
+        ("FIRSTNAME", 0.60),
+        ("LASTNAME", 0.60),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
         # COMPANY raised from 0.50 to 0.55 to reduce 32 spurious on
