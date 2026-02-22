@@ -3,11 +3,16 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card.tsx';
 import { LogoIcon } from '@/components/brand/logo.tsx';
 
-interface AuthConfig {
-  provider: string;
+interface AuthProviderInfo {
+  key: string;
+  provider_type: string;
   display_name: string;
   button_style: string;
   login_url: string;
+}
+
+interface AuthConfig {
+  providers: AuthProviderInfo[];
 }
 
 function ProviderIcon({ style }: { style: string }) {
@@ -31,6 +36,13 @@ function ProviderIcon({ style }: { style: string }) {
       </svg>
     );
   }
+  if (style === 'github') {
+    return (
+      <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+      </svg>
+    );
+  }
   // Generic lock icon for other providers
   return (
     <svg className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -40,44 +52,33 @@ function ProviderIcon({ style }: { style: string }) {
 }
 
 export function Component() {
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [providers, setProviders] = useState<AuthProviderInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/v1/auth/config')
       .then((res) => res.json())
       .then((config: AuthConfig) => {
-        setAuthConfig(config);
+        setProviders(config.providers ?? []);
         setLoading(false);
       })
       .catch(() => {
-        // Fallback to Microsoft if config endpoint fails
-        setAuthConfig({
-          provider: 'azure_ad',
+        setProviders([{
+          key: 'azure_ad',
+          provider_type: 'azure_ad',
           display_name: 'Microsoft',
           button_style: 'microsoft',
           login_url: '/api/v1/auth/login',
-        });
+        }]);
         setLoading(false);
       });
   }, []);
 
-  const handleLogin = () => {
-    const loginUrl = authConfig?.login_url ?? '/api/v1/auth/login';
+  const handleLogin = (loginUrl: string) => {
     window.location.href = loginUrl;
   };
 
-  const buttonLabel = authConfig
-    ? `Sign in with ${authConfig.display_name}`
-    : 'Sign in';
-
-  const helperText = authConfig?.provider === 'azure_ad'
-    ? "Authenticates via your organization's Azure AD"
-    : authConfig?.provider === 'oidc'
-      ? `Authenticates via ${authConfig.display_name}`
-      : authConfig?.provider === 'none'
-        ? 'Development mode — no authentication required'
-        : 'Authenticates via your identity provider';
+  const isDev = providers.length === 1 && providers[0]?.provider_type === 'none';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
@@ -91,19 +92,28 @@ export function Component() {
             Sensitive data discovery and protection platform
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            className="w-full"
-            onClick={handleLogin}
-            disabled={loading}
-          >
-            {!loading && authConfig && (
-              <ProviderIcon style={authConfig.button_style} />
-            )}
-            {loading ? 'Loading...' : buttonLabel}
-          </Button>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <Button className="w-full" disabled>Loading...</Button>
+          ) : (
+            providers.map((p) => (
+              <Button
+                key={p.key}
+                variant={providers.length > 1 ? 'outline' : 'default'}
+                className="w-full"
+                onClick={() => handleLogin(p.login_url)}
+              >
+                <ProviderIcon style={p.button_style} />
+                Sign in with {p.display_name}
+              </Button>
+            ))
+          )}
           <p className="text-center text-xs text-[var(--muted-foreground)]">
-            {helperText}
+            {isDev
+              ? 'Development mode — no authentication required'
+              : providers.length === 1
+                ? `Authenticates via ${providers[0]?.display_name}`
+                : 'Choose your identity provider to sign in'}
           </p>
         </CardContent>
       </Card>

@@ -99,16 +99,47 @@ class AuthSettings(BaseSettings):
     For Azure AD (legacy mode):
     - AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET
 
-    For generic OIDC:
+    For a single OIDC provider:
     - OPENLABELS_AUTH__OIDC__DISCOVERY_URL=https://your-idp/.well-known/openid-configuration
     - OPENLABELS_AUTH__OIDC__CLIENT_ID=...
     - OPENLABELS_AUTH__OIDC__CLIENT_SECRET=...
+
+    For multiple OIDC providers (Google + Microsoft + GitHub, etc.):
+    Configure via config.yaml::
+
+        auth:
+          provider: oidc
+          oidc_providers:
+            google:
+              discovery_url: https://accounts.google.com/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: Google
+              button_style: google
+            microsoft:
+              discovery_url: https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: Microsoft
+              button_style: microsoft
+            github:
+              discovery_url: https://token.actions.githubusercontent.com/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: GitHub
+              button_style: github
     """
 
     provider: Literal["azure_ad", "oidc", "none"] = "none"
     tenant_id: str | None = None
     client_id: str | None = None
     client_secret: str | None = None
+
+    # Single OIDC provider (backward-compatible)
+    oidc: OIDCProviderSettings = Field(default_factory=OIDCProviderSettings)
+
+    # Multi-provider OIDC: keyed by slug ("google", "microsoft", "github", etc.)
+    oidc_providers: dict[str, OIDCProviderSettings] = Field(default_factory=dict)
 
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -120,6 +151,23 @@ class AuthSettings(BaseSettings):
         if self.tenant_id:
             return f"https://login.microsoftonline.com/{self.tenant_id}"
         return None
+
+    def get_oidc_providers(self) -> dict[str, OIDCProviderSettings]:
+        """All configured OIDC providers.
+
+        If ``oidc_providers`` is populated, returns that dict directly.
+        Otherwise falls back to the single ``oidc`` config under the key
+        ``"default"``, provided it has a discovery_url set.
+        """
+        if self.oidc_providers:
+            return dict(self.oidc_providers)
+        if self.oidc.discovery_url:
+            return {"default": self.oidc}
+        return {}
+
+    def get_oidc_provider(self, key: str) -> OIDCProviderSettings | None:
+        """Look up a specific OIDC provider by key."""
+        return self.get_oidc_providers().get(key)
 
 
 class FilesystemAdapterSettings(BaseSettings):

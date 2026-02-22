@@ -175,7 +175,12 @@ async def _validate_azure_ad_token(token: str) -> TokenClaims:
 
 
 async def _validate_oidc_token(token: str) -> TokenClaims:
-    """Validate a generic OIDC id_token and extract claims."""
+    """Validate a generic OIDC id_token and extract claims.
+
+    Tries each configured OIDC provider until one validates the token.
+    This is necessary because bearer tokens don't carry which provider
+    issued them, so we attempt validation against all providers.
+    """
     from openlabels.auth.oidc_provider import (
         extract_claims,
         get_discovery,
@@ -183,23 +188,34 @@ async def _validate_oidc_token(token: str) -> TokenClaims:
     )
 
     settings = get_settings()
-    oidc_config = settings.auth.oidc
+    providers = settings.auth.get_oidc_providers()
 
-    if not oidc_config.discovery_url:
-        raise TokenInvalidError("auth.oidc.discovery_url is not configured")
+    if not providers:
+        raise TokenInvalidError("No OIDC providers configured")
 
-    discovery = await get_discovery(oidc_config.discovery_url)
-    raw_claims = await validate_id_token(token, discovery, oidc_config)
-    normalized = extract_claims(raw_claims, oidc_config)
+    last_error: Exception | None = None
+    for key, oidc_config in providers.items():
+        if not oidc_config.discovery_url:
+            continue
+        try:
+            discovery = await get_discovery(oidc_config.discovery_url)
+            raw_claims = await validate_id_token(token, discovery, oidc_config)
+            normalized = extract_claims(raw_claims, oidc_config)
+            return TokenClaims(
+                oid=normalized.sub,
+                preferred_username=normalized.email,
+                name=normalized.name,
+                tenant_id=normalized.tenant_id,
+                roles=normalized.roles,
+                provider="oidc",
+            )
+        except (TokenExpiredError, TokenInvalidError) as e:
+            last_error = e
+            continue
 
-    return TokenClaims(
-        oid=normalized.sub,
-        preferred_username=normalized.email,
-        name=normalized.name,
-        tenant_id=normalized.tenant_id,
-        roles=normalized.roles,
-        provider="oidc",
-    )
+    if last_error:
+        raise last_error
+    raise TokenInvalidError("No OIDC providers with discovery_url configured")
 
 
 async def validate_token(token: str) -> TokenClaims:

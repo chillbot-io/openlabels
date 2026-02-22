@@ -848,6 +848,7 @@ class PendingAuth(Base):
     redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
     callback_url: Mapped[str] = mapped_column(Text, nullable=False)
     nonce: Mapped[str | None] = mapped_column(String(64))  # OIDC replay protection
+    oidc_provider: Mapped[str | None] = mapped_column(String(100))  # Multi-provider key
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
