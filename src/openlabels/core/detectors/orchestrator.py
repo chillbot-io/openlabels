@@ -577,9 +577,15 @@ _ML_PRIMARY_TYPES = frozenset({
     # precision).  With ML-primary + solo-min gating, high-confidence
     # GLiNER COMPANY detections survive solo while low-confidence ones
     # still require corroboration, balancing recall vs FP.
-    # JOB_TITLE remains strict — it has no pattern coverage and
-    # generates FPs without corroboration.
     "COMPANY",
+    # JOB_TITLE moved here from strict corroboration — strict was
+    # suppressing 41 real job titles on nemotron_pii because no
+    # pattern detector exists for JOB_TITLE, making the strict
+    # threshold (≥0.62) unreachable for most GLiNER detections.
+    # With ML-primary + calibration gating (temp=1.25), moderate-
+    # confidence detections survive while low-confidence FPs are
+    # still filtered.
+    "JOB_TITLE",
     "EMPLOYER", "EMPLOYEE_ID", "FACILITY",
     # Medical identifiers: benefit from ML context
     "MRN", "HEALTH_PLAN_ID", "NPI", "MEDICAL_LICENSE",
@@ -611,7 +617,7 @@ _ML_UNCORROBORATED_MIN_DEFAULT = 0.55
 # confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
 # these types are allowed through solo — the calibration temperature
 # already dampened unreliable scores, so survivors are trustworthy.
-_STRICT_CORROBORATION_TYPES = frozenset({"JOB_TITLE", "DRIVER_LICENSE"})
+_STRICT_CORROBORATION_TYPES = frozenset({"DRIVER_LICENSE"})
 _STRICT_SOLO_MIN = 0.62
 
 # Default minimum calibrated confidence for ML-primary spans to
@@ -1023,6 +1029,10 @@ _PATTERN_PRIORITY_OVER_NAMES = frozenset({
     "USERNAME",
     "CITY", "STATE", "COUNTY", "COUNTRY", "ZIP",
     "ADDRESS", "GPS_COORDINATE", "GPS_COORDINATES",
+    # COMPANY: pattern detectors catch corporate suffixes (Inc, LLC, etc.)
+    # but GLiNER also detects the same span as FIRSTNAME.  5 COMPANY→
+    # FIRSTNAME type mismatches on nemotron_pii from this collision.
+    "COMPANY",
 })
 
 

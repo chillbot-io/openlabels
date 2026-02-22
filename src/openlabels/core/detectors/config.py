@@ -94,10 +94,11 @@ class DetectionConfig:
         ("COUNTRY", 0.82),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # Raised from 0.55 to 0.58: 12 FIRSTNAME + 6 LASTNAME
-        # spurious on ai4privacy 400k at 0.55.
+        # FIRSTNAME raised from 0.58 to 0.60: 21 spurious FIRSTNAME
+        # on nemotron_pii at 0.58, many from company/city/username
+        # spans misclassified as names.
         ("NAME", 0.50),
-        ("FIRSTNAME", 0.58),
+        ("FIRSTNAME", 0.60),
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
