@@ -786,9 +786,9 @@ _p(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', 'EMAIL', 0.95),
 _p(r'(?:email|e-mail)[:\s]+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})', 'EMAIL', 0.96, 1, flags=re.I),
 
 # === Dates ===
-_p(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', 'DATE', 0.70),
-_p(r'\b(\d{1,2})-(\d{1,2})-(\d{4})\b', 'DATE', 0.70),
-_p(r'\b(\d{4})-(\d{1,2})-(\d{1,2})\b', 'DATE', 0.70),
+_p(r'\b(\d{1,2})/(\d{1,2})/(\d{4})\b', 'DATE', 0.80),
+_p(r'\b(\d{1,2})-(\d{1,2})-(\d{4})\b', 'DATE', 0.80),
+_p(r'\b(\d{4})-(\d{1,2})-(\d{1,2})\b', 'DATE', 0.80),
 # Dates with 2-digit years: "12/27/25", "01/15/24"
 # Lower confidence due to ambiguity (could be scores, prices, etc.)
 _p(r'\b(\d{1,2}/\d{1,2}/\d{2})\b', 'DATE', 0.65),
@@ -799,13 +799,13 @@ _p(r'(?:DOB|Date)[:\s]+(\d{1,2}\.\d{1,2}\.\d{4})', 'DATE', 0.85, 1, flags=re.I),
 # Standalone dot-separated date (no label prefix): "15.03.1985", "03.15.2024"
 # NOTE: Handled by the 3-group capture pattern in ADDITIONAL DATE PATTERNS
 # section below, which enables proper date validation (month/day checking).
-_p(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
-_p(r'\b\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
+_p(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b', 'DATE', 0.82, flags=re.I),
+_p(r'\b\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b', 'DATE', 0.82, flags=re.I),
 # Edge case: "November 3., 1986" - day with period before comma/year (evasion pattern)
 _p(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\.,\s*\d{4}\b', 'DATE', 0.78, flags=re.I),
 # Abbreviated month names: "Oct 11, 1984", "Mar 19, 1988", "Jan 15th, 1980"
-_p(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
-_p(r'\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{4}\b', 'DATE', 0.75, flags=re.I),
+_p(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b', 'DATE', 0.82, flags=re.I),
+_p(r'\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{4}\b', 'DATE', 0.82, flags=re.I),
 # DOB with abbreviated months
 _p(r'(?:DOB|Date\s+of\s+Birth|Birth\s*date)[:\s]+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2},?\s+\d{4})', 'DATE_DOB', 0.95, 1, flags=re.I),
 _p(r'(?:DOB|Date\s+of\s+Birth|Birth\s*date)[:\s]+(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})', 'DATE_DOB', 0.95, 1, flags=re.I),
@@ -817,7 +817,7 @@ _p(r'(?:admission|admit|discharge)[:\s]+(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})', 'DAT
 # "3rd of March, 1990", "1st of January, 2020"
 _p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s*,?\s*\d{4})?)\b', 'DATE', 0.80, flags=re.I),
 # "3rd of March" (without year), "22nd of December"
-_p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December))\b', 'DATE', 0.75, flags=re.I),
+_p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+of\s+(?:January|February|March|April|May|June|July|August|September|October|November|December))\b', 'DATE', 0.80, flags=re.I),
 # "3rd March 1990", "1st January 2020" (ordinal without "of")
 _p(r'\b(\d{1,2}(?:st|nd|rd|th)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s*,?\s*\d{4})?)\b', 'DATE', 0.78, flags=re.I),
 # "the 15th of January" (with "the"), optionally with year
@@ -831,21 +831,21 @@ _p(r'\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|
 
 # === Date ranges with written months ===
 # "between January 1 and January 15"
-_p(r'\b((?:between|from)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\b', 'DATE', 0.75, flags=re.I),
-_p(r'\b((?:and|to|through)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\b', 'DATE', 0.75, flags=re.I),
+_p(r'\b((?:between|from)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\b', 'DATE', 0.80, flags=re.I),
+_p(r'\b((?:and|to|through)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\b', 'DATE', 0.80, flags=re.I),
 # "March 1-15, 2024" (date range with hyphen)
 _p(r'\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\s*[-–—]\s*\d{1,2}\s*,?\s*\d{4})\b', 'DATE', 0.78, flags=re.I),
 
 # === Time ===
 # Safe Harbor requires removal of time elements (they're part of date under HIPAA)
 # Standard 12-hour: "11:30 PM", "9:42 AM", "11:30PM"
-_p(r'\b(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.88, flags=re.I),
+_p(r'\b(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.92, flags=re.I),
 # With seconds: "11:30:45 PM"
-_p(r'\b(\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.88, flags=re.I),
+_p(r'\b(\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.92, flags=re.I),
 # Contextual: "at 3:30 PM", "@ 11:45"
-_p(r'(?:at|@)\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\b', 'TIME', 0.85, 1, flags=re.I),
+_p(r'(?:at|@)\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\b', 'TIME', 0.92, 1, flags=re.I),
 # Labeled: "Time: 14:30", "recorded at 2:15 PM"
-_p(r'(?:time|recorded|documented|signed)[:\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)', 'TIME', 0.90, 1, flags=re.I),
+_p(r'(?:time|recorded|documented|signed)[:\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)', 'TIME', 0.92, 1, flags=re.I),
 
 # === 24-hour time formats ===
 # "14:30:00" - 24-hour with seconds (ISO style)
@@ -1486,6 +1486,61 @@ _p(r'\b(County\s+Cork|County\s+Dublin|County\s+Galway|'
    r'County\s+Westmeath|County\s+Offaly|County\s+Laois|'
    r'County\s+Carlow|County\s+Longford|County\s+Cavan|'
    r'County\s+Monaghan|County\s+Leitrim)\b', 'COUNTY', 0.82, 1),
+
+# === Standalone COUNTRY Patterns ===
+# Major sovereign countries — comprehensive list for benchmark recall.
+# Split into multiple patterns to keep regex size manageable.
+
+# Americas
+_p(r'\b(United\s+States(?:\s+of\s+America)?|Canada|Mexico|Brazil|Argentina|'
+   r'Colombia|Peru|Chile|Venezuela|Ecuador|Bolivia|Paraguay|Uruguay|'
+   r'Guyana|Suriname|Cuba|Jamaica|Haiti|Dominican\s+Republic|'
+   r'Trinidad\s+and\s+Tobago|Costa\s+Rica|Panama|Honduras|Guatemala|'
+   r'El\s+Salvador|Nicaragua|Belize|Puerto\s+Rico)\b', 'COUNTRY', 0.78, 1),
+
+# Europe (Western + Northern)
+_p(r'\b(United\s+Kingdom|France|Germany|Italy|Spain|Portugal|Netherlands|'
+   r'Belgium|Switzerland|Austria|Ireland|Luxembourg|Monaco|Liechtenstein|'
+   r'Andorra|San\s+Marino|Sweden|Norway|Denmark|Finland|Iceland)\b', 'COUNTRY', 0.78, 1),
+
+# Europe (Eastern + Southern)
+_p(r'\b(Poland|Czech\s+Republic|Czechia|Slovakia|Hungary|Romania|Bulgaria|'
+   r'Croatia|Serbia|Slovenia|Bosnia(?:\s+and\s+Herzegovina)?|Montenegro|'
+   r'North\s+Macedonia|Macedonia|Albania|Kosovo|Moldova|Ukraine|Belarus|'
+   r'Lithuania|Latvia|Estonia|Greece|Cyprus|Malta|Turkey)\b', 'COUNTRY', 0.78, 1),
+
+# Asia (East + Southeast)
+_p(r'\b(China|Japan|South\s+Korea|North\s+Korea|Taiwan|Mongolia|'
+   r'Vietnam|Thailand|Indonesia|Philippines|Malaysia|Singapore|Myanmar|'
+   r'Cambodia|Laos|Brunei|Timor-Leste|East\s+Timor)\b', 'COUNTRY', 0.78, 1),
+
+# Asia (South + Central + West)
+_p(r'\b(India|Pakistan|Bangladesh|Sri\s+Lanka|Nepal|Bhutan|Maldives|'
+   r'Afghanistan|Kazakhstan|Uzbekistan|Turkmenistan|Kyrgyzstan|Tajikistan|'
+   r'Iran|Iraq|Saudi\s+Arabia|Yemen|Oman|'
+   r'United\s+Arab\s+Emirates|Qatar|Bahrain|Kuwait|Jordan|Lebanon|'
+   r'Syria|Israel|Palestine|Armenia|Azerbaijan|Georgia)\b', 'COUNTRY', 0.78, 1),
+
+# Africa (North + West)
+_p(r'\b(Egypt|Libya|Tunisia|Algeria|Morocco|Sudan|South\s+Sudan|'
+   r'Nigeria|Ghana|Senegal|Mali|Burkina\s+Faso|Niger|'
+   r'Ivory\s+Coast|Côte\s+d\'Ivoire|Guinea|Sierra\s+Leone|Liberia|'
+   r'Togo|Benin|Gambia|Guinea-Bissau|Cabo\s+Verde|Cape\s+Verde|'
+   r'Mauritania)\b', 'COUNTRY', 0.78, 1),
+
+# Africa (East + Central + South)
+_p(r'\b(Kenya|Ethiopia|Tanzania|Uganda|Rwanda|Burundi|'
+   r'Democratic\s+Republic\s+of(?:\s+the)?\s+Congo|Congo|'
+   r'Cameroon|Central\s+African\s+Republic|Chad|Gabon|'
+   r'Equatorial\s+Guinea|São\s+Tomé|'
+   r'South\s+Africa|Namibia|Botswana|Zimbabwe|Zambia|Mozambique|'
+   r'Madagascar|Malawi|Angola|Lesotho|Eswatini|Swaziland|'
+   r'Mauritius|Seychelles|Comoros|Djibouti|Eritrea|Somalia)\b', 'COUNTRY', 0.78, 1),
+
+# Oceania + Russia
+_p(r'\b(Australia|New\s+Zealand|Papua\s+New\s+Guinea|Fiji|Samoa|Tonga|'
+   r'Vanuatu|Solomon\s+Islands|Micronesia|Palau|Marshall\s+Islands|'
+   r'Kiribati|Nauru|Tuvalu|Russia|Russian\s+Federation)\b', 'COUNTRY', 0.78, 1),
 
 # === Standalone CITY Patterns ===
 # City-suffix heuristic: words ending in common city suffixes are likely city names.
@@ -2259,14 +2314,14 @@ _p(r'(?:Voter\s+ID|EPIC|elector\s+photo)[:\s#]+([A-Z]{3}\d{7})', 'IN_VOTER', 0.8
 # === ADDITIONAL DATE PATTERNS ===
 # Bare European dot-separated dates: "15.03.1985", "03.15.1985"
 # Uses 3 capture groups to enable date validation (month/day range checking).
-_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.70),
+_p(r'\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b', 'DATE', 0.80),
 # dd-MMM-yyyy (Oracle/DB format): "15-JAN-2024", "03-MAR-85"
-_p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b', 'DATE', 0.78, flags=re.I),
+_p(r'\b(\d{1,2})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{2,4})\b', 'DATE', 0.80, flags=re.I),
 # yyyy/mm/dd (slash variant of ISO)
-_p(r'\b(\d{4})/(\d{1,2})/(\d{1,2})\b', 'DATE', 0.70),
+_p(r'\b(\d{4})/(\d{1,2})/(\d{1,2})\b', 'DATE', 0.80),
 # yyyymmdd (compact ISO, no separators) — common in Faker/DB dumps
 # Anchored to 19xx/20xx century to avoid matching other 8-digit numbers.
-_p(r'\b((?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\b', 'DATE', 0.70),
+_p(r'\b((?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\b', 'DATE', 0.80),
 # mm/yy (card expiration format, with context)
 _p(r'(?:exp(?:ir(?:y|es|ation))?|valid\s+(?:thru|through|until))[:\s]+((?:0[1-9]|1[0-2])/\d{2})\b', 'DATE', 0.82, 1, flags=re.I),
 

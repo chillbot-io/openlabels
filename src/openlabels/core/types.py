@@ -277,6 +277,8 @@ _ENTITY_ALIASES: dict[str, str] = {
     "CREDITCARD": "CREDIT_CARD",
     "CREDITCARDNUMBER": "CREDIT_CARD",
     "CREDIT_CARD_NUMBER": "CREDIT_CARD",
+    "CREDIT_DEBIT_CARD": "CREDIT_CARD",
+    "DEBIT_CARD": "CREDIT_CARD",
     # Phone variants
     "TELEPHONE": "PHONE",
     "TEL": "PHONE",
@@ -285,12 +287,17 @@ _ENTITY_ALIASES: dict[str, str] = {
     "PHONENUMBER": "PHONE",
     "PHONE_NUMBER": "PHONE",
     "US_PHONE_NUMBER": "PHONE",
+    "FAX_NUMBER": "FAX",
+    "FAXNUMBER": "FAX",
     # Email variants
     "EMAILADDRESS": "EMAIL",
     "EMAIL_ADDRESS": "EMAIL",
     # Address variants
     "STREET_ADDRESS": "ADDRESS",
     "STREET": "ADDRESS",
+    # Coordinate variants
+    "COORDINATE": "GPS_COORDINATE",
+    "COORDINATES": "GPS_COORDINATE",
     # IP variants
     "IP": "IP_ADDRESS",
     "IPADDRESS": "IP_ADDRESS",
@@ -310,6 +317,8 @@ _ENTITY_ALIASES: dict[str, str] = {
     "ABA_ROUTING": "BANK_ROUTING",
     "ROUTING": "BANK_ROUTING",
     "ROUTING_NUMBER": "BANK_ROUTING",
+    # Job / occupation variants
+    "OCCUPATION": "JOB_TITLE",
     # Zip code variants
     "ZIPCODE": "ZIP",
     "ZIP_CODE": "ZIP",
