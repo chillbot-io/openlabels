@@ -42,6 +42,7 @@ interface M365Connection {
   connected: boolean;
   tenantId: string | null;
   tenantName: string | null;
+  hasDedicatedApp: boolean;
 }
 
 interface SiteSelection {
@@ -1108,7 +1109,7 @@ export function Component() {
 
   // M365 connection
   const [m365, setM365] = useState<M365Connection>({
-    connected: false, tenantId: null, tenantName: null,
+    connected: false, tenantId: null, tenantName: null, hasDedicatedApp: false,
   });
 
   // Sources configured so far
@@ -1141,6 +1142,7 @@ export function Component() {
           connected: true,
           tenantId: status.tenant_id,
           tenantName: status.tenant_name,
+          hasDedicatedApp: status.has_dedicated_app,
         });
       }
     }).catch(() => {});
@@ -1160,6 +1162,7 @@ export function Component() {
         connected: status.connected,
         tenantId: status.tenant_id,
         tenantName: status.tenant_name,
+        hasDedicatedApp: status.has_dedicated_app,
       });
     } catch { /* ignore */ }
     setStep('pick_source');

@@ -762,9 +762,9 @@ async def _get_m365_session_credentials(
 ) -> dict[str, Any]:
     """Build Graph API credentials from the M365 tenant stored in the session.
 
-    After admin consent, the session stores the tenant_id. Combined with
-    our app's client_id and client_secret from settings, this gives us
-    everything needed for client_credentials flow.
+    Prefers per-tenant app credentials (created during auto app registration)
+    if available in the session. Falls back to the bootstrap app's credentials
+    from settings.
     """
     from openlabels.server.config import get_settings
 
@@ -777,6 +777,16 @@ async def _get_m365_session_credentials(
     if session_data is None:
         raise HTTPException(status_code=401, detail="Session expired")
 
+    # Prefer per-tenant app credentials from auto registration
+    app_creds = session_data.get("m365_app_credentials")
+    if app_creds and app_creds.get("client_id") and app_creds.get("client_secret"):
+        return {
+            "tenant_id": app_creds["tenant_id"],
+            "client_id": app_creds["client_id"],
+            "client_secret": app_creds["client_secret"],
+        }
+
+    # Fall back to bootstrap app
     m365_info = session_data.get("m365_tenant")
     if not m365_info or not m365_info.get("tenant_id"):
         raise HTTPException(

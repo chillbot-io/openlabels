@@ -4,6 +4,7 @@ export interface M365Status {
   connected: boolean;
   tenant_id: string | null;
   tenant_name: string | null;
+  has_dedicated_app: boolean;
 }
 
 export interface M365ConsentStart {
