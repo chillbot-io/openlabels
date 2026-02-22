@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -647,8 +648,12 @@ class WEFSetupResponse(BaseModel):
 
 class WEFCreateRequest(BaseModel):
     """Request to create a WEF subscription."""
-    subscription_name: str = Field("OpenLabels-FileAccess", description="Subscription identifier")
-    transport: str = Field("HTTP", description="Transport: HTTP or HTTPS")
+    subscription_name: str = Field(
+        "OpenLabels-FileAccess",
+        description="Subscription identifier",
+        pattern=r'^[\w\-]+$',
+    )
+    transport: Literal["HTTP", "HTTPS"] = Field("HTTP", description="Transport: HTTP or HTTPS")
 
 
 @router.post("/wef/init", response_model=WEFSetupResponse)

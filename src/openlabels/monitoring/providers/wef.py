@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from openlabels.monitoring.base import WINDOWS_ACCESS_MASKS, AccessAction
@@ -150,8 +150,10 @@ class WEFProvider:
         # Timestamp
         try:
             ts = datetime.fromisoformat(fields.get("Date", ""))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
-            ts = datetime.now()
+            ts = datetime.now(timezone.utc)
 
         # Source computer (populated by WEF for forwarded events)
         source_computer = fields.get("Computer", "")

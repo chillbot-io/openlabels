@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import subprocess
 import textwrap
 from dataclasses import dataclass
+from xml.sax.saxutils import escape as xml_escape
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +89,26 @@ def _build_subscription_xml(
     if event_ids is None:
         event_ids = [4663, 4656]
 
+    # Validate transport to prevent unexpected values in the XML
+    transport = transport.upper()
+    if transport not in ("HTTP", "HTTPS"):
+        raise ValueError(f"transport must be 'HTTP' or 'HTTPS', got {transport!r}")
+
+    # Validate subscription name: only allow safe characters
+    if not re.match(r'^[\w\-]+$', subscription_name):
+        raise ValueError(
+            "subscription_name must contain only alphanumeric characters, "
+            "hyphens, and underscores"
+        )
+
     id_filter = " or ".join(f"EventID={eid}" for eid in event_ids)
+    safe_name = xml_escape(subscription_name)
 
     return textwrap.dedent(f"""\
         <Subscription xmlns="http://schemas.microsoft.com/2006/03/windows/events/subscription">
-            <SubscriptionId>{subscription_name}</SubscriptionId>
+            <SubscriptionId>{safe_name}</SubscriptionId>
             <SubscriptionType>SourceInitiated</SubscriptionType>
-            <Description>OpenLabels file access event collection (Events {', '.join(str(e) for e in event_ids)})</Description>
+            <Description>{xml_escape(f"OpenLabels file access event collection (Events {', '.join(str(e) for e in event_ids)})")}</Description>
             <Enabled>true</Enabled>
             <Uri>http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog</Uri>
             <ConfigurationMode>Custom</ConfigurationMode>
@@ -118,7 +133,7 @@ def _build_subscription_xml(
             <Locale Language="en-US"/>
             <LogFile>ForwardedEvents</LogFile>
             <AllowedSourceNonDomainComputers/>
-            <AllowedSourceDomainComputers>{allowed_sddl}</AllowedSourceDomainComputers>
+            <AllowedSourceDomainComputers>{xml_escape(allowed_sddl)}</AllowedSourceDomainComputers>
         </Subscription>""")
 
 
