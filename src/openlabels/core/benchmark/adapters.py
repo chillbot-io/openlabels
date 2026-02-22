@@ -300,7 +300,11 @@ def _parse_pii_spans(
         try:
             spans = json.loads(spans_raw)
         except json.JSONDecodeError:
-            return []
+            # Fallback for Python-formatted strings (single quotes, etc.)
+            try:
+                spans = ast.literal_eval(spans_raw)
+            except (ValueError, SyntaxError):
+                return []
     elif isinstance(spans_raw, list):
         spans = spans_raw
     else:
@@ -308,11 +312,15 @@ def _parse_pii_spans(
 
     gold: list[GoldSpan] = []
     for span in spans:
-        # Handle different key naming conventions
+        # Handle different key naming conventions across datasets
         raw_label = (
             span.get("label")
             or span.get("type")
             or span.get("entity_type")
+            or span.get("pii_type")
+            or span.get("entity")
+            or span.get("tag")
+            or span.get("category")
             or ""
         )
         start = span.get("start")
@@ -683,6 +691,82 @@ def dataset_summary(samples: list[BenchmarkSample]) -> str:
 # ── NVIDIA Nemotron-PII dataset ────────────────────────────────────────
 
 
+def _parse_tagged_text(text_tagged: str, mapping: dict[str, str | None]) -> tuple[str, list[GoldSpan]]:
+    """Extract PII spans from XML-tagged text like ``<label>value</label>``.
+
+    Returns the plain text (tags stripped) and the gold spans with character
+    offsets computed against the plain text.
+    """
+    import re
+
+    # Match <label>value</label> patterns (non-greedy value)
+    tag_pattern = re.compile(r"<([a-zA-Z_][a-zA-Z0-9_]*)>(.*?)</\1>", re.DOTALL)
+
+    plain_parts: list[str] = []
+    gold: list[GoldSpan] = []
+    last_end = 0
+
+    for m in tag_pattern.finditer(text_tagged):
+        tag_start = m.start()
+        raw_label = m.group(1)
+        value = m.group(2)
+
+        # Append text before this tag
+        plain_parts.append(text_tagged[last_end:tag_start])
+        span_start = sum(len(p) for p in plain_parts)
+
+        # Append the entity value (without tags)
+        plain_parts.append(value)
+        span_end = span_start + len(value)
+
+        mapped = _map_entity(raw_label, mapping)
+        if mapped is not None and value.strip():
+            gold.append(GoldSpan(
+                start=span_start,
+                end=span_end,
+                text=value,
+                entity_type=mapped,
+                original_label=raw_label,
+            ))
+
+        last_end = m.end()
+
+    # Append remaining text
+    plain_parts.append(text_tagged[last_end:])
+    plain_text = "".join(plain_parts)
+
+    return plain_text, gold
+
+
+def _coerce_spans_to_list(spans_raw: object) -> list[dict]:
+    """Coerce a HuggingFace spans column value to a list of dicts.
+
+    Handles:
+    - dict-of-lists (Arrow columnar Sequence format)
+    - list-of-dicts (already correct)
+    - JSON string
+    - Python repr string (single quotes)
+    """
+    if isinstance(spans_raw, dict):
+        return _dict_of_lists_to_list_of_dicts(spans_raw)
+    if isinstance(spans_raw, list):
+        return spans_raw
+    if isinstance(spans_raw, str):
+        try:
+            parsed = json.loads(spans_raw)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        try:
+            parsed = ast.literal_eval(spans_raw)
+            if isinstance(parsed, list):
+                return parsed
+        except (ValueError, SyntaxError):
+            pass
+    return []
+
+
 def _download_nemotron_cache(
     cache_dir: Path,
     cache_path: Path,
@@ -693,6 +777,13 @@ def _download_nemotron_cache(
     The ``spans`` column contains character-level annotations::
 
         [{"start": 52, "end": 61, "text": "johndoe88", "label": "user_name"}, ...]
+
+    HuggingFace ``datasets`` (v4+) returns ``Sequence(Feature)`` columns as
+    dict-of-lists (Arrow columnar format).  This function converts them to
+    list-of-dicts before parsing.
+
+    If the ``spans`` column yields 0 annotations, falls back to parsing
+    ``text_tagged`` (XML-tagged text with ``<label>value</label>`` markup).
     """
     try:
         from datasets import load_dataset as hf_load
@@ -705,40 +796,107 @@ def _download_nemotron_cache(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     ds = hf_load("nvidia/Nemotron-PII", split="test")
+
+    # ── Diagnostic: log schema and first-row spans ──────────────────
+    try:
+        logger.info("Nemotron-PII schema: %s", ds.features)
+    except Exception:
+        pass
+
+    _log_first_rows_diagnostic(ds, n=3)
+
+    # ── Primary pass: parse spans column ────────────────────────────
+    samples, stats = _nemotron_pass_spans(ds)
+
+    # ── Fallback: parse text_tagged if spans were all empty ─────────
+    has_text_tagged = "text_tagged" in (ds.column_names if hasattr(ds, "column_names") else [])
+    if stats["total_annotations"] == 0 and has_text_tagged:
+        logger.warning(
+            "Nemotron-PII: spans column yielded 0 annotations; "
+            "falling back to text_tagged column"
+        )
+        samples, stats = _nemotron_pass_tagged(ds)
+
+    density = stats["total_gold_kept"] / len(samples) if samples else 0
+    logger.info(
+        "Nemotron-PII download: %d samples, %d total annotations, "
+        "%d gold spans kept (%.1f per sample), "
+        "%d skipped (no text: %d, bad format: %d)",
+        len(samples), stats["total_annotations"], stats["total_gold_kept"],
+        density,
+        stats["skipped_no_text"] + stats["skipped_format"],
+        stats["skipped_no_text"], stats["skipped_format"],
+    )
+
+    if not samples:
+        logger.warning("Nemotron-PII download returned 0 samples; skipping cache write")
+        return samples
+
+    _write_nemotron_cache(cache_path, samples)
+    logger.info("Cached %d Nemotron-PII samples to %s", len(samples), cache_path)
+    return samples
+
+
+def _log_first_rows_diagnostic(ds: object, n: int = 3) -> None:
+    """Log the raw spans format of the first *n* rows for debugging."""
+    try:
+        for i in range(min(n, len(ds))):
+            row = ds[i]
+            spans_raw = row.get("spans")
+            text_tagged = row.get("text_tagged", "")
+            logger.info(
+                "Nemotron-PII row %d diagnostic: "
+                "type(spans)=%s, "
+                "keys=%s, "
+                "repr(spans)=%.300s, "
+                "text[:120]=%s, "
+                "text_tagged[:120]=%s",
+                i,
+                type(spans_raw).__name__,
+                list(spans_raw.keys()) if isinstance(spans_raw, dict) else "N/A",
+                repr(spans_raw),
+                repr(row.get("text", "")[:120]),
+                repr(text_tagged[:120]) if text_tagged else "N/A",
+            )
+    except Exception as exc:
+        logger.warning("Nemotron-PII diagnostic failed: %s", exc)
+
+
+def _nemotron_pass_spans(ds: object) -> tuple[list["BenchmarkSample"], dict]:
+    """First pass: parse the ``spans`` column."""
     samples: list[BenchmarkSample] = []
+    stats = {
+        "total_annotations": 0,
+        "total_gold_kept": 0,
+        "skipped_no_text": 0,
+        "skipped_format": 0,
+        "reject_no_label": 0,
+        "reject_no_offsets": 0,
+        "reject_unmapped": 0,
+        "reject_oob": 0,
+    }
     idx = 0
-    total_annotations = 0
-    total_gold_kept = 0
-    skipped_no_text = 0
-    skipped_format = 0
 
     for row in ds:
         text = row.get("text", "")
         if not text:
-            skipped_no_text += 1
+            stats["skipped_no_text"] += 1
             continue
 
         spans_raw = row.get("spans")
         if spans_raw is None:
-            skipped_format += 1
+            stats["skipped_format"] += 1
             continue
 
-        # HuggingFace may return list-of-dicts or dict-of-lists (Arrow)
-        if isinstance(spans_raw, dict):
-            spans_raw = _dict_of_lists_to_list_of_dicts(spans_raw)
-        elif isinstance(spans_raw, str):
-            try:
-                spans_raw = json.loads(spans_raw)
-            except json.JSONDecodeError:
-                skipped_format += 1
-                continue
-        elif not isinstance(spans_raw, list):
-            skipped_format += 1
-            continue
+        span_list = _coerce_spans_to_list(spans_raw)
+        stats["total_annotations"] += len(span_list)
 
-        total_annotations += len(spans_raw)
-        gold_spans = _parse_pii_spans(text, spans_raw, NEMOTRON_TO_OPENLABELS)
-        total_gold_kept += len(gold_spans)
+        gold_spans = _parse_pii_spans(text, span_list, NEMOTRON_TO_OPENLABELS)
+        stats["total_gold_kept"] += len(gold_spans)
+
+        # Detailed rejection tracking (first 5 rows only, to avoid perf hit)
+        if idx < 5 and len(span_list) > 0 and len(gold_spans) == 0:
+            _log_span_rejections(text, span_list, idx)
 
         samples.append(BenchmarkSample(
             sample_id=idx,
@@ -748,19 +906,82 @@ def _download_nemotron_cache(
         ))
         idx += 1
 
-    density = total_gold_kept / len(samples) if samples else 0
-    logger.info(
-        "Nemotron-PII download: %d samples, %d total annotations, "
-        "%d gold spans kept (%.1f per sample), "
-        "%d skipped (no text: %d, bad format: %d)",
-        len(samples), total_annotations, total_gold_kept, density,
-        skipped_no_text + skipped_format, skipped_no_text, skipped_format,
-    )
+    return samples, stats
 
-    if not samples:
-        logger.warning("Nemotron-PII download returned 0 samples; skipping cache write")
-        return samples
 
+def _log_span_rejections(text: str, span_list: list[dict], row_idx: int) -> None:
+    """Log why each span in a row was rejected (for debugging)."""
+    for i, span in enumerate(span_list[:3]):
+        raw_label = (
+            span.get("label") or span.get("type") or span.get("entity_type")
+            or span.get("pii_type") or span.get("entity") or span.get("tag")
+            or span.get("category") or ""
+        )
+        start = span.get("start")
+        end = span.get("end")
+        reason = "unknown"
+        if start is None or end is None:
+            reason = f"missing offsets (start={start}, end={end})"
+        elif not raw_label:
+            reason = f"no label found; span keys={list(span.keys())}"
+        else:
+            s, e = int(start), int(end)
+            mapped = _map_entity(raw_label, NEMOTRON_TO_OPENLABELS)
+            if mapped is None:
+                reason = f"label '{raw_label}' excluded by mapping"
+            elif s < 0 or e <= s or e > len(text):
+                reason = (
+                    f"out of bounds: start={s}, end={e}, "
+                    f"text_len={len(text)}"
+                )
+            else:
+                reason = "passed (should not be rejected)"
+        logger.warning(
+            "Nemotron-PII row %d span %d rejected: %s | span=%s",
+            row_idx, i, reason, repr(span)[:200],
+        )
+
+
+def _nemotron_pass_tagged(ds: object) -> tuple[list["BenchmarkSample"], dict]:
+    """Fallback pass: extract spans from ``text_tagged`` XML markup."""
+    samples: list[BenchmarkSample] = []
+    stats = {
+        "total_annotations": 0,
+        "total_gold_kept": 0,
+        "skipped_no_text": 0,
+        "skipped_format": 0,
+    }
+    idx = 0
+
+    for row in ds:
+        text_tagged = row.get("text_tagged", "")
+        if not text_tagged:
+            stats["skipped_no_text"] += 1
+            continue
+
+        plain_text, gold_spans = _parse_tagged_text(
+            text_tagged, NEMOTRON_TO_OPENLABELS
+        )
+        if not plain_text:
+            stats["skipped_no_text"] += 1
+            continue
+
+        stats["total_annotations"] += len(gold_spans)
+        stats["total_gold_kept"] += len(gold_spans)
+
+        samples.append(BenchmarkSample(
+            sample_id=idx,
+            text=plain_text,
+            gold_spans=gold_spans,
+            language="en",
+        ))
+        idx += 1
+
+    return samples, stats
+
+
+def _write_nemotron_cache(cache_path: Path, samples: list["BenchmarkSample"]) -> None:
+    """Write parsed Nemotron-PII samples to JSONL cache."""
     with open(cache_path, "w", encoding="utf-8") as f:
         for s in samples:
             record = {
@@ -779,9 +1000,6 @@ def _download_nemotron_cache(
                 ],
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-    logger.info("Cached %d Nemotron-PII samples to %s", len(samples), cache_path)
-    return samples
 
 
 def _dict_of_lists_to_list_of_dicts(d: dict) -> list[dict]:
