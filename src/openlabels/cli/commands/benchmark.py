@@ -128,6 +128,19 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
         return
 
     click.echo("")  # newline after progress
+    if result.detectors_loaded:
+        click.echo(f"Detectors: {', '.join(result.detectors_loaded)}")
+        ml_names = {"gliner", "multilingual_gliner", "phi"}
+        has_ml = any(n in ml_names for n in result.detectors_loaded)
+        if config.enable_ml and not has_ml:
+            click.echo(
+                click.style(
+                    "WARNING: ML was requested but NO ML detectors loaded! "
+                    "Results are pattern-only.",
+                    fg="red", bold=True,
+                ),
+                err=True,
+            )
     click.echo(f"Dataset: {result.dataset_source}")
     _print_result(result, verbose)
 

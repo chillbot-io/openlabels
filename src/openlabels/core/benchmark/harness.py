@@ -192,6 +192,8 @@ class BenchmarkResult:
     by_language: dict[str, EvalMetrics] | None = None
     # Per-NER-difficulty-dimension metrics (Singh & Narayanan 2025)
     by_dimension: dict[str, EvalMetrics] | None = None
+    # Detectors that were actually loaded and used
+    detectors_loaded: list[str] | None = None
 
     @property
     def avg_time_per_sample_ms(self) -> float:
@@ -393,6 +395,7 @@ def run_benchmark(
     )
 
     # Create detector
+    _detector_names: list[str] = []
     if config.use_tiered_pipeline:
         from openlabels.core.pipeline.tiered import TieredPipeline
 
@@ -405,6 +408,23 @@ def run_benchmark(
 
         orchestrator = DetectorOrchestrator(config.to_detection_config())
         detect_fn = orchestrator.detect_sync
+        _detector_names = orchestrator.detector_names
+
+        # Warn loudly if ML/PHI was requested but didn't load
+        if config.enable_ml and not orchestrator.ml_loaded:
+            import warnings
+            warnings.warn(
+                "ML detectors were requested (--ml) but NONE loaded! "
+                "Benchmark is running with pattern-only detection. "
+                f"Active detectors: {orchestrator.detector_names}",
+                stacklevel=1,
+            )
+        if config.enable_phi and not orchestrator.phi_loaded:
+            import warnings
+            warnings.warn(
+                "PHI detector was requested but failed to load!",
+                stacklevel=1,
+            )
 
     # Run evaluation
     sample_results: list[SampleResult] = []
@@ -525,6 +545,7 @@ def run_benchmark(
         miss_rates=miss_rates or None,
         by_language=by_language,
         by_dimension=by_dimension or None,
+        detectors_loaded=_detector_names or None,
     )
 
 
