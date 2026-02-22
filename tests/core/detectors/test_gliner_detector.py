@@ -272,3 +272,79 @@ class TestGLiNERLabelMap:
             assert entity_type.upper() in KNOWN_ENTITY_TYPES, (
                 f"GLiNER label {label!r} maps to unknown type {entity_type!r}"
             )
+
+
+class TestDedupeChunkSpansMergedText:
+    """Regression: _dedup_chunk_spans must produce correct text for merged spans.
+
+    When two overlapping same-type spans from adjacent chunks are merged,
+    the widened [start, end) range must match the text field.  Previously
+    the code kept `best.text` from one of the originals which was shorter
+    than the merged range, triggering:
+        ValueError: Invalid span: text length 7 != span length 18
+    """
+
+    def test_merged_span_text_matches_widened_range(self):
+        """Merging two overlapping spans produces correct text from source."""
+        source = "Contact John Robert Smith at john@example.com"
+        #         0123456789...
+
+        span_a = Span(
+            start=8,
+            end=19,
+            text="John Robert",
+            entity_type="PERSON_NAME",
+            confidence=0.85,
+            detector="gliner",
+            tier=Tier.ML,
+        )
+        span_b = Span(
+            start=8,
+            end=25,
+            text="John Robert Smith",
+            entity_type="PERSON_NAME",
+            confidence=0.78,
+            detector="gliner",
+            tier=Tier.ML,
+        )
+
+        result = GLiNERDetector._dedup_chunk_spans(
+            [span_a, span_b], source_text=source,
+        )
+
+        assert len(result) == 1
+        merged = result[0]
+        assert merged.start == 8
+        assert merged.end == 25
+        assert merged.text == "John Robert Smith"
+        assert len(merged.text) == merged.end - merged.start
+
+    def test_merged_span_text_without_source_text(self):
+        """Fallback: reconstruct merged text from overlapping span texts."""
+        span_a = Span(
+            start=0,
+            end=11,
+            text="John Robert",
+            entity_type="PERSON_NAME",
+            confidence=0.85,
+            detector="gliner",
+            tier=Tier.ML,
+        )
+        span_b = Span(
+            start=5,
+            end=17,
+            text="Robert Smith",
+            entity_type="PERSON_NAME",
+            confidence=0.78,
+            detector="gliner",
+            tier=Tier.ML,
+        )
+
+        result = GLiNERDetector._dedup_chunk_spans([span_a, span_b])
+
+        assert len(result) == 1
+        merged = result[0]
+        assert merged.start == 0
+        assert merged.end == 17
+        assert merged.text == "John Robert Smith"
+        assert len(merged.text) == merged.end - merged.start
