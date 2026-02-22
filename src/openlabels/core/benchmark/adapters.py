@@ -1120,6 +1120,12 @@ def load_nemotron_pii(
                 "Nemotron-PII from HuggingFace. Install with: "
                 "pip install 'openlabels[benchmark]'"
             )
+        except (ConnectionError, OSError) as exc:
+            logger.warning(
+                "Cannot reach HuggingFace Hub (%s) — cannot download "
+                "Nemotron-PII dataset.",
+                type(exc).__name__,
+            )
 
     if not samples:
         from .dataset import DatasetLoadError

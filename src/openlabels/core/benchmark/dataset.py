@@ -289,6 +289,12 @@ def _load_english(
             "full dataset from HuggingFace.  Install with: "
             "pip install 'openlabels[benchmark]'"
         )
+    except (ConnectionError, OSError) as exc:
+        logger.warning(
+            "Cannot reach HuggingFace Hub (%s) — will fall back to "
+            "bundled dataset.",
+            type(exc).__name__,
+        )
 
     # 3. Bundled fallback
     if _BUNDLED_PATH.exists():
@@ -347,6 +353,12 @@ def _load_multilingual(
             "The 'datasets' package is not installed — cannot download "
             "multilingual data from HuggingFace. Install with: "
             "pip install 'openlabels[benchmark]'"
+        )
+    except (ConnectionError, OSError) as exc:
+        logger.warning(
+            "Cannot reach HuggingFace Hub (%s) — will fall back to "
+            "bundled dataset.",
+            type(exc).__name__,
         )
 
     # 3. Fall back to bundled English-only dataset

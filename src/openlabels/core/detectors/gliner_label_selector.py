@@ -159,12 +159,19 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         # Pattern detectors handle US ZIP but miss international postal
         # codes.  GLiNER adds marginal recall here.
         "zip code",
+        # --- Professional: gated by strict corroboration (0.62 min) ---
+        # JOB_TITLE has no pattern detector, so only GLiNER can detect it.
+        # Strict corroboration + calibration (temp=1.40) means only raw
+        # confidence ≥ 0.70 survives.  65 OCCUPATION misses on nemotron_pii
+        # motivate re-inclusion; strict gating limits FP risk.
+        "job title",
         # --- Labels REMOVED from GENERAL ---
         # date, date and time, time, age:
         #   Pattern detectors achieve 100% recall on structured dates/times.
         #   GLiNER adds 26+ spurious FPs and 0 additional TP.
-        # country: 93% FP rate, 6 spurious on 100 samples.
-        # employer, job title: generate FPs without corroboration.
+        # country: 93% FP rate; now covered by comprehensive country
+        #   name patterns (8 regex groups covering ~200 countries).
+        # employer: generates FPs without corroboration.
     ],
     ContentCategory.MEDICAL: [
         "medical record number",

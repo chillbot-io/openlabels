@@ -1487,6 +1487,61 @@ _p(r'\b(County\s+Cork|County\s+Dublin|County\s+Galway|'
    r'County\s+Carlow|County\s+Longford|County\s+Cavan|'
    r'County\s+Monaghan|County\s+Leitrim)\b', 'COUNTY', 0.82, 1),
 
+# === Standalone COUNTRY Patterns ===
+# Major sovereign countries — comprehensive list for benchmark recall.
+# Split into multiple patterns to keep regex size manageable.
+
+# Americas
+_p(r'\b(United\s+States(?:\s+of\s+America)?|Canada|Mexico|Brazil|Argentina|'
+   r'Colombia|Peru|Chile|Venezuela|Ecuador|Bolivia|Paraguay|Uruguay|'
+   r'Guyana|Suriname|Cuba|Jamaica|Haiti|Dominican\s+Republic|'
+   r'Trinidad\s+and\s+Tobago|Costa\s+Rica|Panama|Honduras|Guatemala|'
+   r'El\s+Salvador|Nicaragua|Belize|Puerto\s+Rico)\b', 'COUNTRY', 0.78, 1),
+
+# Europe (Western + Northern)
+_p(r'\b(United\s+Kingdom|France|Germany|Italy|Spain|Portugal|Netherlands|'
+   r'Belgium|Switzerland|Austria|Ireland|Luxembourg|Monaco|Liechtenstein|'
+   r'Andorra|San\s+Marino|Sweden|Norway|Denmark|Finland|Iceland)\b', 'COUNTRY', 0.78, 1),
+
+# Europe (Eastern + Southern)
+_p(r'\b(Poland|Czech\s+Republic|Czechia|Slovakia|Hungary|Romania|Bulgaria|'
+   r'Croatia|Serbia|Slovenia|Bosnia(?:\s+and\s+Herzegovina)?|Montenegro|'
+   r'North\s+Macedonia|Macedonia|Albania|Kosovo|Moldova|Ukraine|Belarus|'
+   r'Lithuania|Latvia|Estonia|Greece|Cyprus|Malta|Turkey)\b', 'COUNTRY', 0.78, 1),
+
+# Asia (East + Southeast)
+_p(r'\b(China|Japan|South\s+Korea|North\s+Korea|Taiwan|Mongolia|'
+   r'Vietnam|Thailand|Indonesia|Philippines|Malaysia|Singapore|Myanmar|'
+   r'Cambodia|Laos|Brunei|Timor-Leste|East\s+Timor)\b', 'COUNTRY', 0.78, 1),
+
+# Asia (South + Central + West)
+_p(r'\b(India|Pakistan|Bangladesh|Sri\s+Lanka|Nepal|Bhutan|Maldives|'
+   r'Afghanistan|Kazakhstan|Uzbekistan|Turkmenistan|Kyrgyzstan|Tajikistan|'
+   r'Iran|Iraq|Saudi\s+Arabia|Yemen|Oman|'
+   r'United\s+Arab\s+Emirates|Qatar|Bahrain|Kuwait|Jordan|Lebanon|'
+   r'Syria|Israel|Palestine|Armenia|Azerbaijan|Georgia)\b', 'COUNTRY', 0.78, 1),
+
+# Africa (North + West)
+_p(r'\b(Egypt|Libya|Tunisia|Algeria|Morocco|Sudan|South\s+Sudan|'
+   r'Nigeria|Ghana|Senegal|Mali|Burkina\s+Faso|Niger|'
+   r'Ivory\s+Coast|Côte\s+d\'Ivoire|Guinea|Sierra\s+Leone|Liberia|'
+   r'Togo|Benin|Gambia|Guinea-Bissau|Cabo\s+Verde|Cape\s+Verde|'
+   r'Mauritania)\b', 'COUNTRY', 0.78, 1),
+
+# Africa (East + Central + South)
+_p(r'\b(Kenya|Ethiopia|Tanzania|Uganda|Rwanda|Burundi|'
+   r'Democratic\s+Republic\s+of(?:\s+the)?\s+Congo|Congo|'
+   r'Cameroon|Central\s+African\s+Republic|Chad|Gabon|'
+   r'Equatorial\s+Guinea|São\s+Tomé|'
+   r'South\s+Africa|Namibia|Botswana|Zimbabwe|Zambia|Mozambique|'
+   r'Madagascar|Malawi|Angola|Lesotho|Eswatini|Swaziland|'
+   r'Mauritius|Seychelles|Comoros|Djibouti|Eritrea|Somalia)\b', 'COUNTRY', 0.78, 1),
+
+# Oceania + Russia
+_p(r'\b(Australia|New\s+Zealand|Papua\s+New\s+Guinea|Fiji|Samoa|Tonga|'
+   r'Vanuatu|Solomon\s+Islands|Micronesia|Palau|Marshall\s+Islands|'
+   r'Kiribati|Nauru|Tuvalu|Russia|Russian\s+Federation)\b', 'COUNTRY', 0.78, 1),
+
 # === Standalone CITY Patterns ===
 # City-suffix heuristic: words ending in common city suffixes are likely city names.
 # Matches Faker-generated cities (Pfefferton, Langoshburgh, Strackeview) and real cities.
