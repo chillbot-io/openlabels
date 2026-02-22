@@ -169,7 +169,55 @@ def load_dataset(
             len(filtered),
         )
 
+    # Audit: warn about gold entity types that fell through the mapping
+    # (not explicitly mapped) — these create guaranteed false negatives.
+    _audit_gold_labels(filtered)
+
     return filtered, source
+
+
+def _audit_gold_labels(samples: list[BenchmarkSample]) -> None:
+    """Log warnings for gold entity types that are not in EVAL_CATEGORIES.
+
+    Labels that fall through ``map_entity_type`` (not in the mapping dict,
+    not in UNMAPPED_TYPES) produce gold spans whose entity types no detector
+    ever emits.  These are *guaranteed* false negatives and need to be fixed
+    in ``entity_mapping.py``.
+    """
+    from .entity_mapping import AI4PRIVACY_TO_OPENLABELS, EVAL_CATEGORIES, UNMAPPED_TYPES
+
+    passthrough_counts: dict[str, int] = {}
+    total_gold = 0
+
+    for s in samples:
+        for g in s.gold_spans:
+            total_gold += 1
+            upper = g.original_label.upper().replace(" ", "").replace("-", "")
+            if upper not in AI4PRIVACY_TO_OPENLABELS and upper not in UNMAPPED_TYPES:
+                passthrough_counts[g.original_label] = (
+                    passthrough_counts.get(g.original_label, 0) + 1
+                )
+
+    if passthrough_counts:
+        total_passthrough = sum(passthrough_counts.values())
+        pct = total_passthrough / total_gold * 100 if total_gold else 0
+        detail = ", ".join(
+            f"{lbl}({cnt})"
+            for lbl, cnt in sorted(
+                passthrough_counts.items(), key=lambda x: -x[1]
+            )[:10]
+        )
+        logger.warning(
+            "LABEL MAPPING GAP: %d gold span(s) (%.1f%% of %d) have labels "
+            "that fall through the mapping — these are GUARANTEED false "
+            "negatives.  Passthrough labels: %s.  "
+            "Fix: add entries to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py, "
+            "or run 'openlabels benchmark diagnose' for details.",
+            total_passthrough,
+            pct,
+            total_gold,
+            detail,
+        )
 
 
 # ── English-only loading (backwards compatible) ─────────────────────
