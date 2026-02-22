@@ -1126,6 +1126,15 @@ def load_nemotron_pii(
                 "Nemotron-PII dataset.",
                 type(exc).__name__,
             )
+        except Exception as exc:  # noqa: BLE001
+            # httpx.ProxyError and other transport errors don't inherit
+            # from ConnectionError/OSError.
+            logger.warning(
+                "HuggingFace download failed (%s: %s) — cannot download "
+                "Nemotron-PII dataset.",
+                type(exc).__name__,
+                exc,
+            )
 
     if not samples:
         from .dataset import DatasetLoadError

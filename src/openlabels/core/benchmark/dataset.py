@@ -295,6 +295,16 @@ def _load_english(
             "bundled dataset.",
             type(exc).__name__,
         )
+    except Exception as exc:  # noqa: BLE001
+        # httpx.ProxyError and other transport errors don't inherit from
+        # ConnectionError/OSError — catch broadly so the bundled fallback
+        # still kicks in when the network is unreachable.
+        logger.warning(
+            "HuggingFace download failed (%s: %s) — will fall back to "
+            "bundled dataset.",
+            type(exc).__name__,
+            exc,
+        )
 
     # 3. Bundled fallback
     if _BUNDLED_PATH.exists():
@@ -359,6 +369,13 @@ def _load_multilingual(
             "Cannot reach HuggingFace Hub (%s) — will fall back to "
             "bundled dataset.",
             type(exc).__name__,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "HuggingFace download failed (%s: %s) — will fall back to "
+            "bundled dataset.",
+            type(exc).__name__,
+            exc,
         )
 
     # 3. Fall back to bundled English-only dataset
