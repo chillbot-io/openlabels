@@ -74,6 +74,7 @@ def load_dataset(
     max_text_length: int = 10_000,
     language: str | None = None,
     multilingual: bool = False,
+    refresh_cache: bool = False,
 ) -> tuple[list[BenchmarkSample], str]:
     """Load samples from the ai4privacy PII dataset.
 
@@ -93,6 +94,9 @@ def load_dataset(
         multilingual: If True, load all supported languages from HuggingFace.
             The bundled dataset only contains English, so multilingual mode
             requires the ``datasets`` package for first-time download.
+        refresh_cache: If True, delete existing cache and re-download from
+            HuggingFace.  Use this after fixing data loading bugs to ensure
+            annotations are re-parsed with the latest code.
 
     Returns:
         Tuple of (list of ``BenchmarkSample`` instances, dataset source string).
@@ -102,6 +106,15 @@ def load_dataset(
             source.
     """
     cache_dir = cache_dir or _CACHE_DIR
+
+    # Delete stale cache if requested
+    if refresh_cache:
+        for pattern in ("ai4privacy_en.jsonl", "ai4privacy_multilingual.jsonl"):
+            stale = cache_dir / pattern
+            if stale.exists():
+                logger.info("Deleting stale cache: %s", stale)
+                stale.unlink()
+
 
     if multilingual or (language is not None and language != "en"):
         # Multilingual path — download all supported languages from HF
@@ -169,7 +182,74 @@ def load_dataset(
             len(filtered),
         )
 
+    # Audit: warn about gold entity types that fell through the mapping
+    # (not explicitly mapped) — these create guaranteed false negatives.
+    _audit_gold_labels(filtered)
+
+    # Audit: warn if gold span density is suspiciously low — this usually
+    # means the cache was built with a buggy parser that silently dropped
+    # annotations.  The bundled 1k has ~27 mapped gold spans per sample;
+    # anything below 3 per sample is suspicious.
+    total_gold = sum(len(s.gold_spans) for s in filtered)
+    density = total_gold / len(filtered) if filtered else 0
+    if density < 3.0:
+        logger.warning(
+            "SUSPICIOUS: Gold span density is %.1f per sample "
+            "(%d gold across %d samples).  The bundled 1k dataset averages "
+            "~27 per sample.  This may indicate a stale cache with dropped "
+            "annotations.  Try deleting the cache and re-downloading:\n"
+            "  rm -rf ~/.cache/openlabels/benchmark/ai4privacy_*.jsonl\n"
+            "  openlabels benchmark --refresh-cache",
+            density,
+            total_gold,
+            len(filtered),
+        )
+
     return filtered, source
+
+
+def _audit_gold_labels(samples: list[BenchmarkSample]) -> None:
+    """Log warnings for gold entity types that are not in EVAL_CATEGORIES.
+
+    Labels that fall through ``map_entity_type`` (not in the mapping dict,
+    not in UNMAPPED_TYPES) produce gold spans whose entity types no detector
+    ever emits.  These are *guaranteed* false negatives and need to be fixed
+    in ``entity_mapping.py``.
+    """
+    from .entity_mapping import AI4PRIVACY_TO_OPENLABELS, EVAL_CATEGORIES, UNMAPPED_TYPES
+
+    passthrough_counts: dict[str, int] = {}
+    total_gold = 0
+
+    for s in samples:
+        for g in s.gold_spans:
+            total_gold += 1
+            upper = g.original_label.upper().replace(" ", "").replace("-", "")
+            if upper not in AI4PRIVACY_TO_OPENLABELS and upper not in UNMAPPED_TYPES:
+                passthrough_counts[g.original_label] = (
+                    passthrough_counts.get(g.original_label, 0) + 1
+                )
+
+    if passthrough_counts:
+        total_passthrough = sum(passthrough_counts.values())
+        pct = total_passthrough / total_gold * 100 if total_gold else 0
+        detail = ", ".join(
+            f"{lbl}({cnt})"
+            for lbl, cnt in sorted(
+                passthrough_counts.items(), key=lambda x: -x[1]
+            )[:10]
+        )
+        logger.warning(
+            "LABEL MAPPING GAP: %d gold span(s) (%.1f%% of %d) have labels "
+            "that fall through the mapping — these are GUARANTEED false "
+            "negatives.  Passthrough labels: %s.  "
+            "Fix: add entries to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py, "
+            "or run 'openlabels benchmark diagnose' for details.",
+            total_passthrough,
+            pct,
+            total_gold,
+            detail,
+        )
 
 
 # ── English-only loading (backwards compatible) ─────────────────────
@@ -293,6 +373,43 @@ def _count_languages(samples: list[BenchmarkSample]) -> dict[str, int]:
 # ── Download and cache ──────────────────────────────────────────────
 
 
+def _dict_of_lists_to_list_of_dicts(d: dict) -> list[dict]:
+    """Convert a dict-of-lists to a list-of-dicts.
+
+    HuggingFace ``datasets`` may return structured columns in Arrow
+    columnar format, e.g.::
+
+        {"value": ["John", "Doe"], "start": [10, 20], "end": [14, 23],
+         "label": ["FIRSTNAME", "LASTNAME"]}
+
+    This converts it to the list-of-dicts format the rest of the code
+    expects::
+
+        [{"value": "John", "start": 10, "end": 14, "label": "FIRSTNAME"},
+         {"value": "Doe", "start": 20, "end": 23, "label": "LASTNAME"}]
+    """
+    if not d:
+        return []
+    # Find a list-valued key to determine the length
+    length = None
+    for v in d.values():
+        if isinstance(v, (list, tuple)):
+            length = len(v)
+            break
+    if length is None:
+        return []
+    result = []
+    for i in range(length):
+        entry = {}
+        for key, vals in d.items():
+            if isinstance(vals, (list, tuple)) and i < len(vals):
+                entry[key] = vals[i]
+            else:
+                entry[key] = vals  # scalar — copy as-is
+        result.append(entry)
+    return result
+
+
 def _download_and_cache(
     cache_dir: Path,
     cache_path: Path,
@@ -319,6 +436,10 @@ def _download_and_cache(
     ds = hf_load("ai4privacy/pii-masking-400k", split="train")
     samples: list[BenchmarkSample] = []
     idx = 0
+    total_annotations = 0
+    total_gold_kept = 0
+    skipped_no_text = 0
+    skipped_format = 0
 
     for row in ds:
         lang = row.get("language", "en")
@@ -328,6 +449,7 @@ def _download_and_cache(
         # The 400k dataset renamed "unmasked_text" → "source_text"
         text = row.get("source_text") or row.get("unmasked_text", "")
         if not text:
+            skipped_no_text += 1
             continue
 
         privacy_mask_raw = row.get("privacy_mask", "[]")
@@ -335,13 +457,22 @@ def _download_and_cache(
             try:
                 annotations = json.loads(privacy_mask_raw)
             except json.JSONDecodeError:
+                skipped_format += 1
                 continue
         elif isinstance(privacy_mask_raw, list):
             annotations = privacy_mask_raw
+        elif isinstance(privacy_mask_raw, dict):
+            # HuggingFace datasets library may return dict-of-lists
+            # (Arrow columnar format) instead of list-of-dicts.
+            # e.g. {"value": ["John","Doe"], "start": [10,20], ...}
+            annotations = _dict_of_lists_to_list_of_dicts(privacy_mask_raw)
         else:
+            skipped_format += 1
             continue
 
+        total_annotations += len(annotations)
         gold_spans = _parse_annotations(text, annotations)
+        total_gold_kept += len(gold_spans)
 
         samples.append(BenchmarkSample(
             sample_id=idx,
@@ -350,6 +481,16 @@ def _download_and_cache(
             language=lang,
         ))
         idx += 1
+
+    # Report download diagnostics
+    density = total_gold_kept / len(samples) if samples else 0
+    logger.info(
+        "Download complete: %d samples, %d total annotations, "
+        "%d gold spans kept (%.1f per sample), "
+        "%d skipped (no text: %d, bad format: %d)",
+        len(samples), total_annotations, total_gold_kept, density,
+        skipped_no_text + skipped_format, skipped_no_text, skipped_format,
+    )
 
     # Persist cache (only if we got samples — avoid creating empty files
     # that would block future re-downloads)
@@ -455,8 +596,15 @@ def _parse_annotations(
     """Convert raw ai4privacy ``privacy_mask`` entries to ``GoldSpan``s.
 
     Filters out unmapped entity types and validates character offsets.
+    Logs diagnostic counts for dropped annotations.
     """
     gold: list[GoldSpan] = []
+    n_total = len(annotations)
+    n_missing_offsets = 0
+    n_unmapped = 0
+    n_bad_offsets = 0
+    n_realigned = 0
+
     for ann in annotations:
         raw_label = ann.get("label", "")
         start = ann.get("start")
@@ -464,23 +612,49 @@ def _parse_annotations(
         value = ann.get("value", "") or ann.get("text", "")
 
         if start is None or end is None:
+            n_missing_offsets += 1
             continue
         start, end = int(start), int(end)
 
         # Skip unmapped types
         mapped = map_entity_type(raw_label)
         if mapped is None:
+            n_unmapped += 1
             continue
 
         # Validate offsets
         if start < 0 or end <= start or end > len(text):
-            continue
+            # Attempt to re-align using the value string
+            if value and end > len(text):
+                found = text.find(value)
+                if found >= 0:
+                    start = found
+                    end = found + len(value)
+                    n_realigned += 1
+                else:
+                    n_bad_offsets += 1
+                    continue
+            else:
+                n_bad_offsets += 1
+                continue
 
         # Use text slice if value disagrees with offsets
         actual_text = text[start:end]
         if value and value != actual_text:
-            # Trust offsets over the value field
-            value = actual_text
+            # Try to find value in text near the expected position
+            # (handles byte-vs-character offset drift)
+            search_start = max(0, start - 50)
+            search_end = min(len(text), end + 50)
+            nearby = text[search_start:search_end]
+            found_in_nearby = nearby.find(value)
+            if found_in_nearby >= 0:
+                start = search_start + found_in_nearby
+                end = start + len(value)
+                actual_text = value
+                n_realigned += 1
+            else:
+                # Trust offsets over the value field
+                value = actual_text
 
         gold.append(GoldSpan(
             start=start,
@@ -489,5 +663,16 @@ def _parse_annotations(
             entity_type=mapped,
             original_label=raw_label,
         ))
+
+    # Log diagnostics at DEBUG level (visible with -v / --verbose logging)
+    n_kept = len(gold)
+    n_dropped = n_total - n_kept - n_unmapped
+    if n_dropped > 0 or n_realigned > 0:
+        logger.debug(
+            "parse_annotations: %d total, %d kept, %d unmapped, "
+            "%d bad offsets, %d missing offsets, %d re-aligned",
+            n_total, n_kept, n_unmapped, n_bad_offsets,
+            n_missing_offsets, n_realigned,
+        )
 
     return gold

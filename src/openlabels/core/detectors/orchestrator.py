@@ -85,11 +85,42 @@ class DetectorOrchestrator:
                 self.config.enable_context_enhancement,
             )
 
+        self._ml_loaded = any(
+            d.name in ("gliner", "multilingual_gliner") for d in self.detectors
+        )
+        self._phi_loaded = any(d.name == "phi" for d in self.detectors)
+
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "
             f"{[d.name for d in self.detectors]}"
             f"{' (Hyperscan accelerated)' if self._using_hyperscan else ''}"
         )
+
+        # Loud warnings when requested detectors failed to load
+        if self.config.enable_ml and not self._ml_loaded:
+            logger.warning(
+                "ML was requested but NO ML detectors loaded! "
+                "Results will use pattern-only detection."
+            )
+        if self.config.enable_phi and not self._phi_loaded:
+            logger.warning(
+                "PHI was requested but PHI detector failed to load!"
+            )
+
+    @property
+    def ml_loaded(self) -> bool:
+        """True if at least one ML detector is active."""
+        return self._ml_loaded
+
+    @property
+    def phi_loaded(self) -> bool:
+        """True if the PHI detector is active."""
+        return self._phi_loaded
+
+    @property
+    def detector_names(self) -> list[str]:
+        """Names of all active detectors."""
+        return [d.name for d in self.detectors]
 
     def _init_hyperscan_detector(self) -> None:
         """Initialize Hyperscan-accelerated detector."""
@@ -283,13 +314,6 @@ class DetectorOrchestrator:
         if processed_spans:
             processed_spans = _suppress_pronoun_names(processed_spans)
 
-        # Suppress FIRSTNAME/LASTNAME spans that collide with location
-        # entities.  City/state/county names like "Florence", "Georgia",
-        # "Madison" are valid first names but in benchmark contexts they
-        # are almost always locations.
-        if processed_spans:
-            processed_spans = _suppress_name_location_collisions(processed_spans)
-
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
@@ -375,9 +399,10 @@ class DetectorOrchestrator:
         2. Apply context keyword boost/demote (on raw confidence)
         3. Calibrate into unified tier bands
         4. Ensemble boost (when 2+ detectors agree)
-        5. Resolve overlapping spans
-        6. Suppress uncorroborated ML detections for pattern-covered types
-        7. Proximity boost (optional)
+        5. Suppress ML name fragments that collide with pattern detections
+        6. Resolve overlapping spans
+        7. Suppress uncorroborated ML detections for pattern-covered types
+        8. Proximity boost (optional)
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -391,6 +416,12 @@ class DetectorOrchestrator:
         # Ensemble boost: when multiple detectors agree on overlapping
         # spans with the same entity type, boost the best span's confidence.
         calibrated = self._apply_ensemble_boost(calibrated)
+
+        # Pre-dedup: suppress ML FIRSTNAME/LASTNAME fragments that overlap
+        # with pattern detections of more specific types (USERNAME, CITY,
+        # STATE, etc.).  Without this, ML names absorb pattern detections
+        # in HIGHER_TIER dedup, causing USERNAME and location misses.
+        calibrated = _suppress_ml_name_collisions(calibrated)
 
         from ..pipeline.span_resolver import OverlapStrategy
 
@@ -568,9 +599,11 @@ _ML_PRIMARY_TYPES = frozenset({
 
 # Default minimum calibrated confidence for ML-only spans on types where
 # patterns are the primary detector (used when calibration data is absent).
-# Raised from 0.52 to 0.60: GLiNER produces high-confidence FPs that
-# survived the old threshold on ai4privacy 400k.
-_ML_UNCORROBORATED_MIN_DEFAULT = 0.60
+# Lowered from 0.60 back to 0.55: the 0.60 threshold (raised to fight
+# GLiNER FPs on ai4privacy 400k) also kills recall on entity types where
+# patterns miss due to different PII formats in the 400k dataset.  The net
+# effect was worse F1 (recall dropped more than precision improved).
+_ML_UNCORROBORATED_MIN_DEFAULT = 0.55
 
 # Types that require pattern corroboration unless the span's calibrated
 # confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
@@ -607,11 +640,11 @@ def _calibrated_threshold(span: Span, base: float) -> float:
         return base
 
     temperature = params[0]
-    # Cap raised from 0.55 to 0.70, scale from 0.08 to 0.12:
-    # GLiNER produces high-confidence FPs on ai4privacy 400k that
-    # survived the old ceiling.  Overconfident labels (temp >> 1.0)
-    # now need much higher calibrated confidence to pass solo.
-    return min(0.70, base + max(0.0, temperature - 1.0) * 0.12)
+    # Scale: overconfident labels (temp >> 1.0) need higher confidence to
+    # survive solo.  Cap at 0.62 — the previous 0.70 cap suppressed too
+    # many valid ML detections on the 400k dataset where patterns miss
+    # more entities due to different PII formats, tanking recall.
+    return min(0.62, base + max(0.0, temperature - 1.0) * 0.08)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -822,6 +855,9 @@ def _suppress_uncorroborated_ml(
             pattern_ranges.append((s.start, s.end, _corroboration_group(ptype)))
 
     result: list[Span] = []
+    suppressed_count = 0
+    suppressed_types: dict[str, int] = {}
+
     for span in resolved:
         if span.tier != Tier.ML:
             result.append(span)
@@ -848,6 +884,8 @@ def _suppress_uncorroborated_ml(
                     span.entity_type, span.text, span.confidence,
                 )
             else:
+                suppressed_count += 1
+                suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
                 logger.debug(
                     "ML suppressed (strict): %s %r conf=%.3f",
                     span.entity_type, span.text, span.confidence,
@@ -872,6 +910,8 @@ def _suppress_uncorroborated_ml(
             if any_agreement:
                 result.append(span)
             else:
+                suppressed_count += 1
+                suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
                 logger.debug(
                     "ML suppressed (primary, solo low-conf): %s %r conf=%.3f (min=%.3f)",
                     span.entity_type, span.text, span.confidence, solo_min,
@@ -892,10 +932,28 @@ def _suppress_uncorroborated_ml(
         if span.confidence >= uncorr_min:
             result.append(span)
         else:
+            suppressed_count += 1
+            suppressed_types[etype] = suppressed_types.get(etype, 0) + 1
             logger.debug(
                 "ML suppressed (uncorroborated): %s %r conf=%.3f (min=%.3f)",
                 span.entity_type, span.text, span.confidence, uncorr_min,
             )
+
+    if suppressed_count:
+        ml_total = sum(1 for s in resolved if s.tier == Tier.ML)
+        top_types = ", ".join(
+            f"{t}({c})" for t, c in sorted(
+                suppressed_types.items(), key=lambda x: -x[1]
+            )[:5]
+        )
+        logger.info(
+            "ML corroboration: suppressed %d/%d ML spans (%.0f%%). "
+            "Top suppressed types: %s",
+            suppressed_count,
+            ml_total,
+            suppressed_count / ml_total * 100 if ml_total else 0,
+            top_types,
+        )
 
     return result
 
@@ -1017,6 +1075,77 @@ def _suppress_pronoun_names(spans: list[Span]) -> list[Span]:
 
 
 # ---------------------------------------------------------------------------
+# Pre-dedup: ML name fragment suppression
+# ---------------------------------------------------------------------------
+
+# Pattern types that should take priority over ML name detections at the
+# same position.  USERNAME is the most important: patterns detect compound
+# tokens like "Roma_Altenwerth" while GLiNER only sees the word fragment
+# "Roma" → without suppression the ML FIRSTNAME absorbs the USERNAME in
+# HIGHER_TIER dedup.  Locations suffer the same problem: "Florence" as
+# CITY (pattern) vs FIRSTNAME (GLiNER).
+_PATTERN_PRIORITY_OVER_NAMES = frozenset({
+    "USERNAME",
+    "CITY", "STATE", "COUNTY", "COUNTRY", "ZIP",
+    "ADDRESS", "GPS_COORDINATE", "GPS_COORDINATES",
+})
+
+
+def _suppress_ml_name_collisions(spans: list[Span]) -> list[Span]:
+    """Remove ML name spans that overlap with pattern non-name spans.
+
+    Must run BEFORE ``resolve_spans``.  Prevents ML FIRSTNAME/LASTNAME
+    detections from absorbing pattern detections of more specific types
+    during HIGHER_TIER dedup.
+
+    Two scenarios fixed:
+    1. USERNAME "Roma_Altenwerth" (PATTERN) vs FIRSTNAME "Roma" (ML)
+       → remove the ML FIRSTNAME, keep the pattern USERNAME.
+    2. CITY "Florence" (PATTERN) vs FIRSTNAME "Florence" (ML)
+       → remove the ML FIRSTNAME, keep the pattern CITY.
+    """
+    from ..types import Tier
+
+    # Collect ranges of non-ML spans with priority types
+    priority_ranges: list[tuple[int, int]] = []
+    for s in spans:
+        if s.tier != Tier.ML:
+            norm = normalize_entity_type(s.entity_type)
+            if norm in _PATTERN_PRIORITY_OVER_NAMES:
+                priority_ranges.append((s.start, s.end))
+
+    if not priority_ranges:
+        return spans
+
+    result: list[Span] = []
+    suppressed = 0
+    for span in spans:
+        if span.tier == Tier.ML and span.entity_type in _NAME_FAMILY:
+            # Check if this ML name is contained within (or exactly matches)
+            # a priority pattern span.
+            is_fragment = any(
+                ps <= span.start and span.end <= pe
+                for ps, pe in priority_ranges
+            )
+            if is_fragment:
+                suppressed += 1
+                logger.debug(
+                    "Pre-dedup ML name suppressed: %s %r (overlaps pattern)",
+                    span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+
+    if suppressed:
+        logger.info(
+            "Pre-dedup: suppressed %d ML name fragments overlapping "
+            "pattern USERNAME/location spans",
+            suppressed,
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Name–location collision suppression
 # ---------------------------------------------------------------------------
 
@@ -1026,17 +1155,30 @@ _LOCATION_TYPES = frozenset({
 })
 
 
-def _suppress_name_location_collisions(spans: list[Span]) -> list[Span]:
+def _suppress_name_location_collisions(
+    spans: list[Span],
+    all_candidates: list[Span] | None = None,
+) -> list[Span]:
     """Suppress FIRSTNAME/LASTNAME spans that overlap with location spans.
 
     City/state/county names (Florence, Georgia, Madison, Austin) are common
     first names but are almost always locations in benchmark contexts.
     When both a name and a location span overlap at the same position,
     suppress the name and keep the location.
+
+    Args:
+        spans: The resolved (post-dedup) span list to filter.
+        all_candidates: Optional pre-dedup span list to source location
+            ranges from.  GLiNER may detect both CITY and FIRSTNAME at
+            the same position; dedup picks one winner (often FIRSTNAME
+            with higher confidence).  By checking ``all_candidates`` we
+            see location detections that lost in dedup.
     """
-    # Collect location span ranges
+    # Collect location ranges from both the resolved spans AND
+    # all pre-dedup candidates (if provided).
+    source = spans if all_candidates is None else all_candidates
     location_ranges: list[tuple[int, int]] = [
-        (s.start, s.end) for s in spans if s.entity_type in _LOCATION_TYPES
+        (s.start, s.end) for s in source if s.entity_type in _LOCATION_TYPES
     ]
     if not location_ranges:
         return spans

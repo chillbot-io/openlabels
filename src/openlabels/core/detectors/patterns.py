@@ -2278,14 +2278,10 @@ _p(r'(?:birth\s*(?:date)?|date\s+of\s+birth|DOB)[:\s]+(\d{1,2}/\d{2})\b', 'DATE_
 # "process by M/YY" / "initiate by M/YY" / "the process by M/YY"
 _p(r'(?:process|initiate|complete|register|submit|validate)\s+(?:\S+\s+)?by\s+(\d{1,2}/\d{2})\b', 'DATE', 0.75, 1, flags=re.I),
 
-# === AGE PATTERNS ===
-# "X years old", "X years", "X-year-old"
-_p(r'\b(\d{1,3})\s+years?\s+old\b', 'AGE', 0.88, 1, flags=re.I),
-_p(r'\b(\d{1,3})\s+years?\b(?=\s+(?:old|of\s+age))', 'AGE', 0.85, 1, flags=re.I),
-_p(r'\b(\d{1,3})\s+years?\b', 'AGE', 0.72, 1, flags=re.I),
-_p(r'\b(\d{1,3})-year-old\b', 'AGE', 0.88, 1, flags=re.I),
-# "age (X)" — parenthetical age
-_p(r'\bage\s*\((\d{1,3})\)', 'AGE', 0.90, 1, flags=re.I),
+# === AGE PATTERNS (supplementary — see also lines 884-892) ===
+# Removed: bare "\d+ years?" (0.72) — too broad, matches "10 years warranty",
+# "25 years of experience".  Contextual patterns handle real ages.
+# Removed: duplicates of lines 884-892 (years old, year-old, age(X)).
 # "of age X years" / "of age X"
 _p(r'\bof\s+age\s+(\d{1,3})\b', 'AGE', 0.88, 1, flags=re.I),
 # "Patient of X" / "individuals of X" — age in "of" context after person-word
@@ -2328,6 +2324,45 @@ def _validate_ip(ip: str) -> bool:
         return all(0 <= int(p) <= 255 for p in parts)
     except ValueError:
         return False
+
+
+# Regex for version-string context before an IPv4 address.
+# Matches "version 1.2.3.4", "v1.2.3.4", "build 1.2.3.4" etc.
+# Uses \b to avoid matching inside words like "Server".
+_IP_VERSION_CONTEXT = re.compile(
+    r'\b(?:version|ver|build|release)\s*[=:.]?\s*$|'
+    r'\bv\d*\s*[=:.]?\s*$',
+    re.I,
+)
+
+
+def _validate_url(url: str) -> bool:
+    """Validate URL has a plausible domain with at least one dot or localhost."""
+    url = url.rstrip('.,;:!?)]\'"')
+    try:
+        after_scheme = url.split('://', 1)[1]
+        domain = after_scheme.split('/')[0].split(':')[0].split('@')[-1]
+    except (IndexError, ValueError):
+        return False
+    if '.' not in domain and domain.lower() != 'localhost':
+        return False
+    if '..' in domain:
+        return False
+    return len(domain) >= 3
+
+
+def _validate_mac(value: str) -> bool:
+    """Validate MAC address — reject trivial and time-like patterns."""
+    parts = re.split(r'[:-]', value)
+    if len(parts) != 6:
+        return False
+    # Reject if all groups are identical (trivial)
+    if len(set(parts)) == 1:
+        return False
+    # Reject if all groups are pure decimal ≤ 59 (looks like time)
+    if all(p.isdigit() and int(p) <= 59 for p in parts):
+        return False
+    return True
 
 
 # Invalid US area codes - these should not be detected as valid phone numbers
@@ -2737,6 +2772,20 @@ class PatternDetector(BaseDetector):
 
                 # Post-validation for specific types
                 if pdef.entity_type == 'IP_ADDRESS' and not _validate_ip(value):
+                    continue
+
+                # IPv4 context filter — reject version-string IPs
+                if pdef.entity_type == 'IP_ADDRESS' and '.' in value:
+                    pre_text = text[max(0, start - 20):start]
+                    if _IP_VERSION_CONTEXT.search(pre_text):
+                        continue
+
+                # URL validation — reject URLs with invalid domains
+                if pdef.entity_type == 'URL' and not _validate_url(value):
+                    continue
+
+                # MAC address validation — reject trivial/time-like patterns
+                if pdef.entity_type == 'MAC_ADDRESS' and not _validate_mac(value):
                     continue
 
                 # Phone validation - reject invalid area codes and test numbers

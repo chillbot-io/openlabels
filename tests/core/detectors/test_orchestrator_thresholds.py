@@ -29,7 +29,7 @@ class TestPerEntityThresholds:
     """Test that per-entity thresholds override global thresholds."""
 
     def test_name_below_global_passes_entity_threshold(self):
-        """NAME at 0.56 passes entity threshold (0.55) even below global (0.70)."""
+        """NAME at 0.56 passes entity threshold (0.50) even below global (0.70)."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
@@ -41,7 +41,7 @@ class TestPerEntityThresholds:
         assert result is True
 
     def test_name_below_entity_threshold_filtered(self):
-        """NAME at 0.40 is below entity threshold (0.45) and filtered."""
+        """NAME at 0.40 is below entity threshold (0.50) and filtered."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,

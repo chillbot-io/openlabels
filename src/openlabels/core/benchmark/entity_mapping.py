@@ -58,6 +58,7 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "DRIVERSLICENSE": "DRIVER_LICENSE",
     "DRIVERLICENSENUM": "DRIVER_LICENSE",
     "PASSPORT": "PASSPORT",
+    "PASSPORTNUM": "PASSPORT",       # HF 400k uses PASSPORTNUM
     "IDCARD": "STATE_ID",
     "IDCARDNUM": "STATE_ID",
     "TAXNUMBER": "TAX_ID",
@@ -66,8 +67,9 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "UKNINUMBER": "UKNINUMBER",
     "SIN": "SIN",
 
-    # Financial
+    # Financial — HF 400k may use CREDITCARDNUM alongside CREDITCARDNUMBER
     "CREDITCARDNUMBER": "CREDIT_CARD",
+    "CREDITCARDNUM": "CREDIT_CARD",
     "IBAN": "IBAN",
     "BIC": "SWIFT_BIC",
     "ACCOUNTNAME": "ACCOUNT_NUMBER",
@@ -78,6 +80,7 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "LITECOINADDRESS": "LITECOIN_ADDRESS",
     "PIN": "PASSWORD",
     "MASKEDNUMBER": "ACCOUNT_NUMBER",
+    "MASKNUM": "ACCOUNT_NUMBER",      # HF 400k short form
     "POLICYNUM": "ACCOUNT_NUMBER",
 
     # Professional
@@ -121,6 +124,10 @@ UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
     "NAME_PROVIDER",  # PHI model type; ai4privacy uses FIRSTNAME/LASTNAME (18 FP)
     "PHONE_EXT",      # No gold labels in ai4privacy/gretel (6 FP)
     "BED_NUMBER",     # No gold labels in ai4privacy/gretel (1 FP)
+    # ai4privacy 400k analysis: these predicted types have 0 gold labels
+    # and generate pure false positives.
+    "UNIQUE_ID",      # No gold labels in ai4privacy 400k (pure FP)
+    "TRACKING_NUMBER",  # No gold labels in ai4privacy 400k (pure FP)
 })
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect
@@ -327,18 +334,87 @@ EVAL_CATEGORIES: dict[str, str] = {
 }
 
 
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+# Track labels that fall through the mapping (not explicitly mapped, not
+# unmapped).  These are returned as-is and almost always indicate a missing
+# entry in AI4PRIVACY_TO_OPENLABELS — the detector pipeline never produces
+# them, so they create guaranteed false negatives.
+_warned_passthrough: set[str] = set()
+
+
 def map_entity_type(ai4privacy_label: str) -> str | None:
     """Map an ai4privacy label to an OpenLabels entity type.
 
     Returns ``None`` if the label has no meaningful OpenLabels counterpart
     (i.e. it is in ``UNMAPPED_TYPES``).
+
+    Labels that are neither in the mapping dict nor in UNMAPPED_TYPES are
+    returned as-is (uppercased) and a warning is logged once per label.
+    These passthrough labels almost always indicate a gap in the mapping
+    that needs to be fixed — they become gold spans with entity types that
+    no detector ever produces, causing guaranteed false negatives.
     """
     upper = ai4privacy_label.upper().replace(" ", "").replace("-", "")
     if upper in UNMAPPED_TYPES:
         return None
-    return AI4PRIVACY_TO_OPENLABELS.get(upper, upper)
+    mapped = AI4PRIVACY_TO_OPENLABELS.get(upper)
+    if mapped is not None:
+        return mapped
+    # Label is not in the mapping dict.  Return as-is but warn — this is
+    # almost certainly a bug that creates phantom gold entities.
+    if upper and upper not in _warned_passthrough:
+        _warned_passthrough.add(upper)
+        _logger.warning(
+            "ai4privacy label %r is not in AI4PRIVACY_TO_OPENLABELS and not "
+            "in UNMAPPED_TYPES — passing through as %r.  This likely creates "
+            "false negatives.  Add it to the mapping or to UNMAPPED_TYPES.",
+            ai4privacy_label,
+            upper,
+        )
+    return upper
 
 
 def get_eval_category(entity_type: str) -> str:
     """Return the evaluation category for an OpenLabels entity type."""
     return EVAL_CATEGORIES.get(entity_type, "other")
+
+
+def audit_labels(
+    labels: list[str],
+) -> dict[str, list[str]]:
+    """Audit a list of ai4privacy labels for mapping coverage.
+
+    Returns a dict with keys:
+    - ``"mapped"``: Labels correctly mapped to OpenLabels types.
+    - ``"unmapped"``: Labels explicitly excluded from scoring.
+    - ``"passthrough"``: Labels NOT in the mapping — these create
+      guaranteed false negatives and need to be added.
+
+    Run this on the unique labels from your dataset to find gaps::
+
+        >>> from collections import Counter
+        >>> raw_labels = [ann["label"] for sample in dataset for ann in sample["privacy_mask"]]
+        >>> report = audit_labels(list(set(raw_labels)))
+        >>> print("NEEDS FIXING:", report["passthrough"])
+    """
+    mapped: list[str] = []
+    unmapped: list[str] = []
+    passthrough: list[str] = []
+
+    for label in labels:
+        upper = label.upper().replace(" ", "").replace("-", "")
+        if upper in UNMAPPED_TYPES:
+            unmapped.append(label)
+        elif upper in AI4PRIVACY_TO_OPENLABELS:
+            mapped.append(label)
+        else:
+            passthrough.append(label)
+
+    return {
+        "mapped": sorted(mapped),
+        "unmapped": sorted(unmapped),
+        "passthrough": sorted(passthrough),
+    }

@@ -5,6 +5,7 @@ Usage:
     openlabels benchmark --samples 1000                     # More samples
     openlabels benchmark --preset with_ml                   # With ML detectors
     openlabels benchmark --ml                               # Enable full ML stack
+    openlabels benchmark --dataset nemotron_pii -n 1000      # NVIDIA Nemotron-PII
     openlabels benchmark --dataset gretel_pii -n 1000       # Gretel PII 1k
     openlabels benchmark --dataset gretel_finance --ml      # Full ML on Gretel finance
     openlabels benchmark sweep                              # Compare all presets
@@ -21,7 +22,11 @@ import click
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
-DATASET_CHOICES = ["ai4privacy", "ai4privacy_multilingual", "gretel_pii", "gretel_finance"]
+DATASET_CHOICES = [
+    "ai4privacy", "ai4privacy_multilingual",
+    "nemotron_pii",
+    "gretel_pii", "gretel_finance",
+]
 
 
 @click.group(invoke_without_command=True)
@@ -41,9 +46,12 @@ DATASET_CHOICES = ["ai4privacy", "ai4privacy_multilingual", "gretel_pii", "grete
 @click.option("--model-dir", default=None, help="Path to ML model directory")
 @click.option("--language", "-l", default=None,
               help="Filter to a specific language (ISO 639-1 code, e.g. 'fr')")
+@click.option("--refresh-cache", is_flag=True,
+              help="Delete cached dataset and re-download from HuggingFace")
 @click.pass_context
 def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
-              ml, enable_ml, enable_phi, tiered, model_dir, language):
+              ml, enable_ml, enable_phi, tiered, model_dir, language,
+              refresh_cache):
     """Benchmark the classification pipeline against PII datasets."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
@@ -53,6 +61,7 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     ctx.obj["model_dir"] = model_dir
     ctx.obj["dataset"] = dataset
     ctx.obj["language"] = language
+    ctx.obj["refresh_cache"] = refresh_cache
 
     if ctx.invoked_subcommand is not None:
         return
@@ -107,7 +116,9 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     click.echo("-" * 60)
 
     # Load dataset
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         from openlabels.core.benchmark.dataset import DatasetLoadError
@@ -128,6 +139,19 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
         return
 
     click.echo("")  # newline after progress
+    if result.detectors_loaded:
+        click.echo(f"Detectors: {', '.join(result.detectors_loaded)}")
+        ml_names = {"gliner", "multilingual_gliner", "phi"}
+        has_ml = any(n in ml_names for n in result.detectors_loaded)
+        if config.enable_ml and not has_ml:
+            click.echo(
+                click.style(
+                    "WARNING: ML was requested but NO ML detectors loaded! "
+                    "Results are pattern-only.",
+                    fg="red", bold=True,
+                ),
+                err=True,
+            )
     click.echo(f"Dataset: {result.dataset_source}")
     _print_result(result, verbose)
 
@@ -163,12 +187,15 @@ def sweep(ctx, presets):
         preset_names = ["patterns_relaxed", "patterns_only", "patterns_strict"]
 
     language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Sweep: {', '.join(preset_names)}")
     click.echo(f"Dataset: {dataset} | Samples: {samples}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         results = run_sweep(
@@ -231,12 +258,15 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
     base = BenchmarkConfig(enable_ml=use_ml, enable_phi=use_phi, ml_model_dir=model_dir)
 
     language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Threshold tuning | Dataset: {dataset} | Samples: {samples} | "
                f"ML: {'on' if use_ml else 'off'} | PHI: {'on' if use_phi else 'off'}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         results = threshold_sweep(
@@ -267,6 +297,153 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
             return
         save_results(results, validated)
         click.echo(f"\nResults saved to: {validated}")
+
+
+@benchmark.command()
+@click.option("--top", default=30, type=int, help="Number of top entries to show")
+@click.pass_context
+def diagnose(ctx, top):
+    """Diagnose F1 score issues: find unmapped labels, phantom gold entities, and distribution gaps.
+
+    This command loads the dataset and checks for:
+    1. Labels that fall through the mapping (guaranteed false negatives)
+    2. Gold entity type distribution
+    3. Labels that detectors can never produce
+    4. Comparison with EVAL_CATEGORIES coverage
+
+    Example:
+        openlabels benchmark diagnose -n 1000
+        openlabels benchmark diagnose -n 5000 --top 50
+    """
+    from collections import Counter
+
+    from openlabels.core.benchmark.entity_mapping import (
+        AI4PRIVACY_TO_OPENLABELS,
+        EVAL_CATEGORIES,
+        UNMAPPED_PRED_TYPES,
+        UNMAPPED_TYPES,
+        audit_labels,
+    )
+
+    samples_n = ctx.obj["samples"]
+    seed = ctx.obj["seed"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
+    language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
+
+    click.echo(f"Diagnosing label mapping: {dataset} | {samples_n} samples")
+    click.echo("=" * 70)
+
+    loaded_samples = _load_dataset_samples(
+        dataset, samples_n, seed, language=language, refresh_cache=refresh_cache,
+    )
+
+    # 1. Collect ALL original labels and mapped types
+    original_labels: Counter = Counter()
+    mapped_types: Counter = Counter()
+    passthrough_labels: Counter = Counter()
+    total_gold = 0
+
+    for sample in loaded_samples:
+        for g in sample.gold_spans:
+            original_labels[g.original_label] += 1
+            mapped_types[g.entity_type] += 1
+            total_gold += 1
+            # Check if this was a passthrough (not explicitly mapped)
+            upper = g.original_label.upper().replace(" ", "").replace("-", "")
+            if upper not in AI4PRIVACY_TO_OPENLABELS and upper not in UNMAPPED_TYPES:
+                passthrough_labels[g.original_label] += 1
+
+    click.echo(f"\nTotal gold spans: {total_gold}")
+    click.echo(f"Unique original labels: {len(original_labels)}")
+    click.echo(f"Unique mapped types: {len(mapped_types)}")
+
+    # 2. CRITICAL: Show passthrough labels (guaranteed FN)
+    if passthrough_labels:
+        passthrough_total = sum(passthrough_labels.values())
+        passthrough_pct = passthrough_total / total_gold * 100 if total_gold else 0
+        click.echo(f"\n{'!'*70}")
+        click.echo(f"CRITICAL: {len(passthrough_labels)} label(s) FALL THROUGH the mapping!")
+        click.echo(f"These create {passthrough_total} guaranteed false negatives "
+                   f"({passthrough_pct:.1f}% of all gold spans)")
+        click.echo(f"{'!'*70}")
+        click.echo(f"\n  {'Label':<30} {'Count':>6} {'% of Gold':>9}  Suggested fix")
+        click.echo("  " + "-" * 75)
+        for label, count in passthrough_labels.most_common():
+            pct = count / total_gold * 100
+            # Suggest the most likely mapping
+            upper = label.upper().replace(" ", "").replace("-", "")
+            suggestion = _suggest_mapping(upper)
+            click.echo(f"  {label:<30} {count:>6} {pct:>8.1f}%  → {suggestion}")
+        click.echo(f"\n  Fix: Add these to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py")
+    else:
+        click.echo(f"\n✓ All labels are mapped (no passthrough labels)")
+
+    # 3. Show gold entity type distribution
+    click.echo(f"\nGold entity type distribution (top {top}):")
+    click.echo(f"  {'Type':<25} {'Count':>6} {'% Gold':>7}  {'In EVAL_CAT':>11}")
+    click.echo("  " + "-" * 55)
+    for etype, count in mapped_types.most_common(top):
+        pct = count / total_gold * 100
+        in_eval = "✓" if etype in EVAL_CATEGORIES else "✗ MISSING"
+        click.echo(f"  {etype:<25} {count:>6} {pct:>6.1f}%  {in_eval:>11}")
+
+    # 4. Check for gold types not in EVAL_CATEGORIES
+    missing_eval = {t for t in mapped_types if t not in EVAL_CATEGORIES}
+    if missing_eval:
+        missing_count = sum(mapped_types[t] for t in missing_eval)
+        missing_pct = missing_count / total_gold * 100 if total_gold else 0
+        click.echo(f"\nWARNING: {len(missing_eval)} gold type(s) not in EVAL_CATEGORIES "
+                   f"({missing_count} spans, {missing_pct:.1f}% of gold)")
+        click.echo("  These types cannot benefit from category-level type matching.")
+        for t in sorted(missing_eval):
+            click.echo(f"    {t} ({mapped_types[t]} spans)")
+
+    # 5. Label audit summary
+    all_original = list(original_labels.keys())
+    audit = audit_labels(all_original)
+    click.echo(f"\nLabel audit summary:")
+    click.echo(f"  Mapped:      {len(audit['mapped'])} labels")
+    click.echo(f"  Unmapped:    {len(audit['unmapped'])} labels (excluded from scoring)")
+    click.echo(f"  Passthrough: {len(audit['passthrough'])} labels (NEEDS FIXING)")
+
+    # 6. Check UNMAPPED_PRED_TYPES coverage
+    click.echo(f"\nFiltered prediction types (UNMAPPED_PRED_TYPES):")
+    for t in sorted(UNMAPPED_PRED_TYPES):
+        click.echo(f"  {t}")
+
+    click.echo(f"\nDone. Use 'openlabels benchmark -v' for per-category F1 breakdown.")
+
+
+def _suggest_mapping(upper_label: str) -> str:
+    """Suggest a likely OpenLabels mapping for an unmapped label."""
+    suggestions = {
+        "PASSPORTNUM": "PASSPORT",
+        "CREDITCARDNUM": "CREDIT_CARD",
+        "VEHICLEREGISTRATION": "LICENSE_PLATE",
+        "BANKACCOUNTNUMBER": "ACCOUNT_NUMBER",
+        "INSURANCENUMBER": "ACCOUNT_NUMBER",
+        "INSURANCENUM": "ACCOUNT_NUMBER",
+        "MORTGAGENUMBER": "ACCOUNT_NUMBER",
+        "INVESTMENTACCOUNTNUMBER": "ACCOUNT_NUMBER",
+        "LOANNUM": "ACCOUNT_NUMBER",
+        "MEMBERID": "ACCOUNT_NUMBER",
+        "MASKNUM": "ACCOUNT_NUMBER",
+        "LICENSENUM": "DRIVER_LICENSE",
+        "BROKERAGE": "COMPANY",
+    }
+    if upper_label in suggestions:
+        return suggestions[upper_label]
+    # Pattern-based guessing
+    if "PHONE" in upper_label:
+        return "PHONE"
+    if "NAME" in upper_label and "COMPANY" not in upper_label:
+        return "NAME (check if first/last)"
+    if "ADDRESS" in upper_label:
+        return "ADDRESS"
+    if "NUM" in upper_label:
+        return "(needs manual review — likely an ID type)"
+    return "(unknown — needs manual review)"
 
 
 @benchmark.command()
@@ -301,6 +478,7 @@ def calibrate(ctx, output, apply_cal):
     dataset = ctx.obj.get("dataset", "ai4privacy")
     language = ctx.obj.get("language")
     model_dir = ctx.obj.get("model_dir")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Calibration fitting | Dataset: {dataset} | Samples: {samples_n}")
     click.echo("=" * 60)
@@ -327,7 +505,9 @@ def calibrate(ctx, output, apply_cal):
         ml_model_dir=model_dir,
     )
 
-    loaded_samples = _load_dataset_samples(dataset, samples_n, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples_n, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     click.echo("Running benchmark with ML enabled...")
     try:
@@ -432,6 +612,7 @@ def _load_dataset_samples(
     seed: int,
     *,
     language: str | None = None,
+    refresh_cache: bool = False,
 ):
     """Load and return samples for the chosen dataset.
 
@@ -442,7 +623,9 @@ def _load_dataset_samples(
     if dataset == "ai4privacy" and language is None:
         from openlabels.core.benchmark.dataset import load_dataset as load_ai4privacy
 
-        samples, source = load_ai4privacy(sample_size=sample_size, seed=seed)
+        samples, source = load_ai4privacy(
+            sample_size=sample_size, seed=seed, refresh_cache=refresh_cache,
+        )
         click.echo(f"Loaded {len(samples)} samples from ai4privacy ({source})")
         return samples
 
@@ -453,6 +636,7 @@ def _load_dataset_samples(
         samples, source = load_ai4privacy(
             sample_size=sample_size, seed=seed,
             language=language, multilingual=True,
+            refresh_cache=refresh_cache,
         )
         click.echo(f"Loaded {len(samples)} samples from ai4privacy [{language}] ({source})")
         return samples
@@ -463,9 +647,19 @@ def _load_dataset_samples(
         samples, source = load_ai4privacy(
             sample_size=sample_size, seed=seed,
             language=language, multilingual=True,
+            refresh_cache=refresh_cache,
         )
         lang_info = f" [{language}]" if language else " [all languages]"
         click.echo(f"Loaded {len(samples)} samples from ai4privacy{lang_info} ({source})")
+        return samples
+
+    if dataset == "nemotron_pii":
+        from openlabels.core.benchmark.adapters import load_nemotron_pii
+
+        samples, source = load_nemotron_pii(
+            sample_size=sample_size, seed=seed, refresh_cache=refresh_cache,
+        )
+        click.echo(f"Loaded {len(samples)} samples from nemotron_pii ({source})")
         return samples
 
     if dataset == "gretel_pii":
