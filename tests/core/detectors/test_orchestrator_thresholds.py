@@ -53,14 +53,14 @@ class TestPerEntityThresholds:
         assert result is False
 
     def test_age_below_entity_threshold_filtered(self):
-        """AGE at 0.65 is below entity threshold (0.70) and filtered."""
+        """AGE at 0.75 is below entity threshold (0.82) and filtered."""
         config = DetectionConfig(
             enable_ml=False, enable_checksum=False, enable_secrets=False,
             enable_financial=False, enable_government=False, enable_patterns=False,
             enable_context_keywords=False,
         )
         orch = DetectorOrchestrator(config=config)
-        span = _make_span("AGE", 0.65, Tier.ML)
+        span = _make_span("AGE", 0.75, Tier.ML)
         result = orch._passes_threshold(span)
         assert result is False
 
