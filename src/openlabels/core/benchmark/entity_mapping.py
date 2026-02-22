@@ -124,6 +124,10 @@ UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
     "NAME_PROVIDER",  # PHI model type; ai4privacy uses FIRSTNAME/LASTNAME (18 FP)
     "PHONE_EXT",      # No gold labels in ai4privacy/gretel (6 FP)
     "BED_NUMBER",     # No gold labels in ai4privacy/gretel (1 FP)
+    # ai4privacy 400k analysis: these predicted types have 0 gold labels
+    # and generate pure false positives.
+    "UNIQUE_ID",      # No gold labels in ai4privacy 400k (pure FP)
+    "TRACKING_NUMBER",  # No gold labels in ai4privacy 400k (pure FP)
 })
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect

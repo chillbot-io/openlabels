@@ -41,9 +41,12 @@ DATASET_CHOICES = ["ai4privacy", "ai4privacy_multilingual", "gretel_pii", "grete
 @click.option("--model-dir", default=None, help="Path to ML model directory")
 @click.option("--language", "-l", default=None,
               help="Filter to a specific language (ISO 639-1 code, e.g. 'fr')")
+@click.option("--refresh-cache", is_flag=True,
+              help="Delete cached dataset and re-download from HuggingFace")
 @click.pass_context
 def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
-              ml, enable_ml, enable_phi, tiered, model_dir, language):
+              ml, enable_ml, enable_phi, tiered, model_dir, language,
+              refresh_cache):
     """Benchmark the classification pipeline against PII datasets."""
     ctx.ensure_object(dict)
     ctx.obj["samples"] = samples
@@ -53,6 +56,7 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     ctx.obj["model_dir"] = model_dir
     ctx.obj["dataset"] = dataset
     ctx.obj["language"] = language
+    ctx.obj["refresh_cache"] = refresh_cache
 
     if ctx.invoked_subcommand is not None:
         return
@@ -107,7 +111,9 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
     click.echo("-" * 60)
 
     # Load dataset
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         from openlabels.core.benchmark.dataset import DatasetLoadError
@@ -176,12 +182,15 @@ def sweep(ctx, presets):
         preset_names = ["patterns_relaxed", "patterns_only", "patterns_strict"]
 
     language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Sweep: {', '.join(preset_names)}")
     click.echo(f"Dataset: {dataset} | Samples: {samples}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         results = run_sweep(
@@ -244,12 +253,15 @@ def tune(ctx, thresholds, ml, enable_ml, enable_phi):
     base = BenchmarkConfig(enable_ml=use_ml, enable_phi=use_phi, ml_model_dir=model_dir)
 
     language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Threshold tuning | Dataset: {dataset} | Samples: {samples} | "
                f"ML: {'on' if use_ml else 'off'} | PHI: {'on' if use_phi else 'off'}")
     click.echo("=" * 60)
 
-    loaded_samples = _load_dataset_samples(dataset, samples, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     try:
         results = threshold_sweep(
@@ -312,11 +324,14 @@ def diagnose(ctx, top):
     seed = ctx.obj["seed"]
     dataset = ctx.obj.get("dataset", "ai4privacy")
     language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Diagnosing label mapping: {dataset} | {samples_n} samples")
     click.echo("=" * 70)
 
-    loaded_samples = _load_dataset_samples(dataset, samples_n, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples_n, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     # 1. Collect ALL original labels and mapped types
     original_labels: Counter = Counter()
@@ -458,6 +473,7 @@ def calibrate(ctx, output, apply_cal):
     dataset = ctx.obj.get("dataset", "ai4privacy")
     language = ctx.obj.get("language")
     model_dir = ctx.obj.get("model_dir")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
 
     click.echo(f"Calibration fitting | Dataset: {dataset} | Samples: {samples_n}")
     click.echo("=" * 60)
@@ -484,7 +500,9 @@ def calibrate(ctx, output, apply_cal):
         ml_model_dir=model_dir,
     )
 
-    loaded_samples = _load_dataset_samples(dataset, samples_n, seed, language=language)
+    loaded_samples = _load_dataset_samples(
+        dataset, samples_n, seed, language=language, refresh_cache=refresh_cache,
+    )
 
     click.echo("Running benchmark with ML enabled...")
     try:
@@ -589,6 +607,7 @@ def _load_dataset_samples(
     seed: int,
     *,
     language: str | None = None,
+    refresh_cache: bool = False,
 ):
     """Load and return samples for the chosen dataset.
 
@@ -599,7 +618,9 @@ def _load_dataset_samples(
     if dataset == "ai4privacy" and language is None:
         from openlabels.core.benchmark.dataset import load_dataset as load_ai4privacy
 
-        samples, source = load_ai4privacy(sample_size=sample_size, seed=seed)
+        samples, source = load_ai4privacy(
+            sample_size=sample_size, seed=seed, refresh_cache=refresh_cache,
+        )
         click.echo(f"Loaded {len(samples)} samples from ai4privacy ({source})")
         return samples
 
@@ -610,6 +631,7 @@ def _load_dataset_samples(
         samples, source = load_ai4privacy(
             sample_size=sample_size, seed=seed,
             language=language, multilingual=True,
+            refresh_cache=refresh_cache,
         )
         click.echo(f"Loaded {len(samples)} samples from ai4privacy [{language}] ({source})")
         return samples
@@ -620,6 +642,7 @@ def _load_dataset_samples(
         samples, source = load_ai4privacy(
             sample_size=sample_size, seed=seed,
             language=language, multilingual=True,
+            refresh_cache=refresh_cache,
         )
         lang_info = f" [{language}]" if language else " [all languages]"
         click.echo(f"Loaded {len(samples)} samples from ai4privacy{lang_info} ({source})")
