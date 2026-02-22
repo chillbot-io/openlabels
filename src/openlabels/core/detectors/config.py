@@ -84,8 +84,9 @@ class DetectionConfig:
         ("PHONE", 0.70),
         ("ADDRESS", 0.68),
         # DATE/TIME/AGE removed from GLiNER GENERAL labels (patterns
-        # have 100% recall).  Higher thresholds here only affect the
-        # rare case where a category-specific label set activates.
+        # handle detection).  Threshold at 0.78 filters patterns with
+        # confidence below this level; well-formed date patterns were
+        # bumped to 0.80+ so they survive.
         ("DATE", 0.78),
         ("DATE_DOB", 0.72),
         ("DATETIME", 0.78),
@@ -114,8 +115,8 @@ class DetectionConfig:
         # are filtered before they can become false positives.
         ("NAME_PATIENT", 0.80),
         ("NAME_PROVIDER", 0.80),
-        # Time — removed from GLiNER GENERAL.  6 spurious at 0.85.
-        # Only labeled TIME patterns ("time: HH:MM") at 0.90+ survive.
+        # Time — removed from GLiNER GENERAL.  Unambiguous AM/PM time
+        # patterns bumped to 0.92 so they survive at this threshold.
         ("TIME", 0.91),
         # Honorifics — name-splitting PREFIX removed; only pattern
         # PREFIX survives.  Raise to suppress low-confidence patterns.

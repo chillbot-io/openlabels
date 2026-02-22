@@ -219,15 +219,22 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
 
     # Dates / Time
     "date_of_birth": "DATE_DOB",
-    "date_time": "DATE",
+    "date_time": "DATETIME",
+    "time": "TIME",
 
     # Location
     "address": "ADDRESS",
     "location": "ADDRESS",
+    "city": "CITY",
+    "state": "STATE",
+    "country": "COUNTRY",
+    "coordinate": "GPS_COORDINATE",
+    "coordinates": "GPS_COORDINATE",
 
     # Contact
     "email": "EMAIL",
     "phone_number": "PHONE",
+    "fax_number": "FAX",
     "url": "URL",
     "user_name": "USERNAME",
 
@@ -238,6 +245,7 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
 
     # Financial
     "credit_card_number": "CREDIT_CARD",
+    "credit_debit_card": "CREDIT_CARD",
     "account_number": "ACCOUNT_NUMBER",
     "bank_routing_number": "BANK_ROUTING",
     "swift_bic": "SWIFT_BIC",
@@ -253,6 +261,7 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     "company_name": "COMPANY",
     "employee_id": "EMPLOYEE_ID",
     "customer_id": "ACCOUNT_NUMBER",
+    "occupation": "JOB_TITLE",
 
     # Network / Device
     "ip_address": "IP_ADDRESS",
@@ -265,6 +274,7 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     # Secrets
     "password": "PASSWORD",
     "api_key": "API_KEY",
+    "http_cookie": "API_KEY",
 
     # IDs / Certificates
     "unique_identifier": "UNIQUE_ID",
