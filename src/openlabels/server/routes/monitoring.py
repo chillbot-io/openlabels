@@ -524,3 +524,103 @@ async def detect_access_anomalies(
         "anomaly_count": len(anomalies),
         "anomalies": anomalies,
     }
+
+
+# ── Remote monitoring (WinRM) endpoints ─────────────────────────────
+
+class RemoteTestRequest(BaseModel):
+    """Request to test WinRM connectivity to a remote host."""
+    host: str = Field(..., description="Target hostname or IP")
+    username: str = Field(..., description="Account with audit privileges")
+    password: str = Field(..., description="Password")
+    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+
+
+class RemoteTestResponse(BaseModel):
+    """Result of WinRM connectivity test."""
+    success: bool
+    message: str
+    hostname: str | None = None
+    os: str | None = None
+    has_audit_privilege: bool | None = None
+    audit_policy_enabled: bool | None = None
+    error: str | None = None
+
+
+class RemoteConfigureRequest(BaseModel):
+    """Request to configure audit policy on a remote file server."""
+    host: str = Field(..., description="Target hostname or IP")
+    username: str = Field(..., description="Account with audit privileges")
+    password: str = Field(..., description="Password")
+    share_paths: list[str] = Field(..., description="Local paths on the server to audit")
+    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+
+
+class RemoteConfigureResponse(BaseModel):
+    """Result of remote audit configuration."""
+    success: bool
+    message: str
+    paths: list[dict] | None = None
+    error: str | None = None
+
+
+@router.post("/remote/test", response_model=RemoteTestResponse)
+async def test_remote_connection(
+    body: RemoteTestRequest,
+    _user=Depends(require_admin),
+) -> RemoteTestResponse:
+    """Test WinRM connectivity to a remote Windows file server.
+
+    Verifies the account has SeSecurityPrivilege (required for SACL
+    management) and checks whether the audit policy for File System
+    access is already enabled.
+    """
+    from openlabels.monitoring.winrm_remote import test_connection
+
+    result = await test_connection(
+        host=body.host,
+        username=body.username,
+        password=body.password,
+        use_ssl=body.use_ssl,
+    )
+
+    data = result.data or {}
+    return RemoteTestResponse(
+        success=result.success,
+        message=result.message,
+        hostname=data.get("hostname"),
+        os=data.get("os"),
+        has_audit_privilege=data.get("has_audit_privilege"),
+        audit_policy_enabled=data.get("audit_policy_enabled"),
+        error=result.error,
+    )
+
+
+@router.post("/remote/configure", response_model=RemoteConfigureResponse)
+async def configure_remote_audit(
+    body: RemoteConfigureRequest,
+    _user=Depends(require_admin),
+) -> RemoteConfigureResponse:
+    """Configure SACL audit rules on a remote Windows file server via WinRM.
+
+    Enables the "Audit object access → File System" audit policy and adds
+    SACL entries (Everyone → Read, Write → Success, Failure) on each
+    specified share path.
+    """
+    from openlabels.monitoring.winrm_remote import configure_audit_policy
+
+    result = await configure_audit_policy(
+        host=body.host,
+        username=body.username,
+        password=body.password,
+        share_paths=body.share_paths,
+        use_ssl=body.use_ssl,
+    )
+
+    data = result.data or {}
+    return RemoteConfigureResponse(
+        success=result.success,
+        message=result.message,
+        paths=data.get("paths"),
+        error=result.error,
+    )

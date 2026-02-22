@@ -148,6 +148,10 @@ azure = [
     "azure-storage-blob>=12.19.0",
     "azure-identity>=1.15.0",
 ]
+# WinRM remote monitoring
+monitoring = [
+    "pywinrm>=0.4.3",  # WinRM client for agentless audit configuration
+]
 # Report generation (Phase M)
 reports = [
     "weasyprint>=62.0",
@@ -157,7 +161,7 @@ benchmark = [
     "datasets>=2.14.0",  # HuggingFace dataset loader
 ]
 all = [
-    "openlabels[mip,windows,dev,hyperscan,ocr,s3,gcs,azure,reports,benchmark]",
+    "openlabels[mip,windows,dev,hyperscan,ocr,s3,gcs,azure,monitoring,reports,benchmark]",
 ]
 
 [project.scripts]

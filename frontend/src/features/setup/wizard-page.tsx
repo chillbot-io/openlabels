@@ -8,6 +8,8 @@ import {
 import { m365Api } from '@/api/endpoints/m365.ts';
 import { enumerateApi } from '@/api/endpoints/enumerate.ts';
 import { targetsApi } from '@/api/endpoints/targets.ts';
+import { credentialsApi } from '@/api/endpoints/credentials.ts';
+import { monitoringApi } from '@/api/endpoints/monitoring.ts';
 import type { EnumeratedResource } from '@/api/endpoints/enumerate.ts';
 import { Card, CardContent } from '@/components/ui/card.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -542,13 +544,14 @@ function SmbSetupStep({
     setValidating(true);
     setError('');
     try {
+      const creds = {
+        host: config.host,
+        username: config.username,
+        password: config.password,
+      };
       const resp = await enumerateApi.enumerate({
         source_type: 'smb',
-        credentials: {
-          host: config.host,
-          username: config.username,
-          password: config.password,
-        },
+        credentials: creds,
       });
       setShares(resp.resources);
       setValidated(true);
@@ -556,6 +559,17 @@ function SmbSetupStep({
       setSelectedShares(new Set(resp.resources.map(r => r.id)));
       if (resp.resources.length === 0) {
         setError('Connected successfully but no shares were found.');
+      }
+
+      // Persist credentials if "save password" is checked
+      if (config.savePassword) {
+        await credentialsApi.save({
+          source_type: 'smb',
+          name: `SMB — ${config.host}`,
+          credentials: creds,
+        }).catch(() => {
+          // Non-fatal: credentials will still work inline for this session
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connection failed');
@@ -789,12 +803,81 @@ function MonitoringStep({
   onToggle,
   onNext,
   onBack,
+  smbConfig,
 }: {
   enabled: boolean;
   onToggle: (v: boolean) => void;
   onNext: () => void;
   onBack: () => void;
+  smbConfig: SmbConfig | null;
 }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    hostname?: string;
+    has_audit_privilege?: boolean;
+  } | null>(null);
+  const [configuring, setConfiguring] = useState(false);
+  const [configResult, setConfigResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  const hasSmbTarget = smbConfig && smbConfig.host.trim().length > 0;
+
+  const handleTestConnection = async () => {
+    if (!smbConfig) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const resp = await monitoringApi.testRemote({
+        host: smbConfig.host,
+        username: smbConfig.username,
+        password: smbConfig.password,
+      });
+      setTestResult({
+        success: resp.success,
+        message: resp.message,
+        hostname: resp.hostname ?? undefined,
+        has_audit_privilege: resp.has_audit_privilege ?? undefined,
+      });
+    } catch (e) {
+      setTestResult({
+        success: false,
+        message: e instanceof Error ? e.message : 'Connection test failed',
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleConfigureAudit = async () => {
+    if (!smbConfig) return;
+    setConfiguring(true);
+    setConfigResult(null);
+    try {
+      const sharePaths = smbConfig.selectedShares.map(s => s.path);
+      const resp = await monitoringApi.configureRemote({
+        host: smbConfig.host,
+        username: smbConfig.username,
+        password: smbConfig.password,
+        share_paths: sharePaths,
+      });
+      setConfigResult({
+        success: resp.success,
+        message: resp.message,
+      });
+    } catch (e) {
+      setConfigResult({
+        success: false,
+        message: e instanceof Error ? e.message : 'Configuration failed',
+      });
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
   return (
     <Card>
       <CardContent className="space-y-5 p-8">
@@ -820,7 +903,7 @@ function MonitoringStep({
               <span className="text-sm font-medium">Enable monitoring</span>
               <p className="text-xs text-[var(--muted-foreground)]">
                 OpenLabels will configure audit logging on your file servers
-                and stream access events for analysis.
+                via WinRM and stream access events for analysis.
               </p>
             </div>
           </button>
@@ -841,6 +924,72 @@ function MonitoringStep({
             </div>
           </button>
         </div>
+
+        {/* WinRM configuration panel — shown when monitoring is enabled and SMB target exists */}
+        {enabled && hasSmbTarget && (
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">Configure {smbConfig.host}</p>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Test WinRM connectivity to your file server, then configure
+              audit policies on the selected shares. The service account
+              needs SeSecurityPrivilege on the target server.
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestConnection}
+                disabled={testing}
+              >
+                {testing ? (
+                  <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Testing...</>
+                ) : (
+                  <>Test Connection</>
+                )}
+              </Button>
+
+              {testResult?.success && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleConfigureAudit}
+                  disabled={configuring}
+                >
+                  {configuring ? (
+                    <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Configuring...</>
+                  ) : (
+                    <>Configure Audit Policy</>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {testResult && (
+              <p className={cn(
+                'text-xs',
+                testResult.success ? 'text-green-600' : 'text-red-600',
+              )}>
+                {testResult.success ? (
+                  <>Connected to {testResult.hostname || smbConfig.host}
+                    {testResult.has_audit_privilege === false && (
+                      <span className="text-amber-600"> (warning: account lacks SeSecurityPrivilege)</span>
+                    )}
+                  </>
+                ) : testResult.message}
+              </p>
+            )}
+
+            {configResult && (
+              <p className={cn(
+                'text-xs',
+                configResult.success ? 'text-green-600' : 'text-red-600',
+              )}>
+                {configResult.message}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-between pt-2">
           <Button variant="ghost" onClick={onBack}>
@@ -1087,7 +1236,7 @@ export function Component() {
       }
 
       if (smbConfig.host && smbConfig.selectedShares.length > 0) {
-        await targetsApi.create({
+        const smbTarget = await targetsApi.create({
           name: `SMB — ${smbConfig.host}`,
           adapter: 'filesystem',
           enabled: true,
@@ -1099,8 +1248,23 @@ export function Component() {
             })),
             root_path: smbConfig.selectedShares[0]?.path,
             path: smbConfig.selectedShares[0]?.path,
+            monitoring_enabled: monitoringEnabled,
           },
         });
+
+        // Associate saved credentials with the target
+        if (smbConfig.savePassword && smbTarget?.id) {
+          await credentialsApi.save({
+            source_type: 'smb',
+            name: `SMB — ${smbConfig.host}`,
+            credentials: {
+              host: smbConfig.host,
+              username: smbConfig.username,
+              password: smbConfig.password,
+            },
+            target_id: smbTarget.id,
+          }).catch(() => {});
+        }
       }
 
       addToast({ level: 'success', message: 'Setup complete!' });
@@ -1192,6 +1356,7 @@ export function Component() {
             onToggle={setMonitoringEnabled}
             onNext={() => setStep('review')}
             onBack={() => setStep('add_more')}
+            smbConfig={smbConfig.host ? smbConfig : null}
           />
         )}
 
