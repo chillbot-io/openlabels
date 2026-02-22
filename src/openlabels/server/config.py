@@ -734,6 +734,26 @@ class CatalogSettings(BaseSettings):
     duckdb_threads: int = 4
 
 
+class M365Settings(BaseSettings):
+    """Microsoft 365 integration settings.
+
+    This configures the multi-tenant Azure AD app registration used
+    to access customer tenants via Graph API after admin consent.
+
+    The client_id and client_secret belong to OpenLabels' own app
+    registration (registered once in the publisher's tenant).
+    Customer admins grant consent to this app via the setup wizard.
+
+    Environment variables::
+
+        OPENLABELS_M365__CLIENT_ID=your-multi-tenant-app-id
+        OPENLABELS_M365__CLIENT_SECRET=your-client-secret
+    """
+
+    client_id: str = ""
+    client_secret: str = ""
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -746,6 +766,7 @@ class Settings(BaseSettings):
     server: ServerSettings = Field(default_factory=ServerSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    m365: M365Settings = Field(default_factory=M365Settings)
     adapters: AdapterSettings = Field(default_factory=AdapterSettings)
     labeling: LabelingSettings = Field(default_factory=LabelingSettings)
     detection: DetectionSettings = Field(default_factory=DetectionSettings)

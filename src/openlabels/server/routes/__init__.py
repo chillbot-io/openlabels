@@ -55,7 +55,7 @@ def __getattr__(name: str):
 
     valid_modules = {
         "audit", "auth", "browse", "credentials", "enumerate", "jobs",
-        "scans", "results", "targets",
+        "m365", "scans", "results", "targets",
         "schedules", "labels", "dashboard", "ws", "ws_events", "users",
         "remediation", "monitoring", "health", "settings",
         "policies", "export", "reporting", "webhooks", "permissions",
@@ -80,6 +80,7 @@ __all__ = [
     "credentials",
     "enumerate",
     "jobs",
+    "m365",
     "scans",
     "results",
     "targets",
