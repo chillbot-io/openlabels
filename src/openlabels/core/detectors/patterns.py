@@ -2370,6 +2370,12 @@ def _validate_ip(ip: str) -> bool:
         # the compressed IPv6 regex incorrectly matches.
         if len(parts) == 6 and all(len(p) == 2 for p in parts):
             return False
+        # Reject time-like patterns: 3 groups of pure digits (HH:MM:SS).
+        # Real compressed IPv6 addresses have 4+ groups or contain hex a-f.
+        if len(parts) == 3 and all(
+            p.isdigit() and len(p) <= 2 for p in parts
+        ):
+            return False
         return True
     # IPv4: 4 octets 0-255
     try:

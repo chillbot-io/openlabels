@@ -159,11 +159,11 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         # Pattern detectors handle US ZIP but miss international postal
         # codes.  GLiNER adds marginal recall here.
         "zip code",
-        # --- Professional: gated by strict corroboration (0.62 min) ---
+        # --- Professional: ML-primary gating (solo_min ~0.52) ---
         # JOB_TITLE has no pattern detector, so only GLiNER can detect it.
-        # Strict corroboration + calibration (temp=1.40) means only raw
-        # confidence ≥ 0.70 survives.  65 OCCUPATION misses on nemotron_pii
-        # motivate re-inclusion; strict gating limits FP risk.
+        # Moved from strict to ML-primary: strict was suppressing 41
+        # real job titles on nemotron_pii.  With ML-primary + calibration
+        # (temp=1.25), moderate-confidence detections survive.
         "job title",
         # --- Labels REMOVED from GENERAL ---
         # date, date and time, time, age:

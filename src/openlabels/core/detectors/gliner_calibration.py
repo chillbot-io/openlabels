@@ -103,10 +103,15 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # IMEI: 0 TP / 1 FP on 1k — too few samples; identity.
     "imei number": (1.00, 0.00),
     # ── Professional ───────────────────────────────────────
-    # COMPANY raised from 1.35 to 1.45 — 32 spurious on 10k benchmark;
-    # GLiNER frequently confuses common words with company names.
-    "company name": (1.45, 0.10),
-    "job title": (1.40, 0.10),
+    # COMPANY: lowered from 1.45 to 1.35 — the 1.45 temp suppressed
+    # 22 real companies on nemotron_pii.  At 1.35, moderate-confidence
+    # detections survive while still dampening overconfident FPs.
+    "company name": (1.35, 0.10),
+    # JOB_TITLE: lowered from (1.40, 0.10) — with JOB_TITLE now
+    # ML-primary (solo_min ~0.52), the old temp=1.40 was still too
+    # aggressive (raw 0.60 → calibrated ~0.44, suppressed).  At 1.25,
+    # raw 0.55 → calibrated ~0.50, which survives ML-primary gating.
+    "job title": (1.25, 0.08),
     "employee id": (1.15, 0.04),
     # ── Vehicle ──────────────────────────────────────────
     # VIN has checksum detector; GLiNER hallucinates on alphanumeric codes.
