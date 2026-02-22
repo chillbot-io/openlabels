@@ -432,6 +432,16 @@ def run_benchmark(
     per_sample_metrics: list[EvalMetrics] = []
     start_time = time.monotonic()
 
+    # Build dataset-aware exclusion set: only exclude predicted types that
+    # have ZERO gold counterparts in this dataset.  UNMAPPED_PRED_TYPES was
+    # designed for ai4privacy (where e.g. JOBTITLE is excluded from gold),
+    # but Nemotron maps "occupation" → JOB_TITLE as real gold spans.
+    gold_entity_types: set[str] = set()
+    for sample in samples:
+        for g in sample.gold_spans:
+            gold_entity_types.add(normalize_entity_type(g.entity_type))
+    active_pred_exclusions = UNMAPPED_PRED_TYPES - gold_entity_types
+
     for i, sample in enumerate(samples):
         t0 = time.monotonic()
         detection_result = detect_fn(sample.text)
@@ -441,7 +451,7 @@ def run_benchmark(
         # (e.g. JOB_TITLE when JOBTITLE is not scored as PII).
         pred_spans = [
             s for s in detection_result.spans
-            if normalize_entity_type(s.entity_type) not in UNMAPPED_PRED_TYPES
+            if normalize_entity_type(s.entity_type) not in active_pred_exclusions
         ]
 
         metrics, matches = evaluate_spans(

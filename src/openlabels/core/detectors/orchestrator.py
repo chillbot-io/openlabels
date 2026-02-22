@@ -88,7 +88,7 @@ class DetectorOrchestrator:
         self._ml_loaded = any(
             d.name in ("gliner", "multilingual_gliner") for d in self.detectors
         )
-        self._phi_loaded = any(d.name == "phi" for d in self.detectors)
+        self._phi_loaded = any(d.name == "stanford_phi" for d in self.detectors)
 
         logger.info(
             f"DetectorOrchestrator initialized with {len(self.detectors)} detectors: "

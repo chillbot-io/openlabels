@@ -279,6 +279,16 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     # IDs / Certificates
     "unique_identifier": "UNIQUE_ID",
     "certificate_license_number": "CERTIFICATE_NUMBER",
+
+    # Demographic / non-PII — exclude from scoring
+    "gender": None,
+    "race_ethnicity": None,
+    "sexuality": None,
+    "language": None,
+    "religion": None,
+    "religious_belief": None,
+    "education_level": None,
+    "employment_status": None,
 }
 
 # Default cache location for Nemotron-PII
