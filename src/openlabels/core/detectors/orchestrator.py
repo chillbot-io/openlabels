@@ -375,9 +375,10 @@ class DetectorOrchestrator:
         2. Apply context keyword boost/demote (on raw confidence)
         3. Calibrate into unified tier bands
         4. Ensemble boost (when 2+ detectors agree)
-        5. Resolve overlapping spans
-        6. Suppress uncorroborated ML detections for pattern-covered types
-        7. Proximity boost (optional)
+        5. Suppress ML name fragments that collide with pattern detections
+        6. Resolve overlapping spans
+        7. Suppress uncorroborated ML detections for pattern-covered types
+        8. Proximity boost (optional)
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -391,6 +392,12 @@ class DetectorOrchestrator:
         # Ensemble boost: when multiple detectors agree on overlapping
         # spans with the same entity type, boost the best span's confidence.
         calibrated = self._apply_ensemble_boost(calibrated)
+
+        # Pre-dedup: suppress ML FIRSTNAME/LASTNAME fragments that overlap
+        # with pattern detections of more specific types (USERNAME, CITY,
+        # STATE, etc.).  Without this, ML names absorb pattern detections
+        # in HIGHER_TIER dedup, causing USERNAME and location misses.
+        calibrated = _suppress_ml_name_collisions(calibrated)
 
         from ..pipeline.span_resolver import OverlapStrategy
 
@@ -964,6 +971,77 @@ def _suppress_pronoun_names(spans: list[Span]) -> list[Span]:
             logger.debug("Pronoun suppressed: %s %r", span.entity_type, span.text)
             continue
         result.append(span)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Pre-dedup: ML name fragment suppression
+# ---------------------------------------------------------------------------
+
+# Pattern types that should take priority over ML name detections at the
+# same position.  USERNAME is the most important: patterns detect compound
+# tokens like "Roma_Altenwerth" while GLiNER only sees the word fragment
+# "Roma" → without suppression the ML FIRSTNAME absorbs the USERNAME in
+# HIGHER_TIER dedup.  Locations suffer the same problem: "Florence" as
+# CITY (pattern) vs FIRSTNAME (GLiNER).
+_PATTERN_PRIORITY_OVER_NAMES = frozenset({
+    "USERNAME",
+    "CITY", "STATE", "COUNTY", "COUNTRY", "ZIP",
+    "ADDRESS", "GPS_COORDINATE", "GPS_COORDINATES",
+})
+
+
+def _suppress_ml_name_collisions(spans: list[Span]) -> list[Span]:
+    """Remove ML name spans that overlap with pattern non-name spans.
+
+    Must run BEFORE ``resolve_spans``.  Prevents ML FIRSTNAME/LASTNAME
+    detections from absorbing pattern detections of more specific types
+    during HIGHER_TIER dedup.
+
+    Two scenarios fixed:
+    1. USERNAME "Roma_Altenwerth" (PATTERN) vs FIRSTNAME "Roma" (ML)
+       → remove the ML FIRSTNAME, keep the pattern USERNAME.
+    2. CITY "Florence" (PATTERN) vs FIRSTNAME "Florence" (ML)
+       → remove the ML FIRSTNAME, keep the pattern CITY.
+    """
+    from ..types import Tier
+
+    # Collect ranges of non-ML spans with priority types
+    priority_ranges: list[tuple[int, int]] = []
+    for s in spans:
+        if s.tier != Tier.ML:
+            norm = normalize_entity_type(s.entity_type)
+            if norm in _PATTERN_PRIORITY_OVER_NAMES:
+                priority_ranges.append((s.start, s.end))
+
+    if not priority_ranges:
+        return spans
+
+    result: list[Span] = []
+    suppressed = 0
+    for span in spans:
+        if span.tier == Tier.ML and span.entity_type in _NAME_FAMILY:
+            # Check if this ML name is contained within (or exactly matches)
+            # a priority pattern span.
+            is_fragment = any(
+                ps <= span.start and span.end <= pe
+                for ps, pe in priority_ranges
+            )
+            if is_fragment:
+                suppressed += 1
+                logger.debug(
+                    "Pre-dedup ML name suppressed: %s %r (overlaps pattern)",
+                    span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+
+    if suppressed:
+        logger.info(
+            "Pre-dedup: suppressed %d ML name fragments overlapping "
+            "pattern USERNAME/location spans",
+            suppressed,
+        )
     return result
 
 
