@@ -211,6 +211,70 @@ GRETEL_FINANCE_TO_OPENLABELS: dict[str, str] = {
 }
 
 
+NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
+    # Names
+    "name": "NAME",
+    "first_name": "FIRSTNAME",
+    "last_name": "LASTNAME",
+
+    # Dates / Time
+    "date_of_birth": "DATE_DOB",
+    "date_time": "DATE",
+
+    # Location
+    "address": "ADDRESS",
+    "location": "ADDRESS",
+
+    # Contact
+    "email": "EMAIL",
+    "phone_number": "PHONE",
+    "url": "URL",
+    "user_name": "USERNAME",
+
+    # Government IDs
+    "ssn": "SSN",
+    "national_id": "STATE_ID",
+    "tax_id": "TAX_ID",
+
+    # Financial
+    "credit_card_number": "CREDIT_CARD",
+    "account_number": "ACCOUNT_NUMBER",
+    "bank_routing_number": "BANK_ROUTING",
+    "swift_bic": "SWIFT_BIC",
+    "cvv": None,  # Exclude — metadata, not standalone PII
+    "pin": "PASSWORD",
+
+    # Medical / PHI
+    "medical_record_number": "MRN",
+    "health_plan_beneficiary_number": "HEALTH_PLAN_ID",
+    "biometric_identifier": "BIOMETRIC_ID",
+
+    # Professional
+    "company_name": "COMPANY",
+    "employee_id": "EMPLOYEE_ID",
+    "customer_id": "ACCOUNT_NUMBER",
+
+    # Network / Device
+    "ip_address": "IP_ADDRESS",
+    "device_identifier": "DEVICE_ID",
+
+    # Vehicle
+    "license_plate": "LICENSE_PLATE",
+    "vehicle_identifier": "VIN",
+
+    # Secrets
+    "password": "PASSWORD",
+    "api_key": "API_KEY",
+
+    # IDs / Certificates
+    "unique_identifier": "UNIQUE_ID",
+    "certificate_license_number": "CERTIFICATE_NUMBER",
+}
+
+# Default cache location for Nemotron-PII
+_NEMOTRON_CACHE_DIR = Path.home() / ".cache" / "openlabels" / "benchmark"
+
+
 def _map_entity(raw_label: str, mapping: dict[str, str | None]) -> str | None:
     """Map a dataset label to an OpenLabels entity type.
 
@@ -614,3 +678,251 @@ def dataset_summary(samples: list[BenchmarkSample]) -> str:
         pct = 100.0 * count / total_entities if total_entities else 0
         lines.append(f"{etype:25s}  {count:6d}  {pct:5.1f}%")
     return "\n".join(lines)
+
+
+# ── NVIDIA Nemotron-PII dataset ────────────────────────────────────────
+
+
+def _download_nemotron_cache(
+    cache_dir: Path,
+    cache_path: Path,
+) -> list[BenchmarkSample]:
+    """Download NVIDIA Nemotron-PII from HuggingFace and write JSONL cache.
+
+    Uses the ``test`` split (50 k records) for evaluation benchmarking.
+    The ``spans`` column contains character-level annotations::
+
+        [{"start": 52, "end": 61, "text": "johndoe88", "label": "user_name"}, ...]
+    """
+    try:
+        from datasets import load_dataset as hf_load
+    except ImportError as exc:
+        raise ImportError(
+            "The 'datasets' package is required for downloading Nemotron-PII. "
+            "Install it with: pip install 'openlabels[benchmark]'"
+        ) from exc
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    ds = hf_load("nvidia/Nemotron-PII", split="test")
+    samples: list[BenchmarkSample] = []
+    idx = 0
+    total_annotations = 0
+    total_gold_kept = 0
+    skipped_no_text = 0
+    skipped_format = 0
+
+    for row in ds:
+        text = row.get("text", "")
+        if not text:
+            skipped_no_text += 1
+            continue
+
+        spans_raw = row.get("spans")
+        if spans_raw is None:
+            skipped_format += 1
+            continue
+
+        # HuggingFace may return list-of-dicts or dict-of-lists (Arrow)
+        if isinstance(spans_raw, dict):
+            spans_raw = _dict_of_lists_to_list_of_dicts(spans_raw)
+        elif isinstance(spans_raw, str):
+            try:
+                spans_raw = json.loads(spans_raw)
+            except json.JSONDecodeError:
+                skipped_format += 1
+                continue
+        elif not isinstance(spans_raw, list):
+            skipped_format += 1
+            continue
+
+        total_annotations += len(spans_raw)
+        gold_spans = _parse_pii_spans(text, spans_raw, NEMOTRON_TO_OPENLABELS)
+        total_gold_kept += len(gold_spans)
+
+        samples.append(BenchmarkSample(
+            sample_id=idx,
+            text=text,
+            gold_spans=gold_spans,
+            language="en",
+        ))
+        idx += 1
+
+    density = total_gold_kept / len(samples) if samples else 0
+    logger.info(
+        "Nemotron-PII download: %d samples, %d total annotations, "
+        "%d gold spans kept (%.1f per sample), "
+        "%d skipped (no text: %d, bad format: %d)",
+        len(samples), total_annotations, total_gold_kept, density,
+        skipped_no_text + skipped_format, skipped_no_text, skipped_format,
+    )
+
+    if not samples:
+        logger.warning("Nemotron-PII download returned 0 samples; skipping cache write")
+        return samples
+
+    with open(cache_path, "w", encoding="utf-8") as f:
+        for s in samples:
+            record = {
+                "id": s.sample_id,
+                "text": s.text,
+                "language": s.language,
+                "spans": [
+                    {
+                        "start": g.start,
+                        "end": g.end,
+                        "text": g.text,
+                        "entity_type": g.entity_type,
+                        "original_label": g.original_label,
+                    }
+                    for g in s.gold_spans
+                ],
+            }
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    logger.info("Cached %d Nemotron-PII samples to %s", len(samples), cache_path)
+    return samples
+
+
+def _dict_of_lists_to_list_of_dicts(d: dict) -> list[dict]:
+    """Convert Arrow columnar dict-of-lists to list-of-dicts."""
+    if not d:
+        return []
+    length = None
+    for v in d.values():
+        if isinstance(v, (list, tuple)):
+            length = len(v)
+            break
+    if length is None:
+        return []
+    result = []
+    for i in range(length):
+        entry = {}
+        for key, vals in d.items():
+            if isinstance(vals, (list, tuple)) and i < len(vals):
+                entry[key] = vals[i]
+            else:
+                entry[key] = vals
+        result.append(entry)
+    return result
+
+
+def _load_nemotron_cache(cache_path: Path) -> list[BenchmarkSample]:
+    """Read Nemotron-PII JSONL cache, re-applying entity mapping."""
+    samples: list[BenchmarkSample] = []
+    with open(cache_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            gold_spans: list[GoldSpan] = []
+            for s in record["spans"]:
+                original = s.get("original_label", "")
+                mapped = _map_entity(original, NEMOTRON_TO_OPENLABELS) if original else s["entity_type"]
+                if mapped is None:
+                    continue
+                gold_spans.append(GoldSpan(
+                    start=s["start"],
+                    end=s["end"],
+                    text=s["text"],
+                    entity_type=mapped,
+                    original_label=original,
+                ))
+            samples.append(BenchmarkSample(
+                sample_id=record["id"],
+                text=record["text"],
+                gold_spans=gold_spans,
+                language=record.get("language", "en"),
+            ))
+    return samples
+
+
+def load_nemotron_pii(
+    *,
+    sample_size: int | None = None,
+    seed: int = 42,
+    cache_dir: Path | None = None,
+    min_entities: int = 1,
+    max_text_length: int = 10_000,
+    refresh_cache: bool = False,
+) -> tuple[list[BenchmarkSample], str]:
+    """Load samples from the NVIDIA Nemotron-PII dataset.
+
+    Resolution order:
+    1. JSONL cache (``~/.cache/openlabels/benchmark/nemotron_pii.jsonl``)
+    2. Download from HuggingFace Hub (requires ``datasets`` package)
+
+    The Nemotron-PII dataset contains 100 k synthetic English records across
+    50+ industries with span-level annotations for 55+ PII/PHI categories.
+    We use the ``test`` split (50 k) for benchmarking.
+
+    License: CC BY 4.0 (https://huggingface.co/datasets/nvidia/Nemotron-PII)
+    """
+    cache_dir = cache_dir or _NEMOTRON_CACHE_DIR
+    cache_path = cache_dir / "nemotron_pii.jsonl"
+
+    if refresh_cache and cache_path.exists():
+        logger.info("Deleting stale Nemotron-PII cache: %s", cache_path)
+        cache_path.unlink()
+
+    samples: list[BenchmarkSample] = []
+    source = "none"
+
+    # 1. Try cache
+    if cache_path.exists():
+        logger.info("Loading cached Nemotron-PII from %s", cache_path)
+        samples = _load_nemotron_cache(cache_path)
+        if samples:
+            source = f"cache ({cache_path})"
+        else:
+            logger.warning("Nemotron-PII cache returned 0 samples; removing")
+            cache_path.unlink(missing_ok=True)
+
+    # 2. Download from HuggingFace
+    if not samples:
+        try:
+            logger.info("Downloading Nemotron-PII from HuggingFace...")
+            samples = _download_nemotron_cache(cache_dir, cache_path)
+            if samples:
+                source = f"huggingface (cached to {cache_path})"
+        except ImportError:
+            logger.warning(
+                "The 'datasets' package is not installed — cannot download "
+                "Nemotron-PII from HuggingFace. Install with: "
+                "pip install 'openlabels[benchmark]'"
+            )
+
+    if not samples:
+        from .dataset import DatasetLoadError
+        raise DatasetLoadError(
+            "Failed to load Nemotron-PII dataset from any source.\n"
+            "  Cache path: {cache_path} (exists={cache_path.exists()})\n"
+            "Ensure the 'datasets' package is installed:\n"
+            "  pip install 'openlabels[benchmark]'"
+        )
+
+    # Filter
+    filtered: list[BenchmarkSample] = []
+    for s in samples:
+        if len(s.text) > max_text_length:
+            continue
+        if len(s.gold_spans) < min_entities:
+            continue
+        filtered.append(s)
+
+    logger.info(
+        "Nemotron-PII: %d total, %d after filtering (min_entities=%d)",
+        len(samples), len(filtered), min_entities,
+    )
+
+    if sample_size is not None and sample_size < len(filtered):
+        rng = random.Random(seed)
+        filtered = rng.sample(filtered, sample_size)
+    elif sample_size is not None and sample_size > len(filtered):
+        logger.warning(
+            "Requested %d samples but only %d available. Returning all %d.",
+            sample_size, len(filtered), len(filtered),
+        )
+
+    return filtered, source
