@@ -206,7 +206,7 @@ class GLiNERDetector(BaseDetector):
     # chars-per-token ratio is measured and chunk sizes are scaled.
     _MAX_CHUNK_CHARS = 1024
     _CHUNK_OVERLAP = 200
-    _CHUNK_TARGET_TOKENS = 420  # leaves headroom for special tokens
+    _CHUNK_TARGET_TOKENS = 350  # leaves headroom for special tokens + bi-encoder overhead
 
     def _estimate_chars_per_token(self, text: str, sample_size: int = 500) -> float:
         """Estimate chars-per-token for *text* using the model's tokenizer.
