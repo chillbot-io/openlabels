@@ -38,12 +38,13 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # Names are the most frequent entity and GLiNER tends to be
     # overconfident on partial matches.
     "person name": (1.35, 0.06),
-    # FIRSTNAME: 7 TP / 22 FP on 1k benchmark — 76% FP rate.
-    # Max suppression to filter unreliable GLiNER name predictions;
-    # pattern + ML detectors handle name recall.
-    "first name": (2.00, 0.185),
-    # LASTNAME: 1 TP / 11 FP on 1k benchmark — 92% FP rate.
-    "last name": (2.00, 0.185),
+    # FIRSTNAME: moderate dampening — align with "person name" calibration.
+    # Previous (2.00, 0.185) required raw >= 0.74 to survive solo, killing
+    # most true positives (4 FIRSTNAME misses on 10-sample benchmark).
+    "first name": (1.40, 0.08),
+    # LASTNAME: moderate dampening — align with "person name" calibration.
+    # Previous (2.00, 0.185) killed nearly all LASTNAME detections.
+    "last name": (1.40, 0.08),
     "middle name": (1.30, 0.08),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.
