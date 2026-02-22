@@ -5,6 +5,7 @@ Usage:
     openlabels benchmark --samples 1000                     # More samples
     openlabels benchmark --preset with_ml                   # With ML detectors
     openlabels benchmark --ml                               # Enable full ML stack
+    openlabels benchmark --dataset nemotron_pii -n 1000      # NVIDIA Nemotron-PII
     openlabels benchmark --dataset gretel_pii -n 1000       # Gretel PII 1k
     openlabels benchmark --dataset gretel_finance --ml      # Full ML on Gretel finance
     openlabels benchmark sweep                              # Compare all presets
@@ -21,7 +22,11 @@ import click
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
 
-DATASET_CHOICES = ["ai4privacy", "ai4privacy_multilingual", "gretel_pii", "gretel_finance"]
+DATASET_CHOICES = [
+    "ai4privacy", "ai4privacy_multilingual",
+    "nemotron_pii",
+    "gretel_pii", "gretel_finance",
+]
 
 
 @click.group(invoke_without_command=True)
@@ -646,6 +651,15 @@ def _load_dataset_samples(
         )
         lang_info = f" [{language}]" if language else " [all languages]"
         click.echo(f"Loaded {len(samples)} samples from ai4privacy{lang_info} ({source})")
+        return samples
+
+    if dataset == "nemotron_pii":
+        from openlabels.core.benchmark.adapters import load_nemotron_pii
+
+        samples, source = load_nemotron_pii(
+            sample_size=sample_size, seed=seed, refresh_cache=refresh_cache,
+        )
+        click.echo(f"Loaded {len(samples)} samples from nemotron_pii ({source})")
         return samples
 
     if dataset == "gretel_pii":
