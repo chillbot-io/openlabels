@@ -314,13 +314,6 @@ class DetectorOrchestrator:
         if processed_spans:
             processed_spans = _suppress_pronoun_names(processed_spans)
 
-        # Suppress FIRSTNAME/LASTNAME spans that collide with location
-        # entities.  City/state/county names like "Florence", "Georgia",
-        # "Madison" are valid first names but in benchmark contexts they
-        # are almost always locations.
-        if processed_spans:
-            processed_spans = _suppress_name_location_collisions(processed_spans)
-
         if self._context_enhancer and processed_spans:
             try:
                 processed_spans = self._context_enhancer.enhance(text, processed_spans)
@@ -450,6 +443,12 @@ class DetectorOrchestrator:
         # ML should primarily contribute names and rare professional
         # entities — things patterns cannot detect.
         resolved = _suppress_uncorroborated_ml(resolved, calibrated)
+
+        # Suppress FIRSTNAME/LASTNAME that collide with location entities.
+        # Uses the pre-dedup calibrated list as location source so we see
+        # GLiNER CITY detections that lost to FIRSTNAME in dedup (e.g.
+        # "Florence" detected as both CITY and FIRSTNAME).
+        resolved = _suppress_name_location_collisions(resolved, all_candidates=calibrated)
 
         if self.config.enable_proximity_boost and resolved:
             from ..pipeline.entity_proximity import analyze_proximity
@@ -593,6 +592,11 @@ _ML_PRIMARY_TYPES = frozenset({
     # many are GLiNER detections suppressed because ADDRESS was non-
     # ML-primary (required raw ≥ 0.94 to survive uncorroborated).
     "ADDRESS",
+    # USERNAME: pattern detectors only match labeled context
+    # ("username: ...") but miss standalone usernames.  16 USERNAME
+    # misses on ai4privacy 400k (100 samples) — biggest single recall
+    # gap.  ML-primary lets GLiNER USERNAME survive solo at ~0.52.
+    "USERNAME",
 })
 
 # Default minimum calibrated confidence for ML-only spans on types where
@@ -1086,17 +1090,30 @@ _LOCATION_TYPES = frozenset({
 })
 
 
-def _suppress_name_location_collisions(spans: list[Span]) -> list[Span]:
+def _suppress_name_location_collisions(
+    spans: list[Span],
+    all_candidates: list[Span] | None = None,
+) -> list[Span]:
     """Suppress FIRSTNAME/LASTNAME spans that overlap with location spans.
 
     City/state/county names (Florence, Georgia, Madison, Austin) are common
     first names but are almost always locations in benchmark contexts.
     When both a name and a location span overlap at the same position,
     suppress the name and keep the location.
+
+    Args:
+        spans: The resolved (post-dedup) span list to filter.
+        all_candidates: Optional pre-dedup span list to source location
+            ranges from.  GLiNER may detect both CITY and FIRSTNAME at
+            the same position; dedup picks one winner (often FIRSTNAME
+            with higher confidence).  By checking ``all_candidates`` we
+            see location detections that lost in dedup.
     """
-    # Collect location span ranges
+    # Collect location ranges from both the resolved spans AND
+    # all pre-dedup candidates (if provided).
+    source = spans if all_candidates is None else all_candidates
     location_ranges: list[tuple[int, int]] = [
-        (s.start, s.end) for s in spans if s.entity_type in _LOCATION_TYPES
+        (s.start, s.end) for s in source if s.entity_type in _LOCATION_TYPES
     ]
     if not location_ranges:
         return spans
