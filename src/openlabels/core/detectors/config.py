@@ -76,6 +76,10 @@ class DetectionConfig:
         ("SSN", 0.60),
         ("IBAN", 0.60),
         ("IP_ADDRESS", 0.60),
+        # URL — regex pattern has 0.90 confidence and no minimum length,
+        # causing 92 spurious on ai4privacy 1k.  Raise threshold so only
+        # high-confidence URL detections survive.
+        ("URL", 0.88),
         # Contextual — standard threshold
         ("PHONE", 0.70),
         ("ADDRESS", 0.68),
@@ -96,9 +100,10 @@ class DetectionConfig:
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
-        # COMPANY raised from 0.50 to 0.55 to reduce 32 spurious on
-        # 10k benchmark (professional category P=0.588).
-        ("COMPANY", 0.55),
+        # COMPANY raised from 0.55 to 0.60: still 80 spurious on
+        # ai4privacy 1k at 0.55 with ML enabled (multiple detectors:
+        # GLiNER + pattern + additional_patterns all producing COMPANY).
+        ("COMPANY", 0.60),
         ("JOB_TITLE", 0.50),
         # FACILITY from PHI model — trained on clinical text where every
         # hospital name is PHI; massively over-fires on general-purpose text.
