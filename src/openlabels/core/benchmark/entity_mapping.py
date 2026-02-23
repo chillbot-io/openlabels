@@ -332,6 +332,12 @@ EVAL_CATEGORIES: dict[str, str] = {
     "FACILITY": "professional",
     "EMPLOYEE_ID": "professional",
     "PHARMACY_ID": "professional",
+
+    "GENDER": "demographics",
+    "ETHNICITY": "demographics",
+    "NATIONALITY": "demographics",
+    "HEIGHT": "demographics",
+    "WEIGHT": "demographics",
 }
 
 

@@ -453,6 +453,13 @@ class DetectorOrchestrator:
             resolved, all_candidates=calibrated,
         )
 
+        # Suppress ML name spans whose text is a common English word
+        # that GLiNER falsely labels as FIRSTNAME/LASTNAME.
+        resolved = _suppress_ml_name_false_positives(resolved)
+
+        # Suppress ML USERNAME spans that are common English words
+        resolved = _suppress_ml_username_false_positives(resolved)
+
         if self.config.enable_proximity_boost and resolved:
             from ..pipeline.entity_proximity import analyze_proximity
             proximity = analyze_proximity(
@@ -1220,6 +1227,128 @@ def _suppress_name_location_collisions(
                 logger.debug(
                     "Name-collision suppressed: %s %r",
                     span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# ML name false-positive suppression (common English words)
+# ---------------------------------------------------------------------------
+
+# Words that GLiNER frequently misclassifies as FIRSTNAME or LASTNAME.
+# These are common English nouns, adjectives, demonyms, and business terms
+# that are never standalone person names in PII contexts.
+# Imported _NEVER_NAMES covers job titles and structural terms; this set
+# adds GLiNER-specific false positives discovered through benchmarking.
+_ML_NAME_BLOCKLIST = frozenset({
+    # Business / legal terms frequently flagged as FIRSTNAME
+    "strategies", "consent", "contractors", "recipient", "recipients",
+    "submission", "submissions", "campaigns", "investments",
+    "obligations", "acquisition", "acquisitions", "compliance",
+    "governance", "initiatives", "procurement", "stakeholders",
+    "implementation", "specifications", "authorization",
+    "documentation", "infrastructure", "telecommunications",
+    "unfortunately", "approximately", "alternatively",
+    "comprehensive", "fundamentally", "subsequently",
+    # Common words flagged as LASTNAME
+    "spark", "nationalist", "mutual", "team", "mente",
+    "premium", "quantum", "spectrum", "catalyst", "pinnacle",
+    "velocity", "momentum", "paradigm", "syndicate",
+    # Demonyms / nationality-adjacent words
+    "croat", "croatian", "emirati", "kuwaiti", "qatari",
+    "bahraini", "omani", "yemeni", "somali", "afghan",
+    # Place names GLiNER confuses with person names
+    "kremlin", "hartford", "pentagon", "saharan",
+    # Short words / brand-adjacent
+    "verde", "tone", "viva", "alto", "vista",
+    "forte", "tempo", "presto", "largo", "motto",
+    # Action / role words
+    "claim", "claims", "overall", "overview",
+    "appeal", "appeals", "reform", "reforms",
+    "mandate", "mandates", "verdict", "verdicts",
+    "pioneer", "advocate", "sentinel",
+    # Common words that start sentences (title-cased by position)
+    "cash", "yoga", "menu", "logo", "demo", "memo",
+    "quota", "bonus", "forum", "salon", "plaza",
+})
+
+
+def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
+    """Suppress ML-tier FIRSTNAME/LASTNAME spans that are common English words.
+
+    GLiNER's zero-shot NER frequently flags business terms, demonyms, and
+    other common words as person names.  The dictionary-based detector has
+    its own blocklists (_NEVER_NAMES, _AMBIGUOUS_FIRST/LAST) but those
+    don't apply to ML-tier spans.  This function fills that gap.
+
+    Also imports _NEVER_NAMES from the dictionary detector for comprehensive
+    coverage — terms like "consultant", "executive", "diagnostic" etc.
+    """
+    from .dictionary_names import _NEVER_NAMES
+
+    result: list[Span] = []
+    suppressed = 0
+    for span in spans:
+        if (
+            span.tier == Tier.ML
+            and span.entity_type in _NAME_FAMILY
+        ):
+            lower = span.text.strip().lower()
+            if lower in _ML_NAME_BLOCKLIST or lower in _NEVER_NAMES:
+                suppressed += 1
+                logger.debug(
+                    "ML name FP suppressed: %s %r (blocklist)",
+                    span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+
+    if suppressed:
+        logger.info(
+            "ML name FP suppression: removed %d common-word name spans",
+            suppressed,
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# ML USERNAME false-positive suppression
+# ---------------------------------------------------------------------------
+
+# Common English words GLiNER misclassifies as USERNAME.
+# The pattern detector has _USERNAME_FALSE_POSITIVES but that only filters
+# pattern-tier detections.  This covers ML-tier USERNAME spans.
+_ML_USERNAME_BLOCKLIST = frozenset({
+    "training", "obligations", "license", "licenses", "licensed",
+    "named", "manual", "manuals", "experience", "experienced",
+    "re-authenticated", "authenticated", "authentication",
+    "registered", "registration", "certified", "certification",
+    "authorized", "authorization", "qualified", "qualification",
+    "approved", "approval", "designated", "designation",
+    "processed", "processing", "completed", "completion",
+    "submitted", "submission", "confirmed", "confirmation",
+    "verified", "verification", "validated", "validation",
+    "updated", "suspended", "terminated", "transferred",
+    "recommended", "assigned", "associated", "documented",
+    "referenced", "generated", "maintained", "established",
+    "implemented", "distributed", "administered",
+})
+
+
+def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
+    """Suppress ML-tier USERNAME spans that are common English words."""
+    result: list[Span] = []
+    for span in spans:
+        if (
+            span.tier == Tier.ML
+            and normalize_entity_type(span.entity_type) == "USERNAME"
+        ):
+            lower = span.text.strip().lower()
+            if lower in _ML_USERNAME_BLOCKLIST:
+                logger.debug(
+                    "ML USERNAME FP suppressed: %r (blocklist)", span.text,
                 )
                 continue
         result.append(span)

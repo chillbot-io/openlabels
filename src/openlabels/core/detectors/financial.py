@@ -401,12 +401,10 @@ FINANCIAL_PATTERNS: tuple[PatternDefinition, ...] = (
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
     _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,34})\b',
        'BITCOIN_ADDRESS', 0.95, 1, _validate_bitcoin_base58),
-    # Relaxed base58 patterns (no checksum) — catches synthetic/test addresses
-    # that have correct character set but fail checksum validation
-    _p(r'\b(1[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,42})\b',
-       'BITCOIN_ADDRESS', 0.78, 1),
-    _p(r'\b(3[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{25,42})\b',
-       'BITCOIN_ADDRESS', 0.78, 1),
+    # NOTE: Relaxed base58 patterns (no checksum) were removed.
+    # Base58Check addresses with invalid checksums are not valid Bitcoin
+    # addresses and should not be flagged.  The strict patterns above with
+    # _validate_bitcoin_base58 provide proper checksum validation.
     _p(r'\b(bc1q[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38,})\b',
        'BITCOIN_ADDRESS', 0.98, 1, _validate_bitcoin_bech32, flags=re.I),
     _p(r'\b(bc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58,})\b',

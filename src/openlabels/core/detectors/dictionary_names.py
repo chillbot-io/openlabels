@@ -72,7 +72,7 @@ _AMBIGUOUS_FIRST = frozenset({
     "jersey", "jewel", "jimmy", "joe", "john", "joy", "june",
     "king", "lance", "lily", "love", "mark", "mat", "max",
     "may", "mercy", "mike", "miles", "nick", "noble", "norm",
-    "olive", "pat", "pearl", "penny", "peter", "pierre",
+    "olive", "pat", "pearl", "penny", "peter",
     "ray", "reed", "rob", "robin", "rod", "rose", "ruby",
     "sandy", "skip", "spring", "sterling", "sue", "summer",
     "tab", "terry", "tom", "tony", "troy", "val", "van",
@@ -418,7 +418,7 @@ class DictionaryNameDetector(BaseDetector):
                     end=bare_end,
                     text=bare_word,
                     entity_type="LASTNAME",
-                    confidence=0.55,
+                    confidence=0.58,
                     detector=self.name,
                     tier=self.tier,
                 ))
