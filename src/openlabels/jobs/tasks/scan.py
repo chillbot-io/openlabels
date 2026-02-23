@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters import (
@@ -330,6 +331,13 @@ async def execute_scan_task(
                 settings=settings,
                 force_full_scan=force_full_scan,
             )
+            # Agent pool succeeded — close adapter and ML processor before returning.
+            # (On fallback to the pipeline below, the pipeline's own finally handles this.)
+            try:
+                await adapter.__aexit__(None, None, None)
+            except (ConnectionError, OSError, RuntimeError):
+                pass
+            cleanup_processor()
             return result
         except (ImportError, RuntimeError, OSError) as agent_err:
             logger.warning(
@@ -1367,8 +1375,6 @@ async def _run_agent_pool_scan(
         OSError: On I/O failures during setup.
     """
     from openlabels.core.agents.pool import AgentPoolConfig, ScanOrchestrator
-    from openlabels.core.change_providers import FullWalkProvider
-    from openlabels.jobs.inventory import InventoryService
 
     logger.info(
         "Using agent pool for scan job %s (target=%s, adapter=%s)",
@@ -1431,39 +1437,43 @@ async def _run_agent_pool_scan(
 
     try:
         pool_stats = await orchestrator.run()
-
-        # Merge orchestrator stats into the standard format
-        stats = {
-            **orchestrator.stats,
-            "scan_mode": "agent_pool",
-            "agent_pool": {
-                "items_submitted": pool_stats.items_submitted,
-                "items_completed": pool_stats.items_completed,
-                "items_failed": pool_stats.items_failed,
-                "avg_processing_ms": round(pool_stats.avg_processing_ms, 1),
-                "throughput_per_sec": round(pool_stats.throughput_per_second, 1),
-            },
-        }
-
-        logger.info(
-            "Agent pool scan completed for job %s: %d files scanned, "
-            "%d with PII, %d entities (%.1f files/sec)",
-            job.id,
-            stats["files_scanned"],
-            stats["files_with_pii"],
-            stats["total_entities"],
-            pool_stats.throughput_per_second,
-        )
-
-    except Exception:
-        # Mark job as failed before re-raising
+    except Exception as run_err:
+        # Mark the ScanJob as failed (the worker only marks the JobQueue entry)
         job.status = JobStatus.FAILED
-        job.error = "Agent pool scan failed"
-        await session.commit()
+        job.error = f"Agent pool scan failed: {type(run_err).__name__}: {run_err}"
+        job.completed_at = datetime.now(timezone.utc)
+        try:
+            await session.commit()
+        except SQLAlchemyError:
+            pass  # Best effort — the raise below lets the worker handle the rest
         raise
+
+    # Merge orchestrator stats into the standard format
+    stats = {
+        **orchestrator.stats,
+        "scan_mode": "agent_pool",
+        "agent_pool": {
+            "items_submitted": pool_stats.items_submitted,
+            "items_completed": pool_stats.items_completed,
+            "items_failed": pool_stats.items_failed,
+            "avg_processing_ms": round(pool_stats.avg_processing_ms, 1),
+            "throughput_per_sec": round(pool_stats.throughput_per_second, 1),
+        },
+    }
+
+    logger.info(
+        "Agent pool scan completed for job %s: %d files scanned, "
+        "%d with PII, %d entities (%.1f files/sec)",
+        job.id,
+        stats["files_scanned"],
+        stats["files_with_pii"],
+        stats["total_entities"],
+        pool_stats.throughput_per_second,
+    )
 
     # Mark job as completed
     job.status = JobStatus.COMPLETED
+    job.completed_at = datetime.now(timezone.utc)
     await session.commit()
 
     # Stream completion via WebSocket
