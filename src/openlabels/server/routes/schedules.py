@@ -39,6 +39,13 @@ class ScheduleCreate(BaseModel):
     cron: str | None = None  # Cron expression, None = on-demand only
 
 
+class BulkScheduleCreate(BaseModel):
+    """Create schedules for all enabled targets with a shared cron expression."""
+
+    cron: str = Field(..., description="Cron expression for all schedules")
+    enabled: bool = True
+
+
 class ScheduleUpdate(BaseModel):
     """Request to update a scan schedule."""
 
@@ -125,6 +132,78 @@ async def create_schedule(
     except SQLAlchemyError as e:
         logger.error(f"Database error creating schedule: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred") from e
+
+
+@router.post("/bulk", response_model=list[ScheduleResponse], status_code=201)
+async def create_bulk_schedules(
+    request: BulkScheduleCreate,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> list[ScheduleResponse]:
+    """Create scan schedules for all enabled targets.
+
+    Skips targets that already have a schedule with the same cron expression.
+    Used by the "Schedule All Targets" action in the UI.
+    """
+    # Get all enabled targets for this tenant
+    targets_result = await session.execute(
+        select(ScanTarget)
+        .where(ScanTarget.tenant_id == user.tenant_id, ScanTarget.enabled.is_(True))
+        .order_by(ScanTarget.name)
+    )
+    targets = targets_result.scalars().all()
+
+    if not targets:
+        raise HTTPException(status_code=400, detail="No enabled targets found")
+
+    # Get existing schedules to avoid duplicates
+    existing_result = await session.execute(
+        select(ScanSchedule.target_id, ScanSchedule.cron)
+        .where(ScanSchedule.tenant_id == user.tenant_id)
+    )
+    existing_pairs = {(row[0], row[1]) for row in existing_result.all()}
+
+    created = []
+    for target in targets:
+        # Skip if this target already has a schedule with the same cron
+        if (target.id, request.cron) in existing_pairs:
+            logger.info("Skipping target %s — schedule with cron %r already exists", target.name, request.cron)
+            continue
+
+        schedule = ScanSchedule(
+            tenant_id=user.tenant_id,
+            name=f"{target.name} — Scheduled",
+            target_id=target.id,
+            cron=request.cron,
+            enabled=request.enabled,
+            created_by=user.id,
+        )
+
+        if request.cron:
+            schedule.next_run_at = parse_cron_expression(request.cron)
+
+        session.add(schedule)
+        created.append(schedule)
+
+    if created:
+        await session.flush()
+
+        audit_log(
+            session, tenant_id=user.tenant_id, user_id=user.id,
+            action="schedules_bulk_created", resource_type="scan_schedule",
+            resource_id=created[0].id,
+            details={
+                "count": len(created),
+                "cron": request.cron,
+                "target_ids": [str(s.target_id) for s in created],
+            },
+        )
+
+        # Refresh all to load server-generated defaults
+        for schedule in created:
+            await session.refresh(schedule)
+
+    return [ScheduleResponse.model_validate(s) for s in created]
 
 
 @router.get("/{schedule_id}", response_model=ScheduleResponse)
