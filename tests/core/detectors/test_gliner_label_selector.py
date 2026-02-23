@@ -118,7 +118,10 @@ class TestLabelSelection:
         assert "person name" in profile.selected_labels
         assert "first name" in profile.selected_labels
         assert "date of birth" in profile.selected_labels
-        assert "company name" in profile.selected_labels
+        # company/job are NOT in GENERAL — they're not PII and
+        # were removed to free GLiNER's attention budget for real PII.
+        assert "company name" not in profile.selected_labels
+        assert "job title" not in profile.selected_labels
         # email/phone are NOT in GENERAL — they're in CONTACT category
         # because pattern detectors already handle them reliably
         assert "email address" not in profile.selected_labels

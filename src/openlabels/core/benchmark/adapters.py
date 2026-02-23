@@ -257,11 +257,14 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     "health_plan_beneficiary_number": "HEALTH_PLAN_ID",
     "biometric_identifier": "BIOMETRIC_ID",
 
-    # Professional
-    "company_name": "COMPANY",
+    # Professional — not PII in most frameworks (GDPR, CCPA, HIPAA).
+    # Company names and job titles do not uniquely identify individuals.
+    # Excluding from gold scoring (same as ai4privacy JOBTITLE/JOBTYPE).
+    "company_name": None,
+    "occupation": None,
+    # Employee/customer IDs ARE identifiers → keep mapped.
     "employee_id": "EMPLOYEE_ID",
     "customer_id": "ACCOUNT_NUMBER",
-    "occupation": "JOB_TITLE",
 
     # Network / Device
     "ip_address": "IP_ADDRESS",

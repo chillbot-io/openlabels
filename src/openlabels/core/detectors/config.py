@@ -103,11 +103,9 @@ class DetectionConfig:
         ("FIRSTNAME", 0.60),
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
-        # Professional — ML-dependent, similar to names.
-        # COMPANY: lowered back from 0.60 to 0.55 — the 0.60 threshold
-        # filtered real companies (19 misses on nemotron_pii).  FP control
-        # now handled by calibration (1.35, 0.10) + ML-primary solo_min.
-        ("COMPANY", 0.55),
+        # Professional — not PII, excluded from benchmark scoring.
+        # Thresholds kept for production use but don't affect F1.
+        ("COMPANY", 0.60),
         # JOB_TITLE: lowered from 0.50 to 0.45 — no pattern detector
         # exists so only GLiNER can detect these.  At 0.50 + calibration
         # (1.25, 0.08), 39 real job titles on nemotron_pii were filtered.

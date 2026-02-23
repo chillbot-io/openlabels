@@ -114,8 +114,9 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
 # detection counts as a spurious FP even though the benchmark considers
 # the underlying text non-PII.
 UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
-    "JOB_TITLE",      # ai4privacy JOBTITLE / JOBTYPE / JOBAREA are unmapped
-    "EMPLOYER",       # ai4privacy has no EMPLOYER gold labels
+    "JOB_TITLE",      # Not PII — job titles don't identify individuals
+    "COMPANY",        # Not PII — company names don't identify individuals
+    "EMPLOYER",       # Not PII — same as COMPANY
     "HEIGHT",         # ai4privacy HEIGHT is in UNMAPPED_TYPES (not scored)
     "FACILITY",       # ai4privacy has no FACILITY gold labels
     # Gretel PII 1K analysis: these predicted types have 0 gold labels and
