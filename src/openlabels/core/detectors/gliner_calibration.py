@@ -52,8 +52,9 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # Phone: 0 TP / 1 FP on 1k — too few samples; identity transform.
     "phone number": (1.00, 0.00),
     "url": (0.95, -0.03),
-    # Username: 0 TP / 1 FP on 1k — too few samples; identity transform.
-    "username": (1.00, 0.00),
+    # Username: identity calibration generated 9 spurious on nemotron_pii.
+    # Moderate dampening to filter low-confidence detections.
+    "username": (1.20, 0.04),
     # ── Locations ──────────────────────────────────────────
     # Street address: 2 TP / 0 FP on 1k — too few samples; identity.
     "street address": (1.00, 0.00),
@@ -89,9 +90,11 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "health plan number": (1.20, 0.05),
     "npi number": (1.10, 0.02),
     # ── Financial ──────────────────────────────────────────
-    # Credit card: 80 TP / 0 FP on 1k — 100% precision.
-    # Boost confidence; GLiNER excels at Luhn-structured numbers.
-    "credit card number": (0.60, -0.185),
+    # Credit card: well-calibrated due to Luhn structure.  Mild boost.
+    # Previous (0.60, -0.185) was too aggressive — boosted DEVICE_ID
+    # and other numeric codes into credit card range, causing 3
+    # DEVICE_ID→CREDIT_CARD type mismatches on nemotron_pii.
+    "credit card number": (0.85, -0.03),
     "bank account number": (1.35, 0.08),  # Random numbers in finance text
     "iban": (0.95, -0.02),
     # SWIFT code: 0 TP / 17 FP on 1k — 100% FP rate.  Max suppression.
@@ -119,10 +122,11 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "vehicle identification number": (1.45, 0.12),
     "license plate number": (1.40, 0.10),
     # ── Secrets (when detected via GLiNER in GENERAL label set) ─────
-    # Password: 1 TP / 0 FP on 1k — too few samples; identity.
-    "password": (1.00, 0.00),
-    # Pin code: 0 TP / 3 FP on 1k — too few samples; identity.
-    "pin code": (1.00, 0.00),
+    # Password: identity calibration generated 7 spurious on nemotron_pii.
+    # Moderate dampening to filter low-confidence detections.
+    "password": (1.30, 0.06),
+    # Pin code: 0 TP / 3 FP on 1k.  Dampening to reduce noise.
+    "pin code": (1.30, 0.06),
 }
 
 # Module-level override: when set, ``calibrate_gliner_score`` uses this

@@ -222,6 +222,10 @@ class TestCustomCalibration:
 class TestFitCalibration:
     """Test fitting Platt scaling from labeled data."""
 
+    def teardown_method(self):
+        """Reset calibration after each test to avoid leaking state."""
+        reset_calibration()
+
     def test_fit_identity_on_perfect_predictions(self):
         """Perfect predictions (all correct at high conf) → near identity."""
         labels = ["test"] * 50

@@ -90,8 +90,10 @@ class DetectionConfig:
         ("DATE", 0.78),
         ("DATE_DOB", 0.72),
         ("DATETIME", 0.78),
-        # Country: 93% FP rate from GLiNER, removed from GENERAL.
-        ("COUNTRY", 0.82),
+        # Country: removed from GLiNER GENERAL (93% FP rate).  Pattern
+        # detectors now provide coverage at 0.78 confidence.  Threshold
+        # must be below pattern confidence or ALL country detections die.
+        ("COUNTRY", 0.76),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
         # FIRSTNAME raised from 0.58 to 0.60: 21 spurious FIRSTNAME
@@ -102,10 +104,10 @@ class DetectionConfig:
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — ML-dependent, similar to names.
-        # COMPANY raised from 0.55 to 0.60: still 80 spurious on
-        # ai4privacy 1k at 0.55 with ML enabled (multiple detectors:
-        # GLiNER + pattern + additional_patterns all producing COMPANY).
-        ("COMPANY", 0.60),
+        # COMPANY: lowered back from 0.60 to 0.55 — the 0.60 threshold
+        # filtered real companies (19 misses on nemotron_pii).  FP control
+        # now handled by calibration (1.35, 0.10) + ML-primary solo_min.
+        ("COMPANY", 0.55),
         # JOB_TITLE: lowered from 0.50 to 0.45 — no pattern detector
         # exists so only GLiNER can detect these.  At 0.50 + calibration
         # (1.25, 0.08), 39 real job titles on nemotron_pii were filtered.

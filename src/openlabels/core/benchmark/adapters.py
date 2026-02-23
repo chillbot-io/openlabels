@@ -280,6 +280,11 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     "unique_identifier": "UNIQUE_ID",
     "certificate_license_number": "CERTIFICATE_NUMBER",
 
+    # Location (additional)
+    "postcode": "ZIP",
+    "postal_code": "ZIP",
+    "zip_code": "ZIP",
+
     # Demographic / non-PII — exclude from scoring
     "gender": None,
     "race_ethnicity": None,
@@ -289,6 +294,12 @@ NEMOTRON_TO_OPENLABELS: dict[str, str | None] = {
     "religious_belief": None,
     "education_level": None,
     "employment_status": None,
+    "marital_status": None,
+    # Health attributes — not identifiers
+    "blood_type": None,
+    # Political / ideological — sensitive attributes, not identifiers
+    "political_view": None,
+    "political_affiliation": None,
 }
 
 # Default cache location for Nemotron-PII
