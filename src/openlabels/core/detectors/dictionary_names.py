@@ -418,7 +418,7 @@ class DictionaryNameDetector(BaseDetector):
                     end=bare_end,
                     text=bare_word,
                     entity_type="LASTNAME",
-                    confidence=0.55,
+                    confidence=0.58,
                     detector=self.name,
                     tier=self.tier,
                 ))

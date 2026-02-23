@@ -20,6 +20,22 @@ from .base import BaseDetector
 from .pattern_registry import PatternDefinition, _p
 from .registry import register_detector
 
+# False positive filters for STATE detection
+_STATE_FALSE_POSITIVES = frozenset({
+    "active", "pending", "inactive", "closed", "open", "new",
+    "complete", "completed", "approved", "denied", "valid",
+    "invalid", "current", "previous", "final", "initial",
+    "unknown", "other", "none", "null", "ready", "done",
+    "processing", "submitted", "cancelled", "expired",
+    "suspended", "terminated", "updated", "verified",
+})
+
+# False positive filters for CITY detection
+_CITY_FALSE_POSITIVES = frozenset({
+    "the", "this", "that", "these", "those",
+    "none", "unknown", "other", "general", "main",
+})
+
 # Pattern definitions: frozen tuple of PatternDefinition objects
 ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     # COMPANY - Company/Organization Names with legal suffixes
@@ -414,6 +430,22 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(?:assigned|designated|allocated)\s+(?:account\s+)?(?:number|id)\s*[:\s#]*([A-Z0-9]{6,17})\b",
         "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
     ),
+    # ACCOUNT_NUMBER — "bank account XXXX" (no "number" keyword)
+    _p(
+        r"\bbank\s+account\s+(\d{6,17})\b",
+        "ACCOUNT_NUMBER", 0.85, 1, flags=re.IGNORECASE
+    ),
+    # ACCOUNT_NUMBER — IBAN format with context: "IBAN: GB29NWBK60161331926819"
+    # Requires IBAN label to avoid matching random alphanumeric strings.
+    _p(
+        r"\bIBAN\s*[:\s]+([A-Z]{2}\d{2}[A-Z0-9]{4,30})\b",
+        "ACCOUNT_NUMBER", 0.90, 1, flags=re.IGNORECASE
+    ),
+    # ACCOUNT_NUMBER — "Acc No:" / "A/C:" British abbreviations
+    _p(
+        r"\b(?:Acc\.?\s*(?:No\.?|#)|A/C)\s*[:\s#]+(\d{6,17})\b",
+        "ACCOUNT_NUMBER", 0.85, 1, flags=re.IGNORECASE
+    ),
 
     # DEVICE_ID — labeled context for numeric device identifiers
     # Prevents 15-digit device IDs from being misclassified as CREDIT_CARD
@@ -426,6 +458,66 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\b(?:device\s+(?:identifier|id\b)|hardware\s+id\b)\s*[:\s#]*([A-Z0-9]{8,20})\b",
         "DEVICE_ID", 0.85, 1, flags=re.IGNORECASE
+    ),
+
+    # ── STATE — US state detection (no ML fallback) ──────────────────────
+    # US 2-letter state abbreviation after comma in address context:
+    # "Portland, OR 97201" or "Austin, TX 78701"
+    _p(
+        r",\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\s+\d{5}\b",
+        "STATE", 0.88, 1, flags=0
+    ),
+    # US 2-letter state abbreviation after comma, before period/comma/newline/end
+    _p(
+        r",\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\b(?=\s*[,.\n]|\s+\d)",
+        "STATE", 0.82, 1, flags=0
+    ),
+    # Labeled: "State: California", "State: New York"
+    # Case-sensitive "State:" to avoid matching "state: active/pending".
+    _p(
+        r"\bState\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "STATE", 0.82, 1, flags=0
+    ),
+
+    # ── CITY — labeled context patterns ──────────────────────────────────
+    # "City: Portland", "Hometown: Denver"
+    _p(
+        r"\b(?:City|Hometown)\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b",
+        "CITY", 0.82, 1, flags=0
+    ),
+    # "City of Portland", "Town of Springfield"
+    _p(
+        r"\b(?:City|Town|Village)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b",
+        "CITY", 0.85, 1, flags=0
+    ),
+
+    # ── API_KEY — broader token/authorization patterns ───────────────────
+    # "auth_token: VALUE" / "access_token: VALUE"
+    _p(
+        r"\b(?:auth[_\s]?token|access[_\s]?token|session[_\s]?token|refresh[_\s]?token)\s*[=:\s]+([A-Za-z0-9\-_.]{16,100})\b",
+        "API_KEY", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # "Authorization: Bearer <token>"
+    _p(
+        r"\bAuthorization\s*:\s*Bearer\s+([A-Za-z0-9\-_.]+)\b",
+        "API_KEY", 0.90, 1, flags=re.IGNORECASE
+    ),
+    # "x-api-key: VALUE" HTTP header
+    _p(
+        r"\bx-api-key\s*:\s*([A-Za-z0-9\-_.]{16,100})\b",
+        "API_KEY", 0.90, 1, flags=re.IGNORECASE
+    ),
+    # Generic "token" label with colon/equals and long alphanumeric value
+    _p(
+        r"\b(?:token|secret[_\s]?key)\s*[=:]\s*([A-Za-z0-9\-_]{20,100})\b",
+        "API_KEY", 0.80, 1, flags=re.IGNORECASE
+    ),
+    # HTTP cookie: "Set-Cookie: name=value;..."
+    _p(
+        r"\b(?:Set-)?Cookie\s*:\s*\S+=([A-Za-z0-9\-_.%+/]{16,200})",
+        "API_KEY", 0.82, 1, flags=re.IGNORECASE
     ),
 )
 
@@ -482,6 +574,16 @@ class AdditionalPatternDetector(BaseDetector):
                     # HEALTH_PLAN_ID/MEMBER_ID: must contain at least one digit
                     if pdef.entity_type in ("HEALTH_PLAN_ID", "MEMBER_ID"):
                         if not any(c.isdigit() for c in value):
+                            continue
+
+                    # STATE: reject common non-geographic values
+                    if pdef.entity_type == "STATE":
+                        if value.lower() in _STATE_FALSE_POSITIVES:
+                            continue
+
+                    # CITY: reject common non-geographic values
+                    if pdef.entity_type == "CITY":
+                        if value.lower() in _CITY_FALSE_POSITIVES:
                             continue
 
                     # Validate AGE is reasonable (0-120)
