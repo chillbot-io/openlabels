@@ -94,19 +94,17 @@ class DetectionConfig:
         # detectors now provide coverage at 0.78 confidence.  Threshold
         # must be below pattern confidence or ALL country detections die.
         ("COUNTRY", 0.76),
-        # USERNAME — GLiNER "username" over-fires (23 spurious on nemotron).
-        # Pattern detectors cover labeled formats ("username: X") and
-        # structural formats ("John_Doe", "alice.smith123").  Raise
-        # threshold so only high-confidence GLiNER detections survive.
-        ("USERNAME", 0.72),
+        # USERNAME — 23 spurious on nemotron_pii are from PATTERN detectors
+        # (not GLiNER).  "Name+Digits" (0.72) and "word_word" (0.78)
+        # patterns are the noisiest.  Threshold 0.79 filters both while
+        # keeping "Word_Word" compound (0.80) and labeled (0.82-0.85).
+        ("USERNAME", 0.79),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # FIRSTNAME raised to 0.62: 19 spurious on nemotron_pii at 0.60
-        # after COMPANY removed from GLiNER (fewer competing detections
-        # means more FIRSTNAME survive).  0.62 trims the noisiest while
-        # keeping real name detections (calibrated ~0.55+ after Platt).
+        # FIRSTNAME at 0.60: tried 0.62 but lost 18 TP for only 4 FP
+        # saved (misses 6→24, spurious 19→15).  0.60 is the sweet spot.
         ("NAME", 0.50),
-        ("FIRSTNAME", 0.62),
+        ("FIRSTNAME", 0.60),
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — not PII, excluded from benchmark scoring.
