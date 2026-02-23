@@ -446,6 +446,22 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(?:Acc\.?\s*(?:No\.?|#)|A/C)\s*[:\s#]+(\d{6,17})\b",
         "ACCOUNT_NUMBER", 0.85, 1, flags=re.IGNORECASE
     ),
+    # ACCOUNT_NUMBER — "CUS" prefix (shorter than CUST): "CUS028139", "CUS109342"
+    _p(
+        r"\b(CUS\d{5,12})\b",
+        "ACCOUNT_NUMBER", 0.88, 1, flags=0
+    ),
+    # ACCOUNT_NUMBER — "SUP" prefix (support/supplier IDs): "SUP872419"
+    _p(
+        r"\b(SUP\d{5,12})\b",
+        "ACCOUNT_NUMBER", 0.85, 1, flags=0
+    ),
+    # ACCOUNT_NUMBER — Single letter + digits in account context:
+    # "account C73628945", "customer ID: C938D76215"
+    _p(
+        r"\b(?:account|acct|customer|client|member|policy|subscriber)\s*(?:#|no\.?|number|id)?\s*[:\s#]+([A-Z]\d{6,12})\b",
+        "ACCOUNT_NUMBER", 0.82, 1, flags=re.IGNORECASE
+    ),
 
     # DEVICE_ID — labeled context for numeric device identifiers
     # Prevents 15-digit device IDs from being misclassified as CREDIT_CARD
@@ -518,6 +534,12 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\b(?:Set-)?Cookie\s*:\s*\S+=([A-Za-z0-9\-_.%+/]{16,200})",
         "API_KEY", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # HTTP cookie with attributes: "name=value; Path=/; HttpOnly; Secure"
+    # Matches full cookie strings including Path, Max-Age, Expires, etc.
+    _p(
+        r"\b(\w+=[\w\-]+;\s*Path=/[^;\s]*(?:;\s*(?:HttpOnly|Secure|SameSite=\w+|Max-Age=\d+|Expires=[^;]+))*)",
+        "API_KEY", 0.85, 1, flags=0
     ),
 )
 

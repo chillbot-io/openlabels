@@ -1679,8 +1679,13 @@ _p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNA
 # "delegating/responsibility to Username" — assignment context
 _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
 # Bare Name+Digits usernames: "Eugenia10", "Geovany30", "Jonatan78"
-# Require 3+ alpha chars + 1-3 digits, title-case (not common words)
-_p(r'\b([A-Z][a-z]{2,15}\d{1,3})\b', 'USERNAME', 0.72, 1),
+# Require 3+ alpha chars + 1-4 digits, title-case (not common words)
+_p(r'\b([A-Z][a-z]{2,15}\d{1,4})\b', 'USERNAME', 0.72, 1),
+# CamelCase + digits usernames (no separator): "BerthaRichardson1965", "DeclanMcK77"
+# Two or more uppercase transitions + trailing digits — distinctive username format.
+_p(r'\b([A-Z][a-z]+(?:[A-Z][a-z]*)+\d{1,4})\b', 'USERNAME', 0.75, 1),
+# Lowercase + digits usernames in labeled context: "username: cd1987", "user: el1990"
+_p(r'(?:username|user|login|userid|handle|screen\s*name)[:\s]+([a-z]{2,15}\d{2,4})\b', 'USERNAME', 0.82, 1, flags=re.I),
 
 # === Password ===
 # English password labels - require colon/equals separator (not just whitespace) to avoid FPs

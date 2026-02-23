@@ -72,7 +72,7 @@ _AMBIGUOUS_FIRST = frozenset({
     "jersey", "jewel", "jimmy", "joe", "john", "joy", "june",
     "king", "lance", "lily", "love", "mark", "mat", "max",
     "may", "mercy", "mike", "miles", "nick", "noble", "norm",
-    "olive", "pat", "pearl", "penny", "peter", "pierre",
+    "olive", "pat", "pearl", "penny", "peter",
     "ray", "reed", "rob", "robin", "rod", "rose", "ruby",
     "sandy", "skip", "spring", "sterling", "sue", "summer",
     "tab", "terry", "tom", "tony", "troy", "val", "van",
