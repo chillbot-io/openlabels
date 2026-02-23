@@ -107,11 +107,12 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # 22 real companies on nemotron_pii.  At 1.35, moderate-confidence
     # detections survive while still dampening overconfident FPs.
     "company name": (1.35, 0.10),
-    # JOB_TITLE: lowered from (1.40, 0.10) — with JOB_TITLE now
-    # ML-primary (solo_min ~0.52), the old temp=1.40 was still too
-    # aggressive (raw 0.60 → calibrated ~0.44, suppressed).  At 1.25,
-    # raw 0.55 → calibrated ~0.50, which survives ML-primary gating.
-    "job title": (1.25, 0.08),
+    # JOB_TITLE: lowered from (1.25, 0.08) — with JOB_TITLE ML-primary
+    # and no pattern detector, the 1.25 temp required raw >= 0.58 to
+    # survive solo, filtering out 39 real job titles on nemotron_pii.
+    # Near-identity (1.05, 0.02) means raw >= 0.52 survives solo,
+    # matching the effective solo_min for well-calibrated labels.
+    "job title": (1.05, 0.02),
     "employee id": (1.15, 0.04),
     # ── Vehicle ──────────────────────────────────────────
     # VIN has checksum detector; GLiNER hallucinates on alphanumeric codes.

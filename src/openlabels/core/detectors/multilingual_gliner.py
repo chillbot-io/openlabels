@@ -77,7 +77,7 @@ MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
     "mac address": (0.90, -0.04),
     # Professional
     "company name": (1.25, 0.06),
-    "job title": (1.30, 0.08),
+    "job title": (1.05, 0.02),
     "employee id": (1.10, 0.03),
     # Vehicle
     "vehicle identification number": (1.35, 0.10),
