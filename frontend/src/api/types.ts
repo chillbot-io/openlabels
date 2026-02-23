@@ -270,6 +270,7 @@ export interface BrowseFile {
   owner: string | null;
   current_label_name: string | null;
   last_scanned_at: string | null;
+  latest_result_id: string | null;
 }
 
 export interface BrowseFilesResponse {
