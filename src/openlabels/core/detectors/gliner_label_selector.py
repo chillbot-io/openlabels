@@ -204,7 +204,8 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "zip code",
         "country",
         "county",
-        "gps coordinate",
+        # "gps coordinate" removed: pattern detectors cover all GPS formats
+        # (bracket, decimal, DMS, labeled).  GLiNER produces 8 spurious.
         "url",
         "username",
         "imei number",

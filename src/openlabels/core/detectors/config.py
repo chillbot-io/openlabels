@@ -94,13 +94,19 @@ class DetectionConfig:
         # detectors now provide coverage at 0.78 confidence.  Threshold
         # must be below pattern confidence or ALL country detections die.
         ("COUNTRY", 0.76),
+        # USERNAME — GLiNER "username" over-fires (23 spurious on nemotron).
+        # Pattern detectors cover labeled formats ("username: X") and
+        # structural formats ("John_Doe", "alice.smith123").  Raise
+        # threshold so only high-confidence GLiNER detections survive.
+        ("USERNAME", 0.72),
         # Names — ML-dependent, need lower threshold to recover
         # borderline GLiNER detections after Platt calibration.
-        # FIRSTNAME raised from 0.58 to 0.60: 21 spurious FIRSTNAME
-        # on nemotron_pii at 0.58, many from company/city/username
-        # spans misclassified as names.
+        # FIRSTNAME raised to 0.62: 19 spurious on nemotron_pii at 0.60
+        # after COMPANY removed from GLiNER (fewer competing detections
+        # means more FIRSTNAME survive).  0.62 trims the noisiest while
+        # keeping real name detections (calibrated ~0.55+ after Platt).
         ("NAME", 0.50),
-        ("FIRSTNAME", 0.60),
+        ("FIRSTNAME", 0.62),
         ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — not PII, excluded from benchmark scoring.
@@ -137,6 +143,11 @@ class DetectionConfig:
         # SWIFT_BIC — 2 spurious from standalone 8-char pattern (0.75).
         # Only labeled ("SWIFT: XXXX") at 0.98 survives.
         ("SWIFT_BIC", 0.80),
+        # GPS_COORDINATE — GLiNER "gps coordinate" (CONTACT) has no
+        # calibration and over-fires (8 spurious).  Pattern detectors
+        # cover all structural GPS formats at 0.85–0.92 confidence.
+        # Threshold at 0.86 filters GLiNER noise while keeping patterns.
+        ("GPS_COORDINATE", 0.86),
     )
 
     @classmethod

@@ -1542,6 +1542,12 @@ _p(r'\b(Australia|New\s+Zealand|Papua\s+New\s+Guinea|Fiji|Samoa|Tonga|'
    r'Vanuatu|Solomon\s+Islands|Micronesia|Palau|Marshall\s+Islands|'
    r'Kiribati|Nauru|Tuvalu|Russia|Russian\s+Federation)\b', 'COUNTRY', 0.78, 1),
 
+# Country abbreviations / short forms — only with context to avoid FP.
+# "USA" and "UAE" are unambiguous.  "US" and "UK" need boundary context
+# (preceded by "the" or "in" etc.) to avoid matching in-word occurrences.
+_p(r'\b(USA|U\.S\.A\.?|UAE|U\.A\.E\.?)\b', 'COUNTRY', 0.78, 1),
+_p(r'(?:the|in|from|of|to)\s+(US|U\.S\.?|UK|U\.K\.?)\b', 'COUNTRY', 0.75, 1, flags=re.I),
+
 # === Standalone CITY Patterns ===
 # City-suffix heuristic: words ending in common city suffixes are likely city names.
 # Matches Faker-generated cities (Pfefferton, Langoshburgh, Strackeview) and real cities.
