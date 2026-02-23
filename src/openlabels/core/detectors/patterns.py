@@ -849,7 +849,7 @@ _p(r'(?:time|recorded|documented|signed)[:\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|
 
 # === 24-hour time formats ===
 # "14:30:00" - 24-hour with seconds (ISO style)
-_p(r'\b(\d{2}:\d{2}:\d{2})\b', 'TIME', 0.82, 1),
+_p(r'\b(\d{2}:\d{2}:\d{2})\b', 'TIME', 0.92, 1),
 
 # === ISO 8601 datetime formats ===
 # "2024-03-15T14:30:00Z" - full ISO with timezone
@@ -859,23 +859,24 @@ _p(r'\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\b', 'DATETIME', 0.88, 1),
 
 # === Timezone-aware times ===
 # "14:30:00-05:00" - time with timezone offset
-_p(r'\b(\d{2}:\d{2}:\d{2}[+-]\d{2}:?\d{2})\b', 'TIME', 0.85, 1),
+_p(r'\b(\d{2}:\d{2}:\d{2}[+-]\d{2}:?\d{2})\b', 'TIME', 0.92, 1),
 # "14:30:00Z" - time with Z (UTC) suffix
-_p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.88, 1),
+_p(r'\b(\d{2}:\d{2}:\d{2}Z)\b', 'TIME', 0.92, 1),
 
 # === Clinical time contexts ===
 # "Surgery began 08:00", "procedure at 14:30"
-_p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.85, 1, flags=re.I),
-# Bare HH:MM (24-hour) — "04:52", "23:15"
-# 0.72 confidence: slightly above default threshold.  Bare HH:MM is somewhat
-# ambiguous (scores, verse refs, ratios) but PII benchmarks show most
-# bare HH:MM tokens in real documents are genuine times.  Additional guard:
-# negative lookahead rejects score-like "NN:NN-NN" and ratio "NN:NN/NN".
+_p(r'(?:began|started|ended|completed|performed)\s+(?:at\s+)?(\d{2}:\d{2})\b', 'TIME', 0.92, 1, flags=re.I),
+# Bare HH:MM (24-hour, hour >= 13) — "18:45", "21:45", "14:30"
+# Unambiguous: hours 13-23 can only be 24-hour time, not scores/ratios.
+_p(r'\b((?:1[3-9]|2[0-3]):\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.92, 1),
+# Bare HH:MM (24-hour, hour 00-12) — "04:52", "12:30"
+# 0.72 confidence: somewhat ambiguous (scores, verse refs, ratios).
+# Negative lookahead rejects score-like "NN:NN-NN" and ratio "NN:NN/NN".
 _p(r'\b(\d{2}:\d{2})\b(?!\s*[-/]\d)', 'TIME', 0.72, 1),
 # Standalone AM/PM without colon: "8 AM", "12 PM", "3pm"
 _p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I),
 # "by HH:MM", "before HH:MM", "after HH:MM", "until HH:MM"
-_p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.85, 1, flags=re.I),
+_p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.92, 1, flags=re.I),
 # "N o'clock" — informal time expression
 _p(r"\b(\d{1,2}\s*o'?\s*clock)\b", 'TIME', 0.88, 1, flags=re.I),
 # Military time: "1545 hours", "0930 hrs", "0800 HRS"
@@ -1675,7 +1676,7 @@ _p(r'(?:your|through\s+your|with\s+your)\s+([A-Za-z0-9_.-]{3,30})\s+credentials'
 # NOTE: Hyphens excluded — "Roberts-Rolfson" etc. are hyphenated surnames, not usernames.
 _p(r'\b([A-Z][a-z]+(?:[_.][A-Z][a-z]+)+\d{0,3})\b', 'USERNAME', 0.80, 1),
 # Simple Word_word or word_Word (mixed case with underscore)
-_p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNAME', 0.78, 1),
+_p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNAME', 0.80, 1),
 # "delegating/responsibility to Username" — assignment context
 _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
 # Bare Name+Digits usernames: "Eugenia10", "Geovany30", "Jonatan78"
@@ -1683,7 +1684,7 @@ _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A
 _p(r'\b([A-Z][a-z]{2,15}\d{1,4})\b', 'USERNAME', 0.72, 1),
 # CamelCase + digits usernames (no separator): "BerthaRichardson1965", "DeclanMcK77"
 # Two or more uppercase transitions + trailing digits — distinctive username format.
-_p(r'\b([A-Z][a-z]+(?:[A-Z][a-z]*)+\d{1,4})\b', 'USERNAME', 0.75, 1),
+_p(r'\b([A-Z][a-z]+(?:[A-Z][a-z]*)+\d{1,4})\b', 'USERNAME', 0.82, 1),
 # Lowercase + digits usernames in labeled context: "username: cd1987", "user: el1990"
 _p(r'(?:username|user|login|userid|handle|screen\s*name)[:\s]+([a-z]{2,15}\d{2,4})\b', 'USERNAME', 0.82, 1, flags=re.I),
 
@@ -1786,6 +1787,13 @@ _p(r'credentials?\s*\(\s*\S+\s*,\s*([A-Za-z0-9_]{6,50})\s*\)', 'PASSWORD', 0.85,
 _p(r'(?:encrypt|decrypt)\s+(?:\S+\s+)?(?:using|with)\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # "implement VALUE" followed by auth/security context — deployment password
 _p(r'\bimplement\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b(?=\s+(?:and|for|to|as|in))', 'PASSWORD', 0.75, 1, flags=re.I),
+# Word+special+year pattern: "Ocean@2025", "Winter#2024", "Summer$2023"
+# Common human-generated password format — word + symbol + 4-digit year.
+_p(r'(?:password|passwd|pwd|passcode|pass)\s*[=:]\s*([A-Za-z]{3,20}[!@#$%^&*]{1,2}\d{4})\b', 'PASSWORD', 0.90, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|pass)\s+(?:is|was|will\s+be)\s+([A-Za-z]{3,20}[!@#$%^&*]{1,2}\d{4})\b', 'PASSWORD', 0.88, 1, flags=re.I),
+# Keyboard pattern passwords: "qwerty*", "asdf*", "zxcv*" followed by digits
+_p(r'(?:password|passwd|pwd|passcode|pass)\s*[=:]\s*((?:qwerty|asdf|zxcv)[A-Za-z0-9!@#$%^&*]{2,30})\b', 'PASSWORD', 0.92, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|pass)\s+(?:is|was|will\s+be)\s+((?:qwerty|asdf|zxcv)[A-Za-z0-9!@#$%^&*]{2,30})\b', 'PASSWORD', 0.90, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),

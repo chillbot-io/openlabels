@@ -541,6 +541,135 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(\w+=[\w\-]+;\s*Path=/[^;\s]*(?:;\s*(?:HttpOnly|Secure|SameSite=\w+|Max-Age=\d+|Expires=[^;]+))*)",
         "API_KEY", 0.85, 1, flags=0
     ),
+
+    # ── DEMOGRAPHICS ──────────────────────────────────────────────────────
+    # GENDER — labeled context: "Gender: Male", "Sex: Female", "gender: M"
+    _p(
+        r"\b(?:gender|sex)\s*[:=]\s*(male|female|m|f|non[- ]?binary|transgender|"
+        r"other|prefer\s+not\s+to\s+say|genderqueer|genderfluid|agender|"
+        r"intersex|two[- ]?spirit)\b",
+        "GENDER", 0.92, 1, flags=re.IGNORECASE
+    ),
+    # GENDER — verb form: "identifies as male/female/non-binary"
+    _p(
+        r"\b(?:identifies|identified|identifying)\s+as\s+(male|female|"
+        r"non[- ]?binary|transgender|genderqueer|genderfluid)\b",
+        "GENDER", 0.88, 1, flags=re.IGNORECASE
+    ),
+    # GENDER — parenthetical: "(Male)", "(Female)", "(M)", "(F)"
+    _p(
+        r"\((Male|Female|M|F|Non[- ]?binary|Transgender)\)",
+        "GENDER", 0.85, 1, flags=0
+    ),
+
+    # ETHNICITY — labeled context: "Race: Caucasian", "Ethnicity: Hispanic"
+    _p(
+        r"\b(?:race|ethnicity|ethnic\s+group|racial\s+group)\s*[:=]\s*"
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b",
+        "ETHNICITY", 0.90, 1, flags=0
+    ),
+    # ETHNICITY — verb form: "ethnically Japanese", "racially mixed"
+    _p(
+        r"\b(?:ethnically|racially)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "ETHNICITY", 0.85, 1, flags=0
+    ),
+
+    # NATIONALITY — labeled context: "Nationality: French", "Citizenship: German"
+    _p(
+        r"\b(?:nationality|citizenship|citizen\s+of|national\s+of)\s*[:=]?\s*"
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "NATIONALITY", 0.90, 1, flags=0
+    ),
+    # NATIONALITY — "is a/an X citizen/national"
+    _p(
+        r"\bis\s+(?:a|an)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:citizen|national|resident)\b",
+        "NATIONALITY", 0.85, 1, flags=0
+    ),
+
+    # HEIGHT — labeled: "Height: 5'10\"", "Height: 178 cm", "Height: 5 ft 10 in"
+    _p(
+        r"\b[Hh]eight\s*[:=]\s*(\d{1,2}'\d{1,2}\"?)\b",
+        "HEIGHT", 0.92, 1, flags=0
+    ),
+    _p(
+        r"\b[Hh]eight\s*[:=]\s*(\d{2,3}\s*(?:cm|centimeters?|metres?|meters?))\b",
+        "HEIGHT", 0.92, 1, flags=0
+    ),
+    _p(
+        r"\b[Hh]eight\s*[:=]\s*(\d{1,2}\s*(?:ft|feet|foot)\.?\s*\d{1,2}\s*(?:in|inches?)?)\b",
+        "HEIGHT", 0.92, 1, flags=0
+    ),
+
+    # WEIGHT — labeled: "Weight: 180 lbs", "Weight: 82 kg"
+    _p(
+        r"\b[Ww]eight\s*[:=]\s*(\d{2,3}\s*(?:lbs?|pounds?|kg|kilograms?|kgs?|stone))\b",
+        "WEIGHT", 0.92, 1, flags=0
+    ),
+
+    # ── BIOMETRIC_ID — letter + 11 digits in context ─────────────────────
+    # Patterns like M87563249103, J47293856129, A74283965213
+    _p(
+        r"\b(?:biometric(?:\s+(?:id|identifier|template|hash|data))?|"
+        r"fingerprint(?:\s+(?:id|identifier|template|hash))?|"
+        r"retina(?:\s+(?:id|scan))?|iris(?:\s+(?:id|scan))?|"
+        r"facial(?:\s+(?:id|recognition\s+id))?)\s*[:\s#]+([A-Z]\d{10,14})\b",
+        "BIOMETRIC_ID", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # ── MRN — additional prefix patterns ──────────────────────────────────
+    # BH-00025483 — 2-letter prefix + hyphen + 6-8 digits
+    _p(
+        r"\b(?:medical\s+record|MRN|patient\s+(?:id|number|record))\s*[:\s#]*([A-Z]{1,3}-\d{5,10})\b",
+        "MRN", 0.88, 1, flags=re.IGNORECASE
+    ),
+    # Zero-padded 10-digit MRN in context: "MRN: 0004829175"
+    _p(
+        r"\b(?:medical\s+record|MRN|patient\s+(?:id|number|record))\s*[:\s#]*(0\d{7,11})\b",
+        "MRN", 0.90, 1, flags=re.IGNORECASE
+    ),
+    # M-375924 — single letter + hyphen + 5-8 digits in MRN context
+    _p(
+        r"\b(?:MRN|medical\s+record)\s*[:\s#]*([A-Z]-\d{5,8})\b",
+        "MRN", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # ── EMPLOYEE_ID — additional patterns ─────────────────────────────────
+    # Mixed alphanumeric with department codes: "21MKT105C"
+    _p(
+        r"\b(?:employee|staff|personnel|worker)\s*(?:id|#|number|no\.?|code)\s*[:\s#]*"
+        r"((?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{6,12})\b",
+        "EMPLOYEE_ID", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # Digits-hyphen-digits in employee context: "21-34987"
+    _p(
+        r"\b(?:employee|staff|badge|personnel)\s*(?:id|#|number|no\.?)\s*[:\s#]*(\d{2,4}-\d{4,8})\b",
+        "EMPLOYEE_ID", 0.82, 1, flags=re.IGNORECASE
+    ),
+
+    # ── CERTIFICATE_NUMBER — ILC prefix ───────────────────────────────────
+    # ILC-12345-678 — ILC prefix with segment separators
+    _p(
+        r"\b(ILC-\d{3,6}-\d{2,6})\b",
+        "CERTIFICATE_NUMBER", 0.88, 1, flags=0
+    ),
+
+    # ── ACCOUNT_NUMBER — additional patterns ──────────────────────────────
+    # DigitsCUST pattern: "23CUST14238" — digits + CUST + digits
+    _p(
+        r"\b(\d{1,4}CUST\d{4,12})\b",
+        "ACCOUNT_NUMBER", 0.88, 1, flags=0
+    ),
+    # IBAN with spaces — "FR72 2000 7002 4900 2500 0120 53"
+    # Canonical IBAN: 2 letters + 2 digits + groups of 4 digits/letters separated by spaces
+    _p(
+        r"\b([A-Z]{2}\d{2}(?:\s+\d{4}){2,7}(?:\s+\d{1,4})?)\b",
+        "ACCOUNT_NUMBER", 0.90, 1, flags=0
+    ),
+    # Date-hyphen-digits in account context: "230815-102487"
+    _p(
+        r"\b(?:account|acct|customer|reference|ref)\s*(?:#|no\.?|number|id)?\s*[:\s#]+(\d{6}-\d{5,8})\b",
+        "ACCOUNT_NUMBER", 0.82, 1, flags=re.IGNORECASE
+    ),
 )
 
 
