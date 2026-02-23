@@ -134,8 +134,6 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         "first name",
         "last name",
         "middle name",
-        # --- Professional: no pattern coverage ---
-        "company name",
         # --- Locations: partial pattern coverage ---
         "street address",
         "city",
@@ -159,13 +157,11 @@ _CATEGORY_LABELS: dict[ContentCategory, list[str]] = {
         # Pattern detectors handle US ZIP but miss international postal
         # codes.  GLiNER adds marginal recall here.
         "zip code",
-        # --- Professional: ML-primary gating (solo_min ~0.52) ---
-        # JOB_TITLE has no pattern detector, so only GLiNER can detect it.
-        # Moved from strict to ML-primary: strict was suppressing 41
-        # real job titles on nemotron_pii.  With ML-primary + calibration
-        # (temp=1.25), moderate-confidence detections survive.
-        "job title",
         # --- Labels REMOVED from GENERAL ---
+        # company name, job title:
+        #   Not PII.  Company/job don't identify individuals.  GLiNER
+        #   "company name" generated 34 spurious + 11 name→COMPANY type
+        #   mismatches on nemotron_pii.  Removing frees attention budget.
         # date, date and time, time, age:
         #   Pattern detectors achieve 100% recall on structured dates/times.
         #   GLiNER adds 26+ spurious FPs and 0 additional TP.

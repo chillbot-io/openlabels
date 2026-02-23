@@ -406,16 +406,6 @@ class DetectorOrchestrator:
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
-        # Collect priority-type ranges from ALL raw detections (before
-        # threshold filtering).  Low-confidence COMPANY/CITY/USERNAME
-        # detections that don't survive the per-entity threshold should
-        # still suppress FIRSTNAME in the name-collision check.
-        raw_priority_ranges = [
-            (s.start, s.end)
-            for s in spans
-            if normalize_entity_type(s.entity_type) in _NAME_COLLISION_PRIORITY_TYPES
-        ]
-
         # Context keyword adjustment (before calibration)
         if self.config.enable_context_keywords and text and filtered:
             from ..pipeline.context_keywords import apply_context_keywords
@@ -455,14 +445,12 @@ class DetectorOrchestrator:
         resolved = _suppress_uncorroborated_ml(resolved, calibrated)
 
         # Suppress FIRSTNAME/LASTNAME that collide with priority types
-        # (locations, COMPANY, USERNAME, JOB_TITLE).  Uses both the
-        # pre-dedup calibrated list AND raw priority ranges from before
-        # threshold filtering, so we see detections that were filtered
-        # by per-entity thresholds but still indicate a non-name entity.
+        # (locations, COMPANY, USERNAME, JOB_TITLE).  Uses the pre-dedup
+        # calibrated list so we see GLiNER detections that lost to
+        # FIRSTNAME in dedup (e.g. "Florence" detected as both CITY
+        # and FIRSTNAME by GLiNER).
         resolved = _suppress_name_location_collisions(
-            resolved,
-            all_candidates=calibrated,
-            extra_priority_ranges=raw_priority_ranges,
+            resolved, all_candidates=calibrated,
         )
 
         if self.config.enable_proximity_boost and resolved:
@@ -1195,15 +1183,14 @@ _NAME_COLLISION_PRIORITY_TYPES = _LOCATION_TYPES | frozenset({
 def _suppress_name_location_collisions(
     spans: list[Span],
     all_candidates: list[Span] | None = None,
-    extra_priority_ranges: list[tuple[int, int]] | None = None,
 ) -> list[Span]:
     """Suppress FIRSTNAME/LASTNAME spans that overlap with priority types.
 
     City/state/county names (Florence, Georgia, Madison, Austin),
-    company names (Apple, Chase), job titles (Engineer, Director),
-    and usernames are common first names but are almost always the
-    more specific type in benchmark contexts.  When both a name and
-    a priority-type span overlap at the same position, suppress the name.
+    company names (Apple, Chase), and usernames are common first names
+    but are almost always the more specific type in PII contexts.
+    When both a name and a priority-type span overlap at the same
+    position, suppress the name.
 
     Args:
         spans: The resolved (post-dedup) span list to filter.
@@ -1212,21 +1199,13 @@ def _suppress_name_location_collisions(
             the same position; dedup picks one winner (often FIRSTNAME
             with higher confidence).  By checking ``all_candidates`` we
             see priority detections that lost in dedup.
-        extra_priority_ranges: Optional pre-computed priority ranges from
-            raw (pre-threshold-filter) detections.  Ensures low-confidence
-            COMPANY/CITY detections that were filtered by per-entity
-            thresholds still suppress FIRSTNAME.
     """
-    # Collect priority ranges from the pre-dedup candidates (or resolved).
     source = spans if all_candidates is None else all_candidates
     priority_ranges: list[tuple[int, int]] = [
         (s.start, s.end)
         for s in source
         if s.entity_type in _NAME_COLLISION_PRIORITY_TYPES
     ]
-    # Add ranges from raw detections (before threshold filtering).
-    if extra_priority_ranges:
-        priority_ranges.extend(extra_priority_ranges)
     if not priority_ranges:
         return spans
 
