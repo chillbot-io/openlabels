@@ -146,6 +146,11 @@ class DetectionConfig:
         # cover all structural GPS formats at 0.85–0.92 confidence.
         # Threshold at 0.86 filters GLiNER noise while keeping patterns.
         ("GPS_COORDINATE", 0.86),
+        # DRIVER_LICENSE — context-free interleaved patterns (0.72) match
+        # generic alphanumeric strings (19 ACCOUNT_NUMBER→DL mismatches).
+        # Threshold at 0.78 filters context-free interleaved (0.72) while
+        # keeping labeled (0.85+), state-specific (0.78+), and WDL (0.92).
+        ("DRIVER_LICENSE", 0.78),
     )
 
     @classmethod

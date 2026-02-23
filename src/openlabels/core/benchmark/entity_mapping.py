@@ -82,6 +82,8 @@ AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     "MASKEDNUMBER": "ACCOUNT_NUMBER",
     "MASKNUM": "ACCOUNT_NUMBER",      # HF 400k short form
     "POLICYNUM": "ACCOUNT_NUMBER",
+    "BANK_ROUTING": "BANK_ROUTING",
+    "BANKROUTING": "BANK_ROUTING",
 
     # Professional
     "COMPANY": "COMPANY",
@@ -118,6 +120,10 @@ UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
     "COMPANY",        # Not PII — company names don't identify individuals
     "EMPLOYER",       # Not PII — same as COMPANY
     "HEIGHT",         # ai4privacy HEIGHT is in UNMAPPED_TYPES (not scored)
+    "WEIGHT",         # ai4privacy WEIGHT is in UNMAPPED_TYPES (not scored)
+    "GENDER",         # ai4privacy GENDER is in UNMAPPED_TYPES (not scored)
+    "ETHNICITY",      # No gold labels in ai4privacy (pure FP)
+    "NATIONALITY",    # ai4privacy NATIONALITY is in UNMAPPED_TYPES (not scored)
     "FACILITY",       # ai4privacy has no FACILITY gold labels
     # Gretel PII 1K analysis: these predicted types have 0 gold labels and
     # generate pure false positives.

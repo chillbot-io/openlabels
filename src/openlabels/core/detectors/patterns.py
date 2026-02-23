@@ -1835,16 +1835,16 @@ _p(r'(?:CO|Colorado|DL)[:\s]+(\d{9})\b', 'DRIVER_LICENSE', 0.80, 1, flags=re.I),
 _p(r'(?:NV|Nevada|DL)[:\s]+(\d{9,12})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
 # New Hampshire: 2 digits + 3 letters + 5 digits (12ABC34567)
-# Interleaved format — specific enough to keep
-_p(r'\b(\d{2}[A-Z]{3}\d{5})\b', 'DRIVER_LICENSE', 0.88, 1),
+# Interleaved format — lowered from 0.88 to 0.72: without DL context these
+# match generic alphanumeric account numbers (19 ACCOUNT_NUMBER→DL mismatches).
+# Labeled DL patterns ("DL: xxx") at 0.88+ still catch these with context.
+_p(r'\b(\d{2}[A-Z]{3}\d{5})\b', 'DRIVER_LICENSE', 0.72, 1),
 
 # Iowa: 3 digits + 2 letters + 4 digits (123AB4567)
-# Interleaved format — specific enough to keep
-_p(r'\b(\d{3}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
+_p(r'\b(\d{3}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.72, 1),
 
 # Indiana: 4 digits + 2 letters + 4 digits (1234AB5678)
-# Interleaved format — specific enough to keep
-_p(r'\b(\d{4}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.88, 1),
+_p(r'\b(\d{4}[A-Z]{2}\d{4})\b', 'DRIVER_LICENSE', 0.72, 1),
 _p(r'(?:IN|Indiana|DL)[:\s]+(\d{10})\b', 'DRIVER_LICENSE', 0.78, 1, flags=re.I),
 
 # Arizona: with context
@@ -1989,8 +1989,10 @@ _p(r'(?:through\s+your)\s+\w+\s+card\s+ending\s+with\s+(\d{16})\b', 'ACCOUNT_NUM
 _p(r'(?:monitor|deposit|withdraw|debit|credited?\s+to|charged?\s+to)\s+(?:the\s+)?(\d{7,17})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
 # Broader: "<number> is your account" or "account <number>"
 _p(r'\b(\d{7,17})\s+(?:is\s+(?:your|the)\s+(?:account|acct))', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),
-# "routing number XXXX" / "sort code XXXX"
-_p(r'(?:routing\s+number|sort\s+code|BSB)\s*[:\s#]+(\d{6,9})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
+# "routing number XXXX" / "sort code XXXX" / "ABA routing"
+# Changed from ACCOUNT_NUMBER to BANK_ROUTING: gold labels use BANK_ROUTING
+# and producing the wrong type caused 10 type mismatches.
+_p(r'(?:routing\s+number|sort\s+code|BSB|ABA)\s*[:\s#]+(\d{6,9})\b', 'BANK_ROUTING', 0.85, 1, flags=re.I),
 # "reference number: XXXX" / "reference no: XXXX" — labeled reference IDs
 _p(r'(?:reference\s+(?:number|no|#|id))[:\s]+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
 # "account (No. XXXX)" / "account (no XXXX)" — parenthesized account label
