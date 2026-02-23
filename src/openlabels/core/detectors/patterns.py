@@ -1684,7 +1684,9 @@ _p(r'(?:password|passwd|pwd|passcode|pin|pass)\s*[=:]\s*([^\s]{4,50})', 'PASSWOR
 # International password labels (DE: Kennwort/Passwort, FR: mot de passe, ES: contraseña, IT: password, NL: wachtwoord, PT: senha)
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha|parola\s+d\'ordine)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I | re.UNICODE),
 # Authentication context: "credentials: password", "secret: xxxxx"
-_p(r'(?:credential|secret|auth\s+key|api\s+key|access\s+key|secret\s+key)[:\s]+([^\s]{8,100})', 'PASSWORD', 0.88, 1, flags=re.I),
+# NOTE: "api key", "access key", "auth key", "secret key" moved to secrets.py as API_KEY.
+# Only "credential" and "secret" remain as PASSWORD triggers here.
+_p(r'(?:credential|secret)[:\s]+([^\s]{8,100})', 'PASSWORD', 0.88, 1, flags=re.I),
 # Temp/initial password context
 _p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode|pin|pass)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
 # "password is XXXX" / "pin is XXXX" / "pass is XXXX" — verb separator instead of colon/equals
