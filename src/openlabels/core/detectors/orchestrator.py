@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1055,7 +1056,7 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
 # NAME-family types that can be false-positively assigned to pronouns.
 _NAME_FAMILY = frozenset({
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
-    "FIRSTNAME", "LASTNAME",
+    "FIRSTNAME", "LASTNAME", "MIDDLENAME",
 })
 
 # Personal pronouns (lower-cased) that are never PII by themselves.
@@ -1256,6 +1257,7 @@ _ML_NAME_BLOCKLIST = frozenset({
     "spark", "nationalist", "mutual", "team", "mente",
     "premium", "quantum", "spectrum", "catalyst", "pinnacle",
     "velocity", "momentum", "paradigm", "syndicate",
+    "brokerage", "sales",
     # Demonyms / nationality-adjacent words
     "croat", "croatian", "emirati", "kuwaiti", "qatari",
     "bahraini", "omani", "yemeni", "somali", "afghan",
@@ -1264,6 +1266,7 @@ _ML_NAME_BLOCKLIST = frozenset({
     # Short words / brand-adjacent
     "verde", "tone", "viva", "alto", "vista",
     "forte", "tempo", "presto", "largo", "motto",
+    "baha",
     # Action / role words
     "claim", "claims", "overall", "overview",
     "appeal", "appeals", "reform", "reforms",
@@ -1272,6 +1275,8 @@ _ML_NAME_BLOCKLIST = frozenset({
     # Common words that start sentences (title-cased by position)
     "cash", "yoga", "menu", "logo", "demo", "memo",
     "quota", "bonus", "forum", "salon", "plaza",
+    # Company name fragments / proper nouns misread as person names
+    "jazeera", "capital",
 })
 
 
@@ -1334,7 +1339,12 @@ _ML_USERNAME_BLOCKLIST = frozenset({
     "recommended", "assigned", "associated", "documented",
     "referenced", "generated", "maintained", "established",
     "implemented", "distributed", "administered",
+    # Additional from nemotron_pii benchmark
+    "multiple", "security",
 })
+
+# Regex to strip leading/trailing non-alphanumeric chars for blocklist matching
+_STRIP_NONALPHA_RE = re.compile(r'^[^a-z0-9]+|[^a-z0-9]+$')
 
 
 def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
@@ -1349,6 +1359,13 @@ def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
             if lower in _ML_USERNAME_BLOCKLIST:
                 logger.debug(
                     "ML USERNAME FP suppressed: %r (blocklist)", span.text,
+                )
+                continue
+            # Also check after stripping trailing punctuation (e.g. "Security**")
+            stripped = _STRIP_NONALPHA_RE.sub('', lower)
+            if stripped and stripped != lower and stripped in _ML_USERNAME_BLOCKLIST:
+                logger.debug(
+                    "ML USERNAME FP suppressed: %r (blocklist, stripped)", span.text,
                 )
                 continue
         result.append(span)
