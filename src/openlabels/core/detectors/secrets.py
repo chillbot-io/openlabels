@@ -201,8 +201,8 @@ SECRETS_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(r'(cassandra://[^:]+:[^@]+@[^\s"\'<>]+)', 'DATABASE_URL', 0.95, 1, flags=re.I),
 
     # GENERIC SECRETS (CONTEXTUAL)
-    _p(r'(?:password|passwd|pwd)["\s:=]+["\']([^"\']{8,})["\']', 'PASSWORD', 0.85, 1, flags=re.I),
-    _p(r'(?:password|passwd|pwd|mot de passe|passwort|contraseña|wachtwoord|parola|senha)[:\s]+([^\s,.<>]{5,30})', 'PASSWORD', 0.80, 1, flags=re.I),
+    _p(r'(?:password|passwd|pwd|passphrase)["\s:=]+["\']([^"\']{8,})["\']', 'PASSWORD', 0.85, 1, flags=re.I),
+    _p(r'(?:password|passwd|pwd|passphrase|mot de passe|passwort|contraseña|wachtwoord|parola|senha)[:\s]+([^\s,.<>]{5,30})', 'PASSWORD', 0.80, 1, flags=re.I),
     # Quoted API key: api_key = "value"
     _p(r'(?:api[_\s]?key|apikey|api[_\s]?secret)["\s:=]+["\']([a-zA-Z0-9\-_]{16,})["\']', 'API_KEY', 0.85, 1, flags=re.I),
     # Unquoted API key: api_key: value  /  api key = value

@@ -878,6 +878,10 @@ _p(r'\b(\d{1,2}\s*(?:AM|PM|am|pm|a\.m\.|p\.m\.))\b', 'TIME', 0.82, 1, flags=re.I
 _p(r'(?:by|before|after|until|around|about)\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?)\b', 'TIME', 0.85, 1, flags=re.I),
 # "N o'clock" — informal time expression
 _p(r"\b(\d{1,2}\s*o'?\s*clock)\b", 'TIME', 0.88, 1, flags=re.I),
+# Military time: "1545 hours", "0930 hrs", "0800 HRS"
+_p(r'\b(\d{4})\s*(?:hours?|hrs?)\b', 'TIME', 0.88, 1, flags=re.I),
+# "noon" / "midnight" with temporal context
+_p(r'(?:at|by|before|after|around|until|since|from)\s+(noon|midnight|midday)\b', 'TIME', 0.85, 1, flags=re.I),
 
 # === Age ===
 # Standard forms: "46 years old", "46 year old"
@@ -1680,7 +1684,10 @@ _p(r'\b([A-Z][a-z]{2,15}\d{1,3})\b', 'USERNAME', 0.72, 1),
 
 # === Password ===
 # English password labels - require colon/equals separator (not just whitespace) to avoid FPs
-_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s*[=:]\s*([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s*[=:]\s*([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I),
+# OTP / MFA / 2FA / recovery/backup codes — labeled context
+_p(r'(?:OTP|one[- ]time\s+(?:password|code|pin)|2FA\s+code|MFA\s+code|verification\s+code|security\s+code)[:\s]+([A-Za-z0-9_-]{4,20})', 'PASSWORD', 0.88, 1, flags=re.I),
+_p(r'(?:recovery|backup)\s+(?:code|key)[:\s]+([A-Za-z0-9_-]{4,50})', 'PASSWORD', 0.85, 1, flags=re.I),
 # International password labels (DE: Kennwort/Passwort, FR: mot de passe, ES: contraseña, IT: password, NL: wachtwoord, PT: senha)
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha|parola\s+d\'ordine)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.90, 1, flags=re.I | re.UNICODE),
 # Authentication context: "credentials: password", "secret: xxxxx"
@@ -1688,9 +1695,9 @@ _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha|parola\s
 # Only "credential" and "secret" remain as PASSWORD triggers here.
 _p(r'(?:credential|secret)[:\s]+([^\s]{8,100})', 'PASSWORD', 0.88, 1, flags=re.I),
 # Temp/initial password context
-_p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode|pin|pass)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
+_p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode|passphrase|pin|pass)[:\s]+([^\s]{4,50})', 'PASSWORD', 0.92, 1, flags=re.I),
 # "password is XXXX" / "pin is XXXX" / "pass is XXXX" — verb separator instead of colon/equals
-_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
 # "password for X is Y" — "for" clause between password and value
 _p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:for\s+\S+(?:\s+\S+){0,4}?\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha)\s+(?:is|ist|est|es|é)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I | re.UNICODE),
@@ -1998,6 +2005,10 @@ _p(r'(?:Board\s+Certified?|Certified)\s+#?[:\s]*([A-Z]*\d[A-Z0-9]{4,14})', 'CERT
 # === Additional Account Numbers (Safe Harbor #10) ===
 _p(r'(?:Patient\s+)?(?:Acct)\s*(?:Number|No|#)?[:\s#]+([A-Z0-9-]{6,20})', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 _p(r'(?:Invoice|Billing|Statement)\s*(?:Number|No|#)?\s*[:#]\s*([A-Z0-9-]{6,20})', 'ACCOUNT_NUMBER', 0.80, 1, flags=re.I),
+# Financial context labels missing "Account" keyword
+_p(r'(?:loan|mortgage|policy|portfolio|contract|subscription|membership|member)\s+(?:number|no\.?|#|id)[:\s]+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
+# "loan number is XXXX" — verb separator
+_p(r'(?:loan|mortgage|policy|contract|membership)\s+(?:number|no\.?|#|id)\s+(?:is|was)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.82, 1, flags=re.I),
 _p(r'(?:Claim)\s*(?:Number|No|#)?\s*[:#]\s*([A-Z0-9-]{8,20})', 'CLAIM_NUMBER', 0.88, 1, flags=re.I),
 
 # === Unique Identifiers (Safe Harbor #18) - Catch-all ===
