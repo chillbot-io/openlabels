@@ -146,12 +146,18 @@ class TokenResponse(BaseModel):
     scope: str
 
 
-class AuthConfigResponse(BaseModel):
-    """Auth configuration for frontend to know which provider to show."""
-    provider: str
+class AuthProviderInfo(BaseModel):
+    """Description of a single login provider for the frontend."""
+    key: str  # provider slug: "google", "microsoft", "github", "azure_ad", "default"
+    provider_type: str  # "oidc", "azure_ad", or "none"
     display_name: str
     button_style: str
     login_url: str
+
+
+class AuthConfigResponse(BaseModel):
+    """Auth configuration for frontend — list of available login providers."""
+    providers: list[AuthProviderInfo]
 
 
 def _get_msal_app():
@@ -206,29 +212,36 @@ async def get_auth_config(request: Request) -> AuthConfigResponse:
     """
     settings = get_settings()
     provider = settings.auth.provider
+    providers: list[AuthProviderInfo] = []
 
     if provider == "oidc":
-        oidc = settings.auth.oidc
-        return AuthConfigResponse(
-            provider="oidc",
-            display_name=oidc.display_name,
-            button_style=oidc.button_style,
-            login_url="/api/v1/auth/login",
-        )
+        for key, cfg in settings.auth.get_oidc_providers().items():
+            providers.append(AuthProviderInfo(
+                key=key,
+                provider_type="oidc",
+                display_name=cfg.display_name,
+                button_style=cfg.button_style,
+                login_url=f"/api/v1/auth/login?provider={key}",
+            ))
     elif provider == "azure_ad":
-        return AuthConfigResponse(
-            provider="azure_ad",
+        providers.append(AuthProviderInfo(
+            key="azure_ad",
+            provider_type="azure_ad",
             display_name="Microsoft",
             button_style="microsoft",
             login_url="/api/v1/auth/login",
-        )
-    else:
-        return AuthConfigResponse(
-            provider="none",
+        ))
+
+    if not providers:
+        providers.append(AuthProviderInfo(
+            key="none",
+            provider_type="none",
             display_name="Development",
             button_style="generic",
             login_url="/api/v1/auth/login",
-        )
+        ))
+
+    return AuthConfigResponse(providers=providers)
 
 
 # ---------- Login ----------
@@ -238,12 +251,14 @@ async def get_auth_config(request: Request) -> AuthConfigResponse:
 async def login(
     request: Request,
     redirect_uri: str | None = None,
+    provider: str | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     """
     Initiate OAuth login flow.
 
     Routes to the appropriate provider (Azure AD, OIDC, or dev mode).
+    For multi-provider OIDC, pass ``?provider=google`` (or whichever key).
     """
     settings = get_settings()
     session_store = SessionStore(db)
@@ -257,7 +272,26 @@ async def login(
         return await _login_dev_mode(request, redirect_uri, db, session_store)
 
     if settings.auth.provider == "oidc":
-        return await _login_oidc(request, redirect_uri, db, pending_store)
+        # Resolve which OIDC provider to use
+        oidc_providers = settings.auth.get_oidc_providers()
+        if not oidc_providers:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No OIDC providers configured",
+            )
+        # If only one provider, use it regardless of param
+        if len(oidc_providers) == 1:
+            provider_key = next(iter(oidc_providers))
+        else:
+            provider_key = provider or next(iter(oidc_providers))
+
+        oidc_config = oidc_providers.get(provider_key)
+        if not oidc_config:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown OIDC provider: {provider_key}",
+            )
+        return await _login_oidc(request, redirect_uri, db, pending_store, provider_key, oidc_config)
 
     # Default: Azure AD via MSAL
     return await _login_azure_ad(request, redirect_uri, db, pending_store)
@@ -345,17 +379,16 @@ async def _login_oidc(
     redirect_uri: str | None,
     db: AsyncSession,
     pending_store: PendingAuthStore,
+    provider_key: str,
+    oidc_config: "OIDCProviderSettings",
 ) -> RedirectResponse:
-    """Initiate generic OIDC login."""
+    """Initiate generic OIDC login for a specific provider."""
     from openlabels.auth.oidc_provider import get_authorization_url, get_discovery
-
-    settings = get_settings()
-    oidc_config = settings.auth.oidc
 
     if not oidc_config.discovery_url:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="OIDC discovery URL not configured",
+            detail=f"OIDC discovery URL not configured for provider '{provider_key}'",
         )
 
     discovery = await get_discovery(oidc_config.discovery_url)
@@ -365,8 +398,8 @@ async def _login_oidc(
     callback_url = str(request.url_for("auth_callback"))
     safe_redirect = validate_redirect_uri(redirect_uri, request)
 
-    # Store state, redirect, and nonce for callback validation
-    await pending_store.set(state, safe_redirect, callback_url, nonce=nonce)
+    # Store state, redirect, nonce, and provider key for callback routing
+    await pending_store.set(state, safe_redirect, callback_url, nonce=nonce, oidc_provider=provider_key)
 
     auth_url = get_authorization_url(
         discovery=discovery,
@@ -459,9 +492,28 @@ async def auth_callback(
     callback_url = pending["callback_url"]
     final_redirect = pending["redirect_uri"]
     nonce = pending.get("nonce")
+    oidc_provider_key = pending.get("oidc_provider")
 
     if settings.auth.provider == "oidc":
-        return await _callback_oidc(request, code, callback_url, final_redirect, db, nonce=nonce)
+        # Look up the OIDC config for the provider that initiated the flow
+        oidc_config = None
+        if oidc_provider_key:
+            oidc_config = settings.auth.get_oidc_provider(oidc_provider_key)
+        if not oidc_config:
+            # Fallback: single-provider or legacy config
+            providers = settings.auth.get_oidc_providers()
+            if providers:
+                oidc_provider_key = next(iter(providers))
+                oidc_config = providers[oidc_provider_key]
+        if not oidc_config:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="OIDC provider configuration not found",
+            )
+        return await _callback_oidc(
+            request, code, callback_url, final_redirect, db,
+            nonce=nonce, oidc_config=oidc_config, provider_key=oidc_provider_key,
+        )
 
     # Default: Azure AD
     return await _callback_azure_ad(request, code, callback_url, final_redirect, db)
@@ -555,6 +607,8 @@ async def _callback_oidc(
     final_redirect: str,
     db: AsyncSession,
     nonce: str | None = None,
+    oidc_config: "OIDCProviderSettings | None" = None,
+    provider_key: str | None = None,
 ) -> RedirectResponse:
     """Handle generic OIDC callback."""
     from openlabels.auth.oidc_provider import (
@@ -564,8 +618,9 @@ async def _callback_oidc(
         validate_id_token,
     )
 
-    settings = get_settings()
-    oidc_config = settings.auth.oidc
+    if oidc_config is None:
+        settings = get_settings()
+        oidc_config = settings.auth.oidc
 
     discovery = await get_discovery(oidc_config.discovery_url)
 
@@ -624,6 +679,7 @@ async def _callback_oidc(
         "id_token": id_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
         "provider": "oidc",
+        "oidc_provider_key": provider_key,
         "claims": {
             # Normalized fields that /me and other endpoints expect
             "oid": normalized.sub,
@@ -646,6 +702,7 @@ async def _callback_oidc(
         action="login_success", resource_type="session",
         details={
             "provider": "oidc",
+            "oidc_provider_key": provider_key,
             "email": normalized.email,
             "ip": get_client_ip(request),
         },
@@ -773,16 +830,26 @@ async def logout(
         from openlabels.auth.oidc_provider import get_discovery, get_end_session_url
 
         try:
-            discovery = await get_discovery(settings.auth.oidc.discovery_url)
-            logout_url = get_end_session_url(
-                discovery, settings.auth.oidc,
-                post_logout_redirect_uri=str(request.base_url),
-                id_token_hint=id_token,
-            )
-            if logout_url:
-                response = RedirectResponse(url=logout_url, status_code=302)
-                response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", secure=is_secure)
-                return response
+            # Determine which OIDC provider config to use for logout
+            oidc_provider_key = (session_data or {}).get("oidc_provider_key")
+            oidc_config = None
+            if oidc_provider_key:
+                oidc_config = settings.auth.get_oidc_provider(oidc_provider_key)
+            if not oidc_config:
+                providers = settings.auth.get_oidc_providers()
+                if providers:
+                    oidc_config = next(iter(providers.values()))
+            if oidc_config and oidc_config.discovery_url:
+                discovery = await get_discovery(oidc_config.discovery_url)
+                logout_url = get_end_session_url(
+                    discovery, oidc_config,
+                    post_logout_redirect_uri=str(request.base_url),
+                    id_token_hint=id_token,
+                )
+                if logout_url:
+                    response = RedirectResponse(url=logout_url, status_code=302)
+                    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", secure=is_secure)
+                    return response
         except Exception:
             logger.debug("Failed to get OIDC end_session_endpoint, falling back to local logout")
 
@@ -890,11 +957,9 @@ async def get_token(
                 refresh_token = session_data.get("refresh_token")
                 if refresh_token:
                     try:
-                        msal_app = _get_msal_app()
-                        result = msal_app.acquire_token_by_refresh_token(
-                            refresh_token,
-                            scopes=["User.Read", "openid", "profile", "email"],
-                        )
+                        session_provider = session_data.get("provider", "azure_ad")
+                        oidc_key = session_data.get("oidc_provider_key")
+                        result = await _refresh_token(session_provider, refresh_token, oidc_provider_key=oidc_key)
 
                         if "access_token" in result:
                             new_expires_in = result.get("expires_in", 3600)
@@ -939,15 +1004,20 @@ async def get_token(
     )
 
 
-async def _refresh_token(provider: str, refresh_token_value: str) -> dict:
+async def _refresh_token(provider: str, refresh_token_value: str, oidc_provider_key: str | None = None) -> dict:
     """Refresh an access token using the appropriate provider."""
     if provider == "oidc":
         from openlabels.auth.oidc_provider import get_discovery
         from openlabels.auth.oidc_provider import refresh_token as oidc_refresh
 
         settings = get_settings()
-        discovery = await get_discovery(settings.auth.oidc.discovery_url)
-        return await oidc_refresh(discovery, settings.auth.oidc, refresh_token_value)
+        oidc_config = None
+        if oidc_provider_key:
+            oidc_config = settings.auth.get_oidc_provider(oidc_provider_key)
+        if not oidc_config:
+            oidc_config = settings.auth.oidc
+        discovery = await get_discovery(oidc_config.discovery_url)
+        return await oidc_refresh(discovery, oidc_config, refresh_token_value)
     else:
         # Azure AD via MSAL
         msal_app = _get_msal_app()

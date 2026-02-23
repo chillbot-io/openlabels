@@ -41,7 +41,7 @@ def _build_oauth2_scheme() -> OAuth2AuthorizationCodeBearer:
     """Build OAuth2 scheme based on current auth provider config."""
     settings = get_settings()
 
-    if settings.auth.provider == "oidc" and settings.auth.oidc.discovery_url:
+    if settings.auth.provider == "oidc" and settings.auth.get_oidc_providers():
         # For OIDC, we don't know the exact URLs at import time
         # (they come from discovery), so use placeholder URLs.
         # The actual auth flow is handled by the routes, not this scheme.

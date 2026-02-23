@@ -10,7 +10,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.dependencies import DbSessionDep, TenantContextDep
-from openlabels.server.models import DirectoryTree, FileInventory, FolderInventory, SecurityDescriptor
+from openlabels.server.models import DirectoryTree, FileInventory, FolderInventory, ScanResult, SecurityDescriptor
 
 router = APIRouter()
 
@@ -178,6 +178,7 @@ class BrowseFile(BaseModel):
     owner: str | None = None
     current_label_name: str | None = None
     last_scanned_at: str | None = None
+    latest_result_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -198,6 +199,7 @@ async def browse_files(
     tenant: TenantContextDep,
     folder_path: str | None = Query(None, description="Filter by folder path"),
     risk_tier: str | None = Query(None, description="Filter by risk tier (CRITICAL, HIGH, MEDIUM, LOW, MINIMAL)"),
+    search: str | None = Query(None, description="Search file names (case-insensitive substring match)"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ) -> BrowseFilesResponse:
@@ -220,24 +222,43 @@ async def browse_files(
     if risk_tier is not None:
         base_filter.append(FileInventory.risk_tier == risk_tier)
 
+    if search is not None:
+        base_filter.append(FileInventory.file_name.ilike(f"%{search}%"))
+
     # Count
     count_stmt = select(func.count()).select_from(
         select(FileInventory.id).where(*base_filter).subquery()
     )
     total = (await db.execute(count_stmt)).scalar() or 0
 
+    # Correlated subquery: find the most recent ScanResult ID for each file
+    latest_result_subq = (
+        select(ScanResult.id)
+        .where(
+            ScanResult.tenant_id == FileInventory.tenant_id,
+            ScanResult.file_path == FileInventory.file_path,
+        )
+        .order_by(ScanResult.scanned_at.desc())
+        .limit(1)
+        .correlate(FileInventory)
+        .scalar_subquery()
+        .label("latest_result_id")
+    )
+
     # Fetch
     stmt = (
-        select(FileInventory)
+        select(FileInventory, latest_result_subq)
         .where(*base_filter)
         .order_by(FileInventory.risk_score.desc(), FileInventory.file_name)
         .limit(limit)
         .offset(offset)
     )
-    rows = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).all()
 
     files = []
-    for f in rows:
+    for row in rows:
+        f = row[0]  # FileInventory object
+        result_id = row[1]  # latest_result_id (UUID or None)
         files.append(BrowseFile(
             id=f.id,
             file_path=f.file_path,
@@ -252,6 +273,7 @@ async def browse_files(
             owner=f.owner,
             current_label_name=f.current_label_name,
             last_scanned_at=f.last_scanned_at.isoformat() if f.last_scanned_at else None,
+            latest_result_id=result_id,
         ))
 
     return BrowseFilesResponse(

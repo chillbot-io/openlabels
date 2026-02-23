@@ -353,6 +353,13 @@ async def periodic_event_harvest(
             if enabled_providers is None or "windows_sacl" in enabled_providers:
                 from openlabels.monitoring.providers.windows import WindowsSACLProvider
                 providers.append(WindowsSACLProvider(watched_paths=watched_paths or None))
+
+            # WEF: reads from ForwardedEvents log (push-based from remote servers)
+            if enabled_providers is not None and "wef" in enabled_providers:
+                from openlabels.monitoring.providers.wef import WEFProvider
+                if WEFProvider.is_available():
+                    providers.append(WEFProvider(watched_paths=watched_paths or None))
+                    logger.info("WEF provider activated (ForwardedEvents log)")
         else:
             if enabled_providers is None or "auditd" in enabled_providers:
                 from openlabels.monitoring.providers.linux import AuditdProvider

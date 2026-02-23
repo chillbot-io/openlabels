@@ -848,10 +848,45 @@ class PendingAuth(Base):
     redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
     callback_url: Mapped[str] = mapped_column(Text, nullable=False)
     nonce: Mapped[str | None] = mapped_column(String(64))  # OIDC replay protection
+    oidc_provider: Mapped[str | None] = mapped_column(String(100))  # Multi-provider key
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index('ix_pending_auth_created', 'created_at'),
+    )
+
+
+class SavedCredential(Base):
+    """Encrypted credential storage for data source connections.
+
+    Persists beyond the user session so scheduled scans can authenticate
+    to data sources without requiring the user to re-enter credentials.
+    The encrypted_data column holds a Fernet token wrapping the JSON
+    credential payload (host, username, password, etc.).
+    """
+
+    __tablename__ = "saved_credentials"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("scan_targets.id", ondelete="SET NULL"))
+
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Fernet-encrypted JSON blob
+    encrypted_data: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Metadata (never contains secrets)
+    fields_stored: Mapped[list] = mapped_column(JSONB, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        Index('ix_saved_creds_tenant_source', 'tenant_id', 'source_type'),
+        Index('ix_saved_creds_target', 'target_id'),
     )
 
 

@@ -41,6 +41,11 @@ class ScanCreate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
 
 
+class BulkScanCreate(BaseModel):
+    """Create scans for multiple targets at once (e.g. after setup wizard)."""
+    target_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+
+
 class ScanResponse(BaseModel):
     id: UUID
     target_id: UUID
@@ -79,6 +84,41 @@ async def create_scan(
     )
 
     return ScanResponse.model_validate(job)
+
+
+@router.post("/bulk", response_model=list[ScanResponse], status_code=201)
+@limiter.limit(lambda: get_settings().rate_limit.scan_create_limit)
+async def create_bulk_scans(
+    request: Request,
+    bulk_request: BulkScanCreate,
+    scan_service: ScanServiceDep,
+    _admin: AdminContextDep,
+    db: DbSessionDep,
+) -> list[ScanResponse]:
+    """Create scan jobs for multiple targets at once.
+
+    Used by the setup wizard to kick off initial scans after configuring
+    data sources.
+    """
+    jobs = []
+    for target_id in bulk_request.target_ids:
+        try:
+            job = await scan_service.create_scan(target_id=target_id)
+            jobs.append(job)
+
+            audit_log(
+                db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
+                action="scan_started", resource_type="scan", resource_id=job.id,
+                details={"target_id": str(target_id), "bulk": True},
+            )
+        except (NotFoundError, BadRequestError) as e:
+            logger.warning("Skipping target %s in bulk scan: %s", target_id, e)
+            continue
+        except SQLAlchemyError as e:
+            logger.error("DB error creating scan for target %s: %s", target_id, e)
+            raise_database_error("creating bulk scan", e)
+
+    return [ScanResponse.model_validate(j) for j in jobs]
 
 
 @router.get("", response_model=PaginatedResponse[ScanResponse])

@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -524,3 +525,350 @@ async def detect_access_anomalies(
         "anomaly_count": len(anomalies),
         "anomalies": anomalies,
     }
+
+
+# ── Remote monitoring (WinRM) endpoints ─────────────────────────────
+
+class RemoteTestRequest(BaseModel):
+    """Request to test WinRM connectivity to a remote host."""
+    host: str = Field(..., description="Target hostname or IP")
+    username: str = Field(..., description="Account with audit privileges")
+    password: str = Field(..., description="Password")
+    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+
+
+class RemoteTestResponse(BaseModel):
+    """Result of WinRM connectivity test."""
+    success: bool
+    message: str
+    hostname: str | None = None
+    os: str | None = None
+    has_audit_privilege: bool | None = None
+    audit_policy_enabled: bool | None = None
+    error: str | None = None
+
+
+class RemoteConfigureRequest(BaseModel):
+    """Request to configure audit policy on a remote file server."""
+    host: str = Field(..., description="Target hostname or IP")
+    username: str = Field(..., description="Account with audit privileges")
+    password: str = Field(..., description="Password")
+    share_paths: list[str] = Field(..., description="Local paths on the server to audit")
+    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+
+
+class RemoteConfigureResponse(BaseModel):
+    """Result of remote audit configuration."""
+    success: bool
+    message: str
+    paths: list[dict] | None = None
+    error: str | None = None
+
+
+@router.post("/remote/test", response_model=RemoteTestResponse)
+async def test_remote_connection(
+    body: RemoteTestRequest,
+    _user=Depends(require_admin),
+) -> RemoteTestResponse:
+    """Test WinRM connectivity to a remote Windows file server.
+
+    Verifies the account has SeSecurityPrivilege (required for SACL
+    management) and checks whether the audit policy for File System
+    access is already enabled.
+    """
+    from openlabels.monitoring.winrm_remote import test_connection
+
+    result = await test_connection(
+        host=body.host,
+        username=body.username,
+        password=body.password,
+        use_ssl=body.use_ssl,
+    )
+
+    data = result.data or {}
+    return RemoteTestResponse(
+        success=result.success,
+        message=result.message,
+        hostname=data.get("hostname"),
+        os=data.get("os"),
+        has_audit_privilege=data.get("has_audit_privilege"),
+        audit_policy_enabled=data.get("audit_policy_enabled"),
+        error=result.error,
+    )
+
+
+@router.post("/remote/configure", response_model=RemoteConfigureResponse)
+async def configure_remote_audit(
+    body: RemoteConfigureRequest,
+    _user=Depends(require_admin),
+) -> RemoteConfigureResponse:
+    """Configure SACL audit rules on a remote Windows file server via WinRM.
+
+    Enables the "Audit object access → File System" audit policy and adds
+    SACL entries (Everyone → Read, Write → Success, Failure) on each
+    specified share path.
+    """
+    from openlabels.monitoring.winrm_remote import configure_audit_policy
+
+    result = await configure_audit_policy(
+        host=body.host,
+        username=body.username,
+        password=body.password,
+        share_paths=body.share_paths,
+        use_ssl=body.use_ssl,
+    )
+
+    data = result.data or {}
+    return RemoteConfigureResponse(
+        success=result.success,
+        message=result.message,
+        paths=data.get("paths"),
+        error=result.error,
+    )
+
+
+# ── Windows Event Forwarding (WEF) endpoints ────────────────────────
+
+class WEFSubscriptionResponse(BaseModel):
+    """WEF subscription status."""
+    name: str
+    enabled: bool
+    source_count: int
+    delivery_mode: str
+    status: str
+    error: str | None = None
+
+
+class WEFSetupResponse(BaseModel):
+    """Result of WEF setup operation."""
+    success: bool
+    message: str
+    gpo_config: str | None = None
+
+
+class WEFCreateRequest(BaseModel):
+    """Request to create a WEF subscription."""
+    subscription_name: str = Field(
+        "OpenLabels-FileAccess",
+        description="Subscription identifier",
+        pattern=r'^[\w\-]+$',
+    )
+    transport: Literal["HTTP", "HTTPS"] = Field("HTTP", description="Transport: HTTP or HTTPS")
+
+
+@router.post("/wef/init", response_model=WEFSetupResponse)
+async def init_wef_collector(
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Initialize the Windows Event Collector service.
+
+    Must be run once before creating subscriptions.  Equivalent to
+    ``wecutil qc`` — enables and starts the WEC service.
+    """
+    from openlabels.monitoring.wef_setup import init_collector
+
+    success, message = await init_collector()
+    return WEFSetupResponse(success=success, message=message)
+
+
+@router.post("/wef/subscriptions", response_model=WEFSetupResponse)
+async def create_wef_subscription(
+    body: WEFCreateRequest,
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Create a WEF source-initiated subscription for file access events.
+
+    After creating the subscription, deploy the GPO config returned in
+    ``gpo_config`` to your file servers so they start pushing events
+    to this collector.
+    """
+    from openlabels.monitoring.wef_setup import create_subscription, get_gpo_config
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+
+    success, message = await create_subscription(
+        subscription_name=body.subscription_name,
+        transport=body.transport,
+    )
+
+    gpo = None
+    if success:
+        fqdn = settings.monitoring.wef_collector_fqdn
+        if not fqdn:
+            import socket
+            fqdn = socket.getfqdn()
+        gpo = get_gpo_config(
+            collector_fqdn=fqdn,
+            use_https=body.transport.upper() == "HTTPS",
+        )
+
+    return WEFSetupResponse(success=success, message=message, gpo_config=gpo)
+
+
+@router.get("/wef/subscriptions", response_model=list[WEFSubscriptionResponse])
+async def list_wef_subscriptions(
+    _user=Depends(require_admin),
+) -> list[WEFSubscriptionResponse]:
+    """List all WEF subscriptions and their status."""
+    from openlabels.monitoring.wef_setup import get_subscription_status, list_subscriptions
+
+    names = await list_subscriptions()
+    results = []
+    for name in names:
+        info = await get_subscription_status(name)
+        results.append(WEFSubscriptionResponse(
+            name=info.name,
+            enabled=info.enabled,
+            source_count=info.source_count,
+            delivery_mode=info.delivery_mode,
+            status=info.status,
+            error=info.error,
+        ))
+    return results
+
+
+@router.get("/wef/subscriptions/{name}", response_model=WEFSubscriptionResponse)
+async def get_wef_subscription(
+    name: str,
+    _user=Depends(require_admin),
+) -> WEFSubscriptionResponse:
+    """Get status of a specific WEF subscription."""
+    from openlabels.monitoring.wef_setup import get_subscription_status
+
+    info = await get_subscription_status(name)
+    return WEFSubscriptionResponse(
+        name=info.name,
+        enabled=info.enabled,
+        source_count=info.source_count,
+        delivery_mode=info.delivery_mode,
+        status=info.status,
+        error=info.error,
+    )
+
+
+@router.delete("/wef/subscriptions/{name}", response_model=WEFSetupResponse)
+async def delete_wef_subscription(
+    name: str,
+    _user=Depends(require_admin),
+) -> WEFSetupResponse:
+    """Delete a WEF subscription."""
+    from openlabels.monitoring.wef_setup import delete_subscription
+
+    success, message = await delete_subscription(name)
+    return WEFSetupResponse(success=success, message=message)
+
+
+@router.get("/wef/gpo-config")
+async def get_wef_gpo_config(
+    _user=Depends(require_admin),
+) -> dict:
+    """Get the GPO configuration string to deploy to file servers.
+
+    Paste this value into:
+    Computer Configuration > Policies > Administrative Templates >
+    Windows Components > Event Forwarding > Configure target
+    Subscription Manager
+    """
+    from openlabels.monitoring.wef_setup import get_gpo_config
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
+    fqdn = settings.monitoring.wef_collector_fqdn
+    if not fqdn:
+        import socket
+        fqdn = socket.getfqdn()
+
+    return {
+        "gpo_path": (
+            "Computer Configuration > Policies > Administrative Templates > "
+            "Windows Components > Event Forwarding > Configure target Subscription Manager"
+        ),
+        "value": get_gpo_config(
+            collector_fqdn=fqdn,
+            use_https=settings.monitoring.wef_use_https,
+        ),
+    }
+
+
+# ── Service identity / gMSA endpoints ───────────────────────────────
+
+class ServiceIdentityResponse(BaseModel):
+    """Current process identity information."""
+    account_name: str
+    domain: str | None = None
+    is_gmsa: bool
+    is_local_system: bool
+    is_network_service: bool
+    sid: str | None = None
+
+
+class GmsaSetupScriptRequest(BaseModel):
+    """Parameters for generating a gMSA setup script."""
+    account_name: str = Field("svc-openlabels", pattern=r'^[\w\-]+$')
+    server_group: str = Field("OpenLabels-Servers", pattern=r'^[\w\- ]+$')
+    domain: str = Field("", description="Domain DNS name (blank = auto-detect)")
+
+
+class AuditPolicyScriptRequest(BaseModel):
+    """Parameters for generating an audit policy GPO script."""
+    share_paths: list[str] = Field(default_factory=list, description="File share paths to audit")
+
+
+@router.get("/identity", response_model=ServiceIdentityResponse)
+async def get_service_identity(
+    _user=Depends(require_admin),
+) -> ServiceIdentityResponse:
+    """Detect the Windows account running the OpenLabels process.
+
+    Returns whether the service is running as a gMSA, Local System,
+    Network Service, or a regular account.  Useful for the setup wizard
+    to guide admins toward the recommended gMSA configuration.
+    """
+    from openlabels.monitoring.gmsa import detect_service_identity
+
+    identity = detect_service_identity()
+    return ServiceIdentityResponse(
+        account_name=identity.account_name,
+        domain=identity.domain,
+        is_gmsa=identity.is_gmsa,
+        is_local_system=identity.is_local_system,
+        is_network_service=identity.is_network_service,
+        sid=identity.sid,
+    )
+
+
+@router.post("/gmsa/setup-script")
+async def generate_gmsa_script(
+    body: GmsaSetupScriptRequest,
+    _user=Depends(require_admin),
+) -> dict:
+    """Generate a PowerShell script to create a gMSA for OpenLabels.
+
+    The admin copies this script and runs it on a Domain Controller
+    (or any machine with the AD PowerShell module).
+    """
+    from openlabels.monitoring.gmsa import generate_gmsa_setup_script
+
+    script = generate_gmsa_setup_script(
+        account_name=body.account_name,
+        server_group=body.server_group,
+        domain=body.domain,
+    )
+    return {"script": script}
+
+
+@router.post("/audit-policy/script")
+async def generate_audit_policy_script(
+    body: AuditPolicyScriptRequest,
+    _user=Depends(require_admin),
+) -> dict:
+    """Generate a PowerShell script to configure file access audit policy.
+
+    Enables 'Audit File System' and sets SACLs on the specified share
+    paths.  Deploy via GPO startup script or run directly on file servers.
+    """
+    from openlabels.monitoring.gmsa import generate_audit_gpo_script
+
+    script = generate_audit_gpo_script(share_paths=body.share_paths or None)
+    return {"script": script}

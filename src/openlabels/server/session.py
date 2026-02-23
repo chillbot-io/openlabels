@@ -275,6 +275,7 @@ class PendingAuthStore:
                 "redirect_uri": pending.redirect_uri,
                 "callback_url": pending.callback_url,
                 "nonce": pending.nonce,
+                "oidc_provider": pending.oidc_provider,
                 "created_at": pending.created_at,
             }
         return None
@@ -285,6 +286,7 @@ class PendingAuthStore:
         redirect_uri: str,
         callback_url: str,
         nonce: str | None = None,
+        oidc_provider: str | None = None,
     ) -> None:
         """
         Store pending auth state.
@@ -295,6 +297,7 @@ class PendingAuthStore:
             redirect_uri=redirect_uri,
             callback_url=callback_url,
             nonce=nonce,
+            oidc_provider=oidc_provider,
         )
         self.db.add(pending)
         await self.db.flush()

@@ -86,6 +86,17 @@ class EnumerateRequest(BaseModel):
         description="Inline credentials (used if not previously saved). "
         "If omitted, uses saved session credentials.",
     )
+    search: str | None = Field(
+        None,
+        description="Search query to filter resources (server-side for SharePoint/OneDrive).",
+    )
+    page: int = Field(1, ge=1, description="Page number (1-indexed)")
+    page_size: int = Field(50, ge=1, le=500, description="Results per page")
+    use_m365_session: bool = Field(
+        False,
+        description="Use M365 tenant credentials from the active session "
+        "instead of inline/stored credentials.",
+    )
 
 
 class EnumeratedResource(BaseModel):
@@ -103,6 +114,7 @@ class EnumerateResponse(BaseModel):
     source_type: str
     resources: list[EnumeratedResource]
     total: int
+    has_more: bool = False
     error: str | None = None
 
 
@@ -427,8 +439,17 @@ async def _enumerate_local_nfs() -> list[EnumeratedResource]:
 
 # ── SharePoint enumeration ───────────────────────────────────────────
 
-async def _enumerate_sharepoint(creds: dict[str, Any]) -> list[EnumeratedResource]:
-    """Enumerate SharePoint sites via Microsoft Graph API."""
+async def _enumerate_sharepoint(
+    creds: dict[str, Any],
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[EnumeratedResource], bool]:
+    """Enumerate SharePoint sites via Microsoft Graph API.
+
+    Supports server-side search and pagination for large tenants (15k+ sites).
+    Returns (resources, has_more).
+    """
     tenant_id = creds.get("tenant_id", "").strip()
     client_id = creds.get("client_id", "").strip()
     client_secret = creds.get("client_secret", "")
@@ -465,16 +486,27 @@ async def _enumerate_sharepoint(creds: dict[str, Any]) -> list[EnumeratedResourc
         access_token = token_resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # List sites
-        sites_resp = await client.get(
-            "https://graph.microsoft.com/v1.0/sites?search=*&$top=100",
-            headers=headers,
+        # Build search URL — Graph API supports search= parameter on /sites
+        search_term = search.strip() if search else "*"
+        # Request one extra to detect has_more
+        fetch_size = page_size + 1
+        skip = (page - 1) * page_size
+        url = (
+            f"https://graph.microsoft.com/v1.0/sites"
+            f"?search={search_term}&$top={fetch_size}&$skip={skip}"
+            f"&$select=id,displayName,webUrl,description"
         )
+
+        sites_resp = await client.get(url, headers=headers)
         if sites_resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Failed to enumerate SharePoint sites")
 
+        raw_sites = sites_resp.json().get("value", [])
+        has_more = len(raw_sites) > page_size
+        sites = raw_sites[:page_size]
+
         resources: list[EnumeratedResource] = []
-        for site in sites_resp.json().get("value", []):
+        for site in sites:
             site_id = site.get("id", "")
             site_name = site.get("displayName", "Unknown")
             site_url = site.get("webUrl", "")
@@ -487,13 +519,22 @@ async def _enumerate_sharepoint(creds: dict[str, Any]) -> list[EnumeratedResourc
                 description=site.get("description"),
             ))
 
-        return resources
+        return resources, has_more
 
 
 # ── OneDrive enumeration ─────────────────────────────────────────────
 
-async def _enumerate_onedrive(creds: dict[str, Any]) -> list[EnumeratedResource]:
-    """Enumerate OneDrive user drives via Microsoft Graph API."""
+async def _enumerate_onedrive(
+    creds: dict[str, Any],
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[EnumeratedResource], bool]:
+    """Enumerate OneDrive user drives via Microsoft Graph API.
+
+    Supports server-side search (by displayName/mail) and pagination.
+    Returns (resources, has_more).
+    """
     tenant_id = creds.get("tenant_id", "").strip()
     client_id = creds.get("client_id", "").strip()
     client_secret = creds.get("client_secret", "")
@@ -529,16 +570,30 @@ async def _enumerate_onedrive(creds: dict[str, Any]) -> list[EnumeratedResource]
         access_token = token_resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        # List users and their drives
-        users_resp = await client.get(
-            "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$top=100",
-            headers=headers,
-        )
+        # Build URL with optional search filter and pagination
+        fetch_size = page_size + 1
+        skip = (page - 1) * page_size
+        base_url = "https://graph.microsoft.com/v1.0/users"
+        params = f"$select=id,displayName,mail,userPrincipalName&$top={fetch_size}&$skip={skip}"
+
+        if search and search.strip():
+            # Use $filter with startsWith for server-side filtering
+            safe_search = search.strip().replace("'", "''")
+            params += (
+                f"&$filter=startsWith(displayName,'{safe_search}')"
+                f" or startsWith(mail,'{safe_search}')"
+            )
+
+        users_resp = await client.get(f"{base_url}?{params}", headers=headers)
         if users_resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Failed to enumerate OneDrive users")
 
+        raw_users = users_resp.json().get("value", [])
+        has_more = len(raw_users) > page_size
+        users = raw_users[:page_size]
+
         resources: list[EnumeratedResource] = []
-        for user in users_resp.json().get("value", []):
+        for user in users:
             user_id = user.get("id", "")
             display_name = user.get("displayName", "Unknown")
             email = user.get("mail") or user.get("userPrincipalName", "")
@@ -551,7 +606,7 @@ async def _enumerate_onedrive(creds: dict[str, Any]) -> list[EnumeratedResource]
                 description=f"OneDrive for {email}",
             ))
 
-        return resources
+        return resources, has_more
 
 
 # ── S3 enumeration ───────────────────────────────────────────────────
@@ -698,6 +753,60 @@ _ENUMERATORS = {
     "azure_blob": _enumerate_azure_blob,
 }
 
+# Enumerators that support search/pagination return (list, has_more)
+_PAGINATED_ENUMERATORS = {"sharepoint", "onedrive"}
+
+
+async def _get_m365_session_credentials(
+    request: Request, db: AsyncSession
+) -> dict[str, Any]:
+    """Build Graph API credentials from the M365 tenant stored in the session.
+
+    Prefers per-tenant app credentials (created during auto app registration)
+    if available in the session. Falls back to the bootstrap app's credentials
+    from settings.
+    """
+    from openlabels.server.config import get_settings
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="No active session")
+
+    store = SessionStore(db)
+    session_data = await store.get(session_id)
+    if session_data is None:
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    # Prefer per-tenant app credentials from auto registration
+    app_creds = session_data.get("m365_app_credentials")
+    if app_creds and app_creds.get("client_id") and app_creds.get("client_secret"):
+        return {
+            "tenant_id": app_creds["tenant_id"],
+            "client_id": app_creds["client_id"],
+            "client_secret": app_creds["client_secret"],
+        }
+
+    # Fall back to bootstrap app
+    m365_info = session_data.get("m365_tenant")
+    if not m365_info or not m365_info.get("tenant_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="No M365 tenant connected. Complete the M365 setup first.",
+        )
+
+    settings = get_settings()
+    if not settings.m365.client_id or not settings.m365.client_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="M365 integration is not configured on the server.",
+        )
+
+    return {
+        "tenant_id": m365_info["tenant_id"],
+        "client_id": settings.m365.client_id,
+        "client_secret": settings.m365.client_secret,
+    }
+
 
 @router.post("", response_model=EnumerateResponse)
 async def enumerate_resources(
@@ -709,21 +818,37 @@ async def enumerate_resources(
     """Connect to a source and enumerate available resources.
 
     Uses inline credentials if provided, otherwise falls back to
-    saved session credentials.
+    saved session credentials. For M365 sources, set use_m365_session=true
+    to use the tenant connected via admin consent.
     """
     if body.source_type not in VALID_SOURCE_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid source type: {body.source_type}")
 
-    creds = await _get_credentials(request, db, user, body.source_type, body.credentials)
+    # Resolve credentials
+    if body.use_m365_session and body.source_type in ("sharepoint", "onedrive"):
+        creds = await _get_m365_session_credentials(request, db)
+    else:
+        creds = await _get_credentials(request, db, user, body.source_type, body.credentials)
 
     enumerator = _ENUMERATORS.get(body.source_type)
     if not enumerator:
         raise HTTPException(status_code=400, detail=f"No enumerator for: {body.source_type}")
 
-    resources = await enumerator(creds)
+    # Paginated enumerators get search/page params
+    if body.source_type in _PAGINATED_ENUMERATORS:
+        resources, has_more = await enumerator(
+            creds,
+            search=body.search,
+            page=body.page,
+            page_size=body.page_size,
+        )
+    else:
+        resources = await enumerator(creds)
+        has_more = False
 
     return EnumerateResponse(
         source_type=body.source_type,
         resources=resources,
         total=len(resources),
+        has_more=has_more,
     )

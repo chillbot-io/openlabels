@@ -3004,6 +3004,7 @@ all = [
     { name = "pytest-mock" },
     { name = "pythonnet" },
     { name = "pywin32" },
+    { name = "pywinrm" },
     { name = "rapidocr-onnxruntime" },
     { name = "ruff" },
     { name = "weasyprint" },
@@ -3040,6 +3041,9 @@ hyperscan = [
 ]
 mip = [
     { name = "pythonnet" },
+]
+monitoring = [
+    { name = "pywinrm" },
 ]
 ocr = [
     { name = "pytesseract" },
@@ -3091,7 +3095,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "numpy", specifier = ">=1.24.0,<2" },
     { name = "onnxruntime", specifier = ">=1.17.0,<2" },
-    { name = "openlabels", extras = ["mip", "windows", "dev", "hyperscan", "ocr", "s3", "gcs", "azure", "reports", "benchmark"], marker = "extra == 'all'" },
+    { name = "openlabels", extras = ["mip", "windows", "dev", "hyperscan", "ocr", "s3", "gcs", "azure", "monitoring", "reports", "benchmark"], marker = "extra == 'all'" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pillow", specifier = ">=10.2.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
@@ -3114,6 +3118,7 @@ requires-dist = [
     { name = "python-pptx", specifier = ">=0.6.23" },
     { name = "pythonnet", marker = "extra == 'mip'", specifier = ">=3.0.0" },
     { name = "pywin32", marker = "extra == 'windows'", specifier = ">=306" },
+    { name = "pywinrm", marker = "extra == 'monitoring'", specifier = ">=0.4.3" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "rapidocr-onnxruntime", marker = "extra == 'dev'", specifier = ">=1.3.0" },
     { name = "rapidocr-onnxruntime", marker = "extra == 'ocr'", specifier = ">=1.3.0" },
@@ -3129,7 +3134,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
     { name = "weasyprint", marker = "extra == 'reports'", specifier = ">=62.0" },
 ]
-provides-extras = ["mip", "windows", "dev", "hyperscan", "ocr", "s3", "gcs", "azure", "reports", "benchmark", "all"]
+provides-extras = ["mip", "windows", "dev", "hyperscan", "ocr", "s3", "gcs", "azure", "monitoring", "reports", "benchmark", "all"]
 
 [[package]]
 name = "openpyxl"
@@ -3937,6 +3942,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pyspnego"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "sspilib", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e4/8b32a91aeba6fbc6943a630c44b2fe038615e5c7dec8814316fafdcf4bf4/pyspnego-0.12.0.tar.gz", hash = "sha256:e1d9cd3520a87a1d6db8d68783b17edc4e1464eae3d51ead411a51c82dbaae67", size = 225764, upload-time = "2025-09-02T18:51:06.858Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/e9/95430b8f3b747ebd3b86a66484a79ef387167655bcb15ab416f563045565/pyspnego-0.12.0-py3-none-any.whl", hash = "sha256:84cc8dae6ad21e04b37c50c1d3c743f05f193e39498f6010cc68ec1146afd007", size = 130180, upload-time = "2025-09-02T18:51:04.938Z" },
+]
+
+[[package]]
 name = "pytesseract"
 version = "0.3.13"
 source = { registry = "https://pypi.org/simple" }
@@ -4132,6 +4150,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c9/31/097f2e132c4f16d99a22bfb777e0fd88bd8e1c634304e102f313af69ace5/pywin32-311-cp314-cp314-win32.whl", hash = "sha256:b7a2c10b93f8986666d0c803ee19b5990885872a7de910fc460f9b0c2fbf92ee", size = 8840714, upload-time = "2025-07-14T20:13:32.449Z" },
     { url = "https://files.pythonhosted.org/packages/90/4b/07c77d8ba0e01349358082713400435347df8426208171ce297da32c313d/pywin32-311-cp314-cp314-win_amd64.whl", hash = "sha256:3aca44c046bd2ed8c90de9cb8427f581c479e594e99b5c0bb19b29c10fd6cb87", size = 9656800, upload-time = "2025-07-14T20:13:34.312Z" },
     { url = "https://files.pythonhosted.org/packages/c0/d2/21af5c535501a7233e734b8af901574572da66fcc254cb35d0609c9080dd/pywin32-311-cp314-cp314-win_arm64.whl", hash = "sha256:a508e2d9025764a8270f93111a970e1d0fbfc33f4153b388bb649b7eec4f9b42", size = 8932540, upload-time = "2025-07-14T20:13:36.379Z" },
+]
+
+[[package]]
+name = "pywinrm"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "requests-ntlm" },
+    { name = "xmltodict" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/2f/d835c342c4b11e28beaccef74982e7669986c84bf19654c39f53c8b8243c/pywinrm-0.5.0.tar.gz", hash = "sha256:5428eb1e494af7954546cd4ff15c9ef1a30a75e05b25a39fd606cef22201e9f1", size = 40875, upload-time = "2024-07-16T19:32:05.624Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/45/4340320145c225387f40ce412de1b209d991c322032e4922cc0a9935fd31/pywinrm-0.5.0-py3-none-any.whl", hash = "sha256:c267046d281de613fc7c8a528cdd261564d9b99bdb7c2926221eff3263b700c8", size = 48182, upload-time = "2024-07-16T19:32:03.001Z" },
 ]
 
 [[package]]
@@ -4369,6 +4401,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517, upload-time = "2025-08-18T20:46:02.573Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738, upload-time = "2025-08-18T20:46:00.542Z" },
+]
+
+[[package]]
+name = "requests-ntlm"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyspnego" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/15/74/5d4e1815107e9d78c44c3ad04740b00efd1189e5a9ec11e5275b60864e54/requests_ntlm-1.3.0.tar.gz", hash = "sha256:b29cc2462623dffdf9b88c43e180ccb735b4007228a542220e882c58ae56c668", size = 16112, upload-time = "2024-06-09T23:52:04.854Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/5d/836b97537a390cf811b0488490c389c5a614f0a93acb23f347bd37a2d914/requests_ntlm-1.3.0-py3-none-any.whl", hash = "sha256:4c7534a7d0e482bb0928531d621be4b2c74ace437e88c5a357ceb7452d25a510", size = 6577, upload-time = "2024-06-09T23:52:03.241Z" },
 ]
 
 [[package]]
@@ -4714,6 +4760,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/33/75/f28622ba6dde79cd545055ea7bd4062dc934e0621f7b3be2891f8563f8de/sqlalchemy-2.0.46-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:ff33c6e6ad006bbc0f34f5faf941cfc62c45841c64c0a058ac38c799f15b5ede", size = 3470008, upload-time = "2026-01-21T18:33:11.725Z" },
     { url = "https://files.pythonhosted.org/packages/a9/42/4afecbbc38d5e99b18acef446453c76eec6fbd03db0a457a12a056836e22/sqlalchemy-2.0.46-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:82ec52100ec1e6ec671563bbd02d7c7c8d0b9e71a0723c72f22ecf52d1755330", size = 3476137, upload-time = "2026-01-21T18:45:15.001Z" },
     { url = "https://files.pythonhosted.org/packages/fc/a1/9c4efa03300926601c19c18582531b45aededfb961ab3c3585f1e24f120b/sqlalchemy-2.0.46-py3-none-any.whl", hash = "sha256:f9c11766e7e7c0a2767dda5acb006a118640c9fc0a4104214b96269bfb78399e", size = 1937882, upload-time = "2026-01-21T18:22:10.456Z" },
+]
+
+[[package]]
+name = "sspilib"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/e6/d0d74b18bed8c16949fddc0401005c072947ae7bf1bab982ed28f9ebc2d8/sspilib-0.5.0.tar.gz", hash = "sha256:b62f7f2602aa1add0505eee2417e2df24421224cb411e53bf3ae42a71b62fe98", size = 59920, upload-time = "2025-12-03T00:31:05.564Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/cb/7cc967b48d182cb012229ccc9f9e3fd5e245b7f0c80667297ddded580877/sspilib-0.5.0-cp310-cp310-win32.whl", hash = "sha256:8dab68e994d24a08f854d36ac96409b3b8cc03fdebc590925f76f9d733c3a902", size = 475882, upload-time = "2025-12-03T00:30:23.403Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/0d/7746ade4e3c4dba6c6d9b2afe3c3903f4bcab2da6b300b5d81afee089196/sspilib-0.5.0-cp310-cp310-win_amd64.whl", hash = "sha256:9e1947df07110ee1861009fc117bd089a7710403f3f5c488fb52a6e00b7c5b84", size = 563068, upload-time = "2025-12-03T00:30:24.605Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/fb/6821418037e9d78179153e770e2b0280956f28f4bf51069dcbcc0348505d/sspilib-0.5.0-cp310-cp310-win_arm64.whl", hash = "sha256:28d0eb944f7ff70bc99fe729d06fa230aec1649c5bc216809e359cd0c77d4840", size = 486370, upload-time = "2025-12-03T00:30:26.21Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/1b/dd9066491168933b0f7ab6e396ac58cc024c8954e95264c38e3dc9363d7c/sspilib-0.5.0-cp311-abi3-win32.whl", hash = "sha256:fcb57b41b3200ef2e6e8846e2a13799d20b35b796267f2f75cc65e3883e8eeb6", size = 451246, upload-time = "2025-12-03T00:30:36.685Z" },
+    { url = "https://files.pythonhosted.org/packages/17/6a/a11abf90172ff580ac2f9ade3496d868e05e851c4ecf487dd5baeb966b1d/sspilib-0.5.0-cp311-abi3-win_amd64.whl", hash = "sha256:ca2a21a4e90db563c2cec639c66b3a29ea53129a0c55ff1e4154a02937f6bd45", size = 540777, upload-time = "2025-12-03T00:30:38.44Z" },
+    { url = "https://files.pythonhosted.org/packages/45/05/983876d281b9e7926f1c9126e72de8bd5928b1de45433163f54d4e217502/sspilib-0.5.0-cp311-abi3-win_arm64.whl", hash = "sha256:6893bad16f122fc3c4bd908461b9728694465c05ca97c22f7e2094791c4ee3cb", size = 470353, upload-time = "2025-12-03T00:30:39.63Z" },
+    { url = "https://files.pythonhosted.org/packages/43/f8/34e8e86883054b961c2eb88a5b42b89b2bf975723b1acca090966c2d03ff/sspilib-0.5.0-cp314-cp314t-win32.whl", hash = "sha256:9dad272abf3f4cf0bf95d495075d2987f6ba1fb300f8d603661ccac07d11272f", size = 567408, upload-time = "2025-12-03T00:30:48.723Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/d8/8c4ba75f925fd9651cb855c47e0e67931a175d6fd41e569193a8d58133ac/sspilib-0.5.0-cp314-cp314t-win_amd64.whl", hash = "sha256:7d7724d5dbb31f68e62465863dfb862fe2793281ce40d0c8f2dc60c8f07998f2", size = 690291, upload-time = "2025-12-03T00:30:49.929Z" },
+    { url = "https://files.pythonhosted.org/packages/74/c3/07af17b6fcc2b02af294a8817e30441a502880a04c8d60be2d71e0a1eacc/sspilib-0.5.0-cp314-cp314t-win_arm64.whl", hash = "sha256:8ce23ec740dee025136370ed4ae64b7d1535368321049ef960012a57c93ebe15", size = 534304, upload-time = "2025-12-03T00:30:51.348Z" },
 ]
 
 [[package]]
@@ -5410,6 +5473,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/2c/c06ef49dc36e7954e55b802a8b231770d286a9758b3d936bd1e04ce5ba88/xlsxwriter-3.2.9.tar.gz", hash = "sha256:254b1c37a368c444eac6e2f867405cc9e461b0ed97a3233b2ac1e574efb4140c", size = 215940, upload-time = "2025-09-16T00:16:21.63Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/0c/3662f4a66880196a590b202f0db82d919dd2f89e99a27fadef91c4a33d41/xlsxwriter-3.2.9-py3-none-any.whl", hash = "sha256:9a5db42bc5dff014806c58a20b9eae7322a134abb6fce3c92c181bfb275ec5b3", size = 175315, upload-time = "2025-09-16T00:16:20.108Z" },
+]
+
+[[package]]
+name = "xmltodict"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/70/80f3b7c10d2630aa66414bf23d210386700aa390547278c789afa994fd7e/xmltodict-1.0.4.tar.gz", hash = "sha256:6d94c9f834dd9e44514162799d344d815a3a4faec913717a9ecbfa5be1bb8e61", size = 26124, upload-time = "2026-02-22T02:21:22.074Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/34/98a2f52245f4d47be93b580dae5f9861ef58977d73a79eb47c58f1ad1f3a/xmltodict-1.0.4-py3-none-any.whl", hash = "sha256:a4a00d300b0e1c59fc2bfccb53d7b2e88c32f200df138a0dd2229f842497026a", size = 13580, upload-time = "2026-02-22T02:21:21.039Z" },
 ]
 
 [[package]]

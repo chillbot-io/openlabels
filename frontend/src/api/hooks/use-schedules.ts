@@ -29,6 +29,16 @@ export function useCreateSchedule() {
   });
 }
 
+export function useCreateBulkSchedules() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: schedulesApi.createBulk,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
 export function useUpdateSchedule() {
   const queryClient = useQueryClient();
   return useMutation({

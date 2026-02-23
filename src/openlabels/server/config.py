@@ -99,16 +99,47 @@ class AuthSettings(BaseSettings):
     For Azure AD (legacy mode):
     - AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET
 
-    For generic OIDC:
+    For a single OIDC provider:
     - OPENLABELS_AUTH__OIDC__DISCOVERY_URL=https://your-idp/.well-known/openid-configuration
     - OPENLABELS_AUTH__OIDC__CLIENT_ID=...
     - OPENLABELS_AUTH__OIDC__CLIENT_SECRET=...
+
+    For multiple OIDC providers (Google + Microsoft + GitHub, etc.):
+    Configure via config.yaml::
+
+        auth:
+          provider: oidc
+          oidc_providers:
+            google:
+              discovery_url: https://accounts.google.com/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: Google
+              button_style: google
+            microsoft:
+              discovery_url: https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: Microsoft
+              button_style: microsoft
+            github:
+              discovery_url: https://token.actions.githubusercontent.com/.well-known/openid-configuration
+              client_id: ...
+              client_secret: ...
+              display_name: GitHub
+              button_style: github
     """
 
     provider: Literal["azure_ad", "oidc", "none"] = "none"
     tenant_id: str | None = None
     client_id: str | None = None
     client_secret: str | None = None
+
+    # Single OIDC provider (backward-compatible)
+    oidc: OIDCProviderSettings = Field(default_factory=OIDCProviderSettings)
+
+    # Multi-provider OIDC: keyed by slug ("google", "microsoft", "github", etc.)
+    oidc_providers: dict[str, OIDCProviderSettings] = Field(default_factory=dict)
 
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -120,6 +151,23 @@ class AuthSettings(BaseSettings):
         if self.tenant_id:
             return f"https://login.microsoftonline.com/{self.tenant_id}"
         return None
+
+    def get_oidc_providers(self) -> dict[str, OIDCProviderSettings]:
+        """All configured OIDC providers.
+
+        If ``oidc_providers`` is populated, returns that dict directly.
+        Otherwise falls back to the single ``oidc`` config under the key
+        ``"default"``, provided it has a discovery_url set.
+        """
+        if self.oidc_providers:
+            return dict(self.oidc_providers)
+        if self.oidc.discovery_url:
+            return {"default": self.oidc}
+        return {}
+
+    def get_oidc_provider(self, key: str) -> OIDCProviderSettings | None:
+        """Look up a specific OIDC provider by key."""
+        return self.get_oidc_providers().get(key)
 
 
 class FilesystemAdapterSettings(BaseSettings):
@@ -269,6 +317,7 @@ class DetectionSettings(BaseSettings):
     enable_ml: bool = True
     enable_ocr: bool = True
     max_file_size_mb: int = 100
+    agent_pool_enabled: bool = True  # Use multi-process agent pool when ML is enabled
 
 
 class LoggingSettings(BaseSettings):
@@ -495,6 +544,10 @@ class JobSettings(BaseSettings):
     default_worker_concurrency: int = 4
     max_worker_concurrency: int = 32
 
+    # Embedded worker (runs inside the server process)
+    embedded_worker_enabled: bool = True  # Start an in-process job worker with the server
+    embedded_worker_concurrency: int = 2  # Concurrent jobs for the embedded worker
+
     # Pipeline parallelism (within a single worker)
     pipeline_enabled: bool = True  # Enable concurrent file processing
     pipeline_max_concurrent_files: int = 8  # Max files in flight per worker
@@ -633,6 +686,16 @@ class MonitoringSettings(BaseSettings):
     scan_trigger_cooldown_seconds: float = 60.0
     scan_trigger_min_risk_tier: str = "MEDIUM"
 
+    # Windows Event Forwarding (WEF) — push-based event collection
+    # from remote Windows file servers.  Requires the OpenLabels host
+    # to be a Windows machine running the Windows Event Collector service.
+    # Add "wef" to the providers list to activate.
+    wef_subscription_name: str = "OpenLabels-FileAccess"
+    # FQDN of this collector (used to generate GPO config for admins)
+    wef_collector_fqdn: str = ""
+    # Use HTTPS for WEF transport (requires cert on collector)
+    wef_use_https: bool = False
+
     # Graph webhooks
     webhook_enabled: bool = False
     # Public HTTPS URL for Graph change notification subscriptions.
@@ -734,6 +797,26 @@ class CatalogSettings(BaseSettings):
     duckdb_threads: int = 4
 
 
+class M365Settings(BaseSettings):
+    """Microsoft 365 integration settings.
+
+    This configures the multi-tenant Azure AD app registration used
+    to access customer tenants via Graph API after admin consent.
+
+    The client_id and client_secret belong to OpenLabels' own app
+    registration (registered once in the publisher's tenant).
+    Customer admins grant consent to this app via the setup wizard.
+
+    Environment variables::
+
+        OPENLABELS_M365__CLIENT_ID=your-multi-tenant-app-id
+        OPENLABELS_M365__CLIENT_SECRET=your-client-secret
+    """
+
+    client_id: str = ""
+    client_secret: str = ""
+
+
 class Settings(BaseSettings):
     """Main settings class that combines all configuration sections."""
 
@@ -746,6 +829,7 @@ class Settings(BaseSettings):
     server: ServerSettings = Field(default_factory=ServerSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    m365: M365Settings = Field(default_factory=M365Settings)
     adapters: AdapterSettings = Field(default_factory=AdapterSettings)
     labeling: LabelingSettings = Field(default_factory=LabelingSettings)
     detection: DetectionSettings = Field(default_factory=DetectionSettings)

@@ -1,11 +1,14 @@
 """
-Session-scoped encrypted credential storage for resource enumeration.
+Encrypted credential storage for resource connections.
 
-Credentials are:
-- Encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256)
-- Tied to the user's login session (auto-expire with session)
-- Never persisted beyond the session lifetime
-- Keyed by (user_id, source_type) so each user can store one credential set per source
+Two storage tiers:
+1. **Session credentials** — encrypted in the session JSONB, expire with the session.
+   Used for temporary enumeration during setup.
+2. **Saved credentials** — encrypted in the ``saved_credentials`` table, persist
+   indefinitely. Used by the scan engine for scheduled scans.
+
+Both tiers use Fernet (AES-128-CBC + HMAC-SHA256), keyed from the server's
+``secret_key`` setting.
 """
 
 from __future__ import annotations
@@ -15,15 +18,18 @@ import hashlib
 import json
 import logging
 from typing import Any
+from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
+from openlabels.server.models import SavedCredential
 from openlabels.server.session import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -67,6 +73,8 @@ def _decrypt(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Stored credentials are invalid or corrupted") from e
 
 
+# ── Request / Response models ───────────────────────────────────────
+
 class CredentialStore(BaseModel):
     """Request to store credentials for a source type."""
     source_type: str = Field(..., description="Source type (smb, nfs, sharepoint, onedrive, s3, gcs, azure_blob)")
@@ -87,6 +95,29 @@ class CredentialCheckResponse(BaseModel):
     has_credentials: bool
     fields_stored: list[str]
 
+
+class SaveCredentialRequest(BaseModel):
+    """Request to persist credentials to the database."""
+    source_type: str = Field(..., description="Source type")
+    name: str = Field(..., description="Display name (e.g. 'SMB — fileserver.contoso.com')")
+    credentials: dict[str, Any] = Field(..., description="Credential fields")
+    target_id: UUID | None = Field(None, description="Optional target to associate with")
+
+
+class SavedCredentialResponse(BaseModel):
+    """Metadata about a saved credential (never exposes secrets)."""
+    id: UUID
+    source_type: str
+    name: str
+    fields_stored: list[str]
+    target_id: UUID | None
+    created_at: str
+    updated_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Session helpers ─────────────────────────────────────────────────
 
 async def _get_session_id(request: Request) -> str:
     """Extract session ID from cookie."""
@@ -113,6 +144,8 @@ def _cred_key(user_id: str, source_type: str) -> str:
     """Build the key used inside the session data dict."""
     return f"cred:{user_id}:{source_type}"
 
+
+# ── Session-scoped credential endpoints ─────────────────────────────
 
 @router.post("", response_model=CredentialStoreResponse)
 async def store_credentials(
@@ -218,6 +251,121 @@ async def delete_credentials(
     return {"status": "ok", "source_type": source_type}
 
 
+# ── Persistent credential endpoints ────────────────────────────────
+
+@router.post("/saved", response_model=SavedCredentialResponse)
+async def save_credential(
+    body: SaveCredentialRequest,
+    db: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> SavedCredentialResponse:
+    """Persist encrypted credentials to the database.
+
+    Unlike session credentials, these survive server restarts and session
+    expiry. Used by the scan engine for scheduled scans.
+    """
+    if body.source_type not in VALID_SOURCE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid source type: {body.source_type}")
+
+    encrypted = _encrypt(body.credentials)
+    fields = list(body.credentials.keys())
+
+    # Upsert: if a saved credential for this tenant+source+name exists, update it
+    existing = await db.execute(
+        select(SavedCredential).where(
+            SavedCredential.tenant_id == user.tenant_id,
+            SavedCredential.source_type == body.source_type,
+            SavedCredential.name == body.name,
+        )
+    )
+    row = existing.scalar_one_or_none()
+
+    if row:
+        row.encrypted_data = encrypted
+        row.fields_stored = fields
+        row.target_id = body.target_id
+    else:
+        row = SavedCredential(
+            tenant_id=user.tenant_id,
+            source_type=body.source_type,
+            name=body.name,
+            encrypted_data=encrypted,
+            fields_stored=fields,
+            target_id=body.target_id,
+            created_by=user.id,
+        )
+        db.add(row)
+
+    await db.flush()
+    await db.refresh(row)
+
+    return SavedCredentialResponse(
+        id=row.id,
+        source_type=row.source_type,
+        name=row.name,
+        fields_stored=row.fields_stored,
+        target_id=row.target_id,
+        created_at=row.created_at.isoformat(),
+        updated_at=row.updated_at.isoformat(),
+    )
+
+
+@router.get("/saved", response_model=list[SavedCredentialResponse])
+async def list_saved_credentials(
+    source_type: str | None = None,
+    db: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> list[SavedCredentialResponse]:
+    """List saved credentials (metadata only, no secrets)."""
+    query = select(SavedCredential).where(
+        SavedCredential.tenant_id == user.tenant_id,
+    )
+    if source_type:
+        query = query.where(SavedCredential.source_type == source_type)
+    query = query.order_by(SavedCredential.created_at.desc())
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    return [
+        SavedCredentialResponse(
+            id=r.id,
+            source_type=r.source_type,
+            name=r.name,
+            fields_stored=r.fields_stored,
+            target_id=r.target_id,
+            created_at=r.created_at.isoformat(),
+            updated_at=r.updated_at.isoformat(),
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/saved/{credential_id}")
+async def delete_saved_credential(
+    credential_id: UUID,
+    db: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_admin),
+) -> dict:
+    """Delete a saved credential."""
+    result = await db.execute(
+        select(SavedCredential).where(
+            SavedCredential.id == credential_id,
+            SavedCredential.tenant_id == user.tenant_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Credential not found")
+
+    await db.delete(row)
+    await db.flush()
+
+    return {"status": "ok", "id": str(credential_id)}
+
+
+# ── Utility functions ───────────────────────────────────────────────
+
 def get_decrypted_credentials(
     session_data: dict,
     user_id: str,
@@ -235,4 +383,31 @@ def get_decrypted_credentials(
     try:
         return _decrypt(encrypted)
     except HTTPException:
+        return None
+
+
+async def get_saved_credentials_for_target(
+    db: AsyncSession,
+    tenant_id: UUID,
+    target_id: UUID,
+) -> dict[str, Any] | None:
+    """Retrieve decrypted credentials for a scan target.
+
+    Used by the scan engine to authenticate to data sources.
+    """
+    result = await db.execute(
+        select(SavedCredential).where(
+            SavedCredential.tenant_id == tenant_id,
+            SavedCredential.target_id == target_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return None
+    try:
+        f = Fernet(_derive_fernet_key())
+        plaintext = f.decrypt(row.encrypted_data.encode())
+        return json.loads(plaintext)
+    except (InvalidToken, json.JSONDecodeError):
+        logger.warning("Failed to decrypt saved credentials %s", row.id)
         return None

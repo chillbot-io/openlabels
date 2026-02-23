@@ -11,6 +11,9 @@ export const scansApi = {
   create: (payload: { target_id: string; name?: string }) =>
     apiFetch<ScanJob>('/scans', { method: 'POST', body: payload }),
 
+  createBulk: (targetIds: string[]) =>
+    apiFetch<ScanJob[]>('/scans/bulk', { method: 'POST', body: { target_ids: targetIds } }),
+
   cancel: (id: string) =>
     apiFetch<void>(`/scans/${id}/cancel`, { method: 'POST' }),
 };

@@ -11,6 +11,9 @@ export const schedulesApi = {
   create: (payload: { name: string; cron: string; target_id: string; enabled: boolean }) =>
     apiFetch<Schedule>('/schedules', { method: 'POST', body: payload }),
 
+  createBulk: (payload: { cron: string; enabled?: boolean }) =>
+    apiFetch<Schedule[]>('/schedules/bulk', { method: 'POST', body: payload }),
+
   update: (id: string, payload: Partial<Schedule>) =>
     apiFetch<Schedule>(`/schedules/${id}`, { method: 'PUT', body: payload }),
 

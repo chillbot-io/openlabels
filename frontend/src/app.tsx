@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router';
+import { createBrowserRouter } from 'react-router';
 import { AppShell } from '@/components/layout/app-shell.tsx';
 import { NotFoundPage } from '@/features/auth/not-found-page.tsx';
 
@@ -6,7 +6,7 @@ export const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, lazy: () => import('@/features/setup/root-redirect.tsx') },
       { path: 'dashboard', lazy: () => import('@/features/dashboard/page.tsx') },
       { path: 'explorer', lazy: () => import('@/features/resource-explorer/page.tsx') },
       { path: 'events', lazy: () => import('@/features/events/page.tsx') },
