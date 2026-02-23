@@ -53,8 +53,10 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     "phone number": (1.00, 0.00),
     "url": (0.95, -0.03),
     # Username: identity calibration generated 9 spurious on nemotron_pii.
-    # Moderate dampening to filter low-confidence detections.
-    "username": (1.20, 0.04),
+    # Strong dampening — 23 spurious USERNAME + 7 API_KEY→USERNAME type
+    # mismatches at (1.20, 0.04).  GLiNER over-fires "username" on short
+    # words in context.  Pattern detectors cover labeled+structural formats.
+    "username": (1.50, 0.08),
     # ── Locations ──────────────────────────────────────────
     # Street address: 2 TP / 0 FP on 1k — too few samples; identity.
     "street address": (1.00, 0.00),
