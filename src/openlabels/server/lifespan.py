@@ -422,6 +422,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 type(e).__name__, e,
             )
 
+    # Embedded job worker (runs scan/label tasks inside the server process)
+    worker_shutdown = asyncio.Event()
+    if settings.jobs.embedded_worker_enabled:
+        try:
+            from openlabels.jobs.embedded import embedded_worker_loop
+
+            task_mgr.supervised_task(
+                "embedded_worker",
+                embedded_worker_loop,
+                shutdown_event=worker_shutdown,
+                concurrency=settings.jobs.embedded_worker_concurrency,
+            )
+            logger.info(
+                "Embedded worker started (concurrency=%d)",
+                settings.jobs.embedded_worker_concurrency,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to start embedded worker: %s: %s",
+                type(e).__name__, e,
+            )
+    else:
+        logger.info("Embedded worker disabled — use 'openlabels worker' for job execution")
+
     # WebSocket pub/sub for cross-instance delivery
     try:
         from openlabels.server.routes.ws import broadcaster as ws_broadcaster

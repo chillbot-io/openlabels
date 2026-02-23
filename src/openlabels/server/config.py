@@ -317,6 +317,7 @@ class DetectionSettings(BaseSettings):
     enable_ml: bool = True
     enable_ocr: bool = True
     max_file_size_mb: int = 100
+    agent_pool_enabled: bool = True  # Use multi-process agent pool when ML is enabled
 
 
 class LoggingSettings(BaseSettings):
@@ -542,6 +543,10 @@ class JobSettings(BaseSettings):
     # Concurrency
     default_worker_concurrency: int = 4
     max_worker_concurrency: int = 32
+
+    # Embedded worker (runs inside the server process)
+    embedded_worker_enabled: bool = True  # Start an in-process job worker with the server
+    embedded_worker_concurrency: int = 2  # Concurrent jobs for the embedded worker
 
     # Pipeline parallelism (within a single worker)
     pipeline_enabled: bool = True  # Enable concurrent file processing

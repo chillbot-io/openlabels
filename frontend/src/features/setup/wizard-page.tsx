@@ -8,6 +8,7 @@ import {
 import { m365Api } from '@/api/endpoints/m365.ts';
 import { enumerateApi } from '@/api/endpoints/enumerate.ts';
 import { targetsApi } from '@/api/endpoints/targets.ts';
+import { scansApi } from '@/api/endpoints/scans.ts';
 import { credentialsApi } from '@/api/endpoints/credentials.ts';
 import { monitoringApi } from '@/api/endpoints/monitoring.ts';
 import type { EnumeratedResource } from '@/api/endpoints/enumerate.ts';
@@ -1388,7 +1389,9 @@ export function Component() {
   const handleFinish = async () => {
     setSubmitting(true);
     try {
-      // Create targets for each configured source
+      // Create targets for each configured source, collecting IDs for scan kickoff
+      const createdTargetIds: string[] = [];
+
       for (const sel of siteSelections) {
         const adapter = sel.sourceType;
         const config: Record<string, unknown> = { source_type: sel.sourceType };
@@ -1402,12 +1405,13 @@ export function Component() {
           }));
         }
 
-        await targetsApi.create({
+        const target = await targetsApi.create({
           name: sel.sourceType === 'sharepoint' ? 'SharePoint Online' : 'OneDrive for Business',
           adapter,
           enabled: true,
           config,
         });
+        if (target?.id) createdTargetIds.push(target.id);
       }
 
       if (smbConfig.host && smbConfig.selectedShares.length > 0) {
@@ -1427,22 +1431,38 @@ export function Component() {
           },
         });
 
-        // Associate saved credentials with the target
-        if (smbConfig.savePassword && smbTarget?.id) {
-          await credentialsApi.save({
-            source_type: 'smb',
-            name: `SMB — ${smbConfig.host}`,
-            credentials: {
-              host: smbConfig.host,
-              username: smbConfig.username,
-              password: smbConfig.password,
-            },
-            target_id: smbTarget.id,
-          }).catch(() => {});
+        if (smbTarget?.id) {
+          createdTargetIds.push(smbTarget.id);
+
+          // Associate saved credentials with the target
+          if (smbConfig.savePassword) {
+            await credentialsApi.save({
+              source_type: 'smb',
+              name: `SMB — ${smbConfig.host}`,
+              credentials: {
+                host: smbConfig.host,
+                username: smbConfig.username,
+                password: smbConfig.password,
+              },
+              target_id: smbTarget.id,
+            }).catch(() => {});
+          }
         }
       }
 
-      addToast({ level: 'success', message: 'Setup complete!' });
+      // Kick off initial scans for all created targets
+      if (createdTargetIds.length > 0) {
+        try {
+          await scansApi.createBulk(createdTargetIds);
+          addToast({ level: 'success', message: 'Setup complete — scans are starting!' });
+        } catch {
+          // Targets were created but scan kickoff failed — still navigate
+          addToast({ level: 'success', message: 'Setup complete! Start scans from the dashboard.' });
+        }
+      } else {
+        addToast({ level: 'success', message: 'Setup complete!' });
+      }
+
       navigate('/dashboard');
     } catch (e) {
       addToast({ level: 'error', message: e instanceof Error ? e.message : 'Setup failed' });
