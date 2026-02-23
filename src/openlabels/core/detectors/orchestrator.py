@@ -613,10 +613,10 @@ _ML_PRIMARY_TYPES = frozenset({
     # many are GLiNER detections suppressed because ADDRESS was non-
     # ML-primary (required raw ≥ 0.94 to survive uncorroborated).
     "ADDRESS",
-    # USERNAME: pattern detectors only match labeled context
-    # ("username: ...") but miss standalone usernames.  16 USERNAME
-    # misses on ai4privacy 400k (100 samples) — biggest single recall
-    # gap.  ML-primary lets GLiNER USERNAME survive solo at ~0.52.
+    # USERNAME: pattern detectors handle labelled formats (username:X)
+    # and structured formats (First_Last, CamelCase.Dot), but miss
+    # some HF 400k usernames.  ML-primary lets GLiNER USERNAME
+    # detections survive solo when patterns don't fire.
     "USERNAME",
 })
 
@@ -984,6 +984,73 @@ def _suppress_uncorroborated_ml(
 def _ranges_overlap(s1: int, e1: int, s2: int, e2: int) -> bool:
     """Return True if two character ranges overlap at all."""
     return s1 < e2 and s2 < e1
+
+
+# ---------------------------------------------------------------------------
+# Type confusion correction
+# ---------------------------------------------------------------------------
+
+# Username format: contains underscore/dot between name parts, or trailing
+# digits after a name — e.g. "First_Last", "John.Doe42", "Alice99"
+_USERNAME_FORMAT_RE = _re.compile(
+    r'^[A-Za-z][A-Za-z0-9]*[._][A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*\d{0,4}$'
+    r'|'
+    r'^[A-Za-z]{2,15}\d{1,4}$'
+)
+
+# US SSN format: XXX-XX-XXXX (with various separators)
+_SSN_FORMAT_RE = _re.compile(
+    r'^\d{3}[\s\-\.]\d{2}[\s\-\.]\d{4}$'
+)
+
+
+def _correct_type_confusions(spans: list[Span]) -> list[Span]:
+    """Reclassify ML spans that match a more specific type's format.
+
+    GLiNER has known confusion patterns:
+    - USERNAME → FIRSTNAME: usernames with underscores/dots/digits
+    - SSN → PHONE: social security numbers in XXX-XX-XXXX format
+
+    Only reclassifies ML-tier spans (pattern detections are trusted).
+    """
+    result: list[Span] = []
+    for span in spans:
+        if span.tier != Tier.ML:
+            result.append(span)
+            continue
+
+        etype = normalize_entity_type(span.entity_type)
+        text = span.text.strip()
+        new_type = None
+
+        # FIRSTNAME/LASTNAME → USERNAME when text matches username format
+        if etype in ("FIRSTNAME", "LASTNAME") and _USERNAME_FORMAT_RE.match(text):
+            new_type = "USERNAME"
+
+        # PHONE → SSN when text matches US SSN format (XXX-XX-XXXX)
+        elif etype == "PHONE" and _SSN_FORMAT_RE.match(text):
+            new_type = "SSN"
+
+        if new_type is not None:
+            logger.debug(
+                "Type correction: %s → %s for %r",
+                span.entity_type, new_type, text,
+            )
+            result.append(Span(
+                start=span.start,
+                end=span.end,
+                text=span.text,
+                entity_type=new_type,
+                confidence=span.confidence,
+                detector=span.detector,
+                tier=span.tier,
+                raw_confidence=span.raw_confidence,
+                detector_label=span.detector_label,
+            ))
+        else:
+            result.append(span)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
