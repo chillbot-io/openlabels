@@ -400,10 +400,10 @@ class GLiNERDetector(BaseDetector):
             chunk_spans = self._detect_single(chunk.text, labels, offset=chunk.start)
             all_spans.extend(chunk_spans)
 
-        return self._dedup_chunk_spans(all_spans)
+        return self._dedup_chunk_spans(all_spans, source_text=text)
 
     @staticmethod
-    def _dedup_chunk_spans(spans: list[Span]) -> list[Span]:
+    def _dedup_chunk_spans(spans: list[Span], source_text: str = "") -> list[Span]:
         """Deduplicate overlapping spans from adjacent chunks.
 
         Uses cluster-based deduplication with weighted interval
@@ -452,12 +452,32 @@ class GLiNERDetector(BaseDetector):
                     min_len = min(cur.end - cur.start, s.end - s.start)
                     if min_len > 0 and overlap > min_len * 0.5:
                         # Merge: widen extent, keep max confidence
+                        new_start = min(cur.start, s.start)
+                        new_end = max(cur.end, s.end)
                         new_conf = max(cur.confidence, s.confidence)
                         best = cur if cur.confidence >= s.confidence else s
+
+                        # Derive merged text from source document when
+                        # available so that the text always matches the
+                        # widened [start, end) range.  Fall back to
+                        # reconstructing from the two overlapping span
+                        # texts when source_text is not provided.
+                        if source_text:
+                            merged_text = source_text[new_start:new_end]
+                        else:
+                            # Reconstruct: left span first, append
+                            # non-overlapping tail of right span.
+                            if cur.start <= s.start:
+                                left, right = cur, s
+                            else:
+                                left, right = s, cur
+                            ovl = left.end - right.start
+                            merged_text = left.text + right.text[max(ovl, 0):]
+
                         cur = Span(
-                            start=min(cur.start, s.start),
-                            end=max(cur.end, s.end),
-                            text=best.text,
+                            start=new_start,
+                            end=new_end,
+                            text=merged_text,
                             entity_type=etype,
                             confidence=new_conf,
                             detector=best.detector,

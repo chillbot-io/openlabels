@@ -1156,7 +1156,7 @@ def _suppress_ml_name_collisions(spans: list[Span]) -> list[Span]:
 
 
 # ---------------------------------------------------------------------------
-# Name–location collision suppression
+# Name–collision suppression (location, company, job title)
 # ---------------------------------------------------------------------------
 
 _LOCATION_TYPES = frozenset({
@@ -1164,33 +1164,46 @@ _LOCATION_TYPES = frozenset({
     "GPS_COORDINATE", "GPS_COORDINATES",
 })
 
+# Entity types that should beat FIRSTNAME/LASTNAME in a collision.
+# Includes locations (Florence→CITY vs FIRSTNAME) and professional
+# types (Apple→COMPANY vs FIRSTNAME, Engineer→JOB_TITLE vs FIRSTNAME).
+# Benchmark: 5 COMPANY→FIRSTNAME, 4 CITY→FIRSTNAME, 2 JOB_TITLE→FIRSTNAME
+# type mismatches on nemotron_pii traced to dedup picking FIRSTNAME over
+# these more specific types.
+_NAME_COLLISION_PRIORITY_TYPES = _LOCATION_TYPES | frozenset({
+    "COMPANY", "EMPLOYER", "JOB_TITLE",
+})
+
 
 def _suppress_name_location_collisions(
     spans: list[Span],
     all_candidates: list[Span] | None = None,
 ) -> list[Span]:
-    """Suppress FIRSTNAME/LASTNAME spans that overlap with location spans.
+    """Suppress FIRSTNAME/LASTNAME spans that overlap with priority types.
 
-    City/state/county names (Florence, Georgia, Madison, Austin) are common
-    first names but are almost always locations in benchmark contexts.
-    When both a name and a location span overlap at the same position,
-    suppress the name and keep the location.
+    City/state/county names (Florence, Georgia, Madison, Austin),
+    company names (Apple, Chase), and job titles (Engineer, Director)
+    are common first names but are almost always the more specific type
+    in benchmark contexts.  When both a name and a priority-type span
+    overlap at the same position, suppress the name.
 
     Args:
         spans: The resolved (post-dedup) span list to filter.
-        all_candidates: Optional pre-dedup span list to source location
+        all_candidates: Optional pre-dedup span list to source priority
             ranges from.  GLiNER may detect both CITY and FIRSTNAME at
             the same position; dedup picks one winner (often FIRSTNAME
             with higher confidence).  By checking ``all_candidates`` we
-            see location detections that lost in dedup.
+            see priority detections that lost in dedup.
     """
-    # Collect location ranges from both the resolved spans AND
+    # Collect priority ranges from both the resolved spans AND
     # all pre-dedup candidates (if provided).
     source = spans if all_candidates is None else all_candidates
-    location_ranges: list[tuple[int, int]] = [
-        (s.start, s.end) for s in source if s.entity_type in _LOCATION_TYPES
+    priority_ranges: list[tuple[int, int]] = [
+        (s.start, s.end)
+        for s in source
+        if s.entity_type in _NAME_COLLISION_PRIORITY_TYPES
     ]
-    if not location_ranges:
+    if not priority_ranges:
         return spans
 
     result: list[Span] = []
@@ -1198,11 +1211,11 @@ def _suppress_name_location_collisions(
         if span.entity_type in _NAME_FAMILY:
             collides = any(
                 _ranges_overlap(span.start, span.end, ls, le)
-                for ls, le in location_ranges
+                for ls, le in priority_ranges
             )
             if collides:
                 logger.debug(
-                    "Name-location collision suppressed: %s %r",
+                    "Name-collision suppressed: %s %r",
                     span.entity_type, span.text,
                 )
                 continue

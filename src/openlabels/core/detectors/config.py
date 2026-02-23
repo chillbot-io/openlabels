@@ -106,7 +106,13 @@ class DetectionConfig:
         # ai4privacy 1k at 0.55 with ML enabled (multiple detectors:
         # GLiNER + pattern + additional_patterns all producing COMPANY).
         ("COMPANY", 0.60),
-        ("JOB_TITLE", 0.50),
+        # JOB_TITLE: lowered from 0.50 to 0.45 — no pattern detector
+        # exists so only GLiNER can detect these.  At 0.50 + calibration
+        # (1.25, 0.08), 39 real job titles on nemotron_pii were filtered.
+        # Lowering to 0.45 with near-identity calibration (1.05, 0.02)
+        # recovers borderline detections while ML-primary solo_min gating
+        # still filters unreliable low-confidence FPs.
+        ("JOB_TITLE", 0.45),
         # FACILITY from PHI model — trained on clinical text where every
         # hospital name is PHI; massively over-fires on general-purpose text.
         ("FACILITY", 0.80),

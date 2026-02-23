@@ -63,6 +63,56 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "COMPANY", 0.75, 0, flags=0
     ),
 
+    # JOB_TITLE — Context-labeled patterns
+    # "Title: Software Engineer", "Position: Marketing Manager"
+    # "Occupation: Data Scientist", "Role: Product Designer"
+    # Uses inline (?i:...) for the label prefix so the capture group
+    # stays case-sensitive (only matches capitalized words).
+    _p(
+        r"\b(?i:title|position|occupation|role|designation|job\s*title|"
+        r"job\s*position)\s*[:]\s*"
+        r"([A-Z][a-z]+(?:\s+(?:of|and|&)\s+[A-Za-z]+|\s+[A-Z][a-z]+)*)",
+        "JOB_TITLE", 0.82, 1, flags=0,
+    ),
+
+    # "works as a Software Engineer", "employed as Data Analyst"
+    _p(
+        r"\b(?i:works?|employed|serving|working)\s+(?i:as)\s+(?:a\s+|an\s+|the\s+)?"
+        r"([A-Z][a-z]+(?:\s+(?:of|and|&)\s+[A-Za-z]+|\s+[A-Z][a-z]+)*)",
+        "JOB_TITLE", 0.78, 1, flags=0,
+    ),
+
+    # JOB_TITLE — Keyword-anchored patterns
+    # "Senior/Junior/Lead/Chief/Head/Principal X" where X ends with a role word
+    _p(
+        r"\b((?:Senior|Junior|Lead|Chief|Head|Principal|Associate|"
+        r"Assistant|Executive|Managing|General|Regional|Global|"
+        r"Vice|Deputy|Staff)\s+"
+        r"(?:[A-Z][a-z]+\s+){0,3}"
+        r"(?:Engineer|Developer|Scientist|Analyst|Designer|Architect|"
+        r"Manager|Director|Officer|Consultant|Coordinator|Specialist|"
+        r"Administrator|Advisor|Strategist|Planner|Supervisor|"
+        r"Technician|Therapist|Inspector|Instructor|Researcher|"
+        r"Producer|Editor|Writer|Accountant|Auditor|Attorney|"
+        r"Counsel|Nurse|Physician|Surgeon|Pilot|Captain|Agent|"
+        r"Representative|Recruiter|Trainer|Coach))\b",
+        "JOB_TITLE", 0.80, 0, flags=0,
+    ),
+
+    # Standalone multi-word role with known suffix (capitalized)
+    # "Software Engineer", "Marketing Manager", "Data Scientist"
+    # Excludes articles/prepositions as the leading word.
+    _p(
+        r"\b((?!The |A |An )[A-Z][a-z]+\s+(?:[A-Z][a-z]+\s+){0,2}"
+        r"(?:Engineer|Developer|Scientist|Analyst|Designer|Architect|"
+        r"Manager|Director|Officer|Consultant|Coordinator|Specialist|"
+        r"Administrator|Advisor|Strategist|Planner|Supervisor|"
+        r"Technician|Therapist|Inspector|Instructor|Researcher|"
+        r"Producer|Editor|Writer|Accountant|Auditor|Attorney|"
+        r"Counsel|Recruiter|Trainer|Coach))\b",
+        "JOB_TITLE", 0.72, 0, flags=0,
+    ),
+
     # AGE - Age Expressions (~579 missed)
     # "45 years old", "45-year-old", "45 y/o", "45yo", "45 yr old"
     _p(
