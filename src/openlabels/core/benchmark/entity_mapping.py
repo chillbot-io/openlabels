@@ -135,6 +135,9 @@ UNMAPPED_PRED_TYPES: frozenset[str] = frozenset({
     # and generate pure false positives.
     "UNIQUE_ID",      # No gold labels in ai4privacy 400k (pure FP)
     "TRACKING_NUMBER",  # No gold labels in ai4privacy 400k (pure FP)
+    # nemotron_pii: no gold counterparts — pure FPs
+    "ROOM",           # No gold labels in nemotron_pii (room number pattern fires on bare numbers)
+    "CUSIP",          # No gold labels in nemotron_pii (MRN→CUSIP type mismatch)
 })
 
 # Entity types the ai4privacy dataset uses that OpenLabels does not detect

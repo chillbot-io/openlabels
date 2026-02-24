@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1334,6 +1335,7 @@ _ML_NAME_BLOCKLIST = frozenset({
     # Short words / brand-adjacent
     "verde", "tone", "viva", "alto", "vista",
     "forte", "tempo", "presto", "largo", "motto",
+    "baha",
     # Action / role words
     "claim", "claims", "overall", "overview",
     "appeal", "appeals", "reform", "reforms",
@@ -1456,7 +1458,12 @@ _ML_USERNAME_BLOCKLIST = frozenset({
     "recommended", "assigned", "associated", "documented",
     "referenced", "generated", "maintained", "established",
     "implemented", "distributed", "administered",
+    # Additional from nemotron_pii benchmark
+    "multiple", "security",
 })
+
+# Regex to strip leading/trailing non-alphanumeric chars for blocklist matching
+_STRIP_NONALPHA_RE = re.compile(r'^[^a-z0-9]+|[^a-z0-9]+$')
 
 
 def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
