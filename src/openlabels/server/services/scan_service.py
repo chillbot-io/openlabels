@@ -60,10 +60,11 @@ class ScanService(BaseService):
     async def list_scans(
         self,
         status: str | None = None,
+        target_id: UUID | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ScanJob], int]:
-        """List scan jobs with optional status filter and pagination."""
+        """List scan jobs with optional status/target filter and pagination."""
         VALID_STATUSES = set(JobStatus)
         conditions = [ScanJob.tenant_id == self.tenant_id]
         if status:
@@ -72,6 +73,8 @@ class ScanService(BaseService):
                 # letting invalid enum values reach PostgreSQL
                 return [], 0
             conditions.append(ScanJob.status == status)
+        if target_id is not None:
+            conditions.append(ScanJob.target_id == target_id)
 
         count_query = select(func.count()).select_from(ScanJob).where(*conditions)
         count_result = await self.session.execute(count_query)

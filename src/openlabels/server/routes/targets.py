@@ -9,6 +9,7 @@ Security features:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -523,3 +524,47 @@ async def delete_target(
         return Response(status_code=204)
     except SQLAlchemyError as e:
         raise_database_error("deleting target", e)
+
+
+class TestConnectionResponse(BaseModel):
+    """Response from testing target connectivity."""
+
+    success: bool
+    latency_ms: float | None = None
+    error: str | None = None
+
+
+@router.post("/{target_id}/test-connection", response_model=TestConnectionResponse)
+async def test_target_connection(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
+) -> TestConnectionResponse:
+    """Test connectivity to a scan target.
+
+    Instantiates the appropriate adapter and calls its test_connection method
+    to verify that the target is reachable with the current configuration.
+    """
+    target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
+
+    try:
+        from openlabels.jobs.tasks.scan import _get_adapter
+
+        adapter = _get_adapter(target.adapter, target.config or {})
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        healthy = await adapter.test_connection(target.config or {})
+        latency = (loop.time() - start) * 1000
+
+        return TestConnectionResponse(
+            success=healthy,
+            latency_ms=round(latency, 1),
+            error=None if healthy else "Connection test returned unhealthy",
+        )
+    except Exception as exc:
+        logger.warning("Connection test failed for target %s: %s", target_id, exc)
+        return TestConnectionResponse(
+            success=False,
+            latency_ms=None,
+            error=f"{type(exc).__name__}: {exc}",
+        )

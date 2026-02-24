@@ -126,11 +126,13 @@ async def list_scans(
     scan_service: ScanServiceDep,
     _tenant: TenantContextDep,
     status: str | None = Query(None, description="Filter by status"),
+    target_id: UUID | None = Query(None, description="Filter by target"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ScanResponse]:
     """List scan jobs with pagination."""
     jobs, total = await scan_service.list_scans(
         status=status,
+        target_id=target_id,
         limit=pagination.limit,
         offset=pagination.offset,
     )
