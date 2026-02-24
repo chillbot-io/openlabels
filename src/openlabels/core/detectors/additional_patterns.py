@@ -353,11 +353,19 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "UNIQUE_ID", 0.75, 1, flags=0
     ),
 
-    # UNIQUE_ID — UUID v4 format: "6178d0a7-8d65-4b5d-9e22-34c7a81e8f0b"
+    # UNIQUE_ID — UUID v4 format with context label
+    # "uuid: 6178d0a7-...", "ID: 6178d0a7-...", "identifier: ..."
+    _p(
+        r"\b(?:uuid|guid|identifier|unique[\s_]?id|reference[\s_]?(?:id|number|code)|"
+        r"tracking[\s_]?(?:id|number))\s*[:=]\s*"
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
+        "UNIQUE_ID", 0.92, 1, flags=re.IGNORECASE
+    ),
+    # UNIQUE_ID — UUID v4 without context (lower confidence so API_KEY wins in dedup)
     # 8-4-4-4-12 hex digits separated by hyphens.
     _p(
         r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
-        "UNIQUE_ID", 0.88, 1, flags=re.IGNORECASE
+        "UNIQUE_ID", 0.75, 1, flags=re.IGNORECASE
     ),
 
     # UNIQUE_ID — SHA-256 hash: 64 hex chars

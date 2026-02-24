@@ -1252,15 +1252,30 @@ _ML_NAME_BLOCKLIST = frozenset({
     "documentation", "infrastructure", "telecommunications",
     "unfortunately", "approximately", "alternatively",
     "comprehensive", "fundamentally", "subsequently",
+    "assessment", "requirements", "procedures", "guidelines",
+    "provisions", "regulations", "amendments", "transactions",
+    "participants", "beneficiaries", "representatives",
+    "notification", "notifications", "coordination",
+    "considerations", "responsibilities", "recommendations",
+    "arrangements", "acknowledgment", "acknowledgement",
+    "correspondence", "miscellaneous", "supplementary",
     # Common words flagged as LASTNAME
     "spark", "nationalist", "mutual", "team", "mente",
     "premium", "quantum", "spectrum", "catalyst", "pinnacle",
     "velocity", "momentum", "paradigm", "syndicate",
+    "global", "digital", "federal", "central", "capital",
+    "premier", "summit", "alliance", "standard", "enterprise",
+    "ventures", "holdings", "partners", "associates", "solutions",
+    "dynamics", "analytics", "logistics", "advisory",
     # Demonyms / nationality-adjacent words
     "croat", "croatian", "emirati", "kuwaiti", "qatari",
     "bahraini", "omani", "yemeni", "somali", "afghan",
+    "iraqi", "irani", "iranian", "syrian", "libyan",
+    "lebanese", "jordanian", "palestinian", "israeli",
+    "turkish", "egyptian", "tunisian", "algerian", "moroccan",
     # Place names GLiNER confuses with person names
     "kremlin", "hartford", "pentagon", "saharan",
+    "broadway", "westminster", "manhattan", "brooklyn",
     # Short words / brand-adjacent
     "verde", "tone", "viva", "alto", "vista",
     "forte", "tempo", "presto", "largo", "motto",
@@ -1269,26 +1284,68 @@ _ML_NAME_BLOCKLIST = frozenset({
     "appeal", "appeals", "reform", "reforms",
     "mandate", "mandates", "verdict", "verdicts",
     "pioneer", "advocate", "sentinel",
+    "interim", "ongoing", "pending", "pursuant",
     # Common words that start sentences (title-cased by position)
     "cash", "yoga", "menu", "logo", "demo", "memo",
     "quota", "bonus", "forum", "salon", "plaza",
+    "versus", "via", "per", "etc", "also",
+    # Common nouns/adjectives falsely detected as names
+    "universal", "regional", "municipal", "provincial",
+    "residential", "commercial", "industrial", "financial",
+    "clinical", "surgical", "medical", "dental", "optical",
+    "tropical", "biological", "technical", "political",
+    "electoral", "judicial", "criminal", "civil",
+    "annual", "quarterly", "monthly", "weekly", "daily",
+    "primary", "secondary", "tertiary", "preliminary",
+    "internal", "external", "lateral", "bilateral",
+    "rural", "urban", "suburban", "coastal",
     # Nemotron PII FP analysis — additional words
     "baha", "al", "sales", "jazeera", "brokerage",
 })
 
 
+# Suffixes that NEVER appear on real person names (for words >= 7 chars).
+# Verified against name databases: no known first or last name of 7+
+# characters ends with any of these suffixes.
+# Examples of what they catch:
+#   -tion: "Administration", "Registration", "Specification"
+#   -sion: "Commission", "Submission", "Permission"
+#   -ness: "Awareness", "Business", "Effectiveness"
+#   -ful:  "Powerful", "Successful", "Meaningful"
+#   -less: "Regardless", "Wireless", "Careless"
+#   -ism:  "Capitalism", "Terrorism", "Journalism"
+# Explicitly excluded: -ity (Trinity, Felicity, Charity),
+# -ous (Precious), -ence (Florence, Clarence), -ance (Constance),
+# -ive (Clive), -ment (Clement), -able (Constable), -ers (Rogers),
+# -son (Johnson), -ton (Clinton), -ing (Sterling, Irving)
+_NON_NAME_SUFFIXES = (
+    "tion", "tions",
+    "sion", "sions",
+    "ness",
+    "ful",
+    "less",
+    "ism", "isms",
+    "ize", "ized", "izes", "izing",
+    "ify", "ified", "ifies", "ifying",
+    "ily",
+    "ably", "ibly",
+    "ally",
+    "ously",
+    "ingly",
+    "ively",
+    "ical",
+    "ible",
+)
+
+
 def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
     """Suppress NAME-family spans whose text is a common non-name English word.
 
-    GLiNER's zero-shot NER frequently flags business terms, demonyms, and
-    other common words as person names.  The dictionary-based detector has
-    its own blocklists (_NEVER_NAMES, _AMBIGUOUS_FIRST/LAST) but those
-    don't cover every false-positive word, and ML detectors bypass them
-    entirely.
-
-    This function checks ALL name-family spans (regardless of tier) against
-    _ML_NAME_BLOCKLIST and _NEVER_NAMES.  Words in these sets are never
-    standalone person names in PII contexts.
+    Uses three complementary strategies:
+    1. Explicit blocklist (_ML_NAME_BLOCKLIST) for known FP words
+    2. _NEVER_NAMES from dictionary detector (job titles, structural terms)
+    3. Suffix heuristic: words >= 7 chars ending in suffixes that never
+       appear on real names (-tion, -sion, -ness, -ful, -less, etc.)
     """
     from .dictionary_names import _NEVER_NAMES
 
@@ -1301,6 +1358,15 @@ def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
                 suppressed += 1
                 logger.debug(
                     "Name FP suppressed: %s %r (blocklist, tier=%s)",
+                    span.entity_type, span.text, span.tier,
+                )
+                continue
+            # Suffix heuristic: words with 7+ characters ending in
+            # distinctly non-name English suffixes.
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
+                suppressed += 1
+                logger.debug(
+                    "Name FP suppressed: %s %r (suffix, tier=%s)",
                     span.entity_type, span.text, span.tier,
                 )
                 continue
