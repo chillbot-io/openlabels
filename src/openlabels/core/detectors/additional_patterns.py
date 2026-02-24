@@ -726,6 +726,77 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(?:account|acct|customer|reference|ref)\s*(?:#|no\.?|number|id)?\s*[:\s#]+(\d{6}-\d{5,8})\b",
         "ACCOUNT_NUMBER", 0.82, 1, flags=re.IGNORECASE
     ),
+
+    # ── Additional EMPLOYEE_ID patterns (48 FN on nemotron_pii 1000) ──────
+
+    # Badge/ID number: "Badge: 12345", "Badge Number: EMF1234"
+    _p(
+        r"\b(?:badge|id\s*card|work(?:er)?\s*id)\s*(?:#|no\.?|number)?\s*[:\s#]+([A-Z0-9]{4,12})\b",
+        "EMPLOYEE_ID", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # "E-" or "W-" prefix in employee context: "E-12345", "W-98765"
+    _p(
+        r"\b(?:employee|staff)\s*[:\s#]*(E-\d{4,10})\b",
+        "EMPLOYEE_ID", 0.85, 1, flags=re.IGNORECASE
+    ),
+    # Standalone EMP prefix with dash: "EMP-84518", "EMP-730359"
+    _p(
+        r"\b(EMP-\d{4,8})\b",
+        "EMPLOYEE_ID", 0.85, 1, flags=0
+    ),
+    # "Staff" or "Personnel" followed directly by a number: "Staff 12345"
+    _p(
+        r"\b(?:staff|personnel)\s+(\d{4,8})\b",
+        "EMPLOYEE_ID", 0.78, 1, flags=re.IGNORECASE
+    ),
+
+    # ── Additional ACCOUNT_NUMBER patterns (166 FN on nemotron_pii 1000) ──
+
+    # "ref/reference" with number/# label and digits
+    _p(
+        r"\b(?:ref(?:erence)?|case|claim|file|policy|loan|mortgage)\s*(?:#|no\.?|number)\s*[:\s#]*(\d{6,15})\b",
+        "ACCOUNT_NUMBER", 0.80, 1, flags=re.IGNORECASE
+    ),
+    # "ref/reference:" directly followed by alphanumeric ID
+    _p(
+        r"\b(?:ref(?:erence)?|case|claim|file|policy|loan|mortgage)\s*[:\s#]+(?=[A-Z0-9]*\d)([A-Z0-9]{6,15})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # Colon-labeled with broader financial terms: "Deposit: 123456789"
+    _p(
+        r"\b(?:deposit|withdrawal|transfer|payment|transaction)\s*(?:#|no\.?|number|ref(?:erence)?)?\s*[:\s#]+(\d{6,15})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # "ACC" prefix (3 letters, shorter than ACCT): "ACC123456", "ACC-789012"
+    _p(
+        r"\b(ACC[-]?\d{5,12})\b",
+        "ACCOUNT_NUMBER", 0.85, 1, flags=0
+    ),
+    # INV/TXN prefixed IDs: "INV123456", "TXN789012"
+    _p(
+        r"\b((?:INV|TXN|ORD|PAY|BIL)[-]?\d{5,12})\b",
+        "ACCOUNT_NUMBER", 0.82, 1, flags=0
+    ),
+
+    # ── Additional CERTIFICATE_NUMBER patterns (23 FN on nemotron_pii 1000)
+    # "Certificate/License/Registration:" with alphanumeric ID
+    _p(
+        r"\b(?:certificate|license|licence|registration|certification|permit)\s*"
+        r"(?:#|no\.?|number)?\s*[:\s#]+(?=[A-Z0-9-]*\d)([A-Z0-9][-A-Z0-9]{4,18})\b",
+        "CERTIFICATE_NUMBER", 0.82, 1, flags=re.IGNORECASE
+    ),
+
+    # ── Additional HEALTH_PLAN_ID patterns (26 FN on nemotron_pii 1000) ───
+    # "Health Plan" / "Plan ID" / "Enrollee" with ID
+    _p(
+        r"\b(?:health\s+plan|plan\s+(?:id\b|number|#|no\.?)|enrollee\s+(?:id\b|number|#))\s*[:\s#]+([A-Z0-9]{5,15})\b",
+        "HEALTH_PLAN_ID", 0.82, 1, flags=re.IGNORECASE
+    ),
+    # "Coverage" / "Benefits" ID
+    _p(
+        r"\b(?:coverage|benefits?)\s*(?:id\b|#|number|no\.?)\s*[:\s#]+([A-Z0-9]{5,15})\b",
+        "HEALTH_PLAN_ID", 0.78, 1, flags=re.IGNORECASE
+    ),
 )
 
 

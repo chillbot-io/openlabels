@@ -453,12 +453,19 @@ class DetectorOrchestrator:
             resolved, all_candidates=calibrated,
         )
 
+        # Correct type confusions: reclassify ML spans that match a more
+        # specific type's format (USERNAME→FIRSTNAME, PHONE→SSN, etc.)
+        resolved = _correct_type_confusions(resolved)
+
         # Suppress ML name spans whose text is a common English word
         # that GLiNER falsely labels as FIRSTNAME/LASTNAME.
         resolved = _suppress_ml_name_false_positives(resolved)
 
         # Suppress ML USERNAME spans that are common English words
         resolved = _suppress_ml_username_false_positives(resolved)
+
+        # Suppress ML CITY/location spans that are common English words
+        resolved = _suppress_ml_location_false_positives(resolved)
 
         if self.config.enable_proximity_boost and resolved:
             from ..pipeline.entity_proximity import analyze_proximity
@@ -1002,13 +1009,17 @@ _SSN_FORMAT_RE = _re.compile(
 def _correct_type_confusions(spans: list[Span]) -> list[Span]:
     """Reclassify ML spans that match a more specific type's format.
 
-    GLiNER has known confusion patterns:
-    - USERNAME → FIRSTNAME: usernames with underscores/dots/digits
-    - SSN → PHONE: social security numbers in XXX-XX-XXXX format
+    GLiNER has known confusion patterns (from nemotron_pii 1000-sample):
+    - USERNAME → FIRSTNAME (14): usernames with underscores/dots/digits
+    - PHONE → SSN: social security numbers in XXX-XX-XXXX format
+    - SSN classified on routing numbers: 9-digit numbers passing ABA checksum
 
     Only reclassifies ML-tier spans (pattern detections are trusted).
     """
+    from .checksum import validate_aba_routing
+
     result: list[Span] = []
+    corrections: dict[str, int] = {}
     for span in spans:
         if span.tier != Tier.ML:
             result.append(span)
@@ -1026,7 +1037,17 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
         elif etype == "PHONE" and _SSN_FORMAT_RE.match(text):
             new_type = "SSN"
 
+        # SSN → BANK_ROUTING when bare 9-digit passes ABA checksum
+        elif etype == "SSN":
+            digits = _re.sub(r'\D', '', text)
+            if len(digits) == 9:
+                valid, _ = validate_aba_routing(digits)
+                if valid:
+                    new_type = "BANK_ROUTING"
+
         if new_type is not None:
+            key = f"{etype}→{new_type}"
+            corrections[key] = corrections.get(key, 0) + 1
             logger.debug(
                 "Type correction: %s → %s for %r",
                 span.entity_type, new_type, text,
@@ -1045,6 +1066,9 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
         else:
             result.append(span)
 
+    if corrections:
+        detail = ", ".join(f"{k}({v})" for k, v in corrections.items())
+        logger.info("Type corrections applied: %s", detail)
     return result
 
 
@@ -1416,7 +1440,73 @@ def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
                     span.text, span.tier,
                 )
                 continue
+            # Suffix heuristic: common English word suffixes → not a username
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
+                logger.debug(
+                    "USERNAME FP suppressed: %r (suffix, tier=%s)",
+                    span.text, span.tier,
+                )
+                continue
         result.append(span)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# ML CITY / location false-positive suppression
+# ---------------------------------------------------------------------------
+
+# Entity types to check for location false positives.
+_LOCATION_FP_TYPES = frozenset({"CITY", "STATE", "COUNTY", "ADDRESS"})
+
+# Common non-location words that GLiNER misclassifies as CITY.
+_ML_CITY_BLOCKLIST = frozenset({
+    # Business/organizational terms
+    "summit", "alliance", "enterprise", "standard", "premium",
+    "capital", "central", "federal", "national", "general",
+    "premier", "pioneer", "advocate", "sentinel", "catalyst",
+    "ventures", "holdings", "partners", "dynamics", "momentum",
+    # Legal/governance
+    "mandate", "verdict", "reform", "appeal", "consent",
+    "governance", "compliance", "oversight", "tribunal",
+    # Generic terms
+    "overall", "overview", "interim", "mutual", "prime",
+    "exchange", "gateway", "forum", "arena", "plaza",
+})
+
+
+def _suppress_ml_location_false_positives(spans: list[Span]) -> list[Span]:
+    """Suppress CITY/location spans whose text is clearly not a place name.
+
+    Uses two strategies:
+    1. Explicit blocklist of business/organizational words
+    2. Suffix heuristic: words >= 7 chars with non-name suffixes are never
+       place names either (-tion, -sion, -ness, -ful, etc.)
+    """
+    result: list[Span] = []
+    suppressed = 0
+    for span in spans:
+        etype = normalize_entity_type(span.entity_type)
+        if etype in _LOCATION_FP_TYPES and span.tier == Tier.ML:
+            lower = span.text.strip().lower()
+            if lower in _ML_CITY_BLOCKLIST:
+                suppressed += 1
+                logger.debug(
+                    "Location FP suppressed: %s %r (blocklist)",
+                    span.entity_type, span.text,
+                )
+                continue
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
+                suppressed += 1
+                logger.debug(
+                    "Location FP suppressed: %s %r (suffix)",
+                    span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+    if suppressed:
+        logger.info(
+            "Location FP suppression: removed %d ML location spans", suppressed,
+        )
     return result
 
 
