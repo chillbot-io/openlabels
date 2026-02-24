@@ -485,7 +485,10 @@ class DetectorOrchestrator:
         return resolved
 
     # Extra boost when 3+ detectors agree (stacks with base boost).
-    _ENSEMBLE_TRIPLE_EXTRA = 0.08
+    # Raised from 0.08 to 0.12: with 3 ML models, triple agreement is
+    # a very strong signal — reward it more to recover TPs that
+    # tighter per-model calibration would otherwise suppress solo.
+    _ENSEMBLE_TRIPLE_EXTRA = 0.12
 
     def _apply_ensemble_boost(self, spans: list[Span]) -> list[Span]:
         """Boost confidence when multiple detectors agree on the same entity.
@@ -662,11 +665,11 @@ _ML_PRIMARY_SOLO_MIN_DEFAULT = 0.52
 def _calibrated_threshold(span: Span, base: float) -> float:
     """Derive a per-span suppression threshold from calibration data.
 
-    Labels with high calibration temperature (>1.0) are overconfident
-    and need a *higher* calibrated confidence to survive solo.
-    Well-calibrated labels (temperature ≤ 1.0) use the base threshold.
-
-    Formula: ``min(0.70, base + max(0, temperature - 1.0) * 0.12)``
+    Checks the calibration table corresponding to the span's detector:
+    GLiNER, Stanford PHI, or multilingual GLiNER.  Labels with high
+    calibration temperature (>1.0) are overconfident and need a *higher*
+    calibrated confidence to survive solo.  Well-calibrated labels
+    (temperature ≤ 1.0) use the base threshold.
 
     Falls back to *base* when the span has no calibration metadata.
     """
@@ -674,19 +677,30 @@ def _calibrated_threshold(span: Span, base: float) -> float:
     if label is None:
         return base
 
-    from .gliner_calibration import get_active_calibration
+    # Look up calibration in the table matching this span's detector.
+    params: tuple[float, float] | None = None
+    detector = span.detector if span.detector else ""
 
-    table = get_active_calibration()
-    params = table.get(label)
+    if detector == "stanford_phi":
+        from .phi_detector import PHI_CALIBRATION
+        params = PHI_CALIBRATION.get(label)
+    elif detector == "gliner_multilingual":
+        from .multilingual_gliner import MULTILINGUAL_CALIBRATION
+        params = MULTILINGUAL_CALIBRATION.get(label)
+    else:
+        from .gliner_calibration import get_active_calibration
+        table = get_active_calibration()
+        params = table.get(label)
+
     if params is None:
         return base
 
     temperature = params[0]
     # Scale: overconfident labels (temp >> 1.0) need higher confidence to
-    # survive solo.  Cap at 0.62 — the previous 0.70 cap suppressed too
-    # many valid ML detections on the 400k dataset where patterns miss
-    # more entities due to different PII formats, tanking recall.
-    return min(0.62, base + max(0.0, temperature - 1.0) * 0.08)
+    # survive solo.  Cap at 0.64 (raised from 0.62) — with 3-model
+    # ensemble, solo detections from high-temperature labels should face
+    # tighter gating; ensemble boost recovers TPs where models agree.
+    return min(0.64, base + max(0.0, temperature - 1.0) * 0.10)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents

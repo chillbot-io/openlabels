@@ -82,14 +82,16 @@ STANFORD_PHI_LABEL_MAP: dict[str, str] = {
 # Format: Stanford_label → (temperature, bias)
 # ---------------------------------------------------------------------------
 PHI_CALIBRATION: dict[str, tuple[float, float]] = {
-    # Names: clinical model is very aggressive on general text
-    "PATIENT": (1.60, 0.12),
-    "HCW": (1.50, 0.10),
+    # Names: clinical model trained on text where every name IS PHI;
+    # very aggressive on general text.  With 3-model ensemble, increase
+    # dampening — ensemble boost recovers TPs where models agree.
+    "PATIENT": (1.75, 0.15),
+    "HCW": (1.65, 0.13),
     # Dates: reasonable on structured dates, overconfident on ambiguous ones
     "DATE": (1.20, 0.04),
     "DATES": (1.20, 0.04),
-    # Age: decent on "XX years old" but fires on bare numbers
-    "AGE": (1.40, 0.08),
+    # Age: 31 spurious on nemotron_pii 1k.  Stronger dampening.
+    "AGE": (1.55, 0.11),
     # Contact: structural patterns are reliable
     "PHONE": (1.05, 0.01),
     "FAX": (1.10, 0.02),
@@ -99,11 +101,15 @@ PHI_CALIBRATION: dict[str, tuple[float, float]] = {
     "MRN": (1.10, 0.02),
     "SSN": (1.05, 0.01),
     "LICENSE": (1.30, 0.06),
-    "ACCOUNT": (1.25, 0.05),
+    # ACCOUNT: 166 ACCOUNT_NUMBER FNs on nemotron_pii 1k.  Lowered
+    # from (1.25, 0.05) to recover missed detections — PHI ACCOUNT
+    # provides valuable corroboration with GLiNER bank account.
+    "ACCOUNT": (1.10, 0.02),
     "VIN": (1.20, 0.04),
     "DEVICE": (1.30, 0.06),
-    # Address: heavily overconfident on general text
-    "GEO": (1.50, 0.10),
+    # Address/GEO: 42 ADDRESS spurious, heavily overconfident on general text.
+    # Increased dampening — ensemble with GLiNER recovers real addresses.
+    "GEO": (1.65, 0.13),
 }
 
 
