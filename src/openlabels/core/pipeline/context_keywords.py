@@ -257,6 +257,37 @@ CONTEXT_RULES: dict[str, ContextRule] = {
         boost_amount=0.10,
         demote_amount=0.0,
     ),
+    # CITY: disambiguate city names from first names (Florence, Austin,
+    # Madison, Sherwood, Trenton, etc.).  Boost when geographic context
+    # nearby; demote when interpersonal/salutation context nearby.
+    "CITY": ContextRule(
+        boost_words=frozenset({
+            "city", "town", "village", "located", "lives in", "based in",
+            "from", "near", "moved to", "traveled to", "born in",
+            "zip", "postal", "state", "county", "district",
+            "street", "road", "avenue", "drive", "lane",
+            "address", "region", "metro", "suburb", "downtown",
+        }),
+        demote_words=frozenset({
+            "hello", "dear", "mr", "mrs", "ms", "dr", "prof",
+            "patient", "name", "called", "named", "signed",
+            "sincerely", "regards", "attn",
+        }),
+        boost_amount=0.15,
+        demote_amount=0.15,
+    ),
+    "STATE": ContextRule(
+        boost_words=frozenset({
+            "state", "located", "lives in", "based in", "from",
+            "zip", "postal", "county", "address", "region",
+        }),
+        demote_words=frozenset({
+            "hello", "dear", "mr", "mrs", "ms", "dr", "patient",
+            "name", "called", "named",
+        }),
+        boost_amount=0.10,
+        demote_amount=0.10,
+    ),
 }
 
 
