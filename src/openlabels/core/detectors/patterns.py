@@ -2816,6 +2816,61 @@ _USERNAME_FALSE_POSITIVES = frozenset({
     'within', 'without', 'between', 'through',
     'policy', 'policies', 'report', 'reports',
     'process', 'processes', 'activity', 'activities',
+    # Single-word FPs from nemotron_pii benchmark (also in ML blocklist
+    # but needed here for pattern-tier suppression)
+    'training', 'license', 'licenses', 'licensed', 'obligations',
+    'named', 'multiple', 'authenticated', 're-authenticated',
+    'authorization', 'certification', 'qualification',
+    'confirmation', 'verification', 'recommended',
+    'implemented', 'distributed', 'administered',
+})
+
+# Common components of data field names / programming identifiers.
+# When a snake_case USERNAME token (containing "_") has ALL parts in this
+# set and no digits, it is almost certainly a schema field name
+# (e.g. "date_of_birth", "eye_color") rather than a real username.
+_SNAKE_CASE_FIELD_PARTS = frozenset({
+    # identifiers / types
+    "id", "identifier", "key", "code", "number", "num", "no",
+    "name", "label", "title", "tag", "type", "kind", "class",
+    "value", "data", "info", "text", "body", "content", "entry",
+    "record", "item", "element", "field", "attribute", "property",
+    # dates / times
+    "date", "time", "timestamp", "timestamped", "datetime",
+    "created", "updated", "modified", "deleted", "expired",
+    "start", "end", "begin", "finish", "birth", "death",
+    # measurements / quantities
+    "rate", "score", "level", "count", "total", "sum",
+    "average", "mean", "median", "max", "min", "size", "length",
+    "width", "height", "weight", "depth", "area", "volume",
+    "pressure", "temperature", "frequency", "velocity", "speed",
+    # body / medical
+    "eye", "hair", "skin", "blood", "heart", "brain", "bone",
+    "biometric", "phenotypic", "genetic", "genomic", "clinical",
+    "medical", "health", "patient", "diagnosis", "treatment",
+    # demographics
+    "first", "last", "middle", "full", "display", "maiden",
+    "age", "gender", "sex", "race", "ethnicity", "nationality",
+    # contact / location
+    "email", "phone", "mobile", "fax", "address", "street",
+    "city", "state", "country", "zip", "postal", "region",
+    # auth / security
+    "auth", "authentication", "authorization", "credential",
+    "session", "token", "access", "refresh", "secret", "private",
+    "password", "passwd", "hash", "salt", "encrypted", "hashed",
+    # roles / entities
+    "user", "admin", "owner", "member", "participant",
+    "unique", "primary", "secondary", "parent", "child",
+    "source", "target", "origin", "destination",
+    # actions / status
+    "input", "output", "request", "response", "result",
+    "config", "setting", "option", "preference", "parameter",
+    "file", "path", "url", "uri", "host", "port", "domain",
+    "color", "colour", "traits", "entries", "records",
+    "measurements", "results", "status", "mode", "format",
+    # prepositions / articles (appear in field names like "date_of_birth")
+    "of", "at", "in", "on", "to", "for", "from", "with", "by",
+    "is", "has", "can", "the", "a", "an", "and", "or", "not",
 })
 
 
@@ -2986,8 +3041,16 @@ class PatternDetector(BaseDetector):
 
                 # Username false positive filter — common words after "user" or "login"
                 if pdef.entity_type == 'USERNAME':
-                    if value.lower().strip() in _USERNAME_FALSE_POSITIVES:
+                    lower_val = value.lower().strip()
+                    if lower_val in _USERNAME_FALSE_POSITIVES:
                         continue
+                    # Snake_case heuristic: reject values like "date_of_birth",
+                    # "eye_color", "heart_rate" where ALL underscore-separated
+                    # parts are common data field terms (not person names).
+                    if '_' in lower_val and not any(c.isdigit() for c in lower_val):
+                        parts = [p for p in lower_val.split('_') if p]
+                        if len(parts) >= 2 and all(p in _SNAKE_CASE_FIELD_PARTS for p in parts):
+                            continue
 
                 # Identifier types must contain at least one digit — pure
                 # alphabetic strings like "Savings" or "Specialist" are never
