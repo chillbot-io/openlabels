@@ -1680,8 +1680,12 @@ _p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNA
 # "delegating/responsibility to Username" — assignment context
 _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
 # Bare Name+Digits usernames: "Eugenia10", "Geovany30", "Jonatan78"
-# Require 3+ alpha chars + 1-4 digits, title-case (not common words)
-_p(r'\b([A-Z][a-z]{2,15}\d{1,4})\b', 'USERNAME', 0.72, 1),
+# Require 3+ alpha chars + 2-4 trailing digits, title-case.
+# Tightened from \d{1,4} to \d{2,4} (2+ digits avoids "Chapter1",
+# "Version2") and raised from 0.72 to 0.80 to survive USERNAME
+# entity threshold (0.79).  The 2-digit minimum is distinctive
+# enough to justify the higher confidence.
+_p(r'\b([A-Z][a-z]{2,15}\d{2,4})\b', 'USERNAME', 0.80, 1),
 # CamelCase + digits usernames (no separator): "BerthaRichardson1965", "DeclanMcK77"
 # Two or more uppercase transitions + trailing digits — distinctive username format.
 _p(r'\b([A-Z][a-z]+(?:[A-Z][a-z]*)+\d{1,4})\b', 'USERNAME', 0.82, 1),
@@ -1804,6 +1808,14 @@ _p(r'(?:password|passwd|pwd|passcode|pass)\s+(?:is|was|will\s+be)\s+([A-Za-z]{3,
 # Keyboard pattern passwords: "qwerty*", "asdf*", "zxcv*" followed by digits
 _p(r'(?:password|passwd|pwd|passcode|pass)\s*[=:]\s*((?:qwerty|asdf|zxcv)[A-Za-z0-9!@#$%^&*]{2,30})\b', 'PASSWORD', 0.92, 1, flags=re.I),
 _p(r'(?:password|passwd|pwd|passcode|pass)\s+(?:is|was|will\s+be)\s+((?:qwerty|asdf|zxcv)[A-Za-z0-9!@#$%^&*]{2,30})\b', 'PASSWORD', 0.90, 1, flags=re.I),
+# "password (VALUE)" — parenthetical after password keyword
+# Catches: "password (4NLMFpqwBPYF)", "passcode (abc123)"
+_p(r'(?:password|passwd|pwd|passcode|passphrase|pin)\s*\(([^)]{4,50})\)', 'PASSWORD', 0.85, 1, flags=re.I),
+# "provide the DIGITS" — security context where a PIN/code is provided
+# Catches: "provide the 0573 provided by our clinic"
+_p(r'\bprovide\s+(?:the\s+)?(\d{4,8})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "encrypted with VALUE" — encryption context (password/key)
+_p(r'\bencrypted\s+with\s+(?:pin\s+|code\s+|password\s+)?([A-Za-z0-9_]{4,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # LICENSE/CREDENTIAL/GOVERNMENT IDs
 # === Driver's License - Labeled ===
 _p(r'(?:Driver\'?s?\s*License|DL|DLN)[:\s#]+([A-Z0-9]{5,15})', 'DRIVER_LICENSE', 0.88, 1, flags=re.I),
@@ -1973,9 +1985,9 @@ _p(r'\baccount\s+(?:number|no\.?|#)\s+(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.88, 1, 
 # "our account number XXXXXXXX" or "use account XXXXXXXX"
 _p(r'\b(?:our|your|the|use|for)\s+account\s+(?:number\s+)?(\d{6,17})\b', 'ACCOUNT_NUMBER', 0.85, 1, flags=re.I),
 # Account type names: "Checking Account", "Savings Account", etc.
-# Confidence kept moderate since these are labels, not identifiers;
-# they must be near an actual account number to be meaningful.
-_p(r'\b((?:Checking|Savings|Investment|Personal\s+Loan|Auto\s+Loan|Home\s+Loan|Money\s+Market|Credit\s+Card)\s+Account)\b', 'ACCOUNT_NUMBER', 0.82, 1),
+# Negative lookahead excludes "Account Name/Type/Number" — those are
+# field labels, not actual account names.
+_p(r'\b((?:Checking|Savings|Investment|Personal\s+Loan|Auto\s+Loan|Home\s+Loan|Money\s+Market|Credit\s+Card)\s+Account)(?!\s+(?:Name|Type|Number|Category)\b)\b', 'ACCOUNT_NUMBER', 0.82, 1),
 # 16-digit numbers with context (masked/tokenized card numbers, account identifiers)
 # Lower confidence — only match when preceded by contextual words
 _p(r'(?:number|identification|assigned|use)\s+(\d{16})\b', 'ACCOUNT_NUMBER', 0.78, 1, flags=re.I),

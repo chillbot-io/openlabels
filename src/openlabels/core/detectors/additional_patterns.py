@@ -169,9 +169,11 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # "X old" without "years" — grammatical shorthand: "I'm a 70 old Male"
+    # Raised from 0.80 to 0.83 — was below AGE entity threshold (0.82),
+    # causing all matches to be silently filtered before scoring.
     _p(
         r"\b(\d{1,3})\s+old\b",
-        "AGE", 0.80, 0, flags=re.IGNORECASE
+        "AGE", 0.83, 0, flags=re.IGNORECASE
     ),
 
     # "aged X" without years — "patients aged over 58", "aged 41"
@@ -826,6 +828,139 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\b(?:coverage|benefits?)\s*(?:id\b|#|number|no\.?)\s*[:\s#]+([A-Z0-9]{5,15})\b",
         "HEALTH_PLAN_ID", 0.78, 1, flags=re.IGNORECASE
+    ),
+
+    # ── ACCOUNT_NUMBER — additional account type names ──────────────────
+    # Supplements patterns.py (which covers Checking/Savings/Investment etc.)
+    # with less common account types from ai4privacy ACCOUNTNAME mapping.
+    _p(
+        r"\b((?:Retirement|Brokerage|Business|Corporate|Joint|Trust|Escrow|"
+        r"Custodial|Current|Deposit|Fixed\s+Deposit|Recurring\s+Deposit)"
+        r"\s+Account)(?!\s+(?:Name|Type|Number|Category)\b)\b",
+        "ACCOUNT_NUMBER", 0.82, 0, flags=0
+    ),
+
+    # ── ACCOUNT_NUMBER — bare numbers in broader context ──────────────────
+    # "your DIGITS to gain access" — possessive + long number + access verb
+    _p(
+        r"\byour\s+(\d{10,19})\s+to\s+(?:gain\s+)?access\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # "info with DIGITS in" / "sensitive info with DIGITS"
+    _p(
+        r"\b(?:info|information|data)\s+with\s+(\d{10,19})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # "Contact us via DIGITS" / "reach us at DIGITS"
+    _p(
+        r"\b(?:contact|reach|call)\s+(?:us\s+)?(?:via|at|on)\s+(\d{7,12})\b",
+        "ACCOUNT_NUMBER", 0.75, 1, flags=re.IGNORECASE
+    ),
+
+    # ── STATE — full US state names ───────────────────────────────────────
+    # Matches capitalized full US state names in running text.
+    # Only multi-word states and states >= 6 chars to avoid FPs on
+    # short words (Ohio, Iowa, Utah handled by labeled/zip context only).
+    _p(
+        r"\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|"
+        r"Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Kansas|"
+        r"Kentucky|Louisiana|Maryland|Massachusetts|Michigan|Minnesota|"
+        r"Mississippi|Missouri|Montana|Nebraska|Nevada|New\s+Hampshire|"
+        r"New\s+Jersey|New\s+Mexico|New\s+York|North\s+Carolina|"
+        r"North\s+Dakota|Oklahoma|Oregon|Pennsylvania|Rhode\s+Island|"
+        r"South\s+Carolina|South\s+Dakota|Tennessee|Texas|Vermont|"
+        r"Virginia|Washington|West\s+Virginia|Wisconsin|Wyoming)\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+    # Short US states (Ohio, Iowa, Utah, Maine) — require context to avoid FPs.
+    # After comma or in address context: "Portland, Ohio", "from Utah"
+    _p(
+        r",\s+(Ohio|Iowa|Utah|Maine)\b",
+        "STATE", 0.80, 1, flags=0
+    ),
+    _p(
+        r"\b(?:in|from|to|near|across|throughout|around)\s+(Ohio|Iowa|Utah|Maine)\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+
+    # ── STATE — international regions / provinces ─────────────────────────
+    # European regions that appear in ai4privacy dataset
+    _p(
+        r"\b(Lombardy|Tuscany|Lazio|Campania|Veneto|Piedmont|Emilia-Romagna|"
+        r"Calabria|Sardinia|Sicily|Liguria|Molise|Apulia|Umbria|Basilicata|"
+        r"Abruzzo|Friuli\s+Venezia\s+Giulia|Trentino[-\s]Alto\s+Adige|"
+        r"Auvergne[-\s]Rh[ôo]ne[-\s]Alpes|Île[-\s]de[-\s]France|Occitanie|"
+        r"Nouvelle[-\s]Aquitaine|Brittany|Normandy|Provence|Alsace|"
+        r"Bavaria|Baden[-\s]Württemberg|Saxony|Hesse|Thuringia|Brandenburg|"
+        r"Mecklenburg[-\s]Vorpommern|Schleswig[-\s]Holstein|Saarland|Bremen|Hamburg|"
+        r"Zurich|Bern|Geneva|Basel|Lucerne|Vaud|Graubünden|Valais|"
+        r"Ontario|Quebec|British\s+Columbia|Alberta|Manitoba|Saskatchewan|"
+        r"Nova\s+Scotia|New\s+Brunswick|Newfoundland)\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+    # English regions / counties
+    _p(
+        r"\b(East\s+Midlands|West\s+Midlands|East\s+Anglia|"
+        r"South\s+West\s+England|South\s+East\s+England|"
+        r"North\s+West\s+England|North\s+East\s+England|"
+        r"Yorkshire|Lancashire|Kent|Essex|Surrey|Sussex|"
+        r"Merseyside|Cumbria|Cornwall|Devon|Dorset|Somerset|"
+        r"Gloucestershire|Leicestershire|Nottinghamshire|"
+        r"Warwickshire|Staffordshire|Derbyshire|Cheshire|"
+        r"Northumberland|Durham|Shropshire|Wiltshire|"
+        r"Oxfordshire|Buckinghamshire|Hertfordshire|"
+        r"County\s+Tyrone|County\s+Down|County\s+Antrim|"
+        r"County\s+Cork|County\s+Galway|County\s+Dublin)\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+
+    # ── ZIP — standalone 5-digit ZIP codes ────────────────────────────────
+    # "zip/postal/zip code XXXXX" with label context
+    _p(
+        r"\b(?:zip|postal|post)\s*(?:code)?\s*[:\s]+(\d{5}(?:-\d{4})?)\b",
+        "ZIP", 0.85, 1, flags=re.IGNORECASE
+    ),
+    # 5-digit ZIP + optional +4 after comma in address-like context:
+    # "city name, XXXXX" or "state, XXXXX"
+    _p(
+        r",\s*(\d{5}(?:-\d{4})?)\b(?=\s*[,.\n)}\]]|\s+(?:and|or|for|with|to|in|at|by|from)\b|\s*$)",
+        "ZIP", 0.76, 1, flags=0
+    ),
+
+    # ── CITY — additional context patterns ────────────────────────────────
+    # "in CITY_NAME" where city name looks like a multi-word proper noun
+    # Only matches 2+ word city names to avoid FPs on single words
+    _p(
+        r"\bin\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
+        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "CITY", 0.78, 1, flags=0
+    ),
+    # "from CITY_NAME" with multi-word proper noun
+    _p(
+        r"\bfrom\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
+        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "CITY", 0.78, 1, flags=0
+    ),
+    # "at CITY_NAME" — location preposition + multi-word proper noun
+    _p(
+        r"\bat\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
+        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        "CITY", 0.75, 1, flags=0
+    ),
+
+    # ── AGE — relaxed context patterns ────────────────────────────────────
+    # "I'm a XX old" — informal age expression without "years"
+    # Raised from 0.80 to 0.83 to survive AGE threshold (0.82)
+    _p(
+        r"\b(?:I'?m\s+a\s+|I\s+am\s+a\s+)(\d{1,3})\s+old\b",
+        "AGE", 0.83, 1, flags=re.IGNORECASE
+    ),
+
+    # ── TIME — o'clock format ─────────────────────────────────────────────
+    # "at 19 o'clock", "3 o'clock", "at 7 o'clock"
+    _p(
+        r"\b(\d{1,2}\s+o[''']?\s*clock)\b",
+        "TIME", 0.92, 0, flags=re.IGNORECASE
     ),
 )
 
