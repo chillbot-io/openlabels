@@ -38,10 +38,10 @@ MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
     # ensemble.  When multilingual runs alongside gliner + PHI,
     # stronger dampening on names reduces solo FPs; ensemble boost
     # recovers TPs where models agree.
-    "person name": (1.30, 0.06),
-    "first name": (1.35, 0.07),
-    "last name": (1.35, 0.07),
-    "middle name": (1.30, 0.06),
+    "person name": (1.25, 0.05),
+    "first name": (1.25, 0.05),
+    "last name": (1.25, 0.05),
+    "middle name": (1.25, 0.05),
     # Contact: structural entities are well-calibrated
     "email address": (0.95, -0.03),
     "phone number": (1.30, 0.08),

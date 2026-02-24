@@ -50,7 +50,7 @@ class TestPlattScalingTemperature:
 
     def test_temperature_on_low_score(self):
         """High temperature on a low score pushes it toward 0.5."""
-        # "first name" has temp=1.65, bias=0.13
+        # "first name" has temp=1.55, bias=0.11
         raw = 0.45
         result = calibrate_gliner_score("first name", raw)
         # High temp + positive bias → spreads and shifts down

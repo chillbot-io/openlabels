@@ -697,10 +697,10 @@ def _calibrated_threshold(span: Span, base: float) -> float:
 
     temperature = params[0]
     # Scale: overconfident labels (temp >> 1.0) need higher confidence to
-    # survive solo.  Cap at 0.64 (raised from 0.62) — with 3-model
-    # ensemble, solo detections from high-temperature labels should face
-    # tighter gating; ensemble boost recovers TPs where models agree.
-    return min(0.64, base + max(0.0, temperature - 1.0) * 0.10)
+    # survive solo.  Cap at 0.63 (was 0.62, raised modestly) with
+    # scaling 0.09 (was 0.08).  0.64/0.10 was too aggressive —
+    # cratered name recall to 0.512 by suppressing too many solo names.
+    return min(0.63, base + max(0.0, temperature - 1.0) * 0.09)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents

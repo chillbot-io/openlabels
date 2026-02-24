@@ -99,13 +99,13 @@ class DetectionConfig:
         # patterns are the noisiest.  Threshold 0.79 filters both while
         # keeping "Word_Word" compound (0.80) and labeled (0.82-0.85).
         ("USERNAME", 0.79),
-        # Names — with 3-model ensemble, tighter entity thresholds are
-        # safe because ensemble boost recovers TPs where models agree.
-        # FIRSTNAME raised from 0.60 to 0.63 to cut the 268 spurious.
-        # LASTNAME raised from 0.58 to 0.61 to cut the 159 spurious.
+        # Names — entity thresholds are pre-ensemble filters; raising them
+        # kills detections before ensemble boost can save them.  Keep at
+        # original values and rely on Platt calibration + solo survival
+        # thresholds for FP control instead.
         ("NAME", 0.50),
-        ("FIRSTNAME", 0.63),
-        ("LASTNAME", 0.61),
+        ("FIRSTNAME", 0.60),
+        ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — not PII, excluded from benchmark scoring.
         # Thresholds kept for production use but don't affect F1.

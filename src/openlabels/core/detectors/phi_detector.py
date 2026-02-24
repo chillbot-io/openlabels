@@ -83,10 +83,11 @@ STANFORD_PHI_LABEL_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 PHI_CALIBRATION: dict[str, tuple[float, float]] = {
     # Names: clinical model trained on text where every name IS PHI;
-    # very aggressive on general text.  With 3-model ensemble, increase
-    # dampening — ensemble boost recovers TPs where models agree.
-    "PATIENT": (1.75, 0.15),
-    "HCW": (1.65, 0.13),
+    # very aggressive on general text.  Moderate dampening increase —
+    # (1.75, 0.15) was too harsh (name recall 0.512); (1.65, 0.12)
+    # balances FP reduction with recall preservation.
+    "PATIENT": (1.65, 0.12),
+    "HCW": (1.55, 0.10),
     # Dates: reasonable on structured dates, overconfident on ambiguous ones
     "DATE": (1.20, 0.04),
     "DATES": (1.20, 0.04),
