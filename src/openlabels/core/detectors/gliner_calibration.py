@@ -40,13 +40,14 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # we increase temperatures to suppress solo FPs — ensemble
     # boost recovers TPs where models agree.
     "person name": (1.40, 0.07),
-    # FIRSTNAME: 268 spurious on nemotron_pii 1k.  Moderate dampening
-    # increase — (1.65, 0.13) cratered recall to 0.512; (1.55, 0.11)
-    # is a gentler step that still cuts FPs via solo survival gating
-    # while letting ensemble-boosted detections through.
-    "first name": (1.55, 0.11),
-    # LASTNAME: 159 spurious.  Same moderate treatment as FIRSTNAME.
-    "last name": (1.55, 0.11),
+    # FIRSTNAME: 268 spurious on nemotron_pii 1k.  (1.65, 0.13) cratered
+    # recall to 0.512; (1.55, 0.11) recovered to 0.858 but still leaves
+    # 8 FN.  (1.45, 0.09) gives borderline solo names more headroom —
+    # raw 0.65 → calibrated 0.58 now clears solo_min ~0.56 instead of
+    # dying at 0.57.  FP control via dictionary corroboration + blocklist.
+    "first name": (1.45, 0.09),
+    # LASTNAME: 159 spurious, 8 FN.  Match FIRSTNAME treatment.
+    "last name": (1.45, 0.09),
     "middle name": (1.35, 0.09),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.
