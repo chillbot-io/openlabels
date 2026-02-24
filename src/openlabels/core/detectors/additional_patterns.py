@@ -34,6 +34,8 @@ _STATE_FALSE_POSITIVES = frozenset({
 _CITY_FALSE_POSITIVES = frozenset({
     "the", "this", "that", "these", "those",
     "none", "unknown", "other", "general", "main",
+    "overview", "summary", "details", "section", "appendix",
+    "introduction", "conclusion", "chapter", "part",
 })
 
 # Pattern definitions: frozen tuple of PatternDefinition objects
@@ -476,6 +478,21 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r"\b(?:account|acct|customer|client|member|policy|subscriber)\s*(?:#|no\.?|number|id)?\s*[:\s#]+([A-Z]\d{6,12})\b",
         "ACCOUNT_NUMBER", 0.82, 1, flags=re.IGNORECASE
     ),
+    # ACCOUNT_NUMBER — Single letter + digits/alphanumeric in broader context:
+    # "reference C938D76215", "case C73628945", "record C72689135"
+    _p(
+        r"\b(?:reference|ref|case|claim|file|record|invoice|receipt|confirmation|transaction|transfer|payment)\s*"
+        r"(?:#|no\.?|number|id)?\s*[:\s#]+"
+        r"((?=[A-Z0-9]*\d)[A-Z][A-Z0-9]{6,14})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # ACCOUNT_NUMBER — broader label context with just digits (7+ digits)
+    # "reference 472163985", "record 5832917640"
+    _p(
+        r"\b(?:reference|ref|case|claim|file|record|invoice|receipt|confirmation|transaction)\s*"
+        r"(?:#|no\.?|number|id)?\s*[:\s#]+(\d{7,15})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
 
     # ACCOUNT_NUMBER — broader financial/case context for digit-only accounts
     # Matches digits preceded by broader financial context words
@@ -543,6 +560,19 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     _p(
         r"\bState\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
         "STATE", 0.82, 1, flags=0
+    ),
+    # US 2-letter state abbreviation before ZIP without comma:
+    # "City NAME ST 12345" — capitalized word(s) followed by state + zip
+    _p(
+        r"\b[A-Z][a-z]+\s+(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\s+\d{5}\b",
+        "STATE", 0.82, 1, flags=0
+    ),
+    # Labeled: "State: CA", "State: NY" — 2-letter abbreviation with label
+    _p(
+        r"\bState\s*:\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\b",
+        "STATE", 0.85, 1, flags=0
     ),
 
     # ── CITY — labeled context patterns ──────────────────────────────────
