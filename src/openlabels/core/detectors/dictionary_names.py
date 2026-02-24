@@ -4,7 +4,8 @@ Uses first-name and last-name dictionaries for O(1)-per-token lookup.
 Detects bare capitalized words that match known names — the primary gap
 left by pattern-only detection where names have no structural context.
 
-Confidence is intentionally moderate (0.60) and the allowlist (professions,
+Confidence is moderate (0.65 first / 0.62 last) — high enough to provide
+meaningful corroboration for ML detectors while the allowlist (professions,
 drugs, facilities, clinical stopwords) suppresses common false positives.
 """
 
@@ -317,11 +318,14 @@ class DictionaryNameDetector(BaseDetector):
     """Detects first/last names via dictionary lookup.
 
     Tier: PATTERN (same as regex patterns).
-    Confidence: 0.60 baseline for single-word matches.
+    Confidence: 0.65 first / 0.62 last for single-word matches.
     """
 
     name = "dictionary_names"
     tier = Tier.PATTERN
+
+    # Regex for detecting adjacent title-cased words (for 3-letter name context).
+    _TITLE_WORD_RE = re.compile(r"[A-Z][a-z]{2,}")
 
     def __init__(self) -> None:
         self._first_names = _load_name_file("first_names.txt")
@@ -331,6 +335,45 @@ class DictionaryNameDetector(BaseDetector):
             len(self._first_names),
             len(self._last_names),
         )
+
+    # Honorific/title prefixes that provide name context for short names.
+    _TITLE_PREFIXES = frozenset({
+        "mr", "mrs", "ms", "miss", "dr", "prof", "sir", "dame",
+        "rev", "judge", "hon", "sgt", "cpl", "capt", "lt", "col",
+        "gen", "maj", "cmdr", "adm",
+    })
+
+    def _has_adjacent_name_context(self, text: str, start: int, end: int) -> bool:
+        """Check if a short name has an adjacent known name or honorific.
+
+        Returns True when the word immediately before or after is a known
+        first/last name or an honorific prefix (e.g., "Dr. Lee", "Kim Park",
+        "Sam Roberts").  This avoids false positives from generic title-cased
+        words like "The", "Our", "Dear".
+        """
+        # Check word after — must be a known name (not just title-cased)
+        after = text[end:end + 25].lstrip()
+        if after:
+            m = self._TITLE_WORD_RE.match(after)
+            if m:
+                after_lower = m.group().lower()
+                if (after_lower in self._first_names
+                        or after_lower in self._last_names):
+                    return True
+        # Check word before — must be a known name or honorific
+        before = text[max(0, start - 20):start].rstrip()
+        if before:
+            last_word = before.split()[-1] if before.split() else ""
+            last_word_clean = last_word.rstrip(".,;:")
+            if last_word_clean:
+                lw_lower = last_word_clean.lower()
+                if lw_lower in self._TITLE_PREFIXES:
+                    return True
+                if (self._TITLE_WORD_RE.fullmatch(last_word_clean)
+                        and (lw_lower in self._first_names
+                             or lw_lower in self._last_names)):
+                    return True
+        return False
 
     def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
@@ -354,11 +397,16 @@ class DictionaryNameDetector(BaseDetector):
                     bare_end = start + len(bare_word)
                     break
 
-            # Short words are too ambiguous for dictionary-only matching
-            if len(bare_word) < 4:
-                continue
-
             lower = bare_word.lower()
+
+            # 3-letter names are allowed only when adjacent to another
+            # title-cased word (e.g., "Kim Park", "Dr. Lee") — the
+            # adjacency requirement avoids standalone ambiguous matches.
+            if len(bare_word) < 3:
+                continue
+            if len(bare_word) == 3:
+                if not self._has_adjacent_name_context(text, start, bare_end):
+                    continue
 
             # Absolute exclusions
             if lower in _NEVER_NAMES:
@@ -409,7 +457,7 @@ class DictionaryNameDetector(BaseDetector):
                     end=bare_end,
                     text=bare_word,
                     entity_type="FIRSTNAME",
-                    confidence=0.60,
+                    confidence=0.65,
                     detector=self.name,
                     tier=self.tier,
                 ))
@@ -420,7 +468,7 @@ class DictionaryNameDetector(BaseDetector):
                     end=bare_end,
                     text=bare_word,
                     entity_type="LASTNAME",
-                    confidence=0.58,
+                    confidence=0.62,
                     detector=self.name,
                     tier=self.tier,
                 ))
