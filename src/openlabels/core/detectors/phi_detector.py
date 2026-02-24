@@ -67,6 +67,66 @@ STANFORD_PHI_LABEL_MAP: dict[str, str] = {
     #   PHOTO       -> PHOTO_ID     (no eval category)
 }
 
+# ---------------------------------------------------------------------------
+# Platt-scaling calibration for PHI model outputs.
+#
+# The Stanford model was trained on clinical de-identification data (i2b2/n2c2)
+# where every patient/provider name, date, and address IS a PHI entity.
+# On general-purpose text, it over-fires — names of companies, geographic
+# references, and generic dates are flagged as PHI.
+#
+# Temperature > 1.0 dampens overconfident scores; bias > 0 shifts down.
+# Values are conservative initial estimates; use fit_calibration() with
+# benchmark data to derive optimal parameters.
+#
+# Format: Stanford_label → (temperature, bias)
+# ---------------------------------------------------------------------------
+PHI_CALIBRATION: dict[str, tuple[float, float]] = {
+    # Names: clinical model trained on text where every name IS PHI;
+    # very aggressive on general text.  With 3-model ensemble, increase
+    # dampening — ensemble boost recovers TPs where models agree.
+    "PATIENT": (1.75, 0.15),
+    "HCW": (1.65, 0.13),
+    # Dates: reasonable on structured dates, overconfident on ambiguous ones
+    "DATE": (1.20, 0.04),
+    "DATES": (1.20, 0.04),
+    # Age: 31 spurious on nemotron_pii 1k.  Stronger dampening.
+    "AGE": (1.55, 0.11),
+    # Contact: structural patterns are reliable
+    "PHONE": (1.05, 0.01),
+    "FAX": (1.10, 0.02),
+    "EMAIL": (0.95, -0.03),
+    "WEB": (1.00, 0.00),
+    # Identifiers: clinical model catches some that GLiNER misses
+    "MRN": (1.10, 0.02),
+    "SSN": (1.05, 0.01),
+    "LICENSE": (1.30, 0.06),
+    # ACCOUNT: 166 ACCOUNT_NUMBER FNs on nemotron_pii 1k.  Lowered
+    # from (1.25, 0.05) to recover missed detections — PHI ACCOUNT
+    # provides valuable corroboration with GLiNER bank account.
+    "ACCOUNT": (1.10, 0.02),
+    "VIN": (1.20, 0.04),
+    "DEVICE": (1.30, 0.06),
+    # Address/GEO: 42 ADDRESS spurious, heavily overconfident on general text.
+    # Increased dampening — ensemble with GLiNER recovers real addresses.
+    "GEO": (1.65, 0.13),
+}
+
+
+def _calibrate_phi_score(label: str, raw_score: float) -> float:
+    """Apply Platt scaling to Stanford PHI model raw scores.
+
+    Normalizes PHI confidence into a comparable scale with GLiNER,
+    dampening overconfident clinical predictions on general-purpose text.
+    """
+    from .gliner_calibration import _platt_transform
+
+    params = PHI_CALIBRATION.get(label)
+    if params is None:
+        return raw_score
+    return _platt_transform(raw_score, *params)
+
+
 # Chunk size for long texts (characters). The model's token limit is 512;
 # at ~4 chars/token we use a conservative character budget to avoid
 # truncation, with overlap to catch entities at boundaries.
@@ -185,9 +245,12 @@ class StanfordPHIDetector(BaseDetector):
             if canonical is None:
                 continue
 
-            score = float(r["score"])
-            if score < self.threshold:
+            raw_score = float(r["score"])
+            if raw_score < self.threshold:
                 continue
+
+            # Apply Platt scaling calibration
+            score = _calibrate_phi_score(raw_label, raw_score)
 
             start = int(r["start"]) + offset
             end = int(r["end"]) + offset
@@ -215,6 +278,8 @@ class StanfordPHIDetector(BaseDetector):
                     confidence=score,
                     detector=self.name,
                     tier=self.tier,
+                    raw_confidence=raw_score,
+                    detector_label=raw_label,
                 ))
             except ValueError as e:
                 logger.debug("stanford_phi: invalid span skipped: %s", e)

@@ -790,3 +790,166 @@ def _print_comparison(results) -> None:
             f"{s['true_positives']:>5} {s['false_positives']:>5} "
             f"{s['false_negatives']:>5} {s['avg_time_ms']:>7.1f}"
         )
+
+
+# ── Recalibrate subcommand ────────────────────────────────────────────
+
+@benchmark.command()
+@click.option("--output-dir", "-o", default="calibration_output",
+              help="Directory to save calibration JSON files")
+@click.option("--min-samples", default=10, type=int,
+              help="Minimum predictions per label to fit calibration")
+@click.pass_context
+def recalibrate(ctx, output_dir, min_samples):
+    """Fit Platt scaling calibration from benchmark predictions.
+
+    Runs the benchmark with ML enabled, collects per-detector raw scores
+    and match results, then fits optimal (temperature, bias) per label
+    per detector using grid search over log-loss.
+
+    Output files:
+      calibration_output/gliner_calibration.json
+      calibration_output/multilingual_calibration.json
+      calibration_output/phi_calibration.json
+
+    Load these into the pipeline with load_calibration() or
+    load_multilingual_calibration().
+
+    Example:
+      openlabels benchmark recalibrate -d nemotron_pii -n 1000 --ml
+    """
+    import json
+
+    from openlabels.core.benchmark.evaluate import MatchType
+    from openlabels.core.benchmark.harness import (
+        get_preset,
+        run_benchmark,
+    )
+
+    samples_count = ctx.obj["samples"]
+    seed = ctx.obj["seed"]
+    dataset = ctx.obj.get("dataset", "ai4privacy")
+    language = ctx.obj.get("language")
+    refresh_cache = ctx.obj.get("refresh_cache", False)
+
+    config = get_preset("with_ml")
+    config.enable_ml = True
+    config.enable_phi = True
+
+    click.echo(f"Recalibration: dataset={dataset}, samples={samples_count}")
+    click.echo(f"Min samples per label: {min_samples}")
+    click.echo("-" * 60)
+
+    loaded_samples = _load_dataset_samples(
+        dataset, samples_count, seed,
+        language=language, refresh_cache=refresh_cache,
+    )
+
+    result = run_benchmark(
+        samples=loaded_samples,
+        config=config,
+        seed=seed,
+        progress_callback=_cli_progress,
+    )
+
+    click.echo("")
+    click.echo(f"Detectors: {', '.join(result.detectors_loaded)}")
+    s = result.summary()
+    click.echo(f"Baseline F1: {s['f1']:.4f} (P={s['precision']:.4f} R={s['recall']:.4f})")
+    click.echo("")
+
+    # Collect per-detector calibration data from match results.
+    # Each prediction has: detector name, detector_label (GLiNER label),
+    # raw_confidence, and whether it was a TP/partial/type_mismatch.
+    detector_data: dict[str, dict[str, list[tuple[float, bool]]]] = {}
+
+    for sr in result.sample_results:
+        for match in sr.matches:
+            if match.pred is None:
+                continue
+            detector = match.pred.detector
+            label = match.pred.detector_label
+            raw = match.pred.raw_confidence
+            if label is None or raw is None:
+                continue
+
+            is_correct = match.match_type in (
+                MatchType.EXACT, MatchType.PARTIAL,
+            )
+
+            detector_data.setdefault(detector, {}).setdefault(label, []).append(
+                (raw, is_correct)
+            )
+
+    if not detector_data:
+        click.echo("No ML predictions with raw_confidence found. "
+                    "Ensure ML detectors are loaded (--ml).", err=True)
+        return
+
+    # Fit calibration per detector.
+    from openlabels.core.detectors.gliner_calibration import fit_calibration
+
+    out_path = Path(output_dir)
+    try:
+        validated = validate_output_path(str(out_path), create_parent=True)
+        out_path = Path(validated) if validated != out_path else out_path
+    except Exception:
+        pass
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    for detector_name, label_data in sorted(detector_data.items()):
+        labels: list[str] = []
+        raw_scores: list[float] = []
+        is_correct: list[bool] = []
+
+        for label, pairs in label_data.items():
+            for raw, correct in pairs:
+                labels.append(label)
+                raw_scores.append(raw)
+                is_correct.append(correct)
+
+        total_preds = len(labels)
+        total_tp = sum(is_correct)
+        click.echo(f"Detector: {detector_name}")
+        click.echo(f"  Predictions: {total_preds} ({total_tp} TP, "
+                    f"{total_preds - total_tp} FP)")
+        click.echo(f"  Unique labels: {len(label_data)}")
+
+        calibration = fit_calibration(
+            labels, raw_scores, is_correct,
+            min_samples=min_samples,
+        )
+
+        # Show top results.
+        click.echo(f"  Fitted {len(calibration)} labels:")
+        for label, (temp, bias) in sorted(
+            calibration.items(),
+            key=lambda x: -x[1][0],  # Sort by temperature (most damped first)
+        )[:10]:
+            count = len(label_data.get(label, []))
+            tp = sum(1 for _, c in label_data.get(label, []) if c)
+            click.echo(f"    {label:<30} temp={temp:.2f} bias={bias:+.3f} "
+                        f"({tp}/{count} TP)")
+        if len(calibration) > 10:
+            click.echo(f"    ... and {len(calibration) - 10} more")
+
+        # Map detector name to output filename.
+        file_map = {
+            "gliner": "gliner_calibration.json",
+            "gliner_multilingual": "multilingual_calibration.json",
+            "stanford_phi": "phi_calibration.json",
+        }
+        fname = file_map.get(detector_name, f"{detector_name}_calibration.json")
+        fpath = out_path / fname
+
+        with open(fpath, "w") as f:
+            json.dump(
+                {k: list(v) for k, v in calibration.items()},
+                f, indent=2, sort_keys=True,
+            )
+        click.echo(f"  Saved: {fpath}")
+        click.echo("")
+
+    click.echo("Done! Load calibration files with:")
+    click.echo("  from openlabels.core.detectors.gliner_calibration import load_calibration")
+    click.echo("  load_calibration('calibration_output/gliner_calibration.json')")

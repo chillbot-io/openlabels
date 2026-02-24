@@ -36,7 +36,7 @@ class TestPlattScalingTemperature:
 
     def test_high_temperature_reduces_confidence(self):
         """Temperature > 1 should reduce overconfident scores toward 0.5."""
-        # "person name" has temp=1.35, bias=0.06
+        # "person name" has temp=1.45, bias=0.08
         raw = 0.90
         result = calibrate_gliner_score("person name", raw)
         assert result < raw  # Tempered overconfidence
@@ -50,7 +50,7 @@ class TestPlattScalingTemperature:
 
     def test_temperature_on_low_score(self):
         """High temperature on a low score pushes it toward 0.5."""
-        # "first name" has temp=2.00, bias=0.185
+        # "first name" has temp=1.65, bias=0.13
         raw = 0.45
         result = calibrate_gliner_score("first name", raw)
         # High temp + positive bias → spreads and shifts down
@@ -62,7 +62,7 @@ class TestPlattScalingBias:
 
     def test_positive_bias_shifts_down(self):
         """Positive bias (model is overconfident) reduces calibrated score."""
-        # "person name" has temp=1.25, bias=0.05
+        # "person name" has temp=1.45, bias=0.08
         raw = 0.80
         result = calibrate_gliner_score("person name", raw)
         assert result < raw

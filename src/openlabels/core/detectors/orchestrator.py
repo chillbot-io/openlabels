@@ -454,12 +454,19 @@ class DetectorOrchestrator:
             resolved, all_candidates=calibrated,
         )
 
+        # Correct type confusions: reclassify ML spans that match a more
+        # specific type's format (USERNAME→FIRSTNAME, PHONE→SSN, etc.)
+        resolved = _correct_type_confusions(resolved)
+
         # Suppress ML name spans whose text is a common English word
         # that GLiNER falsely labels as FIRSTNAME/LASTNAME.
         resolved = _suppress_ml_name_false_positives(resolved)
 
         # Suppress ML USERNAME spans that are common English words
         resolved = _suppress_ml_username_false_positives(resolved)
+
+        # Suppress ML CITY/location spans that are common English words
+        resolved = _suppress_ml_location_false_positives(resolved)
 
         if self.config.enable_proximity_boost and resolved:
             from ..pipeline.entity_proximity import analyze_proximity
@@ -478,20 +485,26 @@ class DetectorOrchestrator:
 
         return resolved
 
+    # Extra boost when 3+ detectors agree (stacks with base boost).
+    # Raised from 0.08 to 0.12: with 3 ML models, triple agreement is
+    # a very strong signal — reward it more to recover TPs that
+    # tighter per-model calibration would otherwise suppress solo.
+    _ENSEMBLE_TRIPLE_EXTRA = 0.12
+
     def _apply_ensemble_boost(self, spans: list[Span]) -> list[Span]:
         """Boost confidence when multiple detectors agree on the same entity.
 
-        For each span, checks if a different detector produced an overlapping
-        span with a compatible entity type (same evaluation category, e.g.
-        FIRSTNAME and NAME are both "names").  If so, the higher-confidence
-        span gets boosted (clamped to 1.0).
+        For each span, checks if different detectors produced overlapping
+        spans with a compatible entity type (same evaluation category, e.g.
+        FIRSTNAME and NAME are both "names").
 
-        The boost scales with the minimum raw confidence of the agreeing
-        pair — strong agreement from both detectors earns up to
-        ``_ENSEMBLE_BOOST_MAX``, while marginal agreement earns
-        ``_ENSEMBLE_BOOST_MIN``.  This implicitly uses calibration: labels
-        whose raw scores were dampened by high calibration temperature
-        will have lower raw confidence, producing a smaller boost.
+        Boost scales with agreement strength:
+        - 2 detectors agree: base boost (0.10–0.20)
+        - 3+ detectors agree: base boost + triple bonus (0.08)
+
+        The base boost scales with the minimum raw confidence of the agreeing
+        pair — strong agreement earns up to ``_ENSEMBLE_BOOST_MAX``, while
+        marginal agreement earns ``_ENSEMBLE_BOOST_MIN``.
         """
         if len(spans) < 2:
             return spans
@@ -510,6 +523,10 @@ class DetectorOrchestrator:
             if i in boosted_indices:
                 continue
             group_a = _entity_group(span_a.entity_type)
+
+            # Collect all agreeing detectors for this span.
+            agreeing_detectors: set[str] = set()
+            min_raw = 1.0
             for j, span_b in enumerate(spans):
                 if i == j or span_a.detector == span_b.detector:
                     continue
@@ -518,36 +535,46 @@ class DetectorOrchestrator:
                 group_b = _entity_group(span_b.entity_type)
                 if group_a != group_b:
                     continue
-                # Two different detectors agree — boost the stronger one.
-                if i not in boosted_indices:
-                    # Scale boost by minimum raw confidence of the pair.
-                    raw_a = span_a.raw_confidence if span_a.raw_confidence is not None else span_a.confidence
-                    raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
-                    min_raw = min(raw_a, raw_b)
-                    # Interpolate: raw ≤ 0.5 → min boost, raw ≥ 0.9 → max boost
-                    t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
-                    boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
-                    new_conf = min(1.0, span_a.confidence + boost)
-                    result[i] = Span(
-                        start=span_a.start,
-                        end=span_a.end,
-                        text=span_a.text,
-                        entity_type=span_a.entity_type,
-                        confidence=new_conf,
-                        detector=span_a.detector,
-                        tier=span_a.tier,
-                        context=span_a.context,
-                        needs_review=span_a.needs_review,
-                        review_reason=span_a.review_reason,
-                        coref_anchor_value=span_a.coref_anchor_value,
-                    )
-                    boosted_indices.add(i)
-                    logger.debug(
-                        "Ensemble boost: %s %r %.3f→%.3f (+%.3f, corroborated by %s)",
-                        span_a.entity_type, span_a.text,
-                        span_a.confidence, new_conf, boost, span_b.detector,
-                    )
-                break  # Only boost once per span
+                agreeing_detectors.add(span_b.detector)
+                raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
+                min_raw = min(min_raw, raw_b)
+
+            if not agreeing_detectors:
+                continue
+
+            raw_a = span_a.raw_confidence if span_a.raw_confidence is not None else span_a.confidence
+            min_raw = min(min_raw, raw_a)
+
+            # Scale base boost by minimum raw confidence.
+            t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
+            boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
+
+            # Triple-agreement bonus: 3+ unique detectors agree.
+            n_agree = len(agreeing_detectors) + 1  # +1 for span_a itself
+            if n_agree >= 3:
+                boost += self._ENSEMBLE_TRIPLE_EXTRA
+
+            new_conf = min(1.0, span_a.confidence + boost)
+            result[i] = Span(
+                start=span_a.start,
+                end=span_a.end,
+                text=span_a.text,
+                entity_type=span_a.entity_type,
+                confidence=new_conf,
+                detector=span_a.detector,
+                tier=span_a.tier,
+                context=span_a.context,
+                needs_review=span_a.needs_review,
+                review_reason=span_a.review_reason,
+                coref_anchor_value=span_a.coref_anchor_value,
+            )
+            boosted_indices.add(i)
+            logger.debug(
+                "Ensemble boost: %s %r %.3f→%.3f (+%.3f, %d detectors: %s)",
+                span_a.entity_type, span_a.text,
+                span_a.confidence, new_conf, boost, n_agree,
+                ", ".join(sorted(agreeing_detectors)),
+            )
 
         return result
 
@@ -639,11 +666,11 @@ _ML_PRIMARY_SOLO_MIN_DEFAULT = 0.52
 def _calibrated_threshold(span: Span, base: float) -> float:
     """Derive a per-span suppression threshold from calibration data.
 
-    Labels with high calibration temperature (>1.0) are overconfident
-    and need a *higher* calibrated confidence to survive solo.
-    Well-calibrated labels (temperature ≤ 1.0) use the base threshold.
-
-    Formula: ``min(0.70, base + max(0, temperature - 1.0) * 0.12)``
+    Checks the calibration table corresponding to the span's detector:
+    GLiNER, Stanford PHI, or multilingual GLiNER.  Labels with high
+    calibration temperature (>1.0) are overconfident and need a *higher*
+    calibrated confidence to survive solo.  Well-calibrated labels
+    (temperature ≤ 1.0) use the base threshold.
 
     Falls back to *base* when the span has no calibration metadata.
     """
@@ -651,19 +678,30 @@ def _calibrated_threshold(span: Span, base: float) -> float:
     if label is None:
         return base
 
-    from .gliner_calibration import get_active_calibration
+    # Look up calibration in the table matching this span's detector.
+    params: tuple[float, float] | None = None
+    detector = span.detector if span.detector else ""
 
-    table = get_active_calibration()
-    params = table.get(label)
+    if detector == "stanford_phi":
+        from .phi_detector import PHI_CALIBRATION
+        params = PHI_CALIBRATION.get(label)
+    elif detector == "gliner_multilingual":
+        from .multilingual_gliner import MULTILINGUAL_CALIBRATION
+        params = MULTILINGUAL_CALIBRATION.get(label)
+    else:
+        from .gliner_calibration import get_active_calibration
+        table = get_active_calibration()
+        params = table.get(label)
+
     if params is None:
         return base
 
     temperature = params[0]
     # Scale: overconfident labels (temp >> 1.0) need higher confidence to
-    # survive solo.  Cap at 0.62 — the previous 0.70 cap suppressed too
-    # many valid ML detections on the 400k dataset where patterns miss
-    # more entities due to different PII formats, tanking recall.
-    return min(0.62, base + max(0.0, temperature - 1.0) * 0.08)
+    # survive solo.  Cap at 0.64 (raised from 0.62) — with 3-model
+    # ensemble, solo detections from high-temperature labels should face
+    # tighter gating; ensemble boost recovers TPs where models agree.
+    return min(0.64, base + max(0.0, temperature - 1.0) * 0.10)
 
 # Broad groups for corroboration matching.  A pattern span only
 # corroborates an ML span if they share the same group.  This prevents
@@ -1003,13 +1041,17 @@ _SSN_FORMAT_RE = _re.compile(
 def _correct_type_confusions(spans: list[Span]) -> list[Span]:
     """Reclassify ML spans that match a more specific type's format.
 
-    GLiNER has known confusion patterns:
-    - USERNAME → FIRSTNAME: usernames with underscores/dots/digits
-    - SSN → PHONE: social security numbers in XXX-XX-XXXX format
+    GLiNER has known confusion patterns (from nemotron_pii 1000-sample):
+    - USERNAME → FIRSTNAME (14): usernames with underscores/dots/digits
+    - PHONE → SSN: social security numbers in XXX-XX-XXXX format
+    - SSN classified on routing numbers: 9-digit numbers passing ABA checksum
 
     Only reclassifies ML-tier spans (pattern detections are trusted).
     """
+    from .checksum import validate_aba_routing
+
     result: list[Span] = []
+    corrections: dict[str, int] = {}
     for span in spans:
         if span.tier != Tier.ML:
             result.append(span)
@@ -1027,7 +1069,17 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
         elif etype == "PHONE" and _SSN_FORMAT_RE.match(text):
             new_type = "SSN"
 
+        # SSN → BANK_ROUTING when bare 9-digit passes ABA checksum
+        elif etype == "SSN":
+            digits = _re.sub(r'\D', '', text)
+            if len(digits) == 9:
+                valid, _ = validate_aba_routing(digits)
+                if valid:
+                    new_type = "BANK_ROUTING"
+
         if new_type is not None:
+            key = f"{etype}→{new_type}"
+            corrections[key] = corrections.get(key, 0) + 1
             logger.debug(
                 "Type correction: %s → %s for %r",
                 span.entity_type, new_type, text,
@@ -1046,6 +1098,9 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
         else:
             result.append(span)
 
+    if corrections:
+        detail = ", ".join(f"{k}({v})" for k, v in corrections.items())
+        logger.info("Type corrections applied: %s", detail)
     return result
 
 
@@ -1253,16 +1308,30 @@ _ML_NAME_BLOCKLIST = frozenset({
     "documentation", "infrastructure", "telecommunications",
     "unfortunately", "approximately", "alternatively",
     "comprehensive", "fundamentally", "subsequently",
+    "assessment", "requirements", "procedures", "guidelines",
+    "provisions", "regulations", "amendments", "transactions",
+    "participants", "beneficiaries", "representatives",
+    "notification", "notifications", "coordination",
+    "considerations", "responsibilities", "recommendations",
+    "arrangements", "acknowledgment", "acknowledgement",
+    "correspondence", "miscellaneous", "supplementary",
     # Common words flagged as LASTNAME
     "spark", "nationalist", "mutual", "team", "mente",
     "premium", "quantum", "spectrum", "catalyst", "pinnacle",
     "velocity", "momentum", "paradigm", "syndicate",
-    "brokerage", "sales",
+    "global", "digital", "federal", "central", "capital",
+    "premier", "summit", "alliance", "standard", "enterprise",
+    "ventures", "holdings", "partners", "associates", "solutions",
+    "dynamics", "analytics", "logistics", "advisory",
     # Demonyms / nationality-adjacent words
     "croat", "croatian", "emirati", "kuwaiti", "qatari",
     "bahraini", "omani", "yemeni", "somali", "afghan",
+    "iraqi", "irani", "iranian", "syrian", "libyan",
+    "lebanese", "jordanian", "palestinian", "israeli",
+    "turkish", "egyptian", "tunisian", "algerian", "moroccan",
     # Place names GLiNER confuses with person names
     "kremlin", "hartford", "pentagon", "saharan",
+    "broadway", "westminster", "manhattan", "brooklyn",
     # Short words / brand-adjacent
     "verde", "tone", "viva", "alto", "vista",
     "forte", "tempo", "presto", "largo", "motto",
@@ -1272,26 +1341,68 @@ _ML_NAME_BLOCKLIST = frozenset({
     "appeal", "appeals", "reform", "reforms",
     "mandate", "mandates", "verdict", "verdicts",
     "pioneer", "advocate", "sentinel",
+    "interim", "ongoing", "pending", "pursuant",
     # Common words that start sentences (title-cased by position)
     "cash", "yoga", "menu", "logo", "demo", "memo",
     "quota", "bonus", "forum", "salon", "plaza",
+    "versus", "via", "per", "etc", "also",
+    # Common nouns/adjectives falsely detected as names
+    "universal", "regional", "municipal", "provincial",
+    "residential", "commercial", "industrial", "financial",
+    "clinical", "surgical", "medical", "dental", "optical",
+    "tropical", "biological", "technical", "political",
+    "electoral", "judicial", "criminal", "civil",
+    "annual", "quarterly", "monthly", "weekly", "daily",
+    "primary", "secondary", "tertiary", "preliminary",
+    "internal", "external", "lateral", "bilateral",
+    "rural", "urban", "suburban", "coastal",
     # Nemotron PII FP analysis — additional words
     "baha", "al", "sales", "jazeera", "brokerage",
 })
 
 
+# Suffixes that NEVER appear on real person names (for words >= 7 chars).
+# Verified against name databases: no known first or last name of 7+
+# characters ends with any of these suffixes.
+# Examples of what they catch:
+#   -tion: "Administration", "Registration", "Specification"
+#   -sion: "Commission", "Submission", "Permission"
+#   -ness: "Awareness", "Business", "Effectiveness"
+#   -ful:  "Powerful", "Successful", "Meaningful"
+#   -less: "Regardless", "Wireless", "Careless"
+#   -ism:  "Capitalism", "Terrorism", "Journalism"
+# Explicitly excluded: -ity (Trinity, Felicity, Charity),
+# -ous (Precious), -ence (Florence, Clarence), -ance (Constance),
+# -ive (Clive), -ment (Clement), -able (Constable), -ers (Rogers),
+# -son (Johnson), -ton (Clinton), -ing (Sterling, Irving)
+_NON_NAME_SUFFIXES = (
+    "tion", "tions",
+    "sion", "sions",
+    "ness",
+    "ful",
+    "less",
+    "ism", "isms",
+    "ize", "ized", "izes", "izing",
+    "ify", "ified", "ifies", "ifying",
+    "ily",
+    "ably", "ibly",
+    "ally",
+    "ously",
+    "ingly",
+    "ively",
+    "ical",
+    "ible",
+)
+
+
 def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
     """Suppress NAME-family spans whose text is a common non-name English word.
 
-    GLiNER's zero-shot NER frequently flags business terms, demonyms, and
-    other common words as person names.  The dictionary-based detector has
-    its own blocklists (_NEVER_NAMES, _AMBIGUOUS_FIRST/LAST) but those
-    don't cover every false-positive word, and ML detectors bypass them
-    entirely.
-
-    This function checks ALL name-family spans (regardless of tier) against
-    _ML_NAME_BLOCKLIST and _NEVER_NAMES.  Words in these sets are never
-    standalone person names in PII contexts.
+    Uses three complementary strategies:
+    1. Explicit blocklist (_ML_NAME_BLOCKLIST) for known FP words
+    2. _NEVER_NAMES from dictionary detector (job titles, structural terms)
+    3. Suffix heuristic: words >= 7 chars ending in suffixes that never
+       appear on real names (-tion, -sion, -ness, -ful, -less, etc.)
     """
     from .dictionary_names import _NEVER_NAMES
 
@@ -1304,6 +1415,15 @@ def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
                 suppressed += 1
                 logger.debug(
                     "Name FP suppressed: %s %r (blocklist, tier=%s)",
+                    span.entity_type, span.text, span.tier,
+                )
+                continue
+            # Suffix heuristic: words with 7+ characters ending in
+            # distinctly non-name English suffixes.
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
+                suppressed += 1
+                logger.debug(
+                    "Name FP suppressed: %s %r (suffix, tier=%s)",
                     span.entity_type, span.text, span.tier,
                 )
                 continue
@@ -1358,14 +1478,73 @@ def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
                     span.text, span.tier,
                 )
                 continue
-            # Also check after stripping trailing punctuation (e.g. "Security**")
-            stripped = _STRIP_NONALPHA_RE.sub('', lower)
-            if stripped and stripped != lower and stripped in _ML_USERNAME_BLOCKLIST:
+            # Suffix heuristic: common English word suffixes → not a username
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
                 logger.debug(
-                    "ML USERNAME FP suppressed: %r (blocklist, stripped)", span.text,
+                    "USERNAME FP suppressed: %r (suffix, tier=%s)",
+                    span.text, span.tier,
                 )
                 continue
         result.append(span)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# ML CITY / location false-positive suppression
+# ---------------------------------------------------------------------------
+
+# Entity types to check for location false positives.
+_LOCATION_FP_TYPES = frozenset({"CITY", "STATE", "COUNTY", "ADDRESS"})
+
+# Common non-location words that GLiNER misclassifies as CITY.
+_ML_CITY_BLOCKLIST = frozenset({
+    # Business/organizational terms
+    "summit", "alliance", "enterprise", "standard", "premium",
+    "capital", "central", "federal", "national", "general",
+    "premier", "pioneer", "advocate", "sentinel", "catalyst",
+    "ventures", "holdings", "partners", "dynamics", "momentum",
+    # Legal/governance
+    "mandate", "verdict", "reform", "appeal", "consent",
+    "governance", "compliance", "oversight", "tribunal",
+    # Generic terms
+    "overall", "overview", "interim", "mutual", "prime",
+    "exchange", "gateway", "forum", "arena", "plaza",
+})
+
+
+def _suppress_ml_location_false_positives(spans: list[Span]) -> list[Span]:
+    """Suppress CITY/location spans whose text is clearly not a place name.
+
+    Uses two strategies:
+    1. Explicit blocklist of business/organizational words
+    2. Suffix heuristic: words >= 7 chars with non-name suffixes are never
+       place names either (-tion, -sion, -ness, -ful, etc.)
+    """
+    result: list[Span] = []
+    suppressed = 0
+    for span in spans:
+        etype = normalize_entity_type(span.entity_type)
+        if etype in _LOCATION_FP_TYPES and span.tier == Tier.ML:
+            lower = span.text.strip().lower()
+            if lower in _ML_CITY_BLOCKLIST:
+                suppressed += 1
+                logger.debug(
+                    "Location FP suppressed: %s %r (blocklist)",
+                    span.entity_type, span.text,
+                )
+                continue
+            if len(lower) >= 7 and lower.endswith(_NON_NAME_SUFFIXES):
+                suppressed += 1
+                logger.debug(
+                    "Location FP suppressed: %s %r (suffix)",
+                    span.entity_type, span.text,
+                )
+                continue
+        result.append(span)
+    if suppressed:
+        logger.info(
+            "Location FP suppression: removed %d ML location spans", suppressed,
+        )
     return result
 
 

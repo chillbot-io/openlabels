@@ -34,28 +34,34 @@ DEFAULT_MULTILINGUAL_GLINER_MODEL = "E3-JSI/gliner-multi-pii-domains-v1"
 #
 # Format: (temperature, bias)  — same Platt scaling as gliner_calibration.py
 MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
-    # Names: slight overconfidence on partial matches across languages
-    "person name": (1.15, 0.03),
-    "first name": (1.10, 0.02),
-    "last name": (1.10, 0.02),
-    "middle name": (1.20, 0.05),
+    # Names: brought closer to English model temperatures for 3-model
+    # ensemble.  When multilingual runs alongside gliner + PHI,
+    # stronger dampening on names reduces solo FPs; ensemble boost
+    # recovers TPs where models agree.
+    "person name": (1.30, 0.06),
+    "first name": (1.35, 0.07),
+    "last name": (1.35, 0.07),
+    "middle name": (1.30, 0.06),
     # Contact: structural entities are well-calibrated
     "email address": (0.95, -0.03),
     "phone number": (1.30, 0.08),
     "url": (0.95, -0.02),
-    "username": (1.20, 0.04),
-    # Locations: multi-token spans vary more across languages
+    # Username: 61 spurious on nemotron_pii 1k — increase dampening.
+    "username": (1.40, 0.08),
+    # Locations: multi-token spans vary more across languages.
+    # City/country increased — 75 CITY + 19 COUNTRY spurious.
     "street address": (1.20, 0.05),
-    "city": (1.10, 0.02),
-    "state": (1.10, 0.02),
+    "city": (1.35, 0.07),
+    "state": (1.15, 0.03),
     "zip code": (1.05, 0.01),
-    "country": (1.05, 0.01),
-    "county": (1.15, 0.03),
+    "country": (1.30, 0.06),
+    "county": (1.20, 0.04),
     # Dates
     "date of birth": (1.05, 0.02),
     "date": (1.10, 0.03),
     "date and time": (1.10, 0.03),
-    "age": (1.40, 0.10),
+    # Age: 31 spurious — increase dampening.
+    "age": (1.55, 0.12),
     # Government IDs: noisy on alphanumeric codes
     "social security number": (1.05, 0.01),
     "driver license number": (1.25, 0.06),
@@ -66,9 +72,9 @@ MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
     "medical record number": (1.20, 0.05),
     "health plan number": (1.15, 0.04),
     "npi number": (1.10, 0.02),
-    # Financial
+    # Financial: lower account dampening to recover 166 ACCOUNT_NUMBER FNs.
     "credit card number": (0.95, -0.02),
-    "bank account number": (1.25, 0.06),
+    "bank account number": (1.10, 0.03),
     "iban": (0.95, -0.02),
     "swift code": (1.00, 0.00),
     "bank routing number": (1.20, 0.05),
@@ -78,13 +84,14 @@ MULTILINGUAL_CALIBRATION: dict[str, tuple[float, float]] = {
     # Professional
     "company name": (1.25, 0.06),
     "job title": (1.05, 0.02),
-    "employee id": (1.10, 0.03),
+    # Employee ID: 48 FNs — lower dampening.
+    "employee id": (1.05, 0.02),
     # Vehicle
     "vehicle identification number": (1.35, 0.10),
     "license plate number": (1.30, 0.08),
-    # Secrets
-    "password": (1.25, 0.06),
-    "pin code": (1.30, 0.08),
+    # Secrets: password 21 FPs — increase dampening.
+    "password": (1.45, 0.10),
+    "pin code": (1.35, 0.08),
 }
 
 

@@ -36,27 +36,28 @@ logger = logging.getLogger(__name__)
 GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Names ──────────────────────────────────────────────
     # Names are the most frequent entity and GLiNER tends to be
-    # overconfident on partial matches.
-    "person name": (1.35, 0.06),
-    # FIRSTNAME: balanced dampening — (1.40, 0.08) recovered recall but
-    # introduced 10 FIRSTNAME FPs on 400k (100 samples).  (1.50, 0.10)
-    # requires raw >= 0.68 to survive solo — keeps most recall gains
-    # while cutting marginal false positives.
-    "first name": (1.50, 0.10),
-    # LASTNAME: same calibration as FIRSTNAME.
-    "last name": (1.50, 0.10),
-    "middle name": (1.30, 0.08),
+    # overconfident on partial matches.  With 3-model ensemble,
+    # we increase temperatures to suppress solo FPs — ensemble
+    # boost recovers TPs where models agree.
+    "person name": (1.45, 0.08),
+    # FIRSTNAME: 268 spurious on nemotron_pii 1k.  Stronger dampening
+    # pushes borderline solo detections below survival threshold;
+    # 2-/3-model agreement recovers real names via ensemble boost.
+    "first name": (1.65, 0.13),
+    # LASTNAME: 159 spurious.  Same treatment as FIRSTNAME.
+    "last name": (1.65, 0.13),
+    "middle name": (1.40, 0.10),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.
     "email address": (0.90, -0.05),
     # Phone: 0 TP / 1 FP on 1k — too few samples; identity transform.
     "phone number": (1.00, 0.00),
     "url": (0.95, -0.03),
-    # Username: identity calibration generated 9 spurious on nemotron_pii.
-    # Strong dampening — 23 spurious USERNAME + 7 API_KEY→USERNAME type
-    # mismatches at (1.20, 0.04).  GLiNER over-fires "username" on short
-    # words in context.  Pattern detectors cover labeled+structural formats.
-    "username": (1.50, 0.08),
+    # Username: 61 spurious on nemotron_pii 1k.  GLiNER over-fires
+    # "username" on short words in context.  Stronger dampening with
+    # 3-model ensemble — ensemble boost recovers real usernames where
+    # multiple models agree.
+    "username": (1.65, 0.11),
     # ── Locations ──────────────────────────────────────────
     # Street address: 2 TP / 0 FP on 1k — too few samples; identity.
     "street address": (1.00, 0.00),
@@ -76,9 +77,9 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # Time: 0 TP / 11 FP on ai4privacy 100 — near-100% FP rate.
     # The 1k benchmark had too few samples.  Heavy suppression.
     "time": (1.80, 0.15),
-    # Age: on ai4privacy 100, 6 spurious at identity transform.
-    # Moderate suppression to reduce FP on bare numbers.
-    "age": (1.50, 0.10),
+    # Age: 31 spurious on nemotron_pii 1k.  Stronger dampening to
+    # cut bare-number FPs; pattern detectors handle structured age.
+    "age": (1.65, 0.13),
     # ── Government IDs ─────────────────────────────────────
     # Structured patterns exist for most of these.  GLiNER over-fires on
     # alphanumeric codes common in financial / EDI documents.
@@ -97,7 +98,10 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # and other numeric codes into credit card range, causing 3
     # DEVICE_ID→CREDIT_CARD type mismatches on nemotron_pii.
     "credit card number": (0.85, -0.03),
-    "bank account number": (1.35, 0.08),  # Random numbers in finance text
+    # Bank account: 166 ACCOUNT_NUMBER FNs on nemotron_pii 1k.  Lowered
+    # from (1.35, 0.08) to recover missed detections — with ensemble
+    # corroboration from PHI ACCOUNT, FPs remain controlled.
+    "bank account number": (1.15, 0.04),
     "iban": (0.95, -0.02),
     # SWIFT code: 0 TP / 17 FP on 1k — 100% FP rate.  Max suppression.
     "swift code": (2.00, 0.185),
@@ -118,15 +122,18 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # Near-identity (1.05, 0.02) means raw >= 0.52 survives solo,
     # matching the effective solo_min for well-calibrated labels.
     "job title": (1.05, 0.02),
-    "employee id": (1.15, 0.04),
+    # Employee ID: 48 FNs on nemotron_pii 1k — nearly all missed.
+    # Lowered from (1.15, 0.04) to near-identity so ML detections
+    # survive solo (ML-primary type, no pattern detector exists).
+    "employee id": (1.05, 0.02),
     # ── Vehicle ──────────────────────────────────────────
     # VIN has checksum detector; GLiNER hallucinates on alphanumeric codes.
     "vehicle identification number": (1.45, 0.12),
     "license plate number": (1.40, 0.10),
     # ── Secrets (when detected via GLiNER in GENERAL label set) ─────
-    # Password: identity calibration generated 7 spurious on nemotron_pii.
-    # Moderate dampening to filter low-confidence detections.
-    "password": (1.30, 0.06),
+    # Password: 21 spurious on nemotron_pii 1k.  Stronger dampening to
+    # cut FPs; secrets patterns cover labeled passwords well.
+    "password": (1.50, 0.10),
     # Pin code: 0 TP / 3 FP on 1k.  Dampening to reduce noise.
     "pin code": (1.30, 0.06),
 }
