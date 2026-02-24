@@ -353,6 +353,20 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "UNIQUE_ID", 0.75, 1, flags=0
     ),
 
+    # UNIQUE_ID — UUID v4 format: "6178d0a7-8d65-4b5d-9e22-34c7a81e8f0b"
+    # 8-4-4-4-12 hex digits separated by hyphens.
+    _p(
+        r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
+        "UNIQUE_ID", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # UNIQUE_ID — SHA-256 hash: 64 hex chars
+    # Require labeled context to avoid matching random hex strings
+    _p(
+        r"\b(?:hash|sha256|sha-256|identifier|unique\s*id|participant\s*id)\s*[:\s]+([0-9a-f]{64})\b",
+        "UNIQUE_ID", 0.85, 1, flags=re.IGNORECASE
+    ),
+
     # ── Prefix-based patterns for under-detected types ──────────────────
     # These use well-known prefixes from the Gretel PII benchmark dataset
     # to correctly classify IDs that would otherwise be misclassified as

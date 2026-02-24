@@ -1055,7 +1055,7 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
 # NAME-family types that can be false-positively assigned to pronouns.
 _NAME_FAMILY = frozenset({
     "NAME", "NAME_PATIENT", "NAME_PROVIDER", "NAME_RELATIVE",
-    "FIRSTNAME", "LASTNAME",
+    "FIRSTNAME", "LASTNAME", "MIDDLENAME",
 })
 
 # Personal pronouns (lower-cased) that are never PII by themselves.
@@ -1272,6 +1272,8 @@ _ML_NAME_BLOCKLIST = frozenset({
     # Common words that start sentences (title-cased by position)
     "cash", "yoga", "menu", "logo", "demo", "memo",
     "quota", "bonus", "forum", "salon", "plaza",
+    # Nemotron PII FP analysis — additional words
+    "baha", "al", "sales", "jazeera",
 })
 
 
