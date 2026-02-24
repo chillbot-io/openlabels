@@ -17,6 +17,16 @@ export function useLabelMappings() {
   });
 }
 
+export function useUpdateLabelMappings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: labelsApi.updateMappings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    },
+  });
+}
+
 export function useSyncLabels() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -41,6 +51,53 @@ export function useApplyLabel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['results'] });
       queryClient.invalidateQueries({ queryKey: ['labels'] });
+    },
+  });
+}
+
+export function useBulkApplyLabels() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: labelsApi.bulkApply,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['results'] });
+      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    },
+  });
+}
+
+export function useLabelStats() {
+  return useQuery({
+    queryKey: ['labels', 'stats'],
+    queryFn: () => labelsApi.stats(),
+    staleTime: 60_000,
+  });
+}
+
+export function useLabelRules(page = 1) {
+  return useQuery({
+    queryKey: ['labels', 'rules', { page }],
+    queryFn: () => labelsApi.listRules({ page, page_size: 50 }),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCreateLabelRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: labelsApi.createRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labels', 'rules'] });
+    },
+  });
+}
+
+export function useDeleteLabelRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: labelsApi.deleteRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['labels', 'rules'] });
     },
   });
 }

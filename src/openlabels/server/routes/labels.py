@@ -20,6 +20,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT
@@ -84,6 +85,12 @@ class ApplyLabelRequest(BaseModel):
 
     result_id: UUID
     label_id: str
+
+
+class BulkApplyRequest(BaseModel):
+    """Request to bulk-apply recommended labels."""
+
+    result_ids: list[UUID]
 
 
 class LabelSyncRequest(BaseModel):
@@ -530,3 +537,149 @@ async def update_label_mappings(
         logger.debug(f"Failed to invalidate label mappings cache: {e}")
 
     return {"message": "Label mappings updated"}
+
+
+# BULK APPLY ENDPOINT
+@router.post("/bulk-apply", status_code=202)
+async def bulk_apply_recommended_labels(
+    request: BulkApplyRequest,
+    db: DbSessionDep,
+    admin: AdminContextDep,
+) -> dict:
+    """
+    Bulk-apply the recommended label to multiple scan results.
+
+    Each result must already have a recommended_label_id populated by a prior scan.
+    Results without a recommendation are skipped. A background job is enqueued per file.
+    """
+    from openlabels.jobs import JobQueue
+    from openlabels.server.models import ScanResult
+
+    if not request.result_ids:
+        raise HTTPException(status_code=400, detail="result_ids must not be empty")
+
+    # Fetch all matching results in one query
+    query = (
+        select(ScanResult)
+        .where(
+            ScanResult.id.in_(request.result_ids),
+            ScanResult.tenant_id == admin.tenant_id,
+        )
+    )
+    result = await db.execute(query)
+    results_map = {r.id: r for r in result.scalars().all()}
+
+    queue = JobQueue(db, admin.tenant_id)
+    queued = 0
+    skipped = 0
+
+    for rid in request.result_ids:
+        scan_result = results_map.get(rid)
+        if not scan_result or not scan_result.recommended_label_id:
+            skipped += 1
+            continue
+
+        try:
+            await queue.enqueue(
+                task_type="label",
+                payload={
+                    "result_id": str(rid),
+                    "label_id": scan_result.recommended_label_id,
+                    "file_path": scan_result.file_path,
+                },
+                priority=60,
+            )
+            queued += 1
+        except SQLAlchemyError:
+            skipped += 1
+
+    audit_log(
+        db, tenant_id=admin.tenant_id, user_id=admin.user_id,
+        action="bulk_label_applied", resource_type="scan_result",
+        details={"queued": queued, "skipped": skipped},
+    )
+
+    return {"queued": queued, "skipped": skipped, "message": f"Queued {queued} label jobs"}
+
+
+# LABEL STATISTICS ENDPOINT
+@router.get("/stats")
+async def get_label_stats(
+    db: DbSessionDep,
+    label_service: LabelServiceDep,
+    _tenant: TenantContextDep,
+) -> dict:
+    """
+    Get label usage statistics.
+
+    Returns counts of applied labels, pending recommendations,
+    labels by risk tier, and per-label application counts.
+    """
+    from sqlalchemy import func
+
+    from openlabels.server.models import ScanResult, SensitivityLabel
+
+    tenant_id = label_service.tenant_id
+
+    # Aggregate label stats from scan_results
+    stats_query = select(
+        func.count().label("total_results"),
+        func.count().filter(ScanResult.label_applied.is_(True)).label("labels_applied"),
+        func.count().filter(
+            ScanResult.recommended_label_id.isnot(None),
+            ScanResult.label_applied.is_(False),
+        ).label("labels_pending"),
+        func.count().filter(ScanResult.label_error.isnot(None)).label("labels_failed"),
+    ).where(ScanResult.tenant_id == tenant_id)
+
+    result = await db.execute(stats_query)
+    row = result.one()
+
+    # Per-label usage counts
+    per_label_query = (
+        select(
+            ScanResult.current_label_name,
+            func.count().label("count"),
+        )
+        .where(
+            ScanResult.tenant_id == tenant_id,
+            ScanResult.label_applied.is_(True),
+            ScanResult.current_label_name.isnot(None),
+        )
+        .group_by(ScanResult.current_label_name)
+        .order_by(func.count().desc())
+        .limit(20)
+    )
+    per_label_result = await db.execute(per_label_query)
+    per_label = [
+        {"label_name": r.current_label_name, "count": r.count}
+        for r in per_label_result.all()
+    ]
+
+    # Labels by risk tier
+    by_tier_query = (
+        select(
+            ScanResult.risk_tier,
+            func.count().filter(ScanResult.label_applied.is_(True)).label("applied"),
+            func.count().filter(
+                ScanResult.recommended_label_id.isnot(None),
+                ScanResult.label_applied.is_(False),
+            ).label("pending"),
+        )
+        .where(ScanResult.tenant_id == tenant_id)
+        .group_by(ScanResult.risk_tier)
+    )
+    by_tier_result = await db.execute(by_tier_query)
+    by_tier = {
+        r.risk_tier: {"applied": r.applied, "pending": r.pending}
+        for r in by_tier_result.all()
+    }
+
+    return {
+        "total_results": row.total_results,
+        "labels_applied": row.labels_applied,
+        "labels_pending": row.labels_pending,
+        "labels_failed": row.labels_failed,
+        "per_label": per_label,
+        "by_tier": by_tier,
+    }

@@ -131,6 +131,24 @@ export interface LabelMappingsResponse {
   labels: Label[];
 }
 
+export interface LabelRule {
+  id: string;
+  rule_type: string;
+  match_value: string;
+  label_id: string;
+  label_name: string | null;
+  priority: number;
+}
+
+export interface LabelStats {
+  total_results: number;
+  labels_applied: number;
+  labels_pending: number;
+  labels_failed: number;
+  per_label: { label_name: string; count: number }[];
+  by_tier: Record<string, { applied: number; pending: number }>;
+}
+
 export interface DashboardStats {
   total_scans: number;
   total_files_scanned: number;

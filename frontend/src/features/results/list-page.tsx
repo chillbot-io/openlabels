@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Download } from 'lucide-react';
+import { Download, Tags } from 'lucide-react';
 import { useResultsCursor } from '@/api/hooks/use-results.ts';
+import { useBulkApplyLabels } from '@/api/hooks/use-labels.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { RiskBadge } from '@/components/risk-badge.tsx';
 import { EntityTag } from '@/components/entity-tag.tsx';
@@ -55,6 +56,23 @@ export function Component() {
 
   const allResults = results.data?.pages.flatMap((p) => p.items) ?? [];
   const addToast = useUIStore((s) => s.addToast);
+  const bulkApply = useBulkApplyLabels();
+
+  // Results that have a recommended label but haven't been labeled yet
+  const pendingLabelIds = allResults
+    .filter((r) => r.recommended_label_name && !r.label_applied)
+    .map((r) => r.id);
+
+  const handleBulkApply = () => {
+    if (pendingLabelIds.length === 0) {
+      addToast({ level: 'info', message: 'No results with pending recommended labels' });
+      return;
+    }
+    bulkApply.mutate({ result_ids: pendingLabelIds }, {
+      onSuccess: (data) => addToast({ level: 'success', message: data.message }),
+      onError: (err) => addToast({ level: 'error', message: err.message }),
+    });
+  };
 
   const handleExport = async (format: 'csv' | 'json') => {
     try {
@@ -69,9 +87,22 @@ export function Component() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Scan Results</h1>
-        <Button variant="outline" size="sm" onClick={() => handleExport('csv')}>
-          <Download className="mr-2 h-4 w-4" /> Export CSV
-        </Button>
+        <div className="flex gap-2">
+          {pendingLabelIds.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkApply}
+              disabled={bulkApply.isPending}
+            >
+              <Tags className="mr-2 h-4 w-4" />
+              {bulkApply.isPending ? 'Applying...' : `Apply Recommended Labels (${pendingLabelIds.length})`}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => handleExport('csv')}>
+            <Download className="mr-2 h-4 w-4" /> Export CSV
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

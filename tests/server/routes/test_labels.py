@@ -280,7 +280,7 @@ class TestDeleteLabelRule:
         await session.commit()
         rule_id = rule.id
 
-        delete_response = await test_client.delete(f"/api/labels/rules/{rule_id}")
+        delete_response = await test_client.delete(f"/api/v1/labels/rules/{rule_id}")
         assert delete_response.status_code == 204
 
         # Expunge all cached objects to avoid MissingGreenlet errors from
@@ -420,19 +420,25 @@ class TestUpdateLabelMappings:
 
         assert data["CRITICAL"] == labels[1].id
 
-    async def test_htmx_request_returns_trigger(self, test_client, setup_labels_data):
-        """HTMX request should return HX-Trigger header."""
+    async def test_clears_mapping_when_null(self, test_client, setup_labels_data):
+        """Setting a tier to null should clear the mapping."""
         labels = setup_labels_data["labels"]
 
-        response = await test_client.post(
+        # First set a mapping
+        await test_client.post(
             "/api/v1/labels/mappings",
-            data={
-                "CRITICAL": labels[0].id,
-            },
-            headers={"HX-Request": "true"},
+            json={"CRITICAL": labels[0].id},
         )
-        assert response.status_code == 200
-        assert "HX-Trigger" in response.headers
+
+        # Clear it
+        await test_client.post(
+            "/api/v1/labels/mappings",
+            json={"CRITICAL": None},
+        )
+
+        response = await test_client.get("/api/v1/labels/mappings")
+        data = response.json()
+        assert data["CRITICAL"] is None
 
 
 class TestApplyLabel:
@@ -589,5 +595,239 @@ class TestLabelTenantIsolation:
 
         names = [l["name"] for l in data["items"]]
         assert "Other Tenant Label" not in names
+
+
+class TestBulkApplyRecommendedLabels:
+    """Tests for POST /api/v1/labels/bulk-apply endpoint."""
+
+    async def test_queues_jobs_for_results_with_recommendations(self, test_client, setup_labels_data):
+        """Bulk apply should queue jobs for results with recommended labels."""
+        from openlabels.server.models import ScanJob, ScanResult, ScanTarget
+
+        session = setup_labels_data["session"]
+        tenant = setup_labels_data["tenant"]
+        labels = setup_labels_data["labels"]
+        admin_user = setup_labels_data["admin_user"]
+
+        target = ScanTarget(
+            tenant_id=tenant.id,
+            name="Bulk Apply Target",
+            adapter="filesystem",
+            config={"path": "/test"},
+            enabled=True,
+            created_by=admin_user.id,
+        )
+        session.add(target)
+        await session.flush()
+
+        job = ScanJob(tenant_id=tenant.id, target_id=target.id, status="completed")
+        session.add(job)
+        await session.flush()
+
+        # Result WITH recommendation
+        r1 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/test/rec1.txt",
+            file_name="rec1.txt",
+            risk_score=80,
+            risk_tier="CRITICAL",
+            entity_counts={"SSN": 2},
+            total_entities=2,
+            recommended_label_id=labels[0].id,
+            recommended_label_name=labels[0].name,
+        )
+        # Result WITHOUT recommendation
+        r2 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/test/norec.txt",
+            file_name="norec.txt",
+            risk_score=10,
+            risk_tier="LOW",
+            entity_counts={},
+            total_entities=0,
+        )
+        session.add_all([r1, r2])
+        await session.commit()
+
+        response = await test_client.post(
+            "/api/v1/labels/bulk-apply",
+            json={"result_ids": [str(r1.id), str(r2.id)]},
+        )
+        assert response.status_code == 202
+        data = response.json()
+
+        assert data["queued"] == 1
+        assert data["skipped"] == 1
+
+    async def test_rejects_empty_result_ids(self, test_client, setup_labels_data):
+        """Bulk apply with empty list should return 400."""
+        response = await test_client.post(
+            "/api/v1/labels/bulk-apply",
+            json={"result_ids": []},
+        )
+        assert response.status_code == 400
+
+    async def test_skips_nonexistent_results(self, test_client, setup_labels_data):
+        """Bulk apply should skip results that don't exist."""
+        fake_id = uuid4()
+        response = await test_client.post(
+            "/api/v1/labels/bulk-apply",
+            json={"result_ids": [str(fake_id)]},
+        )
+        assert response.status_code == 202
+        data = response.json()
+        assert data["queued"] == 0
+        assert data["skipped"] == 1
+
+
+class TestLabelStats:
+    """Tests for GET /api/v1/labels/stats endpoint."""
+
+    async def test_returns_stats_structure(self, test_client, setup_labels_data):
+        """Stats should have required fields."""
+        response = await test_client.get("/api/v1/labels/stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "total_results" in data
+        assert "labels_applied" in data
+        assert "labels_pending" in data
+        assert "labels_failed" in data
+        assert "per_label" in data
+        assert "by_tier" in data
+
+    async def test_returns_zero_counts_when_no_results(self, test_client, setup_labels_data):
+        """Stats should return zeros when no scan results exist."""
+        response = await test_client.get("/api/v1/labels/stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total_results"] == 0
+        assert data["labels_applied"] == 0
+
+    async def test_counts_applied_labels(self, test_client, setup_labels_data):
+        """Stats should count applied labels correctly."""
+        from openlabels.server.models import ScanJob, ScanResult, ScanTarget
+
+        session = setup_labels_data["session"]
+        tenant = setup_labels_data["tenant"]
+        labels = setup_labels_data["labels"]
+        admin_user = setup_labels_data["admin_user"]
+
+        target = ScanTarget(
+            tenant_id=tenant.id,
+            name="Stats Target",
+            adapter="filesystem",
+            config={"path": "/stats"},
+            enabled=True,
+            created_by=admin_user.id,
+        )
+        session.add(target)
+        await session.flush()
+
+        job = ScanJob(tenant_id=tenant.id, target_id=target.id, status="completed")
+        session.add(job)
+        await session.flush()
+
+        # Applied label
+        r1 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/stats/applied.txt",
+            file_name="applied.txt",
+            risk_score=90,
+            risk_tier="CRITICAL",
+            entity_counts={"SSN": 3},
+            total_entities=3,
+            label_applied=True,
+            current_label_id=labels[0].id,
+            current_label_name=labels[0].name,
+        )
+        # Pending recommendation
+        r2 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/stats/pending.txt",
+            file_name="pending.txt",
+            risk_score=60,
+            risk_tier="HIGH",
+            entity_counts={"EMAIL": 1},
+            total_entities=1,
+            recommended_label_id=labels[1].id,
+            recommended_label_name=labels[1].name,
+        )
+        # No label at all
+        r3 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/stats/none.txt",
+            file_name="none.txt",
+            risk_score=10,
+            risk_tier="LOW",
+            entity_counts={},
+            total_entities=0,
+        )
+        session.add_all([r1, r2, r3])
+        await session.commit()
+
+        response = await test_client.get("/api/v1/labels/stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total_results"] == 3
+        assert data["labels_applied"] == 1
+        assert data["labels_pending"] == 1
+        assert len(data["per_label"]) == 1
+        assert data["per_label"][0]["label_name"] == labels[0].name
+        assert data["per_label"][0]["count"] == 1
+
+    async def test_by_tier_breakdown(self, test_client, setup_labels_data):
+        """Stats should return per-tier breakdown."""
+        from openlabels.server.models import ScanJob, ScanResult, ScanTarget
+
+        session = setup_labels_data["session"]
+        tenant = setup_labels_data["tenant"]
+        labels = setup_labels_data["labels"]
+        admin_user = setup_labels_data["admin_user"]
+
+        target = ScanTarget(
+            tenant_id=tenant.id,
+            name="Tier Stats Target",
+            adapter="filesystem",
+            config={"path": "/tier"},
+            enabled=True,
+            created_by=admin_user.id,
+        )
+        session.add(target)
+        await session.flush()
+
+        job = ScanJob(tenant_id=tenant.id, target_id=target.id, status="completed")
+        session.add(job)
+        await session.flush()
+
+        r1 = ScanResult(
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path="/tier/crit.txt",
+            file_name="crit.txt",
+            risk_score=95,
+            risk_tier="CRITICAL",
+            entity_counts={"SSN": 5},
+            total_entities=5,
+            label_applied=True,
+            current_label_id=labels[0].id,
+            current_label_name=labels[0].name,
+        )
+        session.add(r1)
+        await session.commit()
+
+        response = await test_client.get("/api/v1/labels/stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "CRITICAL" in data["by_tier"]
+        assert data["by_tier"]["CRITICAL"]["applied"] == 1
 
 
