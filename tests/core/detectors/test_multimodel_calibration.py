@@ -76,7 +76,7 @@ class TestCalibratedThresholdPHI:
     """_calibrated_threshold uses PHI calibration table for stanford_phi spans."""
 
     def test_patient_label_raises_threshold(self):
-        """PHI 'PATIENT' (temp=1.75) raises threshold above base."""
+        """PHI 'PATIENT' (temp=1.65) raises threshold above base."""
         span = _make_ml_span(
             detector="stanford_phi",
             detector_label="PATIENT",
@@ -85,8 +85,8 @@ class TestCalibratedThresholdPHI:
         base = 0.52
         result = _calibrated_threshold(span, base)
         assert result > base
-        # temp=1.75, scaling=0.10 → base + 0.75*0.10 = 0.595
-        assert result == pytest.approx(min(0.64, base + 0.75 * 0.10), abs=1e-6)
+        # temp=1.65, scaling=0.09 → base + 0.65*0.09 = 0.5785
+        assert result == pytest.approx(min(0.63, base + 0.65 * 0.09), abs=1e-6)
 
     def test_account_label_mild_raise(self):
         """PHI 'ACCOUNT' (temp=1.10) gives mild threshold increase."""
@@ -97,8 +97,8 @@ class TestCalibratedThresholdPHI:
         )
         base = 0.55
         result = _calibrated_threshold(span, base)
-        # temp=1.10 → base + 0.10*0.10 = 0.56
-        assert result == pytest.approx(0.56, abs=1e-6)
+        # temp=1.10 → base + 0.10*0.09 = 0.559
+        assert result == pytest.approx(0.559, abs=1e-6)
 
     def test_phi_unknown_label_returns_base(self):
         """PHI label not in PHI_CALIBRATION falls back to base."""
@@ -126,7 +126,7 @@ class TestCalibratedThresholdMultilingual:
     """_calibrated_threshold uses multilingual table for gliner_multilingual."""
 
     def test_first_name_raises_threshold(self):
-        """Multilingual 'first name' (temp=1.35) raises threshold."""
+        """Multilingual 'first name' (temp=1.25) raises threshold."""
         span = _make_ml_span(
             detector="gliner_multilingual",
             detector_label="first name",
@@ -134,8 +134,8 @@ class TestCalibratedThresholdMultilingual:
         base = 0.52
         result = _calibrated_threshold(span, base)
         assert result > base
-        # temp=1.35 → base + 0.35*0.10 = 0.555
-        assert result == pytest.approx(0.555, abs=1e-6)
+        # temp=1.25 → base + 0.25*0.09 = 0.5425
+        assert result == pytest.approx(0.5425, abs=1e-6)
 
     def test_city_raises_threshold(self):
         """Multilingual 'city' (temp=1.35) raises threshold."""
@@ -146,8 +146,8 @@ class TestCalibratedThresholdMultilingual:
         )
         base = 0.55
         result = _calibrated_threshold(span, base)
-        # temp=1.35 → base + 0.35*0.10 = 0.585
-        assert result == pytest.approx(0.585, abs=1e-6)
+        # temp=1.35 → base + 0.35*0.09 = 0.5815
+        assert result == pytest.approx(0.5815, abs=1e-6)
 
     def test_email_below_one_returns_base(self):
         """Multilingual 'email address' (temp=0.95) returns base."""
@@ -162,26 +162,26 @@ class TestCalibratedThresholdMultilingual:
 
 
 class TestCalibratedThresholdCap:
-    """Threshold is capped at 0.64."""
+    """Threshold is capped at 0.63."""
 
     def test_high_temp_capped(self):
-        """Very high temperature is capped at 0.64."""
-        # GLiNER "city" has temp=2.00 → base + 1.0*0.10 = 0.65 → capped at 0.64
+        """Very high temperature is capped at 0.63."""
+        # GLiNER "city" has temp=2.00 → base + 1.0*0.09 = 0.64 → capped at 0.63
         span = _make_ml_span(detector="gliner", detector_label="city")
         base = 0.55
         result = _calibrated_threshold(span, base)
-        assert result == pytest.approx(0.64, abs=1e-6)
+        assert result == pytest.approx(0.63, abs=1e-6)
 
     def test_cap_applies_across_models(self):
         """Cap applies regardless of which calibration table is used."""
-        # PHI GEO has temp=1.65 → 0.55 + 0.65*0.10 = 0.615
+        # PHI GEO has temp=1.65 → 0.55 + 0.65*0.09 = 0.6085
         span = _make_ml_span(
             detector="stanford_phi",
             detector_label="GEO",
             entity_type="ADDRESS",
         )
         result = _calibrated_threshold(span, 0.55)
-        assert result <= 0.64
+        assert result <= 0.63
 
 
 # ---------------------------------------------------------------------------
@@ -353,13 +353,13 @@ class TestPHICalibrationScores:
     """Test PHI calibration produces expected score adjustments."""
 
     def test_patient_dampened_heavily(self):
-        """PATIENT (temp=1.75, bias=0.15) heavily dampens high confidence."""
+        """PATIENT (temp=1.65, bias=0.12) heavily dampens high confidence."""
         from openlabels.core.detectors.phi_detector import _calibrate_phi_score
         raw = 0.90
         result = _calibrate_phi_score("PATIENT", raw)
         assert result < raw
         # Should be significantly dampened
-        assert result < 0.80
+        assert result < 0.85
 
     def test_account_mild_dampening(self):
         """ACCOUNT (temp=1.10, bias=0.02) only mildly dampens."""
