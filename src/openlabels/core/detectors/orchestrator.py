@@ -1275,6 +1275,14 @@ _NAME_COLLISION_PRIORITY_TYPES = _LOCATION_TYPES | frozenset({
     "COMPANY", "EMPLOYER", "JOB_TITLE", "USERNAME",
 })
 
+# CITY-specific confidence margin for name-collision replacement.
+# GLiNER systematically scores FIRSTNAME higher than CITY for ambiguous
+# names (Florence, Austin, Sherwood).  ML calibration compresses all ML
+# spans into [0.30, 0.55], so a 0.05 calibrated margin covers up to ~0.20
+# raw-confidence difference.  Benchmark: 8 CITY→FIRSTNAME + 4 CITY→LASTNAME
+# vs 3 LASTNAME→CITY type mismatches — CITY margin is strongly net-positive.
+_CITY_CONFIDENCE_MARGIN = 0.05
+
 
 def _suppress_name_location_collisions(
     spans: list[Span],
@@ -1327,13 +1335,22 @@ def _suppress_name_location_collisions(
                         best_priority = pspan
 
             if best_priority is not None:
-                if best_priority.confidence >= span.confidence:
-                    # Priority type has equal or higher confidence — replace.
+                # CITY gets a confidence margin because GLiNER
+                # systematically under-scores city names relative to
+                # first names for ambiguous tokens.
+                margin = (
+                    _CITY_CONFIDENCE_MARGIN
+                    if best_priority.entity_type == "CITY"
+                    else 0.0
+                )
+                if best_priority.confidence >= span.confidence - margin:
+                    # Priority type has sufficient confidence — replace.
                     logger.debug(
-                        "Name-collision replaced: %s %r (%.3f) → %s %r (%.3f)",
+                        "Name-collision replaced: %s %r (%.3f) → %s %r (%.3f)"
+                        " [margin=%.3f]",
                         span.entity_type, span.text, span.confidence,
                         best_priority.entity_type, best_priority.text,
-                        best_priority.confidence,
+                        best_priority.confidence, margin,
                     )
                     result.append(best_priority)
                     continue
