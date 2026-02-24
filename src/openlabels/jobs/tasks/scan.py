@@ -1235,16 +1235,17 @@ async def _detect_and_score(
         if result.processing_time_ms:
             record_processing_duration(adapter_type, result.processing_time_ms / 1000.0)
 
-        # Build findings list from spans (for detailed reporting)
-        findings = []
+        # Build findings grouped by entity type (for frontend detail view)
+        # Shape: {"SSN": [{value, confidence, context}, ...], "EMAIL": [...]}
+        findings_grouped: dict[str, list[dict]] = {}
         for span in result.spans[:50]:  # Limit to first 50 findings
-            findings.append({
-                "entity_type": span.entity_type,
-                "start": span.start,
-                "end": span.end,
+            context_text = ""
+            if span.context and span.context.surrounding_text:
+                context_text = span.context.surrounding_text
+            findings_grouped.setdefault(span.entity_type, []).append({
+                "value": span.text,
                 "confidence": span.confidence,
-                "detector": span.detector,
-                "tier": span.tier.name,
+                "context": context_text,
             })
 
         # Policy evaluation
@@ -1288,11 +1289,6 @@ async def _detect_and_score(
             except (ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Policy evaluation failed for {file_info.path}: {e}")
 
-        # Merge policy data into findings dict
-        findings_dict = {"entities": findings}
-        if policy_data:
-            findings_dict["policy"] = policy_data
-
         return {
             "risk_score": result.risk_score,
             "risk_tier": result.risk_tier.value,
@@ -1301,7 +1297,7 @@ async def _detect_and_score(
             "content_score": result.content_score,
             "exposure_multiplier": result.exposure_multiplier,
             "co_occurrence_rules": result.co_occurrence_rules,
-            "findings": findings_dict,
+            "findings": findings_grouped,
             "policy_violations": policy_violations,
             "processing_time_ms": result.processing_time_ms,
             "error": result.error,
