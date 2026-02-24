@@ -484,20 +484,23 @@ class DetectorOrchestrator:
 
         return resolved
 
+    # Extra boost when 3+ detectors agree (stacks with base boost).
+    _ENSEMBLE_TRIPLE_EXTRA = 0.08
+
     def _apply_ensemble_boost(self, spans: list[Span]) -> list[Span]:
         """Boost confidence when multiple detectors agree on the same entity.
 
-        For each span, checks if a different detector produced an overlapping
-        span with a compatible entity type (same evaluation category, e.g.
-        FIRSTNAME and NAME are both "names").  If so, the higher-confidence
-        span gets boosted (clamped to 1.0).
+        For each span, checks if different detectors produced overlapping
+        spans with a compatible entity type (same evaluation category, e.g.
+        FIRSTNAME and NAME are both "names").
 
-        The boost scales with the minimum raw confidence of the agreeing
-        pair — strong agreement from both detectors earns up to
-        ``_ENSEMBLE_BOOST_MAX``, while marginal agreement earns
-        ``_ENSEMBLE_BOOST_MIN``.  This implicitly uses calibration: labels
-        whose raw scores were dampened by high calibration temperature
-        will have lower raw confidence, producing a smaller boost.
+        Boost scales with agreement strength:
+        - 2 detectors agree: base boost (0.10–0.20)
+        - 3+ detectors agree: base boost + triple bonus (0.08)
+
+        The base boost scales with the minimum raw confidence of the agreeing
+        pair — strong agreement earns up to ``_ENSEMBLE_BOOST_MAX``, while
+        marginal agreement earns ``_ENSEMBLE_BOOST_MIN``.
         """
         if len(spans) < 2:
             return spans
@@ -516,6 +519,10 @@ class DetectorOrchestrator:
             if i in boosted_indices:
                 continue
             group_a = _entity_group(span_a.entity_type)
+
+            # Collect all agreeing detectors for this span.
+            agreeing_detectors: set[str] = set()
+            min_raw = 1.0
             for j, span_b in enumerate(spans):
                 if i == j or span_a.detector == span_b.detector:
                     continue
@@ -524,36 +531,46 @@ class DetectorOrchestrator:
                 group_b = _entity_group(span_b.entity_type)
                 if group_a != group_b:
                     continue
-                # Two different detectors agree — boost the stronger one.
-                if i not in boosted_indices:
-                    # Scale boost by minimum raw confidence of the pair.
-                    raw_a = span_a.raw_confidence if span_a.raw_confidence is not None else span_a.confidence
-                    raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
-                    min_raw = min(raw_a, raw_b)
-                    # Interpolate: raw ≤ 0.5 → min boost, raw ≥ 0.9 → max boost
-                    t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
-                    boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
-                    new_conf = min(1.0, span_a.confidence + boost)
-                    result[i] = Span(
-                        start=span_a.start,
-                        end=span_a.end,
-                        text=span_a.text,
-                        entity_type=span_a.entity_type,
-                        confidence=new_conf,
-                        detector=span_a.detector,
-                        tier=span_a.tier,
-                        context=span_a.context,
-                        needs_review=span_a.needs_review,
-                        review_reason=span_a.review_reason,
-                        coref_anchor_value=span_a.coref_anchor_value,
-                    )
-                    boosted_indices.add(i)
-                    logger.debug(
-                        "Ensemble boost: %s %r %.3f→%.3f (+%.3f, corroborated by %s)",
-                        span_a.entity_type, span_a.text,
-                        span_a.confidence, new_conf, boost, span_b.detector,
-                    )
-                break  # Only boost once per span
+                agreeing_detectors.add(span_b.detector)
+                raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
+                min_raw = min(min_raw, raw_b)
+
+            if not agreeing_detectors:
+                continue
+
+            raw_a = span_a.raw_confidence if span_a.raw_confidence is not None else span_a.confidence
+            min_raw = min(min_raw, raw_a)
+
+            # Scale base boost by minimum raw confidence.
+            t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
+            boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
+
+            # Triple-agreement bonus: 3+ unique detectors agree.
+            n_agree = len(agreeing_detectors) + 1  # +1 for span_a itself
+            if n_agree >= 3:
+                boost += self._ENSEMBLE_TRIPLE_EXTRA
+
+            new_conf = min(1.0, span_a.confidence + boost)
+            result[i] = Span(
+                start=span_a.start,
+                end=span_a.end,
+                text=span_a.text,
+                entity_type=span_a.entity_type,
+                confidence=new_conf,
+                detector=span_a.detector,
+                tier=span_a.tier,
+                context=span_a.context,
+                needs_review=span_a.needs_review,
+                review_reason=span_a.review_reason,
+                coref_anchor_value=span_a.coref_anchor_value,
+            )
+            boosted_indices.add(i)
+            logger.debug(
+                "Ensemble boost: %s %r %.3f→%.3f (+%.3f, %d detectors: %s)",
+                span_a.entity_type, span_a.text,
+                span_a.confidence, new_conf, boost, n_agree,
+                ", ".join(sorted(agreeing_detectors)),
+            )
 
         return result
 

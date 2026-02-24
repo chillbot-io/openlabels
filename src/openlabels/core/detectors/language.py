@@ -166,7 +166,7 @@ ENGLISH_ONLY_DETECTORS = frozenset({
 
 # Detector names that only make sense for multilingual-supported languages.
 MULTILINGUAL_DETECTORS = frozenset({
-    "multilingual_gliner",
+    "gliner_multilingual",  # Must match MultilingualGLiNERDetector.name
 })
 
 
@@ -175,10 +175,8 @@ def should_run_detector(detector_name: str, lang_result: LanguageResult) -> bool
 
     Rules:
     - Pattern/checksum detectors: always run (language-agnostic)
-    - English-only ML detectors (PHI, dictionary names): English only
-    - GLiNER (English): English only
-    - Multilingual GLiNER: non-English multilingual-supported languages only
-      (for English, the English GLiNER is better)
+    - English text: run ALL ML detectors (3-model ensemble)
+    - Supported non-English: run multilingual GLiNER, skip English-only
     - Unsupported languages: patterns/checksums only
     """
     # Pattern/checksum detectors always run
@@ -186,8 +184,11 @@ def should_run_detector(detector_name: str, lang_result: LanguageResult) -> bool
         return True
 
     if lang_result.tier == LanguageTier.ENGLISH:
-        # English text: run English-only detectors + GLiNER, skip multilingual
-        return detector_name != "multilingual_gliner"
+        # English text: run all ML detectors for ensemble voting.
+        # GLiNER (English), multilingual GLiNER, and Stanford PHI all
+        # contribute; the ensemble boost and uncorroborated-ML filter
+        # use agreement/disagreement to improve precision and recall.
+        return True
 
     if lang_result.tier == LanguageTier.MULTILINGUAL_SUPPORTED:
         # Supported non-English: run multilingual GLiNER, skip English-only
