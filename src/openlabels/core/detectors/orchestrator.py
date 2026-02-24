@@ -1275,44 +1275,43 @@ _ML_NAME_BLOCKLIST = frozenset({
     # Common words that start sentences (title-cased by position)
     "cash", "yoga", "menu", "logo", "demo", "memo",
     "quota", "bonus", "forum", "salon", "plaza",
-    # Company name fragments / proper nouns misread as person names
-    "jazeera", "capital",
+    # Nemotron PII FP analysis — additional words
+    "baha", "al", "sales", "jazeera", "brokerage",
 })
 
 
 def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
-    """Suppress ML-tier FIRSTNAME/LASTNAME spans that are common English words.
+    """Suppress NAME-family spans whose text is a common non-name English word.
 
     GLiNER's zero-shot NER frequently flags business terms, demonyms, and
     other common words as person names.  The dictionary-based detector has
     its own blocklists (_NEVER_NAMES, _AMBIGUOUS_FIRST/LAST) but those
-    don't apply to ML-tier spans.  This function fills that gap.
+    don't cover every false-positive word, and ML detectors bypass them
+    entirely.
 
-    Also imports _NEVER_NAMES from the dictionary detector for comprehensive
-    coverage — terms like "consultant", "executive", "diagnostic" etc.
+    This function checks ALL name-family spans (regardless of tier) against
+    _ML_NAME_BLOCKLIST and _NEVER_NAMES.  Words in these sets are never
+    standalone person names in PII contexts.
     """
     from .dictionary_names import _NEVER_NAMES
 
     result: list[Span] = []
     suppressed = 0
     for span in spans:
-        if (
-            span.tier == Tier.ML
-            and span.entity_type in _NAME_FAMILY
-        ):
+        if span.entity_type in _NAME_FAMILY:
             lower = span.text.strip().lower()
             if lower in _ML_NAME_BLOCKLIST or lower in _NEVER_NAMES:
                 suppressed += 1
                 logger.debug(
-                    "ML name FP suppressed: %s %r (blocklist)",
-                    span.entity_type, span.text,
+                    "Name FP suppressed: %s %r (blocklist, tier=%s)",
+                    span.entity_type, span.text, span.tier,
                 )
                 continue
         result.append(span)
 
     if suppressed:
         logger.info(
-            "ML name FP suppression: removed %d common-word name spans",
+            "Name FP suppression: removed %d common-word name spans",
             suppressed,
         )
     return result
@@ -1348,17 +1347,15 @@ _STRIP_NONALPHA_RE = re.compile(r'^[^a-z0-9]+|[^a-z0-9]+$')
 
 
 def _suppress_ml_username_false_positives(spans: list[Span]) -> list[Span]:
-    """Suppress ML-tier USERNAME spans that are common English words."""
+    """Suppress USERNAME spans whose text is a common English word."""
     result: list[Span] = []
     for span in spans:
-        if (
-            span.tier == Tier.ML
-            and normalize_entity_type(span.entity_type) == "USERNAME"
-        ):
+        if normalize_entity_type(span.entity_type) == "USERNAME":
             lower = span.text.strip().lower()
             if lower in _ML_USERNAME_BLOCKLIST:
                 logger.debug(
-                    "ML USERNAME FP suppressed: %r (blocklist)", span.text,
+                    "USERNAME FP suppressed: %r (blocklist, tier=%s)",
+                    span.text, span.tier,
                 )
                 continue
             # Also check after stripping trailing punctuation (e.g. "Security**")

@@ -1736,6 +1736,8 @@ _p(r'(?:log\s*in|sign\s*in)\s+and\s+use\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0
 _p(r'\b\S+\s+and\s+([A-Za-z0-9_]{6,50})\s+used\b', 'PASSWORD', 0.75, 1, flags=re.I),
 # "password changed/updated to X" — password state change
 _p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:changed|updated|modified|reset|set)\s+to\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
+# "update/change your password to X" — password change with preceding verb
+_p(r'(?:change|update|modify|reset|set)\s+(?:\S+\s+)?(?:password|passwd|pwd|passcode|pass)\s+to\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.85, 1, flags=re.I),
 # "password from X" — source reference ("update their password from X to something stronger")
 _p(r'(?:password|passwd|pwd|passcode|pass)\s+from\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.85, 1, flags=re.I),
 # "change/update/modify your/their X" — possessive password change context
@@ -1787,6 +1789,14 @@ _p(r'credentials?\s*\(\s*\S+\s*,\s*([A-Za-z0-9_]{6,50})\s*\)', 'PASSWORD', 0.85,
 _p(r'(?:encrypt|decrypt)\s+(?:\S+\s+)?(?:using|with)\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # "implement VALUE" followed by auth/security context — deployment password
 _p(r'\bimplement\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b(?=\s+(?:and|for|to|as|in))', 'PASSWORD', 0.75, 1, flags=re.I),
+# "password/pin/passcode ... DIGITS" — password label with intervening words,
+# 4-8 digit value (common PINs and numeric passwords).
+_p(r'\b(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s+(?:\S+\s+){1,5}?(\d{4,8})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+# "authenticate with/using DIGITS" — authentication context + numeric code
+_p(r'\b(?:authenticate|login|log\s*in|sign\s*in|access|unlock)\s+(?:\S+\s+){0,3}?(?:with|using)\s+(\d{4,8})\b', 'PASSWORD', 0.80, 1, flags=re.I),
+# "code/password DIGITS" — bare digit password after label, no colon required
+# Require 6+ digits to avoid matching common numbers
+_p(r'\b(?:password|passcode|passcode|secret|passphrase)\s+(\d{6,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # Word+special+year pattern: "Ocean@2025", "Winter#2024", "Summer$2023"
 # Common human-generated password format — word + symbol + 4-digit year.
 _p(r'(?:password|passwd|pwd|passcode|pass)\s*[=:]\s*([A-Za-z]{3,20}[!@#$%^&*]{1,2}\d{4})\b', 'PASSWORD', 0.90, 1, flags=re.I),
@@ -2786,6 +2796,48 @@ _CITY_FALSE_POSITIVES = frozenset({
     'worthwhile', 'noteworthy',
 })
 
+# Snake_case segments that indicate a field/variable name, not a username.
+# If ANY segment of a snake_case identifier is in this set, it's a field name.
+_FIELD_NAME_SEGMENTS = frozenset({
+    'id', 'identifier', 'name', 'number', 'code', 'type', 'data',
+    'date', 'time', 'timestamp', 'key', 'value', 'index', 'count',
+    'rate', 'score', 'level', 'status', 'state', 'mode', 'flag',
+    'color', 'colour', 'size', 'width', 'height', 'length', 'weight',
+    'address', 'email', 'phone', 'url', 'path', 'file', 'dir',
+    'entries', 'entry', 'record', 'records', 'field', 'fields',
+    'participant', 'patient', 'user', 'unique', 'primary',
+    'biometric', 'measurements', 'traits', 'phenotypic',
+    'birth', 'death', 'created', 'updated', 'modified', 'deleted',
+    'heart', 'blood', 'pressure', 'temperature', 'pulse',
+    'eye', 'hair', 'skin', 'facial',
+    'timestamped',
+})
+
+
+def _is_field_name(value: str) -> bool:
+    """Return True if value looks like a snake_case field/variable name.
+
+    Usernames with underscores are typically First_Last (2 segments, mixed case).
+    Field names like "unique_participant_id" have 3+ all-lowercase segments, or
+    contain known programming/data field terms.
+    """
+    if '_' not in value:
+        return False
+
+    segments = value.split('_')
+
+    # 3+ all-lowercase segments is almost always a field name
+    if len(segments) >= 3 and all(s.islower() for s in segments if s):
+        return True
+
+    # Any segment matching a known field-name keyword
+    lower_segments = {s.lower() for s in segments if s}
+    if lower_segments & _FIELD_NAME_SEGMENTS:
+        return True
+
+    return False
+
+
 # Common English words that should never be detected as usernames.
 # The USERNAME pattern trigger "user" is too generic and matches
 # "user agent", "user feedback", "login details", etc.
@@ -3044,13 +3096,13 @@ class PatternDetector(BaseDetector):
                     lower_val = value.lower().strip()
                     if lower_val in _USERNAME_FALSE_POSITIVES:
                         continue
-                    # Snake_case heuristic: reject values like "date_of_birth",
-                    # "eye_color", "heart_rate" where ALL underscore-separated
-                    # parts are common data field terms (not person names).
-                    if '_' in lower_val and not any(c.isdigit() for c in lower_val):
-                        parts = [p for p in lower_val.split('_') if p]
-                        if len(parts) >= 2 and all(p in _SNAKE_CASE_FIELD_PARTS for p in parts):
-                            continue
+                    # Reject snake_case identifiers that look like field/variable
+                    # names rather than usernames.  Real usernames are typically
+                    # First_Last (2 segments); field names like
+                    # "unique_participant_id", "date_of_birth" have 3+ segments
+                    # and use lowercase throughout.
+                    if _is_field_name(value):
+                        continue
 
                 # Identifier types must contain at least one digit — pure
                 # alphabetic strings like "Savings" or "Specialist" are never

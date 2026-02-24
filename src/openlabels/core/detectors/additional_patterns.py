@@ -355,6 +355,20 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "UNIQUE_ID", 0.75, 1, flags=0
     ),
 
+    # UNIQUE_ID — UUID v4 format: "6178d0a7-8d65-4b5d-9e22-34c7a81e8f0b"
+    # 8-4-4-4-12 hex digits separated by hyphens.
+    _p(
+        r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
+        "UNIQUE_ID", 0.88, 1, flags=re.IGNORECASE
+    ),
+
+    # UNIQUE_ID — SHA-256 hash: 64 hex chars
+    # Require labeled context to avoid matching random hex strings
+    _p(
+        r"\b(?:hash|sha256|sha-256|identifier|unique\s*id|participant\s*id)\s*[:\s]+([0-9a-f]{64})\b",
+        "UNIQUE_ID", 0.85, 1, flags=re.IGNORECASE
+    ),
+
     # ── Prefix-based patterns for under-detected types ──────────────────
     # These use well-known prefixes from the Gretel PII benchmark dataset
     # to correctly classify IDs that would otherwise be misclassified as
@@ -480,6 +494,20 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
     ),
 
+    # ACCOUNT_NUMBER — broader financial/case context for digit-only accounts
+    # Matches digits preceded by broader financial context words
+    _p(
+        r"\b(?:balance|debit|credit|billing|invoice|statement|"
+        r"portfolio|fund|savings|checking|investment|"
+        r"wire|remittance|receipt|ledger|folio)\s+(?:\S+\s+){0,3}?(\d{7,12})\b",
+        "ACCOUNT_NUMBER", 0.78, 1, flags=re.IGNORECASE
+    ),
+    # ACCOUNT_NUMBER — "number/no/# XXXX" in financial paragraph context
+    _p(
+        r"\b(?:no\.|no|#)\s*(\d{7,12})\b(?=\s+(?:was|is|has|had|will|should|must|can|may|shall|for|on|in|at|to|from|with|by))",
+        "ACCOUNT_NUMBER", 0.75, 1, flags=re.IGNORECASE
+    ),
+
     # DEVICE_ID — labeled context for numeric device identifiers
     # Prevents 15-digit device IDs from being misclassified as CREDIT_CARD
     # Use identifier|id\b (longest first + word boundary) to prevent "id" matching prefix of "identifier"
@@ -506,6 +534,26 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
         r",\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
         r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\b(?=\s*[,.\n]|\s+\d)",
         "STATE", 0.82, 1, flags=0
+    ),
+    # US 2-letter state abbreviation before 5-digit ZIP (no comma required):
+    # "San Francisco CA 94105", "Chicago IL 60601"
+    _p(
+        r"\b(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\s+\d{5}\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+    # ZIP after US 2-letter state abbreviation (no comma required):
+    # "San Francisco CA 94105", "Chicago IL 60601"
+    _p(
+        r"\b(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|"
+        r"N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY])\s+(\d{5}(?:-\d{4})?)\b",
+        "ZIP", 0.80, 1, flags=0
+    ),
+    # Indian PIN code (6 digits starting with 1-8) in labeled context:
+    # "PIN: 452001", "Postal Code: 110001", "pin code 452001"
+    _p(
+        r"\b(?:pin\s*code|postal\s*code|zip\s*code|zip|pincode)\s*[:\s]+([1-8]\d{5})\b",
+        "ZIP", 0.88, 1, flags=re.IGNORECASE
     ),
     # Labeled: "State: California", "State: New York"
     # Case-sensitive "State:" to avoid matching "state: active/pending".

@@ -100,6 +100,8 @@ _AMBIGUOUS_FIRST = frozenset({
     "berry", "ginger", "sage", "basil", "pepper", "olive",
     # Music/art terms
     "aria", "tempo", "solo", "forte",
+    # Nemotron PII FP analysis — common words detected as first names
+    "tone", "yoga", "baha", "alto",
     # Common words often title-cased at sentence start
     "also", "both", "each", "else", "here", "most", "next",
     "some", "such", "then", "very", "well", "when",
@@ -195,7 +197,7 @@ _AMBIGUOUS_LAST = frozenset({
     "creek", "grove", "knoll", "manor", "ranch",
     "villa", "lodge", "haven", "league",
     # Gretel PII FP analysis — common words detected as lastnames
-    "loan", "reason", "room", "holder", "must",
+    "loan", "reason", "room", "holder", "must", "sales",
     "case", "author", "price", "marine", "foster",
     "parks", "gates", "bell", "smith", "john", "jane",
     "numbers", "access", "level", "record", "energy",
