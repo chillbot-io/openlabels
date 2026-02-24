@@ -16,4 +16,10 @@ export const targetsApi = {
 
   delete: (id: string) =>
     apiFetch<void>(`/targets/${id}`, { method: 'DELETE' }),
+
+  testConnection: (id: string) =>
+    apiFetch<{ success: boolean; latency_ms: number | null; error: string | null }>(
+      `/targets/${id}/test-connection`,
+      { method: 'POST' },
+    ),
 };

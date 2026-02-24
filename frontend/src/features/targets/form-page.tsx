@@ -6,9 +6,9 @@ import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import {
   FolderOpen, ChevronRight, ChevronDown, Loader2, CheckCircle2,
-  AlertCircle, Lock, Eye, EyeOff, Server, Cloud,
+  AlertCircle, Lock, Eye, EyeOff, Server, Cloud, Wifi,
 } from 'lucide-react';
-import { useTarget, useCreateTarget, useUpdateTarget } from '@/api/hooks/use-targets.ts';
+import { useTarget, useCreateTarget, useUpdateTarget, useTestConnection } from '@/api/hooks/use-targets.ts';
 import { useStoreCredentials, useEnumerate } from '@/api/hooks/use-credentials.ts';
 import { browseApi } from '@/api/endpoints/browse.ts';
 import type { EnumeratedResource } from '@/api/endpoints/enumerate.ts';
@@ -379,6 +379,7 @@ export function Component() {
   const target = useTarget(targetId ?? '');
   const createTarget = useCreateTarget();
   const updateTarget = useUpdateTarget();
+  const testConnection = useTestConnection();
   const storeCreds = useStoreCredentials();
   const enumerate = useEnumerate();
   const addToast = useUIStore((s) => s.addToast);
@@ -589,12 +590,12 @@ export function Component() {
 
     if (isEdit) {
       updateTarget.mutate({ id: targetId!, ...submitData }, {
-        onSuccess: () => { addToast({ level: 'success', message: 'Resource updated' }); navigate('/targets'); },
+        onSuccess: () => { addToast({ level: 'success', message: 'Resource updated' }); navigate(`/targets/${targetId}`); },
         onError: (err) => addToast({ level: 'error', message: err.message }),
       });
     } else {
       createTarget.mutate(submitData, {
-        onSuccess: () => { addToast({ level: 'success', message: 'Resource created' }); navigate('/targets'); },
+        onSuccess: (created) => { addToast({ level: 'success', message: 'Resource created' }); navigate(`/targets/${created.id}`); },
         onError: (err) => addToast({ level: 'error', message: err.message }),
       });
     }
@@ -733,7 +734,32 @@ export function Component() {
           <Button type="submit" disabled={createTarget.isPending || updateTarget.isPending}>
             {isEdit ? 'Save Changes' : 'Create Resource'}
           </Button>
-          <Button type="button" variant="outline" onClick={() => navigate('/targets')}>
+          {isEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={testConnection.isPending}
+              onClick={() => {
+                testConnection.mutate(targetId!, {
+                  onSuccess: (result) => {
+                    if (result.success) {
+                      addToast({ level: 'success', message: `Connection OK (${result.latency_ms}ms)` });
+                    } else {
+                      addToast({ level: 'error', message: result.error ?? 'Connection test failed' });
+                    }
+                  },
+                  onError: (err) => addToast({ level: 'error', message: err.message }),
+                });
+              }}
+            >
+              {testConnection.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Testing...</>
+              ) : (
+                <><Wifi className="mr-2 h-4 w-4" />Test Connection</>
+              )}
+            </Button>
+          )}
+          <Button type="button" variant="outline" onClick={() => navigate(isEdit ? `/targets/${targetId}` : '/targets')}>
             Cancel
           </Button>
         </div>

@@ -50,3 +50,9 @@ export function useDeleteTarget() {
     },
   });
 }
+
+export function useTestConnection() {
+  return useMutation({
+    mutationFn: targetsApi.testConnection,
+  });
+}

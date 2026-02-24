@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scansApi } from '../endpoints/scans.ts';
 
-export function useScans(params?: { status?: string; page?: number; page_size?: number }) {
+export function useScans(params?: { status?: string; target_id?: string; page?: number; page_size?: number }) {
   return useQuery({
     queryKey: ['scans', params],
     queryFn: () => scansApi.list(params),
