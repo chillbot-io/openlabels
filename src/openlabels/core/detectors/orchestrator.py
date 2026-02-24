@@ -297,7 +297,17 @@ class DetectorOrchestrator:
             ]
             logger.error(f"Detector timeout ({DETECTOR_TIMEOUT}s): {timed_out}")
 
-        processed_spans = self._post_process(all_spans, text=text)
+        # Gate multilingual GLiNER from ensemble voting on English text.
+        # On English, the multilingual model is a noisier duplicate of the
+        # primary GLiNER — two GLiNERs agreeing on a FP inflates the
+        # ensemble boost.  Still run it (adds recall), but don't let it vote.
+        ensemble_excluded: frozenset[str] = frozenset()
+        if lang_result is not None and lang_result.is_english:
+            ensemble_excluded = frozenset({"gliner_multilingual"})
+
+        processed_spans = self._post_process(
+            all_spans, text=text, ensemble_excluded=ensemble_excluded,
+        )
 
         if self.config.enable_allowlist and processed_spans:
             from .allowlist import get_allowlist
@@ -392,6 +402,7 @@ class DetectorOrchestrator:
         self,
         spans: list[Span],
         text: str | None = None,
+        ensemble_excluded: frozenset[str] = frozenset(),
     ) -> list[Span]:
         """Post-process: filter, context-adjust, calibrate, ensemble, deduplicate.
 
@@ -404,6 +415,10 @@ class DetectorOrchestrator:
         6. Resolve overlapping spans
         7. Suppress uncorroborated ML detections for pattern-covered types
         8. Proximity boost (optional)
+
+        Args:
+            ensemble_excluded: Detector names excluded from ensemble voting
+                (e.g. ``{"gliner_multilingual"}`` on English text).
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -416,7 +431,7 @@ class DetectorOrchestrator:
 
         # Ensemble boost: when multiple detectors agree on overlapping
         # spans with the same entity type, boost the best span's confidence.
-        calibrated = self._apply_ensemble_boost(calibrated)
+        calibrated = self._apply_ensemble_boost(calibrated, ensemble_excluded)
 
         # Pre-dedup: suppress ML FIRSTNAME/LASTNAME fragments that overlap
         # with pattern detections of more specific types (USERNAME, CITY,
@@ -491,7 +506,11 @@ class DetectorOrchestrator:
     # tighter per-model calibration would otherwise suppress solo.
     _ENSEMBLE_TRIPLE_EXTRA = 0.12
 
-    def _apply_ensemble_boost(self, spans: list[Span]) -> list[Span]:
+    def _apply_ensemble_boost(
+        self,
+        spans: list[Span],
+        excluded_detectors: frozenset[str] = frozenset(),
+    ) -> list[Span]:
         """Boost confidence when multiple detectors agree on the same entity.
 
         For each span, checks if different detectors produced overlapping
@@ -505,6 +524,13 @@ class DetectorOrchestrator:
         The base boost scales with the minimum raw confidence of the agreeing
         pair — strong agreement earns up to ``_ENSEMBLE_BOOST_MAX``, while
         marginal agreement earns ``_ENSEMBLE_BOOST_MIN``.
+
+        Args:
+            excluded_detectors: Detector names that do not count for voting.
+                Their spans still receive boosts from other detectors, but
+                they cannot *contribute* to the agreement count.  This gates
+                noisy duplicates (e.g. multilingual GLiNER on English text)
+                from inflating ensemble confidence.
         """
         if len(spans) < 2:
             return spans
@@ -525,10 +551,14 @@ class DetectorOrchestrator:
             group_a = _entity_group(span_a.entity_type)
 
             # Collect all agreeing detectors for this span.
+            # Excluded detectors (e.g. multilingual GLiNER on English) do NOT
+            # count toward agreement — they cannot cast a vote.
             agreeing_detectors: set[str] = set()
             min_raw = 1.0
             for j, span_b in enumerate(spans):
                 if i == j or span_a.detector == span_b.detector:
+                    continue
+                if span_b.detector in excluded_detectors:
                     continue
                 if not span_a.overlaps(span_b):
                     continue
@@ -549,8 +579,11 @@ class DetectorOrchestrator:
             t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
             boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
 
-            # Triple-agreement bonus: 3+ unique detectors agree.
-            n_agree = len(agreeing_detectors) + 1  # +1 for span_a itself
+            # Triple-agreement bonus: 3+ unique non-excluded detectors agree.
+            # span_a counts toward the total only if it is not excluded.
+            n_agree = len(agreeing_detectors) + (
+                0 if span_a.detector in excluded_detectors else 1
+            )
             if n_agree >= 3:
                 boost += self._ENSEMBLE_TRIPLE_EXTRA
 
@@ -1247,44 +1280,70 @@ def _suppress_name_location_collisions(
     spans: list[Span],
     all_candidates: list[Span] | None = None,
 ) -> list[Span]:
-    """Suppress FIRSTNAME/LASTNAME spans that overlap with priority types.
+    """Replace FIRSTNAME/LASTNAME spans with priority-type alternatives.
 
     City/state/county names (Florence, Georgia, Madison, Austin),
     company names (Apple, Chase), and usernames are common first names
     but are almost always the more specific type in PII contexts.
+
     When both a name and a priority-type span overlap at the same
-    position, suppress the name.
+    position, replace the name with the best priority-type span from
+    ``all_candidates``.  If no suitable replacement is found, the name
+    is suppressed entirely (legacy behaviour for edge cases).
 
     Args:
         spans: The resolved (post-dedup) span list to filter.
         all_candidates: Optional pre-dedup span list to source priority
-            ranges from.  GLiNER may detect both CITY and FIRSTNAME at
+            spans from.  GLiNER may detect both CITY and FIRSTNAME at
             the same position; dedup picks one winner (often FIRSTNAME
             with higher confidence).  By checking ``all_candidates`` we
-            see priority detections that lost in dedup.
+            see priority detections that lost in dedup and can restore
+            them as replacements instead of blanket-deleting.
     """
     source = spans if all_candidates is None else all_candidates
-    priority_ranges: list[tuple[int, int]] = [
-        (s.start, s.end)
-        for s in source
-        if s.entity_type in _NAME_COLLISION_PRIORITY_TYPES
-    ]
-    if not priority_ranges:
+
+    # Build a map: (start, end) → best priority-type span at that position.
+    # When multiple priority spans overlap the same range, keep the one
+    # with the highest confidence.
+    priority_by_range: dict[tuple[int, int], Span] = {}
+    for s in source:
+        if s.entity_type in _NAME_COLLISION_PRIORITY_TYPES:
+            key = (s.start, s.end)
+            prev = priority_by_range.get(key)
+            if prev is None or s.confidence > prev.confidence:
+                priority_by_range[key] = s
+
+    if not priority_by_range:
         return spans
 
     result: list[Span] = []
     for span in spans:
         if span.entity_type in _NAME_FAMILY:
-            collides = any(
-                _ranges_overlap(span.start, span.end, ls, le)
-                for ls, le in priority_ranges
-            )
-            if collides:
+            # Find the best overlapping priority-type span.
+            best_priority: Span | None = None
+            for (ps, pe), pspan in priority_by_range.items():
+                if _ranges_overlap(span.start, span.end, ps, pe):
+                    if best_priority is None or pspan.confidence > best_priority.confidence:
+                        best_priority = pspan
+
+            if best_priority is not None:
+                if best_priority.confidence >= span.confidence:
+                    # Priority type has equal or higher confidence — replace.
+                    logger.debug(
+                        "Name-collision replaced: %s %r (%.3f) → %s %r (%.3f)",
+                        span.entity_type, span.text, span.confidence,
+                        best_priority.entity_type, best_priority.text,
+                        best_priority.confidence,
+                    )
+                    result.append(best_priority)
+                    continue
+                # Name is higher confidence — keep it.  The priority span
+                # was a weaker alternative and should not override.
                 logger.debug(
-                    "Name-collision suppressed: %s %r",
-                    span.entity_type, span.text,
+                    "Name-collision kept name: %s %r (%.3f) over %s (%.3f)",
+                    span.entity_type, span.text, span.confidence,
+                    best_priority.entity_type, best_priority.confidence,
                 )
-                continue
         result.append(span)
     return result
 

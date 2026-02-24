@@ -858,22 +858,37 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # ── STATE — full US state names ───────────────────────────────────────
-    # Matches capitalized full US state names in running text.
-    # Only multi-word states and states >= 6 chars to avoid FPs on
-    # short words (Ohio, Iowa, Utah handled by labeled/zip context only).
+    # Split into "safe" states (not first names) and "ambiguous" states
+    # (Virginia, Georgia, Montana, etc.) that need geographic context to
+    # avoid FIRSTNAME→STATE type mismatches.
+    #
+    # Safe states — no overlap with common first names.
     _p(
-        r"\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|"
-        r"Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Kansas|"
-        r"Kentucky|Louisiana|Maryland|Massachusetts|Michigan|Minnesota|"
-        r"Mississippi|Missouri|Montana|Nebraska|Nevada|New\s+Hampshire|"
+        r"\b(Alaska|Arkansas|California|Colorado|Connecticut|"
+        r"Delaware|Hawaii|Idaho|Illinois|Kansas|"
+        r"Kentucky|Maryland|Massachusetts|Michigan|Minnesota|"
+        r"Mississippi|Nebraska|New\s+Hampshire|"
         r"New\s+Jersey|New\s+Mexico|New\s+York|North\s+Carolina|"
         r"North\s+Dakota|Oklahoma|Oregon|Pennsylvania|Rhode\s+Island|"
-        r"South\s+Carolina|South\s+Dakota|Tennessee|Texas|Vermont|"
-        r"Virginia|Washington|West\s+Virginia|Wisconsin|Wyoming)\b",
+        r"South\s+Carolina|South\s+Dakota|Vermont|"
+        r"West\s+Virginia|Wisconsin|Wyoming)\b",
+        "STATE", 0.78, 1, flags=0
+    ),
+    # Ambiguous states (also first names) — require geographic context.
+    # After comma: "Atlanta, Georgia", "Las Vegas, Nevada"
+    _p(
+        r",\s+(Alabama|Arizona|Florida|Georgia|Indiana|Louisiana|"
+        r"Missouri|Montana|Nevada|Tennessee|Texas|Virginia|Washington)\b",
+        "STATE", 0.80, 1, flags=0
+    ),
+    # After preposition: "in Georgia", "from Virginia"
+    _p(
+        r"\b(?:in|from|to|near|across|throughout|around|of)\s+"
+        r"(Alabama|Arizona|Florida|Georgia|Indiana|Louisiana|"
+        r"Missouri|Montana|Nevada|Tennessee|Texas|Virginia|Washington)\b",
         "STATE", 0.78, 1, flags=0
     ),
     # Short US states (Ohio, Iowa, Utah, Maine) — require context to avoid FPs.
-    # After comma or in address context: "Portland, Ohio", "from Utah"
     _p(
         r",\s+(Ohio|Iowa|Utah|Maine)\b",
         "STATE", 0.80, 1, flags=0
@@ -928,24 +943,22 @@ ADDITIONAL_PATTERNS: tuple[PatternDefinition, ...] = (
     ),
 
     # ── CITY — additional context patterns ────────────────────────────────
-    # "in CITY_NAME" where city name looks like a multi-word proper noun
-    # Only matches 2+ word city names to avoid FPs on single words
+    # "in/from/at CITY_NAME" where city name looks like a multi-word proper
+    # noun with a geographic prefix.  The second word must NOT be a common
+    # English noun/kinship term (avoid "New Mother", "Old Friend").
+    # The negative lookahead prevents false positives on non-geographic
+    # multi-word phrases.
     _p(
-        r"\bin\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
-        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+        r"\b(?:in|from|at|near)\s+((?:Lake|West|East|North|South|New|Old|"
+        r"Fort|Mount|Saint|San|Santa|Los|Las|El|La|Port|Cape)"
+        r"\s+(?!Mother|Father|Brother|Sister|Friend|World|Year|"
+        r"Moon|Dawn|Hope|Life|Love|Home|Deal|Rule|Ways?|Era|"
+        r"Age|One|Man|Men|Day|Job|Law|Art|War|Act|Tax|Fee|Idea|"
+        r"Land|Type|Kind|Mode|Form|Part|Side|Role|Goal|Plan|Step|"
+        r"Style|Model|Level|Order|Start|House|Model|Thing|Place|"
+        r"School|Church|Market|Office|Record|System|Member)"
+        r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
         "CITY", 0.78, 1, flags=0
-    ),
-    # "from CITY_NAME" with multi-word proper noun
-    _p(
-        r"\bfrom\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
-        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
-        "CITY", 0.78, 1, flags=0
-    ),
-    # "at CITY_NAME" — location preposition + multi-word proper noun
-    _p(
-        r"\bat\s+((?:Lake|West|East|North|South|New|Old|Fort|Mount|Saint|"
-        r"San|Santa|Los|Las|El|La|Port|Cape)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
-        "CITY", 0.75, 1, flags=0
     ),
 
     # ── AGE — relaxed context patterns ────────────────────────────────────

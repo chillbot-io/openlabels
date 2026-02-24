@@ -1680,12 +1680,11 @@ _p(r'\b([A-Za-z][a-z]+_[A-Za-z][a-z]+(?:[-_][A-Za-z][a-z]+)*\d{0,3})\b', 'USERNA
 # "delegating/responsibility to Username" — assignment context
 _p(r'(?:delegat(?:e|ing)|responsibility|assign(?:ed|ing)?)\s+(?:\S+\s+)?to\s+([A-Z][a-z]+\d{1,4})\b', 'USERNAME', 0.80, 1),
 # Bare Name+Digits usernames: "Eugenia10", "Geovany30", "Jonatan78"
-# Require 3+ alpha chars + 2-4 trailing digits, title-case.
-# Tightened from \d{1,4} to \d{2,4} (2+ digits avoids "Chapter1",
-# "Version2") and raised from 0.72 to 0.80 to survive USERNAME
-# entity threshold (0.79).  The 2-digit minimum is distinctive
-# enough to justify the higher confidence.
-_p(r'\b([A-Z][a-z]{2,15}\d{2,4})\b', 'USERNAME', 0.80, 1),
+# Confidence 0.72 < USERNAME threshold 0.79 — effectively disabled.
+# Enabling this pattern (0.80+) caused ~40 spurious on ai4privacy 1k
+# ("Version22", "Section45", etc.).  Leave disabled; GLiNER handles
+# username detection where patterns lack sufficient context.
+_p(r'\b([A-Z][a-z]{2,15}\d{1,4})\b', 'USERNAME', 0.72, 1),
 # CamelCase + digits usernames (no separator): "BerthaRichardson1965", "DeclanMcK77"
 # Two or more uppercase transitions + trailing digits — distinctive username format.
 _p(r'\b([A-Z][a-z]+(?:[A-Z][a-z]*)+\d{1,4})\b', 'USERNAME', 0.82, 1),
