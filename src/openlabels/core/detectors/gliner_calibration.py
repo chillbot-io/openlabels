@@ -40,13 +40,15 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # we increase temperatures to suppress solo FPs — ensemble
     # boost recovers TPs where models agree.
     "person name": (1.40, 0.07),
-    # FIRSTNAME: 268 spurious on nemotron_pii 1k.  Lowered from (1.45, 0.09)
-    # to (1.38, 0.07) to recover borderline names: raw 0.60 → calibrated
-    # 0.560 now clears solo_min 0.554, recovering ~2-3 FN without
-    # significant FP increase (dictionary corroboration + blocklist guard).
-    "first name": (1.38, 0.07),
+    # FIRSTNAME: 268 spurious on nemotron_pii 1k.  Reverted to (1.45, 0.09)
+    # after ai4privacy 1k showed 227 FIRSTNAME spurious at (1.38, 0.07).
+    # The looser calibration traded ~3 FN recovery for ~100+ new FPs.
+    # At (1.45, 0.09), raw 0.65 → calibrated 0.590 clears solo_min 0.560;
+    # raw 0.60 → calibrated 0.554 fails — acceptable trade-off given the
+    # massive FP cost of passing borderline names.
+    "first name": (1.45, 0.09),
     # LASTNAME: match FIRSTNAME treatment.
-    "last name": (1.38, 0.07),
+    "last name": (1.45, 0.09),
     "middle name": (1.35, 0.09),
     # ── Contact ────────────────────────────────────────────
     # Emails are structurally obvious; GLiNER is well-calibrated.

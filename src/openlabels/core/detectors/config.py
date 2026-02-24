@@ -104,12 +104,11 @@ class DetectionConfig:
         # original values and rely on Platt calibration + solo survival
         # thresholds for FP control instead.
         ("NAME", 0.50),
-        # FIRSTNAME/LASTNAME: lowered by 0.03 to let borderline ML
-        # detections enter the pipeline.  Combined with calibration
-        # tweak (1.38, 0.07), this recovers names at raw 0.57-0.60
-        # that were previously filtered before ensemble boost.
-        ("FIRSTNAME", 0.57),
-        ("LASTNAME", 0.55),
+        # FIRSTNAME/LASTNAME: reverted to original after ai4privacy 1k
+        # showed 227+132 spurious names at (0.57, 0.55).  Borderline ML
+        # detections (raw 0.55-0.60) are too noisy to let through.
+        ("FIRSTNAME", 0.60),
+        ("LASTNAME", 0.58),
         ("PERSON", 0.45),
         # Professional — not PII, excluded from benchmark scoring.
         # Thresholds kept for production use but don't affect F1.
