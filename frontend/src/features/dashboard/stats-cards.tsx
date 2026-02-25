@@ -1,4 +1,4 @@
-import { FileSearch, AlertTriangle, ShieldAlert, Scan } from 'lucide-react';
+import { FileSearch, AlertTriangle, ShieldAlert, ShieldEllipsis, ShieldMinus, Scan } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 import { formatNumber } from '@/lib/utils.ts';
@@ -7,18 +7,34 @@ import type { DashboardStats } from '@/api/types.ts';
 interface StatsCardsProps {
   stats?: DashboardStats;
   isLoading: boolean;
+  deltas?: Partial<Record<keyof DashboardStats, number>>;
 }
 
 const STAT_CARDS = [
   { key: 'total_files_scanned', label: 'Files Scanned', icon: FileSearch, color: 'text-blue-600' },
   { key: 'files_with_pii', label: 'Files with PII', icon: AlertTriangle, color: 'text-orange-600' },
   { key: 'critical_files', label: 'Critical Files', icon: ShieldAlert, color: 'text-red-600' },
+  { key: 'high_files', label: 'High Risk Files', icon: ShieldEllipsis, color: 'text-orange-500' },
+  { key: 'medium_files', label: 'Medium Risk Files', icon: ShieldMinus, color: 'text-yellow-600' },
   { key: 'active_scans', label: 'Active Scans', icon: Scan, color: 'text-green-600' },
 ] as const;
 
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
+function DeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const isUp = delta > 0;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <span
+      className={`ml-1 text-xs font-medium ${isUp ? 'text-red-500' : 'text-green-500'}`}
+      title={`${isUp ? '+' : ''}${delta} vs prior period`}
+    >
+      {isUp ? '\u2191' : '\u2193'}{Math.abs(delta)}
+    </span>
+  );
+}
+
+export function StatsCards({ stats, isLoading, deltas }: StatsCardsProps) {
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
       {STAT_CARDS.map(({ key, label, icon: Icon, color }) => (
         <Card key={key}>
           <CardContent className="flex items-center gap-4 p-6">
@@ -31,6 +47,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
               ) : (
                 <p className="text-2xl font-bold">
                   {formatNumber(stats?.[key] ?? 0)}
+                  {deltas?.[key] != null && <DeltaBadge delta={deltas[key]} />}
                 </p>
               )}
               <p className="text-xs text-[var(--muted-foreground)]">{label}</p>

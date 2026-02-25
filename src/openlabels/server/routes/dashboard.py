@@ -142,6 +142,24 @@ class EntityDistributionResponse(BaseModel):
     total_files_with_entities: int
 
 
+class PeriodStats(BaseModel):
+    """Stats for a single time period."""
+
+    files_scanned: int
+    files_with_pii: int
+    critical_files: int
+    high_files: int
+    medium_files: int
+
+
+class TrendComparisonResponse(BaseModel):
+    """Comparison of current period vs prior period."""
+
+    current: PeriodStats
+    previous: PeriodStats
+    deltas: dict[str, int]
+
+
 class AccessHeatmapResponse(BaseModel):
     """File access heatmap data (7 days x 24 hours)."""
 
@@ -241,6 +259,79 @@ async def get_overall_stats(
         logger.debug(f"Cache write failed: {e}")
 
     return response
+
+
+@router.get("/stats/comparison", response_model=TrendComparisonResponse)
+async def get_stats_comparison(
+    request: Request,
+    days: int = Query(30, ge=1, le=365, description="Period length in days"),
+    user=Depends(get_current_user),
+):
+    """
+    Compare current period stats vs the prior period of equal length.
+
+    For example, with ``days=30`` it compares the last 30 days to the 30 days
+    before that.  Returns raw counts plus deltas (current - previous).
+    """
+    svc = _get_dashboard_service(request)
+    now = datetime.now(timezone.utc)
+
+    current_start = now - timedelta(days=days)
+    previous_start = current_start - timedelta(days=days)
+
+    current_rows = await svc._safe_query(
+        """
+        SELECT
+            count(*)                                       AS files_scanned,
+            count(*) FILTER (WHERE total_entities > 0)     AS files_with_pii,
+            count(*) FILTER (WHERE risk_tier = 'CRITICAL') AS critical_files,
+            count(*) FILTER (WHERE risk_tier = 'HIGH')     AS high_files,
+            count(*) FILTER (WHERE risk_tier = 'MEDIUM')   AS medium_files
+        FROM scan_results
+        WHERE tenant = ?
+          AND scan_date >= ?
+          AND scan_date <= ?
+        """,
+        [str(user.tenant_id), current_start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")],
+    )
+
+    previous_rows = await svc._safe_query(
+        """
+        SELECT
+            count(*)                                       AS files_scanned,
+            count(*) FILTER (WHERE total_entities > 0)     AS files_with_pii,
+            count(*) FILTER (WHERE risk_tier = 'CRITICAL') AS critical_files,
+            count(*) FILTER (WHERE risk_tier = 'HIGH')     AS high_files,
+            count(*) FILTER (WHERE risk_tier = 'MEDIUM')   AS medium_files
+        FROM scan_results
+        WHERE tenant = ?
+          AND scan_date >= ?
+          AND scan_date < ?
+        """,
+        [str(user.tenant_id), previous_start.strftime("%Y-%m-%d"), current_start.strftime("%Y-%m-%d")],
+    )
+
+    def _to_period(rows: list[dict]) -> PeriodStats:
+        if not rows:
+            return PeriodStats(files_scanned=0, files_with_pii=0, critical_files=0, high_files=0, medium_files=0)
+        r = rows[0]
+        return PeriodStats(
+            files_scanned=r.get("files_scanned", 0) or 0,
+            files_with_pii=r.get("files_with_pii", 0) or 0,
+            critical_files=r.get("critical_files", 0) or 0,
+            high_files=r.get("high_files", 0) or 0,
+            medium_files=r.get("medium_files", 0) or 0,
+        )
+
+    current = _to_period(current_rows)
+    previous = _to_period(previous_rows)
+
+    deltas = {
+        field: getattr(current, field) - getattr(previous, field)
+        for field in PeriodStats.model_fields
+    }
+
+    return TrendComparisonResponse(current=current, previous=previous, deltas=deltas)
 
 
 @router.get("/trends", response_model=TrendResponse)

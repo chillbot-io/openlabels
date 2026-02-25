@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { Plus } from 'lucide-react';
-import { useDashboardStats, useEntityTrends } from '@/api/hooks/use-dashboard.ts';
+import { Plus, Search, FileText, ShieldCheck, BarChart3 } from 'lucide-react';
+import { useDashboardStats, useDashboardTrends, useEntityTrends } from '@/api/hooks/use-dashboard.ts';
 import { useScans } from '@/api/hooks/use-scans.ts';
 import { useActivityLog } from '@/api/hooks/use-monitoring.ts';
 import { StatsCards } from './stats-cards.tsx';
@@ -12,11 +12,20 @@ import { ActivityFeed } from './activity-feed.tsx';
 import { SystemStatus } from './system-status.tsx';
 import { ErrorBoundary } from '@/components/layout/error-boundary.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { Card, CardContent } from '@/components/ui/card.tsx';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.tsx';
+import type { DashboardStats } from '@/api/types.ts';
+
+const QUICK_ACTIONS = [
+  { label: 'Run Scan', icon: Plus, path: '/scans', description: 'Start a new data scan' },
+  { label: 'View Results', icon: Search, path: '/results', description: 'Browse scan findings' },
+  { label: 'Manage Labels', icon: ShieldCheck, path: '/labels', description: 'Configure sensitivity labels' },
+  { label: 'Reports', icon: BarChart3, path: '/reports', description: 'Generate compliance reports' },
+] as const;
 
 export function Component() {
   const navigate = useNavigate();
   const stats = useDashboardStats();
+  const trends = useDashboardTrends(30);
   const recentScans = useScans({ page: 1, page_size: 5 });
   const activity = useActivityLog({ page: 1, page_size: 10 });
   const entityTrends = useEntityTrends(30);
@@ -42,6 +51,19 @@ export function Component() {
     return counts;
   }, [entityTrends.data]);
 
+  // Map trend deltas to DashboardStats keys for the stats cards
+  const deltas = useMemo(() => {
+    if (!trends.data?.deltas) return undefined;
+    const d = trends.data.deltas;
+    return {
+      total_files_scanned: d.files_scanned ?? 0,
+      files_with_pii: d.files_with_pii ?? 0,
+      critical_files: d.critical_files ?? 0,
+      high_files: d.high_files ?? 0,
+      medium_files: d.medium_files ?? 0,
+    } as Partial<Record<keyof DashboardStats, number>>;
+  }, [trends.data]);
+
   const criticalOrHigh = (stats.data?.critical_files ?? 0) + (stats.data?.high_files ?? 0);
 
   return (
@@ -54,7 +76,7 @@ export function Component() {
       </div>
 
       <ErrorBoundary>
-        <StatsCards stats={stats.data} isLoading={stats.isLoading} />
+        <StatsCards stats={stats.data} isLoading={stats.isLoading} deltas={deltas} />
       </ErrorBoundary>
 
       {/* Attention Required banner */}
@@ -73,6 +95,29 @@ export function Component() {
           </CardContent>
         </Card>
       )}
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {QUICK_ACTIONS.map(({ label, icon: Icon, path, description }) => (
+              <Button
+                key={path}
+                variant="outline"
+                className="flex h-auto flex-col items-center gap-2 p-4"
+                onClick={() => navigate(path)}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-sm font-medium">{label}</span>
+                <span className="text-xs text-[var(--muted-foreground)]">{description}</span>
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <ErrorBoundary>
