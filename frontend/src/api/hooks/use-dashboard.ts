@@ -17,3 +17,11 @@ export function useEntityTrends(days = 30) {
     staleTime: 60_000,
   });
 }
+
+export function useDashboardTrends(days = 30) {
+  return useQuery({
+    queryKey: ['dashboard', 'stats-comparison', days],
+    queryFn: () => dashboardApi.statsComparison({ days }),
+    staleTime: 60_000,
+  });
+}

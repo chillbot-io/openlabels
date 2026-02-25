@@ -17,12 +17,19 @@ from uuid import uuid4
 
 
 @pytest.fixture
-async def setup_dashboard_data(test_db):
-    """Set up test data for dashboard endpoint tests."""
+async def setup_dashboard_data(test_db, test_client, tmp_path):
+    """Set up test data for dashboard endpoint tests.
+
+    Also provisions a DuckDB-backed dashboard service on ``app.state``
+    so that the ``/dashboard/*`` route handlers can find it.
+    """
     from sqlalchemy import select
     from openlabels.server.models import (
         Tenant, User, ScanJob, ScanResult, ScanTarget,
     )
+    from openlabels.analytics.engine import DuckDBEngine
+    from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
+    from openlabels.server.app import app
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -44,12 +51,23 @@ async def setup_dashboard_data(test_db):
     test_db.add(target)
     await test_db.commit()
 
-    return {
+    # Set up DuckDB dashboard service on app.state
+    catalog_dir = tmp_path / "catalog"
+    engine = DuckDBEngine(str(catalog_dir), memory_limit="256MB", threads=1)
+    analytics_svc = AnalyticsService(engine, max_workers=1)
+    dashboard_svc = DuckDBDashboardService(analytics_svc)
+    app.state.dashboard_service = dashboard_svc
+
+    yield {
         "tenant": tenant,
         "user": user,
         "target": target,
         "session": test_db,
     }
+
+    # Cleanup
+    analytics_svc.close()
+    app.state.dashboard_service = None
 
 
 class TestOverallStats:
@@ -57,7 +75,7 @@ class TestOverallStats:
 
     async def test_returns_all_required_fields(self, test_client, setup_dashboard_data):
         """Stats response should have all required fields."""
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -71,7 +89,7 @@ class TestOverallStats:
 
     async def test_returns_zero_values_for_empty_tenant(self, test_client, setup_dashboard_data):
         """Stats should return zeros when no data exists."""
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -100,7 +118,7 @@ class TestOverallStats:
             session.add(scan)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -134,7 +152,7 @@ class TestOverallStats:
         session.add(scan)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -189,7 +207,7 @@ class TestOverallStats:
             session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -230,7 +248,7 @@ class TestOverallStats:
                 session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -286,7 +304,7 @@ class TestOverallStats:
             session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/stats")
+        response = await test_client.get("/api/v1/dashboard/stats")
         assert response.status_code == 200
         data = response.json()
 
@@ -298,7 +316,7 @@ class TestTrends:
 
     async def test_returns_points_array(self, test_client, setup_dashboard_data):
         """Trends response should have points array."""
-        response = await test_client.get("/api/dashboard/trends")
+        response = await test_client.get("/api/v1/dashboard/trends")
         assert response.status_code == 200
         data = response.json()
 
@@ -307,7 +325,7 @@ class TestTrends:
 
     async def test_default_30_days(self, test_client, setup_dashboard_data):
         """Trends should return 31 points by default (30 days + today)."""
-        response = await test_client.get("/api/dashboard/trends")
+        response = await test_client.get("/api/v1/dashboard/trends")
         assert response.status_code == 200
         data = response.json()
 
@@ -316,7 +334,7 @@ class TestTrends:
 
     async def test_custom_days_parameter(self, test_client, setup_dashboard_data):
         """Trends should respect days parameter."""
-        response = await test_client.get("/api/dashboard/trends?days=7")
+        response = await test_client.get("/api/v1/dashboard/trends?days=7")
         assert response.status_code == 200
         data = response.json()
 
@@ -326,7 +344,7 @@ class TestTrends:
 
     async def test_point_structure(self, test_client, setup_dashboard_data):
         """Each trend point should have required fields."""
-        response = await test_client.get("/api/dashboard/trends?days=7")
+        response = await test_client.get("/api/v1/dashboard/trends?days=7")
         assert response.status_code == 200
         data = response.json()
 
@@ -338,12 +356,12 @@ class TestTrends:
 
     async def test_days_validation_min(self, test_client, setup_dashboard_data):
         """Trends should reject days < 1."""
-        response = await test_client.get("/api/dashboard/trends?days=0")
+        response = await test_client.get("/api/v1/dashboard/trends?days=0")
         assert response.status_code == 422  # Validation error
 
     async def test_days_validation_max(self, test_client, setup_dashboard_data):
         """Trends should reject days > 365."""
-        response = await test_client.get("/api/dashboard/trends?days=400")
+        response = await test_client.get("/api/v1/dashboard/trends?days=400")
         assert response.status_code == 422  # Validation error
 
     async def test_aggregates_by_date(self, test_client, setup_dashboard_data):
@@ -381,7 +399,7 @@ class TestTrends:
             session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/trends?days=7")
+        response = await test_client.get("/api/v1/dashboard/trends?days=7")
         assert response.status_code == 200
         data = response.json()
 
@@ -397,7 +415,7 @@ class TestEntityTrends:
 
     async def test_returns_series_dict(self, test_client, setup_dashboard_data):
         """Entity trends response should have series dict."""
-        response = await test_client.get("/api/dashboard/entity-trends")
+        response = await test_client.get("/api/v1/dashboard/entity-trends")
         assert response.status_code == 200
         data = response.json()
 
@@ -406,7 +424,7 @@ class TestEntityTrends:
 
     async def test_includes_total_series(self, test_client, setup_dashboard_data):
         """Entity trends should always include Total series."""
-        response = await test_client.get("/api/dashboard/entity-trends")
+        response = await test_client.get("/api/v1/dashboard/entity-trends")
         assert response.status_code == 200
         data = response.json()
 
@@ -414,7 +432,7 @@ class TestEntityTrends:
 
     async def test_default_14_days(self, test_client, setup_dashboard_data):
         """Entity trends should default to 14 days."""
-        response = await test_client.get("/api/dashboard/entity-trends")
+        response = await test_client.get("/api/v1/dashboard/entity-trends")
         assert response.status_code == 200
         data = response.json()
 
@@ -423,7 +441,7 @@ class TestEntityTrends:
 
     async def test_custom_days_parameter(self, test_client, setup_dashboard_data):
         """Entity trends should respect days parameter."""
-        response = await test_client.get("/api/dashboard/entity-trends?days=7")
+        response = await test_client.get("/api/v1/dashboard/entity-trends?days=7")
         assert response.status_code == 200
         data = response.json()
 
@@ -432,7 +450,7 @@ class TestEntityTrends:
 
     async def test_series_point_format(self, test_client, setup_dashboard_data):
         """Each series point should be [date, count] tuple."""
-        response = await test_client.get("/api/dashboard/entity-trends?days=7")
+        response = await test_client.get("/api/v1/dashboard/entity-trends?days=7")
         assert response.status_code == 200
         data = response.json()
 
@@ -450,7 +468,7 @@ class TestAccessHeatmap:
 
     async def test_returns_7x24_matrix(self, test_client, setup_dashboard_data):
         """Access heatmap should return 7x24 matrix."""
-        response = await test_client.get("/api/dashboard/access-heatmap")
+        response = await test_client.get("/api/v1/dashboard/access-heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -461,7 +479,7 @@ class TestAccessHeatmap:
 
     async def test_all_values_are_integers(self, test_client, setup_dashboard_data):
         """All heatmap values should be integers."""
-        response = await test_client.get("/api/dashboard/access-heatmap")
+        response = await test_client.get("/api/v1/dashboard/access-heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -471,7 +489,7 @@ class TestAccessHeatmap:
 
     async def test_returns_zeros_when_no_data(self, test_client, setup_dashboard_data):
         """Heatmap should return all zeros when no access events exist."""
-        response = await test_client.get("/api/dashboard/access-heatmap")
+        response = await test_client.get("/api/v1/dashboard/access-heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -484,7 +502,7 @@ class TestHeatmap:
 
     async def test_returns_roots_array(self, test_client, setup_dashboard_data):
         """Heatmap response should have roots array."""
-        response = await test_client.get("/api/dashboard/heatmap")
+        response = await test_client.get("/api/v1/dashboard/heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -493,7 +511,7 @@ class TestHeatmap:
 
     async def test_empty_roots_when_no_data(self, test_client, setup_dashboard_data):
         """Heatmap should return empty roots when no results exist."""
-        response = await test_client.get("/api/dashboard/heatmap")
+        response = await test_client.get("/api/v1/dashboard/heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -531,7 +549,7 @@ class TestHeatmap:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/heatmap")
+        response = await test_client.get("/api/v1/dashboard/heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -595,7 +613,7 @@ class TestHeatmap:
         await session.commit()
 
         # Request heatmap for job1 only
-        response = await test_client.get(f"/api/dashboard/heatmap?job_id={job1.id}")
+        response = await test_client.get(f"/api/v1/dashboard/heatmap?job_id={job1.id}")
         assert response.status_code == 200
         data = response.json()
 
@@ -634,7 +652,7 @@ class TestHeatmap:
         session.add(result)
         await session.commit()
 
-        response = await test_client.get("/api/dashboard/heatmap")
+        response = await test_client.get("/api/v1/dashboard/heatmap")
         assert response.status_code == 200
         data = response.json()
 
@@ -645,5 +663,65 @@ class TestHeatmap:
         assert "type" in root
         assert "risk_score" in root
         assert "entity_counts" in root
+
+
+class TestStatsComparison:
+    """Tests for GET /api/dashboard/stats/comparison endpoint."""
+
+    async def test_returns_comparison_structure(self, test_client, setup_dashboard_data):
+        """Comparison response should have current, previous, and deltas."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "current" in data
+        assert "previous" in data
+        assert "deltas" in data
+
+        for period in [data["current"], data["previous"]]:
+            assert "files_scanned" in period
+            assert "files_with_pii" in period
+            assert "critical_files" in period
+            assert "high_files" in period
+            assert "medium_files" in period
+
+    async def test_returns_zeros_when_empty(self, test_client, setup_dashboard_data):
+        """Comparison should return zeros when no data exists."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison")
+        assert response.status_code == 200
+        data = response.json()
+
+        for field in ["files_scanned", "files_with_pii", "critical_files", "high_files", "medium_files"]:
+            assert data["current"][field] == 0
+            assert data["previous"][field] == 0
+            assert data["deltas"][field] == 0
+
+    async def test_custom_days_parameter(self, test_client, setup_dashboard_data):
+        """Comparison should accept custom days parameter."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison?days=7")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "current" in data
+        assert "previous" in data
+
+    async def test_days_validation_min(self, test_client, setup_dashboard_data):
+        """Comparison should reject days < 1."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison?days=0")
+        assert response.status_code == 422
+
+    async def test_days_validation_max(self, test_client, setup_dashboard_data):
+        """Comparison should reject days > 365."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison?days=400")
+        assert response.status_code == 422
+
+    async def test_deltas_are_correct(self, test_client, setup_dashboard_data):
+        """Deltas should equal current minus previous."""
+        response = await test_client.get("/api/v1/dashboard/stats/comparison")
+        assert response.status_code == 200
+        data = response.json()
+
+        for field in ["files_scanned", "files_with_pii", "critical_files", "high_files", "medium_files"]:
+            assert data["deltas"][field] == data["current"][field] - data["previous"][field]
 
 
