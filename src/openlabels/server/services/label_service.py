@@ -118,7 +118,7 @@ class LabelService(BaseService):
         if auth.provider != "azure_ad" or not all([
             auth.tenant_id,
             auth.client_id,
-            auth.client_secret,
+            auth.client_secret and auth.client_secret.get_secret_value(),
         ]):
             raise BadRequestError(
                 message="Azure AD not configured - cannot sync labels from M365",
@@ -160,7 +160,7 @@ class LabelService(BaseService):
                 tenant_id=self.tenant_id,
                 azure_tenant_id=auth.tenant_id,
                 client_id=auth.client_id,
-                client_secret=auth.client_secret,
+                client_secret=auth.client_secret.get_secret_value() if auth.client_secret else None,
                 remove_stale=False,
             )
 

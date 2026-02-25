@@ -223,7 +223,7 @@ async def exchange_code(
             data={
                 "grant_type": "authorization_code",
                 "client_id": config.client_id,
-                "client_secret": config.client_secret,
+                "client_secret": config.client_secret.get_secret_value(),
                 "code": code,
                 "redirect_uri": redirect_uri,
             },
@@ -366,7 +366,7 @@ async def refresh_token(
             data={
                 "grant_type": "refresh_token",
                 "client_id": config.client_id,
-                "client_secret": config.client_secret,
+                "client_secret": config.client_secret.get_secret_value(),
                 "refresh_token": refresh_token_value,
             },
             headers={"Accept": "application/json"},

@@ -852,15 +852,15 @@ def _get_adapter(adapter_type: str, config: dict):
         return cls(
             tenant_id=settings.auth.tenant_id,
             client_id=settings.auth.client_id,
-            client_secret=settings.auth.client_secret,
+            client_secret=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
         )
     elif adapter_type == AdapterType.S3:
         return S3Adapter(
             bucket=config.get("bucket", ""),
             prefix=config.get("prefix", ""),
             region=config.get("region", settings.adapters.s3.region),
-            access_key=config.get("access_key", settings.adapters.s3.access_key),
-            secret_key=config.get("secret_key", settings.adapters.s3.secret_key),
+            access_key=config.get("access_key", settings.adapters.s3.access_key.get_secret_value()),
+            secret_key=config.get("secret_key", settings.adapters.s3.secret_key.get_secret_value()),
             endpoint_url=config.get("endpoint_url", settings.adapters.s3.endpoint_url),
         )
     elif adapter_type == AdapterType.GCS:
@@ -880,13 +880,13 @@ def _get_adapter(adapter_type: str, config: dict):
             container=config.get("container", ""),
             prefix=config.get("prefix", ""),
             connection_string=config.get(
-                "connection_string", settings.adapters.azure_blob.connection_string
+                "connection_string", settings.adapters.azure_blob.connection_string.get_secret_value()
             ),
             account_key=config.get(
-                "account_key", settings.adapters.azure_blob.account_key
+                "account_key", settings.adapters.azure_blob.account_key.get_secret_value()
             ),
             sas_token=config.get(
-                "sas_token", settings.adapters.azure_blob.sas_token
+                "sas_token", settings.adapters.azure_blob.sas_token.get_secret_value()
             ),
         )
     else:

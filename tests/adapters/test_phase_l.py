@@ -19,8 +19,8 @@ class TestS3AdapterSettings:
         assert cfg.enabled is False
         assert cfg.buckets == []
         assert cfg.region == "us-east-1"
-        assert cfg.access_key == ""
-        assert cfg.secret_key == ""
+        assert cfg.access_key.get_secret_value() == ""
+        assert cfg.secret_key.get_secret_value() == ""
         assert cfg.endpoint_url is None
         assert cfg.sqs_queue_url == ""
         assert cfg.label_sync_enabled is True

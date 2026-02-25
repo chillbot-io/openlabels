@@ -277,7 +277,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.monitoring.enabled
         and settings.auth.tenant_id
         and settings.auth.client_id
-        and settings.auth.client_secret
+        and settings.auth.client_secret and settings.auth.client_secret.get_secret_value()
         and any(
             p in settings.monitoring.providers
             for p in ("m365_audit", "graph_webhook")
@@ -294,7 +294,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     _graph_client = GraphClient(
                         tenant_id=settings.auth.tenant_id,
                         client_id=settings.auth.client_id,
-                        client_secret=settings.auth.client_secret,
+                        client_secret=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
                     )
                 except Exception as _gc_err:
                     logger.error(
@@ -310,14 +310,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 shutdown_event=m365_shutdown,
                 tenant_id=settings.auth.tenant_id,
                 client_id=settings.auth.client_id,
-                client_secret=settings.auth.client_secret,
+                client_secret=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
                 interval_seconds=settings.monitoring.m365_harvest_interval_seconds,
                 max_events_per_cycle=settings.monitoring.max_events_per_cycle,
                 store_raw_events=settings.monitoring.store_raw_events,
                 monitored_site_urls=settings.monitoring.m365_site_urls or None,
                 graph_client=_graph_client,
                 webhook_url=settings.monitoring.webhook_url,
-                webhook_client_state=settings.monitoring.webhook_client_state,
+                webhook_client_state=settings.monitoring.webhook_client_state.get_secret_value(),
                 enabled_providers=settings.monitoring.providers,
             )
             logger.info(

@@ -21,6 +21,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from unittest.mock import patch, MagicMock, AsyncMock
+from pydantic import SecretStr
 
 
 @pytest.fixture
@@ -525,7 +526,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         try:
@@ -557,7 +558,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         try:
@@ -589,7 +590,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         try:
@@ -621,7 +622,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         try:
@@ -662,7 +663,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         # Use the real test tenant/user IDs so FK constraints are satisfied
@@ -729,7 +730,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         # Mock MSAL error response
@@ -775,7 +776,7 @@ class TestCallbackEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()
@@ -1197,7 +1198,7 @@ class TestTokenEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
 
         # Mock successful refresh
         mock_refresh_result = {
@@ -1250,7 +1251,7 @@ class TestTokenEndpoint:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
 
         # Mock failed refresh
         mock_refresh_result = {
@@ -1799,7 +1800,7 @@ class TestMsalAppConfiguration:
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.client_id = "test-client-id"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.auth.tenant_id = "test-tenant-id"
 
         with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
@@ -1946,7 +1947,7 @@ class TestSQLInjectionPrevention:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         sql_payloads = [
@@ -2478,7 +2479,7 @@ class TestCSRFProtection:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_result = {
@@ -2556,7 +2557,7 @@ class TestCSRFProtection:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()
@@ -2652,7 +2653,7 @@ class TestSessionFixation:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_result = {
@@ -2758,7 +2759,7 @@ class TestTokenRefreshEdgeCases:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
 
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_refresh_token.side_effect = ConnectionError("Network error")
@@ -2806,7 +2807,7 @@ class TestTokenRefreshEdgeCases:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
 
         mock_msal_app = MagicMock()
         mock_msal_app.acquire_token_by_refresh_token.return_value = {
@@ -2910,7 +2911,7 @@ class TestAzureADLoginFlow:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant-id"
         mock_settings.auth.client_id = "test-client-id"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()
@@ -2953,7 +2954,7 @@ class TestAzureADLoginFlow:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant-id"
         mock_settings.auth.client_id = "test-client-id"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.cors.allowed_origins = []
         mock_settings.rate_limit.auth_limit = "100/minute"
 
@@ -3043,7 +3044,7 @@ class TestErrorResponseSecurity:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
         mock_settings.rate_limit.auth_limit = "100/minute"
 
         mock_msal_app = MagicMock()

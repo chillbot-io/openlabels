@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 import duckdb
 import pytest
 
+from pydantic import SecretStr
+
 from openlabels.analytics.engine import DuckDBEngine
 
 
@@ -39,8 +41,8 @@ class TestRemoteStorageConfig:
         config = MagicMock()
         config.backend = "s3"
         config.s3.region = "us-west-2"
-        config.s3.access_key = "AKID"
-        config.s3.secret_key = "SECRET"
+        config.s3.access_key = SecretStr("AKID")
+        config.s3.secret_key = SecretStr("SECRET")
         config.s3.endpoint_url = None
 
         engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
@@ -65,8 +67,8 @@ class TestRemoteStorageConfig:
         config = MagicMock()
         config.backend = "s3"
         config.s3.region = "us-east-1"
-        config.s3.access_key = "KEY"
-        config.s3.secret_key = "SECRET"
+        config.s3.access_key = SecretStr("KEY")
+        config.s3.secret_key = SecretStr("SECRET")
         config.s3.endpoint_url = "http://localhost:9000"
 
         engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
@@ -87,7 +89,7 @@ class TestRemoteStorageConfig:
         """Azure backend should execute azure install/load and SET connection string."""
         config = MagicMock()
         config.backend = "azure"
-        config.azure.connection_string = "DefaultEndpointsProtocol=https;AccountName=test"
+        config.azure.connection_string = SecretStr("DefaultEndpointsProtocol=https;AccountName=test")
         config.azure.account_name = None
         config.azure.account_key = None
 
@@ -111,7 +113,7 @@ class TestRemoteStorageConfig:
         config.backend = "azure"
         config.azure.connection_string = None
         config.azure.account_name = "myaccount"
-        config.azure.account_key = "mykey123"
+        config.azure.account_key = SecretStr("mykey123")
 
         engine = DuckDBEngine(str(tmp_path), memory_limit="256MB", threads=1)
         mock_db = MagicMock()

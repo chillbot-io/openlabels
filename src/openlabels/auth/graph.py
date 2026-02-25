@@ -151,7 +151,10 @@ class GraphClient:
 
         self.tenant_id = tenant_id or settings.auth.tenant_id
         self.client_id = client_id or settings.auth.client_id
-        self.client_secret = client_secret or settings.auth.client_secret
+        _cfg_secret = settings.auth.client_secret
+        self.client_secret = client_secret or (
+            _cfg_secret.get_secret_value() if _cfg_secret else None
+        )
 
         if not all([self.tenant_id, self.client_id, self.client_secret]):
             raise ValueError(

@@ -15,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
+from pydantic import SecretStr
+
 from openlabels.auth.graph import (
     GraphUser,
     GraphClient,
@@ -83,7 +85,7 @@ class TestGraphClientInitialization:
         mock_settings = MagicMock()
         mock_settings.auth.tenant_id = None
         mock_settings.auth.client_id = "client-id"
-        mock_settings.auth.client_secret = "secret"
+        mock_settings.auth.client_secret = SecretStr("secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with pytest.raises(ValueError, match="tenant_id"):
@@ -94,7 +96,7 @@ class TestGraphClientInitialization:
         mock_settings = MagicMock()
         mock_settings.auth.tenant_id = "tenant-id"
         mock_settings.auth.client_id = None
-        mock_settings.auth.client_secret = "secret"
+        mock_settings.auth.client_secret = SecretStr("secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with pytest.raises(ValueError, match="client_id"):
@@ -116,7 +118,7 @@ class TestGraphClientInitialization:
         mock_settings = MagicMock()
         mock_settings.auth.tenant_id = "settings-tenant"
         mock_settings.auth.client_id = "settings-client"
-        mock_settings.auth.client_secret = "settings-secret"
+        mock_settings.auth.client_secret = SecretStr("settings-secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with patch("openlabels.auth.graph.ConfidentialClientApplication") as MockMSAL:
@@ -134,7 +136,7 @@ class TestGraphClientInitialization:
         mock_settings = MagicMock()
         mock_settings.auth.tenant_id = "test-tenant"
         mock_settings.auth.client_id = "test-client"
-        mock_settings.auth.client_secret = "test-secret"
+        mock_settings.auth.client_secret = SecretStr("test-secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with patch("openlabels.auth.graph.ConfidentialClientApplication") as MockMSAL:
@@ -156,7 +158,7 @@ class TestGraphClientTokenManagement:
         settings = MagicMock()
         settings.auth.tenant_id = "test-tenant"
         settings.auth.client_id = "test-client"
-        settings.auth.client_secret = "test-secret"
+        settings.auth.client_secret = SecretStr("test-secret")
         return settings
 
     @pytest.fixture
@@ -248,7 +250,7 @@ class TestGraphClientUserLookups:
         settings = MagicMock()
         settings.auth.tenant_id = "test-tenant"
         settings.auth.client_id = "test-client"
-        settings.auth.client_secret = "test-secret"
+        settings.auth.client_secret = SecretStr("test-secret")
         return settings
 
     @pytest.fixture
@@ -394,7 +396,7 @@ class TestGraphClientRequest:
         settings = MagicMock()
         settings.auth.tenant_id = "test-tenant"
         settings.auth.client_id = "test-client"
-        settings.auth.client_secret = "test-secret"
+        settings.auth.client_secret = SecretStr("test-secret")
         return settings
 
     @pytest.fixture
@@ -481,7 +483,7 @@ class TestGraphClientSingleton:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "tenant"
         mock_settings.auth.client_id = "client"
-        mock_settings.auth.client_secret = "secret"
+        mock_settings.auth.client_secret = SecretStr("secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with patch("openlabels.auth.graph.ConfidentialClientApplication"):
@@ -496,7 +498,7 @@ class TestGraphClientSingleton:
         mock_settings.auth.provider = "azure_ad"
         mock_settings.auth.tenant_id = "tenant"
         mock_settings.auth.client_id = "client"
-        mock_settings.auth.client_secret = "secret"
+        mock_settings.auth.client_secret = SecretStr("secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
             with patch("openlabels.auth.graph.ConfidentialClientApplication"):
@@ -515,7 +517,7 @@ class TestGraphClientEdgeCases:
         settings = MagicMock()
         settings.auth.tenant_id = "test-tenant"
         settings.auth.client_id = "test-client"
-        settings.auth.client_secret = "test-secret"
+        settings.auth.client_secret = SecretStr("test-secret")
         return settings
 
     @pytest.fixture

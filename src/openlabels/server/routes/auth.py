@@ -174,7 +174,7 @@ def _get_msal_app():
 
     return ConfidentialClientApplication(
         client_id=settings.auth.client_id,
-        client_credential=settings.auth.client_secret,
+        client_credential=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
         authority=f"https://login.microsoftonline.com/{settings.auth.tenant_id}",
     )
 

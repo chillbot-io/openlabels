@@ -1112,5 +1112,5 @@ def create_labeling_engine() -> LabelingEngine:
     return LabelingEngine(
         tenant_id=settings.auth.tenant_id,
         client_id=settings.auth.client_id,
-        client_secret=settings.auth.client_secret,
+        client_secret=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
     )

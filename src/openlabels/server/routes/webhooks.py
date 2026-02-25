@@ -159,7 +159,7 @@ async def m365_webhook(
 
     # Case 2: Content available notification
     settings = get_settings()
-    expected_state = settings.monitoring.webhook_client_state
+    expected_state = settings.monitoring.webhook_client_state.get_secret_value()
 
     try:
         body = await request.json()
@@ -222,7 +222,7 @@ async def graph_webhook(
 
     # Change notification
     settings = get_settings()
-    expected_state = settings.monitoring.webhook_client_state
+    expected_state = settings.monitoring.webhook_client_state.get_secret_value()
 
     try:
         body = await request.json()

@@ -779,7 +779,7 @@ async def distribute_report(
             smtp_host=settings.smtp_host,
             smtp_port=settings.smtp_port,
             smtp_user=settings.smtp_user,
-            smtp_password=settings.smtp_password,
+            smtp_password=settings.smtp_password.get_secret_value(),
             smtp_use_tls=settings.smtp_use_tls,
             from_addr=settings.smtp_from_addr,
             to_addrs=request.to,

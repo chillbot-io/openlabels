@@ -15,6 +15,7 @@ import pytest
 from datetime import datetime, timezone
 from uuid import uuid4
 from unittest.mock import MagicMock, AsyncMock, patch
+from pydantic import SecretStr
 
 from openlabels.jobs.tasks.label_sync import (
     LabelSyncResult,
@@ -43,7 +44,7 @@ def _mock_settings(provider="azure_ad", tenant_id="t", client_id="c", client_sec
     settings.auth.provider = provider
     settings.auth.tenant_id = tenant_id
     settings.auth.client_id = client_id
-    settings.auth.client_secret = client_secret
+    settings.auth.client_secret = SecretStr(client_secret) if client_secret else None
     return patch(
         "openlabels.server.config.get_settings",
         return_value=settings,

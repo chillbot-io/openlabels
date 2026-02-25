@@ -488,8 +488,8 @@ def create_storage(catalog_settings) -> CatalogStorage:
             bucket=s3.bucket,
             prefix=s3.prefix,
             region=s3.region,
-            access_key=s3.access_key,
-            secret_key=s3.secret_key,
+            access_key=s3.access_key.get_secret_value(),
+            secret_key=s3.secret_key.get_secret_value(),
             endpoint_url=s3.endpoint_url,
         )
 
@@ -500,9 +500,9 @@ def create_storage(catalog_settings) -> CatalogStorage:
         return AzureBlobStorage(
             container=az.container,
             prefix=az.prefix,
-            connection_string=az.connection_string,
+            connection_string=az.connection_string.get_secret_value() if az.connection_string else None,
             account_name=az.account_name,
-            account_key=az.account_key,
+            account_key=az.account_key.get_secret_value() if az.account_key else None,
         )
 
     raise ValueError(f"Unsupported catalog backend: {backend!r}")

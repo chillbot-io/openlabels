@@ -17,24 +17,24 @@ def build_adapters_from_settings(cfg: SIEMExportSettings) -> list[SIEMAdapter]:
     """Instantiate all configured SIEM adapters."""
     adapters: list[SIEMAdapter] = []
 
-    if cfg.splunk_hec_url and cfg.splunk_hec_token:
+    if cfg.splunk_hec_url and cfg.splunk_hec_token.get_secret_value():
         from openlabels.export.adapters.splunk import SplunkAdapter
 
         adapters.append(SplunkAdapter(
             hec_url=cfg.splunk_hec_url,
-            hec_token=cfg.splunk_hec_token,
+            hec_token=cfg.splunk_hec_token.get_secret_value(),
             index=cfg.splunk_index,
             sourcetype=cfg.splunk_sourcetype,
             verify_ssl=cfg.splunk_verify_ssl,
         ))
         logger.info("Configured Splunk HEC adapter")
 
-    if cfg.sentinel_workspace_id and cfg.sentinel_shared_key:
+    if cfg.sentinel_workspace_id and cfg.sentinel_shared_key.get_secret_value():
         from openlabels.export.adapters.sentinel import SentinelAdapter
 
         adapters.append(SentinelAdapter(
             workspace_id=cfg.sentinel_workspace_id,
-            shared_key=cfg.sentinel_shared_key,
+            shared_key=cfg.sentinel_shared_key.get_secret_value(),
             log_type=cfg.sentinel_log_type,
         ))
         logger.info("Configured Sentinel adapter")
@@ -56,9 +56,9 @@ def build_adapters_from_settings(cfg: SIEMExportSettings) -> list[SIEMAdapter]:
 
         adapters.append(ElasticAdapter(
             hosts=cfg.elastic_hosts,
-            api_key=cfg.elastic_api_key or None,
+            api_key=cfg.elastic_api_key.get_secret_value() or None,
             username=cfg.elastic_username or None,
-            password=cfg.elastic_password or None,
+            password=cfg.elastic_password.get_secret_value() or None,
             index_prefix=cfg.elastic_index_prefix,
             verify_ssl=cfg.elastic_verify_ssl,
         ))

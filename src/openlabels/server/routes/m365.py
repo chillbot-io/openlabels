@@ -87,7 +87,7 @@ def _get_m365_config() -> tuple[str, str]:
     """Get the bootstrap M365 app's client_id and client_secret."""
     settings = get_settings()
     client_id = settings.m365.client_id
-    client_secret = settings.m365.client_secret
+    client_secret = settings.m365.client_secret.get_secret_value()
 
     if not client_id or not client_secret:
         raise HTTPException(
