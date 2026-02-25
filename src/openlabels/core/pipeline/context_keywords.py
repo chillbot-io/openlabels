@@ -55,9 +55,24 @@ CONTEXT_RULES: dict[str, ContextRule] = {
             "reference", "receipt",
             "account", "routing", "transaction", "payment",
             "balance", "transfer", "deposit", "iban", "swift",
+            "aba", "wire", "bank", "fed", "federal reserve",
+            "routing number", "transit",
         }),
         boost_amount=0.10,
         demote_amount=0.20,
+    ),
+    "BANK_ROUTING": ContextRule(
+        boost_words=frozenset({
+            "routing", "aba", "routing number", "transit", "wire",
+            "wire transfer", "bank", "fed", "federal reserve",
+            "ach", "direct deposit", "bank routing",
+        }),
+        demote_words=frozenset({
+            "ssn", "social security", "soc sec", "ss#",
+            "social sec", "tax", "employer",
+        }),
+        boost_amount=0.12,
+        demote_amount=0.15,
     ),
     "DATE_DOB": ContextRule(
         boost_words=frozenset({

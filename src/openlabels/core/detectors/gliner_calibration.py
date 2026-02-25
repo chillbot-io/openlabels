@@ -64,9 +64,13 @@ GLINER_CALIBRATION: dict[str, tuple[float, float]] = {
     # ── Locations ──────────────────────────────────────────
     # Street address: 2 TP / 0 FP on 1k — too few samples; identity.
     "street address": (1.00, 0.00),
-    # City: 18 TP / 4 FP on 1k — 18% FP rate.  Max suppression
-    # to reduce spurious city detections on common words.
-    "city": (2.00, 0.185),
+    # City: 18 TP / 4 FP on 1k — 18% FP rate.  Backed off from
+    # max suppression (2.00, 0.185) which killed too many true
+    # positives — 76 CITY misses + 23 CITY→FIRSTNAME mismatches on
+    # nemotron_pii.  The name-collision resolver (with widened CITY
+    # margin + gazetteer) now handles CITY-vs-FIRSTNAME ambiguity,
+    # so we can let more CITY detections survive calibration.
+    "city": (1.60, 0.12),
     "state": (1.15, 0.03),
     # Zip code: 6 TP / 0 FP on 1k — identity (reliable).
     "zip code": (1.00, 0.00),

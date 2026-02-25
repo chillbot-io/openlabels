@@ -29,13 +29,13 @@ class TestTierFloors:
     """Verify tier floor values are ordered and non-overlapping."""
 
     def test_ml_floor(self):
-        assert _TIER_FLOORS[Tier.ML] == 0.30
+        assert _TIER_FLOORS[Tier.ML] == 0.20
 
     def test_pattern_floor(self):
-        assert _TIER_FLOORS[Tier.PATTERN] == 0.55
+        assert _TIER_FLOORS[Tier.PATTERN] == 0.65
 
     def test_structured_floor(self):
-        assert _TIER_FLOORS[Tier.STRUCTURED] == 0.75
+        assert _TIER_FLOORS[Tier.STRUCTURED] == 0.80
 
     def test_checksum_floor(self):
         assert _TIER_FLOORS[Tier.CHECKSUM] == 0.90
@@ -64,50 +64,50 @@ class TestNextCeiling:
 
 
 class TestMLCalibration:
-    """ML tier calibration: [0.30, 0.55] band."""
+    """ML tier calibration: [0.20, 0.65] band."""
 
     def test_ml_raw_0_gives_floor(self):
-        """Raw 0.0 → floor (0.30)."""
+        """Raw 0.0 → floor (0.20)."""
         span = _make_span(0.0, Tier.ML)
-        assert calibrate_confidence(span) == pytest.approx(0.30)
+        assert calibrate_confidence(span) == pytest.approx(0.20)
 
     def test_ml_raw_1_gives_ceiling(self):
-        """Raw 1.0 → ceiling (0.55)."""
+        """Raw 1.0 → ceiling (0.65)."""
         span = _make_span(1.0, Tier.ML)
-        assert calibrate_confidence(span) == pytest.approx(0.55)
+        assert calibrate_confidence(span) == pytest.approx(0.65)
 
     def test_ml_raw_095_competitive(self):
-        """Raw 0.95 → 0.5375, competitive with low-confidence patterns."""
+        """Raw 0.95 → 0.6275, competitive with low-confidence patterns."""
         span = _make_span(0.95, Tier.ML)
         result = calibrate_confidence(span)
-        # 0.30 + 0.95 * (0.55 - 0.30) = 0.30 + 0.2375 = 0.5375
-        assert result == pytest.approx(0.5375)
-        assert result > 0.50
+        # 0.20 + 0.95 * (0.65 - 0.20) = 0.20 + 0.4275 = 0.6275
+        assert result == pytest.approx(0.6275)
+        assert result > 0.60
 
     def test_ml_raw_050_below_pattern(self):
         """Raw 0.50 → 0.425, safely below pattern floor."""
         span = _make_span(0.50, Tier.ML)
         result = calibrate_confidence(span)
-        # 0.30 + 0.50 * 0.25 = 0.425
+        # 0.20 + 0.50 * 0.45 = 0.425
         assert result == pytest.approx(0.425)
         assert result < _TIER_FLOORS[Tier.PATTERN]
 
 
 class TestPatternCalibration:
-    """PATTERN tier calibration: [0.55, 0.75] band."""
+    """PATTERN tier calibration: [0.65, 0.80] band."""
 
     def test_pattern_raw_0_gives_floor(self):
         span = _make_span(0.0, Tier.PATTERN)
-        assert calibrate_confidence(span) == pytest.approx(0.55)
+        assert calibrate_confidence(span) == pytest.approx(0.65)
 
     def test_pattern_raw_1_gives_ceiling(self):
         span = _make_span(1.0, Tier.PATTERN)
-        assert calibrate_confidence(span) == pytest.approx(0.75)
+        assert calibrate_confidence(span) == pytest.approx(0.80)
 
     def test_pattern_raw_085(self):
         span = _make_span(0.85, Tier.PATTERN)
-        # 0.55 + 0.85 * (0.75 - 0.55) = 0.55 + 0.17 = 0.72
-        assert calibrate_confidence(span) == pytest.approx(0.72)
+        # 0.65 + 0.85 * (0.80 - 0.65) = 0.65 + 0.1275 = 0.7775
+        assert calibrate_confidence(span) == pytest.approx(0.7775)
 
 
 class TestChecksumCalibration:
@@ -153,7 +153,7 @@ class TestCalibrateSpans:
         span = _make_span(0.5, Tier.ML)
         result = calibrate_spans([span])[0]
         assert result.confidence != span.confidence
-        # 0.30 + 0.50 * (0.55 - 0.30) = 0.425
+        # 0.20 + 0.50 * (0.65 - 0.20) = 0.425
         assert result.confidence == pytest.approx(0.425)
 
 
