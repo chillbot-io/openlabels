@@ -60,6 +60,52 @@ def _count_rules(config: dict) -> int:
 # Schemas
 # ---------------------------------------------------------------------------
 
+class PolicyRuleResponse(BaseModel):
+    """Individual policy rule extracted from config triggers."""
+
+    type: str = Field(..., description="Rule type: any_of, all_of, or combination")
+    entities: list[str] = Field(default_factory=list, description="Entity types involved")
+    min_confidence: float | None = None
+    min_count: int | None = None
+
+
+def _extract_rules(config: dict) -> list[PolicyRuleResponse]:
+    """Extract structured rules from a policy config's triggers section."""
+    triggers = config.get("triggers", {})
+    if not isinstance(triggers, dict):
+        return []
+
+    rules: list[PolicyRuleResponse] = []
+    min_confidence = triggers.get("min_confidence")
+    min_count = triggers.get("min_count")
+
+    for entity in triggers.get("any_of", []):
+        rules.append(PolicyRuleResponse(
+            type="any_of",
+            entities=[entity],
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    if triggers.get("all_of"):
+        rules.append(PolicyRuleResponse(
+            type="all_of",
+            entities=triggers["all_of"],
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    for combo in triggers.get("combinations", []):
+        rules.append(PolicyRuleResponse(
+            type="combination",
+            entities=combo,
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    return rules
+
+
 class PolicyResponse(BaseModel):
     """Policy resource representation."""
 
@@ -72,6 +118,7 @@ class PolicyResponse(BaseModel):
     config: dict
     priority: int
     rule_count: int = 0
+    rules: list[PolicyRuleResponse] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -79,7 +126,7 @@ class PolicyResponse(BaseModel):
 
 
 def _policy_response(policy) -> PolicyResponse:
-    """Build a PolicyResponse with computed rule_count.
+    """Build a PolicyResponse with computed rule_count and rules.
 
     Constructs the response manually to avoid triggering lazy attribute
     loading for ``updated_at`` (which uses ``onupdate`` and may not be
@@ -97,6 +144,7 @@ def _policy_response(policy) -> PolicyResponse:
     except Exception:
         pass
 
+    config = policy.config or {}
     return PolicyResponse(
         id=policy.id,
         name=policy.name,
@@ -104,9 +152,10 @@ def _policy_response(policy) -> PolicyResponse:
         framework=policy.framework,
         risk_level=policy.risk_level,
         enabled=policy.enabled,
-        config=policy.config,
+        config=config,
         priority=policy.priority,
-        rule_count=_count_rules(policy.config or {}),
+        rule_count=_count_rules(config),
+        rules=_extract_rules(config),
         created_at=created_at,
         updated_at=updated_at,
     )

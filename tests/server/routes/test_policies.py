@@ -165,7 +165,7 @@ class TestListPolicies:
             assert item["enabled"] is True
 
     async def test_policy_response_structure(self, test_client, setup_policies_data):
-        """Policy items should have expected fields including rule_count and timestamps."""
+        """Policy items should have expected fields including rule_count, rules, and timestamps."""
         response = await test_client.get("/api/v1/policies")
         assert response.status_code == 200
         data = response.json()
@@ -179,6 +179,8 @@ class TestListPolicies:
         assert "config" in item
         assert "priority" in item
         assert "rule_count" in item
+        assert "rules" in item
+        assert isinstance(item["rules"], list)
         assert "created_at" in item
         assert "updated_at" in item
 
@@ -192,6 +194,63 @@ class TestListPolicies:
         # any_of: ["SSN", "DRIVERS_LICENSE"] = 2
         # combinations: [["SSN", "DOB"], ["SSN", "ADDRESS"]] = 2
         assert data["rule_count"] == 4
+
+    async def test_rules_field_structure(self, test_client, setup_policies_data):
+        """Rules field should contain structured PolicyRule objects from triggers."""
+        policy = setup_policies_data["policies"][0]
+        # Config: any_of: ["SSN", "DRIVERS_LICENSE"], combinations: [["SSN", "DOB"], ["SSN", "ADDRESS"]]
+        response = await test_client.get(f"/api/v1/policies/{policy.id}")
+        assert response.status_code == 200
+        data = response.json()
+
+        rules = data["rules"]
+        assert len(rules) == 4  # 2 any_of + 2 combinations
+
+        # Verify any_of rules
+        any_of_rules = [r for r in rules if r["type"] == "any_of"]
+        assert len(any_of_rules) == 2
+        assert any_of_rules[0]["entities"] == ["SSN"]
+        assert any_of_rules[1]["entities"] == ["DRIVERS_LICENSE"]
+        assert any_of_rules[0]["min_confidence"] == 0.7
+
+        # Verify combination rules
+        combo_rules = [r for r in rules if r["type"] == "combination"]
+        assert len(combo_rules) == 2
+        assert combo_rules[0]["entities"] == ["SSN", "DOB"]
+        assert combo_rules[1]["entities"] == ["SSN", "ADDRESS"]
+
+    async def test_rules_field_with_all_of(self, test_client, setup_policies_data):
+        """Rules field should include all_of trigger as a single rule."""
+        policy = setup_policies_data["policies"][1]
+        # Config: any_of: ["EMAIL", "PHONE"], all_of: ["PERSON_NAME", "ADDRESS"]
+        response = await test_client.get(f"/api/v1/policies/{policy.id}")
+        assert response.status_code == 200
+        data = response.json()
+
+        rules = data["rules"]
+        all_of_rules = [r for r in rules if r["type"] == "all_of"]
+        assert len(all_of_rules) == 1
+        assert all_of_rules[0]["entities"] == ["PERSON_NAME", "ADDRESS"]
+
+    async def test_rules_field_empty_when_no_triggers(self, test_client, setup_policies_data):
+        """Rules field should be empty list when config has no triggers section."""
+        policy = setup_policies_data["policies"][2]
+        # Config: {"rules": [{"pattern": "test_pci"}]} — no triggers section
+        response = await test_client.get(f"/api/v1/policies/{policy.id}")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["rules"] == []
+
+    async def test_rules_included_in_list_response(self, test_client, setup_policies_data):
+        """Every policy in list response should include rules field."""
+        response = await test_client.get("/api/v1/policies")
+        assert response.status_code == 200
+        data = response.json()
+
+        for item in data["items"]:
+            assert "rules" in item
+            assert isinstance(item["rules"], list)
 
 
 class TestCreatePolicy:
@@ -217,6 +276,12 @@ class TestCreatePolicy:
         assert data["framework"] == "soc2"
         assert data["enabled"] is True
         assert data["rule_count"] == 1
+        # Story 14: rules field present in create response
+        assert "rules" in data
+        assert isinstance(data["rules"], list)
+        assert len(data["rules"]) == 1
+        assert data["rules"][0]["type"] == "any_of"
+        assert data["rules"][0]["entities"] == ["SSN"]
 
     async def test_creates_policy_with_defaults(self, test_client, setup_policies_data):
         """Should create policy with default values."""
@@ -234,13 +299,14 @@ class TestCreatePolicy:
         assert data["risk_level"] == "high"
         assert data["enabled"] is True
         assert data["priority"] == 0
+        assert data["rules"] == []  # No triggers, empty rules
 
 
 class TestGetPolicy:
     """Tests for GET /api/v1/policies/{policy_id} endpoint."""
 
     async def test_returns_policy_details(self, test_client, setup_policies_data):
-        """Should return policy details."""
+        """Should return policy details including rules field."""
         policy = setup_policies_data["policies"][0]
         response = await test_client.get(f"/api/v1/policies/{policy.id}")
         assert response.status_code == 200
@@ -248,6 +314,10 @@ class TestGetPolicy:
 
         assert data["id"] == str(policy.id)
         assert data["name"] == policy.name
+        # Story 14: get response includes rules
+        assert "rules" in data
+        assert isinstance(data["rules"], list)
+        assert len(data["rules"]) > 0
 
     async def test_returns_404_for_nonexistent(self, test_client, setup_policies_data):
         """Should return 404 for non-existent policy."""
@@ -260,7 +330,7 @@ class TestUpdatePolicy:
     """Tests for PUT /api/v1/policies/{policy_id} endpoint."""
 
     async def test_updates_policy_name(self, test_client, setup_policies_data):
-        """Should update policy fields."""
+        """Should update policy fields and return rules in response."""
         policy = setup_policies_data["policies"][0]
         response = await test_client.put(
             f"/api/v1/policies/{policy.id}",
@@ -270,6 +340,9 @@ class TestUpdatePolicy:
         data = response.json()
 
         assert data["name"] == "Updated Policy Name"
+        # Story 14: update response includes rules
+        assert "rules" in data
+        assert isinstance(data["rules"], list)
 
     async def test_returns_404_for_nonexistent(self, test_client, setup_policies_data):
         """Should return 404 for non-existent policy."""
