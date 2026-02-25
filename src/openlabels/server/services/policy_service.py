@@ -186,21 +186,26 @@ class PolicyService(BaseService):
 
         for row in rows:
             findings = row.findings or {}
-            entities_raw = findings.get("entities", [])
-            if not entities_raw:
+            if not findings:
                 continue
 
-            entity_matches = [
-                EntityMatch(
-                    entity_type=e["entity_type"],
-                    value="[redacted]",
-                    confidence=e.get("confidence", 1.0),
-                    start=e.get("start", 0),
-                    end=e.get("end", 0),
-                    source=e.get("detector", ""),
-                )
-                for e in entities_raw
-            ]
+            # Findings are grouped by entity type:
+            # {"SSN": [{value, confidence, context}, ...], "EMAIL": [...]}
+            entity_matches = []
+            for entity_type, items in findings.items():
+                if not isinstance(items, list):
+                    continue
+                for e in items:
+                    entity_matches.append(EntityMatch(
+                        entity_type=entity_type,
+                        value="[redacted]",
+                        confidence=e.get("confidence", 1.0),
+                        start=0,
+                        end=0,
+                        source="",
+                    ))
+            if not entity_matches:
+                continue
 
             result = engine.evaluate(entity_matches)
             if result.is_sensitive:

@@ -133,7 +133,7 @@ AuditActionEnum = ENUM(
     'target_created', 'target_updated', 'target_deleted',
     'user_created', 'user_updated', 'user_deleted',
     'schedule_created', 'schedule_updated', 'schedule_deleted',
-    'quarantine_executed', 'lockdown_executed', 'rollback_executed',
+    'quarantine_executed', 'lockdown_executed', 'label_apply_executed', 'rollback_executed',
     'monitoring_enabled', 'monitoring_disabled',
     'policy_violation',
     'policy_created', 'policy_updated', 'policy_deleted',
@@ -148,7 +148,7 @@ AuditActionEnum = ENUM(
 
 # Remediation action types
 RemediationActionTypeEnum = ENUM(
-    'quarantine', 'lockdown', 'rollback',
+    'quarantine', 'lockdown', 'label_apply', 'rollback',
     name='remediation_action_type',
     create_type=True,
 )
@@ -686,6 +686,12 @@ class RemediationAction(Base):
     performed_by: Mapped[str] = mapped_column(String(255), nullable=False)
     principals: Mapped[dict | None] = mapped_column(JSONB)  # For lockdown: allowed principals
     previous_acl: Mapped[str | None] = mapped_column(Text)  # Base64 encoded for rollback
+
+    # Label application (for label_apply actions)
+    label_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sensitivity_labels.id", ondelete="SET NULL"),
+    )
+    label_name: Mapped[str | None] = mapped_column(String(255))
 
     # Flags
     dry_run: Mapped[bool] = mapped_column(Boolean, default=False)

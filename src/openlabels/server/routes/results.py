@@ -110,8 +110,10 @@ async def list_results(
 async def list_results_cursor(
     db: DbSessionDep,
     _tenant: TenantContextDep,
-    job_id: UUID | None = Query(None, description="Filter by job ID"),
+    job_id: UUID | None = Query(None, alias="scan_id", description="Filter by job/scan ID"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    entity_type: str | None = Query(None, description="Filter by entity type (e.g. SSN, EMAIL)"),
+    search: str | None = Query(None, description="Search by file name or path"),
     pagination: CursorPaginationParams = Depends(),
 ) -> CursorPaginatedResponse[ResultResponse]:
     """List scan results using cursor-based pagination."""
@@ -126,6 +128,12 @@ async def list_results_cursor(
         conditions.append(ScanResult.job_id == job_id)
     if risk_tier:
         conditions.append(ScanResult.risk_tier == risk_tier)
+    if entity_type:
+        # entity_counts is JSONB — filter for results containing this entity type
+        conditions.append(ScanResult.entity_counts.has_key(entity_type))
+    if search:
+        search_pattern = f"%{search}%"
+        conditions.append(ScanResult.file_name.ilike(search_pattern))
 
     query = (
         select(ScanResult)
@@ -175,6 +183,8 @@ async def export_results(
     _tenant: TenantContextDep,
     job_id: UUID | None = Query(None, alias="scan_id", description="Job/Scan ID to export (optional)"),
     risk_tier: Literal["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = Query(None, description="Filter by risk tier"),
+    entity_type: str | None = Query(None, description="Filter by entity type (e.g. SSN, EMAIL)"),
+    search: str | None = Query(None, description="Search by file name"),
     has_label: str | None = Query(None, description="Filter by label status"),
     format: Literal["csv", "json"] = Query("csv", description="Export format (csv or json)"),
 ) -> StreamingResponse:
@@ -216,6 +226,14 @@ async def export_results(
     def _matches_filters(row_dict: dict) -> bool:
         if risk_tier and row_dict.get("risk_tier") != risk_tier:
             return False
+        if entity_type:
+            ec = row_dict.get("entity_counts") or {}
+            if entity_type not in ec:
+                return False
+        if search:
+            fname = (row_dict.get("file_name") or "").lower()
+            if search.lower() not in fname:
+                return False
         if has_label == "true" and not row_dict.get("label_applied"):
             return False
         if has_label == "false" and row_dict.get("label_applied"):

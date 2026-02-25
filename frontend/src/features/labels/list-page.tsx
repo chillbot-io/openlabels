@@ -1,20 +1,27 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
-import { RefreshCw, Plus } from 'lucide-react';
-import { useLabels, useSyncLabels } from '@/api/hooks/use-labels.ts';
-import { useTargets } from '@/api/hooks/use-targets.ts';
+import { RefreshCw, Plus, Trash2, BarChart3 } from 'lucide-react';
+import {
+  useLabels,
+  useSyncLabels,
+  useLabelRules,
+  useCreateLabelRule,
+  useDeleteLabelRule,
+  useLabelMappings,
+  useUpdateLabelMappings,
+  useLabelStats,
+} from '@/api/hooks/use-labels.ts';
 import { DataTable } from '@/components/data-table/data-table.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.tsx';
-import { Input } from '@/components/ui/input.tsx';
 import { Label as FormLabel } from '@/components/ui/label.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
-import { ENTITY_TYPES } from '@/lib/constants.ts';
-import type { Label } from '@/api/types.ts';
+import { ENTITY_TYPES, RISK_TIERS, RISK_COLORS, type RiskTier } from '@/lib/constants.ts';
+import type { Label, LabelRule } from '@/api/types.ts';
 
 const HEX_COLOR_RE = /^#[\da-fA-F]{3,8}$/;
 
@@ -23,7 +30,7 @@ function safeColor(color: string | null | undefined): string | undefined {
   return HEX_COLOR_RE.test(color) ? color : undefined;
 }
 
-const columns: ColumnDef<Label, unknown>[] = [
+const labelColumns: ColumnDef<Label, unknown>[] = [
   { accessorKey: 'name', header: 'Label', cell: ({ row }) => (
     <div className="flex items-center gap-2">
       <span
@@ -38,37 +45,35 @@ const columns: ColumnDef<Label, unknown>[] = [
   { accessorKey: 'priority', header: 'Priority', cell: ({ row }) => row.original.priority ?? '—' },
 ];
 
+/* ── Create Label Rule Dialog ── */
 function CreateLabelRuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const targets = useTargets();
   const labels = useLabels();
+  const createRule = useCreateLabelRule();
   const addToast = useUIStore((s) => s.addToast);
-  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
-  const [entityType, setEntityType] = useState('');
+  const [ruleType, setRuleType] = useState<string>('entity_type');
+  const [matchValue, setMatchValue] = useState('');
   const [labelId, setLabelId] = useState('');
-  const [excludePaths, setExcludePaths] = useState('');
 
-  const handleToggleTarget = (targetId: string) => {
-    setSelectedTargets((prev) =>
-      prev.includes(targetId) ? prev.filter((id) => id !== targetId) : [...prev, targetId],
-    );
-  };
+  const RISK_TIER_VALUES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'MINIMAL'] as const;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedTargets.length === 0) {
-      addToast({ level: 'error', message: 'Select at least one device' });
+    if (!matchValue || !labelId) {
+      addToast({ level: 'error', message: 'Select a match value and label' });
       return;
     }
-    if (!entityType || !labelId) {
-      addToast({ level: 'error', message: 'Select a classification type and label' });
-      return;
-    }
-    addToast({ level: 'success', message: 'Label rule created' });
-    setSelectedTargets([]);
-    setEntityType('');
-    setLabelId('');
-    setExcludePaths('');
-    onOpenChange(false);
+    createRule.mutate(
+      { rule_type: ruleType, match_value: matchValue, label_id: labelId },
+      {
+        onSuccess: () => {
+          addToast({ level: 'success', message: 'Label rule created' });
+          setMatchValue('');
+          setLabelId('');
+          onOpenChange(false);
+        },
+        onError: (err) => addToast({ level: 'error', message: err.message }),
+      },
+    );
   };
 
   return (
@@ -78,82 +83,61 @@ function CreateLabelRuleDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <DialogTitle>Create Label Rule</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Select devices */}
           <div>
-            <FormLabel>Select Device(s)</FormLabel>
-            <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-              {(targets.data?.items ?? []).length === 0 ? (
-                <p className="py-2 text-center text-sm text-[var(--muted-foreground)]">
-                  No resources configured
-                </p>
-              ) : (
-                (targets.data?.items ?? []).map((t) => (
-                  <label key={t.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-[var(--muted)]">
-                    <input
-                      type="checkbox"
-                      checked={selectedTargets.includes(t.id)}
-                      onChange={() => handleToggleTarget(t.id)}
-                      className="rounded"
-                    />
-                    <span className="text-sm">{t.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Classification type / category → label */}
-          <div>
-            <FormLabel htmlFor="entity-type">Classification Type</FormLabel>
-            <Select value={entityType} onValueChange={setEntityType}>
-              <SelectTrigger id="entity-type">
-                <SelectValue placeholder="Select classification type" />
+            <FormLabel htmlFor="rule-type">Rule Type</FormLabel>
+            <Select value={ruleType} onValueChange={(v) => { setRuleType(v); setMatchValue(''); }}>
+              <SelectTrigger id="rule-type">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ENTITY_TYPES.map((et) => (
-                  <SelectItem key={et} value={et}>
-                    {et.replace(/_/g, ' ')}
-                  </SelectItem>
-                ))}
+                <SelectItem value="entity_type">Entity Type</SelectItem>
+                <SelectItem value="risk_tier">Risk Tier</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <FormLabel htmlFor="label-id">Associate Label</FormLabel>
+            <FormLabel htmlFor="match-value">
+              {ruleType === 'entity_type' ? 'Entity Type' : 'Risk Tier'}
+            </FormLabel>
+            <Select value={matchValue} onValueChange={setMatchValue}>
+              <SelectTrigger id="match-value">
+                <SelectValue placeholder={`Select ${ruleType === 'entity_type' ? 'entity type' : 'risk tier'}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {ruleType === 'entity_type'
+                  ? ENTITY_TYPES.map((et) => (
+                      <SelectItem key={et} value={et}>{et.replace(/_/g, ' ')}</SelectItem>
+                    ))
+                  : RISK_TIER_VALUES.map((rt) => (
+                      <SelectItem key={rt} value={rt}>{rt}</SelectItem>
+                    ))
+                }
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <FormLabel htmlFor="label-id">Apply Label</FormLabel>
             <Select value={labelId} onValueChange={setLabelId}>
               <SelectTrigger id="label-id">
                 <SelectValue placeholder="Select label to apply" />
               </SelectTrigger>
               <SelectContent>
                 {(labels.data?.items ?? []).map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.name}
-                  </SelectItem>
+                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          {/* Exclude paths */}
-          <div>
-            <FormLabel htmlFor="rule-exclude-paths">Exclude Paths</FormLabel>
-            <Input
-              id="rule-exclude-paths"
-              placeholder="/tmp,/var/log,*.bak"
-              value={excludePaths}
-              onChange={(e) => setExcludePaths(e.target.value)}
-            />
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-              Comma-separated paths or patterns to exclude from this rule
-            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Create Rule</Button>
+            <Button type="submit" disabled={createRule.isPending}>
+              {createRule.isPending ? 'Creating...' : 'Create Rule'}
+            </Button>
           </div>
         </form>
       </DialogContent>
@@ -161,6 +145,230 @@ function CreateLabelRuleDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
+/* ── Label Rules Tab ── */
+function LabelRulesTab() {
+  const [rulesPage, setRulesPage] = useState(0);
+  const rules = useLabelRules(rulesPage + 1);
+  const deleteRule = useDeleteLabelRule();
+  const addToast = useUIStore((s) => s.addToast);
+
+  const ruleColumns: ColumnDef<LabelRule, unknown>[] = [
+    { accessorKey: 'rule_type', header: 'Type', cell: ({ row }) => (
+      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+        row.original.rule_type === 'risk_tier'
+          ? 'bg-orange-100 text-orange-700'
+          : 'bg-blue-100 text-blue-700'
+      }`}>
+        {row.original.rule_type === 'risk_tier' ? 'Risk Tier' : 'Entity Type'}
+      </span>
+    )},
+    { accessorKey: 'match_value', header: 'Match Value' },
+    { accessorKey: 'label_name', header: 'Label', cell: ({ row }) => row.original.label_name ?? row.original.label_id },
+    { accessorKey: 'priority', header: 'Priority' },
+    { id: 'actions', header: '', cell: ({ row }) => (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          deleteRule.mutate(row.original.id, {
+            onSuccess: () => addToast({ level: 'success', message: 'Rule deleted' }),
+            onError: (err) => addToast({ level: 'error', message: err.message }),
+          });
+        }}
+        disabled={deleteRule.isPending}
+      >
+        <Trash2 className="h-4 w-4 text-red-500" />
+      </Button>
+    )},
+  ];
+
+  return (
+    <DataTable
+      columns={ruleColumns}
+      data={rules.data?.items ?? []}
+      totalRows={rules.data?.total}
+      pagination={{ pageIndex: rulesPage, pageSize: 50 }}
+      onPaginationChange={(p) => setRulesPage(p.pageIndex)}
+      isLoading={rules.isLoading}
+      emptyMessage="No label rules configured"
+      emptyDescription="Create rules to automatically assign labels based on entity types or risk tiers"
+    />
+  );
+}
+
+/* ── Label Mappings Tab ── */
+function LabelMappingsTab() {
+  const mappings = useLabelMappings();
+  const updateMappings = useUpdateLabelMappings();
+  const addToast = useUIStore((s) => s.addToast);
+
+  const TIERS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+
+  const [values, setValues] = useState<Record<string, string | null>>({});
+
+  // Initialize from data when it loads
+  const data = mappings.data;
+  const initialized = Object.keys(values).length > 0;
+  if (data && !initialized) {
+    const init: Record<string, string | null> = {};
+    for (const tier of TIERS) init[tier] = data[tier] ?? null;
+    // Use setTimeout to avoid setState during render
+    setTimeout(() => setValues(init), 0);
+  }
+
+  const handleSave = () => {
+    updateMappings.mutate(values, {
+      onSuccess: () => addToast({ level: 'success', message: 'Label mappings updated' }),
+      onError: (err) => addToast({ level: 'error', message: err.message }),
+    });
+  };
+
+  const labels = data?.labels ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Risk Tier to Label Mappings</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Map each risk tier to a sensitivity label. Files classified at a given risk tier
+          will be recommended for the corresponding label.
+        </p>
+        <div className="space-y-3">
+          {TIERS.map((tier) => (
+            <div key={tier} className="flex items-center gap-4">
+              <span className={`inline-flex w-24 justify-center rounded-full px-2 py-1 text-xs font-bold ${RISK_COLORS[tier as RiskTier].bg} ${RISK_COLORS[tier as RiskTier].text}`}>
+                {tier}
+              </span>
+              <Select
+                value={values[tier] ?? '__none__'}
+                onValueChange={(v) => setValues((prev) => ({ ...prev, [tier]: v === '__none__' ? null : v }))}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="No label assigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No label assigned</SelectItem>
+                  {labels.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: safeColor(l.color) }}
+                          aria-hidden="true"
+                        />
+                        {l.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+        <div className="pt-2">
+          <Button onClick={handleSave} disabled={updateMappings.isPending || mappings.isLoading}>
+            {updateMappings.isPending ? 'Saving...' : 'Save Mappings'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Label Stats Tab ── */
+function LabelStatsTab() {
+  const stats = useLabelStats();
+  const data = stats.data;
+
+  if (stats.isLoading) {
+    return <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Loading statistics...</p>;
+  }
+
+  if (!data) {
+    return <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">No statistics available</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          { label: 'Total Results', value: data.total_results },
+          { label: 'Labels Applied', value: data.labels_applied, color: 'text-green-600' },
+          { label: 'Pending', value: data.labels_pending, color: 'text-yellow-600' },
+          { label: 'Failed', value: data.labels_failed, color: 'text-red-600' },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="pt-6 text-center">
+              <p className={`text-2xl font-bold ${s.color ?? ''}`}>{s.value}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* By risk tier */}
+      {Object.keys(data.by_tier).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Labels by Risk Tier</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {RISK_TIERS.filter((t) => t !== 'MINIMAL').map((tier) => {
+                const tierData = data.by_tier[tier];
+                if (!tierData) return null;
+                const total = tierData.applied + tierData.pending;
+                const pct = total > 0 ? Math.round((tierData.applied / total) * 100) : 0;
+                return (
+                  <div key={tier} className="flex items-center gap-3">
+                    <span className={`inline-flex w-20 justify-center rounded-full px-2 py-0.5 text-xs font-bold ${RISK_COLORS[tier as RiskTier].bg} ${RISK_COLORS[tier as RiskTier].text}`}>
+                      {tier}
+                    </span>
+                    <div className="flex-1">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--muted)]">
+                        <div
+                          className="h-full rounded-full bg-green-500 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="w-24 text-right text-xs text-[var(--muted-foreground)]">
+                      {tierData.applied} / {total} ({pct}%)
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Per-label usage */}
+      {data.per_label.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Label Usage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.per_label.map((item) => (
+                <div key={item.label_name} className="flex items-center justify-between rounded-md border px-3 py-2">
+                  <span className="text-sm font-medium">{item.label_name}</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">{item.count} files</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ── Main Page ── */
 export function Component() {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
@@ -190,7 +398,7 @@ export function Component() {
           </Button>
           <Button onClick={() => setShowCreateRule(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Label Rule
+            Create Rule
           </Button>
         </div>
       </div>
@@ -199,11 +407,16 @@ export function Component() {
         <TabsList aria-label="Labels sections">
           <TabsTrigger value="labels">Synced Labels</TabsTrigger>
           <TabsTrigger value="rules">Label Rules</TabsTrigger>
+          <TabsTrigger value="mappings">Mappings</TabsTrigger>
+          <TabsTrigger value="stats">
+            <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+            Statistics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="labels" className="mt-4">
           <DataTable
-            columns={columns}
+            columns={labelColumns}
             data={labels.data?.items ?? []}
             totalRows={labels.data?.total}
             pagination={{ pageIndex: page, pageSize: 50 }}
@@ -215,23 +428,15 @@ export function Component() {
         </TabsContent>
 
         <TabsContent value="rules" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Label Rules</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Label rules automatically associate classification types with sensitivity labels for selected devices.
-                Create a rule to define which labels should be applied based on detected data categories.
-              </p>
-              <div className="mt-4">
-                <Button onClick={() => setShowCreateRule(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Label Rule
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <LabelRulesTab />
+        </TabsContent>
+
+        <TabsContent value="mappings" className="mt-4">
+          <LabelMappingsTab />
+        </TabsContent>
+
+        <TabsContent value="stats" className="mt-4">
+          <LabelStatsTab />
         </TabsContent>
       </Tabs>
 

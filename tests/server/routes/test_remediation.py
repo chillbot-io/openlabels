@@ -2,11 +2,13 @@
 Comprehensive tests for remediation API endpoints.
 
 Tests focus on:
-- Listing remediation actions with pagination
+- Listing remediation actions with pagination and search
 - Quarantine file action
 - Lockdown file action
-- Rollback action
-- Remediation statistics
+- Label apply action
+- Rollback action (including label rollback)
+- Bulk remediation
+- Remediation statistics (PostgreSQL fallback)
 - Dry-run mode
 - Admin authorization requirements
 - Tenant isolation
@@ -26,7 +28,9 @@ from unittest.mock import patch, AsyncMock, MagicMock
 async def setup_remediation_data(test_db):
     """Set up test data for remediation endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanTarget, ScanJob, ScanResult
+    from openlabels.server.models import (
+        Tenant, User, ScanTarget, ScanJob, ScanResult, SensitivityLabel,
+    )
 
     # Get the existing tenant created by test_client (name includes random suffix)
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -62,6 +66,10 @@ async def setup_remediation_data(test_db):
         "/test/lockdown.txt", "/test/lockdown_record.txt",
         "/test/dry_run_lockdown.txt", "/test/no_principals.txt",
         "/test/content_type.txt",
+        # Additional paths for label and bulk tests
+        "/test/label_target.txt", "/test/label_dry_run.txt",
+        "/test/bulk_file_1.txt", "/test/bulk_file_2.txt", "/test/bulk_file_3.txt",
+        "/data/finance/report.xlsx", "/data/hr/employees.csv",
     ]
     for path in test_paths:
         scan_result = ScanResult(
@@ -76,12 +84,36 @@ async def setup_remediation_data(test_db):
         )
         test_db.add(scan_result)
         await test_db.flush()
+
+    # Create sensitivity labels for label-apply tests
+    label = SensitivityLabel(
+        id="label-confidential-001",
+        tenant_id=tenant.id,
+        name="Confidential",
+        description="Confidential data",
+        priority=1,
+    )
+    test_db.add(label)
+    await test_db.flush()
+
+    label2 = SensitivityLabel(
+        id="label-internal-002",
+        tenant_id=tenant.id,
+        name="Internal",
+        description="Internal data",
+        priority=2,
+    )
+    test_db.add(label2)
+    await test_db.flush()
+
     await test_db.commit()
 
     return {
         "tenant": tenant,
         "admin_user": admin_user,
         "session": test_db,
+        "label": label,
+        "label2": label2,
     }
 
 
@@ -137,7 +169,7 @@ class TestListRemediationActions:
         assert data["items"][0]["action_type"] == "quarantine"
 
     async def test_action_response_structure(self, test_client, setup_remediation_data):
-        """Action response should have all required fields."""
+        """Action response should have all required fields including new ones."""
         from openlabels.server.models import RemediationAction
 
         session = setup_remediation_data["session"]
@@ -164,9 +196,14 @@ class TestListRemediationActions:
         assert "status" in item
         assert "source_path" in item
         assert "dest_path" in item
+        assert "performed_by" in item
         assert "dry_run" in item
         assert "error" in item
         assert "created_at" in item
+        assert "completed_at" in item
+        assert "rollback_of_id" in item
+        assert "label_id" in item
+        assert "label_name" in item
 
     async def test_filter_by_action_type(self, test_client, setup_remediation_data):
         """List should filter by action_type."""
@@ -226,6 +263,57 @@ class TestListRemediationActions:
         for item in data["items"]:
             assert item["status"] == "completed"
 
+    async def test_search_by_file_path(self, test_client, setup_remediation_data):
+        """List should filter by file path search."""
+        from openlabels.server.models import RemediationAction
+
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+        admin_user = setup_remediation_data["admin_user"]
+
+        for path in ["/data/finance/report.xlsx", "/data/hr/employees.csv", "/test/random.txt"]:
+            action = RemediationAction(
+                tenant_id=tenant.id,
+                action_type="quarantine",
+                status="completed",
+                source_path=path,
+                performed_by=admin_user.email,
+            )
+            session.add(action)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/remediation?search=finance")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 1
+        assert "finance" in data["items"][0]["source_path"]
+
+    async def test_search_is_case_insensitive(self, test_client, setup_remediation_data):
+        """Search should be case-insensitive."""
+        from openlabels.server.models import RemediationAction
+
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+        admin_user = setup_remediation_data["admin_user"]
+
+        action = RemediationAction(
+            tenant_id=tenant.id,
+            action_type="quarantine",
+            status="completed",
+            source_path="/data/Finance/Report.xlsx",
+            performed_by=admin_user.email,
+        )
+        session.add(action)
+        await session.commit()
+
+        response = await test_client.get("/api/v1/remediation?search=FINANCE")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["total"] == 1
+
     async def test_pagination_default_limit(self, test_client, setup_remediation_data):
         """List should use default page_size of 50."""
         from openlabels.server.models import RemediationAction
@@ -274,7 +362,7 @@ class TestListRemediationActions:
             await session.flush()
         await session.commit()
 
-        response = await test_client.get("/api/remediation?page_size=5")
+        response = await test_client.get("/api/v1/remediation?page_size=5")
         assert response.status_code == 200
         data = response.json()
 
@@ -496,6 +584,128 @@ class TestLockdownFile:
         assert response.status_code == 422
 
 
+class TestLabelApply:
+    """Tests for POST /api/v1/remediation/label-apply endpoint."""
+
+    async def test_dry_run_returns_200(self, test_client, setup_remediation_data):
+        """Label apply dry run should return 200."""
+        label = setup_remediation_data["label"]
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_target.txt",
+                "label_id": label.id,
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["action_type"] == "label_apply"
+        assert data["status"] == "pending"
+        assert data["dry_run"] is True
+        assert data["label_id"] == label.id
+        assert data["label_name"] == "Confidential"
+
+    async def test_applies_label_to_scan_result(self, test_client, setup_remediation_data):
+        """Label apply should update scan result with label info."""
+        from sqlalchemy import select
+        from openlabels.server.models import ScanResult
+
+        label = setup_remediation_data["label"]
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_target.txt",
+                "label_id": label.id,
+                "dry_run": False,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        assert data["completed_at"] is not None
+
+        # Verify the scan result was updated
+        result = await session.execute(
+            select(ScanResult).where(
+                ScanResult.file_path == "/test/label_target.txt",
+                ScanResult.tenant_id == tenant.id,
+            ).limit(1)
+        )
+        scan_result = result.scalar_one()
+        assert scan_result.current_label_id == label.id
+        assert scan_result.current_label_name == "Confidential"
+        assert scan_result.label_applied is True
+
+    async def test_dry_run_does_not_update_scan_result(self, test_client, setup_remediation_data):
+        """Dry run should not update the scan result."""
+        from sqlalchemy import select
+        from openlabels.server.models import ScanResult
+
+        label = setup_remediation_data["label"]
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_dry_run.txt",
+                "label_id": label.id,
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify the scan result was NOT updated
+        result = await session.execute(
+            select(ScanResult).where(
+                ScanResult.file_path == "/test/label_dry_run.txt",
+                ScanResult.tenant_id == tenant.id,
+            ).limit(1)
+        )
+        scan_result = result.scalar_one()
+        assert scan_result.label_applied is False
+
+    async def test_returns_404_for_nonexistent_file(self, test_client, setup_remediation_data):
+        """Label apply on nonexistent file should return 404."""
+        label = setup_remediation_data["label"]
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/nonexistent/file.txt",
+                "label_id": label.id,
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 404
+
+    async def test_returns_404_for_nonexistent_label(self, test_client, setup_remediation_data):
+        """Label apply with nonexistent label should return 404."""
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_target.txt",
+                "label_id": "nonexistent-label-id",
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 404
+
+    async def test_missing_label_id_returns_422(self, test_client, setup_remediation_data):
+        """Label apply without label_id should return 422."""
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_target.txt",
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 422
+
+
 class TestRollbackAction:
     """Tests for POST /api/v1/remediation/rollback endpoint."""
 
@@ -566,6 +776,51 @@ class TestRollbackAction:
         data = response.json()
 
         assert data["action_type"] == "rollback"
+
+    async def test_rollback_label_apply_clears_label(self, test_client, setup_remediation_data):
+        """Rolling back a label_apply should clear the label from the scan result."""
+        from sqlalchemy import select
+        from openlabels.server.models import RemediationAction, ScanResult
+
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+        admin_user = setup_remediation_data["admin_user"]
+        label = setup_remediation_data["label"]
+
+        # First apply a label
+        response = await test_client.post(
+            "/api/v1/remediation/label-apply",
+            json={
+                "file_path": "/test/label_target.txt",
+                "label_id": label.id,
+                "dry_run": False,
+            },
+        )
+        assert response.status_code == 200
+        action_id = response.json()["id"]
+
+        # Now rollback the label application
+        response = await test_client.post(
+            "/api/v1/remediation/rollback",
+            json={
+                "action_id": action_id,
+                "dry_run": False,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+
+        # Verify the scan result label was cleared
+        result = await session.execute(
+            select(ScanResult).where(
+                ScanResult.file_path == "/test/label_target.txt",
+                ScanResult.tenant_id == tenant.id,
+            ).limit(1)
+        )
+        scan_result = result.scalar_one()
+        assert scan_result.label_applied is False
+        assert scan_result.current_label_id is None
 
     async def test_returns_404_for_nonexistent_action(self, test_client, setup_remediation_data):
         """Rollback nonexistent action should return 404."""
@@ -668,6 +923,162 @@ class TestRollbackAction:
         assert response.status_code == 400
 
 
+class TestBulkRemediation:
+    """Tests for POST /api/v1/remediation/bulk endpoint."""
+
+    async def test_bulk_quarantine_dry_run(self, test_client, setup_remediation_data):
+        """Bulk quarantine dry run should process all files."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "quarantine",
+                "items": [
+                    {"file_path": "/test/bulk_file_1.txt"},
+                    {"file_path": "/test/bulk_file_2.txt"},
+                    {"file_path": "/test/bulk_file_3.txt"},
+                ],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3
+        assert data["success"] == 3
+        assert data["failed"] == 0
+        assert len(data["actions"]) == 3
+        for action in data["actions"]:
+            assert action["action_type"] == "quarantine"
+            assert action["dry_run"] is True
+
+    async def test_bulk_label_apply_dry_run(self, test_client, setup_remediation_data):
+        """Bulk label apply dry run should process all files."""
+        label = setup_remediation_data["label"]
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "label_apply",
+                "items": [
+                    {"file_path": "/test/bulk_file_1.txt"},
+                    {"file_path": "/test/bulk_file_2.txt"},
+                ],
+                "label_id": label.id,
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert data["success"] == 2
+        assert data["failed"] == 0
+        for action in data["actions"]:
+            assert action["label_id"] == label.id
+            assert action["label_name"] == "Confidential"
+
+    async def test_bulk_label_apply_updates_scan_results(self, test_client, setup_remediation_data):
+        """Bulk label apply should update scan results when not dry run."""
+        from sqlalchemy import select
+        from openlabels.server.models import ScanResult
+
+        label = setup_remediation_data["label"]
+        session = setup_remediation_data["session"]
+        tenant = setup_remediation_data["tenant"]
+
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "label_apply",
+                "items": [
+                    {"file_path": "/test/bulk_file_1.txt"},
+                    {"file_path": "/test/bulk_file_2.txt"},
+                ],
+                "label_id": label.id,
+                "dry_run": False,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] == 2
+
+        # Verify scan results were updated
+        for path in ["/test/bulk_file_1.txt", "/test/bulk_file_2.txt"]:
+            result = await session.execute(
+                select(ScanResult).where(
+                    ScanResult.file_path == path,
+                    ScanResult.tenant_id == tenant.id,
+                ).limit(1)
+            )
+            sr = result.scalar_one()
+            assert sr.label_applied is True
+            assert sr.current_label_id == label.id
+
+    async def test_bulk_lockdown_requires_principals(self, test_client, setup_remediation_data):
+        """Bulk lockdown without principals should return 400."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "lockdown",
+                "items": [{"file_path": "/test/bulk_file_1.txt"}],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 400
+
+    async def test_bulk_label_apply_requires_label_id(self, test_client, setup_remediation_data):
+        """Bulk label_apply without label_id should return 400."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "label_apply",
+                "items": [{"file_path": "/test/bulk_file_1.txt"}],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 400
+
+    async def test_bulk_invalid_action_type_returns_400(self, test_client, setup_remediation_data):
+        """Bulk with invalid action_type should return 400."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "invalid",
+                "items": [{"file_path": "/test/bulk_file_1.txt"}],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 400
+
+    async def test_bulk_handles_missing_files(self, test_client, setup_remediation_data):
+        """Bulk should count missing files as failures."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "quarantine",
+                "items": [
+                    {"file_path": "/test/bulk_file_1.txt"},
+                    {"file_path": "/nonexistent/file.txt"},
+                ],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert data["success"] == 1
+        assert data["failed"] == 1
+
+    async def test_bulk_empty_items_returns_422(self, test_client, setup_remediation_data):
+        """Bulk with empty items list should return 422."""
+        response = await test_client.post(
+            "/api/v1/remediation/bulk",
+            json={
+                "action_type": "quarantine",
+                "items": [],
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 422
+
+
 class TestRemediationStats:
     """Tests for GET /api/v1/remediation/stats/summary endpoint."""
 
@@ -742,6 +1153,14 @@ class TestRemediationStats:
         assert data["by_status"]["completed"] == 4
         assert data["by_status"]["failed"] == 2
         assert data["by_status"]["pending"] == 1
+
+    async def test_includes_label_apply_type(self, test_client, setup_remediation_data):
+        """Stats should include label_apply type in by_type."""
+        response = await test_client.get("/api/v1/remediation/stats/summary")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "label_apply" in data["by_type"]
 
 
 class TestRemediationTenantIsolation:
@@ -826,5 +1245,3 @@ class TestRemediationTenantIsolation:
             },
         )
         assert response.status_code == 404
-
-

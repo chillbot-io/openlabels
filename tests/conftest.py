@@ -457,7 +457,22 @@ async def test_db(database_url):
             async with engine.begin() as conn:
                 await conn.execute(text("DROP SCHEMA public CASCADE"))
                 await conn.execute(text("CREATE SCHEMA public"))
-                await conn.run_sync(Base.metadata.create_all)
+                # Temporarily disable partitioning for test DDL — PostgreSQL
+                # requires partition key columns in PK, but the ORM identity
+                # key is just `id`. We strip PARTITION BY from the dialect
+                # options, create all tables as regular tables, then restore.
+                _partitioned_tables = {}
+                for table in Base.metadata.sorted_tables:
+                    popts = table.dialect_options.get("postgresql", {})
+                    if "partition_by" in popts:
+                        _partitioned_tables[table.name] = popts.pop("partition_by")
+                try:
+                    await conn.run_sync(Base.metadata.create_all)
+                finally:
+                    # Restore partition_by so the ORM models stay consistent
+                    for table in Base.metadata.sorted_tables:
+                        if table.name in _partitioned_tables:
+                            table.dialect_options["postgresql"]["partition_by"] = _partitioned_tables[table.name]
             _tables_initialized = True
         else:
             # Subsequent tests: truncate all tables (fast, no DDL,
@@ -475,7 +490,17 @@ async def test_db(database_url):
                 async with engine.begin() as conn:
                     await conn.execute(text("DROP SCHEMA public CASCADE"))
                     await conn.execute(text("CREATE SCHEMA public"))
-                    await conn.run_sync(Base.metadata.create_all)
+                    _partitioned_tables = {}
+                    for table in Base.metadata.sorted_tables:
+                        popts = table.dialect_options.get("postgresql", {})
+                        if "partition_by" in popts:
+                            _partitioned_tables[table.name] = popts.pop("partition_by")
+                    try:
+                        await conn.run_sync(Base.metadata.create_all)
+                    finally:
+                        for table in Base.metadata.sorted_tables:
+                            if table.name in _partitioned_tables:
+                                table.dialect_options["postgresql"]["partition_by"] = _partitioned_tables[table.name]
     except Exception as exc:
         await engine.dispose()
         pytest.fail(f"PostgreSQL not reachable at {database_url}: {exc}")
