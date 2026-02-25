@@ -209,7 +209,10 @@ async def _validate_oidc_token(token: str) -> TokenClaims:
                 roles=normalized.roles,
                 provider="oidc",
             )
-        except (TokenExpiredError, TokenInvalidError) as e:
+        except TokenExpiredError:
+            # Expired tokens should fail immediately — do not try other providers
+            raise
+        except TokenInvalidError as e:
             last_error = e
             continue
 
@@ -236,6 +239,13 @@ async def validate_token(token: str) -> TokenClaims:
             raise ValueError(
                 "Auth provider 'none' is only allowed when server.debug is True. "
                 "Refusing to bypass authentication in non-debug mode."
+            )
+        # SECURITY: Dev mode only allowed when bound to localhost
+        if settings.server.host not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError(
+                "Auth provider 'none' is only allowed when server.host "
+                "is localhost/127.0.0.1. This prevents accidental exposure "
+                "of unauthenticated admin access on network-accessible servers."
             )
         return TokenClaims(
             oid="dev-user-oid",

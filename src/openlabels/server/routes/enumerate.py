@@ -795,7 +795,7 @@ async def _get_m365_session_credentials(
         )
 
     settings = get_settings()
-    if not settings.m365.client_id or not settings.m365.client_secret:
+    if not settings.m365.client_id or not settings.m365.client_secret.get_secret_value():
         raise HTTPException(
             status_code=500,
             detail="M365 integration is not configured on the server.",
@@ -804,7 +804,7 @@ async def _get_m365_session_credentials(
     return {
         "tenant_id": m365_info["tenant_id"],
         "client_id": settings.m365.client_id,
-        "client_secret": settings.m365.client_secret,
+        "client_secret": settings.m365.client_secret.get_secret_value(),
     }
 
 

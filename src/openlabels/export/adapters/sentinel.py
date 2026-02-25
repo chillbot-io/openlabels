@@ -50,6 +50,42 @@ class SentinelAdapter:
         if not records:
             return 0
 
+        # Split records into chunks that fit under the Azure payload size limit
+        chunks = self._chunk_records(records)
+        total_sent = 0
+
+        for chunk in chunks:
+            sent = await self._send_chunk(chunk)
+            total_sent += sent
+
+        return total_sent
+
+    def _chunk_records(self, records: list[ExportRecord]) -> list[list[ExportRecord]]:
+        """Split records into batches that each serialize under _MAX_PAYLOAD_MB."""
+        max_bytes = _MAX_PAYLOAD_MB * 1024 * 1024
+        chunks: list[list[ExportRecord]] = []
+        current_chunk: list[ExportRecord] = []
+        current_size = 2  # account for JSON array brackets "[]"
+
+        for record in records:
+            record_json = json.dumps(self._to_sentinel_record(record), default=str)
+            record_size = len(record_json.encode("utf-8")) + 1  # +1 for comma separator
+
+            if current_chunk and current_size + record_size > max_bytes:
+                chunks.append(current_chunk)
+                current_chunk = []
+                current_size = 2
+
+            current_chunk.append(record)
+            current_size += record_size
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    async def _send_chunk(self, records: list[ExportRecord]) -> int:
+        """Send a single chunk of records to Sentinel."""
         body = json.dumps(
             [self._to_sentinel_record(r) for r in records],
             default=str,

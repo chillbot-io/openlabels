@@ -9,6 +9,8 @@ Linux: queries auditd logs via ``ausearch`` for rules keyed with
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import platform
 import subprocess
@@ -60,7 +62,12 @@ class EventCollector:
         query = (
             f"*[System[(EventID=4663 or EventID=4656){time_filter}]]"
         )
-        cmd = ["wevtutil", "qe", "Security", "/q:" + query, "/f:text"]
+        cmd = [
+            "wevtutil", "qe", "Security",
+            "/q:" + query,
+            "/f:text",
+            "/c:10000",  # MaxEvents: limit output to prevent unbounded memory use
+        ]
 
         try:
             proc = subprocess.run(
@@ -153,15 +160,17 @@ class EventCollector:
 
         # ausearch --format csv: columns vary by version.  We look for
         # common fields: NODE,TYPE,TIME,SERIAL,FILE,SYSCALL,UID,…
-        lines = proc.stdout.strip().splitlines()
-        if len(lines) < 2:
+        # Use Python's csv module to correctly handle quoted fields
+        # containing commas.
+        reader = csv.reader(io.StringIO(proc.stdout.strip()))
+        header_row = next(reader, None)
+        if header_row is None:
             return
 
-        header = lines[0].lower().split(",")
+        header = [h.lower().strip() for h in header_row]
         col = {name: idx for idx, name in enumerate(header)}
 
-        for row in lines[1:]:
-            cols = row.split(",")
+        for cols in reader:
             event = self._parse_linux_row(cols, col, paths)
             if event:
                 yield event

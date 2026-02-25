@@ -3,6 +3,15 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.t
 import { Badge } from '@/components/ui/badge.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
 
+// Normalize status terminology: backend may return 'warning' or 'degraded' for
+// intermediate states, and 'error' or 'unhealthy' for failure states.
+function normalizeStatus(status: string): 'healthy' | 'degraded' | 'unhealthy' {
+  if (status === 'healthy') return 'healthy';
+  if (status === 'warning' || status === 'degraded') return 'degraded';
+  if (status === 'error' || status === 'unhealthy') return 'unhealthy';
+  return 'unhealthy'; // unknown statuses treated as unhealthy
+}
+
 const STATUS_STYLES: Record<string, string> = {
   healthy: 'bg-green-100 text-green-700',
   degraded: 'bg-yellow-100 text-yellow-700',
@@ -11,8 +20,10 @@ const STATUS_STYLES: Record<string, string> = {
 
 const HEALTH_COMPONENTS = ['db', 'queue', 'ml', 'mip', 'ocr'] as const;
 
-const healthDot = (status: string) =>
-  status === 'healthy' ? 'bg-green-500' : status === 'warning' ? 'bg-yellow-500' : 'bg-red-500';
+const healthDot = (status: string) => {
+  const normalized = normalizeStatus(status);
+  return normalized === 'healthy' ? 'bg-green-500' : normalized === 'degraded' ? 'bg-yellow-500' : 'bg-red-500';
+};
 
 export function SystemStatus() {
   const health = useHealth();
@@ -22,10 +33,10 @@ export function SystemStatus() {
 
   const data = health.data;
 
-  // Derive overall status from component statuses
-  const overallStatus = HEALTH_COMPONENTS.some((c) => data[c] === 'error')
+  // Derive overall status from component statuses, normalizing inconsistent terms
+  const overallStatus = HEALTH_COMPONENTS.some((c) => normalizeStatus(data[c]) === 'unhealthy')
     ? 'unhealthy'
-    : HEALTH_COMPONENTS.some((c) => data[c] === 'warning')
+    : HEALTH_COMPONENTS.some((c) => normalizeStatus(data[c]) === 'degraded')
       ? 'degraded'
       : 'healthy';
 

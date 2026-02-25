@@ -245,66 +245,68 @@ class EventHarvester:
             session, file_paths,
         )
 
-        persisted = 0
+        rows_to_add: list[FileAccessEvent] = []
         for event in events:
-            monitored = path_to_monitored.get(event.file_path)
-            if monitored is None:
-                # File is not in the monitored registry — skip
+            # Find all matching monitored files across tenants
+            matched = [
+                mf for (tid, fp), mf in path_to_monitored.items()
+                if fp == event.file_path
+            ]
+            if not matched:
                 logger.debug(
                     "Skipping event for unmonitored file: %s",
                     event.file_path,
                 )
                 continue
 
-            row = FileAccessEvent(
-                tenant_id=monitored.tenant_id,
-                monitored_file_id=monitored.id,
-                file_path=event.file_path,
-                action=event.action,
-                success=event.success,
-                user_sid=event.user_sid,
-                user_name=event.user_name,
-                user_domain=event.user_domain,
-                process_name=event.process_name,
-                process_id=event.process_id,
-                event_id=event.event_id,
-                event_source=event.event_source,
-                event_time=event.event_time,
-                raw_event=event.raw if self._store_raw else None,
-            )
-            session.add(row)
-            persisted += 1
+            for monitored in matched:
+                row = FileAccessEvent(
+                    tenant_id=monitored.tenant_id,
+                    monitored_file_id=monitored.id,
+                    file_path=event.file_path,
+                    action=event.action,
+                    success=event.success,
+                    user_sid=event.user_sid,
+                    user_name=event.user_name,
+                    user_domain=event.user_domain,
+                    process_name=event.process_name,
+                    process_id=event.process_id,
+                    event_id=event.event_id,
+                    event_source=event.event_source,
+                    event_time=event.event_time,
+                    raw_event=event.raw if self._store_raw else None,
+                )
+                rows_to_add.append(row)
 
-            # Update monitored file stats
-            monitored.access_count = (monitored.access_count or 0) + 1
-            if (
-                monitored.last_event_at is None
-                or event.event_time > monitored.last_event_at
-            ):
-                monitored.last_event_at = event.event_time
+                # Update monitored file stats
+                monitored.access_count = (monitored.access_count or 0) + 1
+                if (
+                    monitored.last_event_at is None
+                    or event.event_time > monitored.last_event_at
+                ):
+                    monitored.last_event_at = event.event_time
 
-        if persisted:
+        if rows_to_add:
+            session.add_all(rows_to_add)
             await session.flush()
 
-        return persisted
+        return len(rows_to_add)
 
     @staticmethod
     async def _resolve_monitored_files(
         session: AsyncSession,
         file_paths: set[str],
-    ) -> dict[str, MonitoredFile]:
+    ) -> dict[tuple[str, str], MonitoredFile]:
         """Batch-resolve file paths to MonitoredFile instances.
 
-        Returns a dict mapping ``file_path`` → ``MonitoredFile`` for
-        paths that have a row in the database.  Paths not found are
-        simply omitted.
+        Returns a dict mapping ``(tenant_id, file_path)`` →
+        ``MonitoredFile`` for paths that have a row in the database.
+        Paths not found are simply omitted.
 
-        Note: in a multi-tenant deployment, the same file_path may
-        exist under multiple tenants.  We return only the first match
-        per file_path (ordered by tenant_id for determinism).  The
-        harvester runs globally and attributes events to the tenant
-        that owns the monitored file.  If multiple tenants monitor
-        the same path, the first tenant (by ID) wins.
+        In a multi-tenant deployment, the same file_path may exist
+        under multiple tenants.  Using a composite key of
+        ``(tenant_id, file_path)`` ensures each tenant's monitored
+        file is tracked independently and events are routed correctly.
         """
         if not file_paths:
             return {}
@@ -315,12 +317,13 @@ class EventHarvester:
             .order_by(MonitoredFile.tenant_id)
         )
         rows = result.scalars().all()
-        # First-match-wins: only the first tenant's MonitoredFile is
-        # used for each path.  This is deterministic across cycles.
-        mapping: dict[str, MonitoredFile] = {}
+        # Use composite key (tenant_id, file_path) so multi-tenant
+        # deployments route events to ALL matching tenants.
+        mapping: dict[tuple[str, str], MonitoredFile] = {}
         for row in rows:
-            if row.file_path not in mapping:
-                mapping[row.file_path] = row
+            key = (str(row.tenant_id), row.file_path)
+            if key not in mapping:
+                mapping[key] = row
         return mapping
 
 

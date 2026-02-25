@@ -171,6 +171,9 @@ function AzureSettingsTab({ settings }: { settings: AllSettings }) {
 
 export function Component() {
   const user = useAuthStore((s) => s.user);
+  // UX guard only — the backend API endpoints independently verify admin role
+  // on every request. This check prevents non-admins from seeing the settings
+  // UI, but does not serve as a security boundary.
   const isAdmin = user?.role === 'admin';
   const settings = useSettings();
 

@@ -325,23 +325,44 @@ class FilesystemAdapter:
         self,
         file_info: FileInfo,
         max_size_bytes: int = DEFAULT_MAX_READ_BYTES,
+        *,
+        base_directory: str | None = None,
     ) -> bytes:
         """
         Read file content with size limit.
 
         Security: Enforces maximum file size to prevent DoS attacks via
-        memory exhaustion from processing extremely large files.
+        memory exhaustion from processing extremely large files.  Also
+        validates the resolved path stays within *base_directory* (if
+        provided) to prevent path-traversal attacks.
 
         Args:
             file_info: FileInfo of file to read
             max_size_bytes: Maximum file size to read (default 100MB)
+            base_directory: If provided, the resolved file path must reside
+                within this directory.  Prevents path-traversal attacks.
 
         Returns:
             File content as bytes
 
         Raises:
             ValueError: If file exceeds max_size_bytes
+            FilesystemError: If the resolved path escapes *base_directory*
         """
+        import os
+
+        # Security: Validate the resolved path is within the expected base directory
+        real_path = os.path.realpath(file_info.path)
+        if base_directory is not None:
+            real_base = os.path.realpath(base_directory)
+            if not real_path.startswith(real_base + os.sep) and real_path != real_base:
+                raise FilesystemError(
+                    "Path traversal detected: resolved path escapes base directory",
+                    path=file_info.path,
+                    operation="read_file",
+                    context=f"resolved to {real_path}, which is outside {real_base}",
+                )
+
         # Security: Check file size before reading to prevent memory exhaustion
         if file_info.size > max_size_bytes:
             raise ValueError(
@@ -349,7 +370,7 @@ class FilesystemAdapter:
                 f"(max: {max_size_bytes} bytes). File: {file_info.path}"
             )
 
-        async with aiofiles.open(file_info.path, "rb") as f:
+        async with aiofiles.open(real_path, "rb") as f:
             content = await f.read(max_size_bytes + 1)  # Read one extra byte to detect overflow
 
             # Double-check actual content size (file may have grown since stat)

@@ -307,24 +307,38 @@ def _get_history_linux(
 
 def _parse_ausearch_csv(output: str, path: Path, limit: int) -> list[AccessEvent]:
     """Parse ausearch CSV output into AccessEvent objects."""
+    import csv as csv_mod
+    import io
+
     events = []
-    lines = output.strip().split("\n")
+    reader = csv_mod.reader(io.StringIO(output.strip()))
 
-    # Skip header line if present
-    if lines and lines[0].startswith("NODE,"):
-        lines = lines[1:]
+    # Parse header row dynamically to determine column positions.
+    # ausearch CSV format varies across versions, so we look up
+    # column indices by name rather than using hardcoded positions.
+    header_row = next(reader, None)
+    if header_row is None:
+        return []
 
-    for line in lines[:limit]:
+    col_map = {name.strip().lower(): idx for idx, name in enumerate(header_row)}
+
+    def _get_col(name: str, row: list[str]) -> str | None:
+        idx = col_map.get(name.lower())
+        if idx is not None and idx < len(row):
+            return row[idx].strip().strip('"')
+        return None
+
+    count = 0
+    for parts in reader:
+        if count >= limit:
+            break
         try:
-            # CSV format varies, but typically:
-            # NODE,EVENT_TYPE,EVENT_TIME,AUDIT_ID,UID,AUID,SES,...
-            parts = line.split(",")
-            if len(parts) < 5:
+            if len(parts) < 2:
                 continue
 
-            # Parse what we can
-            event_time_str = parts[2] if len(parts) > 2 else None
-            uid = parts[4] if len(parts) > 4 else None
+            # Look up fields by header name
+            event_time_str = _get_col("event_time", parts) or _get_col("time", parts)
+            uid = _get_col("uid", parts)
 
             # Try to parse timestamp
             ts = datetime.now()  # fallback
@@ -334,8 +348,8 @@ def _parse_ausearch_csv(output: str, path: Path, limit: int) -> list[AccessEvent
                 except ValueError as e:
                     logger.debug(f"Failed to parse timestamp '{event_time_str}': {e}")
 
-            # Determine action from event type (parts[1])
-            event_type = parts[1] if len(parts) > 1 else ""
+            # Determine action from event type
+            event_type = _get_col("event_type", parts) or _get_col("type", parts) or ""
             action = _parse_linux_event_type(event_type)
 
             # Try to resolve username from UID
@@ -348,6 +362,7 @@ def _parse_ausearch_csv(output: str, path: Path, limit: int) -> list[AccessEvent
                 user_sid=uid,
                 user_name=username,
             ))
+            count += 1
 
         except Exception as e:
             logger.debug(f"Failed to parse audit line: {e}")

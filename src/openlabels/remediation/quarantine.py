@@ -135,7 +135,8 @@ def quarantine(
                     f"Hash mismatch after quarantine! "
                     f"pre={pre_hash} post={post_hash} file={result.dest_path}"
                 )
-                result.error = f"Integrity warning: hash mismatch ({pre_hash} != {post_hash})"
+                result.success = False
+                result.error = f"Integrity failure: hash mismatch ({pre_hash} != {post_hash})"
         except OSError as e:
             logger.warning(f"Could not compute post-move hash for {result.dest_path}: {e}")
 
@@ -213,6 +214,13 @@ def _quarantine_windows(
 
         # Check robocopy exit code
         if result.returncode in ROBOCOPY_SUCCESS_CODES:
+            # Verify source file was actually deleted by /MOVE
+            if source.exists():
+                logger.warning(
+                    "Source file %s still exists after robocopy /MOVE; "
+                    "the move may not have fully completed",
+                    source,
+                )
             logger.info(f"Successfully quarantined {source} to {dest_file}")
             return RemediationResult.success_quarantine(
                 source=source,

@@ -1,0 +1,9 @@
+export { StepIndicator } from './step-indicator.tsx';
+export { WelcomeStep } from './welcome-step.tsx';
+export { M365Step } from './m365-step.tsx';
+export { PickSourceStep } from './pick-source-step.tsx';
+export { SelectSitesStep } from './select-sites-step.tsx';
+export { SmbSetupStep } from './smb-setup-step.tsx';
+export { AddMoreStep } from './add-more-step.tsx';
+export { MonitoringStep } from './monitoring-step.tsx';
+export { ReviewStep } from './review-step.tsx';

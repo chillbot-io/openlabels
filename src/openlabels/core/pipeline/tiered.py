@@ -447,23 +447,39 @@ class TieredPipeline:
         """
         Determine if ML escalation is needed.
 
+        Only escalates when a significant portion of relevant spans have
+        low confidence, to avoid triggering ML on nearly every document.
+
         Returns:
             Tuple of (should_escalate, reason)
         """
-        # Check confidence threshold
-        low_confidence_spans = [
-            s for s in stage1_spans
-            if s.confidence < self.config.escalation_threshold
-        ]
-        if low_confidence_spans:
-            return True, f"low_confidence_spans: {len(low_confidence_spans)}"
+        # Check confidence threshold — only escalate when the majority of
+        # spans have low confidence, not just any single one.
+        if stage1_spans:
+            low_confidence_spans = [
+                s for s in stage1_spans
+                if s.confidence < self.config.escalation_threshold
+            ]
+            low_ratio = len(low_confidence_spans) / len(stage1_spans)
+            if low_ratio > 0.5:
+                return True, (
+                    f"low_confidence_spans: {len(low_confidence_spans)}/{len(stage1_spans)} "
+                    f"({low_ratio:.0%} below threshold)"
+                )
 
-        # Check for entity types that benefit from ML
-        for span in stage1_spans:
-            if normalize_entity_type(span.entity_type) in ML_BENEFICIAL_TYPES:
-                # Only escalate if confidence isn't already high
-                if span.confidence < 0.9:
-                    return True, f"ml_beneficial_type: {span.entity_type}"
+        # Check for entity types that benefit from ML — only escalate when
+        # the majority of ML-beneficial spans have low confidence.
+        ml_beneficial_spans = [
+            s for s in stage1_spans
+            if normalize_entity_type(s.entity_type) in ML_BENEFICIAL_TYPES
+        ]
+        if ml_beneficial_spans:
+            low_conf_ml = [s for s in ml_beneficial_spans if s.confidence < 0.9]
+            if len(low_conf_ml) > len(ml_beneficial_spans) / 2:
+                return True, (
+                    f"ml_beneficial_low_confidence: {len(low_conf_ml)}/{len(ml_beneficial_spans)} "
+                    f"spans below 0.9"
+                )
 
         return False, None
 

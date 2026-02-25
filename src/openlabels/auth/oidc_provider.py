@@ -27,7 +27,7 @@ import httpx
 import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, PyJWTError
 
-from openlabels.exceptions import TokenExpiredError, TokenInvalidError
+from openlabels.exceptions import AuthError, TokenExpiredError, TokenInvalidError
 from openlabels.server.config import OIDCProviderSettings
 
 logger = logging.getLogger(__name__)
@@ -223,7 +223,7 @@ async def exchange_code(
             data={
                 "grant_type": "authorization_code",
                 "client_id": config.client_id,
-                "client_secret": config.client_secret,
+                "client_secret": config.client_secret.get_secret_value(),
                 "code": code,
                 "redirect_uri": redirect_uri,
             },
@@ -235,13 +235,16 @@ async def exchange_code(
                 error_body = resp.json()
             except Exception:
                 error_body = {"error": "unknown", "error_description": resp.text[:200]}
+            error_code = error_body.get("error", "token_exchange_failed")
+            error_desc = error_body.get("error_description", "")
             logger.error(
                 "OIDC token exchange failed: %s - %s",
-                error_body.get("error"),
-                error_body.get("error_description"),
+                error_code,
+                error_desc,
             )
-            return {"error": error_body.get("error", "token_exchange_failed"),
-                    "error_description": error_body.get("error_description", "")}
+            raise AuthError(
+                f"OIDC token exchange failed: {error_code} - {error_desc}"
+            )
 
         return resp.json()
 
@@ -363,7 +366,7 @@ async def refresh_token(
             data={
                 "grant_type": "refresh_token",
                 "client_id": config.client_id,
-                "client_secret": config.client_secret,
+                "client_secret": config.client_secret.get_secret_value(),
                 "refresh_token": refresh_token_value,
             },
             headers={"Accept": "application/json"},

@@ -176,6 +176,9 @@ def _open_volume(drive_letter: str) -> int:
         return -1
 
     kernel32 = ctypes.windll.kernel32
+    # Set restype to prevent handle truncation on x64 (handles are
+    # pointer-sized values; without this, ctypes assumes c_int).
+    kernel32.CreateFileW.restype = ctypes.wintypes.HANDLE
     GENERIC_READ = 0x80000000
     FILE_SHARE_READ = 0x00000001
     FILE_SHARE_WRITE = 0x00000002
@@ -291,10 +294,22 @@ def _resolve_path_via_mft(
     """Best-effort path resolution for a USN record.
 
     Falls back to ``<drive>:\\<filename>`` if parent traversal fails.
+
+    WARNING: This implementation does NOT perform full MFT parent-chain
+    traversal.  The returned path is incomplete (no intermediate
+    directory components).  A production implementation should use
+    FSCTL_READ_FILE_USN_DATA to walk the parent_ref chain and cache
+    the parent_ref -> directory path mapping.
     """
     # Full MFT parent traversal requires repeated FSCTL_READ_FILE_USN_DATA
     # calls.  For now, use the simple approach: drive + filename.
     # A production implementation would cache parent_ref → path mappings.
+    logger.warning(
+        "Path resolution is incomplete (stub): returning %s:\\%s without "
+        "intermediate directories (parent_ref=0x%X). Full MFT parent-chain "
+        "traversal is not yet implemented.",
+        drive_letter, filename, parent_ref,
+    )
     return f"{drive_letter}:\\{filename}"
 
 

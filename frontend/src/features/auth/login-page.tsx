@@ -54,6 +54,7 @@ function ProviderIcon({ style }: { style: string }) {
 export function Component() {
   const [providers, setProviders] = useState<AuthProviderInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [configError, setConfigError] = useState(false);
 
   useEffect(() => {
     fetch('/api/v1/auth/config')
@@ -63,6 +64,8 @@ export function Component() {
         setLoading(false);
       })
       .catch(() => {
+        // Auth configuration could not be loaded — show warning to user
+        setConfigError(true);
         setProviders([{
           key: 'azure_ad',
           provider_type: 'azure_ad',
@@ -75,7 +78,17 @@ export function Component() {
   }, []);
 
   const handleLogin = (loginUrl: string) => {
-    window.location.href = loginUrl;
+    // Validate that the redirect URL is same-origin to prevent open redirect attacks
+    try {
+      const resolved = new URL(loginUrl, window.location.origin);
+      if (resolved.origin !== window.location.origin) {
+        console.error('Blocked redirect to external origin:', resolved.origin);
+        return;
+      }
+      window.location.href = resolved.href;
+    } catch {
+      console.error('Invalid login URL:', loginUrl);
+    }
   };
 
   const isDev = providers.length === 1 && providers[0]?.provider_type === 'none';
@@ -93,6 +106,11 @@ export function Component() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {configError && (
+            <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-xs text-yellow-800" role="alert">
+              Auth configuration could not be loaded. Using default provider as fallback.
+            </div>
+          )}
           {loading ? (
             <Button className="w-full" disabled>Loading...</Button>
           ) : (

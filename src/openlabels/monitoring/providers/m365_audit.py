@@ -194,15 +194,26 @@ class M365AuditProvider:
             )
             content_uris = content_uris[:_MAX_CONTENT_BLOBS_PER_CYCLE]
 
+        # Fetch content blobs in parallel with bounded concurrency
+        semaphore = asyncio.Semaphore(10)
+
+        async def _fetch_with_semaphore(uri: str) -> list[RawAccessEvent]:
+            async with semaphore:
+                try:
+                    return await self._fetch_content_blob(client, uri)
+                except Exception:
+                    logger.warning(
+                        "Failed to fetch content blob: %s", uri, exc_info=True,
+                    )
+                    return []
+
+        results = await asyncio.gather(
+            *[_fetch_with_semaphore(uri) for uri in content_uris],
+        )
+
         events: list[RawAccessEvent] = []
-        for uri in content_uris:
-            try:
-                blob_events = await self._fetch_content_blob(client, uri)
-                events.extend(blob_events)
-            except Exception:
-                logger.warning(
-                    "Failed to fetch content blob: %s", uri, exc_info=True,
-                )
+        for blob_events in results:
+            events.extend(blob_events)
 
         return events
 
@@ -287,6 +298,12 @@ class M365AuditProvider:
         response.raise_for_status()
 
         subscriptions = response.json()
+        if not isinstance(subscriptions, list):
+            logger.warning(
+                "M365 subscription list returned non-list response: %s",
+                type(subscriptions).__name__,
+            )
+            subscriptions = []
         for sub in subscriptions:
             if (
                 sub.get("contentType") == CONTENT_TYPE
@@ -362,8 +379,17 @@ class M365AuditProvider:
                     if content_uri:
                         uris.append(content_uri)
 
-                # Follow pagination
-                url = response.headers.get("NextPageUri")
+                # Follow pagination — validate hostname before following
+                next_page = response.headers.get("NextPageUri")
+                if next_page:
+                    next_parsed = urlparse(next_page)
+                    if not next_parsed.hostname or next_parsed.hostname not in _ALLOWED_CONTENT_DOMAINS:
+                        logger.warning(
+                            "Blocked NextPageUri with untrusted/missing hostname: %s",
+                            next_page,
+                        )
+                        next_page = None
+                url = next_page
             else:
                 logger.warning(
                     "M365 content listing failed: %d %s",
@@ -382,7 +408,13 @@ class M365AuditProvider:
         """Fetch a single content blob and parse audit events."""
         # SECURITY: Validate domain to prevent SSRF via tampered API responses
         parsed = urlparse(content_uri)
-        if parsed.hostname and parsed.hostname not in _ALLOWED_CONTENT_DOMAINS:
+        if not parsed.hostname:
+            logger.warning(
+                "Blocked content blob fetch with empty/missing hostname: %s",
+                content_uri,
+            )
+            return []
+        if parsed.hostname not in _ALLOWED_CONTENT_DOMAINS:
             logger.warning(
                 "Blocked content blob fetch to untrusted domain: %s",
                 parsed.hostname,

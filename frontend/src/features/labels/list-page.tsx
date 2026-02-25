@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { type ColumnDef } from '@tanstack/react-table';
 import { RefreshCw, Plus, Trash2, BarChart3 } from 'lucide-react';
@@ -206,15 +206,17 @@ function LabelMappingsTab() {
 
   const [values, setValues] = useState<Record<string, string | null>>({});
 
-  // Initialize from data when it loads
+  // Initialize from data when it loads — use useEffect instead of
+  // setting state during render to avoid React warnings
   const data = mappings.data;
   const initialized = Object.keys(values).length > 0;
-  if (data && !initialized) {
-    const init: Record<string, string | null> = {};
-    for (const tier of TIERS) init[tier] = data[tier] ?? null;
-    // Use setTimeout to avoid setState during render
-    setTimeout(() => setValues(init), 0);
-  }
+  useEffect(() => {
+    if (data && !initialized) {
+      const init: Record<string, string | null> = {};
+      for (const tier of TIERS) init[tier] = data[tier] ?? null;
+      setValues(init);
+    }
+  }, [data, initialized]);
 
   const handleSave = () => {
     updateMappings.mutate(values, {

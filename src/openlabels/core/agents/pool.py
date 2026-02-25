@@ -12,6 +12,7 @@ import asyncio
 import logging
 import multiprocessing as mp
 import os
+import queue as _queue_mod
 import time
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -341,8 +342,8 @@ class AgentPool:
                 # Forward to async queue
                 await self._result_queue.put(result)
 
-            except (RuntimeError, OSError, EOFError) as e:
-                # Queue.get timeout or other error, continue
+            except (_queue_mod.Empty, RuntimeError, OSError, EOFError) as e:
+                # Queue.get timeout or other queue/IPC error — continue
                 logger.debug(f"Result collection interrupted: {e}")
 
     async def results(self) -> AsyncIterator[AgentResult]:
@@ -352,15 +353,31 @@ class AgentPool:
         Yields results as they become available.
         """
         while True:
-            # Check if we should stop
-            if (
-                self._state == PoolState.STOPPED
-                or (self._state == PoolState.DRAINING and self._stats.items_pending == 0)
-            ):
+            # Check if we should stop.
+            # To avoid a race condition where items_pending hits 0 while
+            # results are still in transit (in the MP output queue or the
+            # collector task), we also require the async result queue to
+            # be empty and the collector task to have finished.
+            if self._state == PoolState.STOPPED:
                 # Drain remaining results
                 while not self._result_queue.empty():
                     yield await self._result_queue.get()
                 break
+
+            if self._state == PoolState.DRAINING and self._stats.items_pending == 0:
+                # Wait for the collector task to finish transferring any
+                # remaining results from the MP queue to the async queue.
+                if self._result_task and not self._result_task.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(self._result_task), timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+
+                # Only break once the async result queue is also empty
+                if self._result_queue.empty():
+                    break
+
+                # There are still results to yield — fall through to get()
 
             try:
                 result = await asyncio.wait_for(
@@ -943,7 +960,14 @@ class ScanOrchestrator:
             ExposureLevel.ORG_WIDE: 1.5,
             ExposureLevel.PUBLIC: 2.0,
         }
-        multiplier = exposure_multipliers.get(exposure_level, 1.0)
+        # Normalise exposure_level to an ExposureLevel enum member so
+        # the lookup always matches, regardless of whether a plain
+        # string (e.g. "PRIVATE") or an enum instance was passed in.
+        try:
+            exposure_key = ExposureLevel(exposure_level) if not isinstance(exposure_level, ExposureLevel) else exposure_level
+        except (ValueError, KeyError):
+            exposure_key = ExposureLevel.PRIVATE
+        multiplier = exposure_multipliers.get(exposure_key, 1.0)
         score = min(int(content_score * multiplier), 100)
 
         # Tier from score

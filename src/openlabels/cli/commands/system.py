@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,6 +15,9 @@ import httpx
 from openlabels.cli.base import api_client, server_options
 
 logger = logging.getLogger(__name__)
+
+# Pattern for valid backup filenames: alphanumeric, dashes, underscores, dots only.
+_VALID_BACKUP_FILENAME = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 def _parse_pg_env(db_url: str) -> dict[str, str]:
@@ -320,6 +324,26 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
             for file in sorted(backup_path.glob("*.json")):
                 if file.name == "config.json":
                     click.echo("  Skipped: config.json (apply manually)")
+                    continue
+
+                # Validate backup filename to prevent path/URL injection
+                if not _VALID_BACKUP_FILENAME.match(file.name):
+                    click.echo(
+                        f"  Skipped: {file.name} (invalid filename characters)",
+                        err=True,
+                    )
+                    continue
+                if "/" in file.stem or "\\" in file.stem:
+                    click.echo(
+                        f"  Skipped: {file.name} (contains path separators)",
+                        err=True,
+                    )
+                    continue
+                if "://" in file.stem or file.stem.startswith("http"):
+                    click.echo(
+                        f"  Skipped: {file.name} (contains URL-like pattern)",
+                        err=True,
+                    )
                     continue
 
                 endpoint = file.stem.replace("_", "/")

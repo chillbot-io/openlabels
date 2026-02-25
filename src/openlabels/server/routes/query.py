@@ -64,13 +64,66 @@ _BLOCKED_FUNCTIONS = re.compile(
     r"read_csv|read_csv_auto|read_json|read_json_auto|read_parquet|"
     r"read_ndjson|read_ndjson_auto|"
     r"glob|scan_parquet|scan_csv|scan_json|"
-    r"httpfs|http_get|http_post)\b",
+    r"httpfs|http_get|http_post|"
+    r"duckdb_settings)\b",
     re.IGNORECASE,
 )
 
 MAX_RESULT_ROWS = 10_000
 MAX_QUERY_LENGTH = 10_000
 QUERY_TIMEOUT_SECONDS = 30
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Strip SQL comments while preserving content inside string literals.
+
+    Removes single-line (``-- ...``) and block (``/* ... */``) comments
+    that appear *outside* of string literals. This prevents attackers from
+    hiding forbidden keywords inside comments that the regex-based
+    validator would otherwise miss.
+    """
+    result: list[str] = []
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+        # String literal — pass through unchanged
+        if ch in ("'", '"'):
+            quote = ch
+            result.append(ch)
+            i += 1
+            while i < length:
+                if sql[i] == quote:
+                    result.append(sql[i])
+                    i += 1
+                    # Doubled quote = escape
+                    if i < length and sql[i] == quote:
+                        result.append(sql[i])
+                        i += 1
+                        continue
+                    break
+                else:
+                    result.append(sql[i])
+                    i += 1
+            continue
+        # Single-line comment
+        if ch == "-" and i + 1 < length and sql[i + 1] == "-":
+            # Skip to end of line
+            while i < length and sql[i] != "\n":
+                i += 1
+            result.append(" ")  # replace comment with space to preserve token boundaries
+            continue
+        # Block comment
+        if ch == "/" and i + 1 < length and sql[i + 1] == "*":
+            i += 2
+            while i + 1 < length and not (sql[i] == "*" and sql[i + 1] == "/"):
+                i += 1
+            i += 2  # skip closing */
+            result.append(" ")
+            continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
 
 
 def validate_sql(sql: str) -> str:
@@ -86,13 +139,18 @@ def validate_sql(sql: str) -> str:
     if len(sql) > MAX_QUERY_LENGTH:
         raise ValueError(f"Query exceeds maximum length ({MAX_QUERY_LENGTH} characters)")
 
-    if not _ALLOWED_START.match(sql):
+    # SECURITY: Strip SQL comments before validation so that forbidden
+    # keywords hidden inside comments (e.g. ``SELECT /* DROP TABLE */ ...``)
+    # are not smuggled past the regex checks.
+    sql_no_comments = _strip_sql_comments(sql)
+
+    if not _ALLOWED_START.match(sql_no_comments):
         raise ValueError("Only SELECT and WITH (CTE) queries are allowed")
 
-    if _FORBIDDEN_PATTERNS.search(sql):
+    if _FORBIDDEN_PATTERNS.search(sql_no_comments):
         raise ValueError("Query contains forbidden statements (DDL/DML not allowed)")
 
-    if _BLOCKED_FUNCTIONS.search(sql):
+    if _BLOCKED_FUNCTIONS.search(sql_no_comments):
         raise ValueError("Query contains blocked functions")
 
     # Check for multiple statements (semicolons within the query)

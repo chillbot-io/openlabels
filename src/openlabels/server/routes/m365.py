@@ -23,6 +23,7 @@ access to the tenant's data.
 
 from __future__ import annotations
 
+import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -86,7 +87,7 @@ def _get_m365_config() -> tuple[str, str]:
     """Get the bootstrap M365 app's client_id and client_secret."""
     settings = get_settings()
     client_id = settings.m365.client_id
-    client_secret = settings.m365.client_secret
+    client_secret = settings.m365.client_secret.get_secret_value()
 
     if not client_id or not client_secret:
         raise HTTPException(
@@ -565,20 +566,31 @@ def _popup_response(
     """Return an HTML page that posts a message to the parent window and closes."""
     import json
 
+    # SECURITY: Escape all user-supplied values to prevent XSS injection.
+    # tenant_name comes from Microsoft Graph (displayName) and error may
+    # contain user-supplied query parameters — both must be escaped before
+    # being embedded in the HTML response.
+    safe_tenant_id = html.escape(tenant_id or "", quote=True)
+    safe_tenant_name = html.escape(tenant_name or "", quote=True)
+    safe_error = html.escape(error or "", quote=True)
+
     payload = json.dumps({
         "type": "m365_consent_result",
         "success": success,
-        "tenant_id": tenant_id,
-        "tenant_name": tenant_name,
-        "error": error,
+        "tenant_id": safe_tenant_id or None,
+        "tenant_name": safe_tenant_name or None,
+        "error": safe_error or None,
     })
 
-    html = f"""<!DOCTYPE html>
+    status_msg = "Connected successfully!" if success else "Connection failed."
+    detail_msg = "You can close this window." if success else safe_error
+
+    page = f"""<!DOCTYPE html>
 <html>
 <head><title>Microsoft 365 Setup</title></head>
 <body>
-<p>{"Connected successfully!" if success else "Connection failed."}</p>
-<p>{"You can close this window." if success else (error or "")}</p>
+<p>{status_msg}</p>
+<p>{detail_msg}</p>
 <script>
   if (window.opener) {{
     window.opener.postMessage({payload}, window.location.origin);
@@ -587,4 +599,4 @@ def _popup_response(
 </script>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=page)

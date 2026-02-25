@@ -28,6 +28,7 @@ import os
 import re
 import threading
 import zipfile
+from xml.sax.saxutils import escape as xml_escape
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -267,44 +268,57 @@ class LocalLabelWriter:
                 pids = re.findall(r'pid="(\d+)"', custom_xml)
                 next_pid = max([int(p) for p in pids], default=1) + 1
 
-                # Build new properties
+                # Build new properties (XML-escape all values to prevent injection)
+                safe_label_id = xml_escape(label_id)
+                safe_label_name = xml_escape(label_name or "")
+                safe_classification = xml_escape(label_name or label_id)
                 new_props = (
                     f'\n  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
                     f' pid="{next_pid}" name="OpenLabels_LabelId">\n'
-                    f'    <vt:lpwstr>{label_id}</vt:lpwstr>\n'
+                    f'    <vt:lpwstr>{safe_label_id}</vt:lpwstr>\n'
                     f'  </property>\n'
                     f'  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
                     f' pid="{next_pid + 1}" name="OpenLabels_LabelName">\n'
-                    f'    <vt:lpwstr>{label_name or ""}</vt:lpwstr>\n'
+                    f'    <vt:lpwstr>{safe_label_name}</vt:lpwstr>\n'
                     f'  </property>\n'
                     f'  <property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}"'
                     f' pid="{next_pid + 2}" name="Classification">\n'
-                    f'    <vt:lpwstr>{label_name or label_id}</vt:lpwstr>\n'
+                    f'    <vt:lpwstr>{safe_classification}</vt:lpwstr>\n'
                     f'  </property>\n'
                 )
 
                 # Insert before closing tag
                 custom_xml = custom_xml.replace("</Properties>", new_props + "</Properties>")
 
+                # Check if we need to update [Content_Types].xml
+                needs_content_types_update = False
+                updated_content_types = None
+                if custom_props_path not in file_list:
+                    content_types = zf.read("[Content_Types].xml").decode("utf-8")
+                    if "custom.xml" not in content_types:
+                        needs_content_types_update = True
+                        updated_content_types = content_types.replace(
+                            "</Types>",
+                            '<Override PartName="/docProps/custom.xml" '
+                            'ContentType="application/vnd.openxmlformats-officedocument.'
+                            'custom-properties+xml"/></Types>',
+                        )
+
                 # Write updated file
                 output = io.BytesIO()
                 with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as out_zf:
                     for item in file_list:
-                        if item != custom_props_path:
-                            out_zf.writestr(item, zf.read(item))
+                        if item == custom_props_path:
+                            continue
+                        # Skip [Content_Types].xml if we need to rewrite it
+                        if needs_content_types_update and item == "[Content_Types].xml":
+                            continue
+                        out_zf.writestr(item, zf.read(item))
                     out_zf.writestr(custom_props_path, custom_xml.encode("utf-8"))
 
-                    # Update content types if custom.xml is new
-                    if custom_props_path not in file_list:
-                        content_types = zf.read("[Content_Types].xml").decode("utf-8")
-                        if "custom.xml" not in content_types:
-                            content_types = content_types.replace(
-                                "</Types>",
-                                '<Override PartName="/docProps/custom.xml" '
-                                'ContentType="application/vnd.openxmlformats-officedocument.'
-                                'custom-properties+xml"/></Types>',
-                            )
-                            out_zf.writestr("[Content_Types].xml", content_types.encode("utf-8"))
+                    # Write updated content types if custom.xml is new
+                    if needs_content_types_update and updated_content_types is not None:
+                        out_zf.writestr("[Content_Types].xml", updated_content_types.encode("utf-8"))
 
                 with open(file_path, "wb") as f:
                     f.write(output.getvalue())
@@ -931,7 +945,7 @@ class LabelingEngine:
             item_id = file_info.item_id or ""
 
             # Determine the Graph API endpoint
-            if file_info.adapter == "sharepoint":
+            if file_info.adapter == AdapterType.SHAREPOINT:
                 # SharePoint: /sites/{site_id}/drive/items/{item_id}
                 if "/drive/items/" in item_id:
                     endpoint = f"/{item_id}"
@@ -1098,5 +1112,5 @@ def create_labeling_engine() -> LabelingEngine:
     return LabelingEngine(
         tenant_id=settings.auth.tenant_id,
         client_id=settings.auth.client_id,
-        client_secret=settings.auth.client_secret,
+        client_secret=settings.auth.client_secret.get_secret_value() if settings.auth.client_secret else None,
     )

@@ -221,18 +221,53 @@ async def get_subscription_status(
                 error=proc.stderr.strip() or "Subscription not found",
             )
 
-        # Parse key fields from wecutil output
+        # Parse key fields from wecutil XML output using proper XML parser
         output = proc.stdout
-        enabled = "<Enabled>true</Enabled>" in output.lower() or "Enabled: true" in output
-        # Count source entries (each <EventSource> in XML)
-        source_count = output.count("<EventSource>")
-        # Check for active/inactive
-        if "Active" in output:
-            status = "active"
-        elif "Inactive" in output:
-            status = "inactive"
-        else:
-            status = "active" if enabled else "disabled"
+        try:
+            import xml.etree.ElementTree as ET
+
+            root = ET.fromstring(output)
+            # Handle namespaced and non-namespaced XML
+            ns = {"s": "http://schemas.microsoft.com/2006/03/windows/events/subscription"}
+
+            # Try namespaced first, fall back to non-namespaced
+            enabled_el = root.find(".//s:Enabled", ns) or root.find(".//Enabled")
+            enabled = (
+                enabled_el is not None
+                and enabled_el.text is not None
+                and enabled_el.text.strip().lower() == "true"
+            )
+
+            # Count source entries
+            source_count = (
+                len(root.findall(".//s:EventSource", ns))
+                or len(root.findall(".//EventSource"))
+            )
+
+            # Determine status from runtime info
+            status_el = root.find(".//s:RuntimeStatus", ns) or root.find(".//RuntimeStatus")
+            if status_el is not None and status_el.text:
+                raw_status = status_el.text.strip().lower()
+                if "active" in raw_status:
+                    status = "active"
+                elif "inactive" in raw_status:
+                    status = "inactive"
+                else:
+                    status = "active" if enabled else "disabled"
+            else:
+                status = "active" if enabled else "disabled"
+
+        except ET.ParseError:
+            # Fallback to string matching if XML parsing fails
+            # (e.g., wecutil returned non-XML text output)
+            enabled = "Enabled: true" in output or "enabled>true" in output.lower()
+            source_count = output.count("<EventSource>") or output.count("EventSource")
+            if "Active" in output:
+                status = "active"
+            elif "Inactive" in output:
+                status = "inactive"
+            else:
+                status = "active" if enabled else "disabled"
 
         return WEFSubscriptionInfo(
             name=subscription_name,

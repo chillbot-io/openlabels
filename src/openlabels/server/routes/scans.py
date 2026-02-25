@@ -185,7 +185,7 @@ async def cancel_scan(
     _admin: AdminContextDep,
     db: DbSessionDep,
 ):
-    """Cancel a running scan (POST method for HTMX)."""
+    """Cancel a running scan (POST method)."""
     audit_log(
         db, tenant_id=_admin.tenant_id, user_id=_admin.user_id,
         action="scan_cancelled", resource_type="scan", resource_id=scan_id,

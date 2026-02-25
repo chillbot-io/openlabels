@@ -190,7 +190,12 @@ async def _find_or_create_user(
             logger.info("Promoting user %s to admin (Azure AD role grant)", user.email)
             user.role = "admin"
         elif "admin" not in claims.roles and user.role == "admin":
-            logger.info("Demoting user %s from admin (Azure AD role revoked)", user.email)
+            logger.warning(
+                "Demoting user %s from admin to viewer because IdP claims "
+                "no longer include 'admin' role. If this is unexpected, "
+                "check the IdP role assignments.",
+                user.email,
+            )
             user.role = "viewer"
 
     return user
@@ -212,7 +217,7 @@ async def get_current_user(
                 "OPENLABELS_SERVER__DEBUG=true for development.",
             )
         # SECURITY: Dev mode only allowed when bound to localhost
-        if settings.server.host not in ("127.0.0.1", "localhost", "0.0.0.0", "::1"):
+        if settings.server.host not in ("127.0.0.1", "localhost", "::1"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Auth provider 'none' is only allowed when server.host "
@@ -232,7 +237,7 @@ async def get_current_user(
             claims = await validate_token(token)
         except (ValueError, AuthError) as e:
             # SECURITY: Log specific error server-side; return generic message to client
-            logger.debug("Token validation failed: %s", e)
+            logger.warning("Token validation failed: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication failed",
@@ -243,6 +248,7 @@ async def get_current_user(
     cu = CurrentUser.model_validate(user)
     set_tenant_id(str(cu.tenant_id))
     set_user_id(str(cu.id))
+    logger.info("Authenticated user %s (role=%s, tenant=%s)", cu.email, cu.role, cu.tenant_id)
     return cu
 
 
@@ -256,6 +262,14 @@ async def get_optional_user(
     if settings.auth.provider == "none":
         if not settings.server.debug:
             return None
+        # SECURITY: Dev mode only allowed when bound to localhost
+        if settings.server.host not in ("127.0.0.1", "localhost", "::1"):
+            logger.warning(
+                "get_optional_user: rejecting dev-mode auth because "
+                "server.host=%s is not localhost",
+                settings.server.host,
+            )
+            return None
         user = await get_or_create_user(session, _DEV_CLAIMS)
         return CurrentUser.model_validate(user)
 
@@ -266,7 +280,8 @@ async def get_optional_user(
         claims = await validate_token(token)
         user = await get_or_create_user(session, claims)
         return CurrentUser.model_validate(user)
-    except (ValueError, AuthError):
+    except (ValueError, AuthError) as e:
+        logger.warning("get_optional_user: token validation failed: %s", e)
         return None
 
 
@@ -280,7 +295,7 @@ def require_role(*allowed_roles: str) -> _RoleDep:
         user: CurrentUser = Depends(get_current_user),
     ) -> CurrentUser:
         if user.role not in allowed_roles:
-            logger.debug(
+            logger.warning(
                 "RBAC denied: user %s (role=%s) needs one of %s",
                 user.email, user.role, allowed_roles,
             )

@@ -22,6 +22,7 @@ from openlabels.adapters.base import (
     ExposureLevel,
     FileInfo,
     FilterConfig,
+    FolderInfo,
     PartitionSpec,
     is_label_compatible,
     resolve_prefix,

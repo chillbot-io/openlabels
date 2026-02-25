@@ -75,10 +75,10 @@ class DuckDBEngine:
             s3 = config.s3
             if s3.region:
                 self._db.execute(f"SET s3_region = '{self._esc(s3.region)}';")
-            if s3.access_key:
-                self._db.execute(f"SET s3_access_key_id = '{self._esc(s3.access_key)}';")
-            if s3.secret_key:
-                self._db.execute(f"SET s3_secret_access_key = '{self._esc(s3.secret_key)}';")
+            if s3.access_key.get_secret_value():
+                self._db.execute(f"SET s3_access_key_id = '{self._esc(s3.access_key.get_secret_value())}';")
+            if s3.secret_key.get_secret_value():
+                self._db.execute(f"SET s3_secret_access_key = '{self._esc(s3.secret_key.get_secret_value())}';")
             if s3.endpoint_url:
                 # Strip protocol for DuckDB
                 endpoint = s3.endpoint_url.replace("https://", "").replace("http://", "")
@@ -91,13 +91,15 @@ class DuckDBEngine:
         elif backend == "azure":
             self._db.execute("INSTALL azure; LOAD azure;")
             az = config.azure
-            if az.connection_string:
+            conn_str = az.connection_string.get_secret_value() if az.connection_string else ""
+            acct_key = az.account_key.get_secret_value() if az.account_key else ""
+            if conn_str:
                 self._db.execute(
-                    f"SET azure_storage_connection_string = '{self._esc(az.connection_string)}';"
+                    f"SET azure_storage_connection_string = '{self._esc(conn_str)}';"
                 )
-            elif az.account_name and az.account_key:
+            elif az.account_name and acct_key:
                 self._db.execute(f"SET azure_account_name = '{self._esc(az.account_name)}';")
-                self._db.execute(f"SET azure_account_key = '{self._esc(az.account_key)}';")
+                self._db.execute(f"SET azure_account_key = '{self._esc(acct_key)}';")
             logger.info("DuckDB azure extension loaded")
 
     # View definitions: (view_name, glob_pattern)

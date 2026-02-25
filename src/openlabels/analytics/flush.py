@@ -133,6 +133,9 @@ async def flush_scan_to_catalog(
 
 
 
+_FLUSH_BATCH_LIMIT = 50_000
+
+
 async def flush_events_to_catalog(
     session: AsyncSession,
     storage: CatalogStorage,
@@ -141,6 +144,11 @@ async def flush_events_to_catalog(
     Export new access events, audit logs, and remediation actions
     since the last flush.
 
+    Queries are bounded by ``_FLUSH_BATCH_LIMIT`` to avoid loading
+    millions of rows into memory.  Parquet files are written *before*
+    the flush state is updated so that a crash mid-flush does not
+    lose data (at worst, the next flush re-exports the same batch).
+
     Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": K}``.
     """
     from openlabels.server.models import AuditLog, FileAccessEvent, RemediationAction
@@ -148,8 +156,13 @@ async def flush_events_to_catalog(
     state = load_flush_state(storage)
     counts: dict[str, int] = {"access_events": 0, "audit_logs": 0, "remediation_actions": 0}
 
+    # --- Access events ---
     last_ae = state.get("last_access_event_flush")
-    ae_query = select(FileAccessEvent).order_by(FileAccessEvent.collected_at)
+    ae_query = (
+        select(FileAccessEvent)
+        .order_by(FileAccessEvent.collected_at)
+        .limit(_FLUSH_BATCH_LIMIT)
+    )
     if last_ae:
         cutoff = datetime.fromisoformat(last_ae)
         ae_query = ae_query.where(FileAccessEvent.collected_at > cutoff)
@@ -160,14 +173,19 @@ async def flush_events_to_catalog(
     if ae_rows:
         table = access_events_to_arrow(ae_rows)
 
-        # Group by tenant + event_date and write partitioned files
+        # Write Parquet FIRST, then update state on success
         _write_partitioned_access_events(storage, ae_rows, table)
 
         state["last_access_event_flush"] = ae_rows[-1].collected_at.isoformat()
         counts["access_events"] = len(ae_rows)
 
+    # --- Audit logs ---
     last_al = state.get("last_audit_log_flush")
-    al_query = select(AuditLog).order_by(AuditLog.created_at)
+    al_query = (
+        select(AuditLog)
+        .order_by(AuditLog.created_at)
+        .limit(_FLUSH_BATCH_LIMIT)
+    )
     if last_al:
         cutoff = datetime.fromisoformat(last_al)
         al_query = al_query.where(AuditLog.created_at > cutoff)
@@ -181,8 +199,13 @@ async def flush_events_to_catalog(
         state["last_audit_log_flush"] = al_rows[-1].created_at.isoformat()
         counts["audit_logs"] = len(al_rows)
 
+    # --- Remediation actions ---
     last_ra = state.get("last_remediation_action_flush")
-    ra_query = select(RemediationAction).order_by(RemediationAction.created_at)
+    ra_query = (
+        select(RemediationAction)
+        .order_by(RemediationAction.created_at)
+        .limit(_FLUSH_BATCH_LIMIT)
+    )
     if last_ra:
         cutoff = datetime.fromisoformat(last_ra)
         ra_query = ra_query.where(RemediationAction.created_at > cutoff)
@@ -196,6 +219,9 @@ async def flush_events_to_catalog(
         state["last_remediation_action_flush"] = ra_rows[-1].created_at.isoformat()
         counts["remediation_actions"] = len(ra_rows)
 
+    # Persist state only AFTER all Parquet writes have succeeded.
+    # This ensures that if a crash occurs mid-flush, the next run
+    # will re-export from the last successful cursor.
     save_flush_state(storage, state)
     return counts
 

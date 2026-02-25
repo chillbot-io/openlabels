@@ -169,8 +169,13 @@ class PDFExtractor(BaseExtractor):
                         )
                         img_array = np.array(img)
 
-                        # Run OCR
-                        ocr_text = self.ocr_engine.extract_text(img_array)
+                        # Run OCR — use extract_text_with_confidence if
+                        # available so we can report real OCR confidence.
+                        if hasattr(self.ocr_engine, 'extract_text_with_confidence'):
+                            ocr_text, page_confidence = self.ocr_engine.extract_text_with_confidence(img_array)
+                            ocr_confidences.append(page_confidence)
+                        else:
+                            ocr_text = self.ocr_engine.extract_text(img_array)
 
                         pages_text.append(ocr_text)
                         ocr_pages.append(i)

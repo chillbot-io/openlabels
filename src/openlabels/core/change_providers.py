@@ -184,11 +184,22 @@ class SQSChangeProvider:
         self._queue_url = queue_url
         self._bucket = bucket
         self._region = region
-        self._access_key = access_key
-        self._secret_key = secret_key
+        # Store credentials in a dict to avoid exposing them as simple
+        # instance attributes in tracebacks / repr.
+        self._credentials: dict[str, str] = {
+            "aws_access_key_id": access_key,
+            "aws_secret_access_key": secret_key,
+        }
         self._max_messages = min(max_messages, 10)
         self._wait_time_seconds = min(wait_time_seconds, 20)
         self._client: Any = None
+
+    def __repr__(self) -> str:
+        return (
+            f"SQSChangeProvider(queue_url={self._queue_url!r}, "
+            f"bucket={self._bucket!r}, region={self._region!r}, "
+            f"access_key='***', secret_key='***')"
+        )
 
     async def changed_files(self) -> AsyncIterator[FileInfo]:
         """Poll SQS and yield S3 keys that changed."""
@@ -272,9 +283,11 @@ class SQSChangeProvider:
                 "service_name": "sqs",
                 "region_name": self._region,
             }
-            if self._access_key and self._secret_key:
-                kwargs["aws_access_key_id"] = self._access_key
-                kwargs["aws_secret_access_key"] = self._secret_key
+            ak = self._credentials.get("aws_access_key_id", "")
+            sk = self._credentials.get("aws_secret_access_key", "")
+            if ak and sk:
+                kwargs["aws_access_key_id"] = ak
+                kwargs["aws_secret_access_key"] = sk
             self._client = boto3.client(**kwargs)
         return self._client
 

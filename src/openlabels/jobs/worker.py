@@ -731,47 +731,66 @@ class Worker:
         except JobError as e:
             # Domain-specific job error - log with full context
             logger.error(f"Job {job.id} ({job.task_type}) failed: {e}")
-            await queue.fail(job.id, str(e))
+            await self._safe_fail(queue, job.id, str(e))
         except SQLAlchemyError as e:
             # Database error during job execution
             error_msg = f"Database error during {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with database error: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except PermissionError as e:
             # File/resource permission issue
             error_msg = f"Permission denied during {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed with permission error: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except FileNotFoundError as e:
             # Missing file/resource
             error_msg = f"File not found during {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed - file not found: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except OSError as e:
             # General OS/IO error
             error_msg = f"OS error during {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with OS error: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except ValueError as e:
             # Invalid input/data
             error_msg = f"Invalid data in {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed with value error: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except asyncio.CancelledError:
             # Task cancelled - re-raise to allow graceful shutdown
             logger.warning(f"Job {job.id} cancelled during execution")
-            await queue.fail(job.id, "Job cancelled during execution")
+            await self._safe_fail(queue, job.id, "Job cancelled during execution")
             raise
         except RuntimeError as e:
             # Catch-all for runtime issues
             error_msg = f"Runtime error in {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with runtime error: {error_msg}")
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
         except Exception as e:
             # Catch-all for any other unexpected exception types
             error_msg = f"Unexpected error in {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with unexpected error: {error_msg}", exc_info=True)
-            await queue.fail(job.id, error_msg)
+            await self._safe_fail(queue, job.id, error_msg)
+
+    @staticmethod
+    async def _safe_fail(queue: JobQueue, job_id, error_msg: str) -> None:
+        """Call queue.fail() with protection against secondary failures.
+
+        If queue.fail() itself raises (e.g. lost DB connection), the
+        error is logged so the job can be reclaimed by the stuck-job
+        reclaimer rather than silently remaining in RUNNING forever.
+        """
+        try:
+            await queue.fail(job_id, error_msg)
+        except Exception as fail_exc:
+            logger.error(
+                "CRITICAL: queue.fail() itself failed for job %s — "
+                "job will remain in RUNNING state until reclaimed by "
+                "stuck-job reclaimer. Original error: %s | "
+                "queue.fail() error: %s",
+                job_id, error_msg, fail_exc,
+            )
 
 
 def run_worker(concurrency: int | None = None) -> None:

@@ -60,7 +60,7 @@ def _create_before_send_hook(
 
 def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> bool:
     """Initialize Sentry error tracking if DSN is configured."""
-    if not sentry_settings.dsn:
+    if not sentry_settings.dsn or not sentry_settings.dsn.get_secret_value():
         logger.info("Sentry DSN not configured, error tracking disabled")
         return False
 
@@ -79,7 +79,7 @@ def init_sentry(sentry_settings: SentrySettings, server_environment: str) -> boo
             profiles_sample_rate = max(profiles_sample_rate, 0.5)
 
         sentry_sdk.init(
-            dsn=sentry_settings.dsn,
+            dsn=sentry_settings.dsn.get_secret_value(),
             environment=environment,
             release=f"openlabels@{__version__}",
             traces_sample_rate=traces_sample_rate,

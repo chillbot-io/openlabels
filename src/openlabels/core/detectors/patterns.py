@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Common words/phrases that get incorrectly matched as names
 # These are document headers, labels, medical terms that match NAME patterns
-FALSE_POSITIVE_NAMES: set[str] = {
+FALSE_POSITIVE_NAMES: frozenset[str] = frozenset({
     # Document types/headers
     "LABORATORY", "REPORT", "LICENSE", "CERTIFICATE", "DOCUMENT",
     "INSURANCE", "CARD", "STATEMENT", "RECORD", "FORM", "APPLICATION",
@@ -167,10 +167,43 @@ FALSE_POSITIVE_NAMES: set[str] = {
     "NOW", "THIS", "FORWARD", "HUMAN", "SAMPLE",
     "COLLECTION", "TERMINATION", "MEMORIAL",
     "VETERAN", "VETERANS", "PRAIRIE", "COUNTY",
-}
+})
 
-# Compile into lowercase set for case-insensitive matching
-_FALSE_POSITIVE_NAMES_LOWER = {s.lower() for s in FALSE_POSITIVE_NAMES}
+# Compile into lowercase frozenset for case-insensitive matching
+_FALSE_POSITIVE_NAMES_LOWER = frozenset(s.lower() for s in FALSE_POSITIVE_NAMES)
+
+# Module-level frozensets for O(1) lookups in _is_false_positive_name
+_CURRENCY_WORDS = frozenset({
+    "DOLLAR", "DINAR", "RIAL", "EURO", "POUND", "FRANC", "YEN", "WON",
+    "PESO", "RUPEE", "LIRA", "KRONA", "KRONE", "BAHT", "YUAN", "RUBLE",
+    "RAND", "RINGGIT", "SHEKEL", "OMANI", "BAHRAINI", "SINGAPORE",
+    "ZIMBABWE", "CURRENCY",
+})
+
+_ROLE_WORDS = frozenset({
+    "STAFF", "DEPARTMENT", "ENGINEER", "DEVELOPER", "PLANNER", "MANAGER",
+    "DIRECTOR", "ANALYST", "SPECIALIST", "COORDINATOR", "NURSE", "CARE",
+    "MOBILITY", "CREATIVE", "INFRASTRUCTURE", "NEUROPSYCHOLOGISTS",
+    "NEUROPSYCHOLOGIST",
+})
+
+_DOCUMENT_FIRST_WORDS = frozenset({
+    "LABORATORY", "REPORT", "LICENSE", "CERTIFICATE", "DOCUMENT",
+    "INSURANCE", "DISCHARGE", "SUMMARY", "ASSESSMENT", "CONSULTATION",
+})
+
+_DOCUMENT_LAST_WORDS = frozenset({
+    "REPORT", "REPORTS", "FORM", "DOCUMENT", "CERTIFICATE", "LICENSE",
+    "SUMMARY", "RESULTS", "HISTORY", "NOTES", "CHART",
+})
+
+_US_STATE_ABBREVS = frozenset({
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+})
 
 
 def _is_false_positive_name(value: str) -> bool:
@@ -191,38 +224,20 @@ def _is_false_positive_name(value: str) -> bool:
         return True
 
     # If ANY word is a currency, reject (catches "Bahraini Dinar", "Singapore Dollar")
-    _CURRENCY_WORDS = {
-        "DOLLAR", "DINAR", "RIAL", "EURO", "POUND", "FRANC", "YEN", "WON",
-        "PESO", "RUPEE", "LIRA", "KRONA", "KRONE", "BAHT", "YUAN", "RUBLE",
-        "RAND", "RINGGIT", "SHEKEL", "OMANI", "BAHRAINI", "SINGAPORE",
-        "ZIMBABWE", "CURRENCY",
-    }
     if any(w.upper() in _CURRENCY_WORDS for w in words):
         return True
 
     # If ANY word is a common non-name word (job titles, departments, roles)
     # and the match has multiple words, reject
-    _ROLE_WORDS = {
-        "STAFF", "DEPARTMENT", "ENGINEER", "DEVELOPER", "PLANNER", "MANAGER",
-        "DIRECTOR", "ANALYST", "SPECIALIST", "COORDINATOR", "NURSE", "CARE",
-        "MOBILITY", "CREATIVE", "INFRASTRUCTURE", "NEUROPSYCHOLOGISTS",
-        "NEUROPSYCHOLOGIST",
-    }
     if len(words) >= 2 and any(w.upper() in _ROLE_WORDS for w in words):
         return True
 
     # If first word is a common document term (not a name), likely FP
-    if words and words[0].upper() in {
-        "LABORATORY", "REPORT", "LICENSE", "CERTIFICATE", "DOCUMENT",
-        "INSURANCE", "DISCHARGE", "SUMMARY", "ASSESSMENT", "CONSULTATION",
-    }:
+    if words and words[0].upper() in _DOCUMENT_FIRST_WORDS:
         return True
 
     # If last word is a common document term, likely FP (catches "Y REPORT", "RY REPORT")
-    if words and words[-1].upper() in {
-        "REPORT", "REPORTS", "FORM", "DOCUMENT", "CERTIFICATE", "LICENSE",
-        "SUMMARY", "RESULTS", "HISTORY", "NOTES", "CHART",
-    }:
+    if words and words[-1].upper() in _DOCUMENT_LAST_WORDS:
         return True
 
     # Check for patterns that look like document text fragments
@@ -234,24 +249,15 @@ def _is_false_positive_name(value: str) -> bool:
 
         # Short first word + document term = likely fragment (e.g., "Y REPORT")
         # BUT exclude valid medical credentials after a comma (e.g., "E. Washington, MD")
-        VALID_CREDENTIALS = {"MD", "DO", "PA", "NP", "RN", "PHD", "DNP", "APRN", "PAC"}
+        _VALID_CREDENTIALS = frozenset({"MD", "DO", "PA", "NP", "RN", "PHD", "DNP", "APRN", "PAC"})
         if len(first_word) <= 2 and last_word.upper() in FALSE_POSITIVE_NAMES:
             # Exception: comma + credential = valid provider name
             last_clean = last_word.upper().replace("-", "")
-            if not ("," in value and last_clean in VALID_CREDENTIALS):
+            if not ("," in value and last_clean in _VALID_CREDENTIALS):
                 return True
 
         # Check if ends with state abbreviation mistaken for credentials
-        # Full list of US state abbreviations
-        US_STATE_ABBREVS = {
-            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"
-        }
-
-        if last_word.upper() in US_STATE_ABBREVS:
+        if last_word.upper() in _US_STATE_ABBREVS:
             # Check for "City, STATE" pattern (address, not name)
             # Pattern: "Baltimore, MD" or "New York, NY"
             # Real credentials would be "John Smith, MD" (name + credential)
@@ -1708,7 +1714,7 @@ _p(r'(?:temporary|temp|initial|default)\s+(?:password|pwd|passcode|passphrase|pi
 # "password is XXXX" / "pin is XXXX" / "pass is XXXX" — verb separator instead of colon/equals
 _p(r'(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s+(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I),
 # "password for X is Y" — "for" clause between password and value
-_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:for\s+\S+(?:\s+\S+){0,4}?\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+_p(r'(?:password|passwd|pwd|passcode|pin|pass)\s+(?:for\s+\S+(?:\s\S+){0,4}\s+)?(?:is|was|will\s+be)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
 _p(r'(?:kennwort|passwort|mot\s+de\s+passe|contraseña|wachtwoord|senha)\s+(?:is|ist|est|es|é)\s+([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.88, 1, flags=re.I | re.UNICODE),
 # PIN with label context: "PIN code XXXX", "PIN - XXXX", "pin XXXX", "pin: XXXX"
 _p(r'\bpin\s*[=:]\s*(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
@@ -1728,7 +1734,7 @@ _p(r'(?:passwords?|passcodes?),?\s+(?:with|like|such\s+as|including)\s+([A-Za-z0
 # "asking for your X" — social engineering context (password)
 _p(r'(?:asking|asks)\s+for\s+your\s+([A-Za-z0-9_]{6,50})\b(?=\.\s|[\s,])', 'PASSWORD', 0.78, 1, flags=re.I),
 # "password for accessing online content: X" — colon after content context
-_p(r'(?:password|passcode|pwd|pass)\s+for\s+\S+(?:\s+\S+){0,4}?:\s*([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
+_p(r'(?:password|passcode|pwd|pass)\s+for\s+\S+(?:\s\S+){0,4}:\s*([^\s.,;:!?)]{4,50})', 'PASSWORD', 0.86, 1, flags=re.I),
 # "use X to access" / "use X for one-time access"
 _p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:to\s+access|for\s+(?:one-time\s+)?access)', 'PASSWORD', 0.82, 1, flags=re.I),
 # "use XXXX to access" — 4-digit PIN variant
@@ -1759,7 +1765,7 @@ _p(r'\b\S+\s+&\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b', 'PASSWORD', 0.78, 1, flags=r
 # "Use X for access" / "Use X to get access" — broader access patterns
 _p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:to\s+get\s+access|for\s+access)', 'PASSWORD', 0.82, 1, flags=re.I),
 # "Use X on DATE for access" — use with intervening context before "for access"
-_p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:\S+\s+){0,5}?for\s+access\b', 'PASSWORD', 0.78, 1, flags=re.I),
+_p(r'\buse\s+([A-Za-z0-9_]{6,50})\s+(?:\S+\s){0,5}for\s+access\b', 'PASSWORD', 0.78, 1, flags=re.I),
 # "remember your X for" — extend from digits-only to alphanumeric
 _p(r'\b(?:remember|note|save)\s+(?:your\s+)?([A-Za-z0-9_]{6,50})\b(?=\s+(?:for|as|when|to|during))', 'PASSWORD', 0.78, 1, flags=re.I),
 # "share your login X" — sharing context (require "login" keyword to avoid FPs like "share your details")
@@ -1774,7 +1780,7 @@ _p(r'(?:use|enter|provide)\s+(?:the\s+)?code\s+([A-Za-z0-9_]{3,50})\b', 'PASSWOR
 # "PIN is DIGITS" — ensure PIN + "is" works for digit PINs
 _p(r'\bpin\s+(?:is|was|will\s+be)\s+(\d{4,8})\b', 'PASSWORD', 0.88, 1, flags=re.I),
 # "PIN ... is DIGITS" — PIN with intervening words ("security pin linked to this transaction is 0442")
-_p(r'\bpin\s+(?:\S+\s+){1,6}?(?:is|was)\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
+_p(r'\bpin\s+(?:\S+\s){1,6}(?:is|was)\s+(\d{4,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),
 # "Use X and Y" — credential pair without "using" prefix
 _p(r'\b[Uu]se\s+\S+\s+and\s+([A-Za-z0-9_]{6,50})\b', 'PASSWORD', 0.78, 1, flags=re.I),
 # "using your X" — using + possessive (require digit to avoid FPs like "using your profile")
@@ -1794,9 +1800,9 @@ _p(r'(?:encrypt|decrypt)\s+(?:\S+\s+)?(?:using|with)\s+([A-Za-z0-9_]{6,50})\b', 
 _p(r'\bimplement\s+([A-Za-z0-9_]*\d[A-Za-z0-9_]*)\b(?=\s+(?:and|for|to|as|in))', 'PASSWORD', 0.75, 1, flags=re.I),
 # "password/pin/passcode ... DIGITS" — password label with intervening words,
 # 4-8 digit value (common PINs and numeric passwords).
-_p(r'\b(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s+(?:\S+\s+){1,5}?(\d{4,8})\b', 'PASSWORD', 0.78, 1, flags=re.I),
+_p(r'\b(?:password|passwd|pwd|passcode|passphrase|pin|pass)\s+(?:\S+\s){1,5}(\d{4,8})\b', 'PASSWORD', 0.78, 1, flags=re.I),
 # "authenticate with/using DIGITS" — authentication context + numeric code
-_p(r'\b(?:authenticate|login|log\s*in|sign\s*in|access|unlock)\s+(?:\S+\s+){0,3}?(?:with|using)\s+(\d{4,8})\b', 'PASSWORD', 0.80, 1, flags=re.I),
+_p(r'\b(?:authenticate|login|log\s*in|sign\s*in|access|unlock)\s+(?:\S+\s){0,3}(?:with|using)\s+(\d{4,8})\b', 'PASSWORD', 0.80, 1, flags=re.I),
 # "code/password DIGITS" — bare digit password after label, no colon required
 # Require 6+ digits to avoid matching common numbers
 _p(r'\b(?:password|passcode|passcode|secret|passphrase)\s+(\d{6,8})\b', 'PASSWORD', 0.82, 1, flags=re.I),

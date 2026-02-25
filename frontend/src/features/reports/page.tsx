@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs.tsx';
 import { Skeleton } from '@/components/loading-skeleton.tsx';
+import { ConfirmDialog } from '@/components/confirm-dialog.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
 import { downloadBlob } from '@/api/endpoints/export.ts';
 import type { QueryResult } from '@/api/types.ts';
@@ -48,13 +49,31 @@ function ResultsGrid({ result }: { result: QueryResult }) {
   );
 }
 
+const SQL_MAX_LENGTH = 10_000;
+const DANGEROUS_SQL_PATTERNS = /\b(DROP|TRUNCATE|DELETE\s+FROM|ALTER|CREATE|INSERT|UPDATE|GRANT|REVOKE)\b/i;
+
 function SQLEditor() {
   const [sql, setSql] = useState('SELECT * FROM scan_results LIMIT 100');
+  const [showConfirm, setShowConfirm] = useState(false);
   const executeQuery = useExecuteQuery();
   const addToast = useUIStore((s) => s.addToast);
   const schema = useQuerySchema();
 
   const handleExecute = () => {
+    if (!sql.trim()) return;
+    if (sql.length > SQL_MAX_LENGTH) {
+      addToast({ level: 'error', message: `SQL query exceeds maximum length of ${SQL_MAX_LENGTH} characters` });
+      return;
+    }
+    if (DANGEROUS_SQL_PATTERNS.test(sql)) {
+      setShowConfirm(true);
+      return;
+    }
+    runQuery();
+  };
+
+  const runQuery = () => {
+    setShowConfirm(false);
     executeQuery.mutate(sql, {
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
@@ -100,6 +119,15 @@ function SQLEditor() {
       </div>
 
       {executeQuery.data && <ResultsGrid result={executeQuery.data} />}
+
+      <ConfirmDialog
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        title="Potentially Dangerous Query"
+        description="This query contains operations that may modify data (DROP, DELETE, ALTER, etc.). Are you sure you want to execute it?"
+        confirmLabel="Execute Anyway"
+        onConfirm={runQuery}
+      />
     </div>
   );
 }
@@ -107,10 +135,24 @@ function SQLEditor() {
 function AIAssistant() {
   const [question, setQuestion] = useState('');
   const aiQuery = useAIQuery();
+  const executeQuery = useExecuteQuery();
   const addToast = useUIStore((s) => s.addToast);
 
   const handleAsk = () => {
-    aiQuery.mutate({ question, execute: true }, {
+    // Don't auto-execute AI-generated SQL — show it for review first
+    aiQuery.mutate({ question, execute: false }, {
+      onError: (err) => addToast({ level: 'error', message: err.message }),
+    });
+  };
+
+  const handleRunGenerated = () => {
+    if (!aiQuery.data?.sql) return;
+    const sql = aiQuery.data.sql;
+    if (sql.length > SQL_MAX_LENGTH) {
+      addToast({ level: 'error', message: `Generated SQL exceeds maximum length of ${SQL_MAX_LENGTH} characters` });
+      return;
+    }
+    executeQuery.mutate(sql, {
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
   };
@@ -134,13 +176,24 @@ function AIAssistant() {
       {aiQuery.data && (
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-sm">Generated SQL</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Generated SQL</CardTitle>
+                <Button
+                  size="sm"
+                  onClick={handleRunGenerated}
+                  disabled={executeQuery.isPending}
+                >
+                  {executeQuery.isPending ? 'Running...' : 'Run Query'}
+                </Button>
+              </div>
+            </CardHeader>
             <CardContent>
               <pre className="overflow-x-auto rounded-md bg-[var(--muted)] p-3 text-xs">{aiQuery.data.sql}</pre>
               <p className="mt-2 text-sm text-[var(--muted-foreground)]">{aiQuery.data.explanation}</p>
             </CardContent>
           </Card>
-          {aiQuery.data.result && <ResultsGrid result={aiQuery.data.result} />}
+          {executeQuery.data && <ResultsGrid result={executeQuery.data} />}
         </div>
       )}
     </div>

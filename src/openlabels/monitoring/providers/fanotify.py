@@ -298,7 +298,7 @@ class FanotifyProvider:
             return []
 
         events: list[RawAccessEvent] = []
-        buf_size = 4096
+        buf_size = 65536  # 64KB — larger buffer reduces syscall overhead
 
         try:
             data = os.read(self._fan_fd, buf_size)

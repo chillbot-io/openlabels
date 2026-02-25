@@ -2,7 +2,35 @@
 Configuration management commands.
 """
 
+import json
+import re
+
 import click
+
+_SENSITIVE_PATTERN = re.compile(
+    r"(password|secret|key|token|credential|connection_string)",
+    re.IGNORECASE,
+)
+
+_REDACTED = "***REDACTED***"
+
+
+def _redact_dict(data: dict) -> dict:
+    """Recursively redact sensitive values from a configuration dictionary."""
+    redacted: dict = {}
+    for field_name, value in data.items():
+        if isinstance(value, dict):
+            redacted[field_name] = _redact_dict(value)
+        elif isinstance(value, list):
+            redacted[field_name] = [
+                _redact_dict(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        elif _SENSITIVE_PATTERN.search(field_name):
+            redacted[field_name] = _REDACTED
+        else:
+            redacted[field_name] = value
+    return redacted
 
 
 @click.group()
@@ -17,7 +45,9 @@ def config_show():
     from openlabels.server.config import get_settings
 
     settings = get_settings()
-    click.echo(settings.model_dump_json(indent=2))
+    raw = json.loads(settings.model_dump_json())
+    redacted = _redact_dict(raw)
+    click.echo(json.dumps(redacted, indent=2))
 
 
 @config.command("set")

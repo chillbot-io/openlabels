@@ -43,9 +43,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     try {
       await apiFetch('/auth/logout', { method: 'POST' });
-    } finally {
-      set({ user: null, isAuthenticated: false });
-      window.location.href = '/login';
+    } catch (err) {
+      // Server-side logout failed — log a warning but still clear client state
+      // to avoid the user being stuck in an authenticated state
+      console.warn('Server-side logout failed, clearing client state anyway:', err);
     }
+    set({ user: null, isAuthenticated: false });
+    window.location.href = '/login';
   },
 }));

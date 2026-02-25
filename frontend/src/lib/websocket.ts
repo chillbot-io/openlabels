@@ -16,6 +16,8 @@ class OpenLabelsWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
+  private maxReconnectAttempts = 10;
+  private reconnectAttempts = 0;
   private listeners = new Map<string, Set<EventHandler>>();
   private _connected = false;
 
@@ -39,15 +41,19 @@ class OpenLabelsWebSocket {
     this.ws.onopen = () => {
       this._connected = true;
       this.reconnectDelay = 1000;
+      this.reconnectAttempts = 0;
       this.listeners.get('_connection')?.forEach((h) => h({ connected: true }));
     };
 
     this.ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data as string) as { type: string; data: unknown };
-        if (typeof message.type !== 'string' || !KNOWN_EVENT_TYPES.has(message.type)) return;
-        const handlers = this.listeners.get(message.type);
-        handlers?.forEach((handler) => handler(message.data));
+        const message = JSON.parse(event.data as string) as Record<string, unknown>;
+        const eventType = message.type as string | undefined;
+        if (typeof eventType !== 'string' || !KNOWN_EVENT_TYPES.has(eventType)) return;
+        // Destructure to separate `type` from payload — backend sends flat messages
+        const { type: _, ...payload } = message;
+        const handlers = this.listeners.get(eventType);
+        handlers?.forEach((handler) => handler(payload));
       } catch {
         // ignore malformed messages
       }
@@ -86,6 +92,12 @@ class OpenLabelsWebSocket {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
+    this.reconnectAttempts++;
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      console.error(`WebSocket: max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`);
+      this.listeners.get('_connection')?.forEach((h) => h({ connected: false, maxRetriesReached: true }));
+      return;
+    }
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
     this.reconnectTimer = setTimeout(() => {

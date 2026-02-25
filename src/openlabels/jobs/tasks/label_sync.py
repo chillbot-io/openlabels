@@ -76,7 +76,7 @@ async def execute_label_sync_task(
                 **LabelSyncResult().to_dict(),
             }
 
-        if not all([auth.tenant_id, auth.client_id, auth.client_secret]):
+        if not all([auth.tenant_id, auth.client_id, auth.client_secret and auth.client_secret.get_secret_value()]):
             return {
                 "success": False,
                 "error": "Azure AD credentials not configured - check AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET",

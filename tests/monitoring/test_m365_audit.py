@@ -23,6 +23,7 @@ from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from openlabels.monitoring.providers.base import EventProvider, RawAccessEvent
 from openlabels.monitoring.providers.m365_audit import (
@@ -702,7 +703,7 @@ class TestWebhookEndpoint:
         _m365_notifications.clear()
 
         with patch("openlabels.server.routes.webhooks.get_settings") as mock_settings:
-            mock_settings.return_value.monitoring.webhook_client_state = "my-secret"
+            mock_settings.return_value.monitoring.webhook_client_state = SecretStr("my-secret")
 
             with TestClient(app) as client:
                 resp = client.post(
@@ -730,7 +731,7 @@ class TestWebhookEndpoint:
         _m365_notifications.clear()
 
         with patch("openlabels.server.routes.webhooks.get_settings") as mock_settings:
-            mock_settings.return_value.monitoring.webhook_client_state = "correct-secret"
+            mock_settings.return_value.monitoring.webhook_client_state = SecretStr("correct-secret")
 
             with TestClient(app) as client:
                 resp = client.post(
@@ -763,7 +764,7 @@ class TestMonitoringSettingsM365:
         assert s.m365_harvest_interval_seconds == 300
         assert s.m365_site_urls == []
         assert s.webhook_enabled is False
-        assert s.webhook_client_state == ""
+        assert s.webhook_client_state.get_secret_value() == ""
 
     def test_m365_providers_can_be_listed(self):
         """m365_audit can be included in providers list."""

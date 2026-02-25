@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import MonitoredFile
@@ -208,20 +209,33 @@ async def sync_to_db(
     Returns:
         The number of records that were written (inserted + updated).
     """
-    # Upsert every cached entry
+    # Batch upsert using INSERT ... ON CONFLICT (PostgreSQL) to avoid
+    # N+1 queries.  Each entry is inserted or updated in a single statement.
     count = 0
-    for path_str, wf in watched_files.items():
-        await upsert_monitored_file(
-            session=session,
-            tenant_id=tenant_id,
-            file_path=path_str,
-            risk_tier=wf.risk_tier,
-            sacl_enabled=wf.sacl_enabled,
-            audit_rule_enabled=wf.audit_rule_enabled,
+    if watched_files:
+        batch_values = [
+            {
+                "tenant_id": tenant_id,
+                "file_path": path_str,
+                "risk_tier": wf.risk_tier,
+                "sacl_enabled": wf.sacl_enabled,
+                "audit_rule_enabled": wf.audit_rule_enabled,
+            }
+            for path_str, wf in watched_files.items()
+        ]
+        stmt = pg_insert(MonitoredFile).values(batch_values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["tenant_id", "file_path"],
+            set_={
+                "risk_tier": stmt.excluded.risk_tier,
+                "sacl_enabled": stmt.excluded.sacl_enabled,
+                "audit_rule_enabled": stmt.excluded.audit_rule_enabled,
+            },
         )
-        count += 1
+        await session.execute(stmt)
+        count = len(batch_values)
 
-    # Remove DB rows whose paths are no longer in the cache
+    # Remove DB rows whose paths are no longer in the cache — batch SELECT
     result = await session.execute(
         select(MonitoredFile.file_path).where(
             MonitoredFile.tenant_id == tenant_id,
@@ -230,10 +244,13 @@ async def sync_to_db(
     db_paths = {row[0] for row in result.all()}
     stale_paths = db_paths - set(watched_files.keys())
 
-    for stale in stale_paths:
-        await remove_monitored_file(session, tenant_id, stale)
-
     if stale_paths:
+        await session.execute(
+            delete(MonitoredFile).where(
+                MonitoredFile.tenant_id == tenant_id,
+                MonitoredFile.file_path.in_(stale_paths),
+            )
+        )
         logger.info(
             "Removed %d stale monitored file records during sync",
             len(stale_paths),

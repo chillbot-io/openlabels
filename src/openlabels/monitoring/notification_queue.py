@@ -24,6 +24,7 @@ Concurrency note:
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 # Maximum pending notifications per queue (back-pressure).
@@ -31,7 +32,10 @@ from typing import Any
 MAX_QUEUE_SIZE = 10_000
 
 _graph_notifications: list[dict[str, Any]] = []
+_graph_lock = threading.Lock()
+
 _m365_notifications: list[dict[str, Any]] = []
+_m365_lock = threading.Lock()
 
 
 # Graph change notifications
@@ -39,18 +43,24 @@ def push_graph_notification(notification: dict[str, Any]) -> bool:
     """Add a Graph change notification to the queue.
 
     Returns ``False`` if the queue is full (notification dropped).
+    Thread-safe.
     """
-    if len(_graph_notifications) >= MAX_QUEUE_SIZE:
-        return False
-    _graph_notifications.append(notification)
-    return True
+    with _graph_lock:
+        if len(_graph_notifications) >= MAX_QUEUE_SIZE:
+            return False
+        _graph_notifications.append(notification)
+        return True
 
 
 def drain_graph_notifications() -> list[dict[str, Any]]:
-    """Drain and return all pending Graph change notifications."""
-    notifications = list(_graph_notifications)
-    _graph_notifications.clear()
-    return notifications
+    """Drain and return all pending Graph change notifications.
+
+    Thread-safe.
+    """
+    with _graph_lock:
+        notifications = list(_graph_notifications)
+        _graph_notifications.clear()
+        return notifications
 
 
 # M365 audit "content available" signals
@@ -58,15 +68,21 @@ def push_m365_notification(notification: dict[str, Any]) -> bool:
     """Add an M365 audit notification to the queue.
 
     Returns ``False`` if the queue is full (notification dropped).
+    Thread-safe.
     """
-    if len(_m365_notifications) >= MAX_QUEUE_SIZE:
-        return False
-    _m365_notifications.append(notification)
-    return True
+    with _m365_lock:
+        if len(_m365_notifications) >= MAX_QUEUE_SIZE:
+            return False
+        _m365_notifications.append(notification)
+        return True
 
 
 def drain_m365_notifications() -> list[dict[str, Any]]:
-    """Drain and return all pending M365 audit notifications."""
-    notifications = list(_m365_notifications)
-    _m365_notifications.clear()
-    return notifications
+    """Drain and return all pending M365 audit notifications.
+
+    Thread-safe.
+    """
+    with _m365_lock:
+        notifications = list(_m365_notifications)
+        _m365_notifications.clear()
+        return notifications

@@ -352,8 +352,13 @@ async def _check_and_aggregate(
     """
     from openlabels.server.advisory_lock import try_advisory_lock
 
-    # Use job ID hash as lock ID to serialize per-job aggregation
-    lock_id = abs(hash(str(job.id))) % (2**31)
+    # Use job ID as a deterministic lock ID to serialize per-job
+    # aggregation.  Python's hash() is randomised per-process
+    # (PYTHONHASHSEED), so different workers would compute different
+    # lock IDs for the same job — breaking the advisory lock.
+    # UUID.int is deterministic and stable across processes.
+    import uuid as _uuid_mod
+    lock_id = int(_uuid_mod.UUID(str(job.id)).int % (2**31))
     if not await try_advisory_lock(session, lock_id):
         logger.debug("Another worker is aggregating job %s", job.id)
         return

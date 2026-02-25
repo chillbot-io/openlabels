@@ -10,13 +10,14 @@ Tests focus on:
 
 import pytest
 from unittest.mock import patch, MagicMock
+from pydantic import SecretStr
 
 
 @pytest.fixture
 def mock_webhook_settings():
     """Create mock settings with webhook client state configured."""
     mock_settings = MagicMock()
-    mock_settings.monitoring.webhook_client_state = "test-secret-state"
+    mock_settings.monitoring.webhook_client_state = SecretStr("test-secret-state")
     return mock_settings
 
 
@@ -67,7 +68,7 @@ class TestM365Webhook:
     async def test_notification_rejects_when_state_unconfigured(self, test_client, test_db):
         """Should reject all notifications when webhook_client_state is empty."""
         mock_settings = MagicMock()
-        mock_settings.monitoring.webhook_client_state = ""
+        mock_settings.monitoring.webhook_client_state = SecretStr("")
 
         with patch("openlabels.server.routes.webhooks.get_settings", return_value=mock_settings), \
              patch("openlabels.server.routes.webhooks.push_m365_notification") as mock_push:

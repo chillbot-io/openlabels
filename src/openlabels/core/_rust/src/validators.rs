@@ -55,6 +55,22 @@ pub fn validate_ssn(text: &str) -> bool {
         return false;
     }
 
+    // Well-known invalid SSNs (Woolworth wallet card, advertising SSN)
+    if digits == "078051120" || digits == "219099999" {
+        return false;
+    }
+
+    // Reject all-same-digit patterns (111111111, 222222222, etc.)
+    let first_char = digits.chars().next().unwrap();
+    if digits.chars().all(|c| c == first_char) {
+        return false;
+    }
+
+    // Reject sequential patterns
+    if digits == "123456789" || digits == "234567890" || digits == "987654321" {
+        return false;
+    }
+
     true
 }
 
@@ -276,9 +292,17 @@ mod tests {
 
     #[test]
     fn test_ssn() {
-        assert!(validate_ssn("123-45-6789"));
+        assert!(validate_ssn("452-12-3456")); // Valid SSN
         assert!(!validate_ssn("000-12-3456")); // Invalid area
         assert!(!validate_ssn("666-12-3456")); // Invalid area
+        assert!(!validate_ssn("900-12-3456")); // Invalid area (900+)
+        assert!(!validate_ssn("123-00-3456")); // Invalid group (00)
+        assert!(!validate_ssn("123-45-0000")); // Invalid serial (0000)
+        assert!(!validate_ssn("078-05-1120")); // Well-known invalid (Woolworth)
+        assert!(!validate_ssn("219-09-9999")); // Well-known invalid (advertising)
+        assert!(!validate_ssn("123-45-6789")); // Sequential pattern
+        assert!(!validate_ssn("111-11-1111")); // All same digit
+        assert!(!validate_ssn("987-65-4321")); // Reverse sequential
     }
 
     #[test]

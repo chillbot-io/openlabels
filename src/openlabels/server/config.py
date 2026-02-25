@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,7 +71,7 @@ class OIDCProviderSettings(BaseSettings):
 
     discovery_url: str = ""
     client_id: str = ""
-    client_secret: str = ""
+    client_secret: SecretStr = SecretStr("")
     scopes: str = "openid profile email"
 
     # Claim mapping: which token claims map to OpenLabels user fields
@@ -133,7 +133,7 @@ class AuthSettings(BaseSettings):
     provider: Literal["azure_ad", "oidc", "none"] = "none"
     tenant_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
+    client_secret: SecretStr | None = None
 
     # Single OIDC provider (backward-compatible)
     oidc: OIDCProviderSettings = Field(default_factory=OIDCProviderSettings)
@@ -144,7 +144,7 @@ class AuthSettings(BaseSettings):
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # If not set, tokens are stored in plaintext (a warning is logged on startup).
-    session_encryption_key: str | None = None
+    session_encryption_key: SecretStr | None = None
 
     @property
     def authority(self) -> str | None:
@@ -199,8 +199,8 @@ class S3AdapterSettings(BaseSettings):
     enabled: bool = False
     buckets: list[str] = Field(default_factory=list)
     region: str = "us-east-1"
-    access_key: str = ""
-    secret_key: str = ""
+    access_key: SecretStr = SecretStr("")
+    secret_key: SecretStr = SecretStr("")
     endpoint_url: str | None = None
     # SQS change detection
     sqs_queue_url: str = ""
@@ -227,9 +227,9 @@ class AzureBlobAdapterSettings(BaseSettings):
     enabled: bool = False
     containers: list[str] = Field(default_factory=list)
     storage_account: str = ""
-    connection_string: str = ""
-    account_key: str = ""
-    sas_token: str = ""
+    connection_string: SecretStr = SecretStr("")
+    account_key: SecretStr = SecretStr("")
+    sas_token: SecretStr = SecretStr("")
     # Label sync-back
     label_sync_enabled: bool = True
 
@@ -495,7 +495,7 @@ class SentrySettings(BaseSettings):
     )
 
     # DSN is loaded directly from SENTRY_DSN environment variable
-    dsn: str | None = None
+    dsn: SecretStr | None = None
     # Environment defaults to server.environment but can be overridden
     environment: str | None = None
     # Sampling rates (0.0 to 1.0)
@@ -606,8 +606,8 @@ class S3CatalogSettings(BaseSettings):
     bucket: str = ""
     prefix: str = "openlabels/catalog"
     region: str = "us-east-1"
-    access_key: str = ""
-    secret_key: str = ""
+    access_key: SecretStr = SecretStr("")
+    secret_key: SecretStr = SecretStr("")
     endpoint_url: str | None = None  # For S3-compatible (MinIO)
 
 
@@ -616,9 +616,9 @@ class AzureCatalogSettings(BaseSettings):
 
     container: str = ""
     prefix: str = "openlabels/catalog"
-    connection_string: str | None = None
+    connection_string: SecretStr | None = None
     account_name: str | None = None
-    account_key: str | None = None
+    account_key: SecretStr | None = None
 
 
 class MonitoringSettings(BaseSettings):
@@ -709,7 +709,7 @@ class MonitoringSettings(BaseSettings):
     webhook_url: str = ""
     # Shared secret for validating inbound webhook notifications
     # (matched against ``clientState`` in the subscription).
-    webhook_client_state: str = ""
+    webhook_client_state: SecretStr = SecretStr("")
 
 
 class SIEMExportSettings(BaseSettings):
@@ -731,14 +731,14 @@ class SIEMExportSettings(BaseSettings):
 
     # Splunk HEC
     splunk_hec_url: str = ""
-    splunk_hec_token: str = ""
+    splunk_hec_token: SecretStr = SecretStr("")
     splunk_index: str = "main"
     splunk_sourcetype: str = "openlabels"
     splunk_verify_ssl: bool = True
 
     # Microsoft Sentinel
     sentinel_workspace_id: str = ""
-    sentinel_shared_key: str = ""
+    sentinel_shared_key: SecretStr = SecretStr("")
     sentinel_log_type: str = "OpenLabels"
 
     # IBM QRadar
@@ -750,9 +750,9 @@ class SIEMExportSettings(BaseSettings):
 
     # Elastic
     elastic_hosts: list[str] = []
-    elastic_api_key: str = ""
+    elastic_api_key: SecretStr = SecretStr("")
     elastic_username: str = ""
-    elastic_password: str = ""
+    elastic_password: SecretStr = SecretStr("")
     elastic_index_prefix: str = "openlabels"
     elastic_verify_ssl: bool = True
 
@@ -819,7 +819,7 @@ class M365Settings(BaseSettings):
     """
 
     client_id: str = ""
-    client_secret: str = ""
+    client_secret: SecretStr = SecretStr("")
 
 
 class Settings(BaseSettings):
@@ -874,7 +874,7 @@ class ReportingSettings(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_password: SecretStr = SecretStr("")
     smtp_use_tls: bool = True
     smtp_from_addr: str = "openlabels@localhost"
 

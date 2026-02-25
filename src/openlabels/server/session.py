@@ -38,8 +38,8 @@ def _get_fernet():
 
     from openlabels.server.config import get_settings
 
-    key = get_settings().auth.session_encryption_key
-    if not key:
+    key_secret = get_settings().auth.session_encryption_key
+    if not key_secret or not key_secret.get_secret_value():
         logger.warning(
             "AUTH_SESSION_ENCRYPTION_KEY is not set — session tokens are "
             "stored in plaintext. Set this key for production deployments."
@@ -49,6 +49,7 @@ def _get_fernet():
 
     from cryptography.fernet import Fernet
 
+    key = key_secret.get_secret_value()
     _fernet = Fernet(key.encode() if isinstance(key, str) else key)
     return _fernet
 

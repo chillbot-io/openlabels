@@ -100,6 +100,20 @@ def detect_service_identity() -> ServiceIdentity:
     )
 
 
+def _ps_escape(value: str) -> str:
+    """Escape a string for safe embedding in a PowerShell double-quoted string.
+
+    Escapes backticks, dollar signs, and double quotes which are the
+    special characters inside PowerShell double-quoted strings.
+    """
+    return (
+        value
+        .replace('`', '``')    # backtick is the PS escape char
+        .replace('"', '`"')    # escape double quotes
+        .replace('$', '`$')    # escape variable expansion
+    )
+
+
 def generate_gmsa_setup_script(
     *,
     account_name: str = "svc-openlabels",
@@ -129,10 +143,11 @@ def generate_gmsa_setup_script(
     domain:
         Domain DNS name.  If empty, uses the current domain.
     """
-    acct = account_name.rstrip("$")
+    acct = _ps_escape(account_name.rstrip("$"))
 
     dns = dns_hostname or (f"{acct}.{domain}" if domain else f"{acct}.$env:USERDNSDOMAIN")
-    group = server_group
+    dns = _ps_escape(dns) if dns_hostname else dns  # Only escape user-provided hostnames
+    group = _ps_escape(server_group)
     fqdn_note = f"  # → {dns}" if dns_hostname else ""
 
     return textwrap.dedent(f"""\
@@ -222,8 +237,9 @@ def generate_audit_gpo_script(
     if share_paths:
         path_cmds = []
         for path in share_paths:
-            # Escape single quotes in paths for PowerShell
-            safe_path = path.replace("'", "''")
+            # Escape for PowerShell double-quoted string context:
+            # backticks, dollar signs, and double quotes are special.
+            safe_path = _ps_escape(path)
             path_cmds.append(
                 f'    Set-AuditRule -Path "{safe_path}"'
             )

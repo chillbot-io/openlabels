@@ -649,6 +649,8 @@ class DetectorOrchestrator:
                 needs_review=span_a.needs_review,
                 review_reason=span_a.review_reason,
                 coref_anchor_value=span_a.coref_anchor_value,
+                raw_confidence=span_a.raw_confidence,
+                detector_label=span_a.detector_label,
             )
             boosted_indices.add(i)
             logger.debug(
