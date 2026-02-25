@@ -27,6 +27,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -811,6 +812,45 @@ class FileAccessEvent(Base):
     )
 
 
+class AlertRule(Base):
+    """Configurable alert rules for suspicious file access patterns.
+
+    Each rule defines a condition (e.g. high-volume access, failed attempts,
+    off-hours access) and an action (notify, log, webhook).
+    """
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Rule type: high_volume, failed_access, off_hours, sensitive_file_access, permission_change
+    rule_type: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Condition parameters (varies by rule_type)
+    # e.g. {"threshold": 100, "window_hours": 1} for high_volume
+    # e.g. {"threshold": 5, "window_hours": 1} for failed_access
+    # e.g. {"start_hour": 18, "end_hour": 6} for off_hours
+    conditions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Severity: low, medium, high, critical
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+
+    # Actions: notify, log, webhook
+    actions: Mapped[list] = mapped_column(JSONB, nullable=False, server_default='["log"]')
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    created_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        Index('ix_alert_rules_tenant', 'tenant_id'),
+    )
+
+
 # SESSION MODELS
 class Session(Base):
     """
@@ -978,6 +1018,30 @@ class Policy(Base):
     __table_args__ = (
         Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
         Index('ix_policies_tenant_enabled', 'tenant_id', 'enabled'),
+    )
+
+
+class PolicyTargetAssignment(Base):
+    """Many-to-many assignment of policies to scan targets.
+
+    Allows scoping which policies apply to which scan targets.
+    When a policy has no assignments it applies to all targets (default).
+    """
+
+    __tablename__ = "policy_target_assignments"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    policy_id: Mapped[PyUUID] = mapped_column(ForeignKey("policies.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    assigned_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        UniqueConstraint('policy_id', 'target_id', name='uq_policy_target'),
+        Index('ix_policy_target_tenant', 'tenant_id'),
+        Index('ix_policy_target_policy', 'policy_id'),
+        Index('ix_policy_target_target', 'target_id'),
     )
 
 

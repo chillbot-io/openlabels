@@ -5,6 +5,8 @@ Provides:
 - POST /generate      — trigger report generation
 - POST /schedule      — schedule recurring report generation
 - GET  /              — list generated reports
+- GET  /templates     — list pre-built report templates
+- GET  /compliance-trend — compliance posture trend over time
 - GET  /{id}          — get report details
 - GET  /{id}/download — download generated report
 - POST /{id}/distribute — distribute report via email
@@ -13,7 +15,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -27,7 +29,7 @@ from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
 from openlabels.server.routes import audit_log
-from openlabels.server.models import (
+from openlabels.server.models import (  # noqa: E402
     FileAccessEvent,
     Policy,
     Report,
@@ -49,7 +51,87 @@ router = APIRouter()
 VALID_TYPES = {"executive_summary", "compliance_report", "scan_detail", "access_audit", "sensitive_files"}
 VALID_FORMATS = {"html", "pdf", "csv", "xml"}
 
+# Pre-built report template definitions
+REPORT_TEMPLATES: list[dict] = [
+    {
+        "id": "risk_summary",
+        "name": "Risk Summary",
+        "description": "Overview of files by risk tier with top-risk file listings and entity breakdowns.",
+        "report_type": "executive_summary",
+        "default_format": "html",
+        "category": "risk",
+    },
+    {
+        "id": "label_coverage",
+        "name": "Label Coverage",
+        "description": "Shows labeling progress: labeled vs. unlabeled files, label distribution, and coverage gaps.",
+        "report_type": "compliance_report",
+        "default_format": "html",
+        "category": "compliance",
+    },
+    {
+        "id": "exposure_report",
+        "name": "Exposure Report",
+        "description": "Breakdown of files by exposure level (public, org-wide, internal, private) with world-accessible highlights.",
+        "report_type": "sensitive_files",
+        "default_format": "csv",
+        "category": "security",
+    },
+    {
+        "id": "compliance_violations",
+        "name": "Compliance Violations",
+        "description": "Policy violations by framework and severity, with top-violating files and compliance rate.",
+        "report_type": "compliance_report",
+        "default_format": "html",
+        "category": "compliance",
+    },
+    {
+        "id": "access_audit",
+        "name": "Access Audit",
+        "description": "File access activity: top users, sensitive file accesses, and recent event timeline.",
+        "report_type": "access_audit",
+        "default_format": "html",
+        "category": "security",
+    },
+    {
+        "id": "scan_detail",
+        "name": "Scan Detail",
+        "description": "Detailed scan job results including file counts, entity types found, and risk distribution.",
+        "report_type": "scan_detail",
+        "default_format": "html",
+        "category": "operations",
+    },
+]
 
+
+
+
+class ReportTemplate(BaseModel):
+    """A pre-built report template."""
+
+    id: str
+    name: str
+    description: str
+    report_type: str
+    default_format: str
+    category: str
+
+
+class ComplianceTrendPoint(BaseModel):
+    """Single point in a compliance trend."""
+
+    date: str
+    total_files: int
+    files_with_violations: int
+    total_violations: int
+    compliance_rate: float
+
+
+class ComplianceTrendResponse(BaseModel):
+    """Compliance posture trend over time."""
+
+    points: list[ComplianceTrendPoint]
+    total_days: int
 
 
 class ReportGenerateRequest(BaseModel):
@@ -452,9 +534,11 @@ async def list_reports(
     tenant: TenantContextDep,
     session: AsyncSession = Depends(get_session),
     report_type: str | None = Query(None),
+    start_date: datetime | None = Query(None, description="Filter reports created after this date"),
+    end_date: datetime | None = Query(None, description="Filter reports created before this date"),
     pagination: PaginationParams = Depends(),
 ) -> PaginatedResponse[ReportResponse]:
-    """List generated reports for the current tenant."""
+    """List generated reports for the current tenant with optional date range filtering."""
     tenant_id = tenant.tenant_id
 
     query = select(Report).where(Report.tenant_id == tenant_id)
@@ -463,6 +547,14 @@ async def list_reports(
     if report_type:
         query = query.where(Report.report_type == report_type)
         count_query = count_query.where(Report.report_type == report_type)
+
+    if start_date:
+        query = query.where(Report.created_at >= start_date)
+        count_query = count_query.where(Report.created_at >= start_date)
+
+    if end_date:
+        query = query.where(Report.created_at <= end_date)
+        count_query = count_query.where(Report.created_at <= end_date)
 
     query = query.order_by(desc(Report.created_at))
     query = query.offset(pagination.offset).limit(pagination.page_size)
@@ -481,6 +573,112 @@ async def list_reports(
             page_size=pagination.page_size,
         )
     )
+
+
+@router.get("/templates", response_model=list[ReportTemplate])
+async def list_report_templates(
+    _tenant: TenantContextDep,
+    category: str | None = Query(None, description="Filter templates by category"),
+) -> list[ReportTemplate]:
+    """List pre-built report templates.
+
+    Returns available report templates with descriptions and default
+    settings. Templates provide one-click report generation for common
+    compliance, risk, and security reports.
+    """
+    templates = [ReportTemplate(**t) for t in REPORT_TEMPLATES]
+    if category:
+        templates = [t for t in templates if t.category == category]
+    return templates
+
+
+@router.get("/compliance-trend", response_model=ComplianceTrendResponse)
+async def get_compliance_trend(
+    tenant: TenantContextDep,
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(30, ge=1, le=365, description="Number of days to include"),
+) -> ComplianceTrendResponse:
+    """Get compliance posture trend over time.
+
+    Shows daily compliance rate derived from scan results and policy
+    violations. Enables tracking of compliance progress or regression
+    across the tenant's data estate.
+    """
+    from sqlalchemy import cast, Date
+
+    tenant_id = tenant.tenant_id
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days)
+
+    scan_day = cast(ScanResult.scanned_at, Date).label("scan_date")
+
+    # Query scan results grouped by date
+    result = await session.execute(
+        select(
+            scan_day,
+            func.count(ScanResult.id).label("total_files"),
+        )
+        .where(
+            ScanResult.tenant_id == tenant_id,
+            ScanResult.scanned_at >= start_date,
+            ScanResult.scanned_at <= end_date,
+        )
+        .group_by(scan_day)
+        .order_by(scan_day)
+    )
+    rows = result.all()
+
+    # Build lookup from DB results
+    daily: dict[str, dict] = {}
+    for row in rows:
+        date_str = str(row.scan_date)
+        daily[date_str] = {
+            "total_files": row.total_files or 0,
+            "files_with_violations": 0,
+        }
+
+    # Count files with violations per day
+    violation_day = cast(ScanResult.scanned_at, Date).label("scan_date")
+    violation_result = await session.execute(
+        select(
+            violation_day,
+            func.count(ScanResult.id).label("violation_count"),
+        )
+        .where(
+            ScanResult.tenant_id == tenant_id,
+            ScanResult.scanned_at >= start_date,
+            ScanResult.scanned_at <= end_date,
+            ScanResult.policy_violations != None,  # noqa: E711
+        )
+        .group_by(violation_day)
+    )
+    violation_rows = violation_result.all()
+    violations_by_day: dict[str, int] = {}
+    for row in violation_rows:
+        date_str = str(row.scan_date)
+        violations_by_day[date_str] = row.violation_count or 0
+        if date_str in daily:
+            daily[date_str]["files_with_violations"] = row.violation_count or 0
+
+    # Fill in all dates with zeros
+    points: list[ComplianceTrendPoint] = []
+    current = start_date
+    while current <= end_date:
+        date_str = current.strftime("%Y-%m-%d")
+        stats = daily.get(date_str, {"total_files": 0, "files_with_violations": 0})
+        total = stats["total_files"]
+        violations = violations_by_day.get(date_str, 0)
+        rate = round(((total - stats["files_with_violations"]) / total * 100), 1) if total > 0 else 100.0
+        points.append(ComplianceTrendPoint(
+            date=date_str,
+            total_files=total,
+            files_with_violations=stats["files_with_violations"],
+            total_violations=violations,
+            compliance_rate=rate,
+        ))
+        current += timedelta(days=1)
+
+    return ComplianceTrendResponse(points=points, total_days=days)
 
 
 @router.get("/{report_id}", response_model=ReportResponse)

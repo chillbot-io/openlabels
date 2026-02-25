@@ -2,9 +2,13 @@
 File monitoring and access events API endpoints.
 
 Provides:
-- File access event queries
+- File access event queries with risk enrichment
 - Monitored file management
 - Access statistics and anomaly detection
+- Event type metadata with badge styling
+- Folder tree for filter panels
+- Event retention settings and purge
+- Alert rule CRUD for suspicious patterns
 """
 
 from __future__ import annotations
@@ -22,10 +26,13 @@ from openlabels.auth.dependencies import get_current_user, require_admin
 from openlabels.core.path_validation import PathValidationError, validate_path
 from openlabels.server.db import get_session
 from openlabels.server.models import (
+    AlertRule,
     AuditLog,
     FileAccessEvent,
     FileInventory,
     MonitoredFile,
+    ScanResult,
+    generate_uuid,
 )
 from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
@@ -70,6 +77,8 @@ class AccessEventResponse(BaseModel):
     user_domain: str | None
     process_name: str | None
     event_time: datetime
+    risk_tier: str | None = None
+    scan_result_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,6 +100,140 @@ class AccessStatsResponse(BaseModel):
     by_action: dict[str, int]
     by_user: list[dict]
     monitored_files_count: int
+
+
+class EventTypeInfo(BaseModel):
+    """Event type metadata with badge styling."""
+
+    action: str
+    label: str
+    badge_color: str
+    description: str
+
+
+class FolderNode(BaseModel):
+    """Folder tree node for filtering."""
+
+    path: str
+    name: str
+    event_count: int
+    children: list[FolderNode] = []
+
+
+class RetentionSettings(BaseModel):
+    """Event retention configuration."""
+
+    retention_days: int = Field(90, ge=1, le=3650, description="Days to retain events")
+    archive_enabled: bool = Field(False, description="Archive events before purging")
+    archive_format: str = Field("parquet", description="Archive format: parquet or csv")
+
+
+class RetentionPurgeResponse(BaseModel):
+    """Result of a retention purge operation."""
+
+    purged_count: int
+    cutoff_date: str
+    archived: bool
+
+
+class AlertRuleResponse(BaseModel):
+    """Alert rule response."""
+
+    id: UUID
+    name: str
+    description: str | None
+    enabled: bool
+    rule_type: str
+    conditions: dict
+    severity: str
+    actions: list
+    created_at: datetime
+    updated_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertRuleCreateRequest(BaseModel):
+    """Request to create an alert rule."""
+
+    name: str = Field(..., max_length=255)
+    description: str | None = None
+    enabled: bool = True
+    rule_type: str = Field(..., description="Rule type: high_volume, failed_access, off_hours, sensitive_file_access, permission_change")
+    conditions: dict = Field(..., description="Condition parameters for the rule type")
+    severity: str = Field("medium", description="Severity: low, medium, high, critical")
+    actions: list[str] = Field(default=["log"], description="Actions: log, notify, webhook")
+
+
+class AlertRuleUpdateRequest(BaseModel):
+    """Request to update an alert rule."""
+
+    name: str | None = Field(None, max_length=255)
+    description: str | None = None
+    enabled: bool | None = None
+    conditions: dict | None = None
+    severity: str | None = None
+    actions: list[str] | None = None
+
+
+# Valid alert rule types and severities
+VALID_RULE_TYPES = {"high_volume", "failed_access", "off_hours", "sensitive_file_access", "permission_change"}
+VALID_SEVERITIES = {"low", "medium", "high", "critical"}
+
+# Event type metadata
+EVENT_TYPES: list[dict] = [
+    {"action": "read", "label": "Read", "badge_color": "#3B82F6", "description": "File was read or opened"},
+    {"action": "write", "label": "Write", "badge_color": "#F97316", "description": "File was modified or created"},
+    {"action": "delete", "label": "Delete", "badge_color": "#EF4444", "description": "File was deleted"},
+    {"action": "permission_change", "label": "Permission Change", "badge_color": "#8B5CF6", "description": "File permissions were modified"},
+    {"action": "rename", "label": "Rename", "badge_color": "#6366F1", "description": "File was renamed or moved"},
+    {"action": "execute", "label": "Execute", "badge_color": "#EC4899", "description": "File was executed"},
+]
+
+
+async def _enrich_events(
+    events: list,
+    session: AsyncSession,
+    tenant_id: UUID,
+) -> list[AccessEventResponse]:
+    """Enrich access events with risk_tier from MonitoredFile and scan_result_id from ScanResult."""
+    if not events:
+        return []
+
+    file_paths = list({e.file_path for e in events})
+
+    # Batch lookup monitored file risk tiers
+    mf_result = await session.execute(
+        select(MonitoredFile.file_path, MonitoredFile.risk_tier)
+        .where(
+            MonitoredFile.tenant_id == tenant_id,
+            MonitoredFile.file_path.in_(file_paths),
+        )
+    )
+    risk_map = {row.file_path: row.risk_tier for row in mf_result.all()}
+
+    # Batch lookup scan result IDs
+    sr_result = await session.execute(
+        select(ScanResult.file_path, ScanResult.id)
+        .where(
+            ScanResult.tenant_id == tenant_id,
+            ScanResult.file_path.in_(file_paths),
+        )
+        .order_by(ScanResult.scanned_at.desc())
+    )
+    # Take the most recent scan result per file_path
+    result_map: dict[str, UUID] = {}
+    for row in sr_result.all():
+        if row.file_path not in result_map:
+            result_map[row.file_path] = row.id
+
+    enriched = []
+    for e in events:
+        resp = AccessEventResponse.model_validate(e)
+        resp.risk_tier = risk_map.get(e.file_path)
+        resp.scan_result_id = result_map.get(e.file_path)
+        enriched.append(resp)
+    return enriched
 
 
 # MONITORED FILES ENDPOINTS
@@ -264,10 +407,11 @@ async def list_access_events(
 
     result = await session.execute(query)
     events = result.scalars().all()
+    enriched = await _enrich_events(events, session, user.tenant_id)
 
     return PaginatedResponse[AccessEventResponse](
         **create_paginated_response(
-            items=[AccessEventResponse.model_validate(e) for e in events],
+            items=enriched,
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
@@ -525,6 +669,269 @@ async def detect_access_anomalies(
         "anomaly_count": len(anomalies),
         "anomalies": anomalies,
     }
+
+
+# ── Event type metadata ──────────────────────────────────────────────
+
+@router.get("/events/types", response_model=list[EventTypeInfo])
+async def list_event_types(
+    _user=Depends(get_current_user),
+) -> list[EventTypeInfo]:
+    """List event types with badge colors and descriptions.
+
+    Returns metadata for rendering event type badges in the UI.
+    """
+    return [EventTypeInfo(**t) for t in EVENT_TYPES]
+
+
+# ── Folder tree ─────────────────────────────────────────────────────
+
+@router.get("/events/folders", response_model=list[FolderNode])
+async def list_event_folders(
+    depth: int = Query(3, ge=1, le=10, description="Maximum folder depth"),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> list[FolderNode]:
+    """Build a folder tree from file access event paths.
+
+    Returns a hierarchical folder structure with event counts
+    for use in the folder filter tree panel.
+    """
+    result = await session.execute(
+        select(
+            FileAccessEvent.file_path,
+            func.count(FileAccessEvent.id).label("event_count"),
+        )
+        .where(FileAccessEvent.tenant_id == user.tenant_id)
+        .group_by(FileAccessEvent.file_path)
+        .limit(50_000)
+    )
+    rows = result.all()
+
+    # Build intermediate tree
+    tree: dict = {}
+    for row in rows:
+        parts = row.file_path.replace("\\", "/").split("/")
+        parts = [p for p in parts if p][:depth]
+        current = tree
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {"_count": 0, "_children": {}}
+            current[part]["_count"] += row.event_count
+            current = current[part]["_children"]
+        # Leaf level
+        if parts:
+            leaf = parts[-1]
+            if leaf not in current:
+                current[leaf] = {"_count": 0, "_children": {}}
+            current[leaf]["_count"] += row.event_count
+
+    def _build_nodes(subtree: dict, prefix: str) -> list[FolderNode]:
+        nodes = []
+        for name, data in subtree.items():
+            path = f"{prefix}/{name}" if prefix else name
+            children = _build_nodes(data.get("_children", {}), path)
+            nodes.append(FolderNode(
+                path=path,
+                name=name,
+                event_count=data["_count"],
+                children=children,
+            ))
+        nodes.sort(key=lambda n: n.event_count, reverse=True)
+        return nodes
+
+    return _build_nodes(tree, "")
+
+
+# ── Retention settings ──────────────────────────────────────────────
+
+@router.get("/retention", response_model=RetentionSettings)
+async def get_retention_settings(
+    _user=Depends(require_admin),
+) -> RetentionSettings:
+    """Get current event retention settings.
+
+    Returns the configured retention policy for file access events.
+    """
+    from openlabels.server.config import get_settings
+    settings = get_settings().monitoring
+    return RetentionSettings(
+        retention_days=getattr(settings, "retention_days", 90),
+        archive_enabled=getattr(settings, "archive_enabled", False),
+        archive_format=getattr(settings, "archive_format", "parquet"),
+    )
+
+
+@router.put("/retention", response_model=RetentionSettings)
+async def update_retention_settings(
+    body: RetentionSettings,
+    _user=Depends(require_admin),
+) -> RetentionSettings:
+    """Update event retention settings.
+
+    Note: Settings are applied on the next purge cycle.
+    """
+    # Persist in memory for current process; production deployments
+    # should use environment variables or config file.
+    from openlabels.server.config import get_settings
+    settings = get_settings().monitoring
+    settings.retention_days = body.retention_days  # type: ignore[attr-defined]
+    settings.archive_enabled = body.archive_enabled  # type: ignore[attr-defined]
+    settings.archive_format = body.archive_format  # type: ignore[attr-defined]
+    return body
+
+
+@router.post("/retention/purge", response_model=RetentionPurgeResponse)
+async def purge_old_events(
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+) -> RetentionPurgeResponse:
+    """Purge file access events older than the retention period.
+
+    Removes events beyond the configured retention window.
+    """
+    from openlabels.server.config import get_settings
+    retention_days = getattr(get_settings().monitoring, "retention_days", 90)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+    # Count events to purge
+    count_result = await session.execute(
+        select(func.count(FileAccessEvent.id)).where(
+            FileAccessEvent.tenant_id == user.tenant_id,
+            FileAccessEvent.event_time < cutoff,
+        )
+    )
+    purge_count = count_result.scalar() or 0
+
+    if purge_count > 0:
+        from sqlalchemy import delete
+        await session.execute(
+            delete(FileAccessEvent).where(
+                FileAccessEvent.tenant_id == user.tenant_id,
+                FileAccessEvent.event_time < cutoff,
+            )
+        )
+        await session.commit()
+
+    return RetentionPurgeResponse(
+        purged_count=purge_count,
+        cutoff_date=cutoff.strftime("%Y-%m-%d"),
+        archived=False,
+    )
+
+
+# ── Alert rules ─────────────────────────────────────────────────────
+
+@router.post("/alert-rules", response_model=AlertRuleResponse, status_code=201)
+async def create_alert_rule(
+    body: AlertRuleCreateRequest,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+) -> AlertRuleResponse:
+    """Create a new alert rule for suspicious file access patterns."""
+    if body.rule_type not in VALID_RULE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid rule_type. Must be one of: {', '.join(sorted(VALID_RULE_TYPES))}",
+        )
+    if body.severity not in VALID_SEVERITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid severity. Must be one of: {', '.join(sorted(VALID_SEVERITIES))}",
+        )
+
+    rule = AlertRule(
+        id=generate_uuid(),
+        tenant_id=user.tenant_id,
+        name=body.name,
+        description=body.description,
+        enabled=body.enabled,
+        rule_type=body.rule_type,
+        conditions=body.conditions,
+        severity=body.severity,
+        actions=body.actions,
+        created_by=user.id,
+    )
+    session.add(rule)
+    await session.commit()
+    await session.refresh(rule)
+    return AlertRuleResponse.model_validate(rule)
+
+
+@router.get("/alert-rules", response_model=list[AlertRuleResponse])
+async def list_alert_rules(
+    rule_type: str | None = Query(None, description="Filter by rule type"),
+    enabled: bool | None = Query(None, description="Filter by enabled status"),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> list[AlertRuleResponse]:
+    """List alert rules for the current tenant."""
+    query = select(AlertRule).where(AlertRule.tenant_id == user.tenant_id)
+    if rule_type:
+        query = query.where(AlertRule.rule_type == rule_type)
+    if enabled is not None:
+        query = query.where(AlertRule.enabled == enabled)
+    query = query.order_by(AlertRule.created_at.desc())
+
+    result = await session.execute(query)
+    rules = result.scalars().all()
+    return [AlertRuleResponse.model_validate(r) for r in rules]
+
+
+@router.get("/alert-rules/{rule_id}", response_model=AlertRuleResponse)
+async def get_alert_rule(
+    rule_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> AlertRuleResponse:
+    """Get an alert rule by ID."""
+    rule = await get_or_404(session, AlertRule, rule_id, tenant_id=user.tenant_id)
+    return AlertRuleResponse.model_validate(rule)
+
+
+@router.put("/alert-rules/{rule_id}", response_model=AlertRuleResponse)
+async def update_alert_rule(
+    rule_id: UUID,
+    body: AlertRuleUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+) -> AlertRuleResponse:
+    """Update an alert rule."""
+    rule = await get_or_404(session, AlertRule, rule_id, tenant_id=user.tenant_id)
+
+    if body.name is not None:
+        rule.name = body.name
+    if body.description is not None:
+        rule.description = body.description
+    if body.enabled is not None:
+        rule.enabled = body.enabled
+    if body.conditions is not None:
+        rule.conditions = body.conditions
+    if body.severity is not None:
+        if body.severity not in VALID_SEVERITIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid severity. Must be one of: {', '.join(sorted(VALID_SEVERITIES))}",
+            )
+        rule.severity = body.severity
+    if body.actions is not None:
+        rule.actions = body.actions
+
+    await session.commit()
+    await session.refresh(rule)
+    return AlertRuleResponse.model_validate(rule)
+
+
+@router.delete("/alert-rules/{rule_id}", status_code=204)
+async def delete_alert_rule(
+    rule_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+) -> None:
+    """Delete an alert rule."""
+    rule = await get_or_404(session, AlertRule, rule_id, tenant_id=user.tenant_id)
+    await session.delete(rule)
+    await session.commit()
 
 
 # ── Remote monitoring (WinRM) endpoints ─────────────────────────────

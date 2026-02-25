@@ -1,5 +1,16 @@
 import { apiFetch } from '../client.ts';
-import type { HealthStatus, JobQueueStats, AuditLogEntry, PaginatedResponse } from '../types.ts';
+import type {
+  HealthStatus,
+  JobQueueStats,
+  AuditLogEntry,
+  PaginatedResponse,
+  SystemResourceUsage,
+  WorkersResponse,
+  ScanThroughputResponse,
+  ErrorLogResponse,
+  SystemAlertRule,
+  BackgroundTasksResponse,
+} from '../types.ts';
 
 export interface RemoteTestResponse {
   success: boolean;
@@ -115,5 +126,42 @@ export const monitoringApi = {
     apiFetch<{ script: string }>('/monitoring/audit-policy/script', {
       method: 'POST',
       body: payload ?? {},
+    }),
+
+  // System monitoring & health (Story 13)
+  resources: () =>
+    apiFetch<SystemResourceUsage>('/health/resources'),
+
+  workers: () =>
+    apiFetch<WorkersResponse>('/health/workers'),
+
+  throughput: (params?: { hours?: number; bucket_size?: number }) =>
+    apiFetch<ScanThroughputResponse>('/health/throughput', { params }),
+
+  errors: (params?: { source?: string; severity?: string; hours?: number; page?: number; page_size?: number }) =>
+    apiFetch<ErrorLogResponse>('/health/errors', { params }),
+
+  tasks: () =>
+    apiFetch<BackgroundTasksResponse>('/health/tasks'),
+
+  systemAlerts: () =>
+    apiFetch<SystemAlertRule[]>('/health/alerts'),
+
+  createSystemAlert: (payload: {
+    name: string;
+    component: string;
+    condition: string;
+    threshold?: number;
+    actions?: string[];
+    enabled?: boolean;
+  }) =>
+    apiFetch<SystemAlertRule>('/health/alerts', {
+      method: 'POST',
+      body: payload,
+    }),
+
+  deleteSystemAlert: (id: string) =>
+    apiFetch<void>(`/health/alerts/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
 };
