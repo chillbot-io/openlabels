@@ -166,8 +166,8 @@ class TestCalibratedThresholdCap:
 
     def test_high_temp_capped(self):
         """Very high temperature is capped at 0.63."""
-        # GLiNER "city" has temp=2.00 → base + 1.0*0.09 = 0.64 → capped at 0.63
-        span = _make_ml_span(detector="gliner", detector_label="city")
+        # GLiNER "country" has temp=2.00 → base + 1.0*0.09 = 0.64 → capped at 0.63
+        span = _make_ml_span(detector="gliner", detector_label="country")
         base = 0.55
         result = _calibrated_threshold(span, base)
         assert result == pytest.approx(0.63, abs=1e-6)

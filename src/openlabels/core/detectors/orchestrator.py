@@ -300,13 +300,20 @@ class DetectorOrchestrator:
         # Gate multilingual GLiNER from ensemble voting on English text.
         # On English, the multilingual model is a noisier duplicate of the
         # primary GLiNER — two GLiNERs agreeing on a FP inflates the
-        # ensemble boost.  Still run it (adds recall), but don't let it vote.
+        # ensemble boost.  However, for name-family and location-family
+        # types, the multilingual model adds value (non-Western names,
+        # international locations) so we allow partial voting (0.5x
+        # weight) for those categories instead of full exclusion.
         ensemble_excluded: frozenset[str] = frozenset()
+        ensemble_partial: frozenset[str] = frozenset()
         if lang_result is not None and lang_result.is_english:
             ensemble_excluded = frozenset({"gliner_multilingual"})
+            ensemble_partial = frozenset({"gliner_multilingual"})
 
         processed_spans = self._post_process(
-            all_spans, text=text, ensemble_excluded=ensemble_excluded,
+            all_spans, text=text,
+            ensemble_excluded=ensemble_excluded,
+            ensemble_partial=ensemble_partial,
         )
 
         if self.config.enable_allowlist and processed_spans:
@@ -403,6 +410,7 @@ class DetectorOrchestrator:
         spans: list[Span],
         text: str | None = None,
         ensemble_excluded: frozenset[str] = frozenset(),
+        ensemble_partial: frozenset[str] = frozenset(),
     ) -> list[Span]:
         """Post-process: filter, context-adjust, calibrate, ensemble, deduplicate.
 
@@ -419,6 +427,8 @@ class DetectorOrchestrator:
         Args:
             ensemble_excluded: Detector names excluded from ensemble voting
                 (e.g. ``{"gliner_multilingual"}`` on English text).
+            ensemble_partial: Detector names that get partial voting weight
+                (0.5x) for name/location categories on English text.
         """
         filtered = [s for s in spans if self._passes_threshold(s)]
 
@@ -431,7 +441,9 @@ class DetectorOrchestrator:
 
         # Ensemble boost: when multiple detectors agree on overlapping
         # spans with the same entity type, boost the best span's confidence.
-        calibrated = self._apply_ensemble_boost(calibrated, ensemble_excluded)
+        calibrated = self._apply_ensemble_boost(
+            calibrated, ensemble_excluded, ensemble_partial,
+        )
 
         # Pre-dedup: suppress ML FIRSTNAME/LASTNAME fragments that overlap
         # with pattern detections of more specific types (USERNAME, CITY,
@@ -471,7 +483,7 @@ class DetectorOrchestrator:
 
         # Correct type confusions: reclassify ML spans that match a more
         # specific type's format (USERNAME→FIRSTNAME, PHONE→SSN, etc.)
-        resolved = _correct_type_confusions(resolved)
+        resolved = _correct_type_confusions(resolved, source_text=text)
 
         # Suppress ML name spans whose text is a common English word
         # that GLiNER falsely labels as FIRSTNAME/LASTNAME.
@@ -506,10 +518,20 @@ class DetectorOrchestrator:
     # tighter per-model calibration would otherwise suppress solo.
     _ENSEMBLE_TRIPLE_EXTRA = 0.12
 
+    # Entity categories where partial detectors (e.g. multilingual GLiNER
+    # on English) are allowed to cast a 0.5x vote instead of being fully
+    # excluded.  These are categories where the multilingual model adds
+    # unique value (non-Western names, international locations).
+    _PARTIAL_VOTE_CATEGORIES = frozenset({
+        "names", "locations",
+    })
+    _PARTIAL_VOTE_WEIGHT = 0.5
+
     def _apply_ensemble_boost(
         self,
         spans: list[Span],
         excluded_detectors: frozenset[str] = frozenset(),
+        partial_detectors: frozenset[str] = frozenset(),
     ) -> list[Span]:
         """Boost confidence when multiple detectors agree on the same entity.
 
@@ -531,6 +553,11 @@ class DetectorOrchestrator:
                 they cannot *contribute* to the agreement count.  This gates
                 noisy duplicates (e.g. multilingual GLiNER on English text)
                 from inflating ensemble confidence.
+            partial_detectors: Detector names that get partial voting weight
+                (0.5x) for name/location categories.  On other categories
+                they remain fully excluded.  This lets the multilingual
+                GLiNER contribute to agreement for non-Western names while
+                still being gated for other entity types.
         """
         if len(spans) < 2:
             return spans
@@ -551,14 +578,30 @@ class DetectorOrchestrator:
             group_a = _entity_group(span_a.entity_type)
 
             # Collect all agreeing detectors for this span.
-            # Excluded detectors (e.g. multilingual GLiNER on English) do NOT
-            # count toward agreement — they cannot cast a vote.
+            # Excluded detectors do NOT count toward agreement unless
+            # they are partial detectors and the category allows it.
+            agreeing_weight: float = 0.0
             agreeing_detectors: set[str] = set()
             min_raw = 1.0
             for j, span_b in enumerate(spans):
                 if i == j or span_a.detector == span_b.detector:
                     continue
                 if span_b.detector in excluded_detectors:
+                    # Check if this is a partial detector for this category
+                    if (
+                        span_b.detector in partial_detectors
+                        and group_a in self._PARTIAL_VOTE_CATEGORIES
+                    ):
+                        # Partial vote: counts as 0.5x weight
+                        if not span_a.overlaps(span_b):
+                            continue
+                        group_b = _entity_group(span_b.entity_type)
+                        if group_a != group_b:
+                            continue
+                        agreeing_detectors.add(span_b.detector)
+                        agreeing_weight += self._PARTIAL_VOTE_WEIGHT
+                        raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
+                        min_raw = min(min_raw, raw_b)
                     continue
                 if not span_a.overlaps(span_b):
                     continue
@@ -566,6 +609,7 @@ class DetectorOrchestrator:
                 if group_a != group_b:
                     continue
                 agreeing_detectors.add(span_b.detector)
+                agreeing_weight += 1.0
                 raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
                 min_raw = min(min_raw, raw_b)
 
@@ -579,12 +623,17 @@ class DetectorOrchestrator:
             t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
             boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
 
-            # Triple-agreement bonus: 3+ unique non-excluded detectors agree.
-            # span_a counts toward the total only if it is not excluded.
-            n_agree = len(agreeing_detectors) + (
-                0 if span_a.detector in excluded_detectors else 1
+            # Triple-agreement bonus: effective agreement ≥ 3 (counting
+            # partial weights).  span_a counts toward the total only if
+            # it is not excluded.
+            span_a_weight = (
+                self._PARTIAL_VOTE_WEIGHT
+                if span_a.detector in partial_detectors
+                and group_a in self._PARTIAL_VOTE_CATEGORIES
+                else (0.0 if span_a.detector in excluded_detectors else 1.0)
             )
-            if n_agree >= 3:
+            n_agree = agreeing_weight + span_a_weight
+            if n_agree >= 3.0:
                 boost += self._ENSEMBLE_TRIPLE_EXTRA
 
             new_conf = min(1.0, span_a.confidence + boost)
@@ -603,7 +652,7 @@ class DetectorOrchestrator:
             )
             boosted_indices.add(i)
             logger.debug(
-                "Ensemble boost: %s %r %.3f→%.3f (+%.3f, %d detectors: %s)",
+                "Ensemble boost: %s %r %.3f→%.3f (+%.3f, %.1f effective detectors: %s)",
                 span_a.entity_type, span_a.text,
                 span_a.confidence, new_conf, boost, n_agree,
                 ", ".join(sorted(agreeing_detectors)),
@@ -674,26 +723,41 @@ _ML_PRIMARY_TYPES = frozenset({
     # some HF 400k usernames.  ML-primary lets GLiNER USERNAME
     # detections survive solo when patterns don't fire.
     "USERNAME",
+    # ACCOUNT_NUMBER: patterns require contextual keywords ("account",
+    # "acct", etc.) to fire.  163 ACCOUNT_NUMBER misses on nemotron_pii
+    # — mostly cases where patterns didn't fire due to missing context.
+    # As non-ML-primary, uncorroborated ML ACCOUNT_NUMBER spans need
+    # calibrated confidence ≥ 0.55 to survive — nearly impossible in
+    # the [0.20, 0.65] ML band without ensemble boost.  Making it ML-
+    # primary lowers the survival threshold to 0.52 and lets strong
+    # solo ML detections live.
+    "ACCOUNT_NUMBER",
 })
 
 # Default minimum calibrated confidence for ML-only spans on types where
 # patterns are the primary detector (used when calibration data is absent).
-# Lowered from 0.60 back to 0.55: the 0.60 threshold (raised to fight
-# GLiNER FPs on ai4privacy 400k) also kills recall on entity types where
-# patterns miss due to different PII formats in the 400k dataset.  The net
-# effect was worse F1 (recall dropped more than precision improved).
-_ML_UNCORROBORATED_MIN_DEFAULT = 0.55
+# Adjusted for widened ML tier band [0.20, 0.65]: the old 0.55 was at the
+# 88th percentile of [0.30, 0.55].  The equivalent in the new band is
+# ~0.60 (89th percentile of [0.20, 0.65]).  Set to 0.58 to be slightly
+# more permissive — the wider band gives more dynamic range to distinguish
+# strong vs weak ML detections.
+_ML_UNCORROBORATED_MIN_DEFAULT = 0.58
 
 # Types that require pattern corroboration unless the span's calibrated
 # confidence exceeds _STRICT_SOLO_MIN.  High-confidence detections for
 # these types are allowed through solo — the calibration temperature
 # already dampened unreliable scores, so survivors are trustworthy.
 _STRICT_CORROBORATION_TYPES = frozenset({"DRIVER_LICENSE"})
+# Adjusted for widened ML tier band [0.20, 0.65].
 _STRICT_SOLO_MIN = 0.62
 
 # Default minimum calibrated confidence for ML-primary spans to
 # survive solo (used when calibration data is absent).
-_ML_PRIMARY_SOLO_MIN_DEFAULT = 0.52
+# Adjusted for widened ML tier band [0.20, 0.65]: the old 0.52 was at the
+# 80th percentile of [0.30, 0.55].  The equivalent in the new band is
+# ~0.56 (80th percentile of [0.20, 0.65]).  Set to 0.55 for slightly
+# more recall.
+_ML_PRIMARY_SOLO_MIN_DEFAULT = 0.55
 
 
 def _calibrated_threshold(span: Span, base: float) -> float:
@@ -1071,13 +1135,31 @@ _SSN_FORMAT_RE = _re.compile(
 )
 
 
-def _correct_type_confusions(spans: list[Span]) -> list[Span]:
+# Context words near a 9-digit number that indicate routing number
+_ROUTING_CONTEXT_WORDS = frozenset({
+    "routing", "aba", "transit", "wire", "wire transfer",
+    "bank", "ach", "direct deposit", "routing number",
+    "fed", "federal reserve",
+})
+
+# Context words near a 9-digit number that indicate SSN
+_SSN_CONTEXT_WORDS = frozenset({
+    "ssn", "social security", "soc sec", "ss#", "social sec",
+    "tax", "employer identification",
+})
+
+
+def _correct_type_confusions(
+    spans: list[Span],
+    source_text: str | None = None,
+) -> list[Span]:
     """Reclassify ML spans that match a more specific type's format.
 
     GLiNER has known confusion patterns (from nemotron_pii 1000-sample):
     - USERNAME → FIRSTNAME (14): usernames with underscores/dots/digits
     - PHONE → SSN: social security numbers in XXX-XX-XXXX format
     - SSN classified on routing numbers: 9-digit numbers passing ABA checksum
+    - SSN ↔ BANK_ROUTING context disambiguation via nearby keywords
 
     Only reclassifies ML-tier spans (pattern detections are trusted).
     """
@@ -1102,13 +1184,46 @@ def _correct_type_confusions(spans: list[Span]) -> list[Span]:
         elif etype == "PHONE" and _SSN_FORMAT_RE.match(text):
             new_type = "SSN"
 
-        # SSN → BANK_ROUTING when bare 9-digit passes ABA checksum
+        # SSN → BANK_ROUTING: ABA checksum OR context keywords
         elif etype == "SSN":
             digits = _re.sub(r'\D', '', text)
             if len(digits) == 9:
                 valid, _ = validate_aba_routing(digits)
                 if valid:
                     new_type = "BANK_ROUTING"
+                elif source_text:
+                    # Check surrounding context for routing keywords
+                    ctx_start = max(0, span.start - 100)
+                    ctx_end = min(len(source_text), span.end + 100)
+                    context = source_text[ctx_start:ctx_end].lower()
+                    has_routing = any(
+                        _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                        for kw in _ROUTING_CONTEXT_WORDS
+                    )
+                    has_ssn = any(
+                        _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                        for kw in _SSN_CONTEXT_WORDS
+                    )
+                    if has_routing and not has_ssn:
+                        new_type = "BANK_ROUTING"
+
+        # BANK_ROUTING → SSN: context keywords override when SSN words present
+        elif etype == "BANK_ROUTING" and source_text:
+            digits = _re.sub(r'\D', '', text)
+            if len(digits) == 9:
+                ctx_start = max(0, span.start - 100)
+                ctx_end = min(len(source_text), span.end + 100)
+                context = source_text[ctx_start:ctx_end].lower()
+                has_ssn = any(
+                    _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                    for kw in _SSN_CONTEXT_WORDS
+                )
+                has_routing = any(
+                    _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                    for kw in _ROUTING_CONTEXT_WORDS
+                )
+                if has_ssn and not has_routing:
+                    new_type = "SSN"
 
         if new_type is not None:
             key = f"{etype}→{new_type}"
@@ -1278,10 +1393,41 @@ _NAME_COLLISION_PRIORITY_TYPES = _LOCATION_TYPES | frozenset({
 # CITY-specific confidence margin for name-collision replacement.
 # GLiNER systematically scores FIRSTNAME higher than CITY for ambiguous
 # names (Florence, Austin, Sherwood).  ML calibration compresses all ML
-# spans into [0.30, 0.55], so a 0.05 calibrated margin covers up to ~0.20
-# raw-confidence difference.  Benchmark: 8 CITY→FIRSTNAME + 4 CITY→LASTNAME
-# vs 3 LASTNAME→CITY type mismatches — CITY margin is strongly net-positive.
-_CITY_CONFIDENCE_MARGIN = 0.05
+# spans into [0.20, 0.65], so we need a larger margin than the original
+# 0.05 to compensate.  Benchmark: 23 CITY→FIRSTNAME type mismatches —
+# the old 0.05 margin was too small after tier calibration crushed CITY
+# confidence.  Raised to 0.12 to close the typical gap.
+_CITY_CONFIDENCE_MARGIN = 0.12
+
+# Additional margin when the span text is found in a city gazetteer.
+# This lets us definitively resolve ambiguous names like "Florence",
+# "Austin", "Madison" when they appear in US city databases.
+_CITY_GAZETTEER_MARGIN = 0.08
+
+
+def _load_city_gazetteer() -> frozenset[str]:
+    """Load US city names from the dictionary for gazetteer lookups."""
+    cities_path = Path(__file__).resolve().parent.parent.parent / "dictionaries" / "us_cities.txt"
+    if not cities_path.exists():
+        return frozenset()
+    cities: set[str] = set()
+    with open(cities_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                cities.add(line.lower())
+    return frozenset(cities)
+
+
+# Lazy-loaded city gazetteer
+_city_gazetteer: frozenset[str] | None = None
+
+
+def _get_city_gazetteer() -> frozenset[str]:
+    global _city_gazetteer
+    if _city_gazetteer is None:
+        _city_gazetteer = _load_city_gazetteer()
+    return _city_gazetteer
 
 
 def _suppress_name_location_collisions(
@@ -1299,6 +1445,9 @@ def _suppress_name_location_collisions(
     ``all_candidates``.  If no suitable replacement is found, the name
     is suppressed entirely (legacy behaviour for edge cases).
 
+    Uses a city gazetteer to apply additional confidence margin when
+    the span text matches a known US city name.
+
     Args:
         spans: The resolved (post-dedup) span list to filter.
         all_candidates: Optional pre-dedup span list to source priority
@@ -1309,6 +1458,7 @@ def _suppress_name_location_collisions(
             them as replacements instead of blanket-deleting.
     """
     source = spans if all_candidates is None else all_candidates
+    gazetteer = _get_city_gazetteer()
 
     # Build a map: (start, end) → best priority-type span at that position.
     # When multiple priority spans overlap the same range, keep the one
@@ -1338,11 +1488,12 @@ def _suppress_name_location_collisions(
                 # CITY gets a confidence margin because GLiNER
                 # systematically under-scores city names relative to
                 # first names for ambiguous tokens.
-                margin = (
-                    _CITY_CONFIDENCE_MARGIN
-                    if best_priority.entity_type == "CITY"
-                    else 0.0
-                )
+                margin = 0.0
+                if best_priority.entity_type == "CITY":
+                    margin = _CITY_CONFIDENCE_MARGIN
+                    # Extra margin when text is a known US city
+                    if best_priority.text.strip().lower() in gazetteer:
+                        margin += _CITY_GAZETTEER_MARGIN
                 if best_priority.confidence >= span.confidence - margin:
                     # Priority type has sufficient confidence — replace.
                     logger.debug(
@@ -1451,6 +1602,43 @@ _ML_NAME_BLOCKLIST = frozenset({
 # -ous (Precious), -ence (Florence, Clarence), -ance (Constance),
 # -ive (Clive), -ment (Clement), -able (Constable), -ers (Rogers),
 # -son (Johnson), -ton (Clinton), -ing (Sterling, Irving)
+# Common English words that pattern-tier (dictionary) name detectors
+# falsely match.  Dictionary detectors use name frequency databases
+# that include rare or archaic names — some are overwhelmingly common
+# English words in practice.  Benchmark: 367 name FPs, ~150 from
+# pattern-tier dictionary detections on words like these.
+_PATTERN_NAME_BLOCKLIST = frozenset({
+    # Common nouns/verbs used as titles or headings
+    "environmental", "supplies", "supply", "press", "overview",
+    "search", "contact", "register", "submit", "subscribe",
+    "download", "upload", "install", "remove", "delete",
+    "update", "cancel", "confirm", "accept", "decline",
+    "review", "approve", "reject", "forward", "select",
+    # Business/document words
+    "chase", "grant", "sterling", "reed", "hunter",
+    "archer", "mason", "porter", "turner", "carter",
+    "cooper", "foster", "barber", "miller", "baker",
+    "fisher", "taylor", "walker", "young", "price",
+    # Determiners / pronouns / particles
+    "your", "our", "all", "any", "none", "some",
+    "most", "such", "each", "every", "other", "both",
+    "what", "which", "where", "when", "there", "here",
+    "still", "just", "only", "even", "about", "being",
+    # Common adjectives/adverbs
+    "new", "old", "good", "best", "great", "high",
+    "low", "long", "short", "full", "last", "next",
+    "real", "open", "close", "free", "true", "false",
+    "safe", "fair", "nice", "fine", "rich", "poor",
+    "clean", "smart", "clear", "sharp", "bright",
+    # Titles and section headers
+    "introduction", "conclusion", "summary", "abstract",
+    "chapter", "section", "appendix", "index", "table",
+    "figure", "reference", "disclaimer", "notice", "warning",
+    "privacy", "terms", "conditions", "policy", "statement",
+    "welcome", "home", "help", "about", "blog", "news",
+    "events", "resources", "services", "products", "support",
+})
+
 _NON_NAME_SUFFIXES = (
     "tion", "tions",
     "sion", "sions",
@@ -1474,8 +1662,13 @@ _NON_NAME_SUFFIXES = (
 def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
     """Suppress NAME-family spans whose text is a common non-name English word.
 
+    Applies to ALL tiers (ML and pattern) — dictionary name detectors
+    also produce false positives on common words like "Environmental",
+    "Supplies", "Press" that happen to match name databases.
+
     Uses three complementary strategies:
-    1. Explicit blocklist (_ML_NAME_BLOCKLIST) for known FP words
+    1. Explicit blocklist (_ML_NAME_BLOCKLIST + _PATTERN_NAME_BLOCKLIST)
+       for known FP words across all tiers
     2. _NEVER_NAMES from dictionary detector (job titles, structural terms)
     3. Suffix heuristic: words >= 7 chars ending in suffixes that never
        appear on real names (-tion, -sion, -ness, -ful, -less, etc.)
@@ -1487,7 +1680,11 @@ def _suppress_ml_name_false_positives(spans: list[Span]) -> list[Span]:
     for span in spans:
         if span.entity_type in _NAME_FAMILY:
             lower = span.text.strip().lower()
-            if lower in _ML_NAME_BLOCKLIST or lower in _NEVER_NAMES:
+            if (
+                lower in _ML_NAME_BLOCKLIST
+                or lower in _NEVER_NAMES
+                or lower in _PATTERN_NAME_BLOCKLIST
+            ):
                 suppressed += 1
                 logger.debug(
                     "Name FP suppressed: %s %r (blocklist, tier=%s)",

@@ -16,10 +16,17 @@ from ..types import Span, Tier
 # Tier floors — the minimum calibrated score for each tier.
 # A CHECKSUM span will always score >= 0.90 after calibration,
 # so it can never be beaten by a PATTERN span at 0.85.
+#
+# ML band widened from [0.30, 0.55] to [0.20, 0.65]: the original
+# 0.25-point range compressed all ML scores too aggressively,
+# making the corroboration thresholds (0.52, 0.55) extremely
+# sensitive.  With a 0.45-point band, high-confidence ML detections
+# can compete with low-confidence pattern detections, while still
+# maintaining clear tier separation (pattern floor is 0.65).
 _TIER_FLOORS: dict[Tier, float] = {
-    Tier.ML: 0.30,
-    Tier.PATTERN: 0.55,
-    Tier.STRUCTURED: 0.75,
+    Tier.ML: 0.20,
+    Tier.PATTERN: 0.65,
+    Tier.STRUCTURED: 0.80,
     Tier.CHECKSUM: 0.90,
 }
 
