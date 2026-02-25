@@ -1,8 +1,10 @@
 """
-Policy service for OpenLabels server (Phase J).
+Policy service for OpenLabels server (Phase J / Story 8).
 
 Provides business logic for policy management:
 - CRUD operations for tenant-scoped policies
+- Rule builder helpers
+- Policy-target assignment
 - Dry-run policy evaluation against existing scan results
 - Policy pack loading from built-in templates
 - Compliance statistics
@@ -14,10 +16,15 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT
-from openlabels.server.models import Policy, ScanResult
+from openlabels.server.models import (
+    Policy,
+    PolicyTargetAssignment,
+    ScanResult,
+    ScanTarget,
+)
 from openlabels.server.services.base import BaseService
 
 if TYPE_CHECKING:
@@ -152,21 +159,132 @@ class PolicyService(BaseService):
         ]
 
 
+    # ------------------------------------------------------------------
+    # Policy-target assignment
+    # ------------------------------------------------------------------
+
+    async def assign_targets(self, policy_id: UUID, target_ids: list[UUID]) -> list[dict]:
+        """Assign scan targets to a policy. Skips duplicates."""
+        from openlabels.server.models import generate_uuid
+
+        results = []
+        for target_id in target_ids:
+            # Verify target belongs to tenant
+            target = await self.get_tenant_entity(ScanTarget, target_id, "ScanTarget")
+
+            # Check for existing assignment
+            existing = await self.session.execute(
+                select(PolicyTargetAssignment).where(
+                    PolicyTargetAssignment.policy_id == policy_id,
+                    PolicyTargetAssignment.target_id == target_id,
+                )
+            )
+            if existing.scalar_one_or_none() is not None:
+                # Already assigned — include in response but don't duplicate
+                row = existing.scalar_one_or_none()
+                # Re-query to get fresh data
+                q = select(PolicyTargetAssignment).where(
+                    PolicyTargetAssignment.policy_id == policy_id,
+                    PolicyTargetAssignment.target_id == target_id,
+                )
+                row = (await self.session.execute(q)).scalar_one()
+                results.append({
+                    "id": row.id,
+                    "target_id": row.target_id,
+                    "target_name": target.name,
+                    "assigned_at": row.assigned_at,
+                })
+                continue
+
+            assignment = PolicyTargetAssignment(
+                id=generate_uuid(),
+                tenant_id=self.tenant_id,
+                policy_id=policy_id,
+                target_id=target_id,
+                assigned_by=self.user_id,
+            )
+            self.session.add(assignment)
+            await self.flush()
+            results.append({
+                "id": assignment.id,
+                "target_id": target_id,
+                "target_name": target.name,
+                "assigned_at": assignment.assigned_at,
+            })
+
+        return results
+
+    async def unassign_target(self, policy_id: UUID, target_id: UUID) -> None:
+        """Remove a target assignment from a policy."""
+        from openlabels.exceptions import NotFoundError
+
+        result = await self.session.execute(
+            select(PolicyTargetAssignment).where(
+                PolicyTargetAssignment.policy_id == policy_id,
+                PolicyTargetAssignment.target_id == target_id,
+                PolicyTargetAssignment.tenant_id == self.tenant_id,
+            )
+        )
+        assignment = result.scalar_one_or_none()
+        if assignment is None:
+            raise NotFoundError(
+                message="Policy-target assignment not found",
+                resource_type="PolicyTargetAssignment",
+                resource_id=f"{policy_id}/{target_id}",
+            )
+        await self.session.delete(assignment)
+        await self.flush()
+
+    async def list_assigned_targets(self, policy_id: UUID) -> list[dict]:
+        """List all targets assigned to a policy."""
+        q = (
+            select(PolicyTargetAssignment, ScanTarget.name)
+            .join(ScanTarget, PolicyTargetAssignment.target_id == ScanTarget.id)
+            .where(
+                PolicyTargetAssignment.policy_id == policy_id,
+                PolicyTargetAssignment.tenant_id == self.tenant_id,
+            )
+            .order_by(PolicyTargetAssignment.assigned_at)
+        )
+        rows = (await self.session.execute(q)).all()
+        return [
+            {
+                "id": row[0].id,
+                "target_id": row[0].target_id,
+                "target_name": row[1],
+                "assigned_at": row[0].assigned_at,
+            }
+            for row in rows
+        ]
+
+
+    # ------------------------------------------------------------------
+    # Evaluate / simulate
+    # ------------------------------------------------------------------
+
     async def evaluate_results(
         self,
         *,
         job_id: UUID | None = None,
         result_ids: list[UUID] | None = None,
+        policy_ids: list[UUID] | None = None,
         limit: int = 100,
     ) -> list[dict]:
-        """Evaluate existing scan results against the tenant's active policies.
+        """Evaluate existing scan results against policies.
+
+        If ``policy_ids`` is provided, only those specific policies are loaded
+        (even if disabled), enabling "what-if" simulation.
 
         Returns a list of dicts with ``result_id``, ``file_path``, and
         ``violations`` for each result that has at least one violation.
         """
         from openlabels.core.policies.schema import EntityMatch
 
-        engine = await self._build_tenant_engine()
+        if policy_ids:
+            engine = await self._build_tenant_engine(policy_ids=policy_ids)
+        else:
+            engine = await self._build_tenant_engine()
+
         if engine.policy_count == 0:
             return []
 
@@ -298,21 +416,31 @@ class PolicyService(BaseService):
         }
 
 
-    async def _build_tenant_engine(self) -> PolicyEngine:
-        """Build a PolicyEngine loaded with the tenant's active policies."""
+    async def _build_tenant_engine(
+        self,
+        *,
+        policy_ids: list[UUID] | None = None,
+    ) -> PolicyEngine:
+        """Build a PolicyEngine loaded with the tenant's policies.
+
+        If ``policy_ids`` is provided, loads those specific policies regardless
+        of their enabled status (for simulation).  Otherwise loads all enabled
+        policies.
+        """
         from openlabels.core.policies.engine import PolicyEngine
         from openlabels.core.policies.loader import load_policy_pack
 
         engine = PolicyEngine()
 
-        q = (
-            select(Policy)
-            .where(
-                Policy.tenant_id == self.tenant_id,
-                Policy.enabled.is_(True),
-            )
-            .order_by(Policy.priority.desc())
-        )
+        q = select(Policy).where(Policy.tenant_id == self.tenant_id)
+
+        if policy_ids:
+            q = q.where(Policy.id.in_(policy_ids))
+        else:
+            q = q.where(Policy.enabled.is_(True))
+
+        q = q.order_by(Policy.priority.desc())
+
         rows = (await self.session.execute(q)).scalars().all()
         for row in rows:
             try:

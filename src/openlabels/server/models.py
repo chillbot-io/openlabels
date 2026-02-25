@@ -27,6 +27,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -978,6 +979,30 @@ class Policy(Base):
     __table_args__ = (
         Index('ix_policies_tenant_framework', 'tenant_id', 'framework'),
         Index('ix_policies_tenant_enabled', 'tenant_id', 'enabled'),
+    )
+
+
+class PolicyTargetAssignment(Base):
+    """Many-to-many assignment of policies to scan targets.
+
+    Allows scoping which policies apply to which scan targets.
+    When a policy has no assignments it applies to all targets (default).
+    """
+
+    __tablename__ = "policy_target_assignments"
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    policy_id: Mapped[PyUUID] = mapped_column(ForeignKey("policies.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_targets.id", ondelete="CASCADE"), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    assigned_by: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        UniqueConstraint('policy_id', 'target_id', name='uq_policy_target'),
+        Index('ix_policy_target_tenant', 'tenant_id'),
+        Index('ix_policy_target_policy', 'policy_id'),
+        Index('ix_policy_target_target', 'target_id'),
     )
 
 
