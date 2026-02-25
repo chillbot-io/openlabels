@@ -13,7 +13,9 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -129,8 +131,9 @@ class SIDResolver:
         self.max_cache_size = max_cache_size
         self.enable_graph = enable_graph
 
-        # In-memory cache: SID -> (ResolvedUser, timestamp)
-        self._cache: dict[str, tuple[ResolvedUser, datetime]] = {}
+        # In-memory LRU cache: SID -> (ResolvedUser, timestamp)
+        # OrderedDict maintains insertion/access order for O(1) LRU eviction
+        self._cache: OrderedDict[str, tuple[ResolvedUser, datetime]] = OrderedDict()
 
         # Graph client (lazy initialized)
         self._graph_client = None
@@ -178,6 +181,8 @@ class SIDResolver:
         if sid in self._cache:
             user, cached_at = self._cache[sid]
             if datetime.now(timezone.utc) - cached_at < self.cache_ttl:
+                # Move to end (most recently used) for LRU ordering
+                self._cache.move_to_end(sid)
                 user.resolution_source = "cache"
                 return user
             else:
@@ -186,13 +191,14 @@ class SIDResolver:
         return None
 
     def _add_to_cache(self, user: ResolvedUser):
-        """Add resolved user to cache."""
-        # Evict oldest entries if cache is full
-        if len(self._cache) >= self.max_cache_size:
-            # Remove oldest 10%
-            entries = sorted(self._cache.items(), key=lambda x: x[1][1])
-            for sid, _ in entries[: self.max_cache_size // 10]:
-                del self._cache[sid]
+        """Add resolved user to cache with LRU eviction."""
+        # If already in cache, remove first so re-insertion goes to the end
+        if user.sid in self._cache:
+            del self._cache[user.sid]
+
+        # Evict least-recently-used entries if cache is full
+        while len(self._cache) >= self.max_cache_size:
+            self._cache.popitem(last=False)  # O(1) removal of oldest entry
 
         self._cache[user.sid] = (user, datetime.now(timezone.utc))
 
@@ -267,7 +273,7 @@ class SIDResolver:
 
     async def resolve_batch(self, sids: list[str]) -> dict[str, ResolvedUser]:
         """
-        Resolve multiple SIDs.
+        Resolve multiple SIDs in parallel.
 
         Args:
             sids: List of SIDs to resolve
@@ -275,10 +281,8 @@ class SIDResolver:
         Returns:
             Dict mapping SID -> ResolvedUser
         """
-        results = {}
-        for sid in sids:
-            results[sid] = await self.resolve(sid)
-        return results
+        resolved = await asyncio.gather(*(self.resolve(sid) for sid in sids))
+        return dict(zip(sids, resolved))
 
     def resolve_sync(self, sid: str) -> ResolvedUser:
         """

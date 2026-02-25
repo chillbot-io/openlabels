@@ -30,6 +30,7 @@ from openlabels.auth.dependencies import CurrentUser, require_admin
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.models import SavedCredential
+from openlabels.server.routes import audit_log
 from openlabels.server.session import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,18 @@ def _derive_fernet_key() -> bytes:
 
     Uses HKDF-like derivation: SHA-256 of (secret_key + salt) truncated to
     32 bytes, then base64-encoded for Fernet.
+
+    Raises RuntimeError if secret_key is not configured — credentials must
+    never be encrypted with a predictable default key.
     """
     settings = get_settings()
-    secret = settings.server.secret_key or "openlabels-dev-secret"
+    secret = settings.server.secret_key
+    if not secret:
+        raise RuntimeError(
+            "OPENLABELS_SERVER__SECRET_KEY is not configured. "
+            "A secret key is required for credential encryption. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+        )
     raw = hashlib.sha256(f"{secret}:credential-encryption".encode()).digest()
     return base64.urlsafe_b64encode(raw)
 
@@ -280,7 +290,9 @@ async def save_credential(
     )
     row = existing.scalar_one_or_none()
 
+    is_update = False
     if row:
+        is_update = True
         row.encrypted_data = encrypted
         row.fields_stored = fields
         row.target_id = body.target_id
@@ -298,6 +310,16 @@ async def save_credential(
 
     await db.flush()
     await db.refresh(row)
+
+    audit_log(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        action="credential_updated" if is_update else "credential_created",
+        resource_type="saved_credential",
+        resource_id=row.id,
+        details={"source_type": body.source_type, "name": body.name, "fields": fields},
+    )
 
     return SavedCredentialResponse(
         id=row.id,
@@ -358,8 +380,22 @@ async def delete_saved_credential(
     if not row:
         raise HTTPException(status_code=404, detail="Credential not found")
 
+    # Capture metadata before deletion for the audit log
+    deleted_source_type = row.source_type
+    deleted_name = row.name
+
     await db.delete(row)
     await db.flush()
+
+    audit_log(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        action="credential_deleted",
+        resource_type="saved_credential",
+        resource_id=credential_id,
+        details={"source_type": deleted_source_type, "name": deleted_name},
+    )
 
     return {"status": "ok", "id": str(credential_id)}
 

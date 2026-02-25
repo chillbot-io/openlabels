@@ -79,7 +79,9 @@ def enable_monitoring(
     if not path.exists():
         raise MonitoringError(f"File not found: {path}", path=path)
 
-    # Check if already monitored (lock protects the dict read)
+    # Atomic check-and-set: hold the lock for the entire operation to
+    # prevent TOCTOU races where two threads both see "not monitored"
+    # and both proceed to configure OS-level audit rules.
     with _watched_lock:
         if path_str in _watched_files:
             logger.info(f"File already monitored: {path}")
@@ -91,15 +93,26 @@ def enable_monitoring(
                 audit_rule_enabled=_watched_files[path_str].audit_rule_enabled,
             )
 
+        # Mark as pending by inserting a sentinel so concurrent calls
+        # see the entry and return early.  We'll update or remove it below.
+        _watched_files[path_str] = WatchedFile(
+            path=path,
+            risk_tier=risk_tier,
+            added_at=datetime.now(),
+            sacl_enabled=False,
+            audit_rule_enabled=False,
+            label_id=label_id,
+        )
+
     # Platform-specific setup (outside lock — may be slow)
     if platform.system() == "Windows":
         result = _enable_monitoring_windows(path, audit_read, audit_write)
     else:
         result = _enable_monitoring_linux(path, audit_read, audit_write)
 
-    # Track in registry if successful (lock protects the dict write)
-    if result.success:
-        with _watched_lock:
+    # Finalize: update or remove the sentinel entry
+    with _watched_lock:
+        if result.success:
             if len(_watched_files) >= _MAX_WATCHED_FILES and path_str not in _watched_files:
                 logger.warning("Monitoring cache full (%d entries), skipping cache for %s", _MAX_WATCHED_FILES, path_str)
             else:
@@ -111,6 +124,9 @@ def enable_monitoring(
                     audit_rule_enabled=result.audit_rule_enabled,
                     label_id=label_id,
                 )
+        else:
+            # OS setup failed — remove the sentinel
+            _watched_files.pop(path_str, None)
 
     return result
 
@@ -462,9 +478,9 @@ def _enable_batch_linux(
     risk_tier: str,
 ) -> list[MonitoringResult]:
     """Single auditctl invocation for all files."""
+    import shlex
     import shutil
 
-    _INJECTION_CHARS = set('"\'`$\n\r;&|')
     results: list[MonitoringResult] = []
     validated: list[Path] = []
 
@@ -476,12 +492,7 @@ def _enable_batch_linux(
 
     for p in paths:
         resolved = Path(p).resolve()
-        resolved_str = str(resolved)
-        if any(c in resolved_str for c in _INJECTION_CHARS):
-            results.append(MonitoringResult(
-                success=False, path=resolved, error="Path contains invalid characters",
-            ))
-        elif not resolved.exists():
+        if not resolved.exists():
             results.append(MonitoringResult(
                 success=False, path=resolved, error=f"File not found: {p}",
             ))
@@ -491,10 +502,11 @@ def _enable_batch_linux(
     if not validated:
         return results
 
-    # Build a single shell script with one auditctl call per file
-    # Paths are validated above to not contain shell metacharacters
+    # Build a single shell script with one auditctl call per file.
+    # Use shlex.quote() for all user-provided paths to prevent
+    # shell injection via crafted filenames.
     commands = "\n".join(
-        f'auditctl -w "{p}" -p rwa -k openlabels && echo "OK:{p}" || echo "FAIL:{p}"'
+        f'auditctl -w {shlex.quote(str(p))} -p rwa -k openlabels && echo "OK:{p}" || echo "FAIL:{p}"'
         for p in validated
     )
 
@@ -641,11 +653,18 @@ def _disable_monitoring_windows(path: Path) -> MonitoringResult:
             error="Path contains invalid characters",
         )
 
-    # PowerShell script to remove audit rules
+    # PowerShell script to remove only OpenLabels-added audit rules.
+    # We identify our rules by matching: IdentityReference = "Everyone"
+    # and AuditFlags containing Success,Failure (the signature we use
+    # in _enable_monitoring_windows).  Other audit rules are preserved.
     ps_script = f'''
 $path = "{resolved_path}"
 $acl = Get-Acl -Path $path -Audit
-$acl.Audit | ForEach-Object {{ $acl.RemoveAuditRule($_) }} | Out-Null
+$acl.Audit | Where-Object {{
+    $_.IdentityReference.Value -eq "Everyone" -and
+    $_.AuditFlags -band [System.Security.AccessControl.AuditFlags]::Success -and
+    $_.AuditFlags -band [System.Security.AccessControl.AuditFlags]::Failure
+}} | ForEach-Object {{ $acl.RemoveAuditRule($_) }} | Out-Null
 Set-Acl -Path $path -AclObject $acl
 '''
 

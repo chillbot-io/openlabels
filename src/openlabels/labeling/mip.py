@@ -38,6 +38,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from openlabels.exceptions import AuthError
+
 logger = logging.getLogger(__name__)
 
 # Check for pythonnet availability
@@ -207,17 +209,19 @@ class AuthDelegateImpl:
             else:
                 error = result.get("error_description", "Unknown error")
                 logger.error(f"Failed to acquire token: {error}")
-                return ""
+                raise AuthError(f"Failed to acquire MIP token: {error}")
 
+        except AuthError:
+            raise
         except ImportError as e:
             logger.error(f"MSAL library not installed: {e}")
-            return ""
+            raise AuthError(f"MSAL library not installed: {e}") from e
         except ValueError as e:
             logger.error(f"Invalid MSAL configuration: {e}")
-            return ""
+            raise AuthError(f"Invalid MSAL configuration: {e}") from e
         except ConnectionError as e:
             logger.error(f"Network error during token acquisition: {e}")
-            return ""
+            raise AuthError(f"Network error during token acquisition: {e}") from e
 
 
 class MIPClient:

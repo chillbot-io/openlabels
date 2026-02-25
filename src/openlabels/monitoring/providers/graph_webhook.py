@@ -108,6 +108,18 @@ class GraphWebhookProvider:
         # Deduplicate — multiple notifications may reference the same drive
         affected_drives: set[str] = set()
         for notification in notifications:
+            # Validate clientState to ensure the notification is authentic
+            if self._client_state:
+                received_state = notification.get("clientState", "")
+                if received_state != self._client_state:
+                    logger.warning(
+                        "Rejected Graph notification with invalid clientState "
+                        "(expected=%r, received=%r)",
+                        self._client_state,
+                        received_state,
+                    )
+                    continue
+
             resource = notification.get("resource", "")
             # resource looks like "/drives/{drive-id}/root"
             parts = resource.strip("/").split("/")

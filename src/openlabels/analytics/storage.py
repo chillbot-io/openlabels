@@ -78,7 +78,15 @@ class LocalStorage:
         return str(self._base)
 
     def _resolve(self, path: str) -> Path:
-        return self._base / path
+        resolved = (self._base / path).resolve()
+        base_resolved = self._base.resolve()
+        # Ensure the resolved path stays within the storage root
+        if not (resolved == base_resolved or str(resolved).startswith(str(base_resolved) + "/")):
+            raise ValueError(
+                f"Path traversal detected: '{path}' resolves to '{resolved}' "
+                f"which is outside storage root '{base_resolved}'"
+            )
+        return resolved
 
     def write_parquet(
         self,

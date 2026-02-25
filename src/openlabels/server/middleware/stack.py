@@ -46,17 +46,34 @@ async def add_request_id(request: Request, call_next: _CallNext) -> Response:
 
 
 async def inject_tenant_context(request: Request, call_next: _CallNext) -> Response:
-    """Extract tenant/user context from auth state and inject into logging context."""
-    response = await call_next(request)
-    # After the request has been processed, the auth dependency will have run
-    # and stored the user in the request scope. We set the context vars for
-    # any logging that happens during response streaming.
+    """Extract tenant/user context from auth state and inject into logging context.
+
+    Context is set BEFORE ``call_next`` so that all request-scoped logging
+    (inside route handlers, dependencies, and other middleware) has the
+    correct tenant and user identifiers attached.
+    """
+    # The auth state may already be populated by an earlier middleware or
+    # dependency override (e.g. in tests).  Set context vars eagerly so
+    # that logging during request processing carries the right IDs.
     user = getattr(request.state, "_current_user", None)
     if user:
         if hasattr(user, "tenant_id"):
             set_tenant_id(str(user.tenant_id))
         if hasattr(user, "id"):
             set_user_id(str(user.id))
+
+    response = await call_next(request)
+
+    # Re-check after the request in case the auth dependency populated
+    # the user during handler execution (common path for token-based auth).
+    if not user:
+        user = getattr(request.state, "_current_user", None)
+        if user:
+            if hasattr(user, "tenant_id"):
+                set_tenant_id(str(user.tenant_id))
+            if hasattr(user, "id"):
+                set_user_id(str(user.id))
+
     return response
 
 

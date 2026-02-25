@@ -118,7 +118,7 @@ pub static BUILTIN_PATTERNS: &[(&str, &str, Option<&str>, f64)] = &[
     // US ITIN (Individual Taxpayer Identification Number)
     (
         "US_ITIN",
-        r"\b9\d{2}[-\s]?(?:7\d|8[0-8])[-\s]?\d{4}\b",
+        r"\b9\d{2}[-\s]?(?:5[0-9]|6[0-5]|7\d|8[0-8]|9[0-2]|9[4-9])[-\s]?\d{4}\b",
         None,
         0.72,
     ),

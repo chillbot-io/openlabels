@@ -163,27 +163,46 @@ async def _run_job(
             except JobError as e:
                 error_msg = f"{task_type} task failed: {e}"
                 logger.error("Job %s failed: %s", job_id, error_msg)
-                await queue.fail(job_id, error_msg)
+                await _safe_fail(queue, job_id, error_msg)
             except SQLAlchemyError as e:
                 error_msg = f"Database error in {task_type}: {type(e).__name__}: {e}"
                 logger.error("Job %s failed: %s", job_id, error_msg)
-                await queue.fail(job_id, error_msg)
+                await _safe_fail(queue, job_id, error_msg)
             except (PermissionError, FileNotFoundError, OSError) as e:
                 error_msg = f"I/O error in {task_type}: {type(e).__name__}: {e}"
                 logger.error("Job %s failed: %s", job_id, error_msg)
-                await queue.fail(job_id, error_msg)
+                await _safe_fail(queue, job_id, error_msg)
             except ValueError as e:
                 error_msg = f"Invalid data in {task_type}: {e}"
                 logger.error("Job %s failed: %s", job_id, error_msg)
-                await queue.fail(job_id, error_msg)
+                await _safe_fail(queue, job_id, error_msg)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 error_msg = f"Unexpected error in {task_type}: {type(e).__name__}: {e}"
                 logger.error("Job %s failed: %s", job_id, error_msg, exc_info=True)
-                await queue.fail(job_id, error_msg)
+                await _safe_fail(queue, job_id, error_msg)
     finally:
         semaphore.release()
+
+
+async def _safe_fail(queue: JobQueue, job_id, error_msg: str) -> None:
+    """Call queue.fail() with protection against secondary failures.
+
+    If queue.fail() itself raises (e.g. lost DB connection), the error
+    is logged so the job can be reclaimed by the stuck-job reclaimer
+    rather than silently remaining in RUNNING state forever.
+    """
+    try:
+        await queue.fail(job_id, error_msg)
+    except Exception as fail_exc:
+        logger.error(
+            "CRITICAL: queue.fail() itself failed for job %s — "
+            "job will remain in RUNNING state until reclaimed by "
+            "stuck-job reclaimer. Original error: %s | "
+            "queue.fail() error: %s",
+            job_id, error_msg, fail_exc,
+        )
 
 
 async def _dispatch(session, task_type: str, payload: dict) -> dict:

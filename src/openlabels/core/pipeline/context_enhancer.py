@@ -27,6 +27,13 @@ from ..types import Span, Tier
 logger = logging.getLogger(__name__)
 
 
+def _mask_pii(text: str) -> str:
+    """Mask PII text for safe logging, showing only first and last characters."""
+    if len(text) <= 2:
+        return "***"
+    return f"{text[0]}{'*' * (len(text) - 2)}{text[-1]}"
+
+
 # DENY LISTS - Known false positives to reject immediately
 # Common words that get falsely detected as NAMEs
 NAME_DENY_LIST: set[str] = {
@@ -642,13 +649,13 @@ class ContextEnhancer:
                 kept.append(updated_span)
                 passed_through += 1
                 logger.debug(
-                    f"ContextEnhancer: KEEP '{updated_span.text}' ({updated_span.entity_type}) "
+                    f"ContextEnhancer: KEEP '{_mask_pii(updated_span.text)}' ({updated_span.entity_type}) "
                     f"conf={result.confidence:.2f} reasons={result.reasons}"
                 )
             elif result.action == "reject":
                 rejected += 1
                 logger.info(
-                    f"ContextEnhancer: REJECT '{updated_span.text}' ({updated_span.entity_type}) "
+                    f"ContextEnhancer: REJECT '{_mask_pii(updated_span.text)}' ({updated_span.entity_type}) "
                     f"reasons={result.reasons}"
                 )
             else:  # verify
@@ -657,7 +664,7 @@ class ContextEnhancer:
                 kept.append(updated_span)
                 needs_llm += 1
                 logger.debug(
-                    f"ContextEnhancer: VERIFY '{updated_span.text}' ({updated_span.entity_type}) "
+                    f"ContextEnhancer: VERIFY '{_mask_pii(updated_span.text)}' ({updated_span.entity_type}) "
                     f"conf={result.confidence:.2f} reasons={result.reasons}"
                 )
 

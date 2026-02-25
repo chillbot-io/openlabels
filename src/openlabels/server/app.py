@@ -261,8 +261,8 @@ def _register_spa_serving(app: FastAPI) -> None:
     # This enables client-side routing (React Router, etc.)
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(request: Request, path: str) -> Response:
-        # Don't intercept API, WebSocket, metrics, health, or HTMX UI routes
-        if path.startswith(("api/", "ws/", "ws_events/", "metrics", "health", "ui/")):
+        # Don't intercept API, WebSocket, metrics, or health routes
+        if path.startswith(("api/", "ws/", "ws_events/", "metrics", "health")):
             return JSONResponse(status_code=404, content={"error": "not_found"})
         return FileResponse(str(index_html), media_type="text/html")
 

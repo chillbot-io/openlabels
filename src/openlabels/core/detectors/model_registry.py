@@ -258,11 +258,18 @@ def download_model(
         shutil.copy2(cached_path, target)
 
         # Verify checksum if available
-        if mf.sha256 and not _verify_sha256(target, mf.sha256):
-            target.unlink()
-            raise OSError(
-                f"Checksum mismatch for {mf.filename}. "
-                f"Expected {mf.sha256[:16]}..."
+        if mf.sha256:
+            if not _verify_sha256(target, mf.sha256):
+                target.unlink()
+                raise OSError(
+                    f"Checksum mismatch for {mf.filename}. "
+                    f"Expected {mf.sha256[:16]}..."
+                )
+            logger.debug(f"  Checksum verified for {mf.filename}")
+        else:
+            logger.warning(
+                f"No SHA-256 checksum configured for {mf.filename} in model "
+                f"{spec.name!r} — file integrity was not verified"
             )
 
         downloaded.append(mf.filename)

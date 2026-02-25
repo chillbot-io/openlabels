@@ -7,7 +7,6 @@ Provides:
 - Enable / disable toggle
 - Bulk 'Schedule All Targets' action
 - Manual trigger for immediate execution
-- HTMX-aware delete with HX-Trigger headers
 - Schedule execution history
 """
 
@@ -17,7 +16,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -435,13 +434,8 @@ async def delete_schedule(
     schedule_id: UUID,
     session: AsyncSession = Depends(get_session),
     user: CurrentUser = Depends(require_admin),
-    hx_request: str | None = Header(None, alias="HX-Request"),
 ):
-    """Delete a scan schedule.
-
-    For HTMX requests, returns 200 with HX-Trigger header for UI refresh.
-    For standard API requests, returns 204 No Content.
-    """
+    """Delete a scan schedule."""
     schedule = await get_or_404(session, ScanSchedule, schedule_id, tenant_id=user.tenant_id)
 
     schedule_name = schedule.name
@@ -452,12 +446,6 @@ async def delete_schedule(
     )
     await session.delete(schedule)
     await session.flush()
-
-    if hx_request:
-        return Response(
-            status_code=200,
-            headers={"HX-Trigger": '{"deleted": "schedule"}'},
-        )
 
     return Response(status_code=204)
 

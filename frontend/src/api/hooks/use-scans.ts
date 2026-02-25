@@ -26,10 +26,21 @@ export function useCreateScans() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (items: Array<{ target_id: string; name?: string }>) => {
-      const results = await Promise.all(
+      // Use Promise.allSettled to handle partial failures gracefully
+      const settled = await Promise.allSettled(
         items.map((item) => scansApi.create(item)),
       );
-      return results;
+      const fulfilled = settled
+        .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof scansApi.create>>> => r.status === 'fulfilled')
+        .map((r) => r.value);
+      const rejected = settled.filter((r) => r.status === 'rejected');
+      if (rejected.length > 0) {
+        console.warn(`${rejected.length} of ${items.length} scan creation(s) failed:`, rejected.map((r) => (r as PromiseRejectedResult).reason));
+      }
+      if (fulfilled.length === 0 && rejected.length > 0) {
+        throw (rejected[0] as PromiseRejectedResult).reason;
+      }
+      return fulfilled;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scans'] });

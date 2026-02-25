@@ -5,6 +5,7 @@ Report commands -- local scanning and server-backed report generation.
 from __future__ import annotations
 
 import asyncio
+import html as html_mod
 import json
 import logging
 import os
@@ -185,10 +186,15 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
             return "\n".join(lines)
 
         def _generate_html():
-            html = f"""<!DOCTYPE html>
+            esc = html_mod.escape
+            safe_title = esc(title)
+            safe_scan_path = esc(str(report_data['scan_path']))
+            safe_generated = esc(str(report_data['generated_at']))
+            safe_filter = esc(where_filter) if where_filter else None
+            html_out = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>{title}</title>
+    <title>{safe_title}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; }}
         h1 {{ color: #333; }}
@@ -204,20 +210,20 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
     </style>
 </head>
 <body>
-    <h1>{title}</h1>
-    <p>Generated: {report_data['generated_at']}<br>
-    Scan Path: {report_data['scan_path']}</p>
-    {"<p>Filter: " + where_filter + "</p>" if where_filter else ""}
+    <h1>{safe_title}</h1>
+    <p>Generated: {safe_generated}<br>
+    Scan Path: {safe_scan_path}</p>
+    {"<p>Filter: " + safe_filter + "</p>" if safe_filter else ""}
     <div class="summary">
         <h2>Summary</h2>
-        <p>Total files: {summary['total_files']}<br>
-        Files with findings: {summary['files_with_findings']}<br>
-        Total entities: {summary['total_entities']}</p>
+        <p>Total files: {int(summary['total_files'])}<br>
+        Files with findings: {int(summary['files_with_findings'])}<br>
+        Total entities: {int(summary['total_entities'])}</p>
         <p>
-        <span class="critical">CRITICAL: {summary['by_tier']['CRITICAL']}</span> |
-        <span class="high">HIGH: {summary['by_tier']['HIGH']}</span> |
-        <span class="medium">MEDIUM: {summary['by_tier']['MEDIUM']}</span> |
-        <span class="low">LOW: {summary['by_tier']['LOW']}</span>
+        <span class="critical">CRITICAL: {int(summary['by_tier']['CRITICAL'])}</span> |
+        <span class="high">HIGH: {int(summary['by_tier']['HIGH'])}</span> |
+        <span class="medium">MEDIUM: {int(summary['by_tier']['MEDIUM'])}</span> |
+        <span class="low">LOW: {int(summary['by_tier']['LOW'])}</span>
         </p>
     </div>
     <h2>Findings</h2>
@@ -225,14 +231,16 @@ def _local_report(path: str, where_filter: str | None, recursive: bool,
         <tr><th>File</th><th>Score</th><th>Tier</th><th>Entities</th></tr>
 """
             for r in results:
-                tier_class = r['risk_tier'].lower()
-                entities = ", ".join(f"{k}:{v}" for k, v in r["entity_counts"].items()) or "-"
-                html += f"        <tr><td>{r['file_path']}</td><td>{r['risk_score']}</td>"
-                html += f"<td class='{tier_class}'>{r['risk_tier']}</td><td>{entities}</td></tr>\n"
-            html += """    </table>
+                tier_class = esc(str(r['risk_tier']).lower())
+                entities = esc(", ".join(f"{k}:{v}" for k, v in r["entity_counts"].items()) or "-")
+                safe_file = esc(str(r['file_path']))
+                safe_tier = esc(str(r['risk_tier']))
+                html_out += f"        <tr><td>{safe_file}</td><td>{int(r['risk_score'])}</td>"
+                html_out += f"<td class='{tier_class}'>{safe_tier}</td><td>{entities}</td></tr>\n"
+            html_out += """    </table>
 </body>
 </html>"""
-            return html
+            return html_out
 
         # Generate output
         if fmt == "json":

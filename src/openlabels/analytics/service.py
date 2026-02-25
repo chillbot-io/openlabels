@@ -172,7 +172,8 @@ class AnalyticsService:
         params: list[Any] = [str(tenant_id)]
 
         if job_id:
-            conditions.append(f"job_id = decode('{job_id.hex}', 'hex')")
+            conditions.append("job_id = decode(?, 'hex')")
+            params.append(job_id.hex)
         if risk_tier:
             conditions.append("risk_tier = ?")
             params.append(risk_tier)

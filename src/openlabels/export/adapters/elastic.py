@@ -86,35 +86,62 @@ class ElasticAdapter:
         return "\n".join(lines) + "\n"
 
     async def _post_bulk(self, body: str) -> int:
-        """POST bulk body; returns count of successful items or -1 on error."""
-        async with self._make_client() as client:
-            resp = await client.post(
-                f"{self._hosts[0]}/_bulk",
-                content=body,
-                headers={"Content-Type": "application/x-ndjson"},
-                timeout=30.0,
-            )
+        """POST bulk body with round-robin failover across hosts.
 
-        if resp.status_code not in (200, 201):
-            logger.error(
-                "Elastic Bulk API returned %d: %s",
-                resp.status_code, resp.text[:200],
-            )
-            return -1
+        Tries each host in order; returns count of successful items or -1
+        if all hosts fail.
+        """
+        last_error: Exception | None = None
+        for i in range(len(self._hosts)):
+            host = self._hosts[i]
+            try:
+                async with self._make_client() as client:
+                    resp = await client.post(
+                        f"{host}/_bulk",
+                        content=body,
+                        headers={"Content-Type": "application/x-ndjson"},
+                        timeout=30.0,
+                    )
 
-        result = resp.json()
-        if result.get("errors"):
-            failed = sum(
-                1 for item in result.get("items", [])
-                if item.get("index", {}).get("error")
-            )
-            succeeded = len(result.get("items", [])) - failed
-            logger.warning(
-                "Elastic Bulk API: %d succeeded, %d failed", succeeded, failed,
-            )
-            return succeeded
+                if resp.status_code not in (200, 201):
+                    logger.error(
+                        "Elastic Bulk API on %s returned %d: %s",
+                        host, resp.status_code, resp.text[:200],
+                    )
+                    # Try next host on server errors
+                    if resp.status_code >= 500:
+                        continue
+                    return -1
 
-        return len(result.get("items", []))
+                # Rotate successful host to front for subsequent calls
+                if i > 0:
+                    self._hosts.insert(0, self._hosts.pop(i))
+
+                result = resp.json()
+                if result.get("errors"):
+                    failed = sum(
+                        1 for item in result.get("items", [])
+                        if item.get("index", {}).get("error")
+                    )
+                    succeeded = len(result.get("items", [])) - failed
+                    logger.warning(
+                        "Elastic Bulk API: %d succeeded, %d failed", succeeded, failed,
+                    )
+                    return succeeded
+
+                return len(result.get("items", []))
+
+            except (httpx.HTTPError, OSError, ConnectionError) as exc:
+                last_error = exc
+                logger.warning(
+                    "Elastic host %s failed, trying next: %s", host, exc,
+                )
+                continue
+
+        logger.error(
+            "All Elastic hosts failed. Last error: %s", last_error,
+        )
+        return -1
 
     def _make_client(self) -> httpx.AsyncClient:
         auth = None

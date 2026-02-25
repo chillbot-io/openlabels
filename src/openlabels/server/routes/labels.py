@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -98,6 +98,15 @@ class LabelSyncRequest(BaseModel):
 
     background: bool = False  # Run as background job
     remove_stale: bool = False  # Remove labels not in M365
+
+
+class LabelMappingsRequest(BaseModel):
+    """Request to update label mappings for risk tiers."""
+
+    CRITICAL: str | None = None
+    HIGH: str | None = None
+    MEDIUM: str | None = None
+    LOW: str | None = None
 
 
 class LabelMappingsResponse(BaseModel):
@@ -451,7 +460,7 @@ async def get_label_mappings(
 
 @router.post("/mappings")
 async def update_label_mappings(
-    request: Request,
+    mappings: LabelMappingsRequest,
     db: DbSessionDep,
     label_service: LabelServiceDep,
     admin: AdminContextDep,
@@ -464,19 +473,7 @@ async def update_label_mappings(
 
     tenant_id = label_service.tenant_id
 
-    # Try to get JSON body, fallback to form data
-    content_type = request.headers.get("content-type", "")
-
-    if "application/json" in content_type:
-        data = await request.json()
-    else:
-        form = await request.form()
-        data = {
-            "CRITICAL": form.get("CRITICAL") or None,
-            "HIGH": form.get("HIGH") or None,
-            "MEDIUM": form.get("MEDIUM") or None,
-            "LOW": form.get("LOW") or None,
-        }
+    data = mappings.model_dump()
 
     # SECURITY: Wrap delete+recreate in a savepoint so that concurrent
     # label lookups never see an empty rule set.  If the inserts fail,

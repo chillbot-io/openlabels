@@ -23,9 +23,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    if (import.meta.env.DEV) {
-      console.error('ErrorBoundary caught:', error, info.componentStack);
-    }
+    // Always log errors regardless of environment
+    console.error('ErrorBoundary caught:', error, info.componentStack);
   }
 
   render() {

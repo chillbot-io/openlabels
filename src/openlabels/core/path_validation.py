@@ -62,8 +62,8 @@ def validate_path(
     Validate a file path to prevent path traversal attacks.
 
     Security checks:
-    1. Strip null bytes to prevent null byte injection
-    2. Normalize path to prevent traversal (../, ./, etc.)
+    1. Reject null bytes to prevent null byte injection
+    2. Resolve symlinks and normalize path to prevent traversal (../, ./, etc.)
     3. Block access to system directories
     4. Block access to sensitive files
 
@@ -85,11 +85,11 @@ def validate_path(
     if not isinstance(file_path, str):
         raise PathValidationError("File path must be a string")
 
-    # Security: Strip null bytes to prevent null byte injection attacks
+    # Security: Reject paths containing null bytes to prevent null byte injection attacks
     # Null bytes can be used to truncate paths: "/data/file.pdf\x00.txt" -> "/data/file.pdf"
     if "\x00" in file_path:
         logger.warning(f"Null byte injection attempt detected: {repr(file_path)}")
-        file_path = file_path.replace("\x00", "")
+        raise PathValidationError("Path contains null bytes")
 
     # Store original for traversal detection
     original_path = file_path
@@ -102,11 +102,11 @@ def validate_path(
     # This converts paths like /data/../etc/passwd to /etc/passwd
     try:
         if allow_relative:
-            canonical_path = os.path.normpath(os.path.abspath(file_path))
+            canonical_path = os.path.realpath(file_path)
         else:
             if not os.path.isabs(file_path):
                 raise PathValidationError("Path must be absolute")
-            canonical_path = os.path.normpath(file_path)
+            canonical_path = os.path.realpath(file_path)
     except (ValueError, TypeError) as e:
         logger.warning(f"Invalid file path format: {file_path} - {e}")
         raise PathValidationError(f"Invalid file path format: {e}") from e

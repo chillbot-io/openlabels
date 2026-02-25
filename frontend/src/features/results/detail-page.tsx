@@ -24,9 +24,31 @@ function maskValue(value: string): string {
   return '\u2022'.repeat(value.length - 4) + value.slice(-4);
 }
 
-function EntityTable({ entities }: { entities: Array<{ entity_type: string; value: string; confidence: number; context: string }> }) {
+function EntityTable({ entities, resultId }: { entities: Array<{ entity_type: string; value: string; confidence: number; context: string }>; resultId: string }) {
   const [revealed, setRevealed] = useState(false);
-  const toggle = useCallback(() => setRevealed((v) => !v), []);
+  const toggle = useCallback(() => {
+    const newRevealed = !revealed;
+    if (newRevealed) {
+      // Log PII reveal event for audit purposes
+      const timestamp = new Date().toISOString();
+      console.info(`[AUDIT] PII values revealed for result=${resultId} at ${timestamp} entityCount=${entities.length}`);
+      // Attempt to log to backend audit endpoint
+      fetch('/api/v1/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'pii_reveal',
+          resource_type: 'scan_result',
+          resource_id: resultId,
+          details: { entity_count: entities.length },
+        }),
+      }).catch(() => {
+        // Non-blocking — audit log failure should not break UX
+      });
+    }
+    setRevealed(newRevealed);
+  }, [revealed, resultId, entities.length]);
 
   return (
     <Card>
@@ -307,7 +329,7 @@ export function Component() {
       </Card>
 
       {entityList.length > 0 && (
-        <EntityTable entities={entityList} />
+        <EntityTable entities={entityList} resultId={resultId!} />
       )}
 
       {r.policy_violations && r.policy_violations.length > 0 && (

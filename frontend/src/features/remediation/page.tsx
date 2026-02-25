@@ -57,6 +57,16 @@ export function Component() {
     if (!path.trim()) return 'File path is required';
     if (path.includes('..')) return 'Path traversal sequences are not allowed';
     if (/[<>"|?*]/.test(path)) return 'Path contains invalid characters';
+    // Block absolute Unix paths (paths starting with /)
+    if (path.startsWith('/')) return 'Absolute Unix paths are not allowed';
+    // Block absolute Windows paths (e.g., C:\)
+    if (/^[a-zA-Z]:[\\/]/.test(path)) return 'Absolute Windows paths are not allowed';
+    // Block UNC paths (\\server\share)
+    if (path.startsWith('\\\\')) return 'UNC paths are not allowed';
+    // Block null bytes
+    if (path.includes('\0')) return 'Path contains null bytes';
+    // Block other special/control characters
+    if (/[\x00-\x1f\x7f]/.test(path)) return 'Path contains control characters';
     return null;
   };
 

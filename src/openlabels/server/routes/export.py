@@ -10,7 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from openlabels.auth.dependencies import CurrentUser, get_current_user
+from openlabels.auth.dependencies import CurrentUser, require_admin
 from openlabels.server.config import get_settings
 from openlabels.server.routes import audit_log
 
@@ -45,7 +45,7 @@ class SIEMStatusResponse(BaseModel):
 @router.post("/siem", response_model=SIEMExportResponse)
 async def trigger_siem_export(
     body: SIEMExportRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ):
     tenant_id = user.tenant_id
     """Trigger an immediate SIEM export for the current tenant."""
@@ -121,7 +121,7 @@ async def trigger_siem_export(
 
 @router.post("/siem/test", response_model=SIEMTestResponse)
 async def test_siem_connections(
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ):
     """Test connectivity to all configured SIEM endpoints."""
     settings = get_settings()
@@ -142,7 +142,7 @@ async def test_siem_connections(
 
 @router.get("/siem/status", response_model=SIEMStatusResponse)
 async def siem_export_status(
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ):
     """View SIEM export configuration and cursor status."""
     settings = get_settings()

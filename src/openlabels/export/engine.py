@@ -11,9 +11,10 @@ three export modes:
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -132,20 +133,39 @@ class ExportEngine:
 
 
     async def _dispatch(self, records: list[ExportRecord]) -> dict[str, int]:
-        """Send records to all adapters."""
-        results: dict[str, int] = {}
-        for adapter in self._adapters:
-            name = adapter.format_name()
-            try:
-                count = await adapter.export_batch(records)
-                results[name] = count
-                if records:
-                    self._cursors[name] = max(
-                        r.timestamp for r in records
-                    )
-            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
-                logger.error("Export to %s failed: %s", name, exc)
-                results[name] = 0
+        """Send records to all adapters concurrently in batches.
+
+        Records are split into pages of ``_FETCH_BATCH`` size and each
+        page is dispatched to all adapters via ``asyncio.gather`` so
+        adapters run concurrently rather than sequentially.
+        """
+        results: dict[str, int] = {a.format_name(): 0 for a in self._adapters}
+
+        # Process records in pages to avoid loading everything into memory
+        for offset in range(0, max(len(records), 1), _FETCH_BATCH):
+            page = records[offset : offset + _FETCH_BATCH]
+            if not page:
+                break
+
+            async def _send_to_adapter(adapter: SIEMAdapter, batch: list[ExportRecord]) -> tuple[str, int]:
+                name = adapter.format_name()
+                try:
+                    count = await adapter.export_batch(batch)
+                    if batch:
+                        self._cursors[name] = max(
+                            r.timestamp for r in batch
+                        )
+                    return name, count
+                except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
+                    logger.error("Export to %s failed: %s", name, exc)
+                    return name, 0
+
+            adapter_results = await asyncio.gather(
+                *[_send_to_adapter(a, page) for a in self._adapters]
+            )
+            for name, count in adapter_results:
+                results[name] += count
+
         return results
 
 

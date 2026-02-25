@@ -119,6 +119,23 @@ impl PatternMatcher {
     fn find_matches(&self, text: &str) -> Vec<RawMatch> {
         let matching_patterns: Vec<usize> = self.regex_set.matches(text).into_iter().collect();
 
+        // Build a byte-offset to char-offset lookup table for correct
+        // multi-byte UTF-8 handling.  We collect the char index at each
+        // byte boundary so we can translate regex byte offsets (which is
+        // what the `regex` crate returns) to the character offsets Python
+        // expects.
+        let byte_to_char: Vec<usize> = {
+            let mut table = vec![0usize; text.len() + 1];
+            let mut char_idx = 0usize;
+            for (byte_idx, _) in text.char_indices() {
+                table[byte_idx] = char_idx;
+                char_idx += 1;
+            }
+            // Sentinel: one past the last character
+            table[text.len()] = char_idx;
+            table
+        };
+
         let mut results = Vec::new();
 
         for pattern_idx in matching_patterns {
@@ -137,8 +154,8 @@ impl PatternMatcher {
                     let confidence = (pattern.base_confidence + confidence_boost).min(1.0);
                     results.push(RawMatch {
                         pattern_name: pattern.name.clone(),
-                        start: mat.start(),
-                        end: mat.end(),
+                        start: byte_to_char[mat.start()],
+                        end: byte_to_char[mat.end()],
                         matched_text: matched_text.clone(),
                         confidence,
                         validator: pattern.validator.clone(),

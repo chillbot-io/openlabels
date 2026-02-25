@@ -30,10 +30,23 @@ class WinRMResult:
     error: str | None = None
 
 
-def _get_winrm_session(host: str, username: str, password: str, use_ssl: bool = False):
+def _get_winrm_session(
+    host: str,
+    username: str,
+    password: str,
+    use_ssl: bool = False,
+    server_cert_validation: str = "validate",
+):
     """Create a WinRM session to a remote host.
 
     Raises ImportError if pywinrm is not installed.
+
+    Parameters
+    ----------
+    server_cert_validation:
+        Certificate validation mode: ``"validate"`` (default, secure) or
+        ``"ignore"`` (skip verification — use only for testing/self-signed
+        certs).
     """
     import winrm  # pywinrm
 
@@ -50,7 +63,7 @@ def _get_winrm_session(host: str, username: str, password: str, use_ssl: bool = 
         endpoint,
         auth=(username, password),
         transport=transport,
-        server_cert_validation="ignore" if use_ssl else "validate",
+        server_cert_validation=server_cert_validation,
         operation_timeout_sec=30,
         read_timeout_sec=35,
     )
@@ -256,6 +269,20 @@ async def collect_events(
     Returns:
         WinRMResult with events list in data["events"].
     """
+    # Validate parameters to prevent PowerShell injection
+    if not isinstance(since_hours, int) or since_hours < 0:
+        return WinRMResult(
+            success=False,
+            message="Invalid parameter",
+            error="since_hours must be a non-negative integer",
+        )
+    if not isinstance(max_events, int) or max_events < 1:
+        return WinRMResult(
+            success=False,
+            message="Invalid parameter",
+            error="max_events must be a positive integer",
+        )
+
     try:
         session = await asyncio.to_thread(
             _get_winrm_session, host, username, password, use_ssl

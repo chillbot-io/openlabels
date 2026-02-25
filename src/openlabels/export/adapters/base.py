@@ -95,8 +95,15 @@ def risk_tier_to_cef_severity(tier: str | None) -> int:
 
 
 def cef_escape(value: str) -> str:
-    """Escape CEF special characters: backslash, equals, pipe."""
-    return value.replace("\\", "\\\\").replace("=", "\\=").replace("|", "\\|")
+    """Escape CEF special characters: backslash, equals, pipe, newlines."""
+    return (
+        value
+        .replace("\\", "\\\\")
+        .replace("=", "\\=")
+        .replace("|", "\\|")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def format_cef(

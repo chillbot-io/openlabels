@@ -7,6 +7,7 @@ operation.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -34,28 +35,67 @@ class QuarantineEntry:
     restored_at: str | None = None
 
 
+# Default allowed base directories for path traversal prevention.
+# Restore operations will only target paths under these roots.
+DEFAULT_ALLOWED_BASES: list[Path] = [
+    Path("/"),
+]
+
+
 class QuarantineManifest:
     """JSON-file backed quarantine manifest.
 
-    Thread-safety note: this class is NOT thread-safe.  Callers that
-    share a manifest across threads must provide external locking.
-    For single-worker / single-process deployments (the default) this
-    is fine.
+    Uses file locking (``fcntl.flock``) to prevent corruption from
+    concurrent readers/writers.
     """
 
-    def __init__(self, manifest_path: Path) -> None:
+    def __init__(
+        self,
+        manifest_path: Path,
+        allowed_bases: list[Path] | None = None,
+    ) -> None:
         self._path = Path(manifest_path)
         self._entries: dict[str, QuarantineEntry] = {}
+        self._allowed_bases = [
+            b.resolve() for b in (allowed_bases or DEFAULT_ALLOWED_BASES)
+        ]
         self._load()
+
+    def validate_original_path(self, original_path: str) -> bool:
+        """Check that *original_path* falls under an allowed base directory.
+
+        Prevents path-traversal attacks when restoring quarantined files.
+        """
+        try:
+            resolved = Path(original_path).resolve()
+        except (OSError, ValueError):
+            return False
+        return any(
+            resolved == base or base in resolved.parents
+            for base in self._allowed_bases
+        )
 
     # Persistence
     def _load(self) -> None:
         if self._path.exists():
             try:
                 with open(self._path) as f:
-                    data = json.load(f)
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        data = json.load(f)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
                 for entry_data in data.get("entries", []):
                     entry = QuarantineEntry(**entry_data)
+                    # Validate original_path against allowed bases
+                    if not self.validate_original_path(entry.original_path):
+                        logger.warning(
+                            "Skipping manifest entry %s: original_path %r is "
+                            "outside allowed base directories",
+                            entry.id,
+                            entry.original_path,
+                        )
+                        continue
                     self._entries[entry.id] = entry
             except (json.JSONDecodeError, TypeError, KeyError) as exc:
                 logger.error("Failed to load quarantine manifest %s: %s", self._path, exc)
@@ -63,14 +103,18 @@ class QuarantineManifest:
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._path, "w") as f:
-            json.dump(
-                {
-                    "entries": [asdict(e) for e in self._entries.values()],
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-                f,
-                indent=2,
-            )
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                json.dump(
+                    {
+                        "entries": [asdict(e) for e in self._entries.values()],
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    f,
+                    indent=2,
+                )
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
     # CRUD
     def add(

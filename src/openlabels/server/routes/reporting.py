@@ -181,10 +181,15 @@ async def _build_report_data(
 ) -> dict:
     """Query the database and assemble data context for report templates."""
 
+    # PERF: Cap result set to prevent unbounded memory usage.  For very
+    # large tenants the aggregations below are computed over this window;
+    # future work could stream rows or push aggregation into SQL.
+    _REPORT_ROW_LIMIT = 50_000
+
     base_query = select(ScanResult).where(ScanResult.tenant_id == tenant_id)
     if job_id:
         base_query = base_query.where(ScanResult.job_id == job_id)
-    base_query = base_query.limit(100_000)
+    base_query = base_query.limit(_REPORT_ROW_LIMIT)
 
     result = await session.execute(base_query)
     rows = result.scalars().all()
@@ -396,15 +401,15 @@ async def _build_report_data(
             .order_by(desc(func.count(FileAccessEvent.id)))
             .limit(20)
         )
+        # SECURITY/PERF: Use a dict for O(1) risk_tier lookups instead of
+        # scanning the entire findings list for each file (was O(n^2)).
+        risk_tier_by_path: dict[str, str] = {f["file_path"]: f["risk_tier"] for f in findings}
         access_top_files = [
             {
                 "file_path": row.file_path,
                 "access_count": row.access_count,
                 "unique_users": row.unique_users,
-                "risk_tier": next(
-                    (f["risk_tier"] for f in findings if f["file_path"] == row.file_path),
-                    "MINIMAL",
-                ),
+                "risk_tier": risk_tier_by_path.get(row.file_path, "MINIMAL"),
             }
             for row in top_files_q
         ]

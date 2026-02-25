@@ -220,9 +220,15 @@ class WinRMProvider:
         """
         try:
             from openlabels.server.db import get_session_context
-            from openlabels.server.routes.credentials import _decrypt
             from openlabels.server.models import SavedCredential
             from sqlalchemy import select
+
+            # Import the public decrypt API from the credentials module.
+            # Falls back to the private name for backward compatibility.
+            try:
+                from openlabels.server.routes.credentials import decrypt
+            except ImportError:
+                from openlabels.server.routes.credentials import _decrypt as decrypt
 
             async with get_session_context() as session:
                 result = await session.execute(
@@ -235,7 +241,7 @@ class WinRMProvider:
             targets = []
             for row in rows:
                 try:
-                    creds = _decrypt(row.encrypted_data)
+                    creds = decrypt(row.encrypted_data)
                     host = creds.get("host") or creds.get("hostname", "")
                     username = creds.get("username", "")
                     password = creds.get("password", "")

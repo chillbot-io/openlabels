@@ -97,7 +97,7 @@ def _is_replay(notification: dict, source: str) -> bool:
 
 
 def _validate_client_state(
-    client_state: str,
+    client_state: str | None,
     expected_state: str,
     source: str,
 ) -> bool:
@@ -105,11 +105,22 @@ def _validate_client_state(
 
     Returns ``True`` if valid.  Rejects if ``expected_state`` is empty
     (misconfigured — better to reject than silently accept everything).
+
+    SECURITY: Also rejects if ``client_state`` is empty or None — a
+    missing/blank clientState in the notification must never be accepted
+    when the server expects a secret, as this would allow signature bypass.
     """
     if not expected_state:
         logger.warning(
             "%s webhook: webhook_client_state not configured — "
             "rejecting notification (set OPENLABELS_MONITORING__WEBHOOK_CLIENT_STATE)",
+            source,
+        )
+        return False
+
+    if not client_state:
+        logger.warning(
+            "%s webhook: notification missing or empty clientState — rejecting",
             source,
         )
         return False
@@ -161,7 +172,9 @@ async def m365_webhook(
 
     accepted = 0
     for notification in body:
-        client_state = notification.get("clientState", "")
+        # SECURITY: Pass raw value (may be None) — _validate_client_state
+        # explicitly rejects empty/missing clientState to prevent bypass.
+        client_state = notification.get("clientState")
 
         if not _validate_client_state(client_state, expected_state, "M365"):
             continue
@@ -221,7 +234,9 @@ async def graph_webhook(
 
     accepted = 0
     for notification in notifications:
-        client_state = notification.get("clientState", "")
+        # SECURITY: Pass raw value (may be None) — _validate_client_state
+        # explicitly rejects empty/missing clientState to prevent bypass.
+        client_state = notification.get("clientState")
 
         if not _validate_client_state(client_state, expected_state, "Graph"):
             continue

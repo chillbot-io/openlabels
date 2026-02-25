@@ -13,7 +13,10 @@ function getCsrfToken(): string | undefined {
   const match = document.cookie
     .split('; ')
     .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
-  return match?.split('=')[1];
+  if (!match) return undefined;
+  // Use indexOf + slice to handle cookie values that contain '=' characters
+  const eqIndex = match.indexOf('=');
+  return eqIndex >= 0 ? match.slice(eqIndex + 1) : undefined;
 }
 
 export class ApiError extends Error {
@@ -95,6 +98,6 @@ export async function apiFetch<T>(
     throw new ApiError(response.status, errorBody);
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) return null as T & null;
   return response.json();
 }

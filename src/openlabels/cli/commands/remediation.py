@@ -108,6 +108,12 @@ def quarantine(source: str | None, destination: str | None, where_filter: str | 
                 click.echo(f"  {m['file_path']} (score: {m['risk_score']}, tier: {m['risk_tier']})")
             return
 
+        if not click.confirm(
+            f"Proceed with quarantining {len(matches)} file(s)?", default=False
+        ):
+            click.echo("Aborted.")
+            return
+
         # Quarantine each file
         success_count = 0
         for m in matches:
@@ -240,6 +246,12 @@ def lock_down_cmd(file_path: str | None, where_filter: str | None, scan_path: st
                 click.echo(f"  {m['file_path']} (score: {m['risk_score']}, tier: {m['risk_tier']})")
             if principal_list:
                 click.echo(f"\nAllowed principals: {principal_list}")
+            return
+
+        if not click.confirm(
+            f"Proceed with locking down {len(matches)} file(s)?", default=False
+        ):
+            click.echo("Aborted.")
             return
 
         success_count = 0

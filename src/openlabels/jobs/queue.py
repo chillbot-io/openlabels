@@ -403,7 +403,7 @@ class JobQueue:
             conditions.append(JobQueueModel.task_type == task_type)
 
         values = {
-            "status": "pending",
+            "status": JobStatus.PENDING,
             "worker_id": None,
             "started_at": None,
             "completed_at": None,
@@ -468,7 +468,14 @@ class JobQueue:
             .group_by(JobQueueModel.status)
         )
         status_result = await self.session.execute(status_query)
-        by_status = dict(status_result.all())
+        # The DB may return status values as plain strings or enum
+        # instances depending on the SQLAlchemy column type.  Normalise
+        # everything to string keys so callers can use stats["pending"]
+        # without worrying about JobStatus enum vs str mismatches.
+        by_status: dict[str, int] = {}
+        for status_val, cnt in status_result.all():
+            key = status_val.value if isinstance(status_val, JobStatus) else str(status_val)
+            by_status[key] = cnt
 
         # Count failed by task type
         failed_query = (
@@ -483,11 +490,11 @@ class JobQueue:
         failed_by_type = dict(failed_result.all())
 
         stats = {
-            JobStatus.PENDING: by_status.get(JobStatus.PENDING, 0),
-            JobStatus.RUNNING: by_status.get(JobStatus.RUNNING, 0),
-            JobStatus.COMPLETED: by_status.get(JobStatus.COMPLETED, 0),
-            JobStatus.FAILED: by_status.get(JobStatus.FAILED, 0),
-            JobStatus.CANCELLED: by_status.get(JobStatus.CANCELLED, 0),
+            "pending": by_status.get("pending", 0),
+            "running": by_status.get("running", 0),
+            "completed": by_status.get("completed", 0),
+            "failed": by_status.get("failed", 0),
+            "cancelled": by_status.get("cancelled", 0),
             "failed_by_type": failed_by_type,
         }
 

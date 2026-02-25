@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FolderOpen, ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
 import { browseApi } from '@/api/endpoints/browse.ts';
@@ -10,22 +10,40 @@ import { cn } from '@/lib/utils.ts';
 import type { BrowseFolder } from '@/api/types.ts';
 import type { RiskTier } from '@/lib/constants.ts';
 
-function FolderTreeItem({ folder, targetId, onSelect, selectedId }: {
+const DEFAULT_MAX_DEPTH = 10;
+
+function FolderTreeItem({ folder, targetId, onSelect, selectedId, depth = 0, maxDepth = DEFAULT_MAX_DEPTH }: {
   folder: BrowseFolder;
   targetId: string;
   onSelect: (folder: BrowseFolder) => void;
   selectedId: string | null;
+  depth?: number;
+  maxDepth?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const children = useQuery({
     queryKey: ['browse', targetId, folder.id],
     queryFn: () => browseApi.list(targetId, folder.id),
-    enabled: expanded,
+    enabled: expanded && depth < maxDepth,
+    staleTime: 60_000, // Deduplicate requests within 60s
   });
 
   const childFolders = children.data?.folders ?? [];
   const isSelected = selectedId === folder.id;
+  const atMaxDepth = depth >= maxDepth;
+
+  // Debounce expand actions to prevent rapid query explosions
+  const handleToggleExpand = useCallback(() => {
+    if (expandTimerRef.current) {
+      clearTimeout(expandTimerRef.current);
+    }
+    expandTimerRef.current = setTimeout(() => {
+      setExpanded((prev) => !prev);
+    }, 150);
+    onSelect(folder);
+  }, [folder, onSelect]);
 
   return (
     <div role="treeitem" aria-expanded={expanded} aria-selected={isSelected}>
@@ -34,10 +52,7 @@ function FolderTreeItem({ folder, targetId, onSelect, selectedId }: {
           'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-[var(--muted)]',
           isSelected && 'bg-[var(--accent)] font-medium',
         )}
-        onClick={() => {
-          setExpanded(!expanded);
-          onSelect(folder);
-        }}
+        onClick={handleToggleExpand}
         aria-label={`${folder.dir_name}, folder${folder.highest_risk_tier ? `, risk: ${folder.highest_risk_tier}` : ''}`}
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
@@ -45,10 +60,13 @@ function FolderTreeItem({ folder, targetId, onSelect, selectedId }: {
         <span className="truncate">{folder.dir_name}</span>
         {folder.highest_risk_tier && <RiskBadge tier={folder.highest_risk_tier as RiskTier} className="ml-auto text-[10px]" />}
       </button>
-      {expanded && childFolders.length > 0 && (
+      {expanded && atMaxDepth && (
+        <p className="ml-8 text-xs text-[var(--muted-foreground)]">Maximum depth reached</p>
+      )}
+      {expanded && !atMaxDepth && childFolders.length > 0 && (
         <div className="ml-4 border-l pl-1" role="group">
           {childFolders.map((child) => (
-            <FolderTreeItem key={child.id} folder={child} targetId={targetId} onSelect={onSelect} selectedId={selectedId} />
+            <FolderTreeItem key={child.id} folder={child} targetId={targetId} onSelect={onSelect} selectedId={selectedId} depth={depth + 1} maxDepth={maxDepth} />
           ))}
         </div>
       )}

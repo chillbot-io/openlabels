@@ -218,18 +218,29 @@ class EventStreamManager:
             pass
 
     async def _flush_buffer(self) -> None:
-        """Drain the buffer and persist events to the database."""
+        """Drain the buffer and persist events to the database.
+
+        Atomic flush: the buffer is only cleared after the database
+        commit succeeds.  If persistence fails, the events remain in
+        the buffer so they can be retried on the next flush cycle.
+        """
         async with self._buffer_lock:
             if not self._buffer:
                 return
+            # Take a snapshot but do NOT clear yet — clear only on success.
             batch = list(self._buffer)
-            self._buffer.clear()
 
         if not batch:
             return
 
         try:
             count = await self._persist_events(batch)
+            # Persistence succeeded — now atomically remove the persisted
+            # events from the buffer.
+            async with self._buffer_lock:
+                # Remove only the events we just persisted (new events may
+                # have arrived while we were persisting).
+                del self._buffer[:len(batch)]
             self.total_events_flushed += count
             self.total_flush_cycles += 1
 
@@ -240,15 +251,14 @@ class EventStreamManager:
                     self.total_flush_cycles,
                 )
         except Exception:  # noqa: BLE001 — catch-all for flush resilience
-            # Re-buffer events on failure (best-effort)
+            # Events remain in the buffer for retry on the next cycle.
+            # Check if buffer is over capacity and drop oldest if needed.
             async with self._buffer_lock:
-                headroom = self._max_buffer_size - len(self._buffer)
-                re_buffered = batch[:headroom]
-                self._buffer[:0] = re_buffered
-                dropped = len(batch) - len(re_buffered)
-                if dropped:
-                    self.total_events_dropped += dropped
-            logger.error("Stream flush failed", exc_info=True)
+                overflow = len(self._buffer) - self._max_buffer_size
+                if overflow > 0:
+                    del self._buffer[:overflow]
+                    self.total_events_dropped += overflow
+            logger.error("Stream flush failed; events retained for retry", exc_info=True)
 
     async def _persist_events(
         self, events: list[RawAccessEvent],

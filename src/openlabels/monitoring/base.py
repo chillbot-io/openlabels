@@ -12,7 +12,7 @@ Exception classes live in openlabels.exceptions.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -88,7 +88,7 @@ class WatchedFile:
 
     path: Path
     risk_tier: str  # "CRITICAL", "HIGH", etc.
-    added_at: datetime = field(default_factory=datetime.now)
+    added_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Monitoring status
     sacl_enabled: bool = False  # Windows: SACL added

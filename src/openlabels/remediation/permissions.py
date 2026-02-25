@@ -155,28 +155,8 @@ def _lock_down_windows(
         )
 
     try:
-        # Step 1: Disable inheritance (copy inherited permissions to explicit)
-        if remove_inheritance:
-            result = subprocess.run(
-                ["icacls", str(path), "/inheritance:d"],
-                capture_output=True,
-                text=True,
-                timeout=SUBPROCESS_TIMEOUT,
-            )
-            if result.returncode != 0:
-                logger.warning(f"Failed to disable inheritance: {result.stderr}")
-
-        # Step 2: Reset permissions (remove all explicit ACEs)
-        result = subprocess.run(
-            ["icacls", str(path), "/reset"],
-            capture_output=True,
-            text=True,
-            timeout=SUBPROCESS_TIMEOUT,
-        )
-        if result.returncode != 0:
-            raise RemediationPermissionError(f"Failed to reset permissions: {result.stderr}", path)
-
-        # Step 3: Grant full control to each allowed principal
+        # Step 1: Grant full control to each allowed principal FIRST
+        # (ensures the file is never left without any ACL protection)
         for principal in allowed_principals:
             # /grant:r replaces any existing permission for this principal
             # (OI)(CI)F = Object Inherit, Container Inherit, Full control
@@ -192,7 +172,19 @@ def _lock_down_windows(
                     path,
                 )
 
-        # Step 4: Remove common overly-permissive principals
+        # Step 2: Disable inheritance (copy inherited permissions to explicit)
+        # Done AFTER granting new permissions so the file is never unprotected
+        if remove_inheritance:
+            result = subprocess.run(
+                ["icacls", str(path), "/inheritance:d"],
+                capture_output=True,
+                text=True,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
+            if result.returncode != 0:
+                logger.warning(f"Failed to disable inheritance: {result.stderr}")
+
+        # Step 3: Remove common overly-permissive principals
         # These might have been inherited before we disabled inheritance
         principals_to_remove = [
             "Everyone",
@@ -527,6 +519,12 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
             acl_dict = json.loads(acl_data)
         except (json.JSONDecodeError, ValueError):
             # Fall back: legacy backups may use Python repr() format
+            logger.warning(
+                "ACL backup data is not valid JSON for %s; "
+                "falling back to ast.literal_eval (legacy format). "
+                "Consider re-running lockdown to store JSON-format backups.",
+                path,
+            )
             try:
                 import ast
                 acl_dict = ast.literal_eval(acl_data)

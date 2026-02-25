@@ -94,6 +94,22 @@ class ReportRenderer:
         html_str = self.render_html(report_type, data)
         return WeasyprintHTML(string=html_str).write_pdf()
 
+    @staticmethod
+    def _sanitize_csv_cell(value: Any) -> Any:
+        """Prefix cells that start with formula-trigger characters to prevent CSV injection.
+
+        Spreadsheet applications may interpret cells starting with ``=``,
+        ``+``, ``-``, ``@``, ``\\t``, or ``\\r`` as formulas.  Prefixing
+        with a single-quote neutralises this.
+        """
+        if isinstance(value, str) and value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + value
+        return value
+
+    def _sanitize_row(self, row: list[Any]) -> list[Any]:
+        """Sanitize all cells in a CSV row."""
+        return [self._sanitize_csv_cell(cell) for cell in row]
+
     def render_csv(self, report_type: str, data: dict[str, Any]) -> str:
         """Render a flat CSV export appropriate for the report type."""
         self._validate_report_type(report_type)
@@ -103,20 +119,20 @@ class ReportRenderer:
         if report_type == "access_audit":
             writer.writerow(["timestamp", "user", "action", "file_path"])
             for e in data.get("events", []):
-                writer.writerow([
+                writer.writerow(self._sanitize_row([
                     e.get("timestamp", ""),
                     e.get("user", ""),
                     e.get("action", ""),
                     e.get("file_path", ""),
-                ])
+                ]))
         elif report_type == "compliance_report":
             writer.writerow(["policy", "violations", "severity"])
             for v in data.get("violations_by_policy", []):
-                writer.writerow([
+                writer.writerow(self._sanitize_row([
                     v.get("name", ""),
                     v.get("count", ""),
                     v.get("severity", ""),
-                ])
+                ]))
         else:
             # Default: findings-based CSV
             findings: list[dict] = data.get("findings", [])
@@ -125,12 +141,12 @@ class ReportRenderer:
                 entities = ";".join(
                     f"{k}:{v}" for k, v in (f.get("entity_counts") or {}).items()
                 )
-                writer.writerow([
+                writer.writerow(self._sanitize_row([
                     f.get("file_path", ""),
                     f.get("risk_score", ""),
                     f.get("risk_tier", ""),
                     entities,
-                ])
+                ]))
 
         return buf.getvalue()
 
@@ -254,11 +270,19 @@ class ReportEngine:
         smtp_user: str = "",
         smtp_password: str = "",
         smtp_use_tls: bool = True,
+        smtp_mode: str = "starttls",
         from_addr: str,
         to_addrs: list[str],
         subject: str = "OpenLabels Report",
     ) -> None:
-        """Send a generated report as an email attachment via SMTP."""
+        """Send a generated report as an email attachment via SMTP.
+
+        Args:
+            smtp_mode: TLS mode -- ``"starttls"`` (default, port 587) for
+                opportunistic STARTTLS, or ``"smtps"`` (port 465) for
+                implicit TLS.  When ``"smtps"`` is selected,
+                ``smtp_use_tls`` is ignored.
+        """
         import mimetypes
         import smtplib
         from email.message import EmailMessage
@@ -284,8 +308,16 @@ class ReportEngine:
         )
 
         def _send() -> None:
-            if smtp_use_tls:
-                ctx = ssl.create_default_context()
+            ctx = ssl.create_default_context()
+
+            if smtp_mode == "smtps":
+                # Implicit TLS on port 465
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, context=ctx) as s:
+                    if smtp_user:
+                        s.login(smtp_user, smtp_password)
+                    s.send_message(msg)
+            elif smtp_use_tls:
+                # STARTTLS (opportunistic TLS on port 587)
                 with smtplib.SMTP(smtp_host, smtp_port) as s:
                     s.ehlo()
                     s.starttls(context=ctx)
@@ -296,7 +328,8 @@ class ReportEngine:
                 if smtp_user:
                     raise ValueError(
                         "SMTP credentials cannot be sent without TLS. "
-                        "Set smtp_use_tls=True to encrypt the connection."
+                        "Set smtp_use_tls=True or smtp_mode='smtps' to "
+                        "encrypt the connection."
                     )
                 with smtplib.SMTP(smtp_host, smtp_port) as s:
                     s.send_message(msg)

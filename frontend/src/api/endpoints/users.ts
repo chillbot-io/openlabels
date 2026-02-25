@@ -16,6 +16,7 @@ export const usersApi = {
   get: (id: string) =>
     apiFetch<User>(`/users/${id}`),
 
+  // Note: apiFetch handles JSON.stringify internally — do not pre-stringify the body
   create: (payload: CreateUserPayload) =>
     apiFetch<User>('/users', { method: 'POST', body: payload }),
 

@@ -7,6 +7,7 @@ for accessing Graph API to resolve user information, including SID lookups.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -169,6 +170,21 @@ class GraphClient:
         self._access_token: str | None = None
         self._token_expires: datetime | None = None
 
+        # Shared HTTP client for connection reuse across Graph API requests
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=30.0)
+        return self._http_client
+
+    async def close(self) -> None:
+        """Close the shared HTTP client. Call on shutdown."""
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
+
     async def _get_access_token(self) -> str:
         """Get access token, refreshing if needed."""
         # Check if we have a valid cached token
@@ -176,8 +192,11 @@ class GraphClient:
             if datetime.now(timezone.utc) < self._token_expires - timedelta(minutes=5):
                 return self._access_token
 
-        # Acquire new token
-        result = self._msal_app.acquire_token_for_client(scopes=GRAPH_SCOPES)
+        # Acquire new token — MSAL is synchronous, so offload to a thread
+        # to avoid blocking the async event loop
+        result = await asyncio.to_thread(
+            self._msal_app.acquire_token_for_client, scopes=GRAPH_SCOPES
+        )
 
         if "access_token" not in result:
             error = result.get("error_description", result.get("error", "Unknown error"))
@@ -207,21 +226,20 @@ class GraphClient:
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=params,
-                json=json,
-                timeout=30.0,
-            )
+        client = self._get_http_client()
+        response = await client.request(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json=json,
+        )
 
-            if response.status_code == 404:
-                return {}
+        if response.status_code == 404:
+            return {}
 
-            response.raise_for_status()
-            return response.json()
+        response.raise_for_status()
+        return response.json()
 
     async def get_user_by_id(self, user_id: str) -> GraphUser | None:
         """
