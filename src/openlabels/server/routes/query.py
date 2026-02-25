@@ -3,6 +3,7 @@ SQL query and AI assistant API endpoints.
 
 Provides (router-local paths, mounted at ``/api/v1/query``):
 - POST /              — Execute read-only SQL against the DuckDB analytics layer
+- POST /export        — Execute query and export results as CSV or JSON
 - GET  /schema        — Introspect available tables and columns for autocomplete
 - POST /ai            — Natural language → SQL translation via LLM, then execute
 
@@ -16,12 +17,16 @@ Security:
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
+import json
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 
@@ -220,6 +225,26 @@ class SchemaResponse(BaseModel):
     """Available tables and columns for autocomplete."""
 
     tables: list[SchemaTable]
+
+
+class QueryExportRequest(BaseModel):
+    """Execute a SQL query and export the results."""
+
+    sql: str = Field(
+        ...,
+        description="Read-only SQL query (SELECT/WITH). Use $1 for tenant_id.",
+        max_length=MAX_QUERY_LENGTH,
+    )
+    format: Literal["csv", "json"] = Field(
+        default="csv",
+        description="Export format: csv or json",
+    )
+    limit: int = Field(
+        default=MAX_RESULT_ROWS,
+        ge=1,
+        le=MAX_RESULT_ROWS,
+        description="Maximum rows to export",
+    )
 
 
 class AIQueryRequest(BaseModel):
@@ -478,6 +503,79 @@ async def execute_query(
         truncated=truncated,
         execution_time_ms=elapsed_ms,
         sql=clean_sql,
+    )
+
+
+@router.post("/export")
+@limiter.limit("10/minute")
+async def export_query_results(
+    body: QueryExportRequest,
+    request: Request,
+    tenant: TenantContextDep,
+) -> StreamingResponse:
+    """
+    Execute a read-only SQL query and export results as CSV or JSON.
+
+    Provides downloadable query results for offline analysis or
+    compliance documentation. Same security model as the regular
+    query endpoint.
+    """
+    analytics = getattr(request.app.state, "analytics", None)
+    if not analytics:
+        raise HTTPException(status_code=503, detail="Analytics engine unavailable")
+
+    try:
+        clean_sql = validate_sql(body.sql)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    tenant_str = str(tenant.tenant_id)
+    execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
+    params: list[Any] = [tenant_str] * occurrence_count
+
+    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit}"
+
+    try:
+        rows = await asyncio.wait_for(
+            analytics.query(limited_sql, params or None),
+            timeout=QUERY_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=408,
+            detail=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
+        )
+    except Exception as e:
+        error_msg = str(e)
+        safe_msg = error_msg.split("\n")[0][:200] if error_msg else "Unknown error"
+        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}")
+
+    columns = list(rows[0].keys()) if rows else []
+
+    if body.format == "json":
+        serialized = [
+            {col: _serialize_value(row.get(col)) for col in columns}
+            for row in rows
+        ]
+        content = json.dumps(serialized, indent=2, default=str)
+        return StreamingResponse(
+            iter([content]),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=query_results.json"},
+        )
+
+    # CSV export
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([_serialize_value(row.get(col)) for col in columns])
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=query_results.csv"},
     )
 
 

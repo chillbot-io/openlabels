@@ -13,7 +13,7 @@ Tests focus on:
 
 import pytest
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 @pytest.fixture
@@ -304,6 +304,209 @@ class TestScheduleReport:
         data = response.json()
 
         assert data["distribute_to"] == ["admin@example.com", "ciso@example.com"]
+
+
+# ── Story 11: New Endpoint Tests ──────────────────────────────────────
+
+
+class TestListReportTemplates:
+    """Tests for GET /api/v1/reporting/templates endpoint."""
+
+    async def test_returns_templates_list(self, test_client, setup_reporting_data):
+        response = await test_client.get("/api/v1/reporting/templates")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 3
+
+    async def test_templates_have_required_fields(self, test_client, setup_reporting_data):
+        response = await test_client.get("/api/v1/reporting/templates")
+        data = response.json()
+        for template in data:
+            assert "id" in template
+            assert "name" in template
+            assert "description" in template
+            assert "report_type" in template
+            assert "default_format" in template
+            assert "category" in template
+
+    async def test_includes_core_templates(self, test_client, setup_reporting_data):
+        response = await test_client.get("/api/v1/reporting/templates")
+        data = response.json()
+        ids = {t["id"] for t in data}
+        assert "risk_summary" in ids
+        assert "label_coverage" in ids
+        assert "exposure_report" in ids
+
+    async def test_filter_by_category(self, test_client, setup_reporting_data):
+        response = await test_client.get("/api/v1/reporting/templates?category=compliance")
+        data = response.json()
+        assert len(data) >= 1
+        for t in data:
+            assert t["category"] == "compliance"
+
+    async def test_filter_by_nonexistent_category(self, test_client, setup_reporting_data):
+        response = await test_client.get("/api/v1/reporting/templates?category=nonexistent")
+        data = response.json()
+        assert data == []
+
+
+@pytest.fixture
+async def setup_compliance_trend_data(test_db):
+    """Set up scan results with policy violations for compliance trend testing."""
+    from sqlalchemy import select
+    from openlabels.server.models import (
+        Tenant, User, ScanTarget, ScanJob, ScanResult, generate_uuid,
+    )
+
+    result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
+    tenant = result.scalar_one()
+
+    result = await test_db.execute(select(User).where(User.tenant_id == tenant.id))
+    user = result.scalar_one()
+
+    target = ScanTarget(
+        id=generate_uuid(),
+        tenant_id=tenant.id,
+        name="Compliance Test Target",
+        adapter="filesystem",
+        config={"path": "/data/compliance"},
+        enabled=True,
+        created_by=user.id,
+    )
+    test_db.add(target)
+    await test_db.flush()
+
+    job = ScanJob(
+        id=generate_uuid(),
+        tenant_id=tenant.id,
+        target_id=target.id,
+        name="Compliance Test Scan",
+        status="completed",
+        files_scanned=100,
+        files_with_pii=20,
+        created_by=user.id,
+    )
+    test_db.add(job)
+    await test_db.flush()
+
+    now = datetime.now(timezone.utc)
+
+    # Create results at different dates with and without violations
+    for day_offset in range(5):
+        scan_date = now - timedelta(days=day_offset)
+        # Clean file
+        sr_clean = ScanResult(
+            id=generate_uuid(),
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path=f"/data/compliance/clean_{day_offset}.txt",
+            file_name=f"clean_{day_offset}.txt",
+            risk_score=10,
+            risk_tier="LOW",
+            total_entities=0,
+            entity_counts={},
+            scanned_at=scan_date,
+        )
+        # File with violations
+        sr_violation = ScanResult(
+            id=generate_uuid(),
+            tenant_id=tenant.id,
+            job_id=job.id,
+            file_path=f"/data/compliance/violation_{day_offset}.xlsx",
+            file_name=f"violation_{day_offset}.xlsx",
+            risk_score=80,
+            risk_tier="HIGH",
+            total_entities=3,
+            entity_counts={"SSN": 2, "EMAIL": 1},
+            scanned_at=scan_date,
+            policy_violations=[{"policy": "no_ssn_exposed", "severity": "high"}],
+        )
+        test_db.add_all([sr_clean, sr_violation])
+
+    await test_db.commit()
+
+    return {
+        "tenant": tenant,
+        "user": user,
+        "target": target,
+        "job": job,
+    }
+
+
+class TestComplianceTrend:
+    """Tests for GET /api/v1/reporting/compliance-trend endpoint."""
+
+    async def test_returns_trend_data(self, test_client, setup_compliance_trend_data):
+        response = await test_client.get("/api/v1/reporting/compliance-trend")
+        assert response.status_code == 200
+        data = response.json()
+        assert "points" in data
+        assert "total_days" in data
+        assert isinstance(data["points"], list)
+
+    async def test_trend_points_have_fields(self, test_client, setup_compliance_trend_data):
+        response = await test_client.get("/api/v1/reporting/compliance-trend?days=7")
+        data = response.json()
+        for point in data["points"]:
+            assert "date" in point
+            assert "total_files" in point
+            assert "files_with_violations" in point
+            assert "total_violations" in point
+            assert "compliance_rate" in point
+
+    async def test_trend_respects_days_param(self, test_client, setup_compliance_trend_data):
+        response = await test_client.get("/api/v1/reporting/compliance-trend?days=7")
+        data = response.json()
+        assert data["total_days"] == 7
+        # Should have 8 points (today + 7 days back)
+        assert len(data["points"]) == 8
+
+    async def test_compliance_rate_calculation(self, test_client, setup_compliance_trend_data):
+        response = await test_client.get("/api/v1/reporting/compliance-trend?days=7")
+        data = response.json()
+        # On days with data, rate should reflect violations
+        for point in data["points"]:
+            if point["total_files"] > 0:
+                assert 0 <= point["compliance_rate"] <= 100
+
+    async def test_empty_days_have_defaults(self, test_client, setup_compliance_trend_data):
+        response = await test_client.get("/api/v1/reporting/compliance-trend?days=30")
+        data = response.json()
+        # Most days should have 0 files and 100% compliance
+        zero_days = [p for p in data["points"] if p["total_files"] == 0]
+        for day in zero_days:
+            assert day["compliance_rate"] == 100.0
+            assert day["total_violations"] == 0
+
+
+class TestDateRangeFiltering:
+    """Tests for date range filtering in report listing."""
+
+    async def test_filter_by_start_date(self, test_client, setup_reporting_data):
+        response = await test_client.get(
+            "/api/v1/reporting?start_date=2020-01-01T00:00:00Z"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] >= 0
+
+    async def test_filter_by_end_date(self, test_client, setup_reporting_data):
+        response = await test_client.get(
+            "/api/v1/reporting?end_date=2020-01-01T00:00:00Z"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # All test reports were created "now", so filtering to before 2020 should yield 0
+        assert data["total"] == 0
+
+    async def test_filter_by_date_range(self, test_client, setup_reporting_data):
+        response = await test_client.get(
+            "/api/v1/reporting?start_date=2020-01-01T00:00:00Z&end_date=2099-01-01T00:00:00Z"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 4
 
 
 class TestReportingTenantIsolation:

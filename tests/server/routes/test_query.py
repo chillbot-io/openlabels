@@ -321,6 +321,117 @@ class TestBuildSchema:
 # ── API Endpoint Tests ──────────────────────────────────────────────────
 
 
+# ── Story 11: Query Export Tests ──────────────────────────────────────
+
+
+class TestExportQueryResults:
+    """Tests for POST /api/v1/query/export endpoint."""
+
+    async def test_export_csv(self, test_client):
+        """Should export query results as CSV."""
+        mock_analytics = AsyncMock()
+        mock_analytics.query.return_value = [
+            {"file_path": "/data/test.txt", "risk_score": 85},
+            {"file_path": "/data/other.txt", "risk_score": 42},
+        ]
+
+        with patch.object(
+            test_client._transport.app.state, "analytics",  # type: ignore
+            create=True,
+            new=mock_analytics,
+        ):
+            response = await test_client.post(
+                "/api/v1/query/export",
+                json={
+                    "sql": "SELECT file_path, risk_score FROM scan_results WHERE tenant = $1",
+                    "format": "csv",
+                },
+            )
+            assert response.status_code == 200
+            assert "text/csv" in response.headers["content-type"]
+            assert "attachment" in response.headers.get("content-disposition", "")
+
+            lines = response.text.strip().split("\n")
+            assert len(lines) == 3  # header + 2 data rows
+            assert "file_path" in lines[0]
+            assert "/data/test.txt" in lines[1]
+
+    async def test_export_json(self, test_client):
+        """Should export query results as JSON."""
+        mock_analytics = AsyncMock()
+        mock_analytics.query.return_value = [
+            {"file_path": "/data/test.txt", "risk_score": 85},
+        ]
+
+        with patch.object(
+            test_client._transport.app.state, "analytics",  # type: ignore
+            create=True,
+            new=mock_analytics,
+        ):
+            response = await test_client.post(
+                "/api/v1/query/export",
+                json={
+                    "sql": "SELECT file_path FROM scan_results WHERE tenant = $1",
+                    "format": "json",
+                },
+            )
+            assert response.status_code == 200
+            assert "application/json" in response.headers["content-type"]
+            data = response.json()
+            assert isinstance(data, list)
+            assert len(data) == 1
+            assert data[0]["file_path"] == "/data/test.txt"
+
+    async def test_export_rejects_invalid_sql(self, test_client):
+        """Should return 400 for forbidden SQL."""
+        with patch.object(
+            test_client._transport.app.state, "analytics",  # type: ignore
+            create=True,
+            new=MagicMock(),
+        ):
+            response = await test_client.post(
+                "/api/v1/query/export",
+                json={
+                    "sql": "DROP TABLE scan_results",
+                    "format": "csv",
+                },
+            )
+            assert response.status_code == 400
+
+    async def test_export_returns_503_without_analytics(self, test_client):
+        """Should return 503 when analytics engine unavailable."""
+        response = await test_client.post(
+            "/api/v1/query/export",
+            json={
+                "sql": "SELECT 1",
+                "format": "csv",
+            },
+        )
+        assert response.status_code == 503
+
+    async def test_export_empty_results(self, test_client):
+        """Should handle empty results gracefully."""
+        mock_analytics = AsyncMock()
+        mock_analytics.query.return_value = []
+
+        with patch.object(
+            test_client._transport.app.state, "analytics",  # type: ignore
+            create=True,
+            new=mock_analytics,
+        ):
+            response = await test_client.post(
+                "/api/v1/query/export",
+                json={
+                    "sql": "SELECT file_path FROM scan_results WHERE tenant = $1",
+                    "format": "csv",
+                },
+            )
+            assert response.status_code == 200
+            # Just headers, no data rows
+            lines = response.text.strip().split("\n")
+            assert len(lines) == 1  # header only (empty results = no columns)
+
+
 class TestGetQuerySchema:
     """Tests for GET /api/v1/query/schema endpoint."""
 
