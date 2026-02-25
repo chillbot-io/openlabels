@@ -1,5 +1,5 @@
 """
-Remediation API endpoints for file quarantine, lockdown, and rollback.
+Remediation API endpoints for file quarantine, lockdown, label apply, and rollback.
 
 Security features:
 - All actions require admin role
@@ -8,6 +8,7 @@ Security features:
 - Dry-run mode for testing without execution
 - Path traversal prevention via path validation
 - Rate limiting on remediation actions
+- Bulk operations for multiple files
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from slowapi import Limiter
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import FileInfo, supports_remediation
@@ -37,6 +38,7 @@ from openlabels.server.models import (
     AuditLog,
     RemediationAction,
     ScanResult,
+    SensitivityLabel,
 )
 from openlabels.server.routes import get_or_404
 from openlabels.server.schemas.pagination import (
@@ -125,6 +127,8 @@ def _decode_acl(encoded: str) -> dict:
     return json.loads(base64.b64decode(encoded).decode())
 
 
+# --- Request / Response Models ---
+
 class QuarantineRequest(BaseModel):
     """Request to quarantine a file."""
 
@@ -149,12 +153,54 @@ class LockdownRequest(BaseModel):
     )
 
 
+class LabelApplyRequest(BaseModel):
+    """Request to apply a sensitivity label as a remediation action."""
+
+    file_path: str = Field(..., description="Path to file to label")
+    label_id: str = Field(..., description="Sensitivity label ID to apply")
+    dry_run: bool = Field(
+        False, description="Preview action without executing"
+    )
+
+
 class RollbackRequest(BaseModel):
     """Request to rollback a remediation action."""
 
     action_id: UUID = Field(..., description="ID of action to rollback")
     dry_run: bool = Field(
         False, description="Preview rollback without executing"
+    )
+
+
+class BulkRemediationItem(BaseModel):
+    """A single item in a bulk remediation request."""
+
+    file_path: str = Field(..., description="Path to file")
+
+
+class BulkRemediationRequest(BaseModel):
+    """Request for bulk remediation actions on multiple files."""
+
+    action_type: str = Field(
+        ..., description="Action type: quarantine, lockdown, or label_apply"
+    )
+    items: list[BulkRemediationItem] = Field(
+        ..., description="List of files to remediate", min_length=1, max_length=100
+    )
+    # Quarantine-specific
+    quarantine_dir: str | None = Field(
+        None, description="Custom quarantine directory (quarantine only)"
+    )
+    # Lockdown-specific
+    allowed_principals: list[str] | None = Field(
+        None, description="Allowed principals (lockdown only)"
+    )
+    # Label-specific
+    label_id: str | None = Field(
+        None, description="Sensitivity label ID (label_apply only)"
+    )
+    dry_run: bool = Field(
+        False, description="Preview actions without executing"
     )
 
 
@@ -165,40 +211,134 @@ class RemediationResponse(BaseModel):
     action_type: str
     status: str
     source_path: str
-    dest_path: str | None
+    dest_path: str | None = None
+    performed_by: str
+    label_id: str | None = None
+    label_name: str | None = None
     dry_run: bool
-    error: str | None
+    error: str | None = None
+    rollback_of_id: UUID | None = None
     created_at: datetime
+    completed_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BulkRemediationResponse(BaseModel):
+    """Response for bulk remediation operations."""
+
+    total: int
+    success: int
+    failed: int
+    actions: list[RemediationResponse]
+
+
+# --- Endpoints ---
+
+# Static routes MUST be registered before parameterized /{action_id} routes.
+
+@router.get("/stats/summary")
+async def get_remediation_stats(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+):
+    """Get summary statistics for remediation actions.
+
+    Tries DuckDB analytics first, falls back to PostgreSQL aggregation.
+    """
+    svc = getattr(request.app.state, "dashboard_service", None)
+    if svc is not None:
+        try:
+            stats = await svc.get_remediation_stats(user.tenant_id)
+            return {
+                "total_actions": stats.total_actions,
+                "by_type": stats.by_type,
+                "by_status": stats.by_status,
+            }
+        except Exception:
+            logger.debug("DuckDB analytics unavailable, falling back to PostgreSQL")
+
+    # PostgreSQL fallback
+    base = select(RemediationAction).where(
+        RemediationAction.tenant_id == user.tenant_id
+    )
+
+    # Total count
+    total_q = select(func.count()).select_from(base.subquery())
+    total = (await session.execute(total_q)).scalar() or 0
+
+    # By type
+    type_q = (
+        select(
+            RemediationAction.action_type,
+            func.count().label("cnt"),
+        )
+        .where(RemediationAction.tenant_id == user.tenant_id)
+        .group_by(RemediationAction.action_type)
+    )
+    type_rows = (await session.execute(type_q)).all()
+    by_type = {
+        "quarantine": 0, "lockdown": 0, "label_apply": 0, "rollback": 0,
+    }
+    for row in type_rows:
+        by_type[row[0]] = row[1]
+
+    # By status
+    status_q = (
+        select(
+            RemediationAction.status,
+            func.count().label("cnt"),
+        )
+        .where(RemediationAction.tenant_id == user.tenant_id)
+        .group_by(RemediationAction.status)
+    )
+    status_rows = (await session.execute(status_q)).all()
+    by_status = {
+        "pending": 0, "completed": 0, "failed": 0, "rolled_back": 0,
+    }
+    for row in status_rows:
+        by_status[row[0]] = row[1]
+
+    return {
+        "total_actions": total,
+        "by_type": by_type,
+        "by_status": by_status,
+    }
 
 
 @router.get("", response_model=PaginatedResponse[RemediationResponse])
 async def list_remediation_actions(
     action_type: str | None = Query(
-        None, description="Filter by action type (quarantine, lockdown, rollback)"
+        None, description="Filter by action type (quarantine, lockdown, label_apply, rollback)"
     ),
     status: str | None = Query(
         None, description="Filter by status (pending, completed, failed, rolled_back)"
+    ),
+    search: str | None = Query(
+        None, description="Search by file path (case-insensitive substring match)"
     ),
     pagination: PaginationParams = Depends(),
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
 ) -> PaginatedResponse[RemediationResponse]:
     """
-    List remediation actions with pagination.
+    List remediation actions with pagination and filtering.
 
     Returns a paginated list of all remediation actions for the tenant.
+    Supports filtering by action type, status, and file path search.
     """
     # Build base query
-    query = select(RemediationAction).where(
-        RemediationAction.tenant_id == user.tenant_id
-    )
+    conditions = [RemediationAction.tenant_id == user.tenant_id]
 
     if action_type:
-        query = query.where(RemediationAction.action_type == action_type)
+        conditions.append(RemediationAction.action_type == action_type)
     if status:
-        query = query.where(RemediationAction.status == status)
+        conditions.append(RemediationAction.status == status)
+    if search:
+        conditions.append(RemediationAction.source_path.ilike(f"%{search}%"))
+
+    query = select(RemediationAction).where(*conditions)
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
@@ -286,8 +426,8 @@ async def quarantine_file(
     action = RemediationAction(
         tenant_id=user.tenant_id,
         action_type="quarantine",
-        status="pending" if request.dry_run else "pending",
-        source_path=validated_path,  # Use validated path
+        status="pending",
+        source_path=validated_path,
         dest_path=dest_path,
         performed_by=user.email,
         dry_run=request.dry_run,
@@ -317,6 +457,7 @@ async def quarantine_file(
 
             if success:
                 action.status = "completed"
+                action.completed_at = datetime.now(timezone.utc)
                 logger.info("Quarantined %s to %s", validated_path, dest_path)
             else:
                 action.status = "failed"
@@ -391,7 +532,7 @@ async def lockdown_file(
         tenant_id=user.tenant_id,
         action_type="lockdown",
         status="pending",
-        source_path=validated_path,  # Use validated path
+        source_path=validated_path,
         performed_by=user.email,
         principals={"allowed": request.allowed_principals},
         dry_run=request.dry_run,
@@ -430,6 +571,7 @@ async def lockdown_file(
 
             if success:
                 action.status = "completed"
+                action.completed_at = datetime.now(timezone.utc)
                 logger.info("Locked down %s", validated_path)
             else:
                 action.status = "failed"
@@ -459,6 +601,99 @@ async def lockdown_file(
     return action
 
 
+@router.post("/label-apply", response_model=RemediationResponse)
+@limiter.limit("10/minute")
+async def label_apply_file(
+    http_request: Request,
+    request: LabelApplyRequest,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_admin),
+):
+    """
+    Apply a sensitivity label to a file as a remediation action.
+
+    Records the label application in the remediation audit trail and
+    updates the scan result's label fields.
+
+    Use dry_run=true to preview the action without executing.
+
+    Security:
+    - Path traversal attacks are blocked
+    - Rate limited to 10 requests per minute
+    """
+    # Security: Validate file path
+    validated_path = validate_file_path(request.file_path)
+
+    # Verify file belongs to tenant
+    result = await session.execute(
+        select(ScanResult).where(
+            ScanResult.file_path == validated_path,
+            ScanResult.tenant_id == user.tenant_id,
+        ).limit(1).with_for_update()
+    )
+    scan_result = result.scalar_one_or_none()
+    if not scan_result:
+        raise HTTPException(status_code=404, detail="File not found in tenant's scan results")
+
+    # Verify label exists and belongs to tenant
+    label_result = await session.execute(
+        select(SensitivityLabel).where(
+            SensitivityLabel.id == request.label_id,
+            SensitivityLabel.tenant_id == user.tenant_id,
+        )
+    )
+    label = label_result.scalar_one_or_none()
+    if not label:
+        raise HTTPException(status_code=404, detail="Sensitivity label not found")
+
+    # Create remediation action record
+    action = RemediationAction(
+        tenant_id=user.tenant_id,
+        action_type="label_apply",
+        status="pending",
+        source_path=validated_path,
+        performed_by=user.email,
+        label_id=label.id,
+        label_name=label.name,
+        dry_run=request.dry_run,
+    )
+    session.add(action)
+    await session.flush()
+
+    if not request.dry_run:
+        # Update the scan result with the applied label
+        scan_result.current_label_id = label.id
+        scan_result.current_label_name = label.name
+        scan_result.label_applied = True
+        scan_result.label_applied_at = datetime.now(timezone.utc)
+
+        action.status = "completed"
+        action.completed_at = datetime.now(timezone.utc)
+        logger.info("Applied label '%s' to %s", label.name, validated_path)
+
+    # Log audit event
+    audit = AuditLog(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        action="label_apply_executed",
+        resource_type="file",
+        details={
+            "file_path": validated_path,
+            "label_id": label.id,
+            "label_name": label.name,
+            "dry_run": request.dry_run,
+            "action_id": str(action.id),
+            "status": action.status,
+        },
+    )
+    session.add(audit)
+    await session.flush()
+
+    await session.refresh(action)
+
+    return action
+
+
 @router.post("/rollback", response_model=RemediationResponse)
 async def rollback_action(
     request: RollbackRequest,
@@ -470,6 +705,7 @@ async def rollback_action(
 
     For quarantine: moves file back to original location.
     For lockdown: restores original ACL.
+    For label_apply: removes the applied label from the scan result.
 
     Use dry_run=true to preview the rollback without executing.
     """
@@ -508,68 +744,87 @@ async def rollback_action(
     session.add(rollback)
 
     if not request.dry_run:
-        # Execute actual rollback operation via adapter
-        adapter = _get_adapter_for_path(original.source_path)
-        rollback_success = False
+        if original.action_type == "label_apply":
+            # Rollback label: clear the label from scan result
+            result = await session.execute(
+                select(ScanResult).where(
+                    ScanResult.file_path == original.source_path,
+                    ScanResult.tenant_id == user.tenant_id,
+                ).limit(1)
+            )
+            scan_result = result.scalar_one_or_none()
+            if scan_result:
+                scan_result.current_label_id = None
+                scan_result.current_label_name = None
+                scan_result.label_applied = False
+                scan_result.label_applied_at = None
 
-        if not supports_remediation(adapter):
-            rollback.status = "failed"
-            rollback.error = "Adapter does not support remediation"
-        elif original.action_type == "quarantine":
-            # Move file back from dest_path to source_path
-            if original.dest_path:
-                import os
-                file_name = os.path.basename(original.dest_path)
-                file_info = FileInfo(
-                    path=original.dest_path,
-                    name=file_name,
-                    size=0,
-                    modified=datetime.now(timezone.utc),
-                    adapter=adapter.adapter_type,
-                )
-
-                rollback_success = await adapter.move_file(file_info, original.source_path)
-
-                if rollback_success:
-                    rollback.status = "completed"
-                    original.status = "rolled_back"
-                    logger.info("Rolled back quarantine: %s -> %s", original.dest_path, original.source_path)
-                else:
-                    rollback.status = "failed"
-                    rollback.error = "Failed to move file back"
-            else:
-                rollback.status = "failed"
-                rollback.error = "No destination path recorded"
-
-        elif original.action_type == "lockdown":
-            # Restore ACL from previous_acl
-            if original.previous_acl:
-                import os
-                file_name = os.path.basename(original.source_path)
-                file_info = FileInfo(
-                    path=original.source_path,
-                    name=file_name,
-                    size=0,
-                    modified=datetime.now(timezone.utc),
-                    adapter=adapter.adapter_type,
-                )
-
-                original_acl = _decode_acl(original.previous_acl)
-                rollback_success = await adapter.set_acl(file_info, original_acl)
-
-                if rollback_success:
-                    rollback.status = "completed"
-                    original.status = "rolled_back"
-                    logger.info("Rolled back lockdown: restored ACL for %s", original.source_path)
-                else:
-                    rollback.status = "failed"
-                    rollback.error = "Failed to restore permissions"
-            else:
-                rollback.status = "failed"
-                rollback.error = "No previous ACL recorded"
+            rollback.status = "completed"
+            rollback.completed_at = datetime.now(timezone.utc)
+            original.status = "rolled_back"
+            logger.info("Rolled back label application for %s", original.source_path)
         else:
-            rollback.status = "failed"
-            rollback.error = f"Unknown action type: {original.action_type}"
+            # Execute actual rollback operation via adapter
+            adapter = _get_adapter_for_path(original.source_path)
+
+            if not supports_remediation(adapter):
+                rollback.status = "failed"
+                rollback.error = "Adapter does not support remediation"
+            elif original.action_type == "quarantine":
+                # Move file back from dest_path to source_path
+                if original.dest_path:
+                    file_name = os.path.basename(original.dest_path)
+                    file_info = FileInfo(
+                        path=original.dest_path,
+                        name=file_name,
+                        size=0,
+                        modified=datetime.now(timezone.utc),
+                        adapter=adapter.adapter_type,
+                    )
+
+                    rollback_success = await adapter.move_file(file_info, original.source_path)
+
+                    if rollback_success:
+                        rollback.status = "completed"
+                        rollback.completed_at = datetime.now(timezone.utc)
+                        original.status = "rolled_back"
+                        logger.info("Rolled back quarantine: %s -> %s", original.dest_path, original.source_path)
+                    else:
+                        rollback.status = "failed"
+                        rollback.error = "Failed to move file back"
+                else:
+                    rollback.status = "failed"
+                    rollback.error = "No destination path recorded"
+
+            elif original.action_type == "lockdown":
+                # Restore ACL from previous_acl
+                if original.previous_acl:
+                    file_name = os.path.basename(original.source_path)
+                    file_info = FileInfo(
+                        path=original.source_path,
+                        name=file_name,
+                        size=0,
+                        modified=datetime.now(timezone.utc),
+                        adapter=adapter.adapter_type,
+                    )
+
+                    original_acl = _decode_acl(original.previous_acl)
+                    rollback_success = await adapter.set_acl(file_info, original_acl)
+
+                    if rollback_success:
+                        rollback.status = "completed"
+                        rollback.completed_at = datetime.now(timezone.utc)
+                        original.status = "rolled_back"
+                        logger.info("Rolled back lockdown: restored ACL for %s", original.source_path)
+                    else:
+                        rollback.status = "failed"
+                        rollback.error = "Failed to restore permissions"
+                else:
+                    rollback.status = "failed"
+                    rollback.error = "No previous ACL recorded"
+            else:
+                rollback.status = "failed"
+                rollback.error = f"Unknown action type: {original.action_type}"
 
     await session.flush()
 
@@ -596,24 +851,188 @@ async def rollback_action(
     return rollback
 
 
-@router.get("/stats/summary")
-async def get_remediation_stats(
-    request: Request,
+@router.post("/bulk", response_model=BulkRemediationResponse)
+@limiter.limit("5/minute")
+async def bulk_remediate(
+    http_request: Request,
+    request: BulkRemediationRequest,
     session: AsyncSession = Depends(get_session),
     user=Depends(require_admin),
 ):
-    """Get summary statistics for remediation actions.
-
-    Aggregations run on DuckDB/Parquet for fast full-table scans.
     """
-    svc = getattr(request.app.state, "dashboard_service", None)
-    if svc is None:
-        raise HTTPException(status_code=503, detail="Analytics engine unavailable")
+    Apply remediation actions to multiple files at once.
 
-    stats = await svc.get_remediation_stats(user.tenant_id)
+    Supports quarantine, lockdown, and label_apply in bulk.
+    Each file is processed independently - failures on one file
+    do not prevent processing of others.
 
-    return {
-        "total_actions": stats.total_actions,
-        "by_type": stats.by_type,
-        "by_status": stats.by_status,
-    }
+    Use dry_run=true to preview all actions without executing.
+
+    Security:
+    - Rate limited to 5 bulk requests per minute
+    - Maximum 100 files per request
+    """
+    if request.action_type not in ("quarantine", "lockdown", "label_apply"):
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk action_type must be quarantine, lockdown, or label_apply"
+        )
+
+    if request.action_type == "lockdown" and not request.allowed_principals:
+        raise HTTPException(
+            status_code=400,
+            detail="allowed_principals is required for lockdown actions"
+        )
+
+    if request.action_type == "label_apply" and not request.label_id:
+        raise HTTPException(
+            status_code=400,
+            detail="label_id is required for label_apply actions"
+        )
+
+    # For label_apply, verify label exists
+    label = None
+    if request.action_type == "label_apply":
+        label_result = await session.execute(
+            select(SensitivityLabel).where(
+                SensitivityLabel.id == request.label_id,
+                SensitivityLabel.tenant_id == user.tenant_id,
+            )
+        )
+        label = label_result.scalar_one_or_none()
+        if not label:
+            raise HTTPException(status_code=404, detail="Sensitivity label not found")
+
+    success_count = 0
+    failed_count = 0
+    actions: list[RemediationAction] = []
+
+    for item in request.items:
+        try:
+            validated_path = validate_file_path(item.file_path)
+        except HTTPException:
+            failed_count += 1
+            continue
+
+        # Verify file belongs to tenant
+        result = await session.execute(
+            select(ScanResult).where(
+                ScanResult.file_path == validated_path,
+                ScanResult.tenant_id == user.tenant_id,
+            ).limit(1)
+        )
+        scan_result = result.scalar_one_or_none()
+        if not scan_result:
+            failed_count += 1
+            continue
+
+        # Create the action record
+        action = RemediationAction(
+            tenant_id=user.tenant_id,
+            action_type=request.action_type,
+            status="pending",
+            source_path=validated_path,
+            performed_by=user.email,
+            dry_run=request.dry_run,
+        )
+
+        if request.action_type == "quarantine":
+            quarantine_dir = validate_quarantine_dir(request.quarantine_dir, validated_path)
+            file_name = os.path.basename(validated_path)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            action.dest_path = f"{quarantine_dir}/{timestamp}_{file_name}"
+
+        elif request.action_type == "lockdown":
+            action.principals = {"allowed": request.allowed_principals}
+
+        elif request.action_type == "label_apply" and label:
+            action.label_id = label.id
+            action.label_name = label.name
+
+        session.add(action)
+        await session.flush()
+
+        if not request.dry_run:
+            if request.action_type == "label_apply" and label:
+                # Apply label to scan result
+                scan_result.current_label_id = label.id
+                scan_result.current_label_name = label.name
+                scan_result.label_applied = True
+                scan_result.label_applied_at = datetime.now(timezone.utc)
+                action.status = "completed"
+                action.completed_at = datetime.now(timezone.utc)
+            elif request.action_type in ("quarantine", "lockdown"):
+                # For quarantine/lockdown, adapter operations happen in dry-run=false mode
+                adapter = _get_adapter_for_path(validated_path)
+                if not supports_remediation(adapter):
+                    action.status = "failed"
+                    action.error = "Adapter does not support remediation"
+                elif request.action_type == "quarantine" and action.dest_path:
+                    file_name = os.path.basename(validated_path)
+                    file_info = FileInfo(
+                        path=validated_path,
+                        name=file_name,
+                        size=0,
+                        modified=datetime.now(timezone.utc),
+                        adapter=adapter.adapter_type,
+                    )
+                    move_ok = await adapter.move_file(file_info, action.dest_path)
+                    if move_ok:
+                        action.status = "completed"
+                        action.completed_at = datetime.now(timezone.utc)
+                    else:
+                        action.status = "failed"
+                        action.error = "Failed to move file"
+                elif request.action_type == "lockdown":
+                    file_name = os.path.basename(validated_path)
+                    file_info = FileInfo(
+                        path=validated_path,
+                        name=file_name,
+                        size=0,
+                        modified=datetime.now(timezone.utc),
+                        adapter=adapter.adapter_type,
+                    )
+                    original_acl = await adapter.get_acl(file_info)
+                    if original_acl:
+                        action.previous_acl = _encode_acl(original_acl)
+                    lock_ok, _ = await adapter.lockdown_file(
+                        file_info, allowed_sids=request.allowed_principals or [],
+                    )
+                    if lock_ok:
+                        action.status = "completed"
+                        action.completed_at = datetime.now(timezone.utc)
+                    else:
+                        action.status = "failed"
+                        action.error = "Failed to set permissions"
+
+        if action.status == "failed":
+            failed_count += 1
+        else:
+            success_count += 1
+
+        await session.refresh(action)
+        actions.append(action)
+
+    # Single bulk audit log entry
+    audit = AuditLog(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        action=f"{request.action_type}_executed",
+        resource_type="bulk_remediation",
+        details={
+            "action_type": request.action_type,
+            "total_files": len(request.items),
+            "success": success_count,
+            "failed": failed_count,
+            "dry_run": request.dry_run,
+        },
+    )
+    session.add(audit)
+    await session.flush()
+
+    return BulkRemediationResponse(
+        total=len(request.items),
+        success=success_count,
+        failed=failed_count,
+        actions=[RemediationResponse.model_validate(a) for a in actions],
+    )
