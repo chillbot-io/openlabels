@@ -439,3 +439,96 @@ export interface WSHealthUpdate {
   component: string;
   status: string;
 }
+
+// Story 13: System Monitoring & Health types
+
+export interface SystemResourceUsage {
+  cpu_percent: number;
+  cpu_count: number;
+  memory_total_mb: number;
+  memory_used_mb: number;
+  memory_percent: number;
+  disk_total_gb: number;
+  disk_used_gb: number;
+  disk_free_gb: number;
+  disk_percent: number;
+  load_average: number[] | null;
+}
+
+export interface WorkerInfo {
+  worker_id: string;
+  status: string;
+  concurrency: number;
+  target_concurrency: number;
+  pid: number | null;
+  hostname: string | null;
+  last_heartbeat: string | null;
+  jobs_completed: number;
+}
+
+export interface WorkersResponse {
+  workers: WorkerInfo[];
+  total_active: number;
+  total_idle: number;
+  total_error: number;
+}
+
+export interface ThroughputBucket {
+  period: string;
+  scans_completed: number;
+  files_scanned: number;
+  files_with_pii: number;
+}
+
+export interface ScanThroughputResponse {
+  period_hours: number;
+  buckets: ThroughputBucket[];
+  total_scans: number;
+  total_files: number;
+  avg_files_per_hour: number;
+  avg_scan_duration_seconds: number | null;
+}
+
+export interface ErrorLogEntry {
+  id: string;
+  source: string;
+  severity: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+export interface ErrorLogResponse {
+  entries: ErrorLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+}
+
+export interface SystemAlertRule {
+  id: string;
+  name: string;
+  component: string;
+  condition: string;
+  threshold: number | null;
+  actions: string[];
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface BackgroundTaskStatus {
+  name: string;
+  status: string;
+  cycles_completed: number;
+  errors_total: number;
+  consecutive_failures: number;
+  uptime_seconds?: number;
+  seconds_since_heartbeat?: number;
+  last_error?: string;
+}
+
+export interface BackgroundTasksResponse {
+  tasks: BackgroundTaskStatus[];
+  healthy: boolean;
+}

@@ -2,29 +2,42 @@
 Health and status API endpoints.
 
 Health and status endpoints for monitoring dashboards.
+
+Provides:
+- Component health dashboard (API, workers, DB, Redis)
+- Job queue depth and processing rate
+- Worker status: active, idle, error
+- System resource usage (CPU, memory, disk)
+- Alert configuration for system failures
+- Scan throughput metrics
+- Error log viewer
+- Background task status
+- Cache health
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from sqlalchemy import Integer, func, select, text
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+from sqlalchemy import Integer, case, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.auth.dependencies import get_current_user, get_optional_user
+from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
 from openlabels.core.circuit_breaker import CircuitBreaker
 from openlabels.core.types import JobStatus
 from openlabels.jobs.queue import JobQueue as JobQueueService
 from openlabels.server.cache import get_cache_stats
 from openlabels.server.db import get_pool_stats, get_session
-from openlabels.server.models import JobQueue, ScanJob, ScanResult
+from openlabels.server.models import AuditLog, JobQueue, ScanJob, ScanResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -420,3 +433,500 @@ async def get_cache_health(
             default_ttl=0,
             key_prefix="",
         )
+
+
+# ── System resource usage (CPU, memory, disk) ───────────────────────
+
+class SystemResourceUsage(BaseModel):
+    """System resource usage metrics."""
+
+    cpu_percent: float
+    cpu_count: int
+    memory_total_mb: int
+    memory_used_mb: int
+    memory_percent: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_free_gb: float
+    disk_percent: float
+    load_average: list[float] | None = None
+
+
+@router.get("/resources", response_model=SystemResourceUsage)
+async def get_system_resources(
+    user=Depends(get_current_user),
+) -> SystemResourceUsage:
+    """Get system resource usage (CPU, memory, disk).
+
+    Returns current resource utilisation for the host machine.
+    """
+    try:
+        import psutil
+
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        cpu_count = psutil.cpu_count() or 1
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+        load = None
+        if hasattr(os, "getloadavg"):
+            load = list(os.getloadavg())
+
+        return SystemResourceUsage(
+            cpu_percent=cpu_percent,
+            cpu_count=cpu_count,
+            memory_total_mb=int(mem.total / (1024 * 1024)),
+            memory_used_mb=int(mem.used / (1024 * 1024)),
+            memory_percent=mem.percent,
+            disk_total_gb=round(disk.total / (1024**3), 1),
+            disk_used_gb=round(disk.used / (1024**3), 1),
+            disk_free_gb=round(disk.free / (1024**3), 1),
+            disk_percent=disk.percent,
+            load_average=load,
+        )
+    except ImportError:
+        # psutil not installed — return stub values from /proc if possible
+        cpu_count = os.cpu_count() or 1
+        load = list(os.getloadavg()) if hasattr(os, "getloadavg") else None
+        return SystemResourceUsage(
+            cpu_percent=0.0,
+            cpu_count=cpu_count,
+            memory_total_mb=0,
+            memory_used_mb=0,
+            memory_percent=0.0,
+            disk_total_gb=0.0,
+            disk_used_gb=0.0,
+            disk_free_gb=0.0,
+            disk_percent=0.0,
+            load_average=load,
+        )
+
+
+# ── Worker status ────────────────────────────────────────────────────
+
+class WorkerInfo(BaseModel):
+    """Individual worker status."""
+
+    worker_id: str
+    status: str  # running, idle, error, stopped
+    concurrency: int
+    target_concurrency: int
+    pid: int | None = None
+    hostname: str | None = None
+    last_heartbeat: str | None = None
+    jobs_completed: int = 0
+
+
+class WorkersResponse(BaseModel):
+    """All workers status response."""
+
+    workers: list[WorkerInfo]
+    total_active: int
+    total_idle: int
+    total_error: int
+
+
+@router.get("/workers", response_model=WorkersResponse)
+async def get_workers_status(
+    user=Depends(get_current_user),
+) -> WorkersResponse:
+    """Get status of all registered workers.
+
+    Returns active, idle, and errored workers with their current state.
+    """
+    try:
+        from openlabels.jobs.worker import get_worker_state_manager
+
+        state_manager = await get_worker_state_manager()
+        all_workers = await state_manager.get_all_workers()
+    except Exception as e:
+        logger.info(f"Could not retrieve worker states: {type(e).__name__}: {e}")
+        all_workers = {}
+
+    workers: list[WorkerInfo] = []
+    active = idle = error = 0
+
+    for worker_id, state in all_workers.items():
+        w_status = state.get("status", "unknown")
+        if w_status == "running":
+            active += 1
+        elif w_status == "idle":
+            idle += 1
+        elif w_status in ("error", "crashed"):
+            error += 1
+
+        workers.append(WorkerInfo(
+            worker_id=state.get("worker_id", worker_id),
+            status=w_status,
+            concurrency=state.get("concurrency", 0),
+            target_concurrency=state.get("target_concurrency", 0),
+            pid=state.get("pid"),
+            hostname=state.get("hostname"),
+            last_heartbeat=state.get("last_heartbeat"),
+            jobs_completed=state.get("jobs_completed", 0),
+        ))
+
+    return WorkersResponse(
+        workers=workers,
+        total_active=active,
+        total_idle=idle,
+        total_error=error,
+    )
+
+
+# ── Scan throughput metrics ──────────────────────────────────────────
+
+class ThroughputBucket(BaseModel):
+    """A time bucket for throughput data."""
+
+    period: str  # e.g. "2026-02-25 14:00"
+    scans_completed: int
+    files_scanned: int
+    files_with_pii: int
+
+
+class ScanThroughputResponse(BaseModel):
+    """Scan throughput metrics over time."""
+
+    period_hours: int
+    buckets: list[ThroughputBucket]
+    total_scans: int
+    total_files: int
+    avg_files_per_hour: float
+    avg_scan_duration_seconds: float | None = None
+
+
+@router.get("/throughput", response_model=ScanThroughputResponse)
+async def get_scan_throughput(
+    hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
+    bucket_size: int = Query(1, ge=1, le=24, description="Bucket size in hours"),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> ScanThroughputResponse:
+    """Get scan throughput metrics over time.
+
+    Returns hourly (or custom bucket) breakdown of completed scans,
+    files processed, and average scan duration.
+    """
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # Get completed scans in the period
+    scans_query = (
+        select(
+            ScanJob.completed_at,
+            ScanJob.started_at,
+            ScanJob.files_scanned,
+            ScanJob.files_with_pii,
+        )
+        .where(
+            ScanJob.tenant_id == user.tenant_id,
+            ScanJob.status == JobStatus.COMPLETED,
+            ScanJob.completed_at >= since,
+            ScanJob.completed_at.isnot(None),
+        )
+        .order_by(ScanJob.completed_at)
+    )
+    result = await session.execute(scans_query)
+    rows = result.all()
+
+    # Build time buckets
+    buckets_map: dict[str, ThroughputBucket] = {}
+    total_files = 0
+    total_duration = 0.0
+    duration_count = 0
+
+    for row in rows:
+        # Truncate to bucket
+        completed = row.completed_at
+        if completed is None:
+            continue
+        bucket_hour = completed.replace(
+            minute=0, second=0, microsecond=0,
+            hour=(completed.hour // bucket_size) * bucket_size,
+        )
+        key = bucket_hour.strftime("%Y-%m-%d %H:%M")
+
+        if key not in buckets_map:
+            buckets_map[key] = ThroughputBucket(
+                period=key, scans_completed=0, files_scanned=0, files_with_pii=0,
+            )
+        buckets_map[key].scans_completed += 1
+        buckets_map[key].files_scanned += row.files_scanned or 0
+        buckets_map[key].files_with_pii += row.files_with_pii or 0
+        total_files += row.files_scanned or 0
+
+        if row.started_at and row.completed_at:
+            dur = (row.completed_at - row.started_at).total_seconds()
+            if dur > 0:
+                total_duration += dur
+                duration_count += 1
+
+    avg_dur = round(total_duration / duration_count, 1) if duration_count else None
+    effective_hours = max(hours, 1)
+
+    return ScanThroughputResponse(
+        period_hours=hours,
+        buckets=list(buckets_map.values()),
+        total_scans=len(rows),
+        total_files=total_files,
+        avg_files_per_hour=round(total_files / effective_hours, 1),
+        avg_scan_duration_seconds=avg_dur,
+    )
+
+
+# ── Error log viewer ─────────────────────────────────────────────────
+
+class ErrorLogEntry(BaseModel):
+    """An error log entry from recent job failures or system errors."""
+
+    id: str
+    source: str  # "job", "task", "system"
+    severity: str  # "error", "warning", "critical"
+    message: str
+    details: dict | None = None
+    timestamp: str
+
+
+class ErrorLogResponse(BaseModel):
+    """Paginated error log response."""
+
+    entries: list[ErrorLogEntry]
+    total: int
+    page: int
+    page_size: int
+    has_next: bool
+
+
+@router.get("/errors", response_model=ErrorLogResponse)
+async def get_error_log(
+    source: str | None = Query(None, description="Filter: job, task, system"),
+    severity: str | None = Query(None, description="Filter: error, warning, critical"),
+    hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    request: Request = None,  # type: ignore[assignment]
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> ErrorLogResponse:
+    """Get recent error log entries from jobs, background tasks, and system.
+
+    Aggregates errors from:
+    - Failed jobs (source=job)
+    - Background task crashes (source=task)
+    - Audit log error entries (source=system)
+    """
+    entries: list[ErrorLogEntry] = []
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # 1. Failed jobs
+    if source is None or source == "job":
+        failed_query = (
+            select(JobQueue)
+            .where(
+                JobQueue.tenant_id == user.tenant_id,
+                JobQueue.status == JobStatus.FAILED,
+                JobQueue.created_at >= since,
+            )
+            .order_by(JobQueue.created_at.desc())
+            .limit(200)
+        )
+        result = await session.execute(failed_query)
+        for job in result.scalars().all():
+            sev = "error"
+            if job.retry_count >= (job.max_retries or 3):
+                sev = "critical"
+            entries.append(ErrorLogEntry(
+                id=str(job.id),
+                source="job",
+                severity=sev,
+                message=job.error or f"Job {job.task_type} failed",
+                details={
+                    "task_type": job.task_type,
+                    "retry_count": job.retry_count,
+                    "worker_id": job.worker_id,
+                },
+                timestamp=job.created_at.isoformat() if job.created_at else since.isoformat(),
+            ))
+
+    # 2. Background task errors (from task manager)
+    if source is None or source == "task":
+        task_mgr = getattr(request.app.state, "task_manager", None) if request else None
+        if task_mgr:
+            for t in task_mgr.get_status():
+                if t.get("last_error"):
+                    sev = "critical" if t.get("consecutive_failures", 0) > 3 else "error"
+                    entries.append(ErrorLogEntry(
+                        id=f"task-{t['name']}",
+                        source="task",
+                        severity=sev,
+                        message=t["last_error"],
+                        details={
+                            "task_name": t["name"],
+                            "status": t.get("status"),
+                            "consecutive_failures": t.get("consecutive_failures", 0),
+                            "errors_total": t.get("errors_total", 0),
+                        },
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    ))
+
+    # 3. System audit log errors (only actions that exist in the audit_action enum)
+    if source is None or source == "system":
+        error_actions = [
+            "scan_failed", "scan_cancelled", "policy_violation",
+        ]
+        try:
+            audit_query = (
+                select(AuditLog)
+                .where(
+                    AuditLog.tenant_id == user.tenant_id,
+                    AuditLog.action.in_(error_actions),
+                    AuditLog.created_at >= since,
+                )
+                .order_by(AuditLog.created_at.desc())
+                .limit(200)
+            )
+            result = await session.execute(audit_query)
+            for entry in result.scalars().all():
+                entries.append(ErrorLogEntry(
+                    id=str(entry.id),
+                    source="system",
+                    severity="warning" if entry.action == "policy_violation" else "error",
+                    message=f"{entry.action}: {entry.resource_type or 'unknown'}",
+                    details=entry.details if entry.details else None,
+                    timestamp=entry.created_at.isoformat() if entry.created_at else since.isoformat(),
+                ))
+        except (SQLAlchemyError, ConnectionError, OSError) as e:
+            logger.info(f"Could not query audit log for errors: {type(e).__name__}: {e}")
+
+    # Apply severity filter
+    if severity:
+        entries = [e for e in entries if e.severity == severity]
+
+    # Sort by timestamp descending
+    entries.sort(key=lambda e: e.timestamp, reverse=True)
+
+    total = len(entries)
+    start = (page - 1) * page_size
+    page_entries = entries[start : start + page_size]
+
+    return ErrorLogResponse(
+        entries=page_entries,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_next=(start + page_size) < total,
+    )
+
+
+# ── System alert configuration ───────────────────────────────────────
+
+# In-memory alert rules store (production: persist in DB or config)
+_system_alert_rules: dict[str, dict] = {}
+
+VALID_ALERT_COMPONENTS = {"api", "db", "queue", "redis", "worker", "task", "disk", "memory", "cpu"}
+VALID_ALERT_CONDITIONS = {"unhealthy", "threshold_exceeded", "offline"}
+VALID_ALERT_ACTIONS = {"log", "notify", "webhook"}
+
+
+class SystemAlertRule(BaseModel):
+    """System failure alert rule."""
+
+    id: str
+    name: str
+    component: str
+    condition: str
+    threshold: float | None = None
+    actions: list[str] = Field(default=["log"])
+    enabled: bool = True
+    created_at: str
+
+
+class SystemAlertRuleCreate(BaseModel):
+    """Create a system alert rule."""
+
+    name: str = Field(..., max_length=255)
+    component: str = Field(..., description="Component to monitor: api, db, queue, redis, worker, task, disk, memory, cpu")
+    condition: str = Field("unhealthy", description="Condition: unhealthy, threshold_exceeded, offline")
+    threshold: float | None = Field(None, description="Threshold percentage (for threshold_exceeded condition)")
+    actions: list[str] = Field(default=["log"], description="Actions: log, notify, webhook")
+    enabled: bool = True
+
+
+@router.get("/alerts", response_model=list[SystemAlertRule])
+async def list_system_alerts(
+    user=Depends(get_current_user),
+) -> list[SystemAlertRule]:
+    """List configured system alert rules."""
+    return [SystemAlertRule(**rule) for rule in _system_alert_rules.values()]
+
+
+@router.post("/alerts", response_model=SystemAlertRule, status_code=201)
+async def create_system_alert(
+    body: SystemAlertRuleCreate,
+    user=Depends(require_admin),
+) -> SystemAlertRule:
+    """Create a system alert rule for failure detection."""
+    if body.component not in VALID_ALERT_COMPONENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
+        )
+    if body.condition not in VALID_ALERT_CONDITIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid condition. Must be one of: {', '.join(sorted(VALID_ALERT_CONDITIONS))}",
+        )
+
+    from uuid import uuid4
+    rule_id = str(uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    rule_data = {
+        "id": rule_id,
+        "name": body.name,
+        "component": body.component,
+        "condition": body.condition,
+        "threshold": body.threshold,
+        "actions": body.actions,
+        "enabled": body.enabled,
+        "created_at": now,
+    }
+    _system_alert_rules[rule_id] = rule_data
+    return SystemAlertRule(**rule_data)
+
+
+@router.delete("/alerts/{alert_id}", status_code=204)
+async def delete_system_alert(
+    alert_id: str,
+    user=Depends(require_admin),
+) -> None:
+    """Delete a system alert rule."""
+    if alert_id not in _system_alert_rules:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    del _system_alert_rules[alert_id]
+
+
+@router.put("/alerts/{alert_id}", response_model=SystemAlertRule)
+async def update_system_alert(
+    alert_id: str,
+    body: SystemAlertRuleCreate,
+    user=Depends(require_admin),
+) -> SystemAlertRule:
+    """Update a system alert rule."""
+    if alert_id not in _system_alert_rules:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+    if body.component not in VALID_ALERT_COMPONENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
+        )
+
+    rule = _system_alert_rules[alert_id]
+    rule.update({
+        "name": body.name,
+        "component": body.component,
+        "condition": body.condition,
+        "threshold": body.threshold,
+        "actions": body.actions,
+        "enabled": body.enabled,
+    })
+    return SystemAlertRule(**rule)
