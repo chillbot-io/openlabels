@@ -683,6 +683,11 @@ class MonitoringSettings(BaseSettings):
     # Scan trigger settings
     scan_trigger_enabled: bool = False
     scan_trigger_rate_limit: int = 10
+
+    # Event retention
+    retention_days: int = 90
+    archive_enabled: bool = False
+    archive_format: str = "parquet"
     scan_trigger_cooldown_seconds: float = 60.0
     scan_trigger_min_risk_tier: str = "MEDIUM"
 

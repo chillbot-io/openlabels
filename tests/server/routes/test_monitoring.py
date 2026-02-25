@@ -664,6 +664,342 @@ class TestDetectAccessAnomalies:
         assert data["anomalies"] == []
 
 
+# ── Story 12: New Endpoint Tests ──────────────────────────────────────
+
+
+class TestListEventTypes:
+    """Tests for GET /api/v1/monitoring/events/types endpoint."""
+
+    async def test_returns_event_types(self, test_client, setup_monitoring_data):
+        response = await test_client.get("/api/v1/monitoring/events/types")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 4
+
+    async def test_event_types_have_required_fields(self, test_client, setup_monitoring_data):
+        response = await test_client.get("/api/v1/monitoring/events/types")
+        data = response.json()
+        for t in data:
+            assert "action" in t
+            assert "label" in t
+            assert "badge_color" in t
+            assert "description" in t
+
+    async def test_includes_core_actions(self, test_client, setup_monitoring_data):
+        response = await test_client.get("/api/v1/monitoring/events/types")
+        data = response.json()
+        actions = {t["action"] for t in data}
+        assert "read" in actions
+        assert "write" in actions
+        assert "delete" in actions
+        assert "permission_change" in actions
+
+
+class TestListEventFolders:
+    """Tests for GET /api/v1/monitoring/events/folders endpoint."""
+
+    async def test_returns_empty_when_no_events(self, test_client, setup_monitoring_data):
+        response = await test_client.get("/api/v1/monitoring/events/folders")
+        assert response.status_code == 200
+        data = response.json()
+        assert data == []
+
+    async def test_returns_folder_tree(self, test_client, setup_monitoring_data):
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+
+        session = setup_monitoring_data["session"]
+        tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/data/reports/q1.csv",
+            risk_tier="HIGH", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
+
+        for path in ["/data/reports/q1.csv", "/data/reports/q2.csv", "/data/logs/app.log"]:
+            event = FileAccessEvent(
+                tenant_id=tenant.id,
+                monitored_file_id=monitored.id,
+                file_path=path,
+                action="read",
+                success=True,
+                event_time=datetime.now(timezone.utc),
+            )
+            session.add(event)
+            await session.flush()
+        await session.commit()
+
+        response = await test_client.get("/api/v1/monitoring/events/folders")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1  # at least "data" folder
+
+    async def test_folder_nodes_have_required_fields(self, test_client, setup_monitoring_data):
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+
+        session = setup_monitoring_data["session"]
+        tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/test/folder.txt",
+            risk_tier="MEDIUM", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
+
+        event = FileAccessEvent(
+            tenant_id=tenant.id,
+            monitored_file_id=monitored.id,
+            file_path="/test/folder.txt",
+            action="read",
+            success=True,
+            event_time=datetime.now(timezone.utc),
+        )
+        session.add(event)
+        await session.commit()
+
+        response = await test_client.get("/api/v1/monitoring/events/folders")
+        data = response.json()
+        for node in data:
+            assert "path" in node
+            assert "name" in node
+            assert "event_count" in node
+            assert "children" in node
+
+
+class TestEnrichedEvents:
+    """Tests for risk_tier and scan_result_id enrichment in events."""
+
+    async def test_event_includes_risk_tier(self, test_client, setup_monitoring_data):
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
+
+        session = setup_monitoring_data["session"]
+        tenant = setup_monitoring_data["tenant"]
+        admin_user = setup_monitoring_data["admin_user"]
+
+        monitored = MonitoredFile(
+            tenant_id=tenant.id, file_path="/enriched/file.txt",
+            risk_tier="CRITICAL", enabled_by=admin_user.email,
+        )
+        session.add(monitored)
+        await session.flush()
+
+        event = FileAccessEvent(
+            tenant_id=tenant.id,
+            monitored_file_id=monitored.id,
+            file_path="/enriched/file.txt",
+            action="read",
+            success=True,
+            user_name="analyst",
+            event_time=datetime.now(timezone.utc),
+        )
+        session.add(event)
+        await session.commit()
+
+        response = await test_client.get("/api/v1/monitoring/events")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) >= 1
+
+        item = next(i for i in data["items"] if i["file_path"] == "/enriched/file.txt")
+        assert item["risk_tier"] == "CRITICAL"
+
+
+class TestRetentionSettings:
+    """Tests for GET/PUT /api/v1/monitoring/retention endpoint."""
+
+    async def test_get_retention_settings(self, test_client, setup_monitoring_data):
+        response = await test_client.get("/api/v1/monitoring/retention")
+        assert response.status_code == 200
+        data = response.json()
+        assert "retention_days" in data
+        assert "archive_enabled" in data
+        assert "archive_format" in data
+
+    async def test_update_retention_settings(self, test_client, setup_monitoring_data):
+        response = await test_client.put(
+            "/api/v1/monitoring/retention",
+            json={
+                "retention_days": 180,
+                "archive_enabled": True,
+                "archive_format": "csv",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["retention_days"] == 180
+        assert data["archive_enabled"] is True
+        assert data["archive_format"] == "csv"
+
+
+class TestRetentionPurge:
+    """Tests for POST /api/v1/monitoring/retention/purge endpoint."""
+
+    async def test_purge_returns_result(self, test_client, setup_monitoring_data):
+        response = await test_client.post("/api/v1/monitoring/retention/purge")
+        assert response.status_code == 200
+        data = response.json()
+        assert "purged_count" in data
+        assert "cutoff_date" in data
+        assert data["purged_count"] == 0  # No old events exist
+
+
+class TestAlertRuleCRUD:
+    """Tests for alert rule CRUD endpoints."""
+
+    async def test_create_alert_rule(self, test_client, setup_monitoring_data):
+        response = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "High Volume Access",
+                "rule_type": "high_volume",
+                "conditions": {"threshold": 100, "window_hours": 1},
+                "severity": "high",
+                "actions": ["log", "notify"],
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "High Volume Access"
+        assert data["rule_type"] == "high_volume"
+        assert data["severity"] == "high"
+        assert data["enabled"] is True
+        assert "id" in data
+
+    async def test_create_rejects_invalid_rule_type(self, test_client, setup_monitoring_data):
+        response = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Bad Rule",
+                "rule_type": "invalid_type",
+                "conditions": {},
+                "severity": "medium",
+            },
+        )
+        assert response.status_code == 400
+
+    async def test_create_rejects_invalid_severity(self, test_client, setup_monitoring_data):
+        response = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Bad Severity",
+                "rule_type": "high_volume",
+                "conditions": {"threshold": 50},
+                "severity": "extreme",
+            },
+        )
+        assert response.status_code == 400
+
+    async def test_list_alert_rules(self, test_client, setup_monitoring_data):
+        # Create a rule first
+        await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "List Test Rule",
+                "rule_type": "failed_access",
+                "conditions": {"threshold": 5, "window_hours": 1},
+                "severity": "critical",
+            },
+        )
+
+        response = await test_client.get("/api/v1/monitoring/alert-rules")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+
+    async def test_list_filter_by_rule_type(self, test_client, setup_monitoring_data):
+        await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Off Hours Rule",
+                "rule_type": "off_hours",
+                "conditions": {"start_hour": 18, "end_hour": 6},
+                "severity": "medium",
+            },
+        )
+
+        response = await test_client.get("/api/v1/monitoring/alert-rules?rule_type=off_hours")
+        data = response.json()
+        for rule in data:
+            assert rule["rule_type"] == "off_hours"
+
+    async def test_get_alert_rule(self, test_client, setup_monitoring_data):
+        create_resp = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Get Test Rule",
+                "rule_type": "sensitive_file_access",
+                "conditions": {"risk_tiers": ["CRITICAL", "HIGH"]},
+                "severity": "high",
+            },
+        )
+        rule_id = create_resp.json()["id"]
+
+        response = await test_client.get(f"/api/v1/monitoring/alert-rules/{rule_id}")
+        assert response.status_code == 200
+        assert response.json()["name"] == "Get Test Rule"
+
+    async def test_get_returns_404_for_nonexistent(self, test_client, setup_monitoring_data):
+        fake_id = uuid4()
+        response = await test_client.get(f"/api/v1/monitoring/alert-rules/{fake_id}")
+        assert response.status_code == 404
+
+    async def test_update_alert_rule(self, test_client, setup_monitoring_data):
+        create_resp = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Update Test Rule",
+                "rule_type": "high_volume",
+                "conditions": {"threshold": 100},
+                "severity": "medium",
+            },
+        )
+        rule_id = create_resp.json()["id"]
+
+        response = await test_client.put(
+            f"/api/v1/monitoring/alert-rules/{rule_id}",
+            json={
+                "name": "Updated Rule Name",
+                "severity": "critical",
+                "enabled": False,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated Rule Name"
+        assert data["severity"] == "critical"
+        assert data["enabled"] is False
+
+    async def test_delete_alert_rule(self, test_client, setup_monitoring_data):
+        create_resp = await test_client.post(
+            "/api/v1/monitoring/alert-rules",
+            json={
+                "name": "Delete Test Rule",
+                "rule_type": "permission_change",
+                "conditions": {},
+                "severity": "low",
+            },
+        )
+        rule_id = create_resp.json()["id"]
+
+        response = await test_client.delete(f"/api/v1/monitoring/alert-rules/{rule_id}")
+        assert response.status_code == 204
+
+        # Verify it's gone
+        response = await test_client.get(f"/api/v1/monitoring/alert-rules/{rule_id}")
+        assert response.status_code == 404
+
+    async def test_delete_returns_404_for_nonexistent(self, test_client, setup_monitoring_data):
+        fake_id = uuid4()
+        response = await test_client.delete(f"/api/v1/monitoring/alert-rules/{fake_id}")
+        assert response.status_code == 404
+
+
 class TestMonitoringTenantIsolation:
     """Tests for tenant isolation in monitoring endpoints."""
 
