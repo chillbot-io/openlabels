@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router';
 import { m365Api } from '@/api/endpoints/m365.ts';
 import { targetsApi } from '@/api/endpoints/targets.ts';
 import { scansApi } from '@/api/endpoints/scans.ts';
-import { credentialsApi } from '@/api/endpoints/credentials.ts';
 import { useUIStore } from '@/stores/ui-store.ts';
 import type {
   WizardStep,
@@ -131,6 +130,12 @@ export function Component() {
   };
 
   const handleSmbDone = () => {
+    // SECURITY: Clear sensitive credential fields from React state immediately
+    // after the SMB step completes. Credentials have already been sent to the
+    // backend during validation; only `host` and `selectedShares` are needed
+    // for target creation in handleFinish.
+    setSmbConfig(prev => ({ ...prev, username: '', password: '' }));
+
     setConfiguredSources(prev => new Set([...prev, 'smb']));
     if (isSecondSource) {
       setIsSecondSource(false);
@@ -198,24 +203,12 @@ export function Component() {
         if (smbTarget?.id) {
           createdTargetIds.push(smbTarget.id);
 
-          // Associate saved credentials with the target
-          if (smbConfig.savePassword) {
-            await credentialsApi.save({
-              source_type: 'smb',
-              name: `SMB — ${smbConfig.host}`,
-              credentials: {
-                host: smbConfig.host,
-                username: smbConfig.username,
-                password: smbConfig.password,
-              },
-              target_id: smbTarget.id,
-            }).catch(() => {});
-          }
+          // NOTE: Credential persistence (if savePassword was checked) already
+          // happened during the SMB setup step's validate flow. Sensitive
+          // credential fields (username, password) were cleared from React
+          // state in handleSmbDone immediately after that step completed.
         }
       }
-
-      // Clear sensitive credentials from React state after they've been sent to the backend
-      setSmbConfig((prev) => ({ ...prev, username: '', password: '' }));
 
       // Kick off initial scans for all created targets
       if (createdTargetIds.length > 0) {
