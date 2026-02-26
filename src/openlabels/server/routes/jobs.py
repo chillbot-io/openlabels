@@ -10,7 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from openlabels.exceptions import BadRequestError
 from openlabels.server.dependencies import (
@@ -228,7 +228,7 @@ async def cancel_job(
 class WorkerConfigRequest(BaseModel):
     """Request to update worker configuration."""
 
-    concurrency: int = Query(ge=1, le=32, description="Number of concurrent workers (1-32)")
+    concurrency: int = Field(ge=1, le=32, description="Number of concurrent workers (1-32)")
 
 
 class WorkerStatusResponse(BaseModel):
