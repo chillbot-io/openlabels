@@ -92,13 +92,47 @@ def create_limiter() -> Limiter:
 
 
 # Per-tenant rate limiting (for authenticated API endpoints)
-class _InMemoryTenantBackend:
-    """In-memory sliding-window counters. Per-instance only."""
 
-    def __init__(self) -> None:
+# Maximum number of distinct tenants tracked in the in-memory backend
+# before stale entries are evicted.  This caps worst-case memory usage
+# regardless of how many unique tenant IDs are seen.
+_MAX_TENANTS = 10_000
+
+# Interval (in seconds) between full sweeps that remove tenants whose
+# timestamps have all expired.  This is tracked via a monotonic clock
+# and checked inside ``check_and_record`` so no background thread is
+# needed.
+_SWEEP_INTERVAL = 300  # 5 minutes
+
+
+class _InMemoryTenantBackend:
+    """In-memory sliding-window counters with stale-entry eviction.
+
+    Two eviction strategies prevent unbounded memory growth:
+
+    1. **Periodic sweep** — every ``_SWEEP_INTERVAL`` seconds the full
+       dict is scanned and tenants whose timestamps are all older than
+       the hour window are removed.
+    2. **Max-size LRU** — if the number of tracked tenants exceeds
+       ``_MAX_TENANTS`` after recording a request, the oldest-accessed
+       half of entries are evicted.
+    """
+
+    def __init__(
+        self,
+        max_tenants: int = _MAX_TENANTS,
+        sweep_interval: float = _SWEEP_INTERVAL,
+    ) -> None:
         self._lock = threading.Lock()
         self._minute_counts: dict[str, list[float]] = defaultdict(list)
         self._hour_counts: dict[str, list[float]] = defaultdict(list)
+        # Track last-access time per tenant for LRU eviction
+        self._last_access: dict[str, float] = {}
+        self._max_tenants = max_tenants
+        self._sweep_interval = sweep_interval
+        self._last_sweep: float = time.monotonic()
+
+    # -- public API --------------------------------------------------------
 
     def check_and_record(
         self, tenant_id: str, rpm_limit: int, rph_limit: int,
@@ -107,6 +141,11 @@ class _InMemoryTenantBackend:
         now = time.monotonic()
 
         with self._lock:
+            # Run periodic sweep if interval has elapsed
+            if now - self._last_sweep >= self._sweep_interval:
+                self._sweep_stale(now)
+                self._last_sweep = now
+
             minute_ago = now - 60
             minute_list = self._minute_counts[tenant_id]
             self._minute_counts[tenant_id] = minute_list = [
@@ -127,8 +166,38 @@ class _InMemoryTenantBackend:
 
             minute_list.append(now)
             hour_list.append(now)
+            self._last_access[tenant_id] = now
+
+            # Enforce max-size cap
+            if len(self._last_access) > self._max_tenants:
+                self._evict_lru()
 
         return True, max(0, rpm_limit - len(minute_list)), max(0, rph_limit - len(hour_list))
+
+    # -- eviction helpers (must be called under self._lock) ----------------
+
+    def _sweep_stale(self, now: float) -> None:
+        """Remove tenants with no timestamps within the hour window."""
+        hour_ago = now - 3600
+        stale_ids = [
+            tid for tid, timestamps in self._hour_counts.items()
+            if not timestamps or timestamps[-1] <= hour_ago
+        ]
+        for tid in stale_ids:
+            self._minute_counts.pop(tid, None)
+            self._hour_counts.pop(tid, None)
+            self._last_access.pop(tid, None)
+
+    def _evict_lru(self) -> None:
+        """Evict the oldest-accessed half of tenants to stay under the cap."""
+        sorted_tenants = sorted(
+            self._last_access.items(), key=lambda item: item[1],
+        )
+        evict_count = len(sorted_tenants) // 2
+        for tid, _ in sorted_tenants[:evict_count]:
+            self._minute_counts.pop(tid, None)
+            self._hour_counts.pop(tid, None)
+            self._last_access.pop(tid, None)
 
 
 class _RedisTenantBackend:
