@@ -113,10 +113,20 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
             results = filter_scan_results(results, where_filter)
 
         # Sort results
+        def _tier_sort_key(x):
+            tier = x["risk_tier"]
+            # Handle both enum values and strings
+            tier_str = str(tier) if not isinstance(tier, str) else tier
+            try:
+                return RISK_TIER_ORDER.index(tier_str)
+            except ValueError:
+                # Unknown tier values sort to the end
+                return len(RISK_TIER_ORDER)
+
         sort_key_map = {
             "score": lambda x: x["risk_score"],
             "path": lambda x: x["file_path"],
-            "tier": lambda x: RISK_TIER_ORDER.index(x["risk_tier"]),
+            "tier": _tier_sort_key,
             "entities": lambda x: x["total_entities"],
         }
         results.sort(key=sort_key_map[sort_by], reverse=descending)
@@ -130,7 +140,7 @@ def find(path: str, where_filter: str | None, recursive: bool, fmt: str,
 
         # Output in requested format
         if fmt == "json":
-            click.echo(json.dumps(results, indent=2))
+            click.echo(json.dumps(results, indent=2, default=str))
         elif fmt == "csv":
             import csv
             import io

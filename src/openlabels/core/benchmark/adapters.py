@@ -1163,8 +1163,8 @@ def load_nemotron_pii(
     if not samples:
         from .dataset import DatasetLoadError
         raise DatasetLoadError(
-            "Failed to load Nemotron-PII dataset from any source.\n"
-            "  Cache path: {cache_path} (exists={cache_path.exists()})\n"
+            f"Failed to load Nemotron-PII dataset from any source.\n"
+            f"  Cache path: {cache_path} (exists={cache_path.exists()})\n"
             "Ensure the 'datasets' package is installed:\n"
             "  pip install 'openlabels[benchmark]'"
         )
