@@ -138,7 +138,27 @@ class BaseService:
         from openlabels.exceptions import NotFoundError
 
         entity = await self._session.get(model_class, entity_id)
-        if not entity or getattr(entity, "tenant_id", None) != self.tenant_id:
+        if entity is not None and getattr(entity, "tenant_id", None) != self.tenant_id:
+            # Entity exists but belongs to a different tenant -- security event
+            from openlabels.server.security import log_security_event
+
+            log_security_event(
+                event_type="cross_tenant_access_denied",
+                details={
+                    "resource_type": model_class.__name__,
+                    "resource_id": str(entity_id),
+                    "requesting_tenant_id": str(self.tenant_id),
+                    "owning_tenant_id": str(getattr(entity, "tenant_id", None)),
+                    "user_id": str(self.user_id) if self.user_id else None,
+                },
+                level="warning",
+            )
+            raise NotFoundError(
+                message=f"{entity_name} not found",
+                resource_type=model_class.__name__,
+                resource_id=str(entity_id),
+            )
+        if entity is None:
             raise NotFoundError(
                 message=f"{entity_name} not found",
                 resource_type=model_class.__name__,

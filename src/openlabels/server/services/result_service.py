@@ -16,10 +16,46 @@ from sqlalchemy import case, delete, func, select
 
 from openlabels.core.types import RiskTier
 from openlabels.server.models import ScanResult
+from openlabels.server.security import log_security_event
 from openlabels.server.services.base import BaseService
 
 # Default chunk size for streaming operations
 DEFAULT_CHUNK_SIZE = 1000
+
+# Allowlist of ScanResult field names that may be used for sorting, filtering,
+# or export via getattr().  Any user-supplied field name MUST be validated
+# against this set before being passed to getattr() to prevent access to
+# internal model attributes (e.g. __dict__, _sa_instance_state).
+ALLOWED_RESULT_FIELDS: frozenset[str] = frozenset({
+    "id",
+    "tenant_id",
+    "job_id",
+    "file_path",
+    "file_name",
+    "file_size",
+    "file_modified",
+    "content_hash",
+    "adapter_item_id",
+    "risk_score",
+    "risk_tier",
+    "content_score",
+    "exposure_multiplier",
+    "co_occurrence_rules",
+    "exposure_level",
+    "owner",
+    "entity_counts",
+    "total_entities",
+    "findings",
+    "policy_violations",
+    "current_label_id",
+    "current_label_name",
+    "recommended_label_id",
+    "recommended_label_name",
+    "label_applied",
+    "label_applied_at",
+    "label_error",
+    "scanned_at",
+})
 
 
 class ResultService(BaseService):
@@ -167,6 +203,18 @@ class ResultService(BaseService):
                 "label_applied",
             ]
 
+        # Validate all requested fields against the allowlist to prevent
+        # access to internal model attributes via getattr().
+        invalid_fields = set(fields) - ALLOWED_RESULT_FIELDS
+        if invalid_fields:
+            from openlabels.exceptions import ValidationError
+
+            raise ValidationError(
+                message=f"Invalid field names: {', '.join(sorted(invalid_fields))}",
+                field="fields",
+                reason=f"Allowed fields: {', '.join(sorted(ALLOWED_RESULT_FIELDS))}",
+            )
+
         self._log_debug(
             f"Starting dict stream job_id={job_id} fields={len(fields)} chunk_size={chunk_size}"
         )
@@ -237,9 +285,22 @@ class ResultService(BaseService):
                 return ResultResponse.model_validate(result)
         """
         result = await self.session.get(ScanResult, result_id)
-        if result and result.tenant_id == self.tenant_id:
-            return result
-        return None
+        if result is None:
+            return None
+        if result.tenant_id != self.tenant_id:
+            log_security_event(
+                event_type="cross_tenant_access_denied",
+                details={
+                    "resource_type": "ScanResult",
+                    "resource_id": str(result_id),
+                    "requesting_tenant_id": str(self.tenant_id),
+                    "owning_tenant_id": str(result.tenant_id),
+                    "user_id": str(self.user_id) if self.user_id else None,
+                },
+                level="warning",
+            )
+            return None
+        return result
 
     async def list_results(
         self,
