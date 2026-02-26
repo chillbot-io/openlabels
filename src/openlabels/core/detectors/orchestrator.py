@@ -562,6 +562,7 @@ class DetectorOrchestrator:
         if len(spans) < 2:
             return spans
 
+        from bisect import bisect_left
         from ..benchmark.entity_mapping import EVAL_CATEGORIES
 
         def _entity_group(entity_type: str) -> str:
@@ -571,6 +572,12 @@ class DetectorOrchestrator:
 
         boosted_indices: set[int] = set()
         result = list(spans)
+
+        # Build a position-based index to avoid O(n^2) all-pairs comparison.
+        # Sort span indices by start position; for each span_a we only need to
+        # check spans whose start < span_a.end (necessary for overlap).
+        sorted_indices = sorted(range(len(spans)), key=lambda k: spans[k].start)
+        sorted_starts = [spans[k].start for k in sorted_indices]
 
         for i, span_a in enumerate(spans):
             if i in boosted_indices:
@@ -583,8 +590,20 @@ class DetectorOrchestrator:
             agreeing_weight: float = 0.0
             agreeing_detectors: set[str] = set()
             min_raw = 1.0
-            for j, span_b in enumerate(spans):
-                if i == j or span_a.detector == span_b.detector:
+
+            # Find the range of spans that could overlap with span_a.
+            # A span_b overlaps span_a iff span_b.start < span_a.end
+            # AND span_a.start < span_b.end.  We use the sorted index
+            # to limit candidates to those with start < span_a.end.
+            right_bound = bisect_left(sorted_starts, span_a.end)
+            for idx in range(right_bound):
+                j = sorted_indices[idx]
+                if i == j or span_a.detector == spans[j].detector:
+                    continue
+                span_b = spans[j]
+                # Second half of the overlap check (sorted index
+                # already guarantees span_b.start < span_a.end).
+                if span_a.start >= span_b.end:
                     continue
                 if span_b.detector in excluded_detectors:
                     # Check if this is a partial detector for this category
@@ -593,8 +612,6 @@ class DetectorOrchestrator:
                         and group_a in self._PARTIAL_VOTE_CATEGORIES
                     ):
                         # Partial vote: counts as 0.5x weight
-                        if not span_a.overlaps(span_b):
-                            continue
                         group_b = _entity_group(span_b.entity_type)
                         if group_a != group_b:
                             continue
@@ -602,8 +619,6 @@ class DetectorOrchestrator:
                         agreeing_weight += self._PARTIAL_VOTE_WEIGHT
                         raw_b = span_b.raw_confidence if span_b.raw_confidence is not None else span_b.confidence
                         min_raw = min(min_raw, raw_b)
-                    continue
-                if not span_a.overlaps(span_b):
                     continue
                 group_b = _entity_group(span_b.entity_type)
                 if group_a != group_b:
@@ -654,8 +669,8 @@ class DetectorOrchestrator:
             )
             boosted_indices.add(i)
             logger.debug(
-                "Ensemble boost: %s %r %.3f→%.3f (+%.3f, %.1f effective detectors: %s)",
-                span_a.entity_type, span_a.text,
+                "Ensemble boost: %s@%d-%d %.3f->%.3f (+%.3f, %.1f effective detectors: %s)",
+                span_a.entity_type, span_a.start, span_a.end,
                 span_a.confidence, new_conf, boost, n_agree,
                 ", ".join(sorted(agreeing_detectors)),
             )
