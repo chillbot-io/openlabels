@@ -10,7 +10,8 @@ auth:
 
 # Server settings
 server:
-  host: "0.0.0.0"
+  # SECURITY: Default binds to localhost only. Use "0.0.0.0" only behind a reverse proxy.
+  host: "127.0.0.1"
   port: 8000
 
 # Database (uses Docker PostgreSQL by default)
