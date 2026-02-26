@@ -819,8 +819,9 @@ async def get_error_log(
 
 # ── System alert configuration ───────────────────────────────────────
 
-# In-memory alert rules store (production: persist in DB or config)
-_system_alert_rules: dict[str, dict] = {}
+# In-memory alert rules store keyed by tenant_id for isolation
+# (production: persist in DB or config per-tenant)
+_system_alert_rules: dict[UUID, dict[str, dict]] = {}
 
 VALID_ALERT_COMPONENTS = {"api", "db", "queue", "redis", "worker", "task", "disk", "memory", "cpu"}
 VALID_ALERT_CONDITIONS = {"unhealthy", "threshold_exceeded", "offline"}
@@ -855,8 +856,9 @@ class SystemAlertRuleCreate(BaseModel):
 async def list_system_alerts(
     user=Depends(get_current_user),
 ) -> list[SystemAlertRule]:
-    """List configured system alert rules."""
-    return [SystemAlertRule(**rule) for rule in _system_alert_rules.values()]
+    """List configured system alert rules for the current tenant."""
+    tenant_rules = _system_alert_rules.get(user.tenant_id, {})
+    return [SystemAlertRule(**rule) for rule in tenant_rules.values()]
 
 
 @router.post("/alerts", response_model=SystemAlertRule, status_code=201)
@@ -890,7 +892,7 @@ async def create_system_alert(
         "enabled": body.enabled,
         "created_at": now,
     }
-    _system_alert_rules[rule_id] = rule_data
+    _system_alert_rules.setdefault(user.tenant_id, {})[rule_id] = rule_data
     return SystemAlertRule(**rule_data)
 
 
@@ -900,9 +902,10 @@ async def delete_system_alert(
     user=Depends(require_admin),
 ) -> None:
     """Delete a system alert rule."""
-    if alert_id not in _system_alert_rules:
+    tenant_rules = _system_alert_rules.get(user.tenant_id, {})
+    if alert_id not in tenant_rules:
         raise HTTPException(status_code=404, detail="Alert rule not found")
-    del _system_alert_rules[alert_id]
+    del tenant_rules[alert_id]
 
 
 @router.put("/alerts/{alert_id}", response_model=SystemAlertRule)
@@ -912,7 +915,8 @@ async def update_system_alert(
     user=Depends(require_admin),
 ) -> SystemAlertRule:
     """Update a system alert rule."""
-    if alert_id not in _system_alert_rules:
+    tenant_rules = _system_alert_rules.get(user.tenant_id, {})
+    if alert_id not in tenant_rules:
         raise HTTPException(status_code=404, detail="Alert rule not found")
     if body.component not in VALID_ALERT_COMPONENTS:
         raise HTTPException(
@@ -920,7 +924,7 @@ async def update_system_alert(
             detail=f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
         )
 
-    rule = _system_alert_rules[alert_id]
+    rule = tenant_rules[alert_id]
     rule.update({
         "name": body.name,
         "component": body.component,

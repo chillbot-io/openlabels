@@ -20,6 +20,7 @@ from openlabels.server.dependencies import (
     TenantContextDep,
 )
 from openlabels.server.errors import ErrorCode, raise_database_error
+from openlabels.server.routes import audit_log
 from openlabels.server.utils import get_client_ip
 
 from slowapi import Limiter
@@ -348,10 +349,20 @@ async def get_result(
 async def clear_all_results(
     request: Request,
     result_service: ResultServiceDep,
+    db: DbSessionDep,
     _admin: AdminContextDep,
 ):
     """Clear all scan results for the tenant."""
     deleted_count = await result_service.delete_results(job_id=None)
+
+    audit_log(
+        db,
+        tenant_id=_admin.tenant_id,
+        user_id=_admin.user_id,
+        action="results_cleared",
+        resource_type="ScanResult",
+        details={"deleted_count": deleted_count},
+    )
 
     return {"deleted_count": deleted_count}
 
@@ -367,16 +378,15 @@ async def delete_result(
 ):
     """Delete a single scan result."""
 
-    result = await result_service.get_result(result_id)
-    if not result:
+    deleted = await result_service.delete_result(result_id)
+    if not deleted:
         raise NotFoundError(
             message="Result not found",
             resource_type="ScanResult",
             resource_id=str(result_id),
         )
 
-    file_name = result.file_name
-    await db.delete(result)
+    file_name = deleted.file_name
     await db.commit()
 
     return JSONResponse(status_code=200, content={"message": f'Result for "{file_name}" deleted'})

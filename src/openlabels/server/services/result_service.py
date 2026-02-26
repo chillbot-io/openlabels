@@ -342,6 +342,31 @@ class ResultService(BaseService):
 
         return deleted_count
 
+    async def delete_result(self, result_id: UUID) -> ScanResult | None:
+        """
+        Delete a single scan result by ID.
+
+        Args:
+            result_id: The UUID of the scan result to delete.
+
+        Returns:
+            The deleted ScanResult if found and belongs to tenant, None otherwise.
+
+        Example:
+            deleted = await service.delete_result(result_id)
+            if deleted:
+                await session.commit()
+        """
+        result = await self.get_result(result_id)
+        if result is None:
+            return None
+
+        await self.session.delete(result)
+        await self.session.flush()
+
+        self._log_info(f"Deleted result result_id={result_id}")
+        return result
+
     # STATISTICS (Efficient SQL Aggregation)
     async def get_stats(self, job_id: UUID | None = None) -> dict:
         """

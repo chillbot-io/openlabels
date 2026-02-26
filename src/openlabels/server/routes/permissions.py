@@ -495,6 +495,12 @@ async def get_folder_tree(
     them as a nested tree structure. Each node carries its derived
     exposure level so the frontend can render badges.
     """
+    # Limit the number of rows loaded into memory to prevent OOM on
+    # large directory trees.  10 000 nodes is sufficient for rendering
+    # a usable tree; callers that need deeper exploration should use
+    # the ``parent_id`` parameter to paginate subtrees.
+    _FOLDER_TREE_ROW_LIMIT = 10_000
+
     stmt = (
         select(
             DirectoryTree.id,
@@ -512,6 +518,7 @@ async def get_folder_tree(
         .where(DirectoryTree.tenant_id == tenant.tenant_id)
         .where(DirectoryTree.target_id == target_id)
         .order_by(DirectoryTree.dir_name)
+        .limit(_FOLDER_TREE_ROW_LIMIT)
     )
 
     rows = (await db.execute(stmt)).all()
