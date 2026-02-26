@@ -330,9 +330,14 @@ class TestAuthenticationBypass:
         finally:
             app.dependency_overrides.clear()
 
-    @pytest.mark.skip(reason="Requires full Azure AD configuration to test token validation")
     async def test_invalid_bearer_token_rejected(self, test_db):
-        """Invalid JWT tokens should be rejected in production mode."""
+        """Invalid JWT tokens should be rejected in production mode.
+
+        The token validation pipeline rejects malformed tokens regardless
+        of whether Azure AD is fully configured -- validate_token raises
+        ValueError or TokenInvalidError for garbage input, and
+        get_current_user converts those to 401.
+        """
         from unittest.mock import patch, MagicMock
 
         mock_settings = MagicMock()
