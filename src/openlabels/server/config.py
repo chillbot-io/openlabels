@@ -29,6 +29,11 @@ class ServerSettings(BaseSettings):
     debug: bool = False
     environment: Literal["development", "staging", "production"] = "development"
 
+    # Secret key for encrypting credentials stored in the database.
+    # Required for credential encryption (SavedCredential and ScanTarget.config).
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    secret_key: str = ""
+
 
 class DatabaseSettings(BaseSettings):
     """Database configuration.
