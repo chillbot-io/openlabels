@@ -237,6 +237,156 @@ class TestDecorator:
 
         assert cb.stats.failed_calls == 1
 
+    @pytest.mark.asyncio
+    async def test_decorator_blocks_when_open(self):
+        config = CircuitBreakerConfig(failure_threshold=1, recovery_timeout=60.0)
+        cb = CircuitBreaker("test", config=config)
+
+        @cb
+        async def my_func():
+            return 42
+
+        # Open the circuit
+        await cb.record_failure()
+        assert cb.is_open
+
+        with pytest.raises(CircuitOpenError):
+            await my_func()
+
+    @pytest.mark.asyncio
+    async def test_decorator_preserves_function_name(self):
+        cb = CircuitBreaker("test")
+
+        @cb
+        async def my_special_func():
+            """Docstring."""
+            return True
+
+        assert my_special_func.__name__ == "my_special_func"
+        assert my_special_func.__doc__ == "Docstring."
+
+
+class TestSyncDecorator:
+    """Tests for @circuit_breaker decorator on sync functions (H-B2 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_records_success(self):
+        cb = CircuitBreaker("test")
+
+        @cb
+        def my_sync_func():
+            return 42
+
+        result = await my_sync_func()
+        assert result == 42
+        assert cb.stats.successful_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_records_failure(self):
+        cb = CircuitBreaker("test")
+
+        @cb
+        def my_sync_func():
+            raise RuntimeError("sync fail")
+
+        with pytest.raises(RuntimeError):
+            await my_sync_func()
+
+        assert cb.stats.failed_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_returns_value_not_coroutine(self):
+        """Sync functions should return the value directly, not a coroutine."""
+        cb = CircuitBreaker("test")
+
+        @cb
+        def my_sync_func():
+            return "hello"
+
+        result = await my_sync_func()
+        # The result must be the plain string, not a coroutine object
+        assert result == "hello"
+        assert isinstance(result, str)
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_blocks_when_open(self):
+        config = CircuitBreakerConfig(failure_threshold=1, recovery_timeout=60.0)
+        cb = CircuitBreaker("test", config=config)
+
+        @cb
+        def my_sync_func():
+            return 42
+
+        await cb.record_failure()
+        assert cb.is_open
+
+        with pytest.raises(CircuitOpenError):
+            await my_sync_func()
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_preserves_function_name(self):
+        cb = CircuitBreaker("test")
+
+        @cb
+        def my_sync_function():
+            """Sync docstring."""
+            return True
+
+        assert my_sync_function.__name__ == "my_sync_function"
+        assert my_sync_function.__doc__ == "Sync docstring."
+
+    @pytest.mark.asyncio
+    async def test_sync_decorator_excluded_exceptions(self):
+        config = CircuitBreakerConfig(
+            failure_threshold=1,
+            exclude_exceptions=(ValueError,),
+        )
+        cb = CircuitBreaker("test", config=config)
+
+        @cb
+        def my_sync_func():
+            raise ValueError("expected")
+
+        with pytest.raises(ValueError):
+            await my_sync_func()
+
+        # ValueError should be excluded - counted as success
+        assert cb.stats.successful_calls == 1
+        assert cb.stats.failed_calls == 0
+        assert cb.state == CircuitState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_sync_and_async_distinguished(self):
+        """Ensure sync and async functions are handled with different code paths."""
+        cb = CircuitBreaker("test")
+
+        @cb
+        def sync_func():
+            return "sync"
+
+        @cb
+        async def async_func():
+            return "async"
+
+        sync_result = await sync_func()
+        async_result = await async_func()
+
+        assert sync_result == "sync"
+        assert async_result == "async"
+        assert cb.stats.successful_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_sync_func_with_args_and_kwargs(self):
+        cb = CircuitBreaker("test")
+
+        @cb
+        def my_sync_func(a, b, multiplier=1):
+            return (a + b) * multiplier
+
+        result = await my_sync_func(3, 4, multiplier=2)
+        assert result == 14
+        assert cb.stats.successful_calls == 1
+
 
 class TestTimeUntilRecovery:
     """Tests for time_until_recovery property."""

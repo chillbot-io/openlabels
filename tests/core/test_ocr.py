@@ -4,11 +4,16 @@ Tests cover:
 - clean_ocr_text function (OCR artifact cleanup)
 - OCRBlock dataclass (bounding boxes)
 - OCRResult dataclass (text-to-coordinate mapping)
-- OCREngine initialization and availability checks
+- OCREngine initialization, warm-up, background loading
+- OCREngine extract_text / extract_text_with_confidence / extract_with_coordinates (mocked)
+- IntervalTree fallback in OCRResult
+- Fallback behavior when OCR libraries unavailable
 """
 
+import threading
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock, patch, PropertyMock
 
 from openlabels.core.ocr import (
     clean_ocr_text,
@@ -326,3 +331,388 @@ class TestProcessorOCRIntegration:
 
         # Large image: rejected
         assert not processor.can_process("test.png", 2000)
+
+
+# =============================================================================
+# OCR RESULT INTERVAL TREE FALLBACK TESTS
+# =============================================================================
+
+class TestOCRResultLinearFallback:
+    """Tests for OCRResult.get_blocks_for_span linear fallback (no IntervalTree)."""
+
+    def test_linear_fallback_when_no_interval_tree(self):
+        """When IntervalTree is None, linear search is used."""
+        block = OCRBlock("hello", [[0, 0], [50, 0], [50, 20], [0, 20]], 0.90)
+        result = OCRResult(
+            full_text="hello",
+            blocks=[block],
+            offset_map=[(0, 5, 0)],
+            confidence=0.90,
+        )
+        # Force linear fallback
+        result._interval_tree = None
+
+        found = result.get_blocks_for_span(0, 5)
+        assert len(found) == 1
+        assert found[0].text == "hello"
+
+    def test_linear_fallback_no_overlap(self):
+        """Linear fallback returns empty when no overlap."""
+        block = OCRBlock("hello", [[0, 0], [50, 0], [50, 20], [0, 20]], 0.90)
+        result = OCRResult(
+            full_text="hello",
+            blocks=[block],
+            offset_map=[(0, 5, 0)],
+            confidence=0.90,
+        )
+        result._interval_tree = None
+
+        found = result.get_blocks_for_span(10, 15)
+        assert len(found) == 0
+
+    def test_linear_fallback_partial_overlap(self):
+        """Linear fallback correctly handles partial overlaps."""
+        blocks = [
+            OCRBlock("AAA", [[0, 0], [30, 0], [30, 20], [0, 20]], 0.90),
+            OCRBlock("BBB", [[40, 0], [70, 0], [70, 20], [40, 20]], 0.90),
+            OCRBlock("CCC", [[80, 0], [110, 0], [110, 20], [80, 20]], 0.90),
+        ]
+        result = OCRResult(
+            full_text="AAA BBB CCC",
+            blocks=blocks,
+            offset_map=[(0, 3, 0), (4, 7, 1), (8, 11, 2)],
+            confidence=0.90,
+        )
+        result._interval_tree = None
+
+        # Overlap with second and third block
+        found = result.get_blocks_for_span(5, 10)
+        assert len(found) == 2
+        texts = {b.text for b in found}
+        assert texts == {"BBB", "CCC"}
+
+    def test_interval_tree_built_on_construction(self):
+        """IntervalTree is built during __post_init__ when available."""
+        block = OCRBlock("test", [[0, 0], [40, 0], [40, 20], [0, 20]], 0.90)
+        result = OCRResult(
+            full_text="test",
+            blocks=[block],
+            offset_map=[(0, 4, 0)],
+            confidence=0.90,
+        )
+        # IntervalTree should be set if the library is available
+        try:
+            from intervaltree import IntervalTree
+            assert result._interval_tree is not None
+        except ImportError:
+            assert result._interval_tree is None
+
+
+# =============================================================================
+# OCR ENGINE MOCKED TESTS
+# =============================================================================
+
+class TestOCREngineMocked:
+    """Tests for OCREngine using mocked RapidOCR."""
+
+    def _make_engine_with_mock_ocr(self):
+        """Create an OCREngine with a mocked RapidOCR instance."""
+        engine = OCREngine(models_dir=Path("/fake/models"))
+        mock_ocr = MagicMock()
+        engine._ocr = mock_ocr
+        engine._initialized = True
+        return engine, mock_ocr
+
+    def test_extract_text_no_result(self):
+        """extract_text returns empty string when OCR finds nothing."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (None, None)
+
+        result = engine.extract_text("fake_image")
+        assert result == ""
+
+    def test_extract_text_single_block(self):
+        """extract_text returns text from a single OCR block."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        # RapidOCR returns: [(bbox, text, confidence), ...]
+        mock_ocr.return_value = (
+            [([[0, 0], [100, 0], [100, 20], [0, 20]], "Hello World", 0.95)],
+            None,
+        )
+
+        result = engine.extract_text("fake_image")
+        assert "Hello World" in result
+
+    def test_extract_text_multiple_blocks_same_line(self):
+        """Blocks on the same line are joined by spaces."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [
+                ([[0, 0], [50, 0], [50, 20], [0, 20]], "Hello", 0.95),
+                ([[60, 0], [120, 0], [120, 20], [60, 20]], "World", 0.93),
+            ],
+            None,
+        )
+
+        result = engine.extract_text("fake_image")
+        assert "Hello" in result
+        assert "World" in result
+
+    def test_extract_text_multiple_lines(self):
+        """Blocks on different lines are joined by newlines."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [
+                ([[0, 0], [100, 0], [100, 20], [0, 20]], "Line One", 0.95),
+                ([[0, 100], [100, 100], [100, 120], [0, 120]], "Line Two", 0.90),
+            ],
+            None,
+        )
+
+        result = engine.extract_text("fake_image")
+        assert "Line One" in result
+        assert "Line Two" in result
+        assert "\n" in result
+
+    def test_extract_text_applies_clean_ocr_text(self):
+        """extract_text applies clean_ocr_text to the output."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [([[0, 0], [100, 0], [100, 20], [0, 20]], "15SEX:M", 0.90)],
+            None,
+        )
+
+        result = engine.extract_text("fake_image")
+        # clean_ocr_text should fix "15SEX:M" -> "15 SEX: M"
+        assert "15 SEX: M" in result
+
+    def test_extract_text_path_converted_to_string(self):
+        """Path objects are converted to strings before passing to RapidOCR."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (None, None)
+
+        engine.extract_text(Path("/some/image.png"))
+        # Verify it was called with a string, not a Path
+        call_args = mock_ocr.call_args[0][0]
+        assert isinstance(call_args, str)
+
+    def test_extract_text_with_confidence_no_result(self):
+        """extract_text_with_confidence returns empty text and 0.0 confidence for no results."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (None, None)
+
+        text, confidence = engine.extract_text_with_confidence("fake_image")
+        assert text == ""
+        assert confidence == 0.0
+
+    def test_extract_text_with_confidence_returns_average(self):
+        """extract_text_with_confidence returns average of block confidences."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [
+                ([[0, 0], [50, 0], [50, 20], [0, 20]], "Hello", 0.80),
+                ([[60, 0], [120, 0], [120, 20], [60, 20]], "World", 0.90),
+            ],
+            None,
+        )
+
+        text, confidence = engine.extract_text_with_confidence("fake_image")
+        assert "Hello" in text
+        assert "World" in text
+        assert abs(confidence - 0.85) < 0.01  # Average of 0.80 and 0.90
+
+    def test_extract_with_coordinates_no_result(self):
+        """extract_with_coordinates returns empty OCRResult for no results."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (None, None)
+
+        result = engine.extract_with_coordinates("fake_image")
+        assert isinstance(result, OCRResult)
+        assert result.full_text == ""
+        assert result.blocks == []
+        assert result.offset_map == []
+        assert result.confidence == 0.0
+
+    def test_extract_with_coordinates_builds_offset_map(self):
+        """extract_with_coordinates builds a correct offset map."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [
+                ([[0, 0], [50, 0], [50, 20], [0, 20]], "Hello", 0.95),
+                ([[60, 0], [120, 0], [120, 20], [60, 20]], "World", 0.93),
+            ],
+            None,
+        )
+
+        result = engine.extract_with_coordinates("fake_image")
+        assert isinstance(result, OCRResult)
+        assert len(result.blocks) == 2
+        assert result.blocks[0].text == "Hello"
+        assert result.blocks[1].text == "World"
+        # Offset map should have 2 entries
+        assert len(result.offset_map) == 2
+        # First block starts at 0
+        assert result.offset_map[0][0] == 0
+        assert result.offset_map[0][1] == 5  # len("Hello")
+        # Average confidence
+        assert abs(result.confidence - 0.94) < 0.01
+
+    def test_extract_with_coordinates_multiline(self):
+        """extract_with_coordinates handles multi-line text."""
+        engine, mock_ocr = self._make_engine_with_mock_ocr()
+        mock_ocr.return_value = (
+            [
+                ([[0, 0], [50, 0], [50, 20], [0, 20]], "Line1", 0.95),
+                ([[0, 100], [50, 100], [50, 120], [0, 120]], "Line2", 0.90),
+            ],
+            None,
+        )
+
+        result = engine.extract_with_coordinates("fake_image")
+        assert "\n" in result.full_text
+        assert "Line1" in result.full_text
+        assert "Line2" in result.full_text
+
+
+class TestOCREngineWarmUp:
+    """Tests for OCR engine warm-up behavior."""
+
+    def test_warm_up_no_numpy(self):
+        """warm_up returns False when numpy not available."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        with patch("openlabels.core.ocr.np", None):
+            result = engine.warm_up()
+        assert result is False
+
+    def test_warm_up_success(self):
+        """warm_up returns True when engine initializes and runs dummy inference."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        mock_ocr = MagicMock()
+        engine._ocr = mock_ocr
+        engine._initialized = True
+        mock_ocr.return_value = (None, None)
+
+        result = engine.warm_up()
+        assert result is True
+        # Should have been called with a tiny numpy array
+        mock_ocr.assert_called_once()
+
+    def test_warm_up_failure_returns_false(self):
+        """warm_up returns False if inference fails."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        mock_ocr = MagicMock()
+        mock_ocr.side_effect = RuntimeError("inference failed")
+        engine._ocr = mock_ocr
+        engine._initialized = True
+
+        result = engine.warm_up()
+        assert result is False
+
+
+class TestOCREngineBackgroundLoading:
+    """Tests for OCR engine background loading."""
+
+    def test_start_loading_sets_loading_flag(self):
+        """start_loading sets _loading flag and starts background thread."""
+        engine = OCREngine(models_dir=Path("/fake"))
+
+        # Mock _ensure_initialized to avoid actual initialization
+        # and warm_up to be a no-op
+        with patch.object(engine, '_ensure_initialized'), \
+             patch.object(engine, 'warm_up'):
+            engine.start_loading()
+            # Wait for the thread to complete
+            engine._ready_event.wait(timeout=5)
+
+        assert engine._loading is True
+
+    def test_start_loading_idempotent(self):
+        """Calling start_loading twice doesn't start two threads."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        engine._initialized = True  # Prevent actual loading
+
+        with patch.object(engine, '_ensure_initialized'), \
+             patch.object(engine, 'warm_up'):
+            engine.start_loading()
+            engine._ready_event.wait(timeout=5)
+            engine.start_loading()  # Should be a no-op
+
+    def test_await_ready_when_already_initialized(self):
+        """await_ready returns True immediately when already initialized."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        engine._initialized = True
+
+        result = engine.await_ready(timeout=1.0)
+        assert result is True
+
+    def test_await_ready_starts_loading_if_not_started(self):
+        """await_ready starts loading if not already started."""
+        engine = OCREngine(models_dir=Path("/fake"))
+
+        with patch.object(engine, '_ensure_initialized'), \
+             patch.object(engine, 'warm_up'):
+            result = engine.await_ready(timeout=5.0)
+
+        assert result is True
+
+    def test_await_ready_propagates_load_error(self):
+        """await_ready re-raises errors from background loading."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        engine._load_error = ImportError("rapidocr not found")
+        engine._ready_event.set()
+        engine._loading = True
+
+        with pytest.raises(ImportError, match="rapidocr not found"):
+            engine.await_ready(timeout=1.0)
+
+    def test_is_loading_property(self):
+        """is_loading is True while loading and False after."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        engine._loading = True
+        engine._initialized = False
+        assert engine.is_loading is True
+
+        engine._initialized = True
+        assert engine.is_loading is False
+
+
+class TestOCREngineAvailability:
+    """Tests for OCR engine availability checks."""
+
+    def test_is_available_with_custom_models(self, tmp_path):
+        """is_available returns True when custom model files exist."""
+        rapidocr_dir = tmp_path / "rapidocr"
+        rapidocr_dir.mkdir()
+        (rapidocr_dir / "det.onnx").write_bytes(b"fake")
+        (rapidocr_dir / "rec.onnx").write_bytes(b"fake")
+        (rapidocr_dir / "cls.onnx").write_bytes(b"fake")
+
+        engine = OCREngine(models_dir=tmp_path)
+        assert engine.has_custom_models is True
+        assert engine.is_available is True
+
+    def test_has_custom_models_partial(self, tmp_path):
+        """has_custom_models returns False when only some models present."""
+        rapidocr_dir = tmp_path / "rapidocr"
+        rapidocr_dir.mkdir()
+        (rapidocr_dir / "det.onnx").write_bytes(b"fake")
+        # Missing rec.onnx and cls.onnx
+
+        engine = OCREngine(models_dir=tmp_path)
+        assert engine.has_custom_models is False
+
+    def test_ensure_initialized_raises_when_not_available(self):
+        """_ensure_initialized raises ImportError when OCR not available."""
+        engine = OCREngine(models_dir=Path("/nonexistent"))
+
+        with patch.object(type(engine), 'is_available', new_callable=PropertyMock, return_value=False):
+            with pytest.raises(ImportError, match="OCR engine not available"):
+                engine._ensure_initialized()
+
+    def test_ensure_initialized_skips_when_already_loaded(self):
+        """_ensure_initialized does nothing if _ocr already set."""
+        engine = OCREngine(models_dir=Path("/fake"))
+        engine._ocr = MagicMock()
+
+        # Should not raise even though models don't exist
+        engine._ensure_initialized()

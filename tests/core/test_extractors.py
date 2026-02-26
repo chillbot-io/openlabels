@@ -279,6 +279,8 @@ class TestPDFExtractor:
 
     def test_scanned_page_with_ocr_engine(self):
         """Scanned page with OCR engine calls extract_text on rendered image."""
+        import sys
+
         mock_page = MagicMock()
         mock_page.get_text.return_value = ""  # No native text
 
@@ -295,23 +297,41 @@ class TestPDFExtractor:
 
         mock_ocr = MagicMock()
         mock_ocr.is_available = True
+        # Ensure spec doesn't include extract_text_with_confidence so the
+        # code takes the simpler extract_text path
+        del mock_ocr.extract_text_with_confidence
         mock_ocr.extract_text.return_value = "OCR extracted text"
 
         mock_fitz = MagicMock()
         mock_fitz.open.return_value = mock_doc
 
         mock_pil_image = MagicMock()
+        mock_pil_module = MagicMock()
+        mock_pil_module.frombytes.return_value = mock_pil_image
         mock_np = MagicMock()
         mock_np.array.return_value = "fake_array"
 
-        with patch.dict("sys.modules", {
-            "fitz": mock_fitz,
-            "PIL": MagicMock(),
-            "PIL.Image": MagicMock(frombytes=MagicMock(return_value=mock_pil_image)),
-            "numpy": mock_np,
-        }):
+        saved_fitz = sys.modules.get("fitz")
+        saved_pil = sys.modules.get("PIL")
+        saved_pil_image = sys.modules.get("PIL.Image")
+        saved_np = sys.modules.get("numpy")
+
+        sys.modules["fitz"] = mock_fitz
+        sys.modules["PIL"] = MagicMock(Image=mock_pil_module)
+        sys.modules["PIL.Image"] = mock_pil_module
+        sys.modules["numpy"] = mock_np
+
+        try:
             ext = PDFExtractor(ocr_engine=mock_ocr)
             result = ext.extract(b"fake-pdf", "scanned.pdf")
+        finally:
+            # Restore original modules
+            for key, val in [("fitz", saved_fitz), ("PIL", saved_pil),
+                             ("PIL.Image", saved_pil_image), ("numpy", saved_np)]:
+                if val is None:
+                    sys.modules.pop(key, None)
+                else:
+                    sys.modules[key] = val
 
         assert result.needs_ocr is True
         assert 0 in result.ocr_pages

@@ -245,14 +245,28 @@ class CircuitBreaker:
         return False  # Don't suppress exceptions
 
     def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
-        """Use circuit breaker as decorator."""
+        """Use circuit breaker as decorator.
 
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> T:
-            async with self:
-                return await func(*args, **kwargs)
+        Handles both sync and async functions correctly:
+        - Async functions are awaited inside the circuit breaker context.
+        - Sync functions are called directly (not awaited).
+        """
+        if asyncio.iscoroutinefunction(func):
 
-        return wrapper
+            @wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> T:
+                async with self:
+                    return await func(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
+        else:
+
+            @wraps(func)
+            async def sync_wrapper(*args: Any, **kwargs: Any) -> T:
+                async with self:
+                    return func(*args, **kwargs)
+
+            return sync_wrapper  # type: ignore[return-value]
 
     def get_status(self) -> dict:
         """Get current status for monitoring."""
