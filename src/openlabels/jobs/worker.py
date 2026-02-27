@@ -39,6 +39,29 @@ from openlabels.server.db import get_session_context, init_db
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_redis_url(url: str) -> str:
+    """Mask the password portion of a Redis URL for safe logging.
+
+    Transforms ``redis://:secret@host:6379/0`` into
+    ``redis://:***@host:6379/0``.  Returns the URL unchanged if no
+    password is present or if parsing fails.
+    """
+    try:
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        if parsed.password:
+            # Replace password in netloc
+            masked_netloc = parsed.netloc.replace(
+                f":{parsed.password}@", ":***@", 1
+            )
+            return urlunparse(parsed._replace(netloc=masked_netloc))
+        return url
+    except Exception:
+        return "redis://***"
+
+
 # Worker state configuration
 WORKER_STATE_KEY_PREFIX = "openlabels:worker:state:"
 WORKER_STATE_TTL_SECONDS = 60  # Workers should heartbeat to stay registered
@@ -161,7 +184,7 @@ class WorkerStateManager:
             # Test connection
             await self._redis_client.ping()
             self._redis_connected = True
-            logger.info(f"Worker state manager connected to Redis: {self._redis_url}")
+            logger.info("Worker state manager connected to Redis: %s", _sanitize_redis_url(self._redis_url))
 
         except ImportError:
             logger.warning(

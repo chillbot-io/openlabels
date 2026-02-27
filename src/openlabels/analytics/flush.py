@@ -139,6 +139,8 @@ _FLUSH_BATCH_LIMIT = 50_000
 async def flush_events_to_catalog(
     session: AsyncSession,
     storage: CatalogStorage,
+    *,
+    tenant_id: UUID | None = None,
 ) -> dict[str, int]:
     """
     Export new access events, audit logs, and remediation actions
@@ -148,6 +150,13 @@ async def flush_events_to_catalog(
     millions of rows into memory.  Parquet files are written *before*
     the flush state is updated so that a crash mid-flush does not
     lose data (at worst, the next flush re-exports the same batch).
+
+    Parameters
+    ----------
+    tenant_id:
+        When provided, only flush events belonging to this tenant.
+        This enforces tenant isolation so that each flush operation
+        only processes a single tenant's data.
 
     Returns ``{"access_events": N, "audit_logs": M, "remediation_actions": K}``.
     """
@@ -166,6 +175,9 @@ async def flush_events_to_catalog(
     if last_ae:
         cutoff = datetime.fromisoformat(last_ae)
         ae_query = ae_query.where(FileAccessEvent.collected_at > cutoff)
+    # SECURITY: Scope to a single tenant to prevent cross-tenant data leakage.
+    if tenant_id is not None:
+        ae_query = ae_query.where(FileAccessEvent.tenant_id == tenant_id)
 
     ae_result = await session.execute(ae_query)
     ae_rows = list(ae_result.scalars())
@@ -189,6 +201,9 @@ async def flush_events_to_catalog(
     if last_al:
         cutoff = datetime.fromisoformat(last_al)
         al_query = al_query.where(AuditLog.created_at > cutoff)
+    # SECURITY: Scope to a single tenant to prevent cross-tenant data leakage.
+    if tenant_id is not None:
+        al_query = al_query.where(AuditLog.tenant_id == tenant_id)
 
     al_result = await session.execute(al_query)
     al_rows = list(al_result.scalars())
@@ -209,6 +224,9 @@ async def flush_events_to_catalog(
     if last_ra:
         cutoff = datetime.fromisoformat(last_ra)
         ra_query = ra_query.where(RemediationAction.created_at > cutoff)
+    # SECURITY: Scope to a single tenant to prevent cross-tenant data leakage.
+    if tenant_id is not None:
+        ra_query = ra_query.where(RemediationAction.tenant_id == tenant_id)
 
     ra_result = await session.execute(ra_query)
     ra_rows = list(ra_result.scalars())

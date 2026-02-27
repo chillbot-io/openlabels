@@ -168,6 +168,16 @@ class MLDetector(BaseDetector):
         try:
             from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
+            # Verify model integrity before loading
+            from .model_integrity import verify_model_integrity
+            integrity_ok = verify_model_integrity(self.model_path, model_name=self.name)
+            if not integrity_ok:
+                logger.critical(
+                    "%s: Model integrity verification FAILED for %s. "
+                    "Loading anyway, but this should be investigated.",
+                    self.name, self.model_path,
+                )
+
             # Load tokenizer and model
             self._tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
             self._model = AutoModelForTokenClassification.from_pretrained(str(self.model_path))

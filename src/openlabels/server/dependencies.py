@@ -39,6 +39,7 @@ from openlabels.server.cache import get_cache_manager as _get_cache_manager
 from openlabels.server.config import Settings, load_yaml_config
 from openlabels.server.config import get_settings as _get_settings
 from openlabels.server.db import get_session as _get_session
+from openlabels.server.db import set_rls_tenant_id
 from openlabels.server.middleware.rate_limit import get_tenant_rate_limiter
 from openlabels.server.services.base import TenantContext as ServiceTenantContext
 from openlabels.server.services.job_service import JobService
@@ -124,6 +125,48 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 # Annotated dependency for use in route signatures
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+# TENANT-SCOPED DATABASE SESSION
+async def get_tenant_db_session(
+    user: CurrentUser = Depends(get_current_user),
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get a database session with the RLS tenant context set.
+
+    Combines authentication and database session creation: the session
+    has ``SET LOCAL app.current_tenant_id = '<tenant_id>'`` executed at
+    the start of the transaction so that PostgreSQL Row-Level Security
+    policies can enforce tenant isolation at the database level.
+
+    The ``SET LOCAL`` is transaction-scoped and automatically cleared
+    when the transaction commits or rolls back.
+
+    Use ``TenantDbSessionDep`` as a drop-in replacement for ``DbSessionDep``
+    in routes that require tenant isolation.
+
+    Yields:
+        AsyncSession: An active database session with the RLS tenant
+            context variable set.
+
+    Raises:
+        RuntimeError: If the database has not been initialized.
+        HTTPException: 401 if the user is not authenticated.
+
+    Example:
+        @router.get("/items")
+        async def list_items(db: TenantDbSessionDep) -> list[Item]:
+            # RLS tenant context is already set on this session
+            result = await db.execute(select(Item))
+            return result.scalars().all()
+    """
+    async for session in _get_session():
+        await set_rls_tenant_id(session, user.tenant_id)
+        yield session
+
+
+# Annotated dependency: session with RLS tenant context pre-set
+TenantDbSessionDep = Annotated[AsyncSession, Depends(get_tenant_db_session)]
 
 
 # TENANT CONTEXT
@@ -559,6 +602,8 @@ __all__ = [
     # Database
     "get_db_session",
     "DbSessionDep",
+    "get_tenant_db_session",
+    "TenantDbSessionDep",
     # Tenant context
     "TenantContext",
     "get_tenant_context",

@@ -29,7 +29,7 @@ from openlabels.adapters import (
     S3Adapter,
     SharePointAdapter,
 )
-from openlabels.adapters.base import ExposureLevel, FileInfo
+from openlabels.adapters.base import FileInfo
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT, RISK_TIER_PRIORITY
 from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.types import AdapterType, ExposureLevel, JobStatus
