@@ -1,7 +1,7 @@
 """Add alert_rules table
 
 Revision ID: c1b8df0349fc
-Revises: 8e0ee9ee0126
+Revises: 2fdd60bab56c
 Create Date: 2026-02-27
 
 Adds the ``alert_rules`` table for configurable alert rules that detect
@@ -16,7 +16,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'c1b8df0349fc'
-down_revision: Union[str, Sequence[str]] = '8e0ee9ee0126'
+down_revision: Union[str, Sequence[str]] = '2fdd60bab56c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

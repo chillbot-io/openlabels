@@ -184,6 +184,7 @@ class TestQuarantineBatchMode:
         from openlabels.cli.commands.remediation import quarantine
 
         dest = Path(temp_dir) / "quarantine"
+        dest.mkdir(exist_ok=True)
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
             mock_processor = MagicMock()
@@ -195,7 +196,7 @@ class TestQuarantineBatchMode:
                     "--where", "score > 50",
                     "--scan-path", temp_dir,
                     str(dest),
-                ])
+                ], input="y\n")
 
         assert result.exit_code == 0
         assert "Found" in result.output
@@ -247,6 +248,7 @@ class TestQuarantineBatchMode:
         (subdir / "nested.txt").write_text("SSN: 111-22-3333")
 
         dest = Path(temp_dir) / "quarantine"
+        dest.mkdir(exist_ok=True)
 
         with patch("openlabels.core.processor.FileProcessor") as mock_processor_cls:
             mock_processor = MagicMock()
@@ -259,7 +261,7 @@ class TestQuarantineBatchMode:
                     "--scan-path", temp_dir,
                     "-r",
                     str(dest),
-                ])
+                ], input="y\n")
 
         assert result.exit_code == 0
 
@@ -408,7 +410,7 @@ class TestLockdownBatchMode:
                 result = runner.invoke(lock_down_cmd, [
                     "--where", "tier = HIGH",
                     "--scan-path", temp_dir,
-                ])
+                ], input="y\n")
 
         assert result.exit_code == 0
         assert "Found" in result.output

@@ -188,6 +188,8 @@ class TestValidateToken:
         """In dev mode (provider=none), should return mock claims."""
         mock_settings = MagicMock()
         mock_settings.auth.provider = "none"
+        mock_settings.server.debug = True
+        mock_settings.server.host = "127.0.0.1"
 
         with patch("openlabels.auth.oauth.get_settings", return_value=mock_settings):
             claims = await validate_token("any-token-ignored")
@@ -202,6 +204,8 @@ class TestValidateToken:
         """Dev mode should work with any token string, even empty."""
         mock_settings = MagicMock()
         mock_settings.auth.provider = "none"
+        mock_settings.server.debug = True
+        mock_settings.server.host = "127.0.0.1"
 
         with patch("openlabels.auth.oauth.get_settings", return_value=mock_settings):
             # Even malformed tokens work in dev mode - by design

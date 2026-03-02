@@ -103,6 +103,7 @@ class TestGetCurrentUser:
         mock_settings = MagicMock()
         mock_settings.auth.provider = "none"
         mock_settings.server.debug = True  # Explicit: dev mode requires debug=True
+        mock_settings.server.host = "127.0.0.1"  # Required: dev mode only allowed on localhost
 
         mock_session = AsyncMock()
         mock_user = MagicMock()

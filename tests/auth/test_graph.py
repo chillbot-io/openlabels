@@ -410,51 +410,48 @@ class TestGraphClientRequest:
 
     async def test_request_adds_auth_header(self, client):
         """Requests should include Authorization header."""
-        with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"id": "test"}
-            mock_response.raise_for_status = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": "test"}
+        mock_response.raise_for_status = MagicMock()
 
-            mock_instance = AsyncMock()
-            mock_instance.request.return_value = mock_response
-            MockClient.return_value.__aenter__.return_value = mock_instance
+        mock_http_client = AsyncMock()
+        mock_http_client.request.return_value = mock_response
 
+        with patch.object(client, "_get_http_client", return_value=mock_http_client):
             await client._request("GET", "/users/me")
 
-            call_kwargs = mock_instance.request.call_args[1]
+            call_kwargs = mock_http_client.request.call_args[1]
             assert "Authorization" in call_kwargs["headers"]
             assert call_kwargs["headers"]["Authorization"] == "Bearer test-token"
 
     async def test_request_404_returns_empty_dict(self, client):
         """404 responses should return empty dict, not raise."""
-        with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
-            mock_response = MagicMock()
-            mock_response.status_code = 404
+        mock_response = MagicMock()
+        mock_response.status_code = 404
 
-            mock_instance = AsyncMock()
-            mock_instance.request.return_value = mock_response
-            MockClient.return_value.__aenter__.return_value = mock_instance
+        mock_http_client = AsyncMock()
+        mock_http_client.request.return_value = mock_response
 
+        with patch.object(client, "_get_http_client", return_value=mock_http_client):
             result = await client._request("GET", "/users/nonexistent")
 
             assert result == {}
 
     async def test_request_error_propagates(self, client):
         """Non-404 errors should propagate."""
-        with patch("openlabels.auth.graph.httpx.AsyncClient") as MockClient:
-            mock_response = MagicMock()
-            mock_response.status_code = 500
-            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "Server Error",
-                request=MagicMock(),
-                response=mock_response,
-            )
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error",
+            request=MagicMock(),
+            response=mock_response,
+        )
 
-            mock_instance = AsyncMock()
-            mock_instance.request.return_value = mock_response
-            MockClient.return_value.__aenter__.return_value = mock_instance
+        mock_http_client = AsyncMock()
+        mock_http_client.request.return_value = mock_response
 
+        with patch.object(client, "_get_http_client", return_value=mock_http_client):
             with pytest.raises(httpx.HTTPStatusError):
                 await client._request("GET", "/failing/endpoint")
 

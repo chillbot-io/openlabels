@@ -14,7 +14,6 @@ import base64
 import logging
 import platform
 import re
-import shlex
 import subprocess
 from pathlib import Path
 

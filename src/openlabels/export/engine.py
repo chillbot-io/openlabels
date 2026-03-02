@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterable, AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from datetime import datetime, timezone
 from typing import Any, Union
 from uuid import UUID
