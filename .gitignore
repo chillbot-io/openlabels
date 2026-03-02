@@ -70,6 +70,9 @@ dump.rdb
 # Runtime data (DuckDB/analytics catalog)
 data/
 
+# Model integrity manifest (generated at runtime by TOFU checker)
+model_manifest.json
+
 # Internal audit reports
 test_docs/
 
