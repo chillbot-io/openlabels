@@ -179,15 +179,9 @@ class PolicyService(BaseService):
                     PolicyTargetAssignment.target_id == target_id,
                 )
             )
-            if existing.scalar_one_or_none() is not None:
+            row = existing.scalar_one_or_none()
+            if row is not None:
                 # Already assigned — include in response but don't duplicate
-                row = existing.scalar_one_or_none()
-                # Re-query to get fresh data
-                q = select(PolicyTargetAssignment).where(
-                    PolicyTargetAssignment.policy_id == policy_id,
-                    PolicyTargetAssignment.target_id == target_id,
-                )
-                row = (await self.session.execute(q)).scalar_one()
                 results.append({
                     "id": row.id,
                     "target_id": row.target_id,

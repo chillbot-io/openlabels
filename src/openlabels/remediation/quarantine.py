@@ -344,6 +344,7 @@ def restore_from_quarantine(
     manifest: QuarantineManifest,
     verify_hash: bool = True,
     dry_run: bool = False,
+    quarantine_base: Path | None = None,
 ) -> RemediationResult:
     """Restore a quarantined file to its original location.
 
@@ -353,10 +354,14 @@ def restore_from_quarantine(
         verify_hash: If ``True`` (default), verify the SHA-256 hash of the
             quarantined file matches the hash recorded at quarantine time.
         dry_run: If ``True``, report what would happen without moving.
+        quarantine_base: Expected base directory for quarantined files.
+            Defaults to ``/var/openlabels/quarantine``.
 
     Returns:
         RemediationResult with success/failure status.
     """
+    if quarantine_base is None:
+        quarantine_base = Path("/var/openlabels/quarantine")
 
     entry = manifest.get(entry_id)
     if not entry:
@@ -366,8 +371,36 @@ def restore_from_quarantine(
             error="Quarantine entry not found",
         )
 
-    quarantine_path = Path(entry.quarantine_path)
-    original_path = Path(entry.original_path)
+    # SECURITY: Resolve paths to their canonical forms and validate they
+    # fall within expected directories.  This prevents an attacker from
+    # tampering with manifest entries to read/move arbitrary files via
+    # path traversal (e.g. "../../etc/passwd").
+    quarantine_path = Path(entry.quarantine_path).resolve()
+    original_path = Path(entry.original_path).resolve()
+
+    resolved_qbase = quarantine_base.resolve()
+    if resolved_qbase not in quarantine_path.parents and quarantine_path != resolved_qbase:
+        logger.warning(
+            "Path traversal detected in quarantine_path: %s (base=%s)",
+            entry.quarantine_path,
+            resolved_qbase,
+        )
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=quarantine_path,
+            error="Security error: quarantine path is outside expected quarantine directory",
+        )
+
+    if not manifest.validate_original_path(str(original_path)):
+        logger.warning(
+            "Path traversal detected in original_path: %s",
+            entry.original_path,
+        )
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=quarantine_path,
+            error="Security error: original path is outside allowed base directories",
+        )
 
     if not quarantine_path.exists():
         return RemediationResult.failure(

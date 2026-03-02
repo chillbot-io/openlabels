@@ -33,6 +33,7 @@ Subscription lifecycle:
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from openlabels.adapters.graph_client import GraphClient
@@ -80,7 +81,12 @@ class GraphWebhookProvider:
     ) -> None:
         self._client = graph_client
         self._webhook_url = webhook_url
-        self._client_state = client_state
+        # SECURITY: If no client_state is provided, generate a
+        # cryptographically random token so that notification
+        # validation is always active.  An empty client_state would
+        # disable the check in collect(), allowing forged
+        # notifications to be accepted.
+        self._client_state = client_state or secrets.token_urlsafe(32)
         self._drive_ids = drive_ids or []
 
         # subscription_id → drive_id

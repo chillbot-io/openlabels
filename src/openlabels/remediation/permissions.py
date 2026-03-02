@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import logging
 import platform
+import re
 import subprocess
 from pathlib import Path
 
@@ -26,6 +27,53 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Strict pattern for principal names.
+# Allows alphanumeric characters, dots, hyphens, underscores, and
+# backslash (for DOMAIN\user).  Rejects shell metacharacters like
+# semicolons, pipes, backticks, $(), etc.
+_PRINCIPAL_PATTERN = re.compile(r"^[a-zA-Z0-9._\-\\@/ ]+$")
+_PRINCIPAL_MAX_LENGTH = 256
+
+
+def validate_principal_name(name: str) -> str:
+    """Validate a principal name for safe use in subprocess commands.
+
+    Args:
+        name: The principal name to validate (e.g. "BUILTIN\\Administrators",
+              "root", "user@domain.com").
+
+    Returns:
+        The validated (stripped) principal name.
+
+    Raises:
+        RemediationPermissionError: If the name contains suspicious characters
+            or exceeds the maximum length.
+    """
+    if not name or not name.strip():
+        raise RemediationPermissionError(
+            "Principal name must not be empty", path=None,
+        )
+    name = name.strip()
+    if len(name) > _PRINCIPAL_MAX_LENGTH:
+        raise RemediationPermissionError(
+            f"Principal name exceeds maximum length of {_PRINCIPAL_MAX_LENGTH}: "
+            f"{name[:50]}...",
+            path=None,
+        )
+    if not _PRINCIPAL_PATTERN.match(name):
+        raise RemediationPermissionError(
+            f"Principal name contains invalid characters: {name!r}. "
+            "Only alphanumeric, dots, hyphens, underscores, backslashes, "
+            "at-signs, forward slashes, and spaces are allowed.",
+            path=None,
+        )
+    # Reject null bytes (belt-and-suspenders; regex already excludes them)
+    if "\x00" in name:
+        raise RemediationPermissionError(
+            "Principal name contains null bytes", path=None,
+        )
+    return name
 
 # Default principals when none specified
 DEFAULT_WINDOWS_PRINCIPALS = ["BUILTIN\\Administrators"]
@@ -71,6 +119,11 @@ def lock_down(
             allowed_principals = DEFAULT_WINDOWS_PRINCIPALS
         else:
             allowed_principals = DEFAULT_UNIX_PRINCIPALS
+
+    # SECURITY: Validate all principal names before passing to subprocess
+    # commands.  This prevents command injection via crafted principal names
+    # containing shell metacharacters (e.g. "admin; rm -rf /").
+    allowed_principals = [validate_principal_name(p) for p in allowed_principals]
 
     # Dispatch to platform-specific implementation
     if platform.system() == "Windows":

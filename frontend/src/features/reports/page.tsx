@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog.tsx';
 import { useUIStore } from '@/stores/ui-store.ts';
 import { downloadBlob } from '@/api/endpoints/export.ts';
 import type { QueryResult } from '@/api/types.ts';
+import { SQL_MAX_LENGTH, DANGEROUS_SQL_PATTERNS } from '@/lib/sql-validation.ts';
 
 function ResultsGrid({ result }: { result: QueryResult }) {
   return (
@@ -48,9 +49,6 @@ function ResultsGrid({ result }: { result: QueryResult }) {
     </div>
   );
 }
-
-const SQL_MAX_LENGTH = 10_000;
-const DANGEROUS_SQL_PATTERNS = /\b(DROP|TRUNCATE|DELETE\s+FROM|ALTER|CREATE|INSERT|UPDATE|GRANT|REVOKE)\b/i;
 
 function SQLEditor() {
   const [sql, setSql] = useState('SELECT * FROM scan_results LIMIT 100');
@@ -134,6 +132,7 @@ function SQLEditor() {
 
 function AIAssistant() {
   const [question, setQuestion] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
   const aiQuery = useAIQuery();
   const executeQuery = useExecuteQuery();
   const addToast = useUIStore((s) => s.addToast);
@@ -152,7 +151,20 @@ function AIAssistant() {
       addToast({ level: 'error', message: `Generated SQL exceeds maximum length of ${SQL_MAX_LENGTH} characters` });
       return;
     }
-    executeQuery.mutate(sql, {
+    // SECURITY: Apply the same dangerous-pattern check used for user-entered
+    // SQL. The backend also validates via validate_sql(), but this provides
+    // consistent defense-in-depth for AI-generated queries.
+    if (DANGEROUS_SQL_PATTERNS.test(sql)) {
+      setShowConfirm(true);
+      return;
+    }
+    runGeneratedQuery();
+  };
+
+  const runGeneratedQuery = () => {
+    setShowConfirm(false);
+    if (!aiQuery.data?.sql) return;
+    executeQuery.mutate(aiQuery.data.sql, {
       onError: (err) => addToast({ level: 'error', message: err.message }),
     });
   };
@@ -196,6 +208,15 @@ function AIAssistant() {
           {executeQuery.data && <ResultsGrid result={executeQuery.data} />}
         </div>
       )}
+
+      <ConfirmDialog
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        title="Potentially Dangerous AI-Generated Query"
+        description="The AI-generated SQL contains operations that may modify data (DROP, DELETE, ALTER, etc.). Are you sure you want to execute it?"
+        confirmLabel="Execute Anyway"
+        onConfirm={runGeneratedQuery}
+      />
     </div>
   );
 }

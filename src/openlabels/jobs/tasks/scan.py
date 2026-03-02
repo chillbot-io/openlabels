@@ -29,7 +29,7 @@ from openlabels.adapters import (
     S3Adapter,
     SharePointAdapter,
 )
-from openlabels.adapters.base import ExposureLevel, FileInfo
+from openlabels.adapters.base import FileInfo
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT, RISK_TIER_PRIORITY
 from openlabels.core.policies.engine import get_policy_engine
 from openlabels.core.types import AdapterType, ExposureLevel, JobStatus
@@ -826,7 +826,7 @@ def _get_adapter(adapter_type: str, config: dict):
 
     Args:
         adapter_type: Type of adapter (filesystem, sharepoint, onedrive, s3, gcs)
-        config: Adapter-specific configuration
+        config: Adapter-specific configuration (may contain encrypted credential fields)
 
     Returns:
         Configured adapter instance
@@ -834,6 +834,11 @@ def _get_adapter(adapter_type: str, config: dict):
     Raises:
         AdapterError: If adapter type is unknown or configuration is invalid
     """
+    from openlabels.server.crypto import decrypt_config_credentials
+
+    # Decrypt any encrypted credential fields before passing to adapters
+    config = decrypt_config_credentials(config)
+
     settings = get_settings()
 
     if adapter_type == AdapterType.FILESYSTEM:

@@ -1,5 +1,6 @@
 """Tests for USN Journal provider (Phase I)."""
 
+import logging
 import struct
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,7 @@ from openlabels.monitoring.providers.usn_journal import (
     USN_REASON_CLOSE,
     _reason_to_action,
     _filetime_to_datetime,
+    _resolve_path_via_mft,
     _USN_RECORD_V2_FMT,
     parse_usn_records,
 )
@@ -209,3 +211,84 @@ class TestUSNJournalProvider:
     def test_watched_paths_lowercased(self):
         provider = USNJournalProvider(watched_paths=["C:\\Users\\Test.txt"])
         assert "c:\\users\\test.txt" in provider._watched_paths
+
+
+class TestResolvePathViaMft:
+    """Tests for _resolve_path_via_mft stub function.
+
+    Validates fix for H-B11: the stub should produce paths that clearly
+    indicate unresolved intermediate directories and should log at DEBUG
+    level (not WARNING) to avoid flooding logs.
+    """
+
+    def test_path_includes_unresolved_marker(self):
+        """Stub path should include <UNRESOLVED> to indicate missing directories."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x1234, filename="report.docx", drive_letter="C",
+        )
+        assert "<UNRESOLVED>" in result
+
+    def test_path_includes_drive_letter(self):
+        """Stub path should start with the correct drive letter."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x1234, filename="report.docx", drive_letter="D",
+        )
+        assert result.startswith("D:\\")
+
+    def test_path_includes_filename(self):
+        """Stub path should end with the original filename."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x1234, filename="budget.xlsx", drive_letter="C",
+        )
+        assert result.endswith("budget.xlsx")
+
+    def test_path_format(self):
+        """Stub path should be drive:\\<UNRESOLVED>\\filename."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x5678, filename="test.txt", drive_letter="E",
+        )
+        assert result == "E:\\<UNRESOLVED>\\test.txt"
+
+    def test_logs_at_debug_level_not_warning(self, caplog):
+        """Stub should log at DEBUG level, not WARNING (fix for H-B11 log flooding)."""
+        with caplog.at_level(logging.DEBUG, logger="openlabels.monitoring.providers.usn_journal"):
+            _resolve_path_via_mft(
+                handle=0, parent_ref=0x1234, filename="test.txt", drive_letter="C",
+            )
+
+        # Should have a DEBUG log message
+        debug_messages = [r for r in caplog.records if r.levelno == logging.DEBUG]
+        assert len(debug_messages) >= 1
+        assert "stub" in debug_messages[0].message.lower()
+
+    def test_does_not_log_at_warning_level(self, caplog):
+        """Stub should NOT produce WARNING logs (they flood production logs)."""
+        with caplog.at_level(logging.WARNING, logger="openlabels.monitoring.providers.usn_journal"):
+            _resolve_path_via_mft(
+                handle=0, parent_ref=0x1234, filename="test.txt", drive_letter="C",
+            )
+
+        warning_messages = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_messages) == 0
+
+    def test_different_drive_letters(self):
+        """Path should work correctly for various drive letters."""
+        for drive in ("C", "D", "E", "Z"):
+            result = _resolve_path_via_mft(
+                handle=0, parent_ref=0x1234, filename="file.dat", drive_letter=drive,
+            )
+            assert result.startswith(f"{drive}:\\")
+
+    def test_filename_with_spaces(self):
+        """Filenames with spaces should be preserved."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x1234, filename="my document.docx", drive_letter="C",
+        )
+        assert "my document.docx" in result
+
+    def test_unicode_filename(self):
+        """Unicode filenames should be preserved."""
+        result = _resolve_path_via_mft(
+            handle=0, parent_ref=0x1234, filename="rapport-financi\u00e8re.xlsx", drive_letter="C",
+        )
+        assert "rapport-financi\u00e8re.xlsx" in result

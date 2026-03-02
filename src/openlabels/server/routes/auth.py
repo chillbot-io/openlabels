@@ -25,6 +25,7 @@ Security features:
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -113,8 +114,13 @@ SESSION_COOKIE_NAME = "openlabels_session"
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 SESSION_TTL_SECONDS = SESSION_COOKIE_MAX_AGE
 
-# Per-session lock to prevent concurrent token refresh races
-_refresh_locks: dict[str, asyncio.Lock] = {}
+# Per-session lock to prevent concurrent token refresh races.
+# Use an OrderedDict with a max-size cap to prevent unbounded growth.
+# When the dict exceeds _REFRESH_LOCKS_MAX_SIZE, the oldest entries
+# are evicted.  asyncio.Lock objects are lightweight (~100 bytes),
+# so 10 000 entries is well under 1 MB.
+_REFRESH_LOCKS_MAX_SIZE = 10_000
+_refresh_locks: collections.OrderedDict[str, asyncio.Lock] = collections.OrderedDict()
 
 
 class DevLoginRequest(BaseModel):
@@ -805,6 +811,7 @@ async def logout(
 
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     id_token = None
+    session_data = None
     if session_id:
         session_store = SessionStore(db)
         # Get session data before deleting (for id_token_hint)
@@ -935,12 +942,18 @@ async def get_token(
         # Try to refresh — use a per-session lock to prevent concurrent
         # refresh races (multiple requests for the same user arriving
         # simultaneously could all attempt to refresh the same token).
-        # Per-session lock prevents concurrent refresh races.  We intentionally
-        # do NOT remove the lock after use — eagerly popping while other
-        # coroutines are waiting would let a new request create a second lock,
-        # defeating mutual exclusion.  asyncio.Lock objects are lightweight
-        # (~100 bytes) and sessions have a 7-day TTL, so growth is bounded.
-        lock = _refresh_locks.setdefault(session_id, asyncio.Lock())
+        # Per-session lock prevents concurrent refresh races.  We use an
+        # OrderedDict with LRU eviction so the dict never grows unbounded.
+        # move_to_end keeps recently-used entries alive; oldest entries
+        # are evicted when the dict exceeds _REFRESH_LOCKS_MAX_SIZE.
+        if session_id in _refresh_locks:
+            _refresh_locks.move_to_end(session_id)
+        else:
+            _refresh_locks[session_id] = asyncio.Lock()
+            # Evict oldest entries if over capacity
+            while len(_refresh_locks) > _REFRESH_LOCKS_MAX_SIZE:
+                _refresh_locks.popitem(last=False)
+        lock = _refresh_locks[session_id]
         async with lock:
             # Re-read session after acquiring lock; another request may
             # have already refreshed it.

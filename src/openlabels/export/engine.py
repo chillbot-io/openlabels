@@ -7,15 +7,20 @@ three export modes:
 * ``export_scan`` — export all results from a specific scan job
 * ``export_since_last`` — incremental export since each adapter's cursor
 * ``export_full`` — full or filtered tenant export
+
+All export methods support both ``list[ExportRecord]`` and
+``AsyncIterable[ExportRecord]`` inputs.  When an async iterable is provided,
+records are consumed in chunks so that the full result set never needs to
+reside in memory at once.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Union
 from uuid import UUID
 
 from openlabels.export.adapters.base import ExportRecord, SIEMAdapter
@@ -24,6 +29,36 @@ logger = logging.getLogger(__name__)
 
 # Default batch size for fetching records from the data source.
 _FETCH_BATCH = 1000
+
+# Type alias: callers may pass a plain list **or** an async iterable.
+RecordSource = Union[list[ExportRecord], AsyncIterable[ExportRecord]]
+
+
+async def _iter_chunks(
+    source: RecordSource,
+    batch_size: int = _FETCH_BATCH,
+) -> AsyncIterator[list[ExportRecord]]:
+    """Yield fixed-size chunks from *source*.
+
+    If *source* is a plain ``list`` it is sliced without copying.
+    If it is an ``AsyncIterable`` each chunk is accumulated until
+    *batch_size* records have been collected (or the iterable is
+    exhausted).
+    """
+    if isinstance(source, list):
+        for offset in range(0, len(source), batch_size):
+            chunk = source[offset : offset + batch_size]
+            if chunk:
+                yield chunk
+    else:
+        chunk: list[ExportRecord] = []
+        async for record in source:
+            chunk.append(record)
+            if len(chunk) >= batch_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
 
 
 class ExportEngine:
@@ -52,64 +87,81 @@ class ExportEngine:
         self,
         job_id: UUID,
         tenant_id: UUID,
-        records: list[ExportRecord],
+        records: RecordSource,
     ) -> dict[str, int]:
-        """Export all results from a specific scan job to all adapters."""
+        """Export all results from a specific scan job to all adapters.
+
+        *records* may be a ``list`` or an ``AsyncIterable``; in the latter
+        case records are streamed in chunks to avoid loading everything into
+        memory at once.
+        """
         return await self._dispatch(records)
 
     async def export_since_last(
         self,
         tenant_id: UUID,
-        records: list[ExportRecord],
+        records: RecordSource,
     ) -> dict[str, int]:
         """Export new records to all adapters since their last cursor.
 
-        Returns ``{adapter_name: records_exported}``.
+        Records are consumed in chunks so that the full set is never
+        materialised in memory.  Returns ``{adapter_name: records_exported}``.
         """
-        results: dict[str, int] = {}
-        for adapter in self._adapters:
-            name = adapter.format_name()
-            cursor = self._cursors.get(name)
-            # Filter records newer than this adapter's cursor
-            if cursor:
-                filtered = [r for r in records if r.timestamp > cursor]
-            else:
-                filtered = list(records)
+        results: dict[str, int] = {a.format_name(): 0 for a in self._adapters}
 
-            if not filtered:
-                results[name] = 0
-                continue
+        async for chunk in _iter_chunks(records, _FETCH_BATCH):
+            for adapter in self._adapters:
+                name = adapter.format_name()
+                cursor = self._cursors.get(name)
+                # Filter records newer than this adapter's cursor
+                if cursor:
+                    filtered = [r for r in chunk if r.timestamp > cursor]
+                else:
+                    filtered = list(chunk)
 
-            try:
-                count = await adapter.export_batch(filtered)
-                results[name] = count
-                if filtered:
+                if not filtered:
+                    continue
+
+                try:
+                    count = await adapter.export_batch(filtered)
+                    results[name] += count
                     self._cursors[name] = max(
-                        r.timestamp for r in filtered
+                        self._cursors.get(name, filtered[0].timestamp),
+                        max(r.timestamp for r in filtered),
                     )
-            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
-                logger.error(
-                    "Export to %s failed: %s", name, exc,
-                )
-                results[name] = 0
+                except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
+                    logger.error(
+                        "Export to %s failed: %s", name, exc,
+                    )
 
         return results
 
     async def export_full(
         self,
         tenant_id: UUID,
-        records: list[ExportRecord],
+        records: RecordSource,
         *,
         since: datetime | None = None,
         record_types: list[str] | None = None,
     ) -> dict[str, int]:
-        """Full or filtered export to all adapters."""
-        filtered = records
-        if since:
-            filtered = [r for r in filtered if r.timestamp >= since]
-        if record_types:
-            filtered = [r for r in filtered if r.record_type in record_types]
-        return await self._dispatch(filtered)
+        """Full or filtered export to all adapters.
+
+        Filtering is applied per-chunk so that only matching records are
+        kept in memory at any point.
+        """
+
+        async def _filtered_chunks() -> AsyncIterator[list[ExportRecord]]:
+            """Apply optional filters chunk-by-chunk."""
+            async for chunk in _iter_chunks(records, _FETCH_BATCH):
+                filtered = chunk
+                if since:
+                    filtered = [r for r in filtered if r.timestamp >= since]
+                if record_types:
+                    filtered = [r for r in filtered if r.record_type in record_types]
+                if filtered:
+                    yield filtered
+
+        return await self._dispatch_chunks(_filtered_chunks())
 
     async def test_connections(self) -> dict[str, bool]:
         """Test connectivity for all configured adapters."""
@@ -132,34 +184,40 @@ class ExportEngine:
         }
 
 
-    async def _dispatch(self, records: list[ExportRecord]) -> dict[str, int]:
+    async def _dispatch(self, records: RecordSource) -> dict[str, int]:
         """Send records to all adapters concurrently in batches.
 
-        Records are split into pages of ``_FETCH_BATCH`` size and each
-        page is dispatched to all adapters via ``asyncio.gather`` so
-        adapters run concurrently rather than sequentially.
+        Accepts a ``list`` or ``AsyncIterable``.  Records are consumed in
+        chunks of ``_FETCH_BATCH`` and each chunk is dispatched to all
+        adapters via ``asyncio.gather`` so adapters run concurrently.
         """
+        return await self._dispatch_chunks(_iter_chunks(records, _FETCH_BATCH))
+
+    async def _dispatch_chunks(
+        self, chunks: AsyncIterable[list[ExportRecord]],
+    ) -> dict[str, int]:
+        """Send pre-chunked records to all adapters concurrently."""
         results: dict[str, int] = {a.format_name(): 0 for a in self._adapters}
 
-        # Process records in pages to avoid loading everything into memory
-        for offset in range(0, max(len(records), 1), _FETCH_BATCH):
-            page = records[offset : offset + _FETCH_BATCH]
+        async def _send_to_adapter(
+            adapter: SIEMAdapter, batch: list[ExportRecord],
+        ) -> tuple[str, int]:
+            name = adapter.format_name()
+            try:
+                count = await adapter.export_batch(batch)
+                if batch:
+                    new_max = max(r.timestamp for r in batch)
+                    self._cursors[name] = max(
+                        self._cursors.get(name, new_max), new_max,
+                    )
+                return name, count
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
+                logger.error("Export to %s failed: %s", name, exc)
+                return name, 0
+
+        async for page in chunks:
             if not page:
-                break
-
-            async def _send_to_adapter(adapter: SIEMAdapter, batch: list[ExportRecord]) -> tuple[str, int]:
-                name = adapter.format_name()
-                try:
-                    count = await adapter.export_batch(batch)
-                    if batch:
-                        self._cursors[name] = max(
-                            r.timestamp for r in batch
-                        )
-                    return name, count
-                except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as exc:
-                    logger.error("Export to %s failed: %s", name, exc)
-                    return name, 0
-
+                continue
             adapter_results = await asyncio.gather(
                 *[_send_to_adapter(a, page) for a in self._adapters]
             )

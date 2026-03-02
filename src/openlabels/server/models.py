@@ -25,6 +25,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -377,7 +378,7 @@ class ScanResult(Base):
 
     __tablename__ = "scan_results"
 
-    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     job_id: Mapped[PyUUID] = mapped_column(ForeignKey("scan_jobs.id", ondelete="CASCADE"), nullable=False)
 
@@ -432,6 +433,9 @@ class ScanResult(Base):
     job: Mapped[ScanJob] = relationship(back_populates="results")
 
     __table_args__ = (
+        # Composite PK required by PostgreSQL for partitioned tables:
+        # the partition key (scanned_at) must be part of the primary key.
+        PrimaryKeyConstraint("id", "scanned_at"),
         CheckConstraint("risk_score >= 0 AND risk_score <= 100", name="ck_scan_results_risk_score_range"),
         # Primary query patterns
         Index('ix_scan_results_tenant_risk_time', 'tenant_id', 'risk_tier', 'scanned_at'),
@@ -445,10 +449,7 @@ class ScanResult(Base):
         Index('ix_scan_results_policy_violations', 'policy_violations',
               postgresql_using='gin',
               postgresql_where=text('policy_violations IS NOT NULL')),
-        # Range-partitioned by scanned_at (monthly).  The actual DB primary
-        # key is (id, scanned_at) — required by PostgreSQL for partitioned
-        # tables.  SQLAlchemy keeps id as the sole ORM identity key so that
-        # session.get(ScanResult, uuid) still works (scans all partitions).
+        # Range-partitioned by scanned_at (monthly).
         {"postgresql_partition_by": "RANGE (scanned_at)"},
     )
 
@@ -767,7 +768,7 @@ class FileAccessEvent(Base):
 
     __tablename__ = "file_access_events"
 
-    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), default=generate_uuid)
     tenant_id: Mapped[PyUUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     monitored_file_id: Mapped[PyUUID] = mapped_column(ForeignKey("monitored_files.id", ondelete="CASCADE"), nullable=False)
 
@@ -799,6 +800,9 @@ class FileAccessEvent(Base):
     raw_event: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (
+        # Composite PK required by PostgreSQL for partitioned tables:
+        # the partition key (event_time) must be part of the primary key.
+        PrimaryKeyConstraint("id", "event_time"),
         # Primary query: "who accessed this file recently?"
         Index('ix_access_events_file_time', 'tenant_id', 'file_path', 'event_time'),
         # Secondary query: "what did this user access?"
@@ -865,8 +869,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Secure token
-    tenant_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
-    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    tenant_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"))
+    user_id: Mapped[PyUUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     # Session data (tokens, claims)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)

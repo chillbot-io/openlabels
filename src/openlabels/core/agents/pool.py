@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 AGENT_MEMORY_MB = 400  # ~350MB model + 50MB overhead
 MIN_SYSTEM_MEMORY_MB = 2048  # Keep 2GB free for OS
 from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.path_validation import validate_path
 
 _MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 
@@ -672,11 +673,12 @@ class ScanOrchestrator:
             if self._adapter:
                 content = await self._adapter.read_file(file_info)
             else:
-                file_size = os.path.getsize(file_info.path)
+                validated = validate_path(file_info.path, require_exists=True)
+                file_size = os.path.getsize(validated)
                 if file_size > _MAX_FILE_BYTES:
                     logger.warning("Skipping %s: %d MB exceeds limit", file_info.path, file_size // 1024 // 1024)
                     return
-                with open(file_info.path, 'rb') as f:
+                with open(validated, 'rb') as f:
                     content = f.read()
             content_hash = None
 
@@ -720,11 +722,12 @@ class ScanOrchestrator:
 
     async def _extract_legacy(self, file_path, pool, chunker, extract_text) -> None:
         """Extract and submit via legacy path (file_path string, no delta)."""
-        file_size = os.path.getsize(file_path)
+        validated = validate_path(file_path, require_exists=True)
+        file_size = os.path.getsize(validated)
         if file_size > _MAX_FILE_BYTES:
             logger.warning("Skipping %s: %d MB exceeds limit", file_path, file_size // 1024 // 1024)
             return
-        with open(file_path, 'rb') as f:
+        with open(validated, 'rb') as f:
             content = f.read()
 
         result = extract_text(content, file_path)

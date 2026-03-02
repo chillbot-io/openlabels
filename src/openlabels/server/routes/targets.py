@@ -24,6 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
 from openlabels.core.types import AdapterType
+from openlabels.server.crypto import (
+    decrypt_config_credentials,
+    encrypt_config_credentials,
+    mask_config_credentials,
+)
 from openlabels.server.db import get_session
 from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.models import ScanTarget
@@ -379,6 +384,17 @@ class TargetResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @classmethod
+    def from_target(cls, target: ScanTarget) -> "TargetResponse":
+        """Build a response with credential fields masked."""
+        return cls(
+            id=target.id,
+            name=target.name,
+            adapter=target.adapter,
+            config=mask_config_credentials(target.config or {}),
+            enabled=target.enabled,
+        )
+
 
 @router.get("", response_model=PaginatedResponse[TargetResponse])
 async def list_targets(
@@ -411,7 +427,7 @@ async def list_targets(
 
     return PaginatedResponse[TargetResponse](
         **create_paginated_response(
-            items=[TargetResponse.model_validate(t) for t in targets],
+            items=[TargetResponse.from_target(t) for t in targets],
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
@@ -432,12 +448,15 @@ async def create_target(
     # Security: Validate target configuration to prevent path traversal and SSRF
     validated_config = validate_target_config(request.adapter, request.config)
 
+    # Security: Encrypt credential fields before storing in the database
+    encrypted_config = encrypt_config_credentials(validated_config)
+
     try:
         target = ScanTarget(
             tenant_id=user.tenant_id,
             name=request.name,
             adapter=request.adapter,
-            config=validated_config,
+            config=encrypted_config,
             enabled=True,  # Explicitly set default to ensure it's available before flush
             created_by=user.id,
         )
@@ -453,7 +472,7 @@ async def create_target(
         # Refresh to load server-generated defaults and ensure proper types
         await session.refresh(target)
 
-        return target
+        return TargetResponse.from_target(target)
     except SQLAlchemyError as e:
         raise_database_error("creating target", e)
 
@@ -467,7 +486,7 @@ async def get_target(
     """Get scan target details."""
     try:
         target = await get_or_404(session, ScanTarget, target_id, tenant_id=user.tenant_id)
-        return target
+        return TargetResponse.from_target(target)
     except SQLAlchemyError as e:
         raise_database_error("getting target", e)
 
@@ -488,7 +507,8 @@ async def update_target(
         if request.config is not None:
             # Security: Validate updated configuration
             validated_config = validate_target_config(target.adapter, request.config)
-            target.config = validated_config
+            # Security: Encrypt credential fields before storing
+            target.config = encrypt_config_credentials(validated_config)
         if request.enabled is not None:
             target.enabled = request.enabled
 
@@ -498,7 +518,7 @@ async def update_target(
             details={"changes": request.model_dump(exclude_unset=True)},
         )
 
-        return target
+        return TargetResponse.from_target(target)
     except SQLAlchemyError as e:
         raise_database_error("updating target", e)
 
@@ -550,10 +570,11 @@ async def test_target_connection(
     try:
         from openlabels.jobs.tasks.scan import _get_adapter
 
-        adapter = _get_adapter(target.adapter, target.config or {})
+        decrypted_config = decrypt_config_credentials(target.config or {})
+        adapter = _get_adapter(target.adapter, decrypted_config)
         loop = asyncio.get_running_loop()
         start = loop.time()
-        healthy = await adapter.test_connection(target.config or {})
+        healthy = await adapter.test_connection(decrypted_config)
         latency = (loop.time() - start) * 1000
 
         return TestConnectionResponse(

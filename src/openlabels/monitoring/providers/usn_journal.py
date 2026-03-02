@@ -293,24 +293,22 @@ def _resolve_path_via_mft(
 ) -> str:
     """Best-effort path resolution for a USN record.
 
-    Falls back to ``<drive>:\\<filename>`` if parent traversal fails.
+    Falls back to ``<drive>:\\<UNRESOLVED>\\<filename>`` if parent traversal
+    fails, making it clear that intermediate directory components are missing.
 
-    WARNING: This implementation does NOT perform full MFT parent-chain
-    traversal.  The returned path is incomplete (no intermediate
-    directory components).  A production implementation should use
-    FSCTL_READ_FILE_USN_DATA to walk the parent_ref chain and cache
-    the parent_ref -> directory path mapping.
+    Note: This stub does NOT perform full MFT parent-chain traversal.
+    A production implementation should use FSCTL_READ_FILE_USN_DATA to walk
+    the parent_ref chain and cache the parent_ref -> directory path mapping.
     """
     # Full MFT parent traversal requires repeated FSCTL_READ_FILE_USN_DATA
-    # calls.  For now, use the simple approach: drive + filename.
+    # calls.  For now, use the simple approach: drive + placeholder + filename.
     # A production implementation would cache parent_ref → path mappings.
-    logger.warning(
-        "Path resolution is incomplete (stub): returning %s:\\%s without "
-        "intermediate directories (parent_ref=0x%X). Full MFT parent-chain "
-        "traversal is not yet implemented.",
+    logger.debug(
+        "Path resolution stub: returning %s:\\<UNRESOLVED>\\%s "
+        "(parent_ref=0x%X). Full MFT parent-chain traversal not yet implemented.",
         drive_letter, filename, parent_ref,
     )
-    return f"{drive_letter}:\\{filename}"
+    return f"{drive_letter}:\\<UNRESOLVED>\\{filename}"
 
 
 

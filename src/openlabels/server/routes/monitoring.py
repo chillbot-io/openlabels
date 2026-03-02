@@ -745,14 +745,16 @@ async def list_event_folders(
 
 # ── Retention settings ──────────────────────────────────────────────
 
-@router.get("/retention", response_model=RetentionSettings)
-async def get_retention_settings(
-    _user=Depends(require_admin),
-) -> RetentionSettings:
-    """Get current event retention settings.
+# Per-tenant retention overrides keyed by tenant_id.
+# Falls back to global config defaults when no override exists.
+# Production deployments should persist these in the database.
+_tenant_retention_overrides: dict[UUID, RetentionSettings] = {}
 
-    Returns the configured retention policy for file access events.
-    """
+
+def _get_tenant_retention(tenant_id: UUID) -> RetentionSettings:
+    """Return retention settings for a tenant, falling back to global config defaults."""
+    if tenant_id in _tenant_retention_overrides:
+        return _tenant_retention_overrides[tenant_id]
     from openlabels.server.config import get_settings
     settings = get_settings().monitoring
     return RetentionSettings(
@@ -762,22 +764,29 @@ async def get_retention_settings(
     )
 
 
+@router.get("/retention", response_model=RetentionSettings)
+async def get_retention_settings(
+    _user=Depends(require_admin),
+) -> RetentionSettings:
+    """Get current event retention settings for the tenant.
+
+    Returns the configured retention policy for file access events.
+    """
+    return _get_tenant_retention(_user.tenant_id)
+
+
 @router.put("/retention", response_model=RetentionSettings)
 async def update_retention_settings(
     body: RetentionSettings,
     _user=Depends(require_admin),
 ) -> RetentionSettings:
-    """Update event retention settings.
+    """Update event retention settings for the current tenant.
 
     Note: Settings are applied on the next purge cycle.
     """
-    # Persist in memory for current process; production deployments
-    # should use environment variables or config file.
-    from openlabels.server.config import get_settings
-    settings = get_settings().monitoring
-    settings.retention_days = body.retention_days  # type: ignore[attr-defined]
-    settings.archive_enabled = body.archive_enabled  # type: ignore[attr-defined]
-    settings.archive_format = body.archive_format  # type: ignore[attr-defined]
+    # Persist per-tenant override in memory for current process;
+    # production deployments should store in the database.
+    _tenant_retention_overrides[_user.tenant_id] = body
     return body
 
 
@@ -790,8 +799,7 @@ async def purge_old_events(
 
     Removes events beyond the configured retention window.
     """
-    from openlabels.server.config import get_settings
-    retention_days = getattr(get_settings().monitoring, "retention_days", 90)
+    retention_days = _get_tenant_retention(user.tenant_id).retention_days
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
     # Count events to purge

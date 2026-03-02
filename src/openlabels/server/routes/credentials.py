@@ -13,8 +13,6 @@ Both tiers use Fernet (AES-128-CBC + HMAC-SHA256), keyed from the server's
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import logging
 from typing import Any
@@ -27,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
-from openlabels.server.config import get_settings
+from openlabels.server.crypto import _derive_fernet_key, encrypt_dict, decrypt_dict
 from openlabels.server.db import get_session
 from openlabels.server.models import SavedCredential
 from openlabels.server.routes import audit_log
@@ -44,40 +42,15 @@ SESSION_COOKIE_NAME = "openlabels_session"
 VALID_SOURCE_TYPES = frozenset({"smb", "nfs", "sharepoint", "onedrive", "s3", "gcs", "azure_blob"})
 
 
-def _derive_fernet_key() -> bytes:
-    """Derive a Fernet key from the server's secret_key.
-
-    Uses HKDF-like derivation: SHA-256 of (secret_key + salt) truncated to
-    32 bytes, then base64-encoded for Fernet.
-
-    Raises RuntimeError if secret_key is not configured — credentials must
-    never be encrypted with a predictable default key.
-    """
-    settings = get_settings()
-    secret = settings.server.secret_key
-    if not secret:
-        raise RuntimeError(
-            "OPENLABELS_SERVER__SECRET_KEY is not configured. "
-            "A secret key is required for credential encryption. "
-            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
-        )
-    raw = hashlib.sha256(f"{secret}:credential-encryption".encode()).digest()
-    return base64.urlsafe_b64encode(raw)
-
-
 def _encrypt(data: dict[str, Any]) -> str:
     """Encrypt credential data to a Fernet token string."""
-    f = Fernet(_derive_fernet_key())
-    plaintext = json.dumps(data).encode()
-    return f.encrypt(plaintext).decode()
+    return encrypt_dict(data)
 
 
 def _decrypt(token: str) -> dict[str, Any]:
     """Decrypt a Fernet token back to credential data."""
-    f = Fernet(_derive_fernet_key())
     try:
-        plaintext = f.decrypt(token.encode())
-        return json.loads(plaintext)
+        return decrypt_dict(token)
     except (InvalidToken, json.JSONDecodeError) as e:
         logger.warning("Failed to decrypt credentials: %s", type(e).__name__)
         raise HTTPException(status_code=400, detail="Stored credentials are invalid or corrupted") from e
@@ -441,9 +414,7 @@ async def get_saved_credentials_for_target(
     if not row:
         return None
     try:
-        f = Fernet(_derive_fernet_key())
-        plaintext = f.decrypt(row.encrypted_data.encode())
-        return json.loads(plaintext)
+        return decrypt_dict(row.encrypted_data)
     except (InvalidToken, json.JSONDecodeError):
         logger.warning("Failed to decrypt saved credentials %s", row.id)
         return None

@@ -68,9 +68,19 @@ def calibrate_spans(spans: list[Span]) -> list[Span]:
 
 
 def _next_ceiling(tier: Tier) -> float:
-    """Ceiling for a tier = floor of the next tier, or 1.0."""
+    """Ceiling for a tier = floor of the next tier, or 1.0.
+
+    Returns 1.0 as a safe default for unknown or unexpected tier values
+    so that calibration never crashes on new/custom tiers.
+    """
     ordered = [Tier.ML, Tier.PATTERN, Tier.STRUCTURED, Tier.CHECKSUM]
-    idx = ordered.index(tier)
+    try:
+        idx = ordered.index(tier)
+    except (ValueError, TypeError):
+        # Unknown tier, new enum member, or non-Tier value: fall back to
+        # the widest possible ceiling so calibration still produces a
+        # value in [0.0, 1.0].
+        return 1.0
     if idx >= len(ordered) - 1:
         return 1.0
-    return _TIER_FLOORS[ordered[idx + 1]]
+    return _TIER_FLOORS.get(ordered[idx + 1], 1.0)

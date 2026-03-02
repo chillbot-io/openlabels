@@ -288,40 +288,40 @@ class EventStreamManager:
                 .order_by(MonitoredFile.tenant_id)
             )
             rows = result.scalars().all()
-            path_to_monitored: dict[str, MonitoredFile] = {}
+            path_to_monitored: dict[str, list[MonitoredFile]] = {}
             for row in rows:
-                if row.file_path not in path_to_monitored:
-                    path_to_monitored[row.file_path] = row
+                path_to_monitored.setdefault(row.file_path, []).append(row)
 
             for event in valid_events:
-                monitored = path_to_monitored.get(event.file_path)
-                if monitored is None:
+                monitored_list = path_to_monitored.get(event.file_path)
+                if not monitored_list:
                     continue
 
-                session.add(FileAccessEvent(
-                    tenant_id=monitored.tenant_id,
-                    monitored_file_id=monitored.id,
-                    file_path=event.file_path,
-                    action=event.action,
-                    success=event.success,
-                    user_sid=event.user_sid,
-                    user_name=event.user_name,
-                    user_domain=event.user_domain,
-                    process_name=event.process_name,
-                    process_id=event.process_id,
-                    event_id=event.event_id,
-                    event_source=event.event_source,
-                    event_time=event.event_time,
-                ))
-                persisted += 1
+                for monitored in monitored_list:
+                    session.add(FileAccessEvent(
+                        tenant_id=monitored.tenant_id,
+                        monitored_file_id=monitored.id,
+                        file_path=event.file_path,
+                        action=event.action,
+                        success=event.success,
+                        user_sid=event.user_sid,
+                        user_name=event.user_name,
+                        user_domain=event.user_domain,
+                        process_name=event.process_name,
+                        process_id=event.process_id,
+                        event_id=event.event_id,
+                        event_source=event.event_source,
+                        event_time=event.event_time,
+                    ))
+                    persisted += 1
 
-                # Update monitored file stats
-                monitored.access_count = (monitored.access_count or 0) + 1
-                if (
-                    monitored.last_event_at is None
-                    or event.event_time > monitored.last_event_at
-                ):
-                    monitored.last_event_at = event.event_time
+                    # Update monitored file stats
+                    monitored.access_count = (monitored.access_count or 0) + 1
+                    if (
+                        monitored.last_event_at is None
+                        or event.event_time > monitored.last_event_at
+                    ):
+                        monitored.last_event_at = event.event_time
 
             await session.commit()
 

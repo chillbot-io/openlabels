@@ -149,9 +149,9 @@ class ClassificationAgent:
 
     def _load_pytorch_model(self) -> None:
         """Load standard PyTorch model."""
-        from openlabels.core.processor import SensitiveDataProcessor
+        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
 
-        self._processor = SensitiveDataProcessor()
+        self._processor = DetectorOrchestrator()
 
     def _load_ipex_model(self) -> None:
         """Load model with Intel Extension for PyTorch optimizations."""
@@ -162,9 +162,9 @@ class ClassificationAgent:
             logger.warning("IPEX not available, falling back to PyTorch")
             return self._load_pytorch_model()
 
-        from openlabels.core.processor import SensitiveDataProcessor
+        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
 
-        self._processor = SensitiveDataProcessor()
+        self._processor = DetectorOrchestrator()
 
         # Optimize the NER model with IPEX
         if hasattr(self._processor, '_ner_model') and self._processor._ner_model:
@@ -181,10 +181,10 @@ class ClassificationAgent:
             logger.warning("OpenVINO/Optimum not available, falling back to PyTorch")
             return self._load_pytorch_model()
 
-        from openlabels.core.processor import SensitiveDataProcessor
+        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
 
         # Load processor but replace NER model with OpenVINO version
-        self._processor = SensitiveDataProcessor()
+        self._processor = DetectorOrchestrator()
 
         if self.model_path and os.path.exists(self.model_path):
             # Load pre-converted OpenVINO model
@@ -204,9 +204,9 @@ class ClassificationAgent:
             logger.warning("ONNX Runtime not available, falling back to PyTorch")
             return self._load_pytorch_model()
 
-        from openlabels.core.processor import SensitiveDataProcessor
+        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
 
-        self._processor = SensitiveDataProcessor()
+        self._processor = DetectorOrchestrator()
 
         if self.model_path and os.path.exists(self.model_path):
             ort_model = ORTModelForTokenClassification.from_pretrained(self.model_path)
@@ -221,19 +221,19 @@ class ClassificationAgent:
         entities: list[EntityMatch] = []
 
         try:
-            # Run classification
-            result = self._processor.process_text(item.text)
+            # Run classification (synchronous — worker runs in subprocess)
+            result = self._processor.detect_sync(item.text)
 
-            # Convert to EntityMatch objects
-            for entity in result.entities:
+            # Convert Span objects to EntityMatch objects
+            for span in result.spans:
                 entities.append(EntityMatch(
-                    entity_type=entity.entity_type,
-                    value=entity.value,
-                    start=entity.start,
-                    end=entity.end,
-                    confidence=entity.confidence,
-                    source=entity.source,
-                    metadata=entity.metadata if hasattr(entity, 'metadata') else {},
+                    entity_type=span.entity_type,
+                    value=span.text,
+                    start=span.start,
+                    end=span.end,
+                    confidence=span.confidence,
+                    source=span.detector,
+                    metadata={},
                 ))
         except (RuntimeError, ValueError, OSError) as e:
             logger.error(f"Agent {self.agent_id} classification error: {e}")

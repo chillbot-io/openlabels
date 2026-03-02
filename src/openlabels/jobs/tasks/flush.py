@@ -51,7 +51,26 @@ async def periodic_event_flush(
                 if not await try_advisory_lock(session, AdvisoryLockID.EVENT_FLUSH):
                     logger.debug("Periodic flush: another instance is running, skipping")
                 else:
-                    counts = await flush_events_to_catalog(session, storage)
+                    # SECURITY: Flush events per-tenant to enforce tenant
+                    # isolation and prevent cross-tenant data leakage.
+                    from sqlalchemy import select
+                    from openlabels.server.models import Tenant
+
+                    tenant_result = await session.execute(select(Tenant.id))
+                    tenant_ids = [row[0] for row in tenant_result.fetchall()]
+
+                    counts: dict[str, int] = {
+                        "access_events": 0,
+                        "audit_logs": 0,
+                        "remediation_actions": 0,
+                    }
+                    for tid in tenant_ids:
+                        tenant_counts = await flush_events_to_catalog(
+                            session, storage, tenant_id=tid,
+                        )
+                        for k in counts:
+                            counts[k] += tenant_counts.get(k, 0)
+
                     total = counts.get("access_events", 0) + counts.get("audit_logs", 0)
                     if total > 0:
                         logger.info(

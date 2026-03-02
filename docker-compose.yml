@@ -16,7 +16,7 @@ services:
       dockerfile: Dockerfile
     command: ["alembic", "upgrade", "head"]
     environment:
-      - DATABASE_URL=postgresql://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
+      - DATABASE_URL=postgresql://openlabels:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/openlabels
     depends_on:
       db:
         condition: service_healthy
@@ -32,8 +32,8 @@ services:
     ports:
       - "127.0.0.1:8000:8000"  # SECURITY: Bind to localhost only, use reverse proxy for external
     environment:
-      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/openlabels
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
       - AUTH_PROVIDER=${AUTH_PROVIDER:-none}
       - AUTH_TENANT_ID=${AUTH_TENANT_ID:-}
       - AUTH_CLIENT_ID=${AUTH_CLIENT_ID:-}
@@ -67,8 +67,8 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "openlabels", "worker"]
     environment:
-      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/openlabels
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://openlabels:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/openlabels
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       db:
@@ -110,12 +110,14 @@ services:
   # ── Redis (caching, rate limiting, job queue) ─────────────────────────
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command: redis-server --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env} --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis-data:/data
     restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5

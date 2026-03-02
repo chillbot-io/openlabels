@@ -89,10 +89,12 @@ class WinRMProvider:
         targets: list[tuple[str, str, str, bool]] | None = None,
         max_events_per_host: int = 500,
         since_hours_default: int = 1,
+        tenant_id: str | None = None,
     ) -> None:
         self._static_targets = targets
         self._max_events_per_host = max_events_per_host
         self._since_hours_default = since_hours_default
+        self._tenant_id = tenant_id
 
     @property
     def name(self) -> str:
@@ -106,7 +108,7 @@ class WinRMProvider:
         """
         targets = self._static_targets
         if targets is None:
-            targets = await self._load_targets_from_db()
+            targets = await self._load_targets_from_db(tenant_id=self._tenant_id)
 
         if not targets:
             logger.debug("WinRM provider: no targets configured")
@@ -212,11 +214,19 @@ class WinRMProvider:
         return events
 
     @staticmethod
-    async def _load_targets_from_db() -> list[tuple[str, str, str, bool]]:
+    async def _load_targets_from_db(
+        *, tenant_id: str | None = None,
+    ) -> list[tuple[str, str, str, bool]]:
         """Load WinRM targets from SavedCredential table.
 
         Looks for credentials with ``source_type="smb"`` and extracts
         host, username, password, and use_ssl from the encrypted data.
+
+        Parameters
+        ----------
+        tenant_id:
+            When provided, only load credentials belonging to this
+            tenant.  This prevents cross-tenant credential leakage.
         """
         try:
             from openlabels.server.db import get_session_context
@@ -231,11 +241,16 @@ class WinRMProvider:
                 from openlabels.server.routes.credentials import _decrypt as decrypt
 
             async with get_session_context() as session:
-                result = await session.execute(
-                    select(SavedCredential).where(
-                        SavedCredential.source_type == "smb",
-                    )
+                query = select(SavedCredential).where(
+                    SavedCredential.source_type == "smb",
                 )
+                # SECURITY: Filter by tenant_id to prevent loading
+                # credentials from other tenants.
+                if tenant_id is not None:
+                    query = query.where(
+                        SavedCredential.tenant_id == tenant_id,
+                    )
+                result = await session.execute(query)
                 rows = result.scalars().all()
 
             targets = []

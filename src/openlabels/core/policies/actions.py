@@ -78,12 +78,31 @@ class PolicyActionExecutor:
 
         return results
 
+    # Base directory that all quarantine source files must reside under.
+    # Prevents path-traversal attacks where ctx.file_path contains
+    # sequences like "../../etc/passwd".
+    ALLOWED_SOURCE_BASE = Path("/data")
+
     async def quarantine(self, ctx: PolicyActionContext) -> ActionResult:
         """Move the file to quarantine."""
         try:
+            from openlabels.exceptions import SecurityError
             from openlabels.remediation import quarantine as do_quarantine
 
-            source = Path(ctx.file_path)
+            # SECURITY: Validate file_path to prevent path traversal attacks.
+            # Resolve the path to its canonical form (resolving symlinks and
+            # ".." components) and verify it falls under the expected base
+            # directory.
+            source = Path(ctx.file_path).resolve()
+            allowed_base = self.ALLOWED_SOURCE_BASE.resolve()
+            if allowed_base not in source.parents and source != allowed_base:
+                raise SecurityError(
+                    f"Path traversal detected: {ctx.file_path!r} resolves to "
+                    f"{source} which is outside allowed base {allowed_base}",
+                    violation_type="path_traversal",
+                    source=str(ctx.file_path),
+                )
+
             if not source.exists():
                 return ActionResult(
                     action="quarantine",

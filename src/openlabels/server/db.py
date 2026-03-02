@@ -7,7 +7,9 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -128,6 +130,84 @@ async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+async def set_rls_tenant_id(session: AsyncSession, tenant_id: UUID) -> None:
+    """Set the ``app.current_tenant_id`` session variable for RLS policies.
+
+    This should be called at the start of every tenant-scoped transaction so
+    that PostgreSQL Row-Level Security policies can filter rows to the
+    current tenant.  Uses ``SET LOCAL`` which scopes the setting to the
+    current transaction only — it is automatically reset when the
+    transaction commits or rolls back.
+
+    Args:
+        session: The active SQLAlchemy async session.
+        tenant_id: The UUID of the current tenant.
+    """
+    # SET LOCAL is transaction-scoped: the value is automatically discarded
+    # at COMMIT/ROLLBACK, so there is no risk of leaking to the next user
+    # of this pooled connection.
+    await session.execute(
+        text("SET LOCAL app.current_tenant_id = :tid"),
+        {"tid": str(tenant_id)},
+    )
+
+
+async def get_tenant_session(tenant_id: UUID) -> AsyncGenerator[AsyncSession, None]:
+    """Get a database session with the RLS tenant context set.
+
+    This is the tenant-aware variant of :func:`get_session`.  It begins the
+    session, immediately sets ``app.current_tenant_id`` via ``SET LOCAL``,
+    and then yields the session.  The variable is transaction-scoped and
+    automatically cleared on commit/rollback.
+
+    Args:
+        tenant_id: The UUID of the current tenant.
+
+    Yields:
+        AsyncSession: A session whose transaction has ``app.current_tenant_id``
+            set to *tenant_id*.
+    """
+    if _session_factory is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+
+    async with _session_factory() as session:
+        try:
+            await set_rls_tenant_id(session, tenant_id)
+            yield session
+            await session.commit()
+        except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
+            logger.debug(f"Session error, rolling back: {e}")
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_tenant_session_context(tenant_id: UUID) -> AsyncGenerator[AsyncSession, None]:
+    """Get a tenant-scoped database session as a context manager.
+
+    Same as :func:`get_tenant_session` but usable with ``async with``.
+
+    Args:
+        tenant_id: The UUID of the current tenant.
+
+    Yields:
+        AsyncSession: A session whose transaction has ``app.current_tenant_id``
+            set to *tenant_id*.
+    """
+    if _session_factory is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+
+    async with _session_factory() as session:
+        try:
+            await set_rls_tenant_id(session, tenant_id)
+            yield session
+            await session.commit()
+        except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
+            logger.debug(f"Session error, rolling back: {e}")
+            await session.rollback()
+            raise
+
+
 def get_pool_stats() -> dict[str, int] | None:
     """Return current connection pool statistics, or None if the engine is not initialised."""
     if _engine is None:
@@ -193,8 +273,6 @@ async def ensure_partitions(months_ahead: int = 3) -> None:
         END LOOP;
     END$$;
     """.replace("{months_ahead}", str(int(months_ahead)))
-
-    from sqlalchemy import text
 
     async with _engine.begin() as conn:
         await conn.execute(text(sql))

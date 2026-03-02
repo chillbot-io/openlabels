@@ -1,0 +1,170 @@
+import { describe, it, expect } from 'vitest';
+import {
+  SQL_MAX_LENGTH,
+  DANGEROUS_SQL_PATTERNS,
+  validateSql,
+} from '@/lib/sql-validation.ts';
+
+// ---------------------------------------------------------------------------
+// DANGEROUS_SQL_PATTERNS — regex unit tests
+// ---------------------------------------------------------------------------
+
+describe('DANGEROUS_SQL_PATTERNS', () => {
+  const dangerous = [
+    'DROP TABLE users',
+    'drop table users',
+    'TRUNCATE TABLE scan_results',
+    'DELETE FROM scan_results WHERE id = 1',
+    'delete from scan_results',
+    'ALTER TABLE users ADD COLUMN foo TEXT',
+    'CREATE TABLE evil (id INT)',
+    'INSERT INTO users VALUES (1)',
+    'UPDATE users SET role = admin',
+    'GRANT ALL ON users TO attacker',
+    'REVOKE SELECT ON users FROM readonly',
+    // Embedded in longer queries
+    'SELECT 1; DROP TABLE users --',
+    'SELECT * FROM t WHERE 1=1 UNION ALL DELETE FROM t',
+  ];
+
+  it.each(dangerous)('flags dangerous SQL: %s', (sql) => {
+    expect(DANGEROUS_SQL_PATTERNS.test(sql)).toBe(true);
+  });
+
+  const safe = [
+    'SELECT * FROM scan_results LIMIT 100',
+    'SELECT COUNT(*) FROM file_inventory',
+    'WITH cte AS (SELECT id FROM scan_results) SELECT * FROM cte',
+    // "DROPDOWN" should NOT match "DROP" because of \\b word boundary
+    'SELECT dropdown FROM ui_config',
+    'SELECT updated_at FROM scan_results',
+    'SELECT alteration FROM changes',
+    'SELECT truncated FROM logs',
+    'SELECT creator FROM users',
+    'SELECT inserter FROM queue',
+  ];
+
+  // Known limitation: the client-side regex cannot distinguish keywords
+  // inside SQL string literals from real SQL keywords. The backend's
+  // validate_sql() handles this properly via full SQL parsing. This is
+  // acceptable since the client check is defense-in-depth only — a false
+  // positive just shows a confirmation dialog.
+  const falsePositives = [
+    "SELECT * FROM scan_results WHERE name = 'DROP'",
+  ];
+
+  it.each(falsePositives)(
+    'known false positive (keyword inside string literal): %s',
+    (sql) => {
+      // The regex WILL match — this documents the expected behavior
+      expect(DANGEROUS_SQL_PATTERNS.test(sql)).toBe(true);
+    },
+  );
+
+  it.each(safe)('allows safe SQL: %s', (sql) => {
+    expect(DANGEROUS_SQL_PATTERNS.test(sql)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateSql — higher-level validation function
+// ---------------------------------------------------------------------------
+
+describe('validateSql', () => {
+  it('rejects empty queries', () => {
+    const result = validateSql('');
+    expect(result.valid).toBe(false);
+    expect(result.message).toMatch(/empty/i);
+  });
+
+  it('rejects whitespace-only queries', () => {
+    const result = validateSql('   \n\t  ');
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects queries exceeding SQL_MAX_LENGTH', () => {
+    const longSql = 'SELECT ' + 'x'.repeat(SQL_MAX_LENGTH + 1);
+    const result = validateSql(longSql);
+    expect(result.valid).toBe(false);
+    expect(result.tooLong).toBe(true);
+    expect(result.message).toContain(String(SQL_MAX_LENGTH));
+  });
+
+  it('returns dangerous flag for DROP statements', () => {
+    const result = validateSql('DROP TABLE users');
+    expect(result.valid).toBe(true);
+    expect(result.dangerous).toBe(true);
+  });
+
+  it('returns dangerous flag for DELETE FROM statements', () => {
+    const result = validateSql('DELETE FROM scan_results WHERE id = 1');
+    expect(result.valid).toBe(true);
+    expect(result.dangerous).toBe(true);
+  });
+
+  it('returns dangerous flag for UPDATE statements', () => {
+    const result = validateSql('UPDATE users SET role = admin');
+    expect(result.valid).toBe(true);
+    expect(result.dangerous).toBe(true);
+  });
+
+  it('returns valid with no flags for safe SELECT queries', () => {
+    const result = validateSql('SELECT * FROM scan_results LIMIT 100');
+    expect(result.valid).toBe(true);
+    expect(result.dangerous).toBeUndefined();
+    expect(result.tooLong).toBeUndefined();
+  });
+
+  it('returns valid with no flags for safe CTE queries', () => {
+    const result = validateSql(
+      'WITH cte AS (SELECT id FROM scan_results) SELECT * FROM cte'
+    );
+    expect(result.valid).toBe(true);
+    expect(result.dangerous).toBeUndefined();
+  });
+
+  it('ensures SQL_MAX_LENGTH is 10000', () => {
+    // Guard against accidental changes to the constant
+    expect(SQL_MAX_LENGTH).toBe(10_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Consistency: both user-entered and AI-generated SQL should be validated
+// ---------------------------------------------------------------------------
+
+describe('validation consistency for user and AI SQL paths', () => {
+  // This test documents the contract: any SQL — whether typed by a user or
+  // generated by the AI assistant — must pass through the same validateSql()
+  // (or at minimum the same DANGEROUS_SQL_PATTERNS check) before execution.
+  // The actual wiring is in page.tsx; here we verify the shared utilities
+  // behave identically regardless of the source.
+
+  const aiGeneratedExamples = [
+    'DROP TABLE scan_results',
+    'DELETE FROM file_inventory WHERE risk_tier = \'LOW\'',
+    'TRUNCATE TABLE audit_log',
+  ];
+
+  it.each(aiGeneratedExamples)(
+    'AI-generated dangerous SQL is caught by the same check: %s',
+    (sql) => {
+      const result = validateSql(sql);
+      expect(result.dangerous).toBe(true);
+    }
+  );
+
+  const aiGeneratedSafe = [
+    'SELECT * FROM scan_results WHERE risk_tier = \'HIGH\' LIMIT 50',
+    'SELECT COUNT(*) AS total, risk_tier FROM scan_results GROUP BY risk_tier',
+  ];
+
+  it.each(aiGeneratedSafe)(
+    'AI-generated safe SQL passes validation: %s',
+    (sql) => {
+      const result = validateSql(sql);
+      expect(result.valid).toBe(true);
+      expect(result.dangerous).toBeUndefined();
+    }
+  );
+});

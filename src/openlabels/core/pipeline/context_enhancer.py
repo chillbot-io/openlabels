@@ -580,7 +580,7 @@ class ContextEnhancer:
             if deny_reason:
                 if span.tier >= Tier.STRUCTURED:
                     logger.warning(
-                        f"ContextEnhancer: Rejecting high-tier span '{span.text}' "
+                        f"ContextEnhancer: Rejecting high-tier span '{_mask_pii(span.text)}' "
                         f"(tier={span.tier.name}) via deny list"
                     )
                 return EnhancementResult("reject", 0.0, [deny_reason])

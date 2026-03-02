@@ -67,11 +67,28 @@ def collect_files(path, recursive=False):
     """
     target_path = Path(path)
     if target_path.is_dir():
+        boundary = target_path.resolve()
         if recursive:
             files = list(target_path.rglob("*"))
         else:
             files = list(target_path.glob("*"))
-        files = [f for f in files if f.is_file()]
+        safe_files = []
+        for f in files:
+            if not f.is_file():
+                continue
+            try:
+                resolved = f.resolve()
+            except OSError:
+                logger.warning("Cannot resolve path, skipping: %s", f)
+                continue
+            if not str(resolved).startswith(str(boundary) + os.sep) and resolved != boundary:
+                logger.warning(
+                    "Symlink escapes scan boundary, skipping: %s -> %s",
+                    f, resolved,
+                )
+                continue
+            safe_files.append(f)
+        files = safe_files
     else:
         files = [target_path]
     return files

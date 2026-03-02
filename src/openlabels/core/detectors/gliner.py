@@ -144,6 +144,59 @@ class GLiNERDetector(BaseDetector):
     def is_available(self) -> bool:
         return self._loaded
 
+    def _verify_cached_model_integrity(self) -> None:
+        """Run SHA-256 integrity check on the cached model directory.
+
+        GLiNER models are downloaded from HuggingFace Hub and cached locally.
+        This method locates the cache directory and verifies file integrity.
+        Logs a CRITICAL warning on mismatch but does not prevent usage.
+        """
+        try:
+            from pathlib import Path
+
+            from .model_integrity import verify_model_integrity
+
+            # Try to find the HuggingFace cache directory for this model
+            cache_dir = None
+
+            # Check if the model object exposes a path
+            model_dir = getattr(self._model, "model_dir", None)
+            if model_dir:
+                cache_dir = Path(model_dir)
+
+            # Fallback: standard HF cache location
+            if cache_dir is None:
+                try:
+                    from huggingface_hub import snapshot_download
+                    cache_dir = Path(snapshot_download(
+                        self.model_name, local_files_only=True,
+                    ))
+                except Exception:
+                    pass
+
+            if cache_dir and cache_dir.exists():
+                integrity_ok = verify_model_integrity(
+                    cache_dir, model_name=self.model_name,
+                )
+                if not integrity_ok:
+                    logger.critical(
+                        "GLiNER model integrity verification FAILED for '%s' "
+                        "at %s. Loading anyway, but this should be investigated.",
+                        self.model_name, cache_dir,
+                    )
+            else:
+                logger.debug(
+                    "GLiNER: could not locate cache directory for '%s', "
+                    "skipping integrity verification.",
+                    self.model_name,
+                )
+        except Exception as e:
+            # Never let integrity checking break model loading
+            logger.warning(
+                "GLiNER: integrity verification error for '%s': %s",
+                self.model_name, e,
+            )
+
     def load(self) -> bool:
         """Load GLiNER model from HuggingFace Hub.
 
@@ -172,6 +225,10 @@ class GLiNERDetector(BaseDetector):
                 "GLiNER model loaded: %s (onnx=%s)",
                 self.model_name, self.use_onnx,
             )
+
+            # Verify model integrity after loading (uses cached model path)
+            self._verify_cached_model_integrity()
+
             return True
         except (OSError, RuntimeError, ValueError) as e:
             if self.use_onnx:

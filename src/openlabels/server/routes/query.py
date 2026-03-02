@@ -516,6 +516,18 @@ async def execute_query(
     execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
     params: list[Any] = [tenant_str] * occurrence_count
 
+    # SECURITY: Require at least one $1 (tenant_id) reference to enforce
+    # tenant isolation.  Queries without a tenant filter could leak data
+    # across tenants.
+    if occurrence_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Query must include at least one $1 parameter for tenant isolation "
+                "(e.g. WHERE tenant = $1)."
+            ),
+        )
+
     # Enforce row limit via wrapping
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
 
@@ -590,6 +602,18 @@ async def export_query_results(
     tenant_str = str(tenant.tenant_id)
     execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
     params: list[Any] = [tenant_str] * occurrence_count
+
+    # SECURITY: Require at least one $1 (tenant_id) reference to enforce
+    # tenant isolation.  Queries without a tenant filter could leak data
+    # across tenants.
+    if occurrence_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Query must include at least one $1 parameter for tenant isolation "
+                "(e.g. WHERE tenant = $1)."
+            ),
+        )
 
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit}"
 
@@ -700,6 +724,20 @@ async def ai_query(
 
     execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
     params: list[Any] = [tenant_str] * occurrence_count
+
+    # SECURITY: Require at least one $1 (tenant_id) reference to enforce
+    # tenant isolation.  AI-generated SQL without a tenant filter could
+    # leak data across tenants.
+    if occurrence_count == 0:
+        return AIQueryResponse(
+            question=body.question,
+            generated_sql=clean_sql,
+            explanation=explanation,
+            error=(
+                "Generated SQL must include at least one $1 parameter for tenant "
+                "isolation (e.g. WHERE tenant = $1)."
+            ),
+        )
 
     limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
 

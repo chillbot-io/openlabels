@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 from openlabels.remediation.permissions import (
     lock_down,
     get_current_acl,
+    validate_principal_name,
     DEFAULT_WINDOWS_PRINCIPALS,
     DEFAULT_UNIX_PRINCIPALS,
 )
@@ -244,3 +245,235 @@ class TestLockDownResult:
         assert isinstance(d, dict)
         assert d["success"] is True
         assert d["action"] == "lockdown"
+
+
+# ============================================================================
+# Command injection prevention tests
+# ============================================================================
+
+
+class TestValidatePrincipalName:
+    """Tests for validate_principal_name input validation."""
+
+    # --- Valid principals ---
+
+    def test_simple_username(self):
+        """Simple alphanumeric username passes."""
+        assert validate_principal_name("admin") == "admin"
+
+    def test_domain_backslash_user(self):
+        """DOMAIN\\user format passes."""
+        assert validate_principal_name("BUILTIN\\Administrators") == "BUILTIN\\Administrators"
+
+    def test_email_format(self):
+        """user@domain.com format passes."""
+        assert validate_principal_name("user@domain.com") == "user@domain.com"
+
+    def test_username_with_dot(self):
+        """Username with dots passes."""
+        assert validate_principal_name("john.doe") == "john.doe"
+
+    def test_username_with_hyphen(self):
+        """Username with hyphens passes."""
+        assert validate_principal_name("john-doe") == "john-doe"
+
+    def test_username_with_underscore(self):
+        """Username with underscores passes."""
+        assert validate_principal_name("john_doe") == "john_doe"
+
+    def test_root_principal(self):
+        """Root principal passes."""
+        assert validate_principal_name("root") == "root"
+
+    def test_windows_builtin_users(self):
+        """BUILTIN\\Users format passes."""
+        assert validate_principal_name("BUILTIN\\Users") == "BUILTIN\\Users"
+
+    def test_principal_with_space(self):
+        """Principal name with spaces passes (e.g., 'Authenticated Users')."""
+        assert validate_principal_name("Authenticated Users") == "Authenticated Users"
+
+    def test_principal_with_forward_slash(self):
+        """Forward slash in principal passes (e.g., group paths)."""
+        assert validate_principal_name("domain/group") == "domain/group"
+
+    def test_strips_whitespace(self):
+        """Leading/trailing whitespace is stripped."""
+        assert validate_principal_name("  admin  ") == "admin"
+
+    # --- Command injection attempts ---
+
+    def test_semicolon_injection_rejected(self):
+        """Semicolon command separator is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin; rm -rf /")
+
+    def test_pipe_injection_rejected(self):
+        """Pipe operator is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin | cat /etc/passwd")
+
+    def test_backtick_injection_rejected(self):
+        """Backtick command substitution is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("`whoami`")
+
+    def test_dollar_paren_injection_rejected(self):
+        """$() command substitution is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("$(cat /etc/passwd)")
+
+    def test_ampersand_injection_rejected(self):
+        """Ampersand background operator is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin & rm -rf /")
+
+    def test_newline_injection_rejected(self):
+        """Newline character is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin\nrm -rf /")
+
+    def test_tab_injection_rejected(self):
+        """Tab character is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin\trm")
+
+    def test_greater_than_redirect_rejected(self):
+        """Output redirect > is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin > /tmp/evil")
+
+    def test_less_than_redirect_rejected(self):
+        """Input redirect < is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin < /etc/passwd")
+
+    def test_dollar_sign_rejected(self):
+        """Dollar sign (variable expansion) is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("$USER")
+
+    def test_single_quote_rejected(self):
+        """Single quote is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin'--")
+
+    def test_double_quote_rejected(self):
+        """Double quote is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name('admin"--')
+
+    def test_hash_comment_rejected(self):
+        """Hash (shell comment) is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin #comment")
+
+    def test_exclamation_mark_rejected(self):
+        """Exclamation mark (history expansion) is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin!!")
+
+    # --- Edge cases ---
+
+    def test_empty_string_rejected(self):
+        """Empty string is rejected."""
+        with pytest.raises(RemediationPermissionError, match="empty"):
+            validate_principal_name("")
+
+    def test_whitespace_only_rejected(self):
+        """Whitespace-only string is rejected."""
+        with pytest.raises(RemediationPermissionError, match="empty"):
+            validate_principal_name("   ")
+
+    def test_null_byte_rejected(self):
+        """Null byte is rejected."""
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            validate_principal_name("admin\x00evil")
+
+    def test_very_long_name_rejected(self):
+        """Extremely long principal name is rejected."""
+        with pytest.raises(RemediationPermissionError, match="maximum length"):
+            validate_principal_name("a" * 300)
+
+    def test_max_length_accepted(self):
+        """Principal name at exactly max length passes."""
+        name = "a" * 256
+        assert validate_principal_name(name) == name
+
+    def test_one_over_max_length_rejected(self):
+        """Principal name one char over max length is rejected."""
+        with pytest.raises(RemediationPermissionError, match="maximum length"):
+            validate_principal_name("a" * 257)
+
+
+class TestLockDownCommandInjectionPrevention:
+    """Tests that lock_down rejects malicious principal names."""
+
+    def test_lock_down_rejects_semicolon_principal(self, tmp_path):
+        """lock_down rejects principal with command injection via semicolon."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            lock_down(
+                test_file,
+                allowed_principals=["admin; rm -rf /"],
+                dry_run=True,
+            )
+
+    def test_lock_down_rejects_backtick_principal(self, tmp_path):
+        """lock_down rejects principal with backtick injection."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            lock_down(
+                test_file,
+                allowed_principals=["`cat /etc/shadow`"],
+                dry_run=True,
+            )
+
+    def test_lock_down_rejects_pipe_principal(self, tmp_path):
+        """lock_down rejects principal with pipe injection."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            lock_down(
+                test_file,
+                allowed_principals=["user | cat /etc/passwd"],
+                dry_run=True,
+            )
+
+    def test_lock_down_accepts_valid_principal(self, tmp_path):
+        """lock_down accepts valid principal names."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        result = lock_down(
+            test_file,
+            allowed_principals=["BUILTIN\\Administrators"],
+            dry_run=True,
+        )
+        assert result.success is True
+
+    def test_lock_down_validates_all_principals_in_list(self, tmp_path):
+        """lock_down validates every principal in the list, not just the first."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        with pytest.raises(RemediationPermissionError, match="invalid characters"):
+            lock_down(
+                test_file,
+                allowed_principals=["ValidUser", "evil;rm -rf /"],
+                dry_run=True,
+            )
+
+    def test_lock_down_default_principals_are_valid(self, tmp_path):
+        """Default principals pass validation (no injection risk)."""
+        test_file = tmp_path / "file.txt"
+        test_file.write_text("test")
+
+        # Should not raise - default principals are safe
+        result = lock_down(test_file, dry_run=True)
+        assert result.success is True
