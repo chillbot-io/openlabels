@@ -23,6 +23,7 @@ access to the tenant's data.
 
 from __future__ import annotations
 
+import hmac
 import html
 import logging
 import secrets
@@ -459,7 +460,9 @@ async def m365_consent_callback(
         return _popup_response(success=False, error="Session expired")
 
     expected_state = session_data.get(_CONSENT_STATE_KEY)
-    if not expected_state or expected_state != state:
+    # Use hmac.compare_digest for constant-time comparison to prevent
+    # timing side-channel attacks on the consent state nonce (M8).
+    if not expected_state or not hmac.compare_digest(expected_state, state):
         logger.warning("M365 consent state mismatch")
         return _popup_response(success=False, error="Invalid state")
 

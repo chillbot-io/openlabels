@@ -15,6 +15,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
@@ -102,6 +103,116 @@ REPORT_TEMPLATES: list[dict] = [
         "category": "operations",
     },
 ]
+
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
+
+# RFC 5322-ish pattern — intentionally restrictive to reject edge-case abuse
+_EMAIL_RE = re.compile(
+    r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
+
+# Maximum number of distribution recipients to prevent abuse
+_MAX_DISTRIBUTION_RECIPIENTS = 50
+
+
+def _validate_email_addresses(emails: list[str]) -> list[str]:
+    """Validate a list of email addresses for report distribution.
+
+    Security (H15): Prevents injection of arbitrary addresses and optionally
+    restricts distribution to a configured domain allow-list.
+
+    Args:
+        emails: List of email address strings.
+
+    Returns:
+        The validated list (unchanged) if all addresses pass.
+
+    Raises:
+        HTTPException: If any address is invalid or exceeds limits.
+    """
+    if not emails:
+        raise HTTPException(status_code=400, detail="At least one email address is required")
+
+    if len(emails) > _MAX_DISTRIBUTION_RECIPIENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many recipients (max {_MAX_DISTRIBUTION_RECIPIENTS})",
+        )
+
+    settings = get_settings().reporting
+    allowed_domains: list[str] = getattr(settings, "allowed_email_domains", None) or []
+
+    invalid: list[str] = []
+    domain_rejected: list[str] = []
+
+    for addr in emails:
+        addr_stripped = addr.strip()
+        if not _EMAIL_RE.match(addr_stripped) or len(addr_stripped) > 254:
+            invalid.append(addr_stripped)
+            continue
+        if allowed_domains:
+            domain = addr_stripped.rsplit("@", 1)[-1].lower()
+            if domain not in [d.lower() for d in allowed_domains]:
+                domain_rejected.append(addr_stripped)
+
+    errors: list[str] = []
+    if invalid:
+        errors.append(f"Invalid email address(es): {', '.join(invalid)}")
+    if domain_rejected:
+        errors.append(
+            f"Email domain not in allow-list for: {', '.join(domain_rejected)}"
+        )
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    return emails
+
+
+def _validate_report_path(result_path: str) -> Path:
+    """Validate that a report result_path is safe and within the storage directory.
+
+    Security (H16): Prevents path traversal attacks where a crafted
+    result_path could escape the configured report storage directory.
+
+    Args:
+        result_path: The file path stored in the report record.
+
+    Returns:
+        The resolved Path object if valid.
+
+    Raises:
+        HTTPException: If the path contains traversal sequences or escapes
+            the storage directory.
+    """
+    if not result_path:
+        raise HTTPException(status_code=404, detail="Report file path is empty")
+
+    # Reject obvious traversal patterns before resolution
+    if ".." in result_path:
+        logger.warning("Path traversal attempt in report path: %s", result_path)
+        raise HTTPException(
+            status_code=400,
+            detail="Report file path contains invalid traversal sequences",
+        )
+
+    settings = get_settings()
+    storage_root = Path(settings.reporting.storage_path).resolve()
+    report_file = Path(result_path).resolve()
+
+    if not report_file.is_relative_to(storage_root):
+        logger.warning(
+            "Report path outside storage directory: %s (storage root: %s)",
+            result_path,
+            storage_root,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Report file path is outside the configured storage directory",
+        )
+
+    return report_file
 
 
 
@@ -722,16 +833,9 @@ async def download_report(
     if not report.result_path or not Path(report.result_path).exists():
         raise HTTPException(status_code=404, detail="Report file not found on disk")
 
-    # Validate the stored path is within the configured storage directory
-    settings = get_settings()
-    storage_root = Path(settings.reporting.storage_path).resolve()
-    report_file = Path(report.result_path).resolve()
-    if not report_file.is_relative_to(storage_root):
-        logger.warning(
-            "Report %s has result_path outside storage directory: %s",
-            report_id, report.result_path,
-        )
-        raise HTTPException(status_code=403, detail="Report file path is outside storage directory")
+    # Security (H16): Validate the stored path is within the configured
+    # storage directory and contains no traversal sequences.
+    report_file = _validate_report_path(report.result_path)
 
     media_type = {
         "pdf": "application/pdf",
@@ -757,6 +861,9 @@ async def distribute_report(
     session: AsyncSession = Depends(get_session),
 ) -> ReportResponse:
     """Distribute a generated report via email."""
+    # Security (H15): Validate email addresses before processing
+    _validate_email_addresses(request.to)
+
     result = await session.execute(
         select(Report).where(Report.id == report_id, Report.tenant_id == tenant.tenant_id)
     )
@@ -765,6 +872,9 @@ async def distribute_report(
         raise HTTPException(status_code=404, detail="Report not found")
     if report.status != "generated":
         raise HTTPException(status_code=400, detail=f"Report is not ready (status={report.status})")
+
+    # Security (H16): Validate report file path before distribution
+    _validate_report_path(report.result_path)
 
     settings = get_settings().reporting
     if not settings.smtp_host:
@@ -832,6 +942,10 @@ async def schedule_report(
         raise HTTPException(status_code=400, detail=f"Invalid report_type. Must be one of: {', '.join(sorted(VALID_TYPES))}")
     if request.format not in VALID_FORMATS:
         raise HTTPException(status_code=400, detail=f"Invalid format. Must be one of: {', '.join(sorted(VALID_FORMATS))}")
+
+    # Security (H15): Validate distribution email addresses if provided
+    if request.distribute_to:
+        _validate_email_addresses(request.distribute_to)
 
     tenant_id = tenant.tenant_id
     name = request.name or f"scheduled_{request.report_type}"

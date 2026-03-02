@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_sentry(settings.sentry, settings.server.environment)
 
     # Database
-    await init_db(settings.database.url)
+    await init_db(settings.database.url.get_secret_value())
 
     # Ensure monthly partitions exist for partitioned tables
     try:

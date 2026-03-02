@@ -400,7 +400,7 @@ class Worker:
         """Start the worker loop with dynamic concurrency support."""
         settings = get_settings()
         await init_db(
-            settings.database.url,
+            settings.database.url.get_secret_value(),
             pool_size=settings.database.pool_size,
             max_overflow=settings.database.max_overflow,
         )

@@ -37,9 +37,9 @@ class QuarantineEntry:
 
 # Default allowed base directories for path traversal prevention.
 # Restore operations will only target paths under these roots.
-DEFAULT_ALLOWED_BASES: list[Path] = [
-    Path("/"),
-]
+# Intentionally restrictive — callers must provide explicit allowed_bases
+# matching their scan target directories.
+DEFAULT_ALLOWED_BASES: list[Path] = []
 
 
 class QuarantineManifest:
@@ -56,9 +56,13 @@ class QuarantineManifest:
     ) -> None:
         self._path = Path(manifest_path)
         self._entries: dict[str, QuarantineEntry] = {}
-        self._allowed_bases = [
-            b.resolve() for b in (allowed_bases or DEFAULT_ALLOWED_BASES)
-        ]
+        bases = allowed_bases if allowed_bases is not None else DEFAULT_ALLOWED_BASES
+        if not bases:
+            logger.warning(
+                "QuarantineManifest: no allowed_bases configured. "
+                "Restore operations will be rejected until explicit bases are set."
+            )
+        self._allowed_bases = [b.resolve() for b in bases]
         self._load()
 
     def validate_original_path(self, original_path: str) -> bool:

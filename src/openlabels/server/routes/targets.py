@@ -298,10 +298,30 @@ def _validate_cloud_target_config(
 
 
 def validate_s3_target_config(config: dict) -> dict:
-    """Validate S3 scan target configuration."""
-    return _validate_cloud_target_config(
+    """Validate S3 scan target configuration.
+
+    In addition to the shared cloud-target checks (bucket name, prefix
+    traversal), this validates the optional ``endpoint_url`` field to
+    prevent SSRF attacks against internal/private IP addresses.
+    """
+    validated = _validate_cloud_target_config(
         config, "S3", "bucket", r"^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$"
     )
+
+    # Security (H6/H7): Validate endpoint_url to prevent SSRF
+    endpoint_url = validated.get("endpoint_url")
+    if endpoint_url:
+        from openlabels.adapters.s3 import _validate_endpoint_url
+
+        try:
+            _validate_endpoint_url(endpoint_url)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid S3 endpoint_url: {exc}",
+            )
+
+    return validated
 
 
 def validate_gcs_target_config(config: dict) -> dict:

@@ -60,6 +60,65 @@ except ImportError:
     _ws_streaming_enabled = False
     logger.debug("WebSocket streaming not available")
 
+# ---------------------------------------------------------------------------
+# PII redaction helper -- masks raw PII values before they are persisted in
+# scan findings or passed to the policy engine.
+# ---------------------------------------------------------------------------
+
+def _redact_pii_value(value: str, entity_type: str) -> str:
+    """Return a masked version of *value* appropriate for *entity_type*.
+
+    The goal is to prevent raw PII (SSNs, credit-card numbers, emails, etc.)
+    from being stored verbatim in scan results while still keeping enough
+    information for operators to identify the *kind* of match.
+
+    Args:
+        value: The raw PII string detected by the engine.
+        entity_type: The entity type label (e.g. ``"SSN"``, ``"EMAIL"``).
+
+    Returns:
+        A redacted string with only non-sensitive fragments visible.
+    """
+    et = entity_type.upper()
+
+    if et in ("SSN", "US_SSN", "SOCIAL_SECURITY_NUMBER"):
+        # Show last 4 digits only: ***-**-XXXX
+        digits = "".join(ch for ch in value if ch.isdigit())
+        last4 = digits[-4:] if len(digits) >= 4 else digits
+        return f"***-**-{last4}"
+
+    if et in (
+        "CREDIT_CARD",
+        "CREDIT_CARD_NUMBER",
+        "PCI",
+        "CARD_NUMBER",
+    ):
+        digits = "".join(ch for ch in value if ch.isdigit())
+        last4 = digits[-4:] if len(digits) >= 4 else digits
+        return f"****-****-****-{last4}"
+
+    if et in ("EMAIL", "EMAIL_ADDRESS"):
+        # Show first character + domain: r***@domain.com
+        if "@" in value:
+            local, domain = value.rsplit("@", 1)
+            first_char = local[0] if local else ""
+            return f"{first_char}***@{domain}"
+        return "***@***.***"
+
+    if et in ("PHONE", "PHONE_NUMBER", "US_PHONE"):
+        digits = "".join(ch for ch in value if ch.isdigit())
+        last4 = digits[-4:] if len(digits) >= 4 else digits
+        return f"***-***-{last4}"
+
+    # Generic fallback
+    if len(value) <= 6:
+        # Short value: first char + *** + last char
+        if len(value) >= 2:
+            return value[0] + "***" + value[-1]
+        return "***"
+    return "***REDACTED***"
+
+
 # Global processor instance (reuse for efficiency within job lifecycle)
 # IMPORTANT: Call cleanup_processor() during worker shutdown to release memory
 _processor: FileProcessor | None = None
@@ -1248,7 +1307,7 @@ async def _detect_and_score(
             if span.context and span.context.surrounding_text:
                 context_text = span.context.surrounding_text
             findings_grouped.setdefault(span.entity_type, []).append({
-                "value": span.text,
+                "value": _redact_pii_value(span.text, span.entity_type),
                 "confidence": span.confidence,
                 "context": context_text,
             })
@@ -1261,7 +1320,7 @@ async def _detect_and_score(
                 entity_matches = [
                     EntityMatch(
                         entity_type=span.entity_type,
-                        value=span.text,
+                        value=_redact_pii_value(span.text, span.entity_type),
                         confidence=span.confidence,
                         start=span.start,
                         end=span.end,

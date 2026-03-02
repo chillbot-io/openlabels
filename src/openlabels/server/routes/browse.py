@@ -223,7 +223,9 @@ async def browse_files(
         base_filter.append(FileInventory.risk_tier == risk_tier)
 
     if search is not None:
-        base_filter.append(FileInventory.file_name.ilike(f"%{search}%"))
+        # Escape SQL LIKE wildcards to prevent wildcard injection
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        base_filter.append(FileInventory.file_name.ilike(f"%{escaped}%"))
 
     # Count
     count_stmt = select(func.count()).select_from(

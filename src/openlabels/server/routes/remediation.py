@@ -336,7 +336,9 @@ async def list_remediation_actions(
     if status:
         conditions.append(RemediationAction.status == status)
     if search:
-        conditions.append(RemediationAction.source_path.ilike(f"%{search}%"))
+        # Escape ILIKE wildcard characters to prevent injection (M12).
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conditions.append(RemediationAction.source_path.ilike(f"%{escaped}%"))
 
     query = select(RemediationAction).where(*conditions)
 

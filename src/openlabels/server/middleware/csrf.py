@@ -30,13 +30,18 @@ CSRF_TOKEN_LENGTH = 32
 # Methods that require CSRF protection
 PROTECTED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
-# Paths exempt from CSRF (e.g., auth callbacks, webhooks)
+# Paths exempt from CSRF (e.g., auth callbacks, webhooks).
+# Includes both bare and /api/v1/-prefixed variants so that the
+# versioned API routes are matched correctly.
 EXEMPT_PATHS = {
-    "/auth/callback",  # OAuth callback from Microsoft
+    "/auth/callback",  # OAuth callback (legacy)
+    "/api/v1/auth/callback",  # OAuth callback (versioned)
     "/health",
     "/api/docs",
     "/api/redoc",
     "/api/openapi.json",
+    "/api/v1/webhooks/m365",  # M365 audit webhook (external POST)
+    "/api/v1/webhooks/graph",  # Graph change notification webhook (external POST)
 }
 
 

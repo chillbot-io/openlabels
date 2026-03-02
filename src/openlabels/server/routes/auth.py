@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -475,9 +476,11 @@ async def auth_callback(
             detail="Missing authorization code or state",
         )
 
-    # Validate state
+    # Validate state — atomic consume prevents replay attacks (H27).
+    # A single SELECT FOR UPDATE + DELETE ensures only one callback
+    # can use a given state token, even under concurrent requests.
     pending_store = PendingAuthStore(db)
-    pending = await pending_store.get(state)
+    pending = await pending_store.consume(state)
 
     if not pending:
         log_security_event(
@@ -492,8 +495,6 @@ async def auth_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state",
         )
-
-    await pending_store.delete(state)
 
     callback_url = pending["callback_url"]
     final_redirect = pending["redirect_uri"]
@@ -649,8 +650,11 @@ async def _callback_oidc(
     id_token = token_result.get("id_token")
     if id_token:
         raw_claims = await validate_id_token(id_token, discovery, oidc_config)
-        # Validate nonce to prevent replay attacks
-        if nonce and raw_claims.get("nonce") != nonce:
+        # Validate nonce to prevent replay attacks.
+        # Use hmac.compare_digest for constant-time comparison to prevent
+        # timing side-channel attacks (M6, M7, M8).
+        claim_nonce = raw_claims.get("nonce", "")
+        if nonce and not hmac.compare_digest(claim_nonce, nonce):
             log_security_event(
                 event_type="oidc_nonce_mismatch",
                 details=_get_request_context(request),
