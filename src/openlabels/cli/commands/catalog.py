@@ -82,7 +82,7 @@ async def _run_rebuild(batch_size: int) -> None:
 
     settings = get_settings()
     storage = create_storage(settings.catalog)
-    await init_db(settings.database.url)
+    await init_db(settings.database.url.get_secret_value())
 
     try:
         async with get_session_context() as session:

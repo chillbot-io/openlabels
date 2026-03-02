@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 _limiter = Limiter(key_func=get_client_ip)
 
+# Security (H17): Maximum number of rows that can be exported in a single
+# request.  This prevents unbounded data extraction that could exhaust
+# server memory or be used for bulk exfiltration of scan results.
+_EXPORT_MAX_ROWS = 100_000
+
 
 class ResultResponse(BaseModel):
     id: UUID
@@ -221,6 +226,14 @@ async def export_results(
             risk_tier=risk_tier,
             has_label=has_label_bool,
         )
+        # Security (H17): Cap exported rows to prevent unbounded extraction
+        if len(rows) > _EXPORT_MAX_ROWS:
+            rows = rows[:_EXPORT_MAX_ROWS]
+            logger.warning(
+                "Export truncated to %d rows for tenant %s",
+                _EXPORT_MAX_ROWS,
+                _tenant.tenant_id,
+            )
         return _build_export_response(rows, format, filename, _EXPORT_COLS)
 
     # PostgreSQL fallback — stream with post-filtering
@@ -242,10 +255,20 @@ async def export_results(
         return True
 
     async def _pg_row_iter():
+        # Security (H17): Enforce maximum row limit for streaming exports
+        emitted = 0
         async for row_dict in result_service.stream_results_as_dicts(job_id=job_id):
             if not _matches_filters(row_dict):
                 continue
             yield row_dict
+            emitted += 1
+            if emitted >= _EXPORT_MAX_ROWS:
+                logger.warning(
+                    "Streaming export truncated to %d rows for tenant %s",
+                    _EXPORT_MAX_ROWS,
+                    _tenant.tenant_id,
+                )
+                break
 
     if format == "csv":
         async def _csv_generator():

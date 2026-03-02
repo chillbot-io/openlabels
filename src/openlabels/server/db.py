@@ -1,5 +1,29 @@
 """
 Database connection and session management.
+
+Production RLS enforcement
+--------------------------
+In production, the ``database_url`` passed to :func:`init_db` should use the
+**restricted** ``openlabels_app`` role (created by migration a1b2c3d4e5f7)
+rather than the database owner role.  The ``openlabels_app`` role has only
+DML privileges (SELECT/INSERT/UPDATE/DELETE) and is NOT the table owner,
+which means PostgreSQL Row-Level Security (RLS) policies are fully enforced
+on every query it executes.
+
+The owner / superuser connection string should be reserved exclusively for:
+* Running Alembic migrations (``alembic upgrade head``).
+* Administrative / maintenance operations (partition management, VACUUM, etc.).
+
+Example production connection strings::
+
+    # Application (RLS enforced):
+    OPENLABELS_DATABASE__URL=postgresql+asyncpg://openlabels_app:$PASSWORD@db:5432/openlabels
+
+    # Migrations / admin (owner, bypasses RLS):
+    OPENLABELS_DATABASE__ADMIN_URL=postgresql+asyncpg://openlabels_owner:$PASSWORD@db:5432/openlabels
+
+See migration a1b2c3d4e5f7 ("Enforce RLS with restricted role") and the
+``OPENLABELS_APP_ROLE_PASSWORD`` environment variable for details.
 """
 
 from __future__ import annotations
@@ -67,19 +91,27 @@ async def init_db(
         "pool_timeout": db_settings.pool_timeout,
     }
 
+    connect_args: dict = {}
+
     # PgBouncer compatibility: disable prepared statements which don't
     # work with transaction-level pooling. Also set
     # statement_cache_size=0 in the asyncpg connect_args.
     if db_settings.pgbouncer_mode:
-        engine_kwargs["connect_args"] = {
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
-        }
+        connect_args["statement_cache_size"] = 0
+        connect_args["prepared_statement_cache_size"] = 0
         logger.info("PgBouncer mode enabled: prepared statements disabled")
     elif db_settings.statement_cache_size != 100:
-        engine_kwargs["connect_args"] = {
-            "statement_cache_size": db_settings.statement_cache_size,
-        }
+        connect_args["statement_cache_size"] = db_settings.statement_cache_size
+
+    # Enforce SSL/TLS for database connections when configured
+    if db_settings.require_ssl:
+        import ssl as _ssl
+        ssl_ctx = _ssl.create_default_context()
+        connect_args["ssl"] = ssl_ctx
+        logger.info("Database SSL/TLS enforcement enabled")
+
+    if connect_args:
+        engine_kwargs["connect_args"] = connect_args
 
     _engine = create_async_engine(database_url, **engine_kwargs)
 

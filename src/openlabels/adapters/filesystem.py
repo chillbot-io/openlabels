@@ -816,6 +816,14 @@ class FilesystemAdapter:
 
             mode = acl.get("mode")
             if mode is not None:
+                # SECURITY (M63): Reject setuid (04000) and setgid (02000)
+                # bits to prevent privilege escalation via ACL restore.
+                if mode & 0o6000:
+                    logger.warning(
+                        "Stripping setuid/setgid bits from mode %o for %s",
+                        mode, path,
+                    )
+                    mode = mode & ~0o6000
                 os.chmod(str(path), mode)
 
             uid = acl.get("uid")

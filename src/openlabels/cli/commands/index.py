@@ -120,7 +120,7 @@ async def _init_db():
     from openlabels.server.db import init_db
 
     settings = get_settings()
-    await init_db(settings.database.url)
+    await init_db(settings.database.url.get_secret_value())
 
 
 async def _resolve_target(session, target_name: str):

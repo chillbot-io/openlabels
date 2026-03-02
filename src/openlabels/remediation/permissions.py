@@ -571,18 +571,32 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
         try:
             acl_dict = json.loads(acl_data)
         except (json.JSONDecodeError, ValueError):
-            # Fall back: legacy backups may use Python repr() format
+            # Fall back: legacy backups may use Python repr() format.
+            # SECURITY (M56): Restrict ast.literal_eval input to prevent
+            # parsing of excessively large or deeply nested Python literals
+            # from potentially-tampered backup files.  Only allow data that
+            # looks like a dict literal (starts with '{') and cap size at
+            # 100 KB — well above any legitimate ACL backup but small enough
+            # to prevent memory exhaustion.
             logger.warning(
                 "ACL backup data is not valid JSON for %s; "
                 "falling back to ast.literal_eval (legacy format). "
                 "Consider re-running lockdown to store JSON-format backups.",
                 path,
             )
-            try:
-                import ast
-                acl_dict = ast.literal_eval(acl_data)
-            except (ValueError, SyntaxError):
+            if len(acl_data) > 100_000 or not acl_data.strip().startswith("{"):
+                logger.warning(
+                    "ACL backup data rejected for ast.literal_eval: "
+                    "size=%d, starts_with_brace=%s",
+                    len(acl_data), acl_data.strip()[:1] == "{",
+                )
                 acl_dict = {"acl": acl_data}
+            else:
+                try:
+                    import ast
+                    acl_dict = ast.literal_eval(acl_data)
+                except (ValueError, SyntaxError):
+                    acl_dict = {"acl": acl_data}
 
     # Validate that parsed data is a dict (not a list, string, etc.)
     if not isinstance(acl_dict, dict):
@@ -595,6 +609,14 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
             # oct() returns strings like '0o100644'; use base 0 to auto-detect
             # the prefix, rather than base 8 which rejects the '0o' prefix.
             mode = int(acl_dict["mode"], 0) if isinstance(acl_dict["mode"], str) else acl_dict["mode"]
+            # SECURITY (M63): Reject setuid (04000) and setgid (02000) bits
+            # from backup data to prevent privilege escalation.
+            if mode & 0o6000:
+                logger.warning(
+                    "Rejecting restored mode %o for %s: setuid/setgid bits are not allowed",
+                    mode, path,
+                )
+                mode = mode & ~0o6000
             os.chmod(path, mode)
 
         # Restore ACLs via setfacl if data available

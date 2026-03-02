@@ -264,17 +264,12 @@ def register_error_handlers(app: FastAPI) -> None:
             },
         )
 
-        if settings.server.debug:
-            body: dict[str, Any] = {
-                "error": "INTERNAL_ERROR",
-                "message": str(exc),
-                "details": {"exception_type": type(exc).__name__},
-            }
-        else:
-            body = {
-                "error": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-            }
+        # Never leak exception details to clients, even in debug mode.
+        # Full details are logged server-side via logger.exception() above.
+        body: dict[str, Any] = {
+            "error": "INTERNAL_ERROR",
+            "message": "An unexpected error occurred",
+        }
 
         if request_id:
             body["request_id"] = request_id

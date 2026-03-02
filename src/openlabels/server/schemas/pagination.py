@@ -239,9 +239,9 @@ def _get_cursor_secret() -> bytes:
     from openlabels.server.config import get_settings
 
     settings = get_settings()
-    key = getattr(settings.server, "secret_key", None) or os.environ.get(
-        "OPENLABELS_SECRET_KEY", ""
-    )
+    raw_key = getattr(settings.server, "secret_key", None)
+    key = raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else (raw_key or "")
+    key = key or os.environ.get("OPENLABELS_SECRET_KEY", "")
     if not key:
         import secrets as _secrets
         import warnings

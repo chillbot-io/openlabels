@@ -127,21 +127,23 @@ start_system_postgres() {
 
     # Ensure postgres role has the test password and test database exists.
     # Try local socket first (trust/peer), fall back to TCP with password.
+    # SECURITY: Use arrays instead of eval to avoid shell injection (H24).
     if psql -U postgres -d postgres -c "SELECT 1" &> /dev/null; then
-        PSQL_CMD="psql -U postgres -d postgres"
+        PSQL_CMD=(psql -U postgres -d postgres)
     elif PGPASSWORD=test psql -h localhost -U postgres -d postgres -c "SELECT 1" &> /dev/null; then
-        PSQL_CMD="PGPASSWORD=test psql -h localhost -U postgres -d postgres"
+        export PGPASSWORD=test
+        PSQL_CMD=(psql -h localhost -U postgres -d postgres)
     else
         echo -e "${RED}Cannot connect to PostgreSQL as postgres user${NC}"
         return 1
     fi
 
     # Set password (idempotent)
-    eval $PSQL_CMD -c "ALTER ROLE postgres WITH PASSWORD 'test';" &> /dev/null
+    "${PSQL_CMD[@]}" -c "ALTER ROLE postgres WITH PASSWORD 'test';" &> /dev/null
 
     # Create test database if it doesn't exist
-    if ! eval $PSQL_CMD -c "SELECT 1 FROM pg_database WHERE datname='openlabels_test'" | grep -q 1; then
-        eval $PSQL_CMD -c "CREATE DATABASE openlabels_test;" &> /dev/null
+    if ! "${PSQL_CMD[@]}" -c "SELECT 1 FROM pg_database WHERE datname='openlabels_test'" | grep -q 1; then
+        "${PSQL_CMD[@]}" -c "CREATE DATABASE openlabels_test;" &> /dev/null
         echo -e "${GREEN}Created openlabels_test database${NC}"
     fi
 

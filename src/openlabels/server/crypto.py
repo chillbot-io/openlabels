@@ -6,18 +6,20 @@ Provides Fernet-based encryption for sensitive data at rest, including:
 - Selective field encryption for JSONB columns (used by ScanTarget.config)
 
 All encryption uses AES-128-CBC + HMAC-SHA256 via Fernet, keyed from the
-server's ``secret_key`` setting.
+server's ``secret_key`` setting via HKDF key derivation.
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import logging
+from functools import lru_cache
 from typing import Any
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 
 from openlabels.server.config import get_settings
 
@@ -46,24 +48,50 @@ CREDENTIAL_FIELD_NAMES = frozenset({
 })
 
 
-def _derive_fernet_key() -> bytes:
-    """Derive a Fernet key from the server's secret_key.
+def _derive_fernet_key(secret: str | None = None) -> bytes:
+    """Derive a Fernet key from the server's secret_key using HKDF.
 
-    Uses SHA-256 of (secret_key + salt) truncated to 32 bytes, then
-    base64url-encoded for Fernet.
+    Uses HKDF-SHA256 for proper cryptographic key derivation instead of a
+    single round of SHA-256.
 
     Raises ``RuntimeError`` if ``secret_key`` is not configured.
     """
-    settings = get_settings()
-    secret = settings.server.secret_key
+    if secret is None:
+        settings = get_settings()
+        key_val = settings.server.secret_key
+        secret = key_val.get_secret_value() if hasattr(key_val, "get_secret_value") else key_val
     if not secret:
         raise RuntimeError(
             "OPENLABELS_SERVER__SECRET_KEY is not configured. "
             "A secret key is required for credential encryption. "
             "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
         )
-    raw = hashlib.sha256(f"{secret}:credential-encryption".encode()).digest()
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"openlabels-credential-encryption-v1",
+        info=b"fernet-key",
+    )
+    raw = hkdf.derive(secret.encode())
     return base64.urlsafe_b64encode(raw)
+
+
+@lru_cache(maxsize=1)
+def _get_fernet() -> MultiFernet:
+    """Return a cached MultiFernet instance supporting key rotation.
+
+    The primary key is derived via HKDF. If ``OPENLABELS_SERVER__SECRET_KEY_PREVIOUS``
+    is set, a secondary Fernet is created from the old key so that data encrypted
+    with the previous key can still be decrypted (rotation support).
+    """
+    settings = get_settings()
+    primary = Fernet(_derive_fernet_key())
+    keys = [primary]
+    prev_key = getattr(settings.server, "secret_key_previous", None)
+    prev_secret = prev_key.get_secret_value() if hasattr(prev_key, "get_secret_value") else (prev_key or "")
+    if prev_secret:
+        keys.append(Fernet(_derive_fernet_key(prev_secret)))
+    return MultiFernet(keys)
 
 
 def encrypt_value(plaintext: str) -> str:
@@ -72,7 +100,7 @@ def encrypt_value(plaintext: str) -> str:
     Returns a string prefixed with ``ENCRYPTED_PREFIX`` so callers can
     detect already-encrypted values.
     """
-    f = Fernet(_derive_fernet_key())
+    f = _get_fernet()
     token = f.encrypt(plaintext.encode()).decode()
     return f"{ENCRYPTED_PREFIX}{token}"
 
@@ -87,7 +115,7 @@ def decrypt_value(token: str) -> str:
         # Not encrypted (legacy data or non-credential field) — return as-is
         return token
     raw_token = token[len(ENCRYPTED_PREFIX):]
-    f = Fernet(_derive_fernet_key())
+    f = _get_fernet()
     return f.decrypt(raw_token.encode()).decode()
 
 
@@ -124,13 +152,12 @@ def encrypt_config_credentials(config: dict[str, Any]) -> dict[str, Any]:
             try:
                 result[key] = encrypt_value(value)
             except RuntimeError:
-                # secret_key not configured — log and store plaintext
-                # so the app doesn't crash, but warn loudly
-                logger.error(
-                    "Cannot encrypt config field '%s': secret_key not configured",
-                    key,
+                # secret_key not configured — fail closed to prevent
+                # storing credentials in plaintext
+                raise RuntimeError(
+                    "OPENLABELS_SERVER__SECRET_KEY is required to store credentials. "
+                    "Cannot save plaintext credentials without encryption configured."
                 )
-                result[key] = value
         else:
             result[key] = value
     return result
@@ -195,7 +222,7 @@ def encrypt_dict(data: dict[str, Any]) -> str:
 
     Used by SavedCredential for full-payload encryption.
     """
-    f = Fernet(_derive_fernet_key())
+    f = _get_fernet()
     plaintext = json.dumps(data).encode()
     return f.encrypt(plaintext).decode()
 
@@ -206,6 +233,6 @@ def decrypt_dict(token: str) -> dict[str, Any]:
     Used by SavedCredential for full-payload decryption.
     Raises ``InvalidToken`` on failure.
     """
-    f = Fernet(_derive_fernet_key())
+    f = _get_fernet()
     plaintext = f.decrypt(token.encode())
     return json.loads(plaintext)

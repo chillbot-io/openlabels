@@ -32,7 +32,22 @@ class ServerSettings(BaseSettings):
     # Secret key for encrypting credentials stored in the database.
     # Required for credential encryption (SavedCredential and ScanTarget.config).
     # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
-    secret_key: str = ""
+    secret_key: SecretStr = SecretStr("")
+
+    # Previous secret key for key rotation. When rotating keys, move the current
+    # secret_key to secret_key_previous so existing encrypted data can still be decrypted.
+    secret_key_previous: SecretStr = SecretStr("")
+
+    @model_validator(mode="after")
+    def validate_production_secret_key(self) -> ServerSettings:
+        """Require a non-empty secret_key in production/staging environments."""
+        if self.environment in ("production", "staging"):
+            if not self.secret_key.get_secret_value():
+                raise ValueError(
+                    "OPENLABELS_SERVER__SECRET_KEY is required in production/staging. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+        return self
 
 
 class DatabaseSettings(BaseSettings):
@@ -49,7 +64,9 @@ class DatabaseSettings(BaseSettings):
     - Adjust ``pool_size`` down or use PgBouncer to keep within pg max_connections
     """
 
-    url: str = "postgresql+asyncpg://localhost/openlabels"
+    url: SecretStr = SecretStr("postgresql+asyncpg://localhost/openlabels")
+    # Require SSL for database connections (set to True for production)
+    require_ssl: bool = False
     pool_size: int = 20
     max_overflow: int = 10
     pool_recycle: int = 1800  # Recycle connections every 30 min to prevent stale connections
@@ -403,7 +420,7 @@ class RateLimitSettings(BaseSettings):
 class SecuritySettings(BaseSettings):
     """Security middleware configuration."""
 
-    max_request_size_mb: int = 100  # Max request body size
+    max_request_size_mb: int = 50  # Max request body size (aligned with upload limit)
 
 
 class TimeoutSettings(BaseSettings):

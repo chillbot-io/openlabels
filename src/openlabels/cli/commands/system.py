@@ -207,7 +207,7 @@ def backup(output: str, include_db: bool, db_url: str | None, server: str, token
             try:
                 from openlabels.server.config import get_settings
                 settings = get_settings()
-                db_connection = settings.database.url.replace("+asyncpg", "")
+                db_connection = settings.database.url.get_secret_value().replace("+asyncpg", "")
             except (ImportError, ValueError) as e:
                 click.echo(f"  Cannot determine database URL: {e}", err=True)
 
@@ -282,7 +282,7 @@ def restore(from_path: str, include_db: bool, db_url: str | None, server: str, t
                 try:
                     from openlabels.server.config import get_settings
                     settings = get_settings()
-                    db_connection = settings.database.url.replace("+asyncpg", "")
+                    db_connection = settings.database.url.get_secret_value().replace("+asyncpg", "")
                 except (ImportError, ValueError) as e:
                     click.echo(f"  Cannot determine database URL: {e}", err=True)
 

@@ -53,6 +53,30 @@ def _create_before_send_hook(
                         breadcrumb["data"], sensitive_fields,
                     )
 
+        # SECURITY (M22): Scrub exception values and stack frame local
+        # variables, which may contain passwords, tokens, or other secrets
+        # leaked via error messages or captured locals.
+        if "exception" in event:
+            for exc_info in event["exception"].get("values", []):
+                # Scrub the exception message itself
+                exc_value = exc_info.get("value", "")
+                if isinstance(exc_value, str):
+                    for field in sensitive_fields:
+                        exc_value = re.sub(
+                            rf"(?i)({field})\s*[=:]\s*\S+",
+                            r"\1=[Filtered]",
+                            exc_value,
+                        )
+                    exc_info["value"] = exc_value
+
+                # Scrub local variables in stack frames
+                stacktrace = exc_info.get("stacktrace", {})
+                for frame in stacktrace.get("frames", []):
+                    if "vars" in frame:
+                        frame["vars"] = _scrub_sensitive_data(
+                            frame["vars"], sensitive_fields,
+                        )
+
         return event
 
     return before_send

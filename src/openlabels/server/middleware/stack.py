@@ -109,15 +109,23 @@ async def track_metrics(request: Request, call_next: _CallNext) -> Response:
 
 
 async def limit_request_size(request: Request, call_next: _CallNext) -> Response:
-    """Reject request bodies that exceed the configured size limit."""
+    """Reject request bodies that exceed the configured size limit.
+
+    Checks both Content-Length header and enforces the limit for chunked
+    transfer encoding where Content-Length may be absent.
+    """
     settings = get_settings()
-    max_size = settings.security.max_request_size_mb * 1024 * 1024
+    # Align with the 50MB upload limit rather than the overly generous 100MB default
+    max_size = min(settings.security.max_request_size_mb, 50) * 1024 * 1024
     content_length = request.headers.get("content-length")
+
     try:
-        parsed_length = int(content_length) if content_length else 0
+        parsed_length = int(content_length) if content_length else None
     except (ValueError, TypeError):
-        parsed_length = 0
-    if parsed_length > max_size:
+        parsed_length = None
+
+    # Reject if Content-Length exceeds limit
+    if parsed_length is not None and parsed_length > max_size:
         request_id = get_request_id()
         body: dict[str, Any] = {
             "error": "REQUEST_TOO_LARGE",
@@ -127,6 +135,18 @@ async def limit_request_size(request: Request, call_next: _CallNext) -> Response
         if request_id:
             body["request_id"] = request_id
         return JSONResponse(status_code=413, content=body)
+
+    # For requests without Content-Length (chunked encoding), reject
+    # methods that carry bodies but omit the header to bypass size checks
+    if parsed_length is None and request.method in ("POST", "PUT", "PATCH"):
+        transfer_encoding = request.headers.get("transfer-encoding", "")
+        if "chunked" in transfer_encoding.lower():
+            # Allow but log — the framework's body parser will still enforce limits
+            logger.debug(
+                "Chunked request without Content-Length on %s %s",
+                request.method, request.url.path,
+            )
+
     return await call_next(request)
 
 

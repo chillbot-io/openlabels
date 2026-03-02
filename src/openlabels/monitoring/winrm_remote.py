@@ -30,11 +30,22 @@ class WinRMResult:
     error: str | None = None
 
 
+def _validate_host(host: str) -> str:
+    """Validate and sanitize WinRM host parameter to prevent injection."""
+    import re
+    # Allow only valid hostnames, FQDNs, and IPv4/IPv6 addresses
+    if not re.match(r'^[a-zA-Z0-9._:\[\]-]+$', host):
+        raise ValueError(f"Invalid WinRM host: {host!r}")
+    if len(host) > 253:
+        raise ValueError(f"WinRM host too long: {len(host)} chars")
+    return host
+
+
 def _get_winrm_session(
     host: str,
     username: str,
     password: str,
-    use_ssl: bool = False,
+    use_ssl: bool = True,
     server_cert_validation: str = "validate",
 ):
     """Create a WinRM session to a remote host.
@@ -43,12 +54,24 @@ def _get_winrm_session(
 
     Parameters
     ----------
+    use_ssl:
+        Use HTTPS transport (port 5986). Defaults to True for security.
+        Set to False only for testing or when using Kerberos encryption.
     server_cert_validation:
         Certificate validation mode: ``"validate"`` (default, secure) or
         ``"ignore"`` (skip verification — use only for testing/self-signed
         certs).
     """
     import winrm  # pywinrm
+
+    host = _validate_host(host)
+
+    if not use_ssl:
+        logger.warning(
+            "WinRM connection to %s using HTTP (unencrypted). "
+            "Credentials will be sent in cleartext. Use use_ssl=True for production.",
+            host,
+        )
 
     port = 5986 if use_ssl else 5985
     scheme = "https" if use_ssl else "http"
@@ -73,7 +96,7 @@ async def test_connection(
     host: str,
     username: str,
     password: str,
-    use_ssl: bool = False,
+    use_ssl: bool = True,
 ) -> WinRMResult:
     """Test WinRM connectivity and verify the account has audit privileges."""
     try:
@@ -138,7 +161,7 @@ async def configure_audit_policy(
     username: str,
     password: str,
     share_paths: list[str],
-    use_ssl: bool = False,
+    use_ssl: bool = True,
 ) -> WinRMResult:
     """Configure SACL audit rules on remote file shares via WinRM.
 
@@ -169,7 +192,7 @@ async def configure_audit_policy(
         # 1. Enables "Audit object access → File System" policy
         # 2. Adds SACL audit rules on each path
         # Each path is validated server-side via Test-Path.
-        _INJECTION_CHARS = set('"\'`$\n\r;&|')
+        _INJECTION_CHARS = set('"\'`$\n\r;&|(){}%#<>')
         validated_paths = []
         for p in share_paths:
             if any(c in p for c in _INJECTION_CHARS):
@@ -259,7 +282,7 @@ async def collect_events(
     password: str,
     since_hours: int = 24,
     max_events: int = 500,
-    use_ssl: bool = False,
+    use_ssl: bool = True,
 ) -> WinRMResult:
     """Collect file access events from a remote Windows Security Event Log.
 

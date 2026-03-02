@@ -40,6 +40,10 @@ WS_MAX_MESSAGE_SIZE = 4096  # 4 KB max inbound message size
 WS_MAX_MESSAGES_PER_MINUTE = 60  # Max client messages per minute
 WS_RATE_WINDOW_SECONDS = 60
 
+# WebSocket connection limits (DoS protection)
+WS_MAX_CONNECTIONS_PER_TENANT = 50  # Max concurrent connections per tenant
+WS_MAX_CONNECTIONS_GLOBAL = 500  # Max concurrent connections across all tenants
+
 # Redis pub/sub channel for WebSocket events
 WS_PUBSUB_CHANNEL = "openlabels:ws:events"
 
@@ -125,27 +129,60 @@ class ConnectionManager:
 
     def __init__(self):
         self.active_connections: dict[UUID, list[AuthenticatedConnection]] = {}
+        self.connections_per_tenant: dict[UUID, int] = {}
 
     async def connect(
         self, scan_id: UUID, websocket: WebSocket, user_id: UUID, tenant_id: UUID
-    ) -> AuthenticatedConnection:
-        """Accept a new authenticated WebSocket connection."""
+    ) -> AuthenticatedConnection | None:
+        """Accept a new authenticated WebSocket connection.
+
+        Returns None and closes with 1013 (Try Again Later) if connection
+        limits are exceeded.
+        """
+        # Check global connection limit
+        if self.connection_count >= WS_MAX_CONNECTIONS_GLOBAL:
+            logger.warning(
+                "WebSocket connection rejected: global limit reached (%d/%d)",
+                self.connection_count, WS_MAX_CONNECTIONS_GLOBAL,
+            )
+            await websocket.close(code=1013)  # Try Again Later
+            return None
+
+        # Check per-tenant connection limit
+        tenant_count = self.connections_per_tenant.get(tenant_id, 0)
+        if tenant_count >= WS_MAX_CONNECTIONS_PER_TENANT:
+            logger.warning(
+                "WebSocket connection rejected: tenant %s limit reached (%d/%d)",
+                tenant_id, tenant_count, WS_MAX_CONNECTIONS_PER_TENANT,
+            )
+            await websocket.close(code=1013)  # Try Again Later
+            return None
+
         await websocket.accept()
         conn = AuthenticatedConnection(websocket, user_id, tenant_id)
         if scan_id not in self.active_connections:
             self.active_connections[scan_id] = []
         self.active_connections[scan_id].append(conn)
+        self.connections_per_tenant[tenant_id] = tenant_count + 1
         return conn
 
     def disconnect(self, scan_id: UUID, conn: AuthenticatedConnection):
         """Remove a WebSocket connection."""
         if scan_id in self.active_connections:
+            prev_len = len(self.active_connections[scan_id])
             self.active_connections[scan_id] = [
                 c for c in self.active_connections[scan_id]
                 if c.websocket != conn.websocket
             ]
+            removed = prev_len - len(self.active_connections[scan_id])
             if not self.active_connections[scan_id]:
                 del self.active_connections[scan_id]
+
+            # Decrement per-tenant counter
+            if removed > 0 and conn.tenant_id in self.connections_per_tenant:
+                self.connections_per_tenant[conn.tenant_id] -= removed
+                if self.connections_per_tenant[conn.tenant_id] <= 0:
+                    del self.connections_per_tenant[conn.tenant_id]
 
     async def deliver_local(self, scan_id: UUID, message: dict):
         """Deliver a message to all local connections watching a scan."""
@@ -452,6 +489,8 @@ async def websocket_scan_progress(
             return
 
     conn = await manager.connect(scan_id, websocket, user_id, tenant_id)
+    if conn is None:
+        return
 
     # Rate limiting state
     message_timestamps: list[float] = []

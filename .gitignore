@@ -65,6 +65,7 @@ Thumbs.db
 *.key
 credentials.json
 secrets.json
+config.yaml
 dump.rdb
 
 # Runtime data (DuckDB/analytics catalog)

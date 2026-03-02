@@ -320,7 +320,15 @@ def _quarantine_unix(
             # Log rsync failures with exception type - non-critical as we have fallback
             logger.info(f"rsync failed, falling back to shutil: {type(e).__name__}: {e}")
 
-    # Fallback to shutil.move
+    # Fallback to shutil.move — verify destination is not a symlink to
+    # prevent following symlinks to write files outside the quarantine area (M59).
+    if dest_file.exists() and dest_file.is_symlink():
+        logger.error("Quarantine destination is a symlink: %s", dest_file)
+        return RemediationResult.failure(
+            action=RemediationAction.QUARANTINE,
+            source=source,
+            error="Quarantine destination is a symlink — refusing to follow",
+        )
     try:
         shutil.move(str(source), str(dest_file))
         logger.info(f"Successfully quarantined {source} to {dest_file}")
@@ -428,8 +436,16 @@ def restore_from_quarantine(
             performed_by=get_current_user(),
         )
 
-    # Move file back to original location
+    # Move file back to original location — verify destination is not a
+    # symlink to prevent following symlinks outside allowed bases (M59).
     original_path.parent.mkdir(parents=True, exist_ok=True)
+    if original_path.exists() and original_path.is_symlink():
+        logger.error("Restore destination is a symlink: %s", original_path)
+        return RemediationResult.failure(
+            action=RemediationAction.RESTORE,
+            source=quarantine_path,
+            error="Restore destination is a symlink — refusing to follow",
+        )
     try:
         shutil.move(str(quarantine_path), str(original_path))
     except (OSError, PermissionError) as e:

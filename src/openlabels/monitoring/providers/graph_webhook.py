@@ -32,6 +32,7 @@ Subscription lifecycle:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -114,15 +115,14 @@ class GraphWebhookProvider:
         # Deduplicate — multiple notifications may reference the same drive
         affected_drives: set[str] = set()
         for notification in notifications:
-            # Validate clientState to ensure the notification is authentic
+            # Validate clientState to ensure the notification is authentic.
+            # SECURITY (M6): Use hmac.compare_digest for constant-time
+            # comparison to prevent timing side-channel attacks.
             if self._client_state:
                 received_state = notification.get("clientState", "")
-                if received_state != self._client_state:
+                if not hmac.compare_digest(received_state, self._client_state):
                     logger.warning(
-                        "Rejected Graph notification with invalid clientState "
-                        "(expected=%r, received=%r)",
-                        self._client_state,
-                        received_state,
+                        "Rejected Graph notification with invalid clientState"
                     )
                     continue
 

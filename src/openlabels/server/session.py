@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.models import PendingAuth, Session
@@ -38,8 +39,16 @@ def _get_fernet():
 
     from openlabels.server.config import get_settings
 
-    key_secret = get_settings().auth.session_encryption_key
+    settings = get_settings()
+    key_secret = settings.auth.session_encryption_key
     if not key_secret or not key_secret.get_secret_value():
+        if settings.server.environment == "production":
+            raise RuntimeError(
+                "AUTH_SESSION_ENCRYPTION_KEY must be set in production. "
+                "Session tokens cannot be stored in plaintext in production "
+                "deployments (M3, M10). Generate a key with: "
+                "python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
         logger.warning(
             "AUTH_SESSION_ENCRYPTION_KEY is not set — session tokens are "
             "stored in plaintext. Set this key for production deployments."
@@ -142,6 +151,9 @@ class SessionStore:
         """
         Create or update a session.
 
+        Uses PostgreSQL INSERT ... ON CONFLICT (upsert) to avoid the
+        TOCTOU race condition (M52) inherent in SELECT-then-INSERT/UPDATE.
+
         Args:
             session_id: Unique session identifier
             data: Session data (tokens, claims, etc.)
@@ -153,27 +165,20 @@ class SessionStore:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
         encrypted_data = _encrypt_session_data(data)
 
-        # Check if session exists
-        result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
+        stmt = pg_insert(Session).values(
+            id=session_id,
+            data=encrypted_data,
+            expires_at=expires_at,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        ).on_conflict_do_update(
+            index_elements=[Session.id],
+            set_={
+                "data": encrypted_data,
+                "expires_at": expires_at,
+            },
         )
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            # Update existing session
-            existing.data = encrypted_data
-            existing.expires_at = expires_at
-        else:
-            # Create new session
-            session = Session(
-                id=session_id,
-                data=encrypted_data,
-                expires_at=expires_at,
-                tenant_id=tenant_id,
-                user_id=user_id,
-            )
-            self.db.add(session)
-
+        await self.db.execute(stmt)
         await self.db.flush()
 
     async def delete(self, session_id: str) -> bool:
@@ -318,6 +323,50 @@ class PendingAuthStore:
         )
         await self.db.flush()
         return result.rowcount > 0
+
+    async def consume(self, state: str) -> dict | None:
+        """
+        Atomically retrieve and delete pending auth state.
+
+        Uses SELECT ... FOR UPDATE followed by DELETE to ensure that only one
+        concurrent callback can consume a given state token, preventing OAuth
+        state replay attacks (H27).
+
+        Returns the pending auth data dict, or None if not found / expired.
+        """
+        try:
+            state = _sanitize_id(state)
+        except ValueError:
+            return None
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.AUTH_TIMEOUT_MINUTES)
+
+        # Lock the row so a concurrent request blocks until we delete it.
+        result = await self.db.execute(
+            select(PendingAuth).where(
+                PendingAuth.state == state,
+                PendingAuth.created_at > cutoff,
+            ).with_for_update()
+        )
+        pending = result.scalar_one_or_none()
+
+        if not pending:
+            return None
+
+        data = {
+            "redirect_uri": pending.redirect_uri,
+            "callback_url": pending.callback_url,
+            "nonce": pending.nonce,
+            "oidc_provider": pending.oidc_provider,
+            "created_at": pending.created_at,
+        }
+
+        # Delete the row while we still hold the lock.
+        await self.db.execute(
+            delete(PendingAuth).where(PendingAuth.state == state)
+        )
+        await self.db.flush()
+
+        return data
 
     async def cleanup_expired(self) -> int:
         """

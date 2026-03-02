@@ -137,7 +137,14 @@ def _register_root_endpoints(app: FastAPI) -> None:
         return {"status": "healthy", "version": __version__}
 
     @app.get("/metrics", include_in_schema=False)
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        from openlabels.server.config import get_settings
+        _settings = get_settings()
+        # In production/staging, only expose metrics to localhost (behind reverse proxy)
+        if _settings.server.environment in ("production", "staging"):
+            client_host = request.client.host if request.client else ""
+            if client_host not in ("127.0.0.1", "::1", "localhost"):
+                return JSONResponse(status_code=403, content={"error": "FORBIDDEN"})
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/api")
@@ -270,6 +277,16 @@ def _register_spa_serving(app: FastAPI) -> None:
 # Application factory
 def create_app() -> FastAPI:
     """Build and return the fully-configured FastAPI application."""
+    from openlabels.server.config import get_settings
+    settings = get_settings()
+
+    # Disable OpenAPI docs in production/staging to prevent unauthenticated API reconnaissance.
+    # Can be re-enabled via OPENLABELS_SERVER__DEBUG=true if needed.
+    is_production = settings.server.environment in ("production", "staging") and not settings.server.debug
+    docs_url = None if is_production else "/api/docs"
+    redoc_url = None if is_production else "/api/redoc"
+    openapi_url = None if is_production else "/api/openapi.json"
+
     application = FastAPI(
         title="OpenLabels API",
         description=(
@@ -282,9 +299,9 @@ def create_app() -> FastAPI:
         ),
         version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
     )
 
     application.state.limiter = limiter

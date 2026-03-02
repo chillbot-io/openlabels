@@ -13,10 +13,13 @@ Requires ``boto3``: install with ``pip install openlabels[s3]``.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+import socket
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from types import TracebackType
+from urllib.parse import urlparse
 
 from openlabels.adapters.base import (
     ExposureLevel,
@@ -38,6 +41,71 @@ except ImportError:
     BotoClientError = Exception  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
+
+# Private / internal IP networks that must never be reached via endpoint_url
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fd00::/8"),
+]
+
+
+def _validate_endpoint_url(url: str) -> str:
+    """Validate that an S3 endpoint_url does not target private/internal IPs.
+
+    Parses the URL, resolves the hostname, and rejects the URL if any of the
+    resolved addresses fall within private or reserved IP ranges.  This
+    prevents SSRF attacks where a user-supplied endpoint_url could be used
+    to reach internal services (e.g. cloud metadata endpoints, internal APIs).
+
+    Args:
+        url: The endpoint URL to validate.
+
+    Returns:
+        The validated URL (unchanged) if it passes all checks.
+
+    Raises:
+        ValueError: If the URL is malformed, the hostname cannot be resolved,
+            or the resolved IP is in a blocked range.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception as exc:
+        raise ValueError(f"Invalid endpoint URL: {exc}") from exc
+
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"endpoint_url must use http or https scheme, got '{parsed.scheme}'"
+        )
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("endpoint_url is missing a hostname")
+
+    # Resolve the hostname to IP addresses
+    try:
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"Cannot resolve endpoint_url hostname '{hostname}': {exc}") from exc
+
+    if not addr_infos:
+        raise ValueError(f"Cannot resolve endpoint_url hostname '{hostname}': no addresses found")
+
+    for addr_info in addr_infos:
+        ip_str = addr_info[4][0]
+        ip_addr = ipaddress.ip_address(ip_str)
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise ValueError(
+                    f"endpoint_url hostname '{hostname}' resolves to private/internal "
+                    f"address {ip_str} (in {network}). This is not allowed."
+                )
+
+    return url
 
 
 async def _iter_s3_pages(paginator_result) -> list[dict]:
@@ -451,6 +519,8 @@ class S3Adapter:
             kwargs["aws_access_key_id"] = self._access_key
             kwargs["aws_secret_access_key"] = self._secret_key
         if self._endpoint_url:
+            # Security: Validate endpoint_url to prevent SSRF to internal services
+            _validate_endpoint_url(self._endpoint_url)
             kwargs["endpoint_url"] = self._endpoint_url
 
         return boto3.client(**kwargs)
