@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 import re
 
-from ..types import Span, Tier
-from .base import BaseDetector
-from .pattern_registry import PatternDefinition, _p
-from .registry import register_detector
+from ...types import Span, Tier
+from ..base import BaseDetector
+from ..pattern_registry import PatternDefinition, _p
+from ..registry import register_detector
 
 logger = logging.getLogger(__name__)
 
