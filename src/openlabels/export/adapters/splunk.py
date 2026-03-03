@@ -16,6 +16,7 @@ from datetime import timezone
 
 import httpx
 
+from openlabels.core.url_validation import validate_url
 from openlabels.export.adapters.base import ExportRecord
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ class SplunkAdapter:
         verify_ssl: bool = True,
         batch_size: int = _MAX_BATCH_SIZE,
     ) -> None:
+        # SECURITY: Validate HEC URL to prevent SSRF attacks
+        validate_url(hec_url, name="Splunk HEC URL")
         self._url = hec_url.rstrip("/")
         self._token = hec_token
         self._index = index

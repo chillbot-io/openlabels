@@ -16,6 +16,7 @@ import logging
 
 import httpx
 
+from openlabels.core.url_validation import validate_url
 from openlabels.export.adapters.base import ExportRecord
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ class ElasticAdapter:
         index_prefix: str = "openlabels",
         verify_ssl: bool = True,
     ) -> None:
+        # SECURITY: Validate all host URLs to prevent SSRF attacks
+        for host in hosts:
+            validate_url(host, name="Elasticsearch host")
         self._hosts = hosts
         self._api_key = api_key
         self._username = username

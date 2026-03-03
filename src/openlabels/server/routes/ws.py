@@ -16,6 +16,8 @@ Security features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 from datetime import datetime, timezone
@@ -46,6 +48,37 @@ WS_MAX_CONNECTIONS_GLOBAL = 500  # Max concurrent connections across all tenants
 
 # Redis pub/sub channel for WebSocket events
 WS_PUBSUB_CHANNEL = "openlabels:ws:events"
+
+
+def _get_pubsub_hmac_key() -> bytes:
+    """Return the HMAC key for signing Redis pub/sub messages."""
+    settings = get_settings()
+    key = settings.server.secret_key.get_secret_value()
+    if not key:
+        key = "openlabels-dev-pubsub-key"
+    return key.encode("utf-8")
+
+
+def sign_pubsub_payload(payload: str) -> str:
+    """Sign a JSON payload with HMAC-SHA256 and return ``sig:payload``."""
+    sig = hmac.new(_get_pubsub_hmac_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{sig}:{payload}"
+
+
+def verify_pubsub_payload(signed: str) -> str | None:
+    """Verify and extract the payload from a signed ``sig:payload`` string.
+
+    Returns the payload if valid, None if the signature is invalid.
+    """
+    sep = signed.find(":")
+    if sep == -1:
+        return None
+    sig_received = signed[:sep]
+    payload = signed[sep + 1:]
+    sig_expected = hmac.new(_get_pubsub_hmac_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    if hmac.compare_digest(sig_received, sig_expected):
+        return payload
+    return None
 
 
 def validate_websocket_origin(websocket: WebSocket) -> bool:
@@ -310,7 +343,8 @@ class PubSubBroadcaster:
         if self._publisher and self._running:
             try:
                 payload = json.dumps(message, default=str)
-                await self._publisher.publish(WS_PUBSUB_CHANNEL, payload)
+                signed = sign_pubsub_payload(payload)
+                await self._publisher.publish(WS_PUBSUB_CHANNEL, signed)
                 return
             except Exception as e:
                 logger.warning("WebSocket pub/sub publish failed (%s), falling back to local", e)
@@ -334,7 +368,14 @@ class PubSubBroadcaster:
                 if message["type"] != "message":
                     continue
 
-                data = json.loads(message["data"])
+                # SECURITY: Verify HMAC signature before processing
+                raw = message["data"]
+                payload = verify_pubsub_payload(raw)
+                if payload is None:
+                    logger.warning("WebSocket pub/sub: rejected message with invalid HMAC signature")
+                    continue
+
+                data = json.loads(payload)
                 scan_id_str = data.get("scan_id")
                 if scan_id_str:
                     await self._local.deliver_local(UUID(scan_id_str), data)
@@ -367,7 +408,8 @@ async def authenticate_websocket(
     # In dev mode with auth disabled, use the existing dev tenant/user
     # that was created by the auth bootstrapper at startup — do NOT
     # auto-create users or bypass authentication entirely.
-    if settings.auth.provider == "none":
+    # SECURITY: Only allow auth bypass in development environment
+    if settings.auth.provider == "none" and settings.server.environment == "development":
         async with get_session_factory()() as session:
             tenant_query = select(Tenant).where(
                 (Tenant.idp_tenant_id == "dev-tenant") | (Tenant.azure_tenant_id == "dev-tenant")

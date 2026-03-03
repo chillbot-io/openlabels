@@ -33,7 +33,9 @@ from openlabels.server.routes.ws import (
     WS_MAX_MESSAGES_PER_MINUTE,
     WS_RATE_WINDOW_SECONDS,
     authenticate_websocket,
+    sign_pubsub_payload,
     validate_websocket_origin,
+    verify_pubsub_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,7 +246,8 @@ class GlobalPubSubBroadcaster:
         if self._publisher and self._running:
             try:
                 payload = json.dumps(routed, default=str)
-                await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, payload)
+                signed = sign_pubsub_payload(payload)
+                await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, signed)
                 return
             except Exception as e:
                 logger.warning("Global WS publish failed (%s), falling back to local", e)
@@ -259,7 +262,8 @@ class GlobalPubSubBroadcaster:
         if self._publisher and self._running:
             try:
                 payload = json.dumps(routed, default=str)
-                await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, payload)
+                signed = sign_pubsub_payload(payload)
+                await self._publisher.publish(GLOBAL_PUBSUB_CHANNEL, signed)
                 return
             except Exception as e:
                 logger.warning("Global WS broadcast failed (%s), falling back to local", e)
@@ -278,7 +282,14 @@ class GlobalPubSubBroadcaster:
                 if msg["type"] != "message":
                     continue
 
-                data = json.loads(msg["data"])
+                # SECURITY: Verify HMAC signature before processing
+                raw = msg["data"]
+                payload = verify_pubsub_payload(raw)
+                if payload is None:
+                    logger.warning("Global WS pub/sub: rejected message with invalid HMAC signature")
+                    continue
+
+                data = json.loads(payload)
                 tid_str = data.pop("tenant_id", None)
 
                 if tid_str == "__all__":
