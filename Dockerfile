@@ -1,9 +1,9 @@
 # OpenLabels API Server
 # Multi-stage build for smaller production image
 
-# Pin the base image to a specific digest in production by passing:
-#   --build-arg PYTHON_IMAGE=python:3.11-slim@sha256:<digest>
-ARG PYTHON_IMAGE=python:3.11-slim
+# Base image pinned to a specific digest for reproducible builds.
+# Update the digest periodically to pick up security patches.
+ARG PYTHON_IMAGE=python:3.11-slim@sha256:1591aa8c01b5b37ab31dbe5662c5bdcf40c2f1bce4ef1c1fd24802dae3d01052
 
 # ── Build stage ─────────────────────────────────────────────────────────
 FROM ${PYTHON_IMAGE} AS builder

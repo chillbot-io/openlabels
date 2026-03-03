@@ -96,6 +96,7 @@ dependencies = [
     "transformers>=4.36.0,<5",  # NER models
     "tokenizers>=0.15.0",  # Fast tokenization
     "numpy>=1.24.0,<2",
+    "torch>=2.6.0",  # Explicit pin — pulled transitively by gliner; pinned to govern version
     "gliner>=0.2.0",  # GLiNER zero-shot NER (Gretel PII model)
     "lingua-language-detector>=2.0.0,<3",  # Language detection for multilingual routing
 ]

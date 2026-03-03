@@ -65,7 +65,10 @@ _BLOCKED_FUNCTIONS = re.compile(
     r"read_ndjson|read_ndjson_auto|"
     r"glob|scan_parquet|scan_csv|scan_json|"
     r"httpfs|http_get|http_post|"
-    r"duckdb_settings)\b",
+    r"duckdb_settings|"
+    r"system|shell|attach|copy|"
+    r"export_database|import_database|"
+    r"load|install)\b",
     re.IGNORECASE,
 )
 
