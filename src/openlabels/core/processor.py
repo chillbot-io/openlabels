@@ -33,6 +33,94 @@ from .types import ExposureLevel, RiskTier, Span
 
 logger = logging.getLogger(__name__)
 
+# SECURITY: Magic byte signatures for content-type validation.
+# Prevents attackers from disguising executables as documents by renaming extensions.
+_MAGIC_SIGNATURES: dict[bytes, str] = {
+    b"%PDF": "application/pdf",
+    b"PK\x03\x04": "application/zip",          # ZIP (DOCX, XLSX, PPTX, ODT are ZIP)
+    b"\xd0\xcf\x11\xe0": "application/msword",  # OLE2 (DOC, XLS, PPT, MSG)
+    b"\x89PNG": "image/png",
+    b"\xff\xd8\xff": "image/jpeg",
+    b"GIF87a": "image/gif",
+    b"GIF89a": "image/gif",
+    b"RIFF": "image/webp",                      # RIFF....WEBP
+    b"II\x2a\x00": "image/tiff",               # TIFF little-endian
+    b"MM\x00\x2a": "image/tiff",               # TIFF big-endian
+    b"BM": "image/bmp",
+}
+
+# MIME types that are ZIP-based (Office Open XML, ODF)
+_ZIP_BASED_MIMES: frozenset[str] = frozenset({
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/zip",
+})
+
+# MIME types that are OLE2-based (legacy Office)
+_OLE2_BASED_MIMES: frozenset[str] = frozenset({
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.ms-outlook",
+})
+
+# Executable signatures that should NEVER be processed regardless of extension
+_DANGEROUS_SIGNATURES: tuple[bytes, ...] = (
+    b"MZ",           # PE executable (EXE, DLL)
+    b"\x7fELF",      # ELF binary
+    b"#!",           # Shell script (shebang)
+)
+
+
+def _validate_content_type(content: bytes, mime_from_extension: str | None) -> str | None:
+    """Validate file content against magic bytes and return the actual MIME type.
+
+    Returns ``None`` if the content is safe to process. Returns an error string
+    if the content appears dangerous or mismatches the claimed extension.
+    """
+    if len(content) < 4:
+        return None  # Too small to validate — let extractors handle it
+
+    # Block dangerous executable signatures regardless of extension
+    for sig in _DANGEROUS_SIGNATURES:
+        if content[:len(sig)] == sig:
+            return f"Blocked: content matches executable signature ({sig[:4]!r})"
+
+    # Detect actual content type from magic bytes
+    detected_mime: str | None = None
+    for sig, mime in _MAGIC_SIGNATURES.items():
+        if content[:len(sig)] == sig:
+            detected_mime = mime
+            break
+
+    if detected_mime is None or mime_from_extension is None:
+        return None  # Can't validate — allow through
+
+    # Normalize: ZIP-based Office formats are all PK\x03\x04 internally
+    if detected_mime == "application/zip" and mime_from_extension in _ZIP_BASED_MIMES:
+        return None  # Expected: DOCX/XLSX/PPTX are ZIP files
+
+    if detected_mime == "application/msword" and mime_from_extension in _OLE2_BASED_MIMES:
+        return None  # Expected: DOC/XLS/PPT/MSG are OLE2 files
+
+    # Check for type-category mismatch (e.g., image extension but PDF content)
+    ext_category = mime_from_extension.split("/")[0] if mime_from_extension else ""
+    detected_category = detected_mime.split("/")[0]
+    if ext_category and detected_category and ext_category != detected_category:
+        # PDF is application/* but commonly processed — allow if extension matches
+        if detected_mime == "application/pdf" and mime_from_extension == "application/pdf":
+            return None
+        return (
+            f"Content-type mismatch: extension suggests {mime_from_extension} "
+            f"but content matches {detected_mime}"
+        )
+
+    return None
+
 
 # Supported text-based file extensions
 TEXT_EXTENSIONS: set[str] = frozenset({
@@ -203,6 +291,16 @@ class FileProcessor:
             result.processing_time_ms = (time.time() - start_time) * 1000
             logger.warning(f"Rejected oversized file: {file_path} ({actual_size:,} bytes)")
             return result
+
+        # SECURITY: Validate content magic bytes against claimed extension to block
+        # disguised executables and content-type mismatches.
+        if isinstance(content, bytes):
+            mismatch = _validate_content_type(content, mime_type)
+            if mismatch:
+                result.error = mismatch
+                result.processing_time_ms = (time.time() - start_time) * 1000
+                logger.warning(f"Content-type validation failed for {file_path}: {mismatch}")
+                return result
 
         try:
             # Extract text if bytes

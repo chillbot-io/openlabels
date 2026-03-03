@@ -54,13 +54,52 @@ _BLOCKED_NETWORKS = [
 ]
 
 
+def _resolve_and_check(hostname: str, port: int | None) -> set[str]:
+    """Resolve *hostname* and reject if any IP falls in a blocked network.
+
+    Returns the set of resolved IP strings so callers can compare across
+    multiple resolution rounds (DNS-rebinding detection).
+    """
+    try:
+        addr_infos = socket.getaddrinfo(
+            hostname, port or 443, proto=socket.IPPROTO_TCP,
+        )
+    except socket.gaierror as exc:
+        raise ValueError(
+            f"Cannot resolve endpoint_url hostname '{hostname}': {exc}",
+        ) from exc
+
+    if not addr_infos:
+        raise ValueError(
+            f"Cannot resolve endpoint_url hostname '{hostname}': no addresses found",
+        )
+
+    resolved_ips: set[str] = set()
+    for addr_info in addr_infos:
+        ip_str = addr_info[4][0]
+        resolved_ips.add(ip_str)
+        ip_addr = ipaddress.ip_address(ip_str)
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise ValueError(
+                    f"endpoint_url hostname '{hostname}' resolves to private/internal "
+                    f"address {ip_str} (in {network}). This is not allowed."
+                )
+
+    return resolved_ips
+
+
 def _validate_endpoint_url(url: str) -> str:
     """Validate that an S3 endpoint_url does not target private/internal IPs.
 
-    Parses the URL, resolves the hostname, and rejects the URL if any of the
-    resolved addresses fall within private or reserved IP ranges.  This
-    prevents SSRF attacks where a user-supplied endpoint_url could be used
-    to reach internal services (e.g. cloud metadata endpoints, internal APIs).
+    Parses the URL, resolves the hostname **twice** (with a brief pause), and
+    rejects the URL if:
+    - any resolved address falls within private or reserved IP ranges, or
+    - the two resolutions return different IPs (DNS rebinding indicator).
+
+    The double-resolve mitigates the TOCTOU (time-of-check-to-time-of-use)
+    gap where an attacker's DNS server could return a safe IP on the first
+    lookup and a private IP on the second lookup that boto3 performs.
 
     Args:
         url: The endpoint URL to validate.
@@ -86,24 +125,29 @@ def _validate_endpoint_url(url: str) -> str:
     if not hostname:
         raise ValueError("endpoint_url is missing a hostname")
 
-    # Resolve the hostname to IP addresses
-    try:
-        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ValueError(f"Cannot resolve endpoint_url hostname '{hostname}': {exc}") from exc
+    # First resolution + blocked-IP check
+    first_ips = _resolve_and_check(hostname, parsed.port)
 
-    if not addr_infos:
-        raise ValueError(f"Cannot resolve endpoint_url hostname '{hostname}': no addresses found")
+    # Brief pause, then re-resolve to detect DNS rebinding.
+    # An attacker's DNS must flip the record between these two lookups; the
+    # short window makes successful rebinding very unlikely.
+    import time
+    time.sleep(0.05)  # 50 ms
 
-    for addr_info in addr_infos:
-        ip_str = addr_info[4][0]
-        ip_addr = ipaddress.ip_address(ip_str)
-        for network in _BLOCKED_NETWORKS:
-            if ip_addr in network:
-                raise ValueError(
-                    f"endpoint_url hostname '{hostname}' resolves to private/internal "
-                    f"address {ip_str} (in {network}). This is not allowed."
-                )
+    second_ips = _resolve_and_check(hostname, parsed.port)
+
+    if first_ips != second_ips:
+        logger.warning(
+            "DNS rebinding detected for endpoint_url hostname '%s': "
+            "first=%s second=%s",
+            hostname,
+            first_ips,
+            second_ips,
+        )
+        raise ValueError(
+            f"endpoint_url hostname '{hostname}' returned inconsistent DNS results "
+            f"(possible DNS rebinding attack). First: {first_ips}, Second: {second_ips}"
+        )
 
     return url
 

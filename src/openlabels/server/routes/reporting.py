@@ -356,7 +356,10 @@ async def _build_report_data(
     files_with_pii = files_with_findings
     scan_duration = "-"
     if job_id:
-        job_result = await session.execute(select(ScanJob).where(ScanJob.id == job_id))
+        # SECURITY: Filter by tenant_id to prevent cross-tenant job metadata leakage.
+        job_result = await session.execute(
+            select(ScanJob).where(ScanJob.id == job_id, ScanJob.tenant_id == tenant_id)
+        )
         job = job_result.scalar_one_or_none()
         if job:
             job_name = job.name or str(job.id)

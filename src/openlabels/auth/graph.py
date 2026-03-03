@@ -156,11 +156,13 @@ class GraphClient:
         self.tenant_id = tenant_id or settings.auth.tenant_id
         self.client_id = client_id or settings.auth.client_id
         _cfg_secret = settings.auth.client_secret
-        self.client_secret = client_secret or (
+        # SECURITY: Store as private attribute to reduce exposure in stack traces,
+        # memory dumps, and repr() serialization.
+        self._client_secret = client_secret or (
             _cfg_secret.get_secret_value() if _cfg_secret else None
         )
 
-        if not all([self.tenant_id, self.client_id, self.client_secret]):
+        if not all([self.tenant_id, self.client_id, self._client_secret]):
             raise ValueError(
                 "Graph client requires tenant_id, client_id, and client_secret. "
                 "Set AUTH_TENANT_ID, AUTH_CLIENT_ID, AUTH_CLIENT_SECRET environment variables."
@@ -169,7 +171,7 @@ class GraphClient:
         # Initialize MSAL confidential client
         self._msal_app = ConfidentialClientApplication(
             client_id=self.client_id,
-            client_credential=self.client_secret,
+            client_credential=self._client_secret,
             authority=f"https://login.microsoftonline.com/{self.tenant_id}",
         )
 
@@ -186,8 +188,19 @@ class GraphClient:
             self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
 
+    def __repr__(self) -> str:
+        """Exclude secrets from repr output."""
+        return f"GraphClient(tenant_id={self.tenant_id!r}, client_id={self.client_id!r})"
+
+    def clear_credentials(self) -> None:
+        """Clear secrets from memory."""
+        self._client_secret = ""
+        self._access_token = None
+        self._token_expires = None
+
     async def close(self) -> None:
-        """Close the shared HTTP client. Call on shutdown."""
+        """Close the shared HTTP client and clear credentials. Call on shutdown."""
+        self.clear_credentials()
         if self._http_client is not None and not self._http_client.is_closed:
             await self._http_client.aclose()
             self._http_client = None
