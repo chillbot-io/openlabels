@@ -363,6 +363,8 @@ async def _login_dev_mode(
 
     safe_redirect = validate_redirect_uri(redirect_uri, request)
     response = RedirectResponse(url=safe_redirect, status_code=302)
+    if existing_session_id:
+        response.delete_cookie(SESSION_COOKIE_NAME)
     _set_session_cookie(response, session_id, request)
     return response
 
@@ -630,6 +632,8 @@ async def _callback_azure_ad(
     )
 
     response = RedirectResponse(url=final_redirect, status_code=302)
+    if existing_session_id:
+        response.delete_cookie(SESSION_COOKIE_NAME)
     _set_session_cookie(response, session_id, request)
     return response
 
@@ -746,6 +750,8 @@ async def _callback_oidc(
     )
 
     response = RedirectResponse(url=final_redirect, status_code=302)
+    if existing_session_id:
+        response.delete_cookie(SESSION_COOKIE_NAME)
     _set_session_cookie(response, session_id, request)
     return response
 
@@ -826,6 +832,8 @@ async def dev_login(
     user_info = {"id": "dev-user-oid", "email": "admin@localhost", "name": "Admin (Dev)", "roles": ["admin"]}
 
     response = JSONResponse(content={"authenticated": True, "user": user_info})
+    if existing_session_id:
+        response.delete_cookie(SESSION_COOKIE_NAME)
     _set_session_cookie(response, session_id, request)
     return response
 
