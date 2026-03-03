@@ -85,16 +85,8 @@ class HyperscanDetector(BaseDetector):
         self._matcher = HyperscanMatcher(patterns=all_patterns, use_fallback=True)
         self._using_hyperscan = self._matcher.using_hyperscan
 
-        if self._using_hyperscan:
-            logger.info(
-                f"HyperscanDetector initialized with {self._matcher.pattern_count} patterns "
-                f"(SIMD-accelerated)"
-            )
-        else:
-            logger.info(
-                f"HyperscanDetector initialized with {self._matcher.pattern_count} patterns "
-                f"(Python regex fallback)"
-            )
+        mode = "SIMD-accelerated" if self._using_hyperscan else "Python regex fallback"
+        logger.info(f"HyperscanDetector initialized with {self._matcher.pattern_count} patterns ({mode})")
 
     def detect(self, text: str) -> list[Span]:
         """

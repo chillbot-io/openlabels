@@ -1,16 +1,8 @@
 import { ApiError } from '../client.ts';
+import { getCsrfToken } from '../../lib/csrf.ts';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 const EXPORT_TIMEOUT_MS = 120_000;
-
-function getCsrfToken(): string | undefined {
-  const match = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('openlabels_csrf='));
-  if (!match) return undefined;
-  const eqIndex = match.indexOf('=');
-  return eqIndex >= 0 ? match.slice(eqIndex + 1) : undefined;
-}
 
 async function fetchBlob(path: string, params?: Record<string, string | undefined>): Promise<Blob> {
   // Build the URL using the same pattern as apiFetch for consistency

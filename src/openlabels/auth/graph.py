@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -73,6 +74,9 @@ def escape_odata_string(value: str) -> str:
     """
     if not isinstance(value, str):
         raise ValueError("OData value must be a string")
+
+    # Normalize to NFC to prevent Unicode bypass of blocklist
+    value = unicodedata.normalize("NFC", value)
 
     # Check for potentially malicious OData operators/functions
     if _ODATA_INJECTION_PATTERN.search(value):

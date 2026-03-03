@@ -1,8 +1,10 @@
 # Test infrastructure for OpenLabels
 # Usage: docker-compose -f docker-compose.test.yml up -d
-# Then: export TEST_DATABASE_URL="postgresql+asyncpg://postgres:test@localhost:5432/openlabels_test"
+# Then: export TEST_DATABASE_URL="postgresql+asyncpg://postgres:${POSTGRES_TEST_PASSWORD:-openlabels_test_c8f2e9a1b4d7}@localhost:5432/openlabels_test"
 #       export REDIS_URL="redis://localhost:6379"
 #       pytest tests/
+#
+# Override via POSTGRES_TEST_PASSWORD / REDIS_TEST_PASSWORD env vars
 
 services:
   postgres:
@@ -10,7 +12,7 @@ services:
     container_name: openlabels-test-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: test
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD:-openlabels_test_c8f2e9a1b4d7}
       POSTGRES_DB: openlabels_test
     ports:
       - "127.0.0.1:5432:5432"
@@ -25,13 +27,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: openlabels-test-redis
-    command: redis-server --requirepass test
+    command: redis-server --requirepass ${REDIS_TEST_PASSWORD:-openlabels_test_c8f2e9a1b4d7}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_test_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "test", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_TEST_PASSWORD:-openlabels_test_c8f2e9a1b4d7}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -405,13 +405,11 @@ class Worker:
             max_overflow=settings.database.max_overflow,
         )
 
-        # Initialize state manager (Redis-based with in-memory fallback)
         self._state_manager = await get_worker_state_manager()
 
         self.running = True
         logger.info(f"Worker {self.worker_id} started with concurrency={self.concurrency}")
 
-        # Write initial state
         await self._state_manager.set_state(self.worker_id, {
             "worker_id": self.worker_id,
             "concurrency": self.concurrency,
@@ -421,7 +419,6 @@ class Worker:
             "hostname": socket.gethostname(),
         })
 
-        # Set up signal handlers
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._handle_shutdown)

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from openlabels.core.types import JobStatus
 from openlabels.exceptions import BadRequestError, NotFoundError
@@ -273,46 +273,3 @@ class ScanService(BaseService):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
-    async def cleanup_old_scans(
-        self,
-        days: int = 30,
-        status: str | None = None,
-    ) -> int:
-        """
-        Delete scan jobs older than specified days.
-
-        Args:
-            days: Delete scans older than this many days (default 30)
-            status: Optional status filter (e.g., 'completed', 'failed')
-                   If None, only deletes completed and cancelled scans.
-
-        Returns:
-            Number of scans deleted
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-        conditions = [
-            ScanJob.tenant_id == self.tenant_id,
-            ScanJob.created_at < cutoff,
-        ]
-
-        if status:
-            conditions.append(ScanJob.status == status)
-        else:
-            # Default: only clean up terminal states
-            conditions.append(ScanJob.status.in_([JobStatus.COMPLETED, JobStatus.CANCELLED]))
-
-        stmt = delete(ScanJob).where(*conditions)
-        result = await self.session.execute(stmt)
-        await self.flush()
-
-        count = result.rowcount
-        if count > 0:
-            self._log_info(
-                f"Cleaned up {count} old scans (older than {days} days)",
-                deleted_count=count,
-                days=days,
-                status_filter=status,
-            )
-
-        return count

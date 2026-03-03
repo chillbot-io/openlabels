@@ -1,23 +1,14 @@
+import { getCsrfToken } from '../lib/csrf.ts';
+
 const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 const API_TIMEOUT_MS = 30_000;
 
-const CSRF_COOKIE_NAME = 'openlabels_csrf';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
 const CSRF_PROTECTED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 // Guard against multiple concurrent 401 responses each triggering a
 // full-page navigation to the login endpoint.
 let isRedirectingToLogin = false;
-
-function getCsrfToken(): string | undefined {
-  const match = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
-  if (!match) return undefined;
-  // Use indexOf + slice to handle cookie values that contain '=' characters
-  const eqIndex = match.indexOf('=');
-  return eqIndex >= 0 ? match.slice(eqIndex + 1) : undefined;
-}
 
 export class ApiError extends Error {
   status: number;

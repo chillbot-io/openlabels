@@ -150,9 +150,9 @@ class TestAdapterRegistration:
 
 class TestLabelSyncBack:
     def test_cloud_label_sync_back_function_is_async(self):
-        """The _cloud_label_sync_back helper should be an async function in scan.py."""
-        scan_py = Path("src/openlabels/jobs/tasks/scan.py")
-        source = scan_py.read_text()
+        """The _cloud_label_sync_back helper should be an async function."""
+        scan_labeling_py = Path("src/openlabels/jobs/tasks/scan_labeling.py")
+        source = scan_labeling_py.read_text()
         tree = ast.parse(source)
 
         async_func_names = [
@@ -165,8 +165,8 @@ class TestLabelSyncBack:
 
     def test_label_sync_back_accepts_expected_parameters(self):
         """The _cloud_label_sync_back should accept adapter and label parameters."""
-        scan_py = Path("src/openlabels/jobs/tasks/scan.py")
-        source = scan_py.read_text()
+        scan_labeling_py = Path("src/openlabels/jobs/tasks/scan_labeling.py")
+        source = scan_labeling_py.read_text()
         tree = ast.parse(source)
 
         for node in ast.walk(tree):

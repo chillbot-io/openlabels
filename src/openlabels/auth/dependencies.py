@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.oauth import TokenClaims, validate_token
@@ -162,9 +162,8 @@ async def _find_or_create_user(
         await session.execute(
             select(Tenant).where(Tenant.id == tenant.id).with_for_update()
         )
-        from sqlalchemy import func as sa_func
         count_query = (
-            select(sa_func.count()).select_from(User)
+            select(func.count()).select_from(User)
             .where(User.tenant_id == tenant.id)
         )
         count_result = await session.execute(count_query)

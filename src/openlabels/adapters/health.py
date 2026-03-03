@@ -79,6 +79,3 @@ class AdapterHealthChecker:
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-    def get_health(self) -> dict[str, AdapterHealth]:
-        """Return the most recent health results (without re-checking)."""
-        return dict(self._health)

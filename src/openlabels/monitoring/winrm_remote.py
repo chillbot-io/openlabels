@@ -68,10 +68,21 @@ def _get_winrm_session(
 
     if not use_ssl:
         logger.warning(
-            "WinRM connection to %s using HTTP (unencrypted). "
-            "Credentials will be sent in cleartext. Use use_ssl=True for production.",
+            "SECURITY: WinRM connection to %s using unencrypted HTTP. "
+            "Credentials will be transmitted in cleartext. "
+            "Set use_ssl=True for production deployments.",
             host,
         )
+        try:
+            from openlabels.server.config import get_settings
+            env = get_settings().server.environment
+            if env in ("production", "staging"):
+                raise ValueError(
+                    f"Unencrypted WinRM (HTTP) is not allowed in {env}. "
+                    "Set use_ssl=True."
+                )
+        except (ImportError, AttributeError):
+            pass  # Settings may not be available in CLI context
 
     port = 5986 if use_ssl else 5985
     scheme = "https" if use_ssl else "http"

@@ -286,14 +286,15 @@ class FilesystemAdapter:
         # Security: skip symlinks that resolve outside the scan root
         if directory.is_symlink():
             try:
-                resolved = directory.resolve(strict=True)
+                resolved = directory.resolve(strict=False)
                 if not resolved.is_relative_to(scan_root.resolve()):
                     logger.warning(
-                        "Skipping symlink escaping scan root: %s -> %s",
-                        directory, resolved,
+                        "Skipping symlink %s — resolves to %s which is outside scan root %s",
+                        directory, resolved, scan_root,
                     )
                     return
-            except OSError:
+            except (OSError, ValueError) as e:
+                logger.warning("Skipping symlink %s — cannot resolve target: %s", directory, e)
                 return
 
         files, subdirs = await asyncio.to_thread(
