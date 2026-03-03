@@ -7,14 +7,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
 from openlabels.server.config import get_settings
 from openlabels.server.routes import audit_log
+from openlabels.server.utils import get_client_ip
 
 router = APIRouter()
+limiter = Limiter(key_func=get_client_ip)
 
 
 
@@ -43,7 +46,9 @@ class SIEMStatusResponse(BaseModel):
 
 
 @router.post("/siem", response_model=SIEMExportResponse)
+@limiter.limit("5/minute")
 async def trigger_siem_export(
+    request: Request,
     body: SIEMExportRequest,
     user: CurrentUser = Depends(require_admin),
 ):

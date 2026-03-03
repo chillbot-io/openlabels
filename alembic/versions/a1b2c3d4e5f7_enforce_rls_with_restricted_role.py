@@ -76,6 +76,17 @@ NEW_RLS_TABLES: list[str] = [
     'label_rules',
     'tenant_settings',
     'alert_rules',
+    # ── Tables discovered missing RLS in security audit ──────────────────
+    'saved_credentials',
+    'policies',
+    'policy_target_assignments',
+    'scan_partitions',
+    'scan_summaries',
+    'reports',
+    'shares',
+    'security_descriptors',
+    'directory_tree',
+    'index_checkpoints',
 ]
 
 # ── All tenant-scoped tables (union of the two lists) ────────────────────
@@ -86,11 +97,15 @@ def upgrade() -> None:
     # ── 1. Create the restricted application role ────────────────────────
     password = os.environ.get('OPENLABELS_APP_ROLE_PASSWORD')
     if not password:
-        password = 'CHANGE_ME_BEFORE_PRODUCTION'
-        logger.warning(
-            "OPENLABELS_APP_ROLE_PASSWORD not set -- using placeholder "
-            "password. You MUST change this before deploying to production."
+        raise RuntimeError(
+            "OPENLABELS_APP_ROLE_PASSWORD environment variable is required. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
         )
+
+    # SECURITY: Escape single quotes to prevent SQL injection via the
+    # password value.  PostgreSQL doubles single quotes inside string
+    # literals, so a password like "it's" becomes "it''s".
+    safe_password = password.replace("'", "''")
 
     # Use PL/pgSQL DO block so we can use IF NOT EXISTS logic for role
     # creation (CREATE ROLE has no IF NOT EXISTS clause in PostgreSQL).
@@ -100,10 +115,10 @@ def upgrade() -> None:
             IF NOT EXISTS (
                 SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'openlabels_app'
             ) THEN
-                CREATE ROLE openlabels_app LOGIN PASSWORD '{password}';
+                CREATE ROLE openlabels_app LOGIN PASSWORD '{safe_password}';
             ELSE
                 -- Ensure the password is up-to-date even if the role exists.
-                ALTER ROLE openlabels_app WITH LOGIN PASSWORD '{password}';
+                ALTER ROLE openlabels_app WITH LOGIN PASSWORD '{safe_password}';
             END IF;
         END
         $$;

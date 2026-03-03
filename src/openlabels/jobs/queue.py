@@ -182,7 +182,10 @@ class JobQueue:
 
         await self.session.execute(
             update(JobQueueModel)
-            .where(JobQueueModel.id == job_id)
+            .where(
+                JobQueueModel.id == job_id,
+                JobQueueModel.tenant_id == self.tenant_id,
+            )
             .values(
                 status=JobStatus.COMPLETED,
                 completed_at=datetime.now(timezone.utc),
@@ -217,7 +220,14 @@ class JobQueue:
             error: Error message
             retry: Whether to retry the job (respects max_retries)
         """
-        job = await self.session.get(JobQueueModel, job_id)
+        # SECURITY: Filter by tenant_id to prevent cross-tenant state changes
+        result = await self.session.execute(
+            select(JobQueueModel).where(
+                JobQueueModel.id == job_id,
+                JobQueueModel.tenant_id == self.tenant_id,
+            )
+        )
+        job = result.scalar_one_or_none()
         if not job:
             return
 
@@ -261,7 +271,14 @@ class JobQueue:
         Returns:
             True if cancelled, False if not cancellable
         """
-        job = await self.session.get(JobQueueModel, job_id)
+        # SECURITY: Filter by tenant_id to prevent cross-tenant cancellation
+        result = await self.session.execute(
+            select(JobQueueModel).where(
+                JobQueueModel.id == job_id,
+                JobQueueModel.tenant_id == self.tenant_id,
+            )
+        )
+        job = result.scalar_one_or_none()
         if not job:
             return False
 

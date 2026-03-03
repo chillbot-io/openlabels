@@ -35,7 +35,7 @@ from openlabels.jobs.tasks.label import execute_label_task
 from openlabels.jobs.tasks.label_sync import execute_label_sync_task
 from openlabels.jobs.tasks.scan import execute_scan_task, run_shutdown_callbacks
 from openlabels.server.config import get_settings
-from openlabels.server.db import get_session_context, init_db
+from openlabels.server.db import get_session_context, init_db, set_rls_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -689,6 +689,9 @@ class Worker:
                     job = await dequeue_next_job(session, worker_tag)
 
                     if job:
+                        # SECURITY: Set RLS tenant context so all subsequent
+                        # queries in this session are scoped to the job's tenant.
+                        await set_rls_tenant_id(session, job.tenant_id)
                         queue = JobQueue(session, job.tenant_id)
                         await self._execute_job(session, queue, job)
 
@@ -724,6 +727,11 @@ class Worker:
             job: Job to execute
         """
         logger.info(f"Executing job {job.id} ({job.task_type})")
+
+        # SECURITY: Override payload tenant_id with the job's authoritative
+        # tenant_id to prevent cross-tenant data access via crafted payloads.
+        if job.payload and job.tenant_id:
+            job.payload["tenant_id"] = str(job.tenant_id)
 
         try:
             if job.task_type == "scan":

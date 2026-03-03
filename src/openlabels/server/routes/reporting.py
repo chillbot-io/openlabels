@@ -20,8 +20,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from slowapi import Limiter
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,7 @@ from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
 from openlabels.server.routes import audit_log
+from openlabels.server.utils import get_client_ip
 from openlabels.server.models import (  # noqa: E402
     FileAccessEvent,
     Policy,
@@ -47,6 +49,7 @@ from openlabels.server.schemas.pagination import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_client_ip)
 
 # Valid report types
 VALID_TYPES = {"executive_summary", "compliance_report", "scan_detail", "access_audit", "sensitive_files"}
@@ -587,29 +590,31 @@ async def _build_report_data(
 
 
 @router.post("/generate", response_model=ReportResponse, status_code=201)
+@limiter.limit("5/minute")
 async def generate_report(
-    request: ReportGenerateRequest,
+    request: Request,
+    body: ReportGenerateRequest,
     tenant: TenantContextDep,
     session: AsyncSession = Depends(get_session),
 ) -> ReportResponse:
     """Generate a new report."""
-    if request.report_type not in VALID_TYPES:
+    if body.report_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid report_type. Must be one of: {', '.join(sorted(VALID_TYPES))}")
-    if request.format not in VALID_FORMATS:
+    if body.format not in VALID_FORMATS:
         raise HTTPException(status_code=400, detail=f"Invalid format. Must be one of: {', '.join(sorted(VALID_FORMATS))}")
 
     settings = get_settings()
     tenant_id = tenant.tenant_id
 
-    name = request.name or f"{request.report_type} ({request.format})"
+    name = body.name or f"{body.report_type} ({body.format})"
     report = Report(
         id=generate_uuid(),
         tenant_id=tenant_id,
         name=name,
-        report_type=request.report_type,
-        format=request.format,
+        report_type=body.report_type,
+        format=body.format,
         status="pending",
-        filters=request.filters,
+        filters=body.filters,
         created_by=getattr(tenant, "user_id", None),
     )
     session.add(report)
@@ -618,11 +623,11 @@ async def generate_report(
     try:
         from openlabels.reporting.engine import ReportEngine
 
-        data = await _build_report_data(session, tenant_id, request.report_type, request.job_id)
+        data = await _build_report_data(session, tenant_id, body.report_type, body.job_id)
         data["tenant_name"] = getattr(tenant, "tenant_name", None) or ""
 
         engine = ReportEngine(storage_dir=Path(settings.reporting.storage_path))
-        path = await engine.generate(request.report_type, data, request.format)
+        path = await engine.generate(body.report_type, data, body.format)
 
         report.status = "generated"
         report.result_path = str(path)
@@ -637,7 +642,7 @@ async def generate_report(
     audit_log(
         session, tenant_id=tenant_id, user_id=getattr(tenant, "user_id", None),
         action="report_generated", resource_type="report", resource_id=report.id,
-        details={"report_type": request.report_type, "format": request.format, "status": report.status},
+        details={"report_type": body.report_type, "format": body.format, "status": report.status},
     )
 
     await session.commit()

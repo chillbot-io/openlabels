@@ -47,7 +47,7 @@ class TestOneDriveAdapterConfiguration:
             client_secret="my-secret-789",
         )
 
-        assert adapter.client_secret == "my-secret-789"
+        assert adapter._client_secret == "my-secret-789"
 
     def test_adapter_type_is_onedrive(self):
         """Adapter type should be 'onedrive'."""

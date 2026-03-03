@@ -163,17 +163,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # Option 2: Double-submit token validation (required for all protected requests)
         if not validate_csrf_token(request):
-            # Allow API requests that use Bearer auth (they don't need CSRF tokens)
-            auth_header = request.headers.get("authorization", "")
-            if not auth_header.startswith("Bearer "):
-                logger.warning(f"CSRF validation failed: token mismatch for {request.url.path}")
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "error": "csrf_validation_failed",
-                        "message": "CSRF validation failed: missing or invalid token",
-                    },
-                )
+            logger.warning(f"CSRF validation failed: token mismatch for {request.url.path}")
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "csrf_validation_failed",
+                    "message": "CSRF validation failed: missing or invalid token",
+                },
+            )
 
         response = await call_next(request)
         return response
