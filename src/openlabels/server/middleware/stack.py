@@ -136,16 +136,26 @@ async def limit_request_size(request: Request, call_next: _CallNext) -> Response
             body["request_id"] = request_id
         return JSONResponse(status_code=413, content=body)
 
-    # For requests without Content-Length (chunked encoding), reject
-    # methods that carry bodies but omit the header to bypass size checks
+    # SECURITY: For requests without Content-Length (chunked encoding),
+    # require a Content-Length header on body-carrying methods to prevent
+    # bypassing the size limit via chunked transfer encoding.
+    # File upload paths are exempt since multipart uploads legitimately
+    # use chunked encoding.
     if parsed_length is None and request.method in ("POST", "PUT", "PATCH"):
         transfer_encoding = request.headers.get("transfer-encoding", "")
         if "chunked" in transfer_encoding.lower():
-            # Allow but log — the framework's body parser will still enforce limits
-            logger.debug(
-                "Chunked request without Content-Length on %s %s",
-                request.method, request.url.path,
-            )
+            # Allow file uploads which may use chunked encoding
+            path = request.url.path
+            is_upload = "/upload" in path or "/import" in path
+            if not is_upload:
+                request_id = get_request_id()
+                body: dict[str, Any] = {
+                    "error": "CONTENT_LENGTH_REQUIRED",
+                    "message": "Content-Length header is required for this endpoint",
+                }
+                if request_id:
+                    body["request_id"] = request_id
+                return JSONResponse(status_code=411, content=body)
 
     return await call_next(request)
 

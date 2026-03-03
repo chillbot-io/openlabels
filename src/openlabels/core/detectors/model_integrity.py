@@ -167,14 +167,22 @@ def verify_model_integrity(
     manifest_key = str(model_path.resolve())
 
     if manifest_key not in manifest:
-        # Trust-on-first-use: record hashes
+        # Trust-on-first-use: record hashes.
+        # SECURITY NOTE: TOFU is vulnerable to first-load attacks — if an
+        # attacker places a poisoned model before the first legitimate load,
+        # the poisoned hashes become the trusted baseline.  Operators should
+        # pre-populate the manifest with known-good hashes from a trusted
+        # source (e.g. CI/CD pipeline) or verify hashes against published
+        # checksums before first deployment.
         manifest[manifest_key] = {
             "name": model_name,
             "hashes": current_hashes,
         }
         if _save_manifest(manifest_path, manifest):
-            logger.info(
-                "Model integrity: recorded initial hashes for '%s' (%d files)",
+            logger.warning(
+                "Model integrity: TRUST-ON-FIRST-USE — recorded initial hashes "
+                "for '%s' (%d files). Verify these hashes against a trusted "
+                "source to prevent first-load poisoning attacks.",
                 model_name, len(current_hashes),
             )
         else:

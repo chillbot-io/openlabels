@@ -151,7 +151,18 @@ async def _run_job(
     """Execute a single job and mark it complete/failed in the queue."""
     try:
         async with get_session_context() as session:
+            # SECURITY: Set RLS tenant context so all subsequent queries
+            # in this session are scoped to the job's tenant, matching
+            # the standalone worker behaviour.
+            from openlabels.server.db import set_rls_tenant_id
+            await set_rls_tenant_id(session, tenant_id)
+
             queue = JobQueue(session, tenant_id)
+
+            # SECURITY: Override payload tenant_id with the job's
+            # authoritative tenant_id to prevent cross-tenant access.
+            if payload and tenant_id:
+                payload["tenant_id"] = str(tenant_id)
 
             try:
                 result = await _dispatch(session, task_type, payload)
