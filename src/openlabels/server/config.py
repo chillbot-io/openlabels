@@ -40,11 +40,18 @@ class ServerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secret_key(self) -> ServerSettings:
-        """Require a non-empty secret_key in production/staging environments."""
+        """Require a strong secret_key in production/staging environments."""
+        key = self.secret_key.get_secret_value()
         if self.environment in ("production", "staging"):
-            if not self.secret_key.get_secret_value():
+            if not key:
                 raise ValueError(
                     "OPENLABELS_SERVER__SECRET_KEY is required in production/staging. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            if len(key) < 32:
+                raise ValueError(
+                    "OPENLABELS_SERVER__SECRET_KEY must be at least 32 characters "
+                    "for adequate entropy. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
         return self
@@ -65,8 +72,10 @@ class DatabaseSettings(BaseSettings):
     """
 
     url: SecretStr = SecretStr("postgresql+asyncpg://localhost/openlabels")
-    # Require SSL for database connections (set to True for production)
-    require_ssl: bool = False
+    # Require SSL for database connections.  Defaults to True so production
+    # deployments are secure by default.  Set to False only for local
+    # development against a trusted PostgreSQL instance.
+    require_ssl: bool = True
     pool_size: int = 20
     max_overflow: int = 10
     pool_recycle: int = 1800  # Recycle connections every 30 min to prevent stale connections
@@ -365,6 +374,7 @@ class CORSSettings(BaseSettings):
             "Authorization",
             "Content-Type",
             "Origin",
+            "X-CSRF-Token",
             "X-Request-ID",
             "X-Requested-With",
         ]

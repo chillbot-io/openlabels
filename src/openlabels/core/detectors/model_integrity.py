@@ -209,7 +209,7 @@ def verify_model_integrity(
             "MODEL INTEGRITY MISMATCH for '%s' at %s! "
             "This may indicate model tampering or corruption. "
             "Mismatched files: %s. Missing files: %s. New files: %s. "
-            "The model will still be loaded, but this should be investigated. "
+            "The model will NOT be loaded. "
             "To re-baseline, delete the entry in %s and reload.",
             model_name,
             model_path,

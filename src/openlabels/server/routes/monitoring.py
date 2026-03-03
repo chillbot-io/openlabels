@@ -949,7 +949,7 @@ class RemoteTestRequest(BaseModel):
     host: str = Field(..., description="Target hostname or IP")
     username: str = Field(..., description="Account with audit privileges")
     password: str = Field(..., description="Password")
-    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+    use_ssl: bool = Field(True, description="Use HTTPS (port 5986). Disable only for isolated test environments.")
 
 
 class RemoteTestResponse(BaseModel):
@@ -969,7 +969,7 @@ class RemoteConfigureRequest(BaseModel):
     username: str = Field(..., description="Account with audit privileges")
     password: str = Field(..., description="Password")
     share_paths: list[str] = Field(..., description="Local paths on the server to audit")
-    use_ssl: bool = Field(False, description="Use HTTPS (port 5986)")
+    use_ssl: bool = Field(True, description="Use HTTPS (port 5986). Disable only for isolated test environments.")
 
 
 class RemoteConfigureResponse(BaseModel):

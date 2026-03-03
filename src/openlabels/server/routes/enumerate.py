@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
@@ -36,10 +37,12 @@ from openlabels.server.routes.credentials import (
     get_decrypted_credentials,
 )
 from openlabels.server.session import SessionStore
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_client_ip)
 
 # Hostname: allow alphanumeric, hyphens, dots, IPv4, bracketed IPv6 — no slashes/traversal
 _HOST_RE = re.compile(r"^[a-zA-Z0-9\-\.:\[\]]+$")
@@ -618,6 +621,14 @@ async def _enumerate_s3(creds: dict[str, Any]) -> list[EnumeratedResource]:
     region = creds.get("region", "us-east-1").strip()
     endpoint_url = creds.get("endpoint_url", "").strip() or None
 
+    # SECURITY: Validate endpoint_url against SSRF (private/internal IPs)
+    if endpoint_url:
+        from openlabels.adapters.s3 import _validate_endpoint_url
+        try:
+            _validate_endpoint_url(endpoint_url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     try:
         import boto3
         from botocore.exceptions import ClientError, NoCredentialsError
@@ -809,6 +820,7 @@ async def _get_m365_session_credentials(
 
 
 @router.post("", response_model=EnumerateResponse)
+@limiter.limit("10/minute")
 async def enumerate_resources(
     request: Request,
     body: EnumerateRequest,

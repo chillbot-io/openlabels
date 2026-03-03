@@ -45,7 +45,9 @@ class BaseGraphAdapter:
     ):
         self.tenant_id = tenant_id
         self.client_id = client_id
-        self.client_secret = client_secret
+        # SECURITY: Store as private attribute to reduce accidental exposure
+        # in stack traces, repr, and Sentry error reports.
+        self._client_secret = client_secret
         self.rate_config = rate_config
 
         self._client: GraphClient | None = None
@@ -65,7 +67,7 @@ class BaseGraphAdapter:
             self._client = GraphClient(
                 tenant_id=self.tenant_id,
                 client_id=self.client_id,
-                client_secret=self.client_secret,
+                client_secret=self._client_secret,
                 rate_config=self.rate_config,
             )
             await self._client.__aenter__()
@@ -87,10 +89,12 @@ class BaseGraphAdapter:
         await self.close()
 
     async def close(self) -> None:
-        """Close the GraphClient if we own it."""
+        """Close the GraphClient if we own it and clear credentials."""
         if self._client and self._owns_client:
             await self._client.__aexit__(None, None, None)
             self._client = None
+        # SECURITY: Clear credential from memory after use
+        self._client_secret = ""
 
     def _parse_modified(self, item: dict) -> datetime:
         """Parse lastModifiedDateTime from a Graph API item."""

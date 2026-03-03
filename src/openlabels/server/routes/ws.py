@@ -71,9 +71,14 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
             break
 
     if not origin:
-        # No origin header - could be same-origin or non-browser client
-        # Allow for backwards compatibility, but log it
-        logger.debug("WebSocket connection without Origin header")
+        # SECURITY: Reject missing Origin header in production/staging to
+        # prevent Cross-Site WebSocket Hijacking.  Non-browser clients can
+        # set a valid Origin header explicitly.
+        if settings.server.environment in ("production", "staging"):
+            logger.warning("WebSocket connection rejected: missing Origin header")
+            return False
+        # Allow in development for convenience (e.g. CLI tools, tests)
+        logger.debug("WebSocket connection without Origin header (dev mode)")
         return True
 
     # Parse the origin
@@ -85,25 +90,11 @@ def validate_websocket_origin(websocket: WebSocket) -> bool:
         logger.warning(f"Failed to parse WebSocket origin '{origin}': {type(parse_err).__name__}: {parse_err}")
         return False
 
-    # Check against allowed CORS origins
+    # Check against allowed CORS origins only — do NOT fall back to the
+    # client-controlled Host header, as an attacker can set both Host and
+    # Origin to the same malicious value.
     if origin_host in settings.cors.allowed_origins:
         return True
-
-    # Check if it matches the request's host (same-origin)
-    host_header = None
-    for header_name, header_value in websocket.headers.items():
-        if header_name.lower() == "host":
-            host_header = header_value
-            break
-
-    if host_header:
-        # Construct expected origins based on host
-        expected_origins = [
-            f"http://{host_header}",
-            f"https://{host_header}",
-        ]
-        if origin_host in expected_origins:
-            return True
 
     logger.warning(
         f"WebSocket connection rejected: invalid origin {origin} "

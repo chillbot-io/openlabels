@@ -53,3 +53,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Also export as local image for Trivy scan
+          load: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true

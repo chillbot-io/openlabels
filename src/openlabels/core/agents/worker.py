@@ -173,6 +173,23 @@ class ClassificationAgent:
             self._processor._ner_model.model = model
             logger.info(f"Agent {self.agent_id} applied IPEX optimization")
 
+    def _verify_model_integrity(self) -> bool:
+        """Verify model integrity before loading. Returns True if safe to proceed."""
+        if not self.model_path or not os.path.exists(self.model_path):
+            return True  # No model path — caller handles missing model separately
+        try:
+            from openlabels.core.detectors.model_integrity import verify_model_integrity
+            if not verify_model_integrity(self.model_path, model_name=f"agent-{self.agent_id}"):
+                logger.critical(
+                    "Agent %s: Model integrity verification FAILED for %s. "
+                    "Refusing to load potentially tampered model.",
+                    self.agent_id, self.model_path,
+                )
+                return False
+        except Exception:  # noqa: BLE001
+            logger.warning("Agent %s: Could not verify model integrity (module unavailable)", self.agent_id)
+        return True
+
     def _load_openvino_model(self) -> None:
         """Load model with OpenVINO for INT8 inference."""
         try:
@@ -187,6 +204,8 @@ class ClassificationAgent:
         self._processor = DetectorOrchestrator()
 
         if self.model_path and os.path.exists(self.model_path):
+            if not self._verify_model_integrity():
+                return
             # Load pre-converted OpenVINO model
             ov_model = OVModelForTokenClassification.from_pretrained(self.model_path)
             # Replace the model in the pipeline
@@ -209,6 +228,8 @@ class ClassificationAgent:
         self._processor = DetectorOrchestrator()
 
         if self.model_path and os.path.exists(self.model_path):
+            if not self._verify_model_integrity():
+                return
             ort_model = ORTModelForTokenClassification.from_pretrained(self.model_path)
             if hasattr(self._processor, '_ner_model'):
                 self._processor._ner_model.model = ort_model

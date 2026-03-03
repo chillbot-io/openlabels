@@ -23,6 +23,11 @@ services:
     networks:
       - internal
     restart: "no"
+    # SECURITY: Container hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # ── API server ────────────────────────────────────────────────────────
   api:
@@ -50,6 +55,16 @@ services:
     volumes:
       - scan-data:/data
     restart: unless-stopped
+    # SECURITY: Container hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -80,6 +95,16 @@ services:
     volumes:
       - scan-data:/data
     restart: unless-stopped
+    # SECURITY: Container hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 8G   # ML inference needs more memory
+          cpus: "4"
     networks:
       - internal
 
@@ -99,6 +124,22 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    # SECURITY: Container hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+      - FOWNER
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openlabels"]
       interval: 10s
@@ -116,6 +157,16 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    # SECURITY: Container hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
       interval: 10s

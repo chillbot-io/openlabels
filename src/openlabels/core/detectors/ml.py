@@ -174,13 +174,27 @@ class MLDetector(BaseDetector):
             if not integrity_ok:
                 logger.critical(
                     "%s: Model integrity verification FAILED for %s. "
-                    "Loading anyway, but this should be investigated.",
+                    "Refusing to load potentially tampered model.",
                     self.name, self.model_path,
                 )
+                return False
+
+            # SECURITY: Prefer safetensors format to avoid pickle deserialization.
+            has_safetensors = (self.model_path / "model.safetensors").exists()
+            load_kwargs: dict = {"pretrained_model_name_or_path": str(self.model_path)}
+            if has_safetensors:
+                load_kwargs["use_safetensors"] = True
 
             # Load tokenizer and model
             self._tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
-            self._model = AutoModelForTokenClassification.from_pretrained(str(self.model_path))
+            self._model = AutoModelForTokenClassification.from_pretrained(**load_kwargs)
+
+            if not has_safetensors:
+                logger.warning(
+                    "%s: Loaded from pytorch_model.bin (pickle). "
+                    "Convert to safetensors format for improved security.",
+                    self.name,
+                )
 
             # Get device using configurable detection
             self._device_id = get_device(self.device_config, self.cuda_device_id)
