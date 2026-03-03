@@ -26,6 +26,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan — startup and shutdown handlers."""
     settings = get_settings()
 
+    # S4: Fail fast if session encryption key is missing in production/staging.
+    # Without this check the error only surfaces on first session use.
+    if settings.server.environment in ("production", "staging"):
+        key = settings.auth.session_encryption_key
+        if not key or not key.get_secret_value():
+            raise RuntimeError(
+                "AUTH_SESSION_ENCRYPTION_KEY must be set in production/staging. "
+                "Generate one with: python -c "
+                "\"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            )
+
+    # S9: Warn if CORS allows localhost origins in production/staging.
+    if settings.server.environment in ("production", "staging"):
+        localhost_origins = [
+            o for o in settings.cors.allowed_origins
+            if "localhost" in o or "127.0.0.1" in o
+        ]
+        if localhost_origins:
+            logger.warning(
+                "CORS allows localhost origins %s in %s environment "
+                "— ensure this is intentional",
+                localhost_origins,
+                settings.server.environment,
+            )
+
     # Structured logging
     setup_logging(
         level=settings.logging.level,

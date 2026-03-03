@@ -28,6 +28,7 @@ import asyncio
 import collections
 import hmac
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
@@ -46,6 +47,15 @@ from openlabels.server.session import PendingAuthStore, SessionStore
 from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
+
+# Dev-mode credentials (only used when AUTH_PROVIDER=none + DEBUG=true).
+# Read once at module import so the generated password is stable for the
+# lifetime of the process.
+_DEV_USERNAME = os.environ.get("OPENLABELS_DEV_USERNAME", "admin")
+_DEV_PASSWORD = os.environ.get("OPENLABELS_DEV_PASSWORD")
+if _DEV_PASSWORD is None:
+    _DEV_PASSWORD = secrets.token_urlsafe(16)
+    logger.warning("DEV MODE: Generated random dev password: %s", _DEV_PASSWORD)
 
 
 def _get_request_context(request: Request) -> dict:
@@ -367,15 +377,17 @@ async def _login_azure_ad(
     msal_app = _get_msal_app()
 
     state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(16)
     callback_url = str(request.url_for("auth_callback"))
     safe_redirect = validate_redirect_uri(redirect_uri, request)
 
-    await pending_store.set(state, safe_redirect, callback_url)
+    await pending_store.set(state, safe_redirect, callback_url, nonce=nonce)
 
     auth_url = msal_app.get_authorization_request_url(
         scopes=["User.Read", "openid", "profile", "email"],
         state=state,
         redirect_uri=callback_url,
+        nonce=nonce,
     )
 
     return RedirectResponse(url=auth_url, status_code=302)
@@ -523,7 +535,7 @@ async def auth_callback(
         )
 
     # Default: Azure AD
-    return await _callback_azure_ad(request, code, callback_url, final_redirect, db)
+    return await _callback_azure_ad(request, code, callback_url, final_redirect, db, nonce=nonce)
 
 
 async def _callback_azure_ad(
@@ -532,6 +544,7 @@ async def _callback_azure_ad(
     callback_url: str,
     final_redirect: str,
     db: AsyncSession,
+    nonce: str | None = None,
 ) -> RedirectResponse:
     """Handle Azure AD OAuth callback."""
     msal_app = _get_msal_app()
@@ -579,6 +592,20 @@ async def _callback_azure_ad(
     expires_in = result.get("expires_in", 3600)
 
     id_token_claims = result.get("id_token_claims", {})
+
+    # Validate nonce to prevent replay attacks (S5).
+    # Use hmac.compare_digest for constant-time comparison.
+    claim_nonce = id_token_claims.get("nonce", "")
+    if nonce and not hmac.compare_digest(claim_nonce, nonce):
+        log_security_event(
+            event_type="azure_ad_nonce_mismatch",
+            details=_get_request_context(request),
+            level="warning",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authentication failed: nonce mismatch (possible replay attack).",
+        )
     session_data = {
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),
@@ -765,7 +792,7 @@ async def dev_login(
     if not settings.server.debug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev login requires DEBUG=true")
 
-    if body.username != "admin" or body.password != "admin":
+    if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
         log_security_event(
             event_type="dev_login_failed",
             details={**_get_request_context(request), "username": body.username},
@@ -778,7 +805,7 @@ async def dev_login(
     if existing_session_id:
         await session_store.delete(existing_session_id)
 
-    logger.warning("DEV MODE: admin/admin login used — DO NOT USE IN PRODUCTION")
+    logger.warning("DEV MODE: dev login used — DO NOT USE IN PRODUCTION")
     session_id = _generate_session_id()
     session_data = {
         "access_token": "dev-token",
@@ -836,6 +863,13 @@ async def logout(
 
     is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
 
+    # Validate request.base_url against CORS allowed_origins to prevent
+    # open redirect via Host header manipulation (S3).
+    post_logout_uri = str(request.base_url).rstrip("/")
+    allowed_origins = settings.cors.allowed_origins
+    if not any(post_logout_uri.startswith(origin) for origin in allowed_origins):
+        post_logout_uri = allowed_origins[0] if allowed_origins else ""
+
     # Check for provider-specific logout
     if settings.auth.provider == "oidc":
         from openlabels.auth.oidc_provider import get_discovery, get_end_session_url
@@ -854,7 +888,7 @@ async def logout(
                 discovery = await get_discovery(oidc_config.discovery_url)
                 logout_url = get_end_session_url(
                     discovery, oidc_config,
-                    post_logout_redirect_uri=str(request.base_url),
+                    post_logout_redirect_uri=post_logout_uri,
                     id_token_hint=id_token,
                 )
                 if logout_url:
@@ -865,10 +899,9 @@ async def logout(
             logger.debug("Failed to get OIDC end_session_endpoint, falling back to local logout")
 
     elif settings.auth.provider == "azure_ad" and settings.auth.tenant_id:
-        encoded_redirect = quote(str(request.base_url), safe="")
         logout_url = (
             f"https://login.microsoftonline.com/{settings.auth.tenant_id}"
-            f"/oauth2/v2.0/logout?post_logout_redirect_uri={quote(str(request.base_url), safe='')}"
+            f"/oauth2/v2.0/logout?post_logout_redirect_uri={quote(post_logout_uri, safe='')}"
         )
         response = RedirectResponse(url=logout_url, status_code=302)
         response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", secure=is_secure)

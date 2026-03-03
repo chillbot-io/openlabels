@@ -867,10 +867,9 @@ def _corroboration_group(entity_type: str) -> str:
     return _CORROBORATION_GROUP.get(entity_type, entity_type)
 
 
-import re as _re
 
 # Name-part token regex: a capitalized word, possibly with apostrophe/hyphen
-_NAME_TOKEN_RE = _re.compile(
+_NAME_TOKEN_RE = re.compile(
     r"[A-Z\u00C0-\u024F][a-z\u00C0-\u024F''\-]*"
     r"(?:[''\-][A-Z\u00C0-\u024F]?[a-z\u00C0-\u024F]*)?"
 )
@@ -1140,14 +1139,14 @@ def _ranges_overlap(s1: int, e1: int, s2: int, e2: int) -> bool:
 
 # Username format: contains underscore/dot between name parts, or trailing
 # digits after a name — e.g. "First_Last", "John.Doe42", "Alice99"
-_USERNAME_FORMAT_RE = _re.compile(
+_USERNAME_FORMAT_RE = re.compile(
     r'^[A-Za-z][A-Za-z0-9]*[._][A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*\d{0,4}$'
     r'|'
     r'^[A-Za-z]{2,15}\d{1,4}$'
 )
 
 # US SSN format: XXX-XX-XXXX (with various separators)
-_SSN_FORMAT_RE = _re.compile(
+_SSN_FORMAT_RE = re.compile(
     r'^\d{3}[\s\-\.]\d{2}[\s\-\.]\d{4}$'
 )
 
@@ -1203,7 +1202,7 @@ def _correct_type_confusions(
 
         # SSN → BANK_ROUTING: ABA checksum OR context keywords
         elif etype == "SSN":
-            digits = _re.sub(r'\D', '', text)
+            digits = re.sub(r'\D', '', text)
             if len(digits) == 9:
                 valid, _ = validate_aba_routing(digits)
                 if valid:
@@ -1214,11 +1213,11 @@ def _correct_type_confusions(
                     ctx_end = min(len(source_text), span.end + 100)
                     context = source_text[ctx_start:ctx_end].lower()
                     has_routing = any(
-                        _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                        re.search(r'\b' + re.escape(kw) + r'\b', context)
                         for kw in _ROUTING_CONTEXT_WORDS
                     )
                     has_ssn = any(
-                        _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                        re.search(r'\b' + re.escape(kw) + r'\b', context)
                         for kw in _SSN_CONTEXT_WORDS
                     )
                     if has_routing and not has_ssn:
@@ -1226,17 +1225,17 @@ def _correct_type_confusions(
 
         # BANK_ROUTING → SSN: context keywords override when SSN words present
         elif etype == "BANK_ROUTING" and source_text:
-            digits = _re.sub(r'\D', '', text)
+            digits = re.sub(r'\D', '', text)
             if len(digits) == 9:
                 ctx_start = max(0, span.start - 100)
                 ctx_end = min(len(source_text), span.end + 100)
                 context = source_text[ctx_start:ctx_end].lower()
                 has_ssn = any(
-                    _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                    re.search(r'\b' + re.escape(kw) + r'\b', context)
                     for kw in _SSN_CONTEXT_WORDS
                 )
                 has_routing = any(
-                    _re.search(r'\b' + _re.escape(kw) + r'\b', context)
+                    re.search(r'\b' + re.escape(kw) + r'\b', context)
                     for kw in _ROUTING_CONTEXT_WORDS
                 )
                 if has_ssn and not has_routing:
