@@ -607,5 +607,5 @@ async def test_target_connection(
         return TestConnectionResponse(
             success=False,
             latency_ms=None,
-            error=f"{type(exc).__name__}: {exc}",
+            error="Connection test failed: internal error",
         )

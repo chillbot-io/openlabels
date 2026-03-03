@@ -38,6 +38,7 @@ import httpx
 
 from openlabels.adapters.base import FileInfo
 from openlabels.adapters.graph_client import GraphClient
+from openlabels.core.path_validation import PathValidationError, validate_path
 from openlabels.core.types import AdapterType
 from openlabels.exceptions import GraphAPIError
 
@@ -229,6 +230,7 @@ class LocalLabelWriter:
         writes the modified package back to *file_path*.
         """
         try:
+            file_path = validate_path(file_path, require_exists=True)
             file_size = os.path.getsize(file_path)
             if file_size > _MAX_FILE_BYTES:
                 return LabelResult(
@@ -330,6 +332,9 @@ class LocalLabelWriter:
                 method="office_metadata",
             )
 
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for Office label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Invalid path: {e}")
         except PermissionError as e:
             logger.error(f"Permission denied applying Office metadata label: {e}")
             return LabelResult(success=False, label_id=label_id, error=f"Permission denied: {e}")
@@ -348,6 +353,8 @@ class LocalLabelWriter:
     ) -> LabelResult:
         """Apply a sensitivity label to a PDF via document metadata."""
         try:
+            file_path = validate_path(file_path, require_exists=True)
+
             try:
                 from pypdf import PdfReader, PdfWriter
             except ImportError:
@@ -378,6 +385,9 @@ class LocalLabelWriter:
                 method="pdf_metadata",
             )
 
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for PDF label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Invalid path: {e}")
         except PermissionError as e:
             logger.error(f"Permission denied applying PDF metadata label: {e}")
             return LabelResult(success=False, label_id=label_id, error=f"Permission denied: {e}")
@@ -399,6 +409,7 @@ class LocalLabelWriter:
     ) -> LabelResult:
         """Apply a sensitivity label via a ``.openlabels`` sidecar file."""
         try:
+            file_path = validate_path(file_path, require_exists=True)
             sidecar_path = f"{file_path}.openlabels"
             sidecar_data = {
                 "label_id": label_id,
@@ -417,6 +428,9 @@ class LocalLabelWriter:
                 method="sidecar",
             )
 
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for sidecar label: {e}")
+            return LabelResult(success=False, label_id=label_id, error=f"Invalid path: {e}")
         except PermissionError as e:
             return LabelResult(
                 success=False,
@@ -434,6 +448,7 @@ class LocalLabelWriter:
     def remove_office_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from an Office document's custom properties."""
         try:
+            file_path = validate_path(file_path, require_exists=True)
             file_size = os.path.getsize(file_path)
             if file_size > _MAX_FILE_BYTES:
                 return LabelResult(
@@ -476,6 +491,9 @@ class LocalLabelWriter:
 
             return LabelResult(success=True, method="office_metadata_removed")
 
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for Office label removal: {e}")
+            return LabelResult(success=False, error=f"Invalid path: {e}")
         except PermissionError as e:
             return LabelResult(success=False, error=f"Permission denied removing Office label: {e}")
         except OSError as e:

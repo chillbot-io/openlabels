@@ -19,7 +19,7 @@ import logging
 import types
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -57,6 +57,7 @@ from openlabels.server.routes import (
     ws,
     ws_events,
 )
+from openlabels.server.dependencies import check_tenant_rate_limit
 from openlabels.server.utils import get_client_ip
 
 # API version constants
@@ -110,13 +111,26 @@ _ROUTE_MODULES: list[tuple[str, str, types.ModuleType]] = [
 ]
 
 
+# Route modules that should NOT have per-tenant rate limiting applied
+# (unauthenticated or partially-authenticated endpoints)
+_RATE_LIMIT_EXEMPT_MODULES = {"auth", "health"}
+
+
 def _include_routes(app: FastAPI) -> None:
     """Wire up versioned (v1) and legacy API routers, plus WebSocket & Web UI."""
 
     # Versioned API
     api_v1_router = APIRouter(prefix=API_V1_PREFIX)
     for prefix, tag, module in _ROUTE_MODULES:
-        api_v1_router.include_router(module.router, prefix=prefix, tags=[tag])
+        module_name = prefix.lstrip("/")
+        if module_name in _RATE_LIMIT_EXEMPT_MODULES:
+            api_v1_router.include_router(module.router, prefix=prefix, tags=[tag])
+        else:
+            # SECURITY: Apply per-tenant rate limiting to all authenticated routes
+            api_v1_router.include_router(
+                module.router, prefix=prefix, tags=[tag],
+                dependencies=[Depends(check_tenant_rate_limit)],
+            )
     app.include_router(api_v1_router)
 
     # Legacy /api/* routes are handled by _register_legacy_redirects() which

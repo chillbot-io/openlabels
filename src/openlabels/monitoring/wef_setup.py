@@ -224,7 +224,7 @@ async def get_subscription_status(
         # Parse key fields from wecutil XML output using proper XML parser
         output = proc.stdout
         try:
-            import xml.etree.ElementTree as ET
+            import defusedxml.ElementTree as ET
 
             root = ET.fromstring(output)
             # Handle namespaced and non-namespaced XML

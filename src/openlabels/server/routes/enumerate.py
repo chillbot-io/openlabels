@@ -234,7 +234,7 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
         raise HTTPException(status_code=504, detail=f"Connection to {host} timed out")
     except Exception as e:
         logger.exception("SMB enumeration failed for %s", host)
-        raise HTTPException(status_code=502, detail=f"SMB enumeration failed: {e}")
+        raise HTTPException(status_code=502, detail="SMB enumeration failed: internal error")
 
     return resources
 
@@ -383,7 +383,7 @@ async def _enumerate_nfs(creds: dict[str, Any]) -> list[EnumeratedResource]:
         raise HTTPException(status_code=504, detail=f"Connection to {host} timed out")
     except Exception as e:
         logger.exception("NFS enumeration failed for %s", host)
-        raise HTTPException(status_code=502, detail=f"NFS enumeration failed: {e}")
+        raise HTTPException(status_code=502, detail="NFS enumeration failed: internal error")
 
     return resources
 
@@ -666,7 +666,7 @@ async def _enumerate_s3(creds: dict[str, Any]) -> list[EnumeratedResource]:
         raise HTTPException(status_code=502, detail=f"S3 error: {error_code}")
     except Exception as e:
         logger.exception("S3 enumeration failed")
-        raise HTTPException(status_code=502, detail=f"S3 enumeration failed: {e}")
+        raise HTTPException(status_code=502, detail="S3 enumeration failed: internal error")
 
 
 # ── GCS enumeration ──────────────────────────────────────────────────
@@ -707,7 +707,7 @@ async def _enumerate_gcs(creds: dict[str, Any]) -> list[EnumeratedResource]:
 
     except Exception as e:
         logger.exception("GCS enumeration failed")
-        raise HTTPException(status_code=502, detail=f"GCS enumeration failed: {e}")
+        raise HTTPException(status_code=502, detail="GCS enumeration failed: internal error")
 
 
 # ── Azure Blob enumeration ───────────────────────────────────────────
@@ -749,7 +749,7 @@ async def _enumerate_azure_blob(creds: dict[str, Any]) -> list[EnumeratedResourc
 
     except Exception as e:
         logger.exception("Azure Blob enumeration failed")
-        raise HTTPException(status_code=502, detail=f"Azure Blob enumeration failed: {e}")
+        raise HTTPException(status_code=502, detail="Azure Blob enumeration failed: internal error")
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────
