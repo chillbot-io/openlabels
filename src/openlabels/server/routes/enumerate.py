@@ -49,6 +49,7 @@ _HOST_RE = re.compile(r"^[a-zA-Z0-9\-\.:\[\]]+$")
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9._\\@\-]+$")
 
 
 def _validate_host(host: str) -> str:
@@ -157,6 +158,13 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
     host = _validate_host(creds.get("host", ""))
     username = creds.get("username", "").strip()
     password = creds.get("password", "")
+
+    # Validate username against strict allowlist to prevent injection
+    if username and not _USERNAME_RE.match(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username contains invalid characters",
+        )
 
     # Check if this is localhost — enumerate local shares
     if host.lower() in ("localhost", "127.0.0.1", "::1"):

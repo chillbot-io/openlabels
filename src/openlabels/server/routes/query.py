@@ -531,8 +531,9 @@ async def execute_query(
             ),
         )
 
-    # Enforce row limit via wrapping
-    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
+    # Enforce row limit via wrapping (parameterized to prevent SQL injection)
+    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT ?"
+    params.append(body.limit + 1)
 
     start = time.monotonic()
     try:
@@ -618,7 +619,8 @@ async def export_query_results(
             ),
         )
 
-    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit}"
+    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT ?"
+    params.append(body.limit)
 
     try:
         rows = await asyncio.wait_for(
@@ -742,7 +744,8 @@ async def ai_query(
             ),
         )
 
-    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT {body.limit + 1}"
+    limited_sql = f"SELECT * FROM ({execution_sql}) AS __q LIMIT ?"
+    params.append(body.limit + 1)
 
     start = time.monotonic()
     try:
