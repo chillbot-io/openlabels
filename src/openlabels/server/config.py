@@ -885,6 +885,18 @@ class Settings(BaseSettings):
     siem_export: SIEMExportSettings = Field(default_factory=SIEMExportSettings)
     reporting: ReportingSettings = Field(default_factory=lambda: ReportingSettings())
 
+    @model_validator(mode="after")
+    def validate_production_db_ssl(self) -> Settings:
+        """S12: Enforce DATABASE_REQUIRE_SSL in production/staging."""
+        if (
+            self.server.environment in ("production", "staging")
+            and not self.database.require_ssl
+        ):
+            raise ValueError(
+                "DATABASE_REQUIRE_SSL cannot be False in production/staging environments"
+            )
+        return self
+
 
 class ReportingSettings(BaseSettings):
     """Reporting and distribution configuration (Phase M).

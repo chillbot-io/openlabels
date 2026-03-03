@@ -16,6 +16,7 @@ API Versioning:
 from __future__ import annotations
 
 import logging
+import os
 import types
 from pathlib import Path
 
@@ -154,7 +155,13 @@ def _register_root_endpoints(app: FastAPI) -> None:
     async def metrics(request: Request) -> Response:
         from openlabels.server.config import get_settings
         _settings = get_settings()
-        # In production/staging, only expose metrics to localhost (behind reverse proxy)
+        # S13: Bearer token authentication for metrics endpoint
+        metrics_token = os.environ.get("OPENLABELS_METRICS_TOKEN")
+        if metrics_token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header != f"Bearer {metrics_token}":
+                return JSONResponse(status_code=403, content={"error": "FORBIDDEN"})
+        # In production/staging, also enforce IP allowlist (behind reverse proxy)
         if _settings.server.environment in ("production", "staging"):
             client_host = request.client.host if request.client else ""
             if client_host not in ("127.0.0.1", "::1", "localhost"):
