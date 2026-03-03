@@ -44,7 +44,20 @@ from openlabels.server.metrics import (
     record_file_processed,
     record_processing_duration,
 )
-from openlabels.server.models import LabelRule, ScanJob, ScanResult, ScanTarget, SensitivityLabel
+from openlabels.server.models import ScanJob, ScanResult, ScanTarget
+
+# Re-export extracted functions so existing importers continue to work.
+# scan_partition.py imports _build_pipeline_config, _auto_label_results,
+# and _cloud_label_sync_back from this module.
+from openlabels.jobs.tasks.scan_config import _build_pipeline_config  # noqa: F401
+from openlabels.jobs.tasks.scan_labeling import (  # noqa: F401
+    _auto_label_results,
+    _cloud_label_sync_back,
+)
+from openlabels.jobs.tasks.scan_processors import (
+    _run_agent_pool_scan,
+    _run_post_scan_steps,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1566,97 +1579,3 @@ async def _run_agent_pool_scan(
     return stats
 
 
-async def _run_post_scan_steps(
-    session: AsyncSession,
-    job: ScanJob,
-    target: ScanTarget,
-    settings,
-    stats: dict,
-) -> None:
-    """Run post-scan steps common to both pipeline and agent-pool paths.
-
-    Non-fatal: each step is wrapped in its own try/except so a failure
-    in one step doesn't prevent the others from running.
-    """
-    # Auto-labeling
-    if settings.labeling.enabled and settings.labeling.mode == "auto":
-        try:
-            auto_label_stats = await _auto_label_results(session, job)
-            stats["auto_labeled"] = auto_label_stats.get("labeled", 0)
-            stats["auto_label_errors"] = auto_label_stats.get("errors", 0)
-        except (PermissionError, OSError, RuntimeError) as e:
-            logger.error("Auto-labeling failed: %s", e)
-            stats["auto_label_error"] = str(e)
-
-    # Cloud label sync-back
-    target = await session.get(ScanTarget, job.target_id)
-    if target and target.adapter in (AdapterType.S3, AdapterType.GCS) and settings.labeling.enabled:
-        adapter_settings = getattr(settings.adapters, target.adapter, None)
-        if adapter_settings and getattr(adapter_settings, "label_sync_enabled", False):
-            try:
-                sync_stats = await _cloud_label_sync_back(session, job, target, settings)
-                stats["label_sync_back"] = sync_stats
-            except (ConnectionError, OSError, RuntimeError, ValueError) as e:
-                logger.warning("Cloud label sync-back failed: %s", e)
-                stats["label_sync_back_error"] = str(e)
-
-    # Catalog flush
-    try:
-        from openlabels.analytics.flush import flush_scan_to_catalog
-        from openlabels.analytics.storage import create_storage
-
-        _catalog_storage = create_storage(settings.catalog)
-        flushed = await flush_scan_to_catalog(session, job, _catalog_storage)
-        stats["catalog_flushed"] = flushed
-    except (ImportError, OSError, RuntimeError, ValueError) as e:
-        logger.warning("Catalog flush failed for job %s: %s", job.id, e)
-        stats["catalog_flush_error"] = str(e)
-
-    # SIEM export
-    if settings.siem_export.enabled and settings.siem_export.mode == "post_scan":
-        try:
-            from openlabels.export.engine import (
-                ExportEngine,
-                scan_result_to_export_records,
-                scan_results_to_dicts,
-            )
-            from openlabels.export.setup import build_adapters_from_settings
-
-            adapters = build_adapters_from_settings(settings.siem_export)
-            if adapters:
-                engine = ExportEngine(adapters)
-                batch_size = 500
-                total_exported = {}
-                result_stream = await session.stream(
-                    select(ScanResult).where(ScanResult.job_id == job.id)
-                )
-                async for batch in result_stream.scalars().partitions(batch_size):
-                    export_records = scan_result_to_export_records(
-                        scan_results_to_dicts(batch), job.tenant_id,
-                    )
-                    batch_results = await engine.export_full(
-                        job.tenant_id,
-                        export_records,
-                        record_types=settings.siem_export.export_record_types or None,
-                    )
-                    for key, val in batch_results.items():
-                        total_exported[key] = total_exported.get(key, 0) + val
-                stats["siem_export"] = total_exported
-        except (ImportError, ConnectionError, OSError, RuntimeError, ValueError) as e:
-            logger.warning("SIEM export failed for job %s: %s", job.id, e)
-            stats["siem_export_error"] = str(e)
-
-    # Summary generation
-    try:
-        from openlabels.jobs.summaries import generate_scan_summary
-
-        auto_label_stats_dict = None
-        if "auto_labeled" in stats or "auto_label_errors" in stats:
-            auto_label_stats_dict = {
-                "labeled": stats.get("auto_labeled", 0),
-                "errors": stats.get("auto_label_errors", 0),
-            }
-        await generate_scan_summary(session, job, auto_label_stats_dict)
-        await session.commit()
-    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as e:
-        logger.warning("Summary generation failed for job %s: %s", job.id, e)
