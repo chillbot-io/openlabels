@@ -12,6 +12,7 @@ Replaces in-memory session storage for production use:
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Fields in the session data dict that contain bearer tokens and must be
 # encrypted at rest to limit blast radius of a database compromise.
-_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token")
+_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token", "m365_app_credentials")
 
 # Lazy-initialised Fernet cipher (None until first use, False if no key).
 _fernet: object | None = None
@@ -73,6 +74,8 @@ def _encrypt_session_data(data: dict) -> dict:
         value = encrypted.get(field)
         if value and isinstance(value, str):
             encrypted[field] = f.encrypt(value.encode()).decode()
+        elif value and isinstance(value, dict):
+            encrypted[field] = f.encrypt(json.dumps(value).encode()).decode()
     return encrypted
 
 
@@ -88,7 +91,11 @@ def _decrypt_session_data(data: dict) -> dict:
         value = decrypted.get(field)
         if value and isinstance(value, str):
             try:
-                decrypted[field] = f.decrypt(value.encode()).decode()
+                plaintext = f.decrypt(value.encode()).decode()
+                try:
+                    decrypted[field] = json.loads(plaintext)
+                except (json.JSONDecodeError, ValueError):
+                    decrypted[field] = plaintext
             except InvalidToken:
                 # Value was stored before encryption was enabled — return as-is
                 pass
