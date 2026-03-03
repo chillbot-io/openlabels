@@ -57,14 +57,47 @@ class GlobalConnection:
 
 
 class GlobalConnectionManager:
-    """Manages WebSocket connections keyed by tenant_id."""
+    """Manages WebSocket connections keyed by tenant_id.
+
+    Enforces connection limits to prevent resource exhaustion (DoS):
+    - Global limit: max concurrent connections across all tenants
+    - Per-tenant limit: max concurrent connections per tenant
+    """
+
+    # SECURITY: Connection limits to prevent DoS (aligned with /ws/scans)
+    MAX_CONNECTIONS_GLOBAL = 500
+    MAX_CONNECTIONS_PER_TENANT = 50
 
     def __init__(self) -> None:
         self.connections: dict[UUID, list[GlobalConnection]] = {}
 
     async def connect(
         self, websocket: WebSocket, user_id: UUID, tenant_id: UUID
-    ) -> GlobalConnection:
+    ) -> GlobalConnection | None:
+        """Accept a WebSocket connection, enforcing connection limits.
+
+        Returns None and closes with 1013 (Try Again Later) if limits
+        are exceeded.
+        """
+        # Check global connection limit
+        if self.connection_count >= self.MAX_CONNECTIONS_GLOBAL:
+            logger.warning(
+                "Global WS connection rejected: global limit reached (%d/%d)",
+                self.connection_count, self.MAX_CONNECTIONS_GLOBAL,
+            )
+            await websocket.close(code=1013)  # Try Again Later
+            return None
+
+        # Check per-tenant connection limit
+        tenant_count = len(self.connections.get(tenant_id, []))
+        if tenant_count >= self.MAX_CONNECTIONS_PER_TENANT:
+            logger.warning(
+                "Global WS connection rejected: tenant %s limit reached (%d/%d)",
+                tenant_id, tenant_count, self.MAX_CONNECTIONS_PER_TENANT,
+            )
+            await websocket.close(code=1013)  # Try Again Later
+            return None
+
         await websocket.accept()
         conn = GlobalConnection(websocket, user_id, tenant_id)
         self.connections.setdefault(tenant_id, []).append(conn)
@@ -293,6 +326,8 @@ async def websocket_global_events(websocket: WebSocket) -> None:
 
     user_id, tenant_id = auth_result
     conn = await global_manager.connect(websocket, user_id, tenant_id)
+    if conn is None:
+        return  # Connection limit exceeded — already closed with 1013
 
     # Rate limiting state
     message_timestamps: list[float] = []

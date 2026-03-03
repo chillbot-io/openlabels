@@ -179,22 +179,28 @@ class MLDetector(BaseDetector):
                 )
                 return False
 
-            # SECURITY: Prefer safetensors format to avoid pickle deserialization.
+            # SECURITY: Require safetensors format to avoid pickle deserialization.
+            # pytorch_model.bin uses Python pickle which can execute arbitrary
+            # code during deserialization (RCE). safetensors is a safe alternative.
             has_safetensors = (self.model_path / "model.safetensors").exists()
-            load_kwargs: dict = {"pretrained_model_name_or_path": str(self.model_path)}
-            if has_safetensors:
-                load_kwargs["use_safetensors"] = True
+            if not has_safetensors:
+                logger.critical(
+                    "%s: REFUSING to load model from %s — only pytorch_model.bin "
+                    "(pickle) found. Convert to safetensors format to eliminate "
+                    "deserialization RCE risk: "
+                    "python -c \"from safetensors.torch import save_file; ...\"",
+                    self.name, self.model_path,
+                )
+                return False
+
+            load_kwargs: dict = {
+                "pretrained_model_name_or_path": str(self.model_path),
+                "use_safetensors": True,
+            }
 
             # Load tokenizer and model
             self._tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
             self._model = AutoModelForTokenClassification.from_pretrained(**load_kwargs)
-
-            if not has_safetensors:
-                logger.warning(
-                    "%s: Loaded from pytorch_model.bin (pickle). "
-                    "Convert to safetensors format for improved security.",
-                    self.name,
-                )
 
             # Get device using configurable detection
             self._device_id = get_device(self.device_config, self.cuda_device_id)

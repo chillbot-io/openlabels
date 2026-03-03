@@ -280,12 +280,17 @@ class EventStreamManager:
         persisted = 0
 
         async with get_session_context() as session:
-            # Batch-resolve file paths to MonitoredFile rows
+            # Batch-resolve file paths to MonitoredFile rows.
+            # NOTE: This query intentionally returns MonitoredFile rows
+            # across all tenants so that a single OS-level file event
+            # (e.g. from fanotify) can be recorded for every tenant that
+            # monitors that path.  Tenant isolation is maintained because
+            # each FileAccessEvent row is created with the correct
+            # tenant_id from the corresponding MonitoredFile.
             file_paths = {e.file_path for e in valid_events}
             result = await session.execute(
                 select(MonitoredFile)
                 .where(MonitoredFile.file_path.in_(file_paths))
-                .order_by(MonitoredFile.tenant_id)
             )
             rows = result.scalars().all()
             path_to_monitored: dict[str, list[MonitoredFile]] = {}
