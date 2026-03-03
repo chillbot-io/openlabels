@@ -592,17 +592,14 @@ class MIPClient:
 
         handler = None
         try:
-            # Create file handler
             handler = self._file_engine.CreateFileHandler(
                 file_path,
                 self._create_file_observer(),
             )
 
-            # Check current label
             current_label = handler.Label
             was_protected = handler.Protection is not None if hasattr(handler, 'Protection') else False
 
-            # Create labeling options
             labeling_options = LabelingOptions()
             labeling_options.AssignmentMethod = AssignmentMethod.Standard
             labeling_options.IsDowngradeJustified = justification is not None
@@ -614,7 +611,6 @@ class MIPClient:
                 for key, value in extended_properties.items():
                     labeling_options.ExtendedProperties.Add(key, value)
 
-            # Set the label
             handler.SetLabel(
                 self._file_engine.GetLabelById(label_id),
                 labeling_options,
@@ -714,7 +710,6 @@ class MIPClient:
 
         handler = None
         try:
-            # Create file handler
             handler = self._file_engine.CreateFileHandler(
                 file_path,
                 self._create_file_observer(),

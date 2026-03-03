@@ -86,14 +86,12 @@ def quarantine(
     source = Path(source).resolve()
     destination = Path(destination).resolve()
 
-    # Validate inputs
     if not source.exists():
         raise QuarantineError(f"Source file not found: {source}", path=source)
 
     if not source.is_file():
         raise QuarantineError(f"Source must be a file, not directory: {source}", path=source)
 
-    # Create destination directory if needed
     if not dry_run:
         destination.mkdir(parents=True, exist_ok=True)
 

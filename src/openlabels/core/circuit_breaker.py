@@ -285,16 +285,3 @@ class CircuitBreaker:
             },
         }
 
-    @classmethod
-    def get_all_status(cls) -> dict[str, dict]:
-        """Get status of all registered circuit breakers."""
-        return {name: cb.get_status() for name, cb in cls._registry.items()}
-
-    @classmethod
-    def reset_all(cls) -> None:
-        """Reset all circuit breakers to closed state (for testing)."""
-        for cb in cls._registry.values():
-            cb._state = CircuitState.CLOSED
-            cb._failure_count = 0
-            cb._success_count = 0
-            cb._last_failure_time = None
