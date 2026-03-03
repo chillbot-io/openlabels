@@ -24,7 +24,7 @@ FALSE_POSITIVE_NAMES: frozenset[str] = frozenset({
     # Field labels that might match
     "MRN", "DOB", "SSN", "DOD", "DOS", "NPI", "DEA", "EXP", "ISS",
     "PATIENT", "PROVIDER", "MEMBER", "SUBSCRIBER", "INSURED",
-    "FACILITY", "HOSPITAL", "CLINIC", "PHARMACY", "LABORATORY",
+    "FACILITY", "HOSPITAL", "CLINIC", "PHARMACY",
 
     # State abbreviations that might match with credentials
     "PA", "MD", "MA", "ME", "NH", "NJ", "NM", "NY", "NC", "ND",
@@ -91,7 +91,7 @@ FALSE_POSITIVE_NAMES: frozenset[str] = frozenset({
     "EXECUTIVE", "ASSOCIATE", "CAPTAIN", "SERGEANT", "LIEUTENANT",
     "DETECTIVE", "INSPECTOR", "DEPUTY", "GENERAL", "VICE",
     "STRATEGIC", "GLOBAL", "REGIONAL", "NATIONAL", "INTERNATIONAL",
-    "COMPLIANCE", "LEGAL", "HUMAN", "PHYSICAL", "TECHNICAL",
+    "COMPLIANCE", "LEGAL", "TECHNICAL",
     "DIVISION", "CORPORATE", "CENTRAL",
 
     # Currencies (appear capitalized in "form of X Dollar")
@@ -141,14 +141,14 @@ FALSE_POSITIVE_NAMES: frozenset[str] = frozenset({
     "BITCOIN", "LITECOIN", "ETHEREUM", "CRYPTO",
     "TRANSGENDER", "NONBINARY", "FUTURES", "INTERACTIONS",
     "VERDE", "GUILDER", "KORUNA", "SHILLING",
-    "DESIGNER", "SOLUTIONS", "TECHNICIAN",
+    "SOLUTIONS",
     "PROGRAM", "PROGRAMMES", "INITIATIVE",
 
     # Gretel PII FP analysis — domain phrases detected as names
-    "ROOM", "TYPE", "ACCESS", "LEVEL", "ENERGY", "UTILITIES",
-    "DEFENDANT", "NUMBERS", "RECORD", "RECORDS", "SYSTEM",
+    "ROOM", "ACCESS", "LEVEL", "ENERGY", "UTILITIES",
+    "DEFENDANT", "NUMBERS", "RECORDS", "SYSTEM",
     "AVIONICS", "ROTTERDAM", "NETHERLANDS", "AMSTERDAM",
-    "PLAINTIFF", "HOLDER", "AUTHOR", "LOAN",
+    "PLAINTIFF", "HOLDER", "AUTHOR",
     "REASON", "MARINE", "SUMMIT", "AVIATION", "LOGISTICS",
     "INDUSTRIAL", "COMMERCIAL", "RESIDENTIAL",
     "MUNICIPAL", "REGULATORY", "JUDICIAL",
@@ -159,16 +159,12 @@ FALSE_POSITIVE_NAMES: frozenset[str] = frozenset({
     "PANGENDER", "ANDROGYNOUS", "INTERSEX",
     # Common words/phrases detected as names at scale
     "PRODUCER", "PARTICULARLY", "NOTABLY", "LASTLY",
-    "ALTERNATIVELY", "CONSEQUENTLY", "SUBSEQUENTLY",
-    "ADDITIONALLY", "FURTHERMORE", "MEANWHILE",
+    "ALTERNATIVELY",
     "PREVIOUSLY", "PRIMARILY", "ESSENTIALLY",
-    "NOW", "THIS", "FORWARD", "HUMAN", "SAMPLE",
-    "COLLECTION", "TERMINATION", "MEMORIAL",
-    "VETERAN", "VETERANS", "PRAIRIE", "COUNTY",
+    "NOW", "THIS", "SAMPLE",
+    "TERMINATION", "MEMORIAL",
+    "VETERAN", "VETERANS", "PRAIRIE",
 })
-
-# Compile into lowercase frozenset for case-insensitive matching
-_FALSE_POSITIVE_NAMES_LOWER = frozenset(s.lower() for s in FALSE_POSITIVE_NAMES)
 
 # Module-level frozensets for O(1) lookups in _is_false_positive_name
 _CURRENCY_WORDS = frozenset({
@@ -194,6 +190,8 @@ _DOCUMENT_LAST_WORDS = frozenset({
     "REPORT", "REPORTS", "FORM", "DOCUMENT", "CERTIFICATE", "LICENSE",
     "SUMMARY", "RESULTS", "HISTORY", "NOTES", "CHART",
 })
+
+_VALID_CREDENTIALS = frozenset({"MD", "DO", "PA", "NP", "RN", "PHD", "DNP", "APRN", "PAC"})
 
 _US_STATE_ABBREVS = frozenset({
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -247,7 +245,6 @@ def _is_false_positive_name(value: str) -> bool:
 
         # Short first word + document term = likely fragment (e.g., "Y REPORT")
         # BUT exclude valid medical credentials after a comma (e.g., "E. Washington, MD")
-        _VALID_CREDENTIALS = frozenset({"MD", "DO", "PA", "NP", "RN", "PHD", "DNP", "APRN", "PAC"})
         if len(first_word) <= 2 and last_word.upper() in FALSE_POSITIVE_NAMES:
             # Exception: comma + credential = valid provider name
             last_clean = last_word.upper().replace("-", "")
@@ -421,14 +418,14 @@ def _is_field_name(value: str) -> bool:
     if '_' not in value:
         return False
 
-    segments = value.split('_')
+    segments = [s for s in value.split('_') if s]
 
     # 3+ all-lowercase segments is almost always a field name
-    if len(segments) >= 3 and all(s.islower() for s in segments if s):
+    if len(segments) >= 3 and all(s.islower() for s in segments):
         return True
 
     # Any segment matching a known field-name keyword
-    lower_segments = {s.lower() for s in segments if s}
+    lower_segments = {s.lower() for s in segments}
     if lower_segments & _FIELD_NAME_SEGMENTS:
         return True
 
@@ -474,50 +471,3 @@ _USERNAME_FALSE_POSITIVES = frozenset({
     'implemented', 'distributed', 'administered',
 })
 
-# Common components of data field names / programming identifiers.
-# When a snake_case USERNAME token (containing "_") has ALL parts in this
-# set and no digits, it is almost certainly a schema field name
-# (e.g. "date_of_birth", "eye_color") rather than a real username.
-_SNAKE_CASE_FIELD_PARTS = frozenset({
-    # identifiers / types
-    "id", "identifier", "key", "code", "number", "num", "no",
-    "name", "label", "title", "tag", "type", "kind", "class",
-    "value", "data", "info", "text", "body", "content", "entry",
-    "record", "item", "element", "field", "attribute", "property",
-    # dates / times
-    "date", "time", "timestamp", "timestamped", "datetime",
-    "created", "updated", "modified", "deleted", "expired",
-    "start", "end", "begin", "finish", "birth", "death",
-    # measurements / quantities
-    "rate", "score", "level", "count", "total", "sum",
-    "average", "mean", "median", "max", "min", "size", "length",
-    "width", "height", "weight", "depth", "area", "volume",
-    "pressure", "temperature", "frequency", "velocity", "speed",
-    # body / medical
-    "eye", "hair", "skin", "blood", "heart", "brain", "bone",
-    "biometric", "phenotypic", "genetic", "genomic", "clinical",
-    "medical", "health", "patient", "diagnosis", "treatment",
-    # demographics
-    "first", "last", "middle", "full", "display", "maiden",
-    "age", "gender", "sex", "race", "ethnicity", "nationality",
-    # contact / location
-    "email", "phone", "mobile", "fax", "address", "street",
-    "city", "state", "country", "zip", "postal", "region",
-    # auth / security
-    "auth", "authentication", "authorization", "credential",
-    "session", "token", "access", "refresh", "secret", "private",
-    "password", "passwd", "hash", "salt", "encrypted", "hashed",
-    # roles / entities
-    "user", "admin", "owner", "member", "participant",
-    "unique", "primary", "secondary", "parent", "child",
-    "source", "target", "origin", "destination",
-    # actions / status
-    "input", "output", "request", "response", "result",
-    "config", "setting", "option", "preference", "parameter",
-    "file", "path", "url", "uri", "host", "port", "domain",
-    "color", "colour", "traits", "entries", "records",
-    "measurements", "results", "status", "mode", "format",
-    # prepositions / articles (appear in field names like "date_of_birth")
-    "of", "at", "in", "on", "to", "for", "from", "with", "by",
-    "is", "has", "can", "the", "a", "an", "and", "or", "not",
-})

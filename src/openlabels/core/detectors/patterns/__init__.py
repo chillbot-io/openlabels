@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 
 # Imported from submodules — see filters.py and validators.py
 from .filters import (
-    FALSE_POSITIVE_NAMES,
-    _FALSE_POSITIVE_NAMES_LOWER,
     _is_false_positive_name,
     _is_field_name,
     _PROPER_NOUN_TYPES,
@@ -27,7 +25,6 @@ from .filters import (
     _ADDRESS_FALSE_POSITIVES,
     _CITY_FALSE_POSITIVES,
     _USERNAME_FALSE_POSITIVES,
-    _SNAKE_CASE_FIELD_PARTS,
 )
 from .validators import (
     _validate_ein,
@@ -75,9 +72,6 @@ from .validators import (
 # FIXED: Support Irish/Scottish names like O'Connor, O'Brien, McDonald, MacArthur
 # Pattern: Capital + lowercase + optional (apostrophe/hyphen + Capital + lowercase)
 _NAME = r"[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ''-]*(?:[''-][A-ZÀ-ÖØ-Þa-zà-öø-ÿ][a-zà-öø-ÿ]*)?"
-
-# Multi-part names: handles "Mary Anne", "Jean-Pierre", "van der Berg"
-_NAME_PART = r"(?:[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ''-]*(?:[''-][A-ZÀ-ÖØ-Þa-zà-öø-ÿ][a-zà-öø-ÿ]*)?)"
 
 # Use [ \t]+ (horizontal whitespace) NOT \s+ (which includes newlines)
 
@@ -1753,7 +1747,7 @@ _p(r'(?:Steuer[-\s]?(?:ID|Identifikationsnummer|Nr)|IdNr|St(?:euer)?[-\s]?Nr)[:\
    'DE_STEUER_ID', 0.92, 1, flags=re.I),
 # Bare 11-digit with checksum (lower confidence due to overlap with phone numbers)
 _p(r'(?:Identifikationsnummer|Steueridentifikationsnummer)[:\s#]+(\d{11})',
-   'DE_STEUER_ID', 0.88, 1, flags=re.I),
+   'DE_STEUER_ID', 0.88, 1, _validate_de_steuer_id, flags=re.I),
 
 # === German Personalausweis (Identity Card Number) ===
 # Format: L + 8 alphanumeric + D (since Nov 2010) or 10-digit (older format)
@@ -1766,14 +1760,14 @@ _p(r'(?:BSN|Burgerservicenummer|burger\s*service\s*nummer|sofinummer|sofi[-\s]?n
    'NL_BSN', 0.92, 1, flags=re.I),
 # Bare 9 digits with checksum (lower confidence — overlaps with other 9-digit IDs)
 _p(r'(?:BSN|Burgerservicenummer)[:\s]+(\d{3}[-.\s]?\d{3}[-.\s]?\d{3})',
-   'NL_BSN', 0.88, 1, flags=re.I),
+   'NL_BSN', 0.88, 1, _validate_nl_bsn, flags=re.I),
 
 # === Portuguese NIF (Numero de Identificacao Fiscal) ===
 # 9 digits with mod-11 checksum
 _p(r'(?:NIF|N[uú]mero\s+de\s+Identifica[cç][aã]o\s+Fiscal|contribuinte)[:\s#]+(\d{9})',
    'PT_NIF', 0.92, 1, flags=re.I),
 _p(r'(?:NIF|contribuinte)[:\s]+(\d{3}\s?\d{3}\s?\d{3})',
-   'PT_NIF', 0.88, 1, flags=re.I),
+   'PT_NIF', 0.88, 1, _validate_pt_nif, flags=re.I),
 
 # === Portuguese CC (Cartao de Cidadao) ===
 # 12 alphanumeric characters
@@ -1794,19 +1788,19 @@ _p(r'\b(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})\b', 'BR_CNPJ', 0.80, 1, _validate_br_cn
 # 11 digits: DDMMYY + 5-digit serial, Luhn checksum
 _p(r'(?:AMKA|Α\.?Μ\.?Κ\.?Α|Αριθμ[οό]ς\s+Μητρ[ωώ]ου\s+Κοινωνικ[ηή]ς\s+Ασφ[αά]λισης)[:\s#]+(\d{11})',
    'EL_AMKA', 0.92, 1, flags=re.I),
-_p(r'(?:AMKA)[:\s]+(\d{2}\d{2}\d{2}\d{5})', 'EL_AMKA', 0.88, 1, flags=re.I),
+_p(r'(?:AMKA)[:\s]+(\d{2}\d{2}\d{2}\d{5})', 'EL_AMKA', 0.88, 1, _validate_el_amka, flags=re.I),
 
 # === Greek AFM (Tax Identification Number) ===
 # 9 digits with weighted checksum
 _p(r'(?:AFM|Α\.?Φ\.?Μ|ΑΦΜ|Αριθμ[οό]ς\s+Φορολογικο[υύ]\s+Μητρ[ωώ]ου)[:\s#]+(\d{9})',
    'EL_AFM', 0.92, 1, flags=re.I),
-_p(r'(?:AFM|ΑΦΜ)[:\s]+(\d{9})', 'EL_AFM', 0.88, 1, flags=re.I),
+_p(r'(?:AFM|ΑΦΜ)[:\s]+(\d{9})', 'EL_AFM', 0.88, 1, _validate_el_afm, flags=re.I),
 
 # === Slovenian EMSO (Enotna Maticna Stevilka Obcana) ===
 # 13 digits: DDMMYYY + RR + SSS + C (mod-11 checksum)
 _p(r'(?:EMŠO|EMSO|Enotna\s+Mati[cč]na\s+[SŠ]tevilka)[:\s#]+(\d{13})',
    'SI_EMSO', 0.92, 1, flags=re.I),
-_p(r'(?:EMŠO|EMSO)[:\s]+(\d{13})', 'SI_EMSO', 0.88, 1, flags=re.I),
+_p(r'(?:EMŠO|EMSO)[:\s]+(\d{13})', 'SI_EMSO', 0.88, 1, _validate_si_emso, flags=re.I),
 
 # === Slovenian Davcna Stevilka (Tax Number) ===
 # 8 digits
