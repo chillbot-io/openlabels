@@ -653,7 +653,7 @@ class DetectorOrchestrator:
             t = max(0.0, min(1.0, (min_raw - 0.5) / 0.4))
             boost = self._ENSEMBLE_BOOST_MIN + t * (self._ENSEMBLE_BOOST_MAX - self._ENSEMBLE_BOOST_MIN)
 
-            # Triple-agreement bonus: effective agreement >= 3 (counting
+            # Triple-agreement bonus: effective agreement ≥ 3 (counting
             # partial weights).  span_a counts toward the total only if
             # it is not excluded.
             span_a_weight = (
