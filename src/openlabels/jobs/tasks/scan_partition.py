@@ -23,13 +23,13 @@ from openlabels.exceptions import JobError
 from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
 from openlabels.jobs.tasks.scan import (
     CANCELLATION_CHECK_INTERVAL,
-    _build_pipeline_config,
     _check_cancellation,
     _detect_and_score,
     _get_adapter,
     cleanup_processor,
     get_processor,
 )
+from openlabels.jobs.tasks.scan_config import _build_pipeline_config
 from openlabels.server.config import get_settings
 from openlabels.server.models import ScanJob, ScanPartition, ScanResult, ScanTarget
 
@@ -456,7 +456,7 @@ async def _run_post_scan_operations(
     # Auto-labeling
     if settings.labeling.enabled and settings.labeling.mode == "auto":
         try:
-            from openlabels.jobs.tasks.scan import _auto_label_results
+            from openlabels.jobs.tasks.scan_labeling import _auto_label_results
             await _auto_label_results(session, job)
         except (PermissionError, OSError, RuntimeError) as e:
             logger.error("Auto-labeling failed for job %s: %s", job.id, e)
@@ -467,7 +467,7 @@ async def _run_post_scan_operations(
         adapter_settings = getattr(settings.adapters, target.adapter, None)
         if adapter_settings and getattr(adapter_settings, "label_sync_enabled", False):
             try:
-                from openlabels.jobs.tasks.scan import _cloud_label_sync_back
+                from openlabels.jobs.tasks.scan_labeling import _cloud_label_sync_back
                 await _cloud_label_sync_back(session, job, target, settings)
             except (ConnectionError, OSError, RuntimeError, ValueError) as e:
                 logger.warning("Cloud label sync-back failed for job %s: %s", job.id, e)
