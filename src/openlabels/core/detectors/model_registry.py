@@ -262,14 +262,14 @@ def download_model(
                     f"Expected {mf.sha256[:16]}..."
                 )
             logger.debug(f"  Checksum verified for {mf.filename}")
-
-        # Copy from HF cache to our models directory (after verification)
-        shutil.copy2(cached_path, target)
         else:
             logger.warning(
                 f"No SHA-256 checksum configured for {mf.filename} in model "
                 f"{spec.name!r} — file integrity was not verified"
             )
+
+        # Copy from HF cache to our models directory (after verification)
+        shutil.copy2(cached_path, target)
 
         downloaded.append(mf.filename)
         if progress_callback:

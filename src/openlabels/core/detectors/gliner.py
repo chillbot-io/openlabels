@@ -190,8 +190,10 @@ class GLiNERDetector(BaseDetector):
                     "skipping integrity verification.",
                     self.model_name,
                 )
+        except RuntimeError:
+            raise  # Re-raise integrity failures — do not swallow
         except Exception as e:
-            # Never let integrity checking break model loading
+            # Don't let non-security errors in integrity checking break model loading
             logger.warning(
                 "GLiNER: integrity verification error for '%s': %s",
                 self.model_name, e,
