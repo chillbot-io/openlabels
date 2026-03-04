@@ -64,9 +64,9 @@ def _create_hipaa_phi() -> PolicyPack:
                 ["phone", "diagnosis"],
                 ["address", "diagnosis"],
             ],
-            # Domain triggers: any entity tagged MEDICAL, or
-            # identifier+medical / contact+medical combinations
-            domain_any_of=["medical"],
+            # Domain triggers: PHI requires linkage to an individual,
+            # so we use combinations (not domain_any_of which would fire
+            # on standalone clinical context like a bare diagnosis code).
             domain_combinations=[
                 ["identifier", "medical"],
                 ["contact", "medical"],
@@ -162,8 +162,13 @@ def _create_pci_dss() -> PolicyPack:
                 ["bank_account", "routing_number"],
                 ["iban", "bic"],
             ],
-            # Domain trigger: any entity tagged FINANCIAL
-            domain_any_of=["financial"],
+            # Domain triggers: PCI-DSS is specific to payment cards,
+            # not all financial entities (CUSIP, ISIN, etc.), so we
+            # use identifier+financial combinations rather than a
+            # broad domain_any_of.
+            domain_combinations=[
+                ["identifier", "financial"],
+            ],
             min_confidence=0.8,
         ),
         handling=HandlingRequirements(
@@ -486,9 +491,9 @@ def _create_soc2() -> PolicyPack:
                 ["person_name", "credit_card"],
                 ["email", "ssn"],
             ],
-            # Domain triggers: credential or financial entities, or
-            # identifier+financial combinations
-            domain_any_of=["credential", "financial"],
+            # Domain triggers: any credential is a SOC2 concern;
+            # financial data needs identifier context to be relevant.
+            domain_any_of=["credential"],
             domain_combinations=[
                 ["identifier", "financial"],
             ],

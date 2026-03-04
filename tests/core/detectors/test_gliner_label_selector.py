@@ -80,6 +80,17 @@ class TestContentProfiling:
         profile = profile_content(text)
         assert EntityDomain.CONTACT in profile.categories
 
+    def test_vehicle_domain(self):
+        text = (
+            "Vehicle Identification Number: 1HGBH41JXMN109186\n"
+            "License plate: ABC-1234\n"
+            "DMV registration number on file\n"
+            "Odometer reading: 45,230 miles\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.VEHICLE in profile.categories
+        assert "vehicle identification number" in profile.selected_labels
+
     def test_combined_medical_financial(self):
         text = (
             "Patient billing record\n"

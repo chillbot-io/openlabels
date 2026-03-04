@@ -73,9 +73,9 @@ _CATEGORY_PATTERNS: dict[EntityDomain, list[tuple[re.Pattern[str], float]]] = {
     EntityDomain.CREDENTIAL: [
         (re.compile(
             r"\b(API[_ ]?KEY|SECRET[_ ]?KEY|TOKEN|PASSWORD|PRIVATE[_ ]?KEY|"
-            r"AWS|GITHUB|BEARER)\b",
+            r"AWS|GITHUB|BEARER)\b", re.I,
         ), 2.0),
-        (re.compile(r"\b(BEGIN (RSA |EC |)PRIVATE KEY)\b"), 3.0),
+        (re.compile(r"\b(BEGIN (RSA |EC |)PRIVATE KEY)\b", re.I), 3.0),
         (re.compile(
             r"\b(ip address|MAC address|hostname|server|database|"
             r"connection string)\b", re.I,
@@ -177,27 +177,21 @@ _DOMAIN_LABELS: dict[EntityDomain, list[str]] = {
         "pin code",
     ],
     EntityDomain.IDENTIFIER: [
-        "social security number",
-        "driver license number",
+        # ssn, driver license, tax id, national id already in _BASE_LABELS
         "passport number",
-        "tax identification number",
-        "national identity number",
         "certificate number",
         "employee id",
     ],
     EntityDomain.CONTACT: [
         "phone number",
         "email address",
-        "street address",
-        "city",
+        # street address, city, zip code, username already in _BASE_LABELS
         "state",
-        "zip code",
         "country",
         "county",
         # "gps coordinate" removed: pattern detectors cover all GPS formats
         # (bracket, decimal, DMS, labeled).  GLiNER produces 8 spurious.
         "url",
-        "username",
         "imei number",
     ],
     EntityDomain.CREDENTIAL: [
@@ -205,7 +199,7 @@ _DOMAIN_LABELS: dict[EntityDomain, list[str]] = {
         "mac address",
         "device identifier",
         "imei number",
-        "password",
+        # password already in _BASE_LABELS
         "pin code",
         "api key",
     ],

@@ -59,7 +59,7 @@ def _entity(
 
 
 def _engine_with_builtins() -> PolicyEngine:
-    """Fresh engine loaded with all 8 built-in policies."""
+    """Fresh engine loaded with all 9 built-in policies."""
     engine = PolicyEngine()
     engine.add_policies(load_builtin_policies())
     return engine

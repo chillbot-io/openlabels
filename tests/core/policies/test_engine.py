@@ -523,7 +523,7 @@ class TestDomainTriggers:
             triggers=PolicyTrigger(
                 domain_combinations=[
                     ["medical", "contact"],
-                    ["credential", "infrastructure"],
+                    ["credential", "network"],
                 ],
             ),
         )
@@ -533,6 +533,28 @@ class TestDomainTriggers:
         entities = [
             make_entity("mrn", "MRN123"),
             make_entity("email", "test@example.com"),
+        ]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_combination"
+
+    def test_domain_combinations_second_combo_fires(self, engine: PolicyEngine):
+        """Second domain_combination fires when first does not match."""
+        policy = PolicyPack(
+            name="Combo Policy",
+            triggers=PolicyTrigger(
+                domain_combinations=[
+                    ["medical", "financial"],  # Won't match
+                    ["credential", "network"],  # Will match
+                ],
+            ),
+        )
+        engine.add_policy(policy)
+
+        # ip_address has {NETWORK}, password has {CREDENTIAL}
+        entities = [
+            make_entity("ip_address", "192.168.1.1"),
+            make_entity("password", "secret123"),
         ]
         result = engine.evaluate(entities)
         assert result.is_sensitive
@@ -648,7 +670,7 @@ class TestDomainTriggerLoader:
                 "domain_all_of": ["identifier", "contact"],
                 "domain_combinations": [
                     ["medical", "identifier"],
-                    ["credential", "infrastructure"],
+                    ["credential", "network"],
                 ],
             },
         }
@@ -658,7 +680,7 @@ class TestDomainTriggerLoader:
         assert policy.triggers.domain_all_of == ["identifier", "contact"]
         assert policy.triggers.domain_combinations == [
             ["medical", "identifier"],
-            ["credential", "infrastructure"],
+            ["credential", "network"],
         ]
 
     def test_load_domain_triggers_from_yaml(self):
@@ -683,18 +705,22 @@ class TestBuiltinDomainTriggers:
     """Verify built-in policies have domain triggers configured."""
 
     def test_hipaa_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
-        """HIPAA policy includes domain triggers for medical entities."""
+        """HIPAA policy uses domain_combinations (not domain_any_of) for PHI."""
         from openlabels.core.policies.loader import load_builtin_policies
 
         hipaa = next(p for p in load_builtin_policies() if p.name == "HIPAA PHI")
-        assert "medical" in hipaa.triggers.domain_any_of
+        # PHI requires linkage to an individual, so combinations not any_of
+        assert hipaa.triggers.domain_any_of == []
+        assert ["identifier", "medical"] in hipaa.triggers.domain_combinations
+        assert ["contact", "medical"] in hipaa.triggers.domain_combinations
 
     def test_pci_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
-        """PCI-DSS policy includes domain triggers for financial entities."""
+        """PCI-DSS policy uses domain_combinations for financial+identifier."""
         from openlabels.core.policies.loader import load_builtin_policies
 
         pci = next(p for p in load_builtin_policies() if p.name == "PCI-DSS")
-        assert "financial" in pci.triggers.domain_any_of
+        assert pci.triggers.domain_any_of == []
+        assert ["identifier", "financial"] in pci.triggers.domain_combinations
 
     def test_credentials_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
         """Credentials policy includes domain triggers for credential entities."""

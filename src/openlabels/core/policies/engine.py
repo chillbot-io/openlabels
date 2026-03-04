@@ -15,7 +15,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from openlabels.core.entity_domains import EntityDomain, get_all_domains
+from openlabels.core.entity_domains import EntityDomain, get_all_domains, get_domains
 from openlabels.core.policies.schema import (
     EntityMatch,
     PolicyCategory,
@@ -198,7 +198,6 @@ class PolicyEngine:
             ctx.detected_domains = frozenset(all_domains)
 
             # Build reverse mapping: domain → contributing entity types
-            from openlabels.core.entity_domains import get_domains
             domain_sources: dict[EntityDomain, set[str]] = {}
             for etype in ctx.entity_types:
                 for domain in get_domains(etype):
@@ -342,11 +341,14 @@ class PolicyEngine:
             return None
 
         min_conf = triggers.min_confidence
+        min_count = triggers.min_count
 
-        def _sources_meet_confidence(sources: set[str]) -> bool:
-            """At least one source entity meets min_confidence."""
+        def _sources_meet_thresholds(sources: set[str]) -> bool:
+            """At least one source entity meets min_confidence and min_count."""
             return any(
-                ctx.type_max_confidence.get(t, 0) >= min_conf for t in sources
+                ctx.type_max_confidence.get(t, 0) >= min_conf
+                and ctx.type_counts.get(t, 0) >= min_count
+                for t in sources
             )
 
         def _domain_set(domain_strs: list[str]) -> set[EntityDomain] | None:
@@ -374,7 +376,7 @@ class PolicyEngine:
                 domain = next(iter(parsed))
                 if domain in detected:
                     sources = ctx.domain_sources.get(domain, set())
-                    if _sources_meet_confidence(sources):
+                    if _sources_meet_thresholds(sources):
                         return PolicyMatch(
                             policy_name=policy_name,
                             trigger_type="domain_any_of",
@@ -387,7 +389,7 @@ class PolicyEngine:
             required = _domain_set(triggers.domain_all_of)
             if required is not None and required.issubset(detected):
                 sources = _collect_sources(required)
-                if _sources_meet_confidence(sources):
+                if _sources_meet_thresholds(sources):
                     return PolicyMatch(
                         policy_name=policy_name,
                         trigger_type="domain_all_of",
@@ -401,7 +403,7 @@ class PolicyEngine:
                 required = _domain_set(combo)
                 if required is not None and required.issubset(detected):
                     sources = _collect_sources(required)
-                    if _sources_meet_confidence(sources):
+                    if _sources_meet_thresholds(sources):
                         return PolicyMatch(
                             policy_name=policy_name,
                             trigger_type="domain_combination",
