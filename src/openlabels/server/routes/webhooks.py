@@ -31,6 +31,8 @@ import time
 from collections import OrderedDict
 
 from fastapi import APIRouter, Query, Request, Response, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from openlabels.monitoring.notification_queue import (
     push_graph_notification,
@@ -41,6 +43,9 @@ from openlabels.server.config import get_settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# SECURITY: Rate limit webhook endpoints to prevent CPU/IO exhaustion from flood attacks.
+_limiter = Limiter(key_func=get_remote_address)
 
 # SECURITY: Replay protection — in-memory dedup cache keyed by notification hash.
 # Entries expire after _REPLAY_WINDOW_SECONDS.  The cache is bounded to
@@ -138,6 +143,7 @@ def _validate_client_state(
     summary="M365 audit webhook receiver",
     tags=["Webhooks"],
 )
+@_limiter.limit("100/minute")
 async def m365_webhook(
     request: Request,
     validationToken: str | None = Query(default=None),
@@ -201,6 +207,7 @@ async def m365_webhook(
     summary="Graph change notification receiver",
     tags=["Webhooks"],
 )
+@_limiter.limit("100/minute")
 async def graph_webhook(
     request: Request,
     validationToken: str | None = Query(default=None),

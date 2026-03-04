@@ -175,6 +175,8 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # SECURITY: Prevent browser/proxy caching of sensitive API responses (PII exports, etc.)
+    response.headers["Cache-Control"] = "no-store"
 
     # NOTE: 'unsafe-inline' for styles is required by HTMX/Tailwind inline styles.
     # Migrate to nonce-based CSP when feasible to eliminate this exception.

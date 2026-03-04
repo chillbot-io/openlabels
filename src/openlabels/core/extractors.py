@@ -15,6 +15,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# SECURITY: Set Pillow decompression bomb limit BEFORE any Image.open() calls.
+# Default (178 million pixels) allows ~500 MB raw bitmaps; 25 million pixels
+# (~75 MB for RGB) is sufficient for any document page and prevents DoS via
+# crafted images that decompress to gigabytes of memory.
+try:
+    from PIL import Image as _Image
+    _Image.MAX_IMAGE_PIXELS = 25_000_000
+except ImportError:
+    pass  # PIL not installed — image extraction will fail gracefully later
+
 from .constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_DOCUMENT_PAGES,

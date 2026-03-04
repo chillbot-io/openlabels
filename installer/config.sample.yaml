@@ -16,7 +16,8 @@ server:
 
 # Database (uses Docker PostgreSQL by default)
 database:
-  url: "postgresql+asyncpg://openlabels:openlabels@localhost:5432/openlabels"
+  # SECURITY: Replace the placeholder password before deploying.
+  url: "postgresql+asyncpg://openlabels:CHANGE_ME_GENERATE_STRONG_PASSWORD@localhost:5432/openlabels"
 
 # Adapter settings
 adapters:

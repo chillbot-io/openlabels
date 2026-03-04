@@ -188,6 +188,10 @@ class S3Storage:
             kwargs["aws_access_key_id"] = access_key
             kwargs["aws_secret_access_key"] = secret_key
         if endpoint_url:
+            # SECURITY: Validate endpoint URL against SSRF (private/internal IPs).
+            from openlabels.adapters.s3 import _validate_endpoint_url
+
+            _validate_endpoint_url(endpoint_url)
             kwargs["endpoint_url"] = endpoint_url
 
         self._s3 = boto3.client("s3", **kwargs)

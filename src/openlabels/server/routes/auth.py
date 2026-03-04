@@ -55,7 +55,15 @@ _DEV_USERNAME = os.environ.get("OPENLABELS_DEV_USERNAME", "admin")
 _DEV_PASSWORD = os.environ.get("OPENLABELS_DEV_PASSWORD")
 if _DEV_PASSWORD is None:
     _DEV_PASSWORD = secrets.token_urlsafe(16)
-    logger.warning("DEV MODE: Generated random dev password: %s", _DEV_PASSWORD)
+    # SECURITY: Never log credentials through the logging framework — they persist
+    # in log aggregation systems.  Print to stderr only so it's visible at startup
+    # but not captured by structured logging pipelines.
+    import sys as _sys
+
+    print(  # noqa: T201
+        f"DEV MODE: Generated random dev password: {_DEV_PASSWORD}",
+        file=_sys.stderr,
+    )
 
 
 def _get_request_context(request: Request) -> dict:
