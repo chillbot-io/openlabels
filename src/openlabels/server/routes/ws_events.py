@@ -28,6 +28,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
+from sqlalchemy import select
+
+from openlabels.server.db import get_session_factory
+from openlabels.server.models import User
 from openlabels.server.routes.ws import (
     WS_MAX_MESSAGE_SIZE,
     WS_MAX_MESSAGES_PER_MINUTE,
@@ -50,12 +54,13 @@ GLOBAL_PUBSUB_CHANNEL = "openlabels:ws:global"
 class GlobalConnection:
     """Authenticated WebSocket connection with tenant context."""
 
-    __slots__ = ("websocket", "user_id", "tenant_id")
+    __slots__ = ("websocket", "user_id", "tenant_id", "role")
 
-    def __init__(self, websocket: WebSocket, user_id: UUID, tenant_id: UUID):
+    def __init__(self, websocket: WebSocket, user_id: UUID, tenant_id: UUID, role: str = "viewer"):
         self.websocket = websocket
         self.user_id = user_id
         self.tenant_id = tenant_id
+        self.role = role
 
 
 class GlobalConnectionManager:
@@ -74,7 +79,7 @@ class GlobalConnectionManager:
         self.connections: dict[UUID, list[GlobalConnection]] = {}
 
     async def connect(
-        self, websocket: WebSocket, user_id: UUID, tenant_id: UUID
+        self, websocket: WebSocket, user_id: UUID, tenant_id: UUID, role: str = "viewer"
     ) -> GlobalConnection | None:
         """Accept a WebSocket connection, enforcing connection limits.
 
@@ -101,7 +106,7 @@ class GlobalConnectionManager:
             return None
 
         await websocket.accept()
-        conn = GlobalConnection(websocket, user_id, tenant_id)
+        conn = GlobalConnection(websocket, user_id, tenant_id, role=role)
         self.connections.setdefault(tenant_id, []).append(conn)
         logger.debug(
             "Global WS connected: user=%s tenant=%s (total=%d)",
@@ -123,14 +128,30 @@ class GlobalConnectionManager:
         )
 
     async def deliver_local(self, tenant_id: UUID, message: dict) -> None:
-        """Deliver a message to all local connections for a tenant."""
+        """Deliver a message to all local connections for a tenant.
+
+        SECURITY: For ``file_access`` events, ``user_name`` is stripped
+        from the payload sent to non-admin connections to avoid leaking
+        who accessed a file to unprivileged users.
+        """
         conns = self.connections.get(tenant_id)
         if not conns:
             return
+
+        # Pre-build a redacted copy for non-admin users if this is a
+        # file_access event containing user_name.
+        is_file_access = message.get("type") == "file_access"
+        redacted_message: dict | None = None
+        if is_file_access:
+            data = message.get("data")
+            if isinstance(data, dict) and "user_name" in data:
+                redacted_message = {**message, "data": {k: v for k, v in data.items() if k != "user_name"}}
+
         dead: list[GlobalConnection] = []
         for conn in conns:
             try:
-                await conn.websocket.send_json(message)
+                msg = message if (conn.role == "admin" or redacted_message is None) else redacted_message
+                await conn.websocket.send_json(msg)
             except (WebSocketDisconnect, ConnectionError, OSError, RuntimeError):
                 dead.append(conn)
         for conn in dead:
@@ -336,7 +357,15 @@ async def websocket_global_events(websocket: WebSocket) -> None:
         return
 
     user_id, tenant_id = auth_result
-    conn = await global_manager.connect(websocket, user_id, tenant_id)
+
+    # Look up user role so deliver_local can filter sensitive fields
+    role = "viewer"
+    async with get_session_factory()() as db_session:
+        user = await db_session.get(User, user_id)
+        if user:
+            role = user.role
+
+    conn = await global_manager.connect(websocket, user_id, tenant_id, role=role)
     if conn is None:
         return  # Connection limit exceeded — already closed with 1013
 

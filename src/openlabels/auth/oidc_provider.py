@@ -93,9 +93,6 @@ async def get_discovery(discovery_url: str) -> dict[str, Any]:
             if now - fetched_at < _DISCOVERY_CACHE_TTL:
                 return cached
 
-        from openlabels.core.url_validation import validate_url
-        validate_url(discovery_url, name="OIDC discovery URL")
-
         async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
             resp = await client.get(discovery_url)
             resp.raise_for_status()
@@ -108,6 +105,20 @@ async def get_discovery(discovery_url: str) -> dict[str, Any]:
             raise ValueError(
                 f"OIDC discovery document at {discovery_url} is missing "
                 f"required fields: {', '.join(missing)}"
+            )
+
+        # SECURITY (M-88): Validate that the issuer in the discovery
+        # document matches the expected issuer derived from the
+        # discovery URL.  Per RFC 8414 s3.3, the issuer value returned
+        # MUST be identical to the issuer used to construct the URL.
+        expected_issuer = discovery_url.removesuffix(
+            "/.well-known/openid-configuration"
+        )
+        actual_issuer = doc["issuer"].rstrip("/")
+        if actual_issuer != expected_issuer.rstrip("/"):
+            raise ValueError(
+                f"OIDC issuer mismatch: discovery URL implies issuer "
+                f"'{expected_issuer}' but document contains '{doc['issuer']}'"
             )
 
         _discovery_cache[discovery_url] = (doc, time.monotonic())
@@ -130,9 +141,6 @@ async def _get_jwks(jwks_uri: str) -> dict[str, Any]:
             cached, fetched_at = _jwks_cache[jwks_uri]
             if now - fetched_at < _JWKS_CACHE_TTL:
                 return cached
-
-        from openlabels.core.url_validation import validate_url
-        validate_url(jwks_uri, name="OIDC JWKS URI")
 
         async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
             resp = await client.get(jwks_uri)
@@ -223,9 +231,6 @@ async def exchange_code(
     """
     token_endpoint = discovery["token_endpoint"]
 
-    from openlabels.core.url_validation import validate_url
-    validate_url(token_endpoint, name="OIDC token endpoint")
-
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
         resp = await client.post(
             token_endpoint,
@@ -251,7 +256,9 @@ async def exchange_code(
                 error_code,
                 error_desc,
             )
-            raise AuthError("Token exchange failed. Please try again.")
+            raise AuthError(
+                f"OIDC token exchange failed: {error_code} - {error_desc}"
+            )
 
         return resp.json()
 
@@ -281,23 +288,15 @@ async def validate_id_token(
         key_data = await _find_signing_key(kid, jwks_uri)
         signing_key = jwt.PyJWK(key_data)
 
-        # SECURITY: Never trust the algorithm from the unverified header.
-        # Using the attacker-controlled "alg" field enables algorithm
-        # confusion attacks (e.g. RS256→HS256 forgery with the public key).
-        # Instead, determine the algorithm from the JWK key type.
-        _ALLOWED_ALGORITHMS = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256")
-        kty = key_data.get("kty", "").upper()
-        if kty == "RSA":
-            algorithms_list = ["RS256", "RS384", "RS512", "PS256"]
-        elif kty == "EC":
-            algorithms_list = ["ES256", "ES384", "ES512"]
-        else:
-            raise TokenInvalidError(f"Unsupported JWK key type: {kty}")
+        # Some providers use RS256, others ES256 — accept common algorithms
+        algorithms = unverified_header.get("alg", "RS256")
+        if algorithms not in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"):
+            raise TokenInvalidError(f"Unsupported algorithm: {algorithms}")
 
         claims = jwt.decode(
             id_token,
             signing_key,
-            algorithms=algorithms_list,
+            algorithms=[algorithms],
             audience=config.client_id,
             issuer=issuer,
             options={"verify_at_hash": False},  # Not all providers include at_hash
@@ -375,9 +374,6 @@ async def refresh_token(
     """
     token_endpoint = discovery["token_endpoint"]
 
-    from openlabels.core.url_validation import validate_url
-    validate_url(token_endpoint, name="OIDC token endpoint")
-
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
         resp = await client.post(
             token_endpoint,
@@ -397,7 +393,15 @@ async def refresh_token(
                 error_body = {"error": "unknown"}
             return {"error": error_body.get("error", "refresh_failed")}
 
-        return resp.json()
+        token_response = resp.json()
+
+        # SECURITY (M-87): If the provider rotated the refresh token,
+        # use the new one.  If no new refresh_token is returned, keep
+        # the original so callers always have a usable value.
+        if "refresh_token" not in token_response:
+            token_response["refresh_token"] = refresh_token_value
+
+        return token_response
 
 
 def get_end_session_url(

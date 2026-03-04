@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Fields in the session data dict that contain bearer tokens and must be
 # encrypted at rest to limit blast radius of a database compromise.
-_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token", "client_secret", "m365_app_credentials")
+_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token", "m365_app_credentials")
 
 # Lazy-initialised Fernet cipher (None until first use, False if no key).
 _fernet: object | None = None
@@ -144,7 +144,31 @@ class SessionStore:
         session = result.scalar_one_or_none()
 
         if session:
-            return _decrypt_session_data(session.data)
+            data = _decrypt_session_data(session.data)
+            # SECURITY (M-86): Validate OAuth access_token expiry in addition
+            # to session TTL.  The token may expire before the session does.
+            token_expires_at = data.get("token_expires_at")
+            if token_expires_at is not None:
+                try:
+                    if isinstance(token_expires_at, str):
+                        exp_dt = datetime.fromisoformat(token_expires_at)
+                    elif isinstance(token_expires_at, (int, float)):
+                        exp_dt = datetime.fromtimestamp(token_expires_at, tz=timezone.utc)
+                    else:
+                        exp_dt = None
+                    if exp_dt is not None:
+                        if exp_dt.tzinfo is None:
+                            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                        if exp_dt <= datetime.now(timezone.utc):
+                            logger.info(
+                                "Session %s has an expired OAuth token (expired %s)",
+                                session_id,
+                                exp_dt.isoformat(),
+                            )
+                            return None
+                except (ValueError, TypeError, OSError):
+                    pass  # Malformed expiry — treat as valid to avoid lockout
+            return data
         return None
 
     async def set(

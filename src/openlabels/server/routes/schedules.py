@@ -137,7 +137,10 @@ async def _enrich_schedule(
     target_name = None
     try:
         result = await session.execute(
-            select(ScanTarget.name).where(ScanTarget.id == schedule.target_id)
+            select(ScanTarget.name).where(
+                ScanTarget.id == schedule.target_id,
+                ScanTarget.tenant_id == schedule.tenant_id,
+            )
         )
         target_name = result.scalar_one_or_none()
     except Exception:

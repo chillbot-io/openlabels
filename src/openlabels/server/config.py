@@ -40,20 +40,52 @@ class ServerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secret_key(self) -> ServerSettings:
-        """Require a strong secret_key in production/staging environments."""
+        """Require a strong secret_key in production/staging environments.
+
+        In production/staging the key is mandatory and must have at least 32
+        characters with sufficient entropy (measured by unique-character ratio).
+        In development, a warning is logged if a key is set but weak.
+        """
+        import logging as _logging
+        import math as _math
+
         key = self.secret_key.get_secret_value()
+        _MIN_LENGTH = 32
+
         if self.environment in ("production", "staging"):
             if not key:
                 raise ValueError(
                     "OPENLABELS_SERVER__SECRET_KEY is required in production/staging. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
-            if len(key) < 32:
+            if len(key) < _MIN_LENGTH:
                 raise ValueError(
-                    "OPENLABELS_SERVER__SECRET_KEY must be at least 32 characters "
+                    f"OPENLABELS_SERVER__SECRET_KEY must be at least {_MIN_LENGTH} characters "
                     "for adequate entropy. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
+            # Shannon entropy check: reject trivially low-entropy keys
+            # (e.g. "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            freq: dict[str, int] = {}
+            for ch in key:
+                freq[ch] = freq.get(ch, 0) + 1
+            entropy = -sum(
+                (c / len(key)) * _math.log2(c / len(key)) for c in freq.values()
+            )
+            if entropy < 3.0:
+                raise ValueError(
+                    "OPENLABELS_SERVER__SECRET_KEY has insufficient entropy "
+                    f"({entropy:.1f} bits). Use a randomly generated value: "
+                    "python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+        elif key and len(key) < _MIN_LENGTH:
+            _logger = _logging.getLogger(__name__)
+            _logger.warning(
+                "OPENLABELS_SERVER__SECRET_KEY is shorter than %d characters. "
+                "This is acceptable for development but would be rejected in "
+                "production/staging.",
+                _MIN_LENGTH,
+            )
         return self
 
 

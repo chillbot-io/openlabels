@@ -308,7 +308,7 @@ class TestCSPDirectives:
             assert "script-src 'self' 'unsafe-inline'" not in csp
 
     async def test_csp_allows_websockets(self):
-        """CSP should allow WebSocket connections for real-time updates."""
+        """CSP connect-src 'self' covers same-origin WebSocket connections."""
         from openlabels.server.middleware.stack import add_security_headers
 
         settings = Mock()
@@ -323,5 +323,7 @@ class TestCSPDirectives:
         with patch("openlabels.server.middleware.stack.get_settings", return_value=settings):
             result = await add_security_headers(request, call_next)
             csp = result.headers.get("Content-Security-Policy")
-            assert "connect-src" in csp
-            assert "wss:" in csp or "ws:" in csp
+            assert "connect-src 'self'" in csp
+            # M-48: wss:/ws: wildcards removed; 'self' covers same-origin WS
+            assert "wss:" not in csp
+            assert "ws:" not in csp

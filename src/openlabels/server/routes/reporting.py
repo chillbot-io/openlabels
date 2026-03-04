@@ -295,10 +295,12 @@ async def _build_report_data(
 ) -> dict:
     """Query the database and assemble data context for report templates."""
 
-    # PERF: Cap result set to prevent unbounded memory usage.  For very
-    # large tenants the aggregations below are computed over this window;
-    # future work could stream rows or push aggregation into SQL.
-    _REPORT_ROW_LIMIT = 50_000
+    # PERF (M-28): Cap result set to prevent OOM under concurrent report
+    # generation.  50K ORM objects per request can exhaust memory when
+    # multiple reports run simultaneously.  10K is sufficient for
+    # meaningful aggregations; very large tenants should use export/CSV
+    # streaming instead.  Future work: push aggregation into SQL.
+    _REPORT_ROW_LIMIT = 10_000
 
     base_query = select(ScanResult).where(ScanResult.tenant_id == tenant_id)
     if job_id:

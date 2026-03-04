@@ -45,6 +45,22 @@ class ElasticAdapter:
         self._username = username
         self._password = password
         self._index_prefix = index_prefix
+        # SECURITY: Enforce SSL verification in production/staging
+        if not verify_ssl:
+            try:
+                from openlabels.server.config import get_settings
+                env = get_settings().server.environment
+                if env in ("production", "staging"):
+                    raise ValueError(
+                        f"verify_ssl=False is not allowed in {env}. "
+                        "SSL verification must be enabled for Elasticsearch."
+                    )
+            except (ImportError, AttributeError):
+                pass  # Settings may not be available in CLI context
+            logger.warning(
+                "SECURITY: Elastic adapter created with verify_ssl=False. "
+                "SSL verification should be enabled for production deployments."
+            )
         self._verify_ssl = verify_ssl
 
 

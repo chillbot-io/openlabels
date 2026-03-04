@@ -12,9 +12,11 @@ server's ``secret_key`` setting via HKDF key derivation.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
-from functools import lru_cache
+import time
+import threading
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
@@ -66,32 +68,74 @@ def _derive_fernet_key(secret: str | None = None) -> bytes:
             "A secret key is required for credential encryption. "
             "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
         )
+    # Derive a per-deployment salt by hashing the secret with a fixed domain
+    # separator.  This ensures different deployments (with different secrets)
+    # produce different HKDF salts, avoiding the "static salt" weakness while
+    # remaining deterministic for a given secret (no external state needed).
+    deployment_salt = hashlib.sha256(
+        b"openlabels-credential-encryption-v1:" + secret.encode()
+    ).digest()
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b"openlabels-credential-encryption-v1",
+        salt=deployment_salt,
         info=b"fernet-key",
     )
     raw = hkdf.derive(secret.encode())
     return base64.urlsafe_b64encode(raw)
 
 
-@lru_cache(maxsize=1)
+# TTL-based cache for MultiFernet instance.  Allows runtime key rotation
+# without a full process restart — the cache expires after _FERNET_TTL_SECONDS
+# and the next call rebuilds from current settings.
+_FERNET_TTL_SECONDS: float = 300  # 5 minutes
+_fernet_cache: MultiFernet | None = None
+_fernet_cache_time: float = 0.0
+_fernet_lock = threading.Lock()
+
+
 def _get_fernet() -> MultiFernet:
     """Return a cached MultiFernet instance supporting key rotation.
 
     The primary key is derived via HKDF. If ``OPENLABELS_SERVER__SECRET_KEY_PREVIOUS``
     is set, a secondary Fernet is created from the old key so that data encrypted
     with the previous key can still be decrypted (rotation support).
+
+    The result is cached for ``_FERNET_TTL_SECONDS`` (default 5 minutes).
+    Call ``invalidate_fernet_cache()`` to force an immediate refresh.
     """
-    settings = get_settings()
-    primary = Fernet(_derive_fernet_key())
-    keys = [primary]
-    prev_key = getattr(settings.server, "secret_key_previous", None)
-    prev_secret = prev_key.get_secret_value() if hasattr(prev_key, "get_secret_value") else (prev_key or "")
-    if prev_secret:
-        keys.append(Fernet(_derive_fernet_key(prev_secret)))
-    return MultiFernet(keys)
+    global _fernet_cache, _fernet_cache_time
+    now = time.monotonic()
+    if _fernet_cache is not None and (now - _fernet_cache_time) < _FERNET_TTL_SECONDS:
+        return _fernet_cache
+
+    with _fernet_lock:
+        # Double-check after acquiring lock
+        now = time.monotonic()
+        if _fernet_cache is not None and (now - _fernet_cache_time) < _FERNET_TTL_SECONDS:
+            return _fernet_cache
+
+        settings = get_settings()
+        primary = Fernet(_derive_fernet_key())
+        keys = [primary]
+        prev_key = getattr(settings.server, "secret_key_previous", None)
+        prev_secret = prev_key.get_secret_value() if hasattr(prev_key, "get_secret_value") else (prev_key or "")
+        if prev_secret:
+            keys.append(Fernet(_derive_fernet_key(prev_secret)))
+        _fernet_cache = MultiFernet(keys)
+        _fernet_cache_time = now
+        return _fernet_cache
+
+
+def invalidate_fernet_cache() -> None:
+    """Force the Fernet cache to refresh on next access.
+
+    Useful after changing ``secret_key`` at runtime or in tests.
+    """
+    global _fernet_cache, _fernet_cache_time
+    with _fernet_lock:
+        _fernet_cache = None
+        _fernet_cache_time = 0.0
 
 
 def encrypt_value(plaintext: str) -> str:

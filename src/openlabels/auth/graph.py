@@ -187,10 +187,19 @@ class GraphClient:
                 return self._access_token
 
         # Acquire new token — MSAL is synchronous, so offload to a thread
-        # to avoid blocking the async event loop
-        result = await asyncio.to_thread(
-            self._msal_app.acquire_token_for_client, scopes=GRAPH_SCOPES
-        )
+        # to avoid blocking the async event loop.
+        # SECURITY (M-24): Wrap in asyncio.wait_for to prevent indefinite
+        # hangs if the token endpoint is unresponsive.
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._msal_app.acquire_token_for_client, scopes=GRAPH_SCOPES
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Graph API token acquisition timed out after 30s")
+            raise RuntimeError("Graph API token acquisition timed out")
 
         if "access_token" not in result:
             logger.error(

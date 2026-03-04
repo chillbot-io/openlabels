@@ -100,12 +100,13 @@ class AzureBlobAdapter:
         exc_tb: TracebackType | None,
     ) -> None:
         if self._client:
-            try:
-                await asyncio.to_thread(self._client.close)
-            except Exception as e:
-                logger.debug("Azure BlobServiceClient close error (non-fatal): %s", e)
+            await asyncio.to_thread(self._client.close)
         self._client = None
         self._container_client = None
+        # SECURITY: Clear stored credentials from memory after use
+        self._connection_string = ""
+        self._account_key = ""
+        self._sas_token = ""
 
     async def test_connection(self, config: dict) -> bool:
         try:

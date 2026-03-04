@@ -44,6 +44,22 @@ class SplunkAdapter:
         self._token = hec_token
         self._index = index
         self._sourcetype = sourcetype
+        # SECURITY: Enforce SSL verification in production/staging
+        if not verify_ssl:
+            try:
+                from openlabels.server.config import get_settings
+                env = get_settings().server.environment
+                if env in ("production", "staging"):
+                    raise ValueError(
+                        f"verify_ssl=False is not allowed in {env}. "
+                        "SSL verification must be enabled for Splunk HEC."
+                    )
+            except (ImportError, AttributeError):
+                pass  # Settings may not be available in CLI context
+            logger.warning(
+                "SECURITY: Splunk adapter created with verify_ssl=False. "
+                "SSL verification should be enabled for production deployments."
+            )
         self._verify_ssl = verify_ssl
         self._batch_size = min(batch_size, _MAX_BATCH_SIZE)
 
@@ -58,20 +74,16 @@ class SplunkAdapter:
             chunk = records[offset : offset + self._batch_size]
             payload = "\n".join(self._format_event(r) for r in chunk)
 
-            try:
-                async with httpx.AsyncClient(verify=self._verify_ssl) as client:
-                    resp = await client.post(
-                        f"{self._url}/services/collector/event",
-                        content=payload,
-                        headers={
-                            "Authorization": f"Splunk {self._token}",
-                            "Content-Type": "application/json",
-                        },
-                        timeout=30.0,
-                    )
-            except (httpx.HTTPError, OSError, ConnectionError) as e:
-                logger.error("Splunk HEC request failed: %s", e)
-                break
+            async with httpx.AsyncClient(verify=self._verify_ssl) as client:
+                resp = await client.post(
+                    f"{self._url}/services/collector/event",
+                    content=payload,
+                    headers={
+                        "Authorization": f"Splunk {self._token}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=30.0,
+                )
 
             if resp.status_code == 200:
                 total_sent += len(chunk)

@@ -124,6 +124,11 @@ class GLiNERDetector(BaseDetector):
     name = "gliner"
     tier = Tier.ML
 
+    # Pinned HuggingFace revision for the default model to prevent
+    # silent model substitution via mutable tags.  Update this hash
+    # after verifying a new revision.
+    DEFAULT_REVISION = "89a38e5d4babe3de24e6a3009acaa0eba2ded99b"
+
     def __init__(
         self,
         model_name: str = DEFAULT_GLINER_MODEL,
@@ -131,12 +136,21 @@ class GLiNERDetector(BaseDetector):
         label_map: dict[str, str] | None = None,
         use_onnx: bool = False,
         enable_label_selection: bool = True,
+        revision: str | None = None,
     ):
         self.model_name = model_name
         self.threshold = threshold
         self.label_map = label_map or GLINER_LABEL_MAP
         self.use_onnx = use_onnx
         self.enable_label_selection = enable_label_selection
+        # Use the caller-provided revision, or fall back to the pinned
+        # default when loading the default model.
+        if revision is not None:
+            self.revision = revision
+        elif model_name == DEFAULT_GLINER_MODEL:
+            self.revision = self.DEFAULT_REVISION
+        else:
+            self.revision = None
         self._model: Any = None
         self._loaded = False
         self._entity_labels = list(self.label_map.keys())
@@ -218,14 +232,19 @@ class GLiNERDetector(BaseDetector):
             return False
 
         try:
+            load_kwargs: dict[str, Any] = {
+                "load_onnx_model": self.use_onnx,
+            }
+            if self.revision is not None:
+                load_kwargs["revision"] = self.revision
             self._model = GLiNER.from_pretrained(
                 self.model_name,
-                load_onnx_model=self.use_onnx,
+                **load_kwargs,
             )
             self._loaded = True
             logger.info(
-                "GLiNER model loaded: %s (onnx=%s)",
-                self.model_name, self.use_onnx,
+                "GLiNER model loaded: %s (onnx=%s, revision=%s)",
+                self.model_name, self.use_onnx, self.revision,
             )
 
             # Verify model integrity after loading (uses cached model path)
@@ -239,9 +258,14 @@ class GLiNERDetector(BaseDetector):
                     self.model_name, e,
                 )
                 try:
+                    fallback_kwargs: dict[str, Any] = {
+                        "load_onnx_model": False,
+                    }
+                    if self.revision is not None:
+                        fallback_kwargs["revision"] = self.revision
                     self._model = GLiNER.from_pretrained(
                         self.model_name,
-                        load_onnx_model=False,
+                        **fallback_kwargs,
                     )
                     self.use_onnx = False
                     self._loaded = True

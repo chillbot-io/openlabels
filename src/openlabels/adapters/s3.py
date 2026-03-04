@@ -232,6 +232,9 @@ class S3Adapter:
             except Exception as e:
                 logger.debug("S3 client close failed: %s", e)
         self._client = None
+        # SECURITY: Clear stored credentials from memory after use
+        self._access_key = ""
+        self._secret_key = ""
 
     async def test_connection(self, config: dict) -> bool:
         try:

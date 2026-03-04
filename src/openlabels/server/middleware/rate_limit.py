@@ -279,9 +279,23 @@ class TenantRateLimiter:
             self._redis_backend = _RedisTenantBackend(redis_client)
             logger.info("Tenant rate limiter using Redis (shared across instances)")
         else:
-            logger.info(
+            # SECURITY (M-30): In-memory rate limiting is per-worker-process.
+            # With N workers each tracking limits independently, the effective
+            # cluster-wide limit is N × configured limit.  Divide by the
+            # configured worker count so the aggregate stays close to the
+            # intended cap.
+            settings = get_settings()
+            worker_count = max(settings.server.workers, 1)
+            self.rpm_limit = max(1, requests_per_minute // worker_count)
+            self.rph_limit = max(1, requests_per_hour // worker_count)
+            logger.warning(
                 "Tenant rate limiter using in-memory storage "
-                "(per-instance only — limits not shared across instances)"
+                "(per-instance only — limits not shared across workers). "
+                "Effective per-worker limits: %d rpm, %d rph (divided by %d workers). "
+                "Configure Redis for accurate cross-instance rate limiting.",
+                self.rpm_limit,
+                self.rph_limit,
+                worker_count,
             )
 
     @property
@@ -310,14 +324,28 @@ class TenantRateLimiter:
                     "X-RateLimit-Remaining": minute_rem,
                 }
             except Exception as e:
+                # SECURITY (M-30): Log warning when falling back to in-memory
+                # at runtime — limits will be per-worker, not cluster-wide.
                 logger.warning(
-                    "Redis tenant rate limit failed (%s), falling back to in-memory",
+                    "Redis tenant rate limit failed (%s), falling back to "
+                    "in-memory (per-worker limits apply)",
                     e,
                 )
 
-        # In-memory fallback
+        # In-memory fallback — when Redis was configured but failed at runtime,
+        # divide limits by worker count since each worker tracks independently
+        # (M-30).  When Redis was never configured, limits were already divided
+        # in __init__, so use them as-is.
+        if self._redis_backend is not None:
+            settings = get_settings()
+            worker_count = max(settings.server.workers, 1)
+            mem_rpm = max(1, self.rpm_limit // worker_count)
+            mem_rph = max(1, self.rph_limit // worker_count)
+        else:
+            mem_rpm = self.rpm_limit
+            mem_rph = self.rph_limit
         allowed, minute_rem, _ = self._memory_backend.check_and_record(
-            tenant_id, self.rpm_limit, self.rph_limit,
+            tenant_id, mem_rpm, mem_rph,
         )
         if not allowed:
             return False, {

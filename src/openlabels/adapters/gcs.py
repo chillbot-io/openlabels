@@ -93,6 +93,8 @@ class GCSAdapter:
             self._client.close()
         self._client = None
         self._bucket = None
+        # SECURITY: Clear stored credentials path from memory after use
+        self._credentials_path = None
 
     async def test_connection(self, config: dict) -> bool:
         try:

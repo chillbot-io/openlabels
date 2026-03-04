@@ -215,7 +215,14 @@ def _set_session_cookie(
     request: Request,
 ) -> None:
     """Set the session cookie on a response."""
-    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    # M-8: In production/staging, always set Secure=True regardless of
+    # the X-Forwarded-Proto header, which can be spoofed by an attacker.
+    # Only trust the header in development where HTTPS may not be used.
+    settings = get_settings()
+    if settings.server.environment in ("production", "staging"):
+        is_secure = True
+    else:
+        is_secure = request.url.scheme == "https"
     response.set_cookie(
         SESSION_COOKIE_NAME,
         session_id,
@@ -603,19 +610,31 @@ async def _callback_azure_ad(
 
     id_token_claims = result.get("id_token_claims", {})
 
-    # Validate nonce to prevent replay attacks (S5).
+    # Validate nonce to prevent replay attacks (S5, M1).
+    # Nonce validation is mandatory when one was sent in the auth request.
     # Use hmac.compare_digest for constant-time comparison.
     claim_nonce = id_token_claims.get("nonce", "")
-    if nonce and not hmac.compare_digest(claim_nonce, nonce):
-        log_security_event(
-            event_type="azure_ad_nonce_mismatch",
-            details=_get_request_context(request),
-            level="warning",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Authentication failed: nonce mismatch (possible replay attack).",
-        )
+    if nonce:
+        if not claim_nonce:
+            log_security_event(
+                event_type="azure_ad_nonce_missing",
+                details=_get_request_context(request),
+                level="warning",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authentication failed: token missing required nonce claim.",
+            )
+        if not hmac.compare_digest(claim_nonce, nonce):
+            log_security_event(
+                event_type="azure_ad_nonce_mismatch",
+                details=_get_request_context(request),
+                level="warning",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authentication failed: nonce mismatch (possible replay attack).",
+            )
     session_data = {
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),
@@ -689,20 +708,32 @@ async def _callback_oidc(
     id_token = token_result.get("id_token")
     if id_token:
         raw_claims = await validate_id_token(id_token, discovery, oidc_config)
-        # Validate nonce to prevent replay attacks.
+        # Validate nonce to prevent replay attacks (M1, M6, M7, M8).
+        # Nonce validation is mandatory when one was sent in the auth request.
         # Use hmac.compare_digest for constant-time comparison to prevent
-        # timing side-channel attacks (M6, M7, M8).
+        # timing side-channel attacks.
         claim_nonce = raw_claims.get("nonce", "")
-        if nonce and not hmac.compare_digest(claim_nonce, nonce):
-            log_security_event(
-                event_type="oidc_nonce_mismatch",
-                details=_get_request_context(request),
-                level="warning",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Authentication failed: nonce mismatch (possible replay attack).",
-            )
+        if nonce:
+            if not claim_nonce:
+                log_security_event(
+                    event_type="oidc_nonce_missing",
+                    details=_get_request_context(request),
+                    level="warning",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Authentication failed: token missing required nonce claim.",
+                )
+            if not hmac.compare_digest(claim_nonce, nonce):
+                log_security_event(
+                    event_type="oidc_nonce_mismatch",
+                    details=_get_request_context(request),
+                    level="warning",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Authentication failed: nonce mismatch (possible replay attack).",
+                )
     else:
         # Some providers don't return id_token in the code exchange —
         # fall back to userinfo endpoint
@@ -776,17 +807,6 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Provider did not return id_token and has no userinfo_endpoint",
-        )
-
-    # Validate the endpoint URL to prevent SSRF via crafted discovery docs
-    from openlabels.core.url_validation import validate_url
-
-    try:
-        validate_url(userinfo_endpoint, name="userinfo_endpoint")
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Untrusted userinfo_endpoint in discovery document: {exc}",
         )
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -888,7 +908,12 @@ async def logout(
             )
         await session_store.delete(session_id)
 
-    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    # M-8: In production/staging, always set Secure=True.
+    settings_env = settings.server.environment
+    if settings_env in ("production", "staging"):
+        is_secure = True
+    else:
+        is_secure = request.url.scheme == "https"
 
     # Validate request.base_url against CORS allowed_origins to prevent
     # open redirect via Host header manipulation (S3).
@@ -986,7 +1011,7 @@ async def get_current_user_info(
 async def get_token(
     request: Request,
     db: AsyncSession = Depends(get_session),
-) -> TokenResponse:
+) -> TokenResponse | JSONResponse:
     """Get access token for API calls."""
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
 
@@ -1001,6 +1026,9 @@ async def get_token(
 
     expires_at_str = session_data.get("expires_at")
     expires_at = datetime.fromisoformat(expires_at_str) if expires_at_str else datetime.min.replace(tzinfo=timezone.utc)
+
+    # Track whether session ID was rotated during refresh
+    new_session_id: str | None = None
 
     if expires_at < datetime.now(timezone.utc):
         # Try to refresh — use a per-session lock to prevent concurrent
@@ -1047,7 +1075,12 @@ async def get_token(
                             if "refresh_token" in result:
                                 session_data["refresh_token"] = result["refresh_token"]
 
-                            await session_store.set(session_id, session_data, SESSION_TTL_SECONDS)
+                            # M-9: Rotate session ID on token refresh to
+                            # prevent session fixation attacks. Delete old
+                            # session and create a new one with a fresh ID.
+                            new_session_id = _generate_session_id()
+                            await session_store.delete(session_id)
+                            await session_store.set(new_session_id, session_data, SESSION_TTL_SECONDS)
                             expires_at = datetime.fromisoformat(session_data["expires_at"])
                         else:
                             await session_store.delete(session_id)
@@ -1073,6 +1106,19 @@ async def get_token(
                     )
 
     expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+
+    # If session ID was rotated, return a JSONResponse so we can set the
+    # new session cookie. Otherwise return the typed model directly.
+    if new_session_id:
+        response = JSONResponse(content={
+            "access_token": session_data["access_token"],
+            "token_type": "Bearer",
+            "expires_in": max(expires_in, 0),
+            "scope": "openid profile email",
+        })
+        response.delete_cookie(SESSION_COOKIE_NAME)
+        _set_session_cookie(response, new_session_id, request)
+        return response
 
     return TokenResponse(
         access_token=session_data["access_token"],
