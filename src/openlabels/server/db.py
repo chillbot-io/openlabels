@@ -184,27 +184,71 @@ async def set_rls_tenant_id(session: AsyncSession, tenant_id: UUID) -> None:
     )
 
 
-async def get_tenant_session(tenant_id: UUID) -> AsyncGenerator[AsyncSession, None]:
-    """Get a database session with the RLS tenant context set.
+async def set_rls_user_id(session: AsyncSession, user_id: UUID) -> None:
+    """Set the ``app.current_user_id`` session variable for RLS policies.
+
+    Similar to :func:`set_rls_tenant_id` but for user-scoped isolation.
+    Used by the ``sessions`` table RLS policy to allow access to rows
+    where ``tenant_id IS NULL`` but ``user_id`` matches (e.g. pre-login
+    sessions).
+
+    Args:
+        session: The active SQLAlchemy async session.
+        user_id: The UUID of the current user.
+    """
+    await session.execute(
+        text("SET LOCAL app.current_user_id = :uid"),
+        {"uid": str(user_id)},
+    )
+
+
+async def set_rls_context(
+    session: AsyncSession,
+    tenant_id: UUID,
+    user_id: UUID | None = None,
+) -> None:
+    """Set both ``app.current_tenant_id`` and ``app.current_user_id``.
+
+    Convenience wrapper that sets the full RLS context in a single call.
+    Both values are transaction-scoped via ``SET LOCAL``.
+
+    Args:
+        session: The active SQLAlchemy async session.
+        tenant_id: The UUID of the current tenant.
+        user_id: The UUID of the current user (optional).
+    """
+    await set_rls_tenant_id(session, tenant_id)
+    if user_id is not None:
+        await set_rls_user_id(session, user_id)
+
+
+async def get_tenant_session(
+    tenant_id: UUID,
+    user_id: UUID | None = None,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Get a database session with the RLS context set.
 
     This is the tenant-aware variant of :func:`get_session`.  It begins the
-    session, immediately sets ``app.current_tenant_id`` via ``SET LOCAL``,
-    and then yields the session.  The variable is transaction-scoped and
-    automatically cleared on commit/rollback.
+    session, immediately sets ``app.current_tenant_id`` (and optionally
+    ``app.current_user_id``) via ``SET LOCAL``, and then yields the session.
+    The variables are transaction-scoped and automatically cleared on
+    commit/rollback.
 
     Args:
         tenant_id: The UUID of the current tenant.
+        user_id: The UUID of the current user (optional).  When provided,
+            ``app.current_user_id`` is also set, enabling user-scoped RLS
+            policies (e.g. the ``sessions`` table).
 
     Yields:
-        AsyncSession: A session whose transaction has ``app.current_tenant_id``
-            set to *tenant_id*.
+        AsyncSession: A session whose transaction has the RLS context set.
     """
     if _session_factory is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
 
     async with _session_factory() as session:
         try:
-            await set_rls_tenant_id(session, tenant_id)
+            await set_rls_context(session, tenant_id, user_id)
             yield session
             await session.commit()
         except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
