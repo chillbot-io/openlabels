@@ -6,7 +6,6 @@ with known Parquet data and validate that the returned DTOs match the
 expected structure and semantics.
 """
 
-from datetime import datetime, timezone
 
 import pytest
 
@@ -17,7 +16,6 @@ from openlabels.analytics.service import (
     RemediationStats,
 )
 from openlabels.analytics.storage import LocalStorage
-
 from tests.analytics.conftest import (
     TENANT_A,
     write_access_events,

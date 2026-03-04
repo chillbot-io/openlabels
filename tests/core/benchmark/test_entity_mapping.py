@@ -1,10 +1,8 @@
 """Tests for entity type mapping between ai4privacy and OpenLabels."""
 
-import pytest
 
 from openlabels.core.benchmark.entity_mapping import (
     AI4PRIVACY_TO_OPENLABELS,
-    EVAL_CATEGORIES,
     UNMAPPED_TYPES,
     get_eval_category,
     map_entity_type,

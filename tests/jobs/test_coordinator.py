@@ -9,25 +9,23 @@ Tests cover:
 - Edge cases (empty buckets, single prefix, estimation failures)
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from openlabels.adapters.base import PartitionSpec
 from openlabels.jobs.coordinator import (
     DEFAULT_FANOUT_MAX_PARTITIONS,
     DEFAULT_FANOUT_THRESHOLD,
-    MIN_PARTITION_SIZE,
     FanoutDecision,
     ScanCoordinator,
 )
-
 
 # ── PartitionSpec tests ──────────────────────────────────────────────
 
@@ -230,7 +228,7 @@ class TestCoordinatorEvaluate:
         """Uses defaults when tenant has no settings row."""
         coordinator = _make_coordinator(None)
 
-        assert coordinator.fanout_enabled == True
+        assert coordinator.fanout_enabled
         assert coordinator.fanout_threshold == DEFAULT_FANOUT_THRESHOLD
         assert coordinator.fanout_max_partitions == DEFAULT_FANOUT_MAX_PARTITIONS
 

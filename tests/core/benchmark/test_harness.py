@@ -8,14 +8,14 @@ import pytest
 
 from openlabels.core.benchmark.dataset import BenchmarkSample, GoldSpan
 from openlabels.core.benchmark.harness import (
+    PRESET_CONFIGS,
     BenchmarkConfig,
     BenchmarkResult,
-    PRESET_CONFIGS,
     get_preset,
     run_benchmark,
     run_sweep,
-    threshold_sweep,
     save_results,
+    threshold_sweep,
 )
 
 

@@ -4,7 +4,6 @@ Tests for server configuration.
 Tests actual configuration behavior, defaults, validation, and security.
 """
 
-import pytest
 
 
 class TestServerSettings:

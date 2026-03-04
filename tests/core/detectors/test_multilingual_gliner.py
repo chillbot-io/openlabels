@@ -10,9 +10,6 @@ Tests cover:
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from openlabels.core.types import Span, Tier
 from openlabels.core.detectors.config import DetectionConfig
 from openlabels.core.detectors.gliner import GLINER_LABEL_MAP
 from openlabels.core.detectors.multilingual_gliner import (
@@ -21,6 +18,7 @@ from openlabels.core.detectors.multilingual_gliner import (
     MultilingualGLiNERDetector,
     _calibrate_multilingual_score,
 )
+from openlabels.core.types import Tier
 
 
 class TestMultilingualGLiNERDetectorInit:
@@ -301,7 +299,7 @@ class TestOrchestratorMultilingual:
         """Multilingual detector is initialized when enabled (mocked load)."""
         config = DetectionConfig(enable_multilingual=True)
 
-        mock_model = MagicMock()
+        MagicMock()
         with patch(
             "openlabels.core.detectors.multilingual_gliner.MultilingualGLiNERDetector.load",
             return_value=True,
@@ -312,7 +310,7 @@ class TestOrchestratorMultilingual:
                 return_value=True,
             ):
                 from openlabels.core.detectors.orchestrator import DetectorOrchestrator
-                orch = DetectorOrchestrator(config=config)
+                DetectorOrchestrator(config=config)
                 # Verify load was attempted
                 assert mock_load.called
 

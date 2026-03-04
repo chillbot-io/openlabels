@@ -36,6 +36,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .base import RawAccessEvent
+
 # Allowed domains for M365 Management Activity API content blob URIs.
 # See: https://learn.microsoft.com/en-us/office/office-365-management-api/
 _ALLOWED_CONTENT_DOMAINS = frozenset({
@@ -44,8 +46,6 @@ _ALLOWED_CONTENT_DOMAINS = frozenset({
     "manage.office365.us",        # GCC High
     "manage.protection.outlook.com",
 })
-
-from .base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
 

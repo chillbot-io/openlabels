@@ -9,22 +9,23 @@ Tests focus on:
 - Queue statistics
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4, UUID
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
+
+import pytest
 
 from openlabels.jobs.queue import (
-    calculate_retry_delay,
-    JobQueue,
     BASE_RETRY_DELAY_SECONDS,
     MAX_RETRY_DELAY_SECONDS,
+    JobQueue,
+    calculate_retry_delay,
 )
 
 

@@ -14,27 +14,23 @@ Tests cover:
 - Convenience function process_file()
 """
 
-import asyncio
-import time
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from openlabels.exceptions import (
-    DetectionError,
-    ExtractionError,
-    SecurityError,
-)
 from openlabels.core.processor import (
-    FileClassification,
-    FileProcessor,
     IMAGE_EXTENSIONS,
     OFFICE_EXTENSIONS,
     PDF_EXTENSIONS,
     TEXT_EXTENSIONS,
+    FileClassification,
+    FileProcessor,
+)
+from openlabels.core.processor import (
     process_file as process_file_convenience,
 )
 from openlabels.core.types import (
@@ -44,15 +40,19 @@ from openlabels.core.types import (
     Span,
     Tier,
 )
-
+from openlabels.exceptions import (
+    DetectionError,
+    ExtractionError,
+    SecurityError,
+)
 
 # =============================================================================
 # HELPERS
 # =============================================================================
 
 def _make_detection_result(
-    spans: Optional[List[Span]] = None,
-    entity_counts: Optional[dict] = None,
+    spans: list[Span] | None = None,
+    entity_counts: dict | None = None,
 ) -> DetectionResult:
     """Create a DetectionResult for testing."""
     spans = spans or []
@@ -109,8 +109,8 @@ class MockExtractionResult:
     text: str = ""
     pages: int = 1
     needs_ocr: bool = False
-    ocr_pages: List[int] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    ocr_pages: list[int] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     confidence: float = 1.0
 
 
@@ -139,7 +139,7 @@ class TestFileProcessorInit:
     def test_ml_enabled(self, mock_ocr_init, mock_orch_cls):
         """ML-enabled processor passes enable_ml=True to orchestrator."""
         from openlabels.core.detectors.config import DetectionConfig
-        processor = FileProcessor(config=DetectionConfig(enable_ml=True))
+        FileProcessor(config=DetectionConfig(enable_ml=True))
 
         mock_orch_cls.assert_called_once_with(config=DetectionConfig(enable_ml=True))
 
@@ -165,7 +165,7 @@ class TestFileProcessorInit:
     def test_custom_confidence_threshold(self, mock_ocr_init, mock_orch_cls):
         """Custom confidence threshold is passed to orchestrator."""
         from openlabels.core.detectors.config import DetectionConfig
-        processor = FileProcessor(config=DetectionConfig(confidence_threshold=0.95))
+        FileProcessor(config=DetectionConfig(confidence_threshold=0.95))
 
         mock_orch_cls.assert_called_once_with(config=DetectionConfig(confidence_threshold=0.95))
 
@@ -220,15 +220,14 @@ class TestOCRLazyLoading:
              patch(
                  "openlabels.core.processor.FileProcessor._init_ocr_engine",
                  wraps=FileProcessor._init_ocr_engine,
-             ) as wrapped:
+             ):
             # We need to actually test the real method logic
             # Create processor with OCR disabled first, then call init manually
             processor = FileProcessor(enable_ocr=False)
             processor._ml_model_dir = Path("/test")
 
-            with patch("openlabels.core.ocr.OCREngine", return_value=mock_engine) as mock_cls:
+            with patch("openlabels.core.ocr.OCREngine", return_value=mock_engine):
                 # Patch the import inside _init_ocr_engine
-                import importlib
                 with patch.object(
                     processor, "_init_ocr_engine",
                     wraps=None,
@@ -251,7 +250,7 @@ class TestOCRLazyLoading:
     def test_ocr_not_called_when_disabled(self, mock_orch_cls):
         """OCR engine is not initialized when enable_ocr is False."""
         with patch.object(FileProcessor, "_init_ocr_engine") as mock_init:
-            processor = FileProcessor(enable_ocr=False)
+            FileProcessor(enable_ocr=False)
             mock_init.assert_not_called()
 
 
@@ -325,7 +324,7 @@ class TestProcessFile:
 
         with patch.object(processor, "_extract_text", return_value="test@example.com") as mock_extract, \
              patch("openlabels.core.processor.score", return_value=_make_scoring_result(30, RiskTier.LOW)):
-            result = await processor.process_file(
+            await processor.process_file(
                 file_path="data.txt",
                 content=b"test@example.com",
                 exposure_level="PRIVATE",
@@ -962,7 +961,7 @@ class TestExtractText:
 
         mock_result = MockExtractionResult(text="some content")
         with patch("openlabels.core.processor._extract_text_from_file", return_value=mock_result) as mock_ext:
-            result = await processor._extract_text(b"data", "file.xyz")
+            await processor._extract_text(b"data", "file.xyz")
 
         mock_ext.assert_called_once()
 
@@ -979,7 +978,7 @@ class TestDecodeText:
     async def test_utf8_decoding(self, mock_ocr, mock_orch_cls):
         """UTF-8 encoded content is decoded correctly."""
         processor = FileProcessor(enable_ocr=False)
-        content = "Hello, World!".encode("utf-8")
+        content = b"Hello, World!"
 
         result = await processor._decode_text(content)
         assert result == "Hello, World!"
@@ -1746,7 +1745,7 @@ class TestPipelineOrchestration:
 
         with patch.object(processor, "_extract_text") as mock_extract, \
              patch("openlabels.core.processor.score", return_value=scoring) as mock_score:
-            result = await processor.process_file(
+            await processor.process_file(
                 file_path="data.txt",
                 content="Email: john@company.com",
                 exposure_level="PRIVATE",

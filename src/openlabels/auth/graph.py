@@ -199,7 +199,7 @@ class GraphClient:
             )
         except asyncio.TimeoutError:
             logger.error("Graph API token acquisition timed out after 30s")
-            raise RuntimeError("Graph API token acquisition timed out")
+            raise RuntimeError("Graph API token acquisition timed out") from None
 
         if "access_token" not in result:
             logger.error(

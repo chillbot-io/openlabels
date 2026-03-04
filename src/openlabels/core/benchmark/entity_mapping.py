@@ -10,6 +10,8 @@ collected in ``UNMAPPED_TYPES`` and are excluded from scoring.
 
 from __future__ import annotations
 
+import logging as _logging
+
 # ── ai4privacy label  ->  OpenLabels entity_type ──────────────────────
 AI4PRIVACY_TO_OPENLABELS: dict[str, str] = {
     # Names — bundled 1k uses FIRSTNAME/LASTNAME; HF 400k uses GIVENNAME/SURNAME
@@ -349,8 +351,6 @@ EVAL_CATEGORIES: dict[str, str] = {
     "WEIGHT": "demographics",
 }
 
-
-import logging as _logging
 
 _logger = _logging.getLogger(__name__)
 

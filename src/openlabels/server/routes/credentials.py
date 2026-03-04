@@ -18,14 +18,14 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
-from openlabels.server.crypto import _derive_fernet_key, encrypt_dict, decrypt_dict
+from openlabels.server.crypto import decrypt_dict, encrypt_dict
 from openlabels.server.db import get_session
 from openlabels.server.models import SavedCredential
 from openlabels.server.routes import audit_log

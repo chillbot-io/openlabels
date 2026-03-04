@@ -10,20 +10,17 @@ Tests the ScanOrchestrator with:
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import AsyncIterator, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from openlabels.adapters.base import ExposureLevel, FileInfo
-from openlabels.core.agents.pool import AgentPoolConfig, FileResult, ScanOrchestrator
+from openlabels.core.agents.pool import FileResult, ScanOrchestrator
 from openlabels.core.agents.worker import AgentResult, EntityMatch, WorkItem
 from openlabels.core.change_providers import ChangeProvider, FullWalkProvider
-
 
 # ── Fixtures / helpers ──────────────────────────────────────────────
 
@@ -348,7 +345,7 @@ class TestScanOrchestratorPersistUnified:
             errors=[],
         )
 
-        with patch("openlabels.jobs.inventory.get_folder_path", return_value="/tmp") as mock_gfp, \
+        with patch("openlabels.jobs.inventory.get_folder_path", return_value="/tmp"), \
              patch("openlabels.server.models.ScanResult") as MockScanResult:
             mock_sr = MagicMock()
             MockScanResult.return_value = mock_sr
@@ -411,7 +408,7 @@ class TestScanOrchestratorPersistUnified:
             errors=[],
         )
 
-        with patch("openlabels.jobs.inventory.get_folder_path", return_value="/tmp") as mock_gfp, \
+        with patch("openlabels.jobs.inventory.get_folder_path", return_value="/tmp"), \
              patch("openlabels.server.models.ScanResult") as MockScanResult:
             mock_sr = MagicMock()
             MockScanResult.return_value = mock_sr

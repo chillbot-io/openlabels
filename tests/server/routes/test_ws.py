@@ -10,16 +10,15 @@ Tests focus on:
 - Error handling and edge cases
 """
 
-import pytest
 import asyncio
 import secrets
-from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 from contextlib import asynccontextmanager
-from unittest.mock import patch, MagicMock, AsyncMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
+import pytest
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 
 def _mock_session_factory(session):
@@ -34,7 +33,8 @@ def _mock_session_factory(session):
 async def setup_ws_test_data(test_client, test_db):
     """Set up test data for WebSocket endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, Session
+
+    from openlabels.server.models import ScanJob, ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -95,10 +95,12 @@ async def setup_ws_test_data(test_client, test_db):
 @pytest.fixture
 async def setup_multi_tenant_data(test_client, test_db):
     """Set up multi-tenant test data for isolation tests."""
-    from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, Session
     import random
     import string
+
+    from sqlalchemy import select
+
+    from openlabels.server.models import ScanJob, ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -389,8 +391,8 @@ class TestWebSocketAuthentication:
 
     async def test_authenticate_dev_mode_returns_dev_user(self, test_db):
         """In dev mode (auth provider=none), authentication should return existing dev user."""
-        from openlabels.server.routes.ws import authenticate_websocket
         from openlabels.server.models import Tenant, User
+        from openlabels.server.routes.ws import authenticate_websocket
 
         # Pre-populate the dev tenant and user that the auth bootstrapper creates at startup
         dev_tenant = Tenant(name="Dev Tenant", azure_tenant_id="dev-tenant")
@@ -458,7 +460,7 @@ class TestWebSocketAuthentication:
         tenant = setup_ws_test_data["tenant"]
 
         # Create an expired session
-        expired_session = await create_ws_session(
+        await create_ws_session(
             session_id="expired-ws-session",
             tenant_azure_id=tenant.azure_tenant_id,
             user_email="test@localhost",
@@ -493,7 +495,7 @@ class TestWebSocketAuthentication:
     ):
         """WebSocket session missing required claims should be rejected."""
         # Create session with missing claims
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="missing-claims-session",
             data={
                 "access_token": "test-token",
@@ -525,7 +527,7 @@ class TestWebSocketAuthentication:
     ):
         """WebSocket with session pointing to non-existent tenant should be rejected."""
         # Create session with non-existent tenant
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="invalid-tenant-session",
             tenant_azure_id="nonexistent-tenant-id",
             user_email="test@localhost",
@@ -553,7 +555,7 @@ class TestWebSocketAuthentication:
         tenant = setup_ws_test_data["tenant"]
 
         # Create session with non-existent user email
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="invalid-user-session",
             tenant_azure_id=tenant.azure_tenant_id,
             user_email="nonexistent@localhost",
@@ -724,7 +726,7 @@ class TestRealTimeUpdateHelpers:
 
     async def test_send_scan_progress(self):
         """send_scan_progress should broadcast progress message."""
-        from openlabels.server.routes.ws import send_scan_progress, manager
+        from openlabels.server.routes.ws import manager, send_scan_progress
 
         scan_id = uuid4()
         tenant_id = uuid4()
@@ -751,7 +753,7 @@ class TestRealTimeUpdateHelpers:
 
     async def test_send_scan_file_result(self):
         """send_scan_file_result should broadcast file result message."""
-        from openlabels.server.routes.ws import send_scan_file_result, manager
+        from openlabels.server.routes.ws import manager, send_scan_file_result
 
         scan_id = uuid4()
         tenant_id = uuid4()
@@ -782,7 +784,7 @@ class TestRealTimeUpdateHelpers:
 
     async def test_send_scan_completed(self):
         """send_scan_completed should broadcast completion message."""
-        from openlabels.server.routes.ws import send_scan_completed, manager
+        from openlabels.server.routes.ws import manager, send_scan_completed
 
         scan_id = uuid4()
         tenant_id = uuid4()
@@ -823,7 +825,7 @@ class TestTenantIsolation:
         from openlabels.server.routes.ws import manager
 
         tenant_a_id = uuid4()
-        tenant_b_id = uuid4()
+        uuid4()
         scan_id = uuid4()
 
         # User A connects to scan (owned by tenant A)
@@ -946,7 +948,6 @@ class TestWebSocketEndpointIntegration:
 
     async def test_endpoint_rejects_invalid_origin_in_production(self, test_db, setup_ws_test_data):
         """WebSocket endpoint should reject invalid origins in production."""
-        from starlette.testclient import TestClient
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1018,7 +1019,7 @@ class TestConcurrentConnections:
         websockets = [AsyncMock() for _ in range(5)]
         connections = []
 
-        for user_id, ws in zip(users, websockets):
+        for user_id, ws in zip(users, websockets, strict=False):
             conn = await manager.connect(scan_id, ws, user_id, tenant_id)
             connections.append(conn)
 
@@ -1109,7 +1110,7 @@ class TestEdgeCases:
 
     async def test_disconnect_nonexistent_scan(self):
         """Disconnect should handle non-existent scan gracefully."""
-        from openlabels.server.routes.ws import ConnectionManager, AuthenticatedConnection
+        from openlabels.server.routes.ws import AuthenticatedConnection, ConnectionManager
 
         manager = ConnectionManager()
         scan_id = uuid4()
@@ -1270,9 +1271,7 @@ class TestWebSocketIntegration:
 
     async def test_websocket_connection_dev_mode(self, test_db, setup_ws_test_data):
         """WebSocket should connect successfully in dev mode."""
-        from starlette.testclient import TestClient
         from openlabels.server.app import app
-        from openlabels.server.db import get_session
 
         scan_job = setup_ws_test_data["scan_job"]
         tenant = setup_ws_test_data["tenant"]
@@ -1314,9 +1313,7 @@ class TestWebSocketIntegration:
 
     async def test_websocket_receives_heartbeat(self, test_db, setup_ws_test_data):
         """WebSocket should receive heartbeat on timeout."""
-        from starlette.testclient import TestClient
         from openlabels.server.app import app
-        from openlabels.server.db import get_session
 
         scan_job = setup_ws_test_data["scan_job"]
         tenant = setup_ws_test_data["tenant"]
@@ -1359,7 +1356,6 @@ class TestWebSocketIntegration:
 
     async def test_websocket_invalid_scan_id_format(self, test_db, setup_ws_test_data):
         """WebSocket should handle invalid scan ID format gracefully."""
-        from starlette.testclient import TestClient
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1376,7 +1372,7 @@ class TestWebSocketIntegration:
             with patch('openlabels.server.routes.ws.get_settings', return_value=mock_settings):
                 client = TestClient(app)
                 # Invalid UUID format should return 422 or similar
-                with pytest.raises(Exception):
+                with pytest.raises(Exception):  # noqa: B017
                     with client.websocket_connect("/ws/scans/invalid-uuid"):
                         pass
         finally:
@@ -1384,7 +1380,6 @@ class TestWebSocketIntegration:
 
     async def test_websocket_nonexistent_scan(self, test_db, setup_ws_test_data):
         """WebSocket should reject connection to non-existent scan."""
-        from starlette.testclient import TestClient
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1405,7 +1400,7 @@ class TestWebSocketIntegration:
                     client = TestClient(app)
                     nonexistent_id = uuid4()
                     # Should reject with policy violation
-                    with pytest.raises(Exception):
+                    with pytest.raises(Exception):  # noqa: B017
                         with client.websocket_connect(f"/ws/scans/{nonexistent_id}"):
                             pass
         finally:
@@ -1453,7 +1448,7 @@ class TestConnectionLifecycle:
         connections = []
 
         # Connect 5 clients
-        for i in range(5):
+        for _i in range(5):
             ws = AsyncMock()
             conn = await manager.connect(scan_id, ws, uuid4(), tenant_id)
             connections.append(conn)
@@ -1474,15 +1469,16 @@ class TestConnectionLifecycle:
 
     async def test_connection_memory_cleanup(self):
         """Verify connections are properly cleaned up to prevent memory leaks."""
-        from openlabels.server.routes.ws import ConnectionManager
         import gc
         import weakref
+
+        from openlabels.server.routes.ws import ConnectionManager
 
         manager = ConnectionManager()
         scan_id = uuid4()
 
         mock_websocket = AsyncMock()
-        weak_ref = weakref.ref(mock_websocket)
+        weakref.ref(mock_websocket)
 
         conn = await manager.connect(scan_id, mock_websocket, uuid4(), uuid4())
         manager.disconnect(scan_id, conn)
@@ -1721,7 +1717,7 @@ class TestAuthenticationEdgeCases:
         from openlabels.server.routes.ws import authenticate_websocket
 
         # Create session with corrupted data structure
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="malformed-session",
             data={
                 "access_token": None,  # Invalid
@@ -1751,7 +1747,7 @@ class TestAuthenticationEdgeCases:
         user = setup_ws_test_data["user"]
 
         # Create session without expires_at in data
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="no-expiry-session",
             tenant_azure_id=tenant.azure_tenant_id,
             user_email=user.email,
@@ -1785,7 +1781,7 @@ class TestAuthenticationEdgeCases:
 
     async def test_session_empty_claims(self, test_db, setup_ws_test_data, create_ws_session):
         """Session with empty claims should be rejected."""
-        session = await create_ws_session(
+        await create_ws_session(
             session_id="empty-claims-session",
             data={
                 "access_token": "test-token",
@@ -1974,8 +1970,9 @@ class TestStressAndPerformance:
 
     async def test_connection_churn(self):
         """Manager should handle rapid connection churn (adds and removes)."""
-        from openlabels.server.routes.ws import ConnectionManager
         import random
+
+        from openlabels.server.routes.ws import ConnectionManager
 
         manager = ConnectionManager()
         scan_id = uuid4()
@@ -2137,7 +2134,7 @@ class TestHelperFunctionsComprehensive:
 
     async def test_send_scan_progress_with_all_fields(self):
         """send_scan_progress should include all expected fields."""
-        from openlabels.server.routes.ws import send_scan_progress, manager
+        from openlabels.server.routes.ws import manager, send_scan_progress
 
         scan_id = uuid4()
 
@@ -2165,7 +2162,7 @@ class TestHelperFunctionsComprehensive:
 
     async def test_send_scan_file_result_with_many_entities(self):
         """send_scan_file_result should handle many entity types."""
-        from openlabels.server.routes.ws import send_scan_file_result, manager
+        from openlabels.server.routes.ws import manager, send_scan_file_result
 
         scan_id = uuid4()
 
@@ -2201,7 +2198,7 @@ class TestHelperFunctionsComprehensive:
 
     async def test_send_scan_completed_with_detailed_summary(self):
         """send_scan_completed should handle detailed summary data."""
-        from openlabels.server.routes.ws import send_scan_completed, manager
+        from openlabels.server.routes.ws import manager, send_scan_completed
 
         scan_id = uuid4()
 
@@ -2240,9 +2237,9 @@ class TestHelperFunctionsComprehensive:
     async def test_helper_functions_with_no_connections(self):
         """Helper functions should handle case with no active connections."""
         from openlabels.server.routes.ws import (
-            send_scan_progress,
-            send_scan_file_result,
             send_scan_completed,
+            send_scan_file_result,
+            send_scan_progress,
         )
 
         scan_id = uuid4()

@@ -140,9 +140,11 @@ class AzureBlobAdapter:
 
         kwargs: dict = {"name_starts_with": prefix}
         if not recursive:
-            blob_iter_factory = lambda: container.walk_blobs(name_starts_with=prefix, delimiter="/")
+            def blob_iter_factory():
+                return container.walk_blobs(name_starts_with=prefix, delimiter="/")
         else:
-            blob_iter_factory = lambda: container.list_blobs(**kwargs)
+            def blob_iter_factory():
+                return container.list_blobs(**kwargs)
 
         # Stream page-by-page: Azure SDK returns a lazy ItemPaged iterator.
         # We use by_page() to iterate one page at a time, fetching each

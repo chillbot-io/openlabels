@@ -8,13 +8,10 @@ Covers:
 - Policy API routes
 """
 
-import asyncio
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -23,12 +20,8 @@ from openlabels.core.policies.loader import load_builtin_policies, load_policy_p
 from openlabels.core.policies.schema import (
     EntityMatch,
     PolicyCategory,
-    PolicyPack,
-    PolicyResult,
-    PolicyTrigger,
     RiskLevel,
 )
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -148,8 +141,8 @@ class TestPolicyActionExecutor:
     @pytest.mark.asyncio
     async def test_log_audit_action(self):
         from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
             PolicyActionContext,
+            PolicyActionExecutor,
         )
 
         ctx = PolicyActionContext(
@@ -187,8 +180,8 @@ class TestPolicyActionExecutor:
     @pytest.mark.asyncio
     async def test_quarantine_missing_file(self):
         from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
             PolicyActionContext,
+            PolicyActionExecutor,
         )
 
         ctx = PolicyActionContext(
@@ -207,8 +200,8 @@ class TestPolicyActionExecutor:
     async def test_execute_all_critical(self):
         """Critical violations should trigger quarantine + monitor + audit."""
         from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
             PolicyActionContext,
+            PolicyActionExecutor,
         )
 
         ctx = PolicyActionContext(
@@ -237,8 +230,8 @@ class TestPolicyActionExecutor:
     async def test_execute_all_high(self):
         """High severity should trigger monitor + audit (no quarantine)."""
         from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
             PolicyActionContext,
+            PolicyActionExecutor,
         )
 
         ctx = PolicyActionContext(
@@ -266,8 +259,8 @@ class TestPolicyActionExecutor:
     async def test_execute_all_medium(self):
         """Medium severity should trigger only audit."""
         from openlabels.core.policies.actions import (
-            PolicyActionExecutor,
             PolicyActionContext,
+            PolicyActionExecutor,
         )
 
         ctx = PolicyActionContext(

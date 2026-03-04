@@ -7,14 +7,10 @@ Covers:
 - Orchestrator & OCR missing-model messages
 """
 
-import json
-import os
-import textwrap
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Model registry unit tests
@@ -144,6 +140,7 @@ class TestModelDownload:
 
     def test_download_creates_files(self, tmp_path):
         import sys
+
         from openlabels.core.detectors.model_registry import download_model
 
         mock_hf = self._make_fake_hf_module(tmp_path)
@@ -159,6 +156,7 @@ class TestModelDownload:
 
     def test_download_skips_if_installed(self, tmp_path):
         import sys
+
         from openlabels.core.detectors.model_registry import download_model, get_model_spec
 
         # Pre-install OCR models
@@ -175,7 +173,6 @@ class TestModelDownload:
 
     def test_download_raises_without_huggingface_hub(self, tmp_path):
         """download_model raises ImportError if huggingface_hub is not installed."""
-        import importlib
         from openlabels.core.detectors import model_registry
 
         with patch.dict("sys.modules", {"huggingface_hub": None}):
@@ -286,8 +283,8 @@ class TestOrchestratorMLWiring:
 
     def test_init_ml_detectors_logs_warning_when_missing(self, tmp_path, caplog):
         """When models fail to load, orchestrator logs warnings."""
-        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
         from openlabels.core.detectors.config import DetectionConfig
+        from openlabels.core.detectors.orchestrator import DetectorOrchestrator
 
         missing_dir = tmp_path / "nonexistent"
         config = DetectionConfig(
@@ -298,7 +295,7 @@ class TestOrchestratorMLWiring:
 
         import logging
         with caplog.at_level(logging.WARNING):
-            orch = DetectorOrchestrator(config)
+            DetectorOrchestrator(config)
 
         assert "failed to load" in caplog.text.lower() or "not available" in caplog.text.lower()
 

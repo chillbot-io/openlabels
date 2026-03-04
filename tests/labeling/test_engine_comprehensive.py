@@ -13,29 +13,25 @@ Tests cover:
 - Error handling paths
 """
 
-import asyncio
-import io
 import json
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 
 from openlabels.adapters.base import FileInfo
 
 # Check if PyPDF2 is available for PDF metadata tests
 try:
-    import PyPDF2
+    import PyPDF2  # noqa: F401
     HAS_PYPDF2 = True
 except ImportError:
     HAS_PYPDF2 = False
 from openlabels.exceptions import GraphAPIError
 from openlabels.labeling.engine import (
     CachedLabel,
-    LabelCache,
     LabelingEngine,
     LabelResult,
     get_label_cache,
@@ -205,7 +201,7 @@ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
         with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
             mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
-            result = await engine._apply_office_metadata(str(bad_file), "label-1", "Label")
+            await engine._apply_office_metadata(str(bad_file), "label-1", "Label")
 
             # Should fall back to sidecar
             mock_sidecar.assert_called_once()
@@ -258,7 +254,7 @@ class TestLabelingEnginePDFMetadata:
             with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
-                result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
+                await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
 
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
@@ -282,7 +278,7 @@ class TestLabelingEnginePDFMetadata:
             with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
-                result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
+                await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
 
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()
@@ -306,7 +302,7 @@ class TestLabelingEnginePDFMetadata:
             with patch.object(engine._writer, "apply_sidecar") as mock_sidecar:
                 mock_sidecar.return_value = LabelResult(success=True, method="sidecar")
 
-                result = await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
+                await engine._apply_pdf_metadata(str(pdf_file), "label-1", "Label")
 
                 # Should fall back to sidecar
                 mock_sidecar.assert_called_once()

@@ -11,40 +11,19 @@ tests/pipeline/test_context_enhancer.py with deeper coverage of:
 
 import pytest
 
-from openlabels.core.types import Span, Tier
-from openlabels.core.pipeline.entity_resolver import (
-    EntityResolver,
-    Entity,
-    Mention,
-    resolve_entities,
-    get_entity_counts,
-    NAME_TYPES,
-    ISOLATED_TYPES,
-)
 from openlabels.core.pipeline.context_enhancer import (
+    NAME_DENY_LIST,
     ContextEnhancer,
     EnhancementResult,
     HotwordRule,
-    NAME_DENY_LIST,
-    USERNAME_DENY_LIST,
-    ADDRESS_DENY_LIST,
-    MEDICATION_DENY_LIST,
-    MRN_EXCLUDE_PATTERNS,
-    COMPANY_SUFFIXES,
-    COMPANY_PATTERN,
-    HTML_PATTERN,
-    REFERENCE_CODE_PATTERN,
-    ALL_CAPS_PATTERN,
-    HAS_DIGITS_PATTERN,
-    GREETING_PATTERN,
-    POSSESSIVE_PRODUCT_PATTERN,
-    HYPHENATED_NAME_PATTERN,
-    BUSINESS_CONTEXT_WORDS,
-    NAME_POSITIVE_HOTWORDS,
-    NAME_NEGATIVE_HOTWORDS,
     create_enhancer,
 )
-
+from openlabels.core.pipeline.entity_resolver import (
+    EntityResolver,
+    get_entity_counts,
+    resolve_entities,
+)
+from openlabels.core.types import Span, Tier
 
 # =============================================================================
 # HELPERS

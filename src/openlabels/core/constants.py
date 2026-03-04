@@ -5,6 +5,8 @@ All magic numbers, timeouts, and limits defined here.
 Import from this module rather than hardcoding values.
 """
 
+from pathlib import Path
+
 __all__ = [
     # Detection
     "BERT_MAX_LENGTH",
@@ -140,8 +142,6 @@ OCR_READY_TIMEOUT = 30.0  # seconds - timeout for OCR engine readiness
 #       rapidocr/ (det.onnx, rec.onnx, cls.onnx)
 #     dictionaries/
 #       diagnoses.txt, drugs.txt, facilities.txt, etc.
-
-from pathlib import Path
 
 
 def _find_project_root() -> Path:

@@ -1,9 +1,7 @@
 """Tests for the flush module: flush state persistence and partitioned writes."""
 
-import json
 
 import pyarrow as pa
-import pytest
 
 from openlabels.analytics.flush import (
     _write_partitioned_access_events,
@@ -18,8 +16,7 @@ from openlabels.analytics.schemas import (
     REMEDIATION_ACTIONS_SCHEMA,
 )
 from openlabels.analytics.storage import LocalStorage
-
-from tests.analytics.conftest import TENANT_A, write_access_events
+from tests.analytics.conftest import TENANT_A
 
 
 class TestFlushState:
@@ -57,7 +54,6 @@ class TestPartitionedWrites:
         """Partitioned write should create Parquet files in hive-style directories."""
         from dataclasses import dataclass
         from datetime import datetime, timezone
-        from uuid import uuid4
 
         @dataclass
         class FakeAccessEvent:
@@ -89,7 +85,6 @@ class TestPartitionedWrites:
         """Partitioned write for audit logs should create hive-style directories."""
         from dataclasses import dataclass
         from datetime import datetime, timezone
-        from uuid import uuid4
 
         @dataclass
         class FakeAuditLog:

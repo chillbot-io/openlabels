@@ -445,9 +445,9 @@ async def get_query_schema(
             for view_name in _ANALYTICS_SCHEMA:
                 try:
                     rows = await analytics.query(
-                        f"SELECT column_name, data_type "
-                        f"FROM information_schema.columns "
-                        f"WHERE table_name = ? ORDER BY ordinal_position",
+                        "SELECT column_name, data_type "
+                        "FROM information_schema.columns "
+                        "WHERE table_name = ? ORDER BY ordinal_position",
                         [view_name],
                     )
                     if rows and not any(r["column_name"] == "placeholder" for r in rows):
@@ -509,7 +509,7 @@ async def execute_query(
     try:
         clean_sql = validate_sql(body.sql)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Inject tenant_id as a parameter — replace $1 with positional ?.
     # DuckDB uses positional parameters (?), and each ? consumes one param,
@@ -545,7 +545,7 @@ async def execute_query(
         raise HTTPException(
             status_code=408,
             detail=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
-        )
+        ) from None
     except Exception as e:
         error_msg = str(e)
         # Don't leak internal details
@@ -553,9 +553,9 @@ async def execute_query(
             raise HTTPException(
                 status_code=400,
                 detail="No data available for the queried table yet",
-            )
+            ) from None
         logger.warning("Query execution failed: %s", error_msg)
-        raise HTTPException(status_code=400, detail="Query execution failed")
+        raise HTTPException(status_code=400, detail="Query execution failed") from None
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     truncated = len(rows) > body.limit
@@ -599,7 +599,7 @@ async def export_query_results(
     try:
         clean_sql = validate_sql(body.sql)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     tenant_str = str(tenant.tenant_id)
     execution_sql, occurrence_count = _replace_param_placeholders(clean_sql)
@@ -629,11 +629,11 @@ async def export_query_results(
         raise HTTPException(
             status_code=408,
             detail=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
-        )
+        ) from None
     except Exception as e:
         error_msg = str(e)
         safe_msg = error_msg.split("\n")[0][:200] if error_msg else "Unknown error"
-        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}")
+        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}") from e
 
     columns = list(rows[0].keys()) if rows else []
 
@@ -695,7 +695,7 @@ async def ai_query(
         raise HTTPException(
             status_code=503,
             detail="AI query generation failed. Check server logs for details.",
-        )
+        ) from e
 
     # Validate the generated SQL
     try:
@@ -876,7 +876,7 @@ async def _call_anthropic(
     try:
         import anthropic
     except ImportError:
-        raise RuntimeError("anthropic package not installed. Run: pip install anthropic")
+        raise RuntimeError("anthropic package not installed. Run: pip install anthropic") from None
 
     client = anthropic.Anthropic(api_key=api_key)
 
@@ -903,7 +903,7 @@ async def _call_openai(
     try:
         import openai
     except ImportError:
-        raise RuntimeError("openai package not installed. Run: pip install openai")
+        raise RuntimeError("openai package not installed. Run: pip install openai") from None
 
     client = openai.OpenAI(api_key=api_key)
 
@@ -940,7 +940,7 @@ def _parse_llm_response(text: str) -> tuple[str, str]:
     if text.startswith("```"):
         lines = text.split("\n")
         # Remove first line (```sql or ```) and last line (```)
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
     # Split on double newline to separate SQL from explanation

@@ -12,8 +12,9 @@ that resource exhaustion attempts are properly bounded.
 """
 
 import asyncio
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 class TestAuthRateLimiting:

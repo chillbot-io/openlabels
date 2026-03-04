@@ -11,31 +11,12 @@ Tests cover:
 - Extractor registry (get_extractor, extract_text)
 """
 
-import io
-import email
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from email.mime.text import MIMEText
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openlabels.core.extractors import (
-    BaseExtractor,
-    DOCXExtractor,
-    EmailExtractor,
-    ExtractionResult,
-    HTMLExtractor,
-    ImageExtractor,
-    PDFExtractor,
-    PPTXExtractor,
-    PageInfo,
-    RTFExtractor,
-    TextExtractor,
-    XLSXExtractor,
-    extract_text,
-    get_extractor,
-)
 from openlabels.core.constants import (
     MAX_DECOMPRESSED_SIZE,
     MAX_DOCUMENT_PAGES,
@@ -43,7 +24,21 @@ from openlabels.core.constants import (
     MAX_SPREADSHEET_ROWS,
     MIN_NATIVE_TEXT_LENGTH,
 )
-
+from openlabels.core.extractors import (
+    DOCXExtractor,
+    EmailExtractor,
+    ExtractionResult,
+    HTMLExtractor,
+    ImageExtractor,
+    PageInfo,
+    PDFExtractor,
+    PPTXExtractor,
+    RTFExtractor,
+    TextExtractor,
+    XLSXExtractor,
+    extract_text,
+    get_extractor,
+)
 
 # =============================================================================
 # ExtractionResult / PageInfo TESTS
@@ -1145,7 +1140,7 @@ class TestEmailExtractor:
 
         # Check if bs4 is actually unavailable
         try:
-            from bs4 import BeautifulSoup
+            from bs4 import BeautifulSoup  # noqa: F401
             bs4_available = True
         except ImportError:
             bs4_available = False
@@ -1248,7 +1243,7 @@ class TestHTMLExtractor:
     def test_noscript_elements_removed_with_bs4(self):
         """<noscript> elements are removed when bs4 is available."""
         try:
-            from bs4 import BeautifulSoup
+            from bs4 import BeautifulSoup  # noqa: F401
         except ImportError:
             pytest.skip("BeautifulSoup not installed - noscript removal requires bs4")
 
@@ -1272,7 +1267,7 @@ class TestHTMLExtractor:
 
         # Check if bs4 is actually unavailable
         try:
-            from bs4 import BeautifulSoup
+            from bs4 import BeautifulSoup  # noqa: F401
             bs4_available = True
         except ImportError:
             bs4_available = False
@@ -1280,7 +1275,6 @@ class TestHTMLExtractor:
         if bs4_available:
             # If bs4 is installed, we need to simulate its absence
             # Use patch on the module-level import inside the method
-            import importlib
             original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
             def selective_import(name, *args, **kwargs):

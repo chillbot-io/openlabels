@@ -2,12 +2,11 @@
 
 import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.context_keywords import (
     CONTEXT_RULES,
-    ContextRule,
     apply_context_keywords,
 )
+from openlabels.core.types import Span, Tier
 
 
 def _make_span(

@@ -31,7 +31,7 @@ from openlabels.server.dependencies import (
     LabelServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode, raise_database_error
+from openlabels.server.errors import raise_database_error
 from openlabels.server.routes import audit_log
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
@@ -139,7 +139,7 @@ async def list_labels(
 
     return PaginatedResponse[LabelResponse](
         **create_paginated_response(
-            items=[LabelResponse.model_validate(l) for l in labels],
+            items=[LabelResponse.model_validate(label) for label in labels],
             total=total,
             page=pagination.page,
             page_size=pagination.page_size,
@@ -407,7 +407,7 @@ async def get_label_mappings(
                 HIGH=cached.get("HIGH"),
                 MEDIUM=cached.get("MEDIUM"),
                 LOW=cached.get("LOW"),
-                labels=[LabelResponse(**l) for l in cached.get("labels", [])],
+                labels=[LabelResponse(**label) for label in cached.get("labels", [])],
             )
     except (ConnectionError, OSError, RuntimeError) as e:
         logger.debug(f"Cache read failed: {e}")
@@ -430,7 +430,7 @@ async def get_label_mappings(
         SensitivityLabel.tenant_id == tenant_id
     ).order_by(SensitivityLabel.priority).limit(DEFAULT_QUERY_LIMIT)
     label_result = await db.execute(label_query)
-    labels = [LabelResponse.model_validate(l) for l in label_result.scalars().all()]
+    labels = [LabelResponse.model_validate(label) for label in label_result.scalars().all()]
 
     response = LabelMappingsResponse(
         CRITICAL=mappings.get("CRITICAL"),
@@ -448,7 +448,7 @@ async def get_label_mappings(
             "HIGH": response.HIGH,
             "MEDIUM": response.MEDIUM,
             "LOW": response.LOW,
-            "labels": [l.model_dump() for l in response.labels],
+            "labels": [label.model_dump() for label in response.labels],
         }
         await cache.set(cache_key, cache_data)
         logger.debug(f"Cached label mappings for tenant: {tenant_id}")
@@ -614,7 +614,7 @@ async def get_label_stats(
     """
     from sqlalchemy import func
 
-    from openlabels.server.models import ScanResult, SensitivityLabel
+    from openlabels.server.models import ScanResult
 
     tenant_id = label_service.tenant_id
 

@@ -3,22 +3,20 @@
 import logging
 import struct
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from openlabels.monitoring.providers.usn_journal import (
-    USNJournalProvider,
+    _USN_RECORD_V2_FMT,
     USN_REASON_DATA_OVERWRITE,
     USN_REASON_FILE_CREATE,
     USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_NEW_NAME,
     USN_REASON_SECURITY_CHANGE,
-    USN_REASON_CLOSE,
-    _reason_to_action,
+    USNJournalProvider,
     _filetime_to_datetime,
+    _reason_to_action,
     _resolve_path_via_mft,
-    _USN_RECORD_V2_FMT,
     parse_usn_records,
 )
 

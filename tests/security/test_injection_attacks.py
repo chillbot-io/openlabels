@@ -6,7 +6,6 @@ to prevent SQL injection, command injection, and other
 injection attacks.
 """
 
-import pytest
 from uuid import uuid4
 
 

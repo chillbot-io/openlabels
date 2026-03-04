@@ -1,7 +1,6 @@
 """Tests for security descriptor collection (sd_collect.py)."""
 
 import os
-import stat
 import tempfile
 from pathlib import Path
 

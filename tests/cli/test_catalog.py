@@ -121,7 +121,7 @@ class TestCatalogRebuild:
         from openlabels.cli.commands.catalog import catalog
 
         with patch("openlabels.cli.commands.catalog._run_rebuild", new_callable=AsyncMock) as mock_rebuild:
-            result = runner.invoke(catalog, ["rebuild", "--yes"])
+            runner.invoke(catalog, ["rebuild", "--yes"])
 
         mock_rebuild.assert_called_once_with(10_000)
 

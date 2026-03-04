@@ -22,7 +22,6 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, FrozenSet, Optional, Set
 
 from openlabels.core.constants import DEFAULT_DICTIONARIES_DIR
 

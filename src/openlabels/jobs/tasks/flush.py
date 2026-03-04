@@ -54,6 +54,7 @@ async def periodic_event_flush(
                     # SECURITY: Flush events per-tenant to enforce tenant
                     # isolation and prevent cross-tenant data leakage.
                     from sqlalchemy import select
+
                     from openlabels.server.models import Tenant
 
                     tenant_result = await session.execute(select(Tenant.id))

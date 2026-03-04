@@ -10,18 +10,18 @@ Tests focus on:
 - LLM response parsing
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from openlabels.server.routes.query import (
-    validate_sql,
-    _replace_param_placeholders,
-    _parse_llm_response,
-    _build_schema,
-    _serialize_value,
-    MAX_QUERY_LENGTH,
-)
+import pytest
 
+from openlabels.server.routes.query import (
+    MAX_QUERY_LENGTH,
+    _build_schema,
+    _parse_llm_response,
+    _replace_param_placeholders,
+    _serialize_value,
+    validate_sql,
+)
 
 # ── SQL Validation ──────────────────────────────────────────────────────
 

@@ -216,7 +216,7 @@ def _audit_gold_labels(samples: list[BenchmarkSample]) -> None:
     ever emits.  These are *guaranteed* false negatives and need to be fixed
     in ``entity_mapping.py``.
     """
-    from .entity_mapping import AI4PRIVACY_TO_OPENLABELS, EVAL_CATEGORIES, UNMAPPED_TYPES
+    from .entity_mapping import AI4PRIVACY_TO_OPENLABELS, UNMAPPED_TYPES
 
     passthrough_counts: dict[str, int] = {}
     total_gold = 0

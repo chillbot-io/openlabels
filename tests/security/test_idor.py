@@ -13,23 +13,36 @@ Critical security principle: Cross-tenant and unauthorized access should return 
 
 import asyncio
 import contextlib
-import pytest
 import random
 import string
-from uuid import uuid4
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
-from unittest.mock import AsyncMock, patch, MagicMock
-from httpx import AsyncClient, ASGITransport
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from openlabels.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_optional_user,
+    require_admin,
+)
 from openlabels.server.app import app
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import get_db_session
-from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import (
-    Tenant, User, ScanJob, ScanResult, ScanTarget,
-    ScanSchedule, AuditLog, JobQueue as JobQueueModel,
+    AuditLog,
+    ScanJob,
+    ScanResult,
+    ScanSchedule,
+    ScanTarget,
+    Tenant,
+    User,
 )
-
+from openlabels.server.models import (
+    JobQueue as JobQueueModel,
+)
 
 # =============================================================================
 # FIXTURES
@@ -310,11 +323,12 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
         tenant: Tenant object
         role_override: Override role for testing (e.g., 'viewer' for admin user)
     """
+    from fastapi import HTTPException
+
     from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
     from openlabels.server.routes.remediation import limiter as remediation_limiter
     from openlabels.server.routes.scans import limiter as scans_limiter
-    from openlabels.server.routes.auth import limiter as auth_limiter
-    from fastapi import HTTPException
 
     role = role_override or str(user.role)
 
@@ -343,7 +357,7 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
 
     # Save original limiter states
     limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
-    original_states = [l.enabled for l in limiters]
+    original_states = [limiter.enabled for limiter in limiters]
 
     # Set up overrides
     app.dependency_overrides[get_session] = override_get_session
@@ -370,7 +384,7 @@ async def create_client_for_user(test_db, user, tenant, role_override=None):
                 yield client
     finally:
         app.dependency_overrides.clear()
-        for limiter, state in zip(limiters, original_states):
+        for limiter, state in zip(limiters, original_states, strict=False):
             limiter.enabled = state
 
 
@@ -497,7 +511,7 @@ class TestScanIDOR:
 
     async def test_cannot_create_scan_with_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot create scan using tenant A's target."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
         target_a_id = data["target_a"].id
@@ -687,7 +701,7 @@ class TestScheduleIDOR:
 
     async def test_cannot_trigger_other_tenant_schedule(self, multi_tenant_idor_setup):
         """User B cannot trigger tenant A's schedule."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
         tenant_a_id = data["tenant_a"].id
@@ -712,7 +726,7 @@ class TestScheduleIDOR:
 
     async def test_cannot_create_schedule_with_other_tenant_target(self, multi_tenant_idor_setup):
         """User B cannot create schedule for tenant A's target."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
 
@@ -1038,7 +1052,7 @@ class TestVerticalPrivilegeEscalation:
 
     async def test_viewer_cannot_create_targets(self, multi_tenant_idor_setup):
         """Viewer cannot create scan targets (admin-only operation)."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
 
@@ -1072,7 +1086,7 @@ class TestVerticalPrivilegeEscalation:
 
     async def test_viewer_cannot_create_schedules(self, multi_tenant_idor_setup):
         """Viewer cannot create scan schedules (admin-only operation)."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
 
@@ -1105,7 +1119,7 @@ class TestVerticalPrivilegeEscalation:
 
     async def test_viewer_cannot_start_scans(self, multi_tenant_idor_setup):
         """Viewer cannot start scans (admin-only operation)."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = multi_tenant_idor_setup
 

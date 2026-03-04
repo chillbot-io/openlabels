@@ -89,7 +89,6 @@ async def _run_rebuild(batch_size: int) -> None:
             total = (await session.execute(select(func.count()).select_from(ScanResult))).scalar() or 0
             click.echo(f"  Scan results: {total} rows")
             offset = 0
-            last_scanned_at = None
             while offset < total:
                 q = (
                     select(ScanResult)
@@ -119,7 +118,6 @@ async def _run_rebuild(batch_size: int) -> None:
                         subset,
                     )
 
-                last_scanned_at = rows[-1].scanned_at
                 offset += len(rows)
                 click.echo(f"    Flushed {offset}/{total}")
 

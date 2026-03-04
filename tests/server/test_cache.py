@@ -1,13 +1,11 @@
 """Tests for cache infrastructure (InMemoryCache, CacheManager)."""
 
-import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from openlabels.server.cache import CacheManager, InMemoryCache
-
 
 # ---------------------------------------------------------------------------
 # InMemoryCache

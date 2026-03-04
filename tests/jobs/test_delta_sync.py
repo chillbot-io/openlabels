@@ -4,7 +4,6 @@ Integration tests use the test_db fixture and require PostgreSQL.
 """
 
 from datetime import datetime, timezone
-from uuid import UUID
 
 import pytest
 

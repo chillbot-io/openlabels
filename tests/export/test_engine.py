@@ -4,7 +4,6 @@ and streaming / chunked processing.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -15,11 +14,9 @@ import pytest
 from openlabels.export.adapters.base import ExportRecord
 from openlabels.export.engine import (
     ExportEngine,
-    _FETCH_BATCH,
     _iter_chunks,
     scan_result_to_export_records,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────
 

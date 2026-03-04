@@ -1,6 +1,6 @@
 """Tests for AnalyticsService (async wrapper) and DuckDBDashboardService."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -9,22 +9,16 @@ from openlabels.analytics.service import (
     AnalyticsService,
     DuckDBDashboardService,
     EntityTrendsData,
-    FileStats,
     HeatmapFileRow,
     RemediationStats,
-    TrendPoint,
 )
 from openlabels.analytics.storage import LocalStorage
-
 from tests.analytics.conftest import (
     TENANT_A,
-    TARGET_1,
-    JOB_1,
     write_access_events,
     write_remediation_actions,
     write_scan_results,
 )
-
 
 # ── AnalyticsService (low-level async wrapper) ─────────────────────
 

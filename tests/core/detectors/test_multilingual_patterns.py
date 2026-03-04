@@ -8,11 +8,11 @@ Tests cover:
 - False positive rejection (invalid checksums, wrong formats)
 """
 
-import re
 
 import pytest
 
 from openlabels.core.detectors.patterns import (
+    PatternDetector,
     _validate_br_cnpj,
     _validate_br_cpf,
     _validate_de_steuer_id,
@@ -22,9 +22,7 @@ from openlabels.core.detectors.patterns import (
     _validate_nl_bsn,
     _validate_pt_nif,
     _validate_si_emso,
-    PatternDetector,
 )
-
 
 # ── Validator unit tests ──────────────────────────────────────────────
 

@@ -15,18 +15,15 @@ All ML detectors, the OCR engine, and the dictionary loader are mocked so these
 tests run fast, are deterministic, and catch real escalation routing bugs.
 """
 
-import logging
-import tempfile
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from openlabels.core.pipeline.tiered import (
-    ESCALATION_THRESHOLD,
     ML_BENEFICIAL_TYPES,
-    OCR_FILE_EXTENSIONS,
     PipelineConfig,
     PipelineResult,
     PipelineStage,
@@ -35,7 +32,6 @@ from openlabels.core.pipeline.tiered import (
     detect_tiered,
 )
 from openlabels.core.types import DetectionResult, Span, Tier
-
 
 # =============================================================================
 # HELPERS
@@ -61,7 +57,7 @@ def _make_span(
     )
 
 
-def _make_mock_detector(name: str = "mock_det", spans: List[Span] = None, available: bool = True):
+def _make_mock_detector(name: str = "mock_det", spans: list[Span] = None, available: bool = True):
     """Build a mock detector with the BaseDetector interface."""
     det = MagicMock()
     det.name = name
@@ -76,17 +72,17 @@ def _minimal_pipeline(**config_kwargs) -> TieredPipeline:
     Only pattern-level detectors are disabled; the pipeline object is real.
     Pass additional PipelineConfig overrides via kwargs.
     """
-    defaults = dict(
-        enable_checksum=False,
-        enable_secrets=False,
-        enable_financial=False,
-        enable_government=False,
-        enable_patterns=False,
-        enable_hyperscan=False,
-        auto_detect_medical=False,
-        enable_policy_evaluation=False,
-        eager_load_ml=False,
-    )
+    defaults = {
+        "enable_checksum": False,
+        "enable_secrets": False,
+        "enable_financial": False,
+        "enable_government": False,
+        "enable_patterns": False,
+        "enable_hyperscan": False,
+        "auto_detect_medical": False,
+        "enable_policy_evaluation": False,
+        "eager_load_ml": False,
+    }
     defaults.update(config_kwargs)
     return TieredPipeline(config=PipelineConfig(**defaults))
 
@@ -261,11 +257,11 @@ class TestDetectEscalationFlow:
 
     def _pipeline_with_mock_stages(
         self,
-        stage1_spans: List[Span],
-        ml_spans: List[Span] = None,
+        stage1_spans: list[Span],
+        ml_spans: list[Span] = None,
         medical: bool = False,
-        stanford_phi_spans: List[Span] = None,
-        gliner_spans: List[Span] = None,
+        stanford_phi_spans: list[Span] = None,
+        gliner_spans: list[Span] = None,
     ) -> TieredPipeline:
         """Build a pipeline with fully mocked Stage 1 + ML detectors."""
         p = _minimal_pipeline(auto_detect_medical=medical, enable_policy_evaluation=False)
@@ -492,7 +488,7 @@ class TestDetectImage:
         mock_ocr.extract_text.return_value = ""
         p._ocr_engine = mock_ocr
 
-        result = p.detect_image(img_path, skip_if_no_text=False)
+        p.detect_image(img_path, skip_if_no_text=False)
         # Should still have called OCR even for tiny image
         mock_ocr.extract_text.assert_called_once()
 

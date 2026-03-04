@@ -194,7 +194,7 @@ async def _validate_oidc_token(token: str) -> TokenClaims:
         raise TokenInvalidError("No OIDC providers configured")
 
     last_error: Exception | None = None
-    for key, oidc_config in providers.items():
+    for _key, oidc_config in providers.items():
         if not oidc_config.discovery_url:
             continue
         try:

@@ -11,11 +11,9 @@ Tests cover:
 Tests context-aware PII detection enhancement.
 """
 
-import re
 import pytest
 
 from openlabels.core.types import Span, Tier
-
 
 # =============================================================================
 # TEST FIXTURES

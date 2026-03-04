@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-
 # FALSE POSITIVE FILTERS
 
 # Common words/phrases that get incorrectly matched as names

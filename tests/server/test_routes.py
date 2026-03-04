@@ -9,17 +9,24 @@ Tests cover:
 - Authentication status
 """
 
-import pytest
 from uuid import uuid4
-from datetime import datetime
+
+import pytest
 
 
 @pytest.fixture
 async def setup_test_data(test_db):
     """Set up test data for route tests."""
     from sqlalchemy import select
+
     from openlabels.server.models import (
-        Tenant, User, ScanTarget, AuditLog, JobQueue as JobQueueModel,
+        AuditLog,
+        ScanTarget,
+        Tenant,
+        User,
+    )
+    from openlabels.server.models import (
+        JobQueue as JobQueueModel,
     )
 
     # Get the existing tenant and user created by test_client fixture

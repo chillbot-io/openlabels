@@ -7,20 +7,30 @@ modify, or enumerate resources belonging to another tenant.
 
 import asyncio
 import contextlib
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from unittest.mock import AsyncMock, patch, MagicMock
-from httpx import AsyncClient, ASGITransport
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from openlabels.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_optional_user,
+    require_admin,
+)
 from openlabels.server.app import app
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import get_db_session
-from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
 from openlabels.server.models import (
-    Tenant, User, ScanJob, ScanResult, ScanTarget,
-    ScanSchedule, AuditLog,
+    AuditLog,
+    ScanJob,
+    ScanResult,
+    ScanSchedule,
+    ScanTarget,
+    Tenant,
+    User,
 )
-
 
 # Rate limiting is disabled in create_client_for_user and test_client fixture
 
@@ -179,9 +189,9 @@ async def create_client_for_user(test_db, user, tenant):
             response = await client.get("/api/...")
     """
     from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
     from openlabels.server.routes.remediation import limiter as remediation_limiter
     from openlabels.server.routes.scans import limiter as scans_limiter
-    from openlabels.server.routes.auth import limiter as auth_limiter
 
     async def override_get_session():
         yield test_db
@@ -206,7 +216,7 @@ async def create_client_for_user(test_db, user, tenant):
 
     # Save original states for cleanup
     limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
-    original_limiter_states = [l.enabled for l in limiters]
+    original_limiter_states = [limiter.enabled for limiter in limiters]
 
     # Set up overrides
     app.dependency_overrides[get_session] = override_get_session
@@ -232,7 +242,7 @@ async def create_client_for_user(test_db, user, tenant):
         # Always clean up, even if test fails
         app.dependency_overrides.clear()
         # Restore rate limiter states
-        for limiter, original_state in zip(limiters, original_limiter_states):
+        for limiter, original_state in zip(limiters, original_limiter_states, strict=False):
             limiter.enabled = original_state
 
 
@@ -369,7 +379,7 @@ class TestTargetTenantIsolation:
 
     async def test_cannot_scan_using_other_tenant_target(self, two_tenant_setup):
         """User from tenant B should not create scan using tenant A's target."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = two_tenant_setup
         target_a = data["target_a"]
@@ -485,11 +495,10 @@ class TestScheduleTenantIsolation:
 
     async def test_cannot_trigger_other_tenant_schedules(self, two_tenant_setup):
         """User from tenant B should not trigger tenant A's schedules."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         data = two_tenant_setup
         schedule_a = data["schedule_a"]
-        schedule_a_id = schedule_a.id
         tenant_a_id = data["tenant_a"].id
 
         # Count scans for tenant A before trigger attempt

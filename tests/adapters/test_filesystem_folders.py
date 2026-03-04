@@ -1,12 +1,10 @@
 """Tests for filesystem adapter list_folders / _collect_folder_info."""
 
-import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from openlabels.adapters.base import FolderInfo
 from openlabels.adapters.filesystem import FilesystemAdapter
 
 

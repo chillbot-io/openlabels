@@ -15,12 +15,11 @@ No skipping - all dependencies required.
 """
 
 import pytest
+
 from openlabels.core.detectors.additional_patterns import (
     AdditionalPatternDetector,
-    ADDITIONAL_PATTERNS,
 )
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # DETECTOR INITIALIZATION TESTS
@@ -543,7 +542,7 @@ class TestAdditionalPatternIntegration:
         # Note: Multiple patterns may match same position - that's acceptable
         # What we're checking is that identical spans aren't returned twice
         full_spans = [(s.start, s.end, s.entity_type, s.text) for s in spans]
-        unique_full = set(full_spans)
+        set(full_spans)
 
         # If duplicates exist, this is a detector issue but tests should pass
         # The detector may have overlapping patterns - document counts for monitoring

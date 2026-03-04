@@ -28,23 +28,22 @@ import os
 import re
 import threading
 import zipfile
-from xml.sax.saxutils import escape as xml_escape
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
 from openlabels.adapters.base import FileInfo
 from openlabels.adapters.graph_client import GraphClient
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 from openlabels.core.path_validation import PathValidationError, validate_path
 from openlabels.core.types import AdapterType
 from openlabels.exceptions import GraphAPIError
 
 logger = logging.getLogger(__name__)
-
-from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
 
 _MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 

@@ -9,9 +9,10 @@ Run with:
     pytest tests/jobs/test_queue_integration.py -v
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+import pytest
 
 from openlabels.jobs.queue import JobQueue, calculate_retry_delay
 
@@ -347,7 +348,7 @@ class TestDeadLetterQueueIntegration:
     async def test_get_failed_count(self, queue, test_db):
         """Verify get_failed_count returns correct count."""
         # Create and fail jobs
-        for i in range(5):
+        for _i in range(5):
             job_id = await queue.enqueue("scan", {})
             await queue.dequeue("worker-1")
             await queue.fail(job_id, "Error", retry=False)
@@ -363,9 +364,9 @@ class TestQueueStatsIntegration:
     async def test_get_queue_stats(self, queue, test_db):
         """Verify get_queue_stats returns comprehensive statistics."""
         # Create jobs in various states
-        pending_id = await queue.enqueue("scan", {})
+        await queue.enqueue("scan", {})
 
-        running_id = await queue.enqueue("scan", {})
+        await queue.enqueue("scan", {})
         await queue.dequeue("worker-1")
 
         completed_id = await queue.enqueue("label", {})

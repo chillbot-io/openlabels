@@ -28,7 +28,6 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1238,12 +1237,12 @@ class TestConfigSetCommand:
         from openlabels.cli.commands.config import config
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = Path(tmpdir) / "config.yaml"
+            Path(tmpdir) / "config.yaml"
 
             # Patch pathlib.Path inside the function to use our temp config
             with patch("builtins.open", mock_open(read_data="")):
                 with patch("yaml.safe_load", return_value={}):
-                    with patch("yaml.dump") as mock_dump:
+                    with patch("yaml.dump"):
                         with patch("pathlib.Path.exists", return_value=True):
                             result = runner.invoke(config, ["set", "server.port", "9000"])
 
@@ -1256,7 +1255,7 @@ class TestConfigSetCommand:
 
         with patch("builtins.open", mock_open(read_data="")):
             with patch("yaml.safe_load", return_value={}):
-                with patch("yaml.dump") as mock_dump:
+                with patch("yaml.dump"):
                     with patch("pathlib.Path.exists", return_value=True):
                         result = runner.invoke(config, ["set", "server.debug", "true"])
 
@@ -1282,7 +1281,7 @@ class TestConfigSetCommand:
 
         with patch("builtins.open", mock_open(read_data="")):
             with patch("yaml.safe_load", return_value={}):
-                with patch("yaml.dump") as mock_dump:
+                with patch("yaml.dump"):
                     with patch("pathlib.Path.exists", return_value=True):
                         result = runner.invoke(config, ["set", "server.port", "8080"])
 
@@ -1295,7 +1294,7 @@ class TestConfigSetCommand:
 
         with patch("builtins.open", mock_open(read_data="")):
             with patch("yaml.safe_load", return_value={}):
-                with patch("yaml.dump") as mock_dump:
+                with patch("yaml.dump"):
                     with patch("pathlib.Path.exists", return_value=True):
                         result = runner.invoke(config, [
                             "set", "cors.allowed_origins",
@@ -1584,9 +1583,10 @@ class TestValidateWhereFilter:
 
     def test_invalid_filter_raises_bad_parameter(self):
         """An invalid filter should raise click.BadParameter."""
-        from openlabels.cli.utils import validate_where_filter
-        from openlabels.cli.filter_parser import ParseError
         import click
+
+        from openlabels.cli.filter_parser import ParseError
+        from openlabels.cli.utils import validate_where_filter
 
         with patch(
             "openlabels.cli.filter_parser.parse_filter",

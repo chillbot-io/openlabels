@@ -1,11 +1,9 @@
 """Tests for ML model configuration and availability checking."""
 
-import pytest
-from pathlib import Path
 
 from openlabels.core.detectors.model_config import (
-    ModelStatus,
     ModelsReport,
+    ModelStatus,
     check_models_available,
 )
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from openlabels.core.pipeline.chunking import TextChunk, TextChunker
+from openlabels.core.pipeline.chunking import TextChunker
 
 
 class TestTextChunker:

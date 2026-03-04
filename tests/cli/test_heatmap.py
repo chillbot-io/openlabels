@@ -235,7 +235,7 @@ class TestHeatmapJsonFormat:
 
         # Parse JSON output (skip "Scanning..." line)
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         json_output = "\n".join(json_lines)
         data = json.loads(json_output)
 
@@ -257,7 +257,7 @@ class TestHeatmapJsonFormat:
 
         # Parse JSON
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         data = json.loads("\n".join(json_lines))
 
         if data:
@@ -358,7 +358,7 @@ class TestHeatmapAggregation:
 
         # Parse JSON
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         data = json.loads("\n".join(json_lines))
 
         # Verify aggregation happened
@@ -381,7 +381,7 @@ class TestHeatmapAggregation:
 
         # Parse JSON
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         data = json.loads("\n".join(json_lines))
 
         # Verify sorted by max_score descending
@@ -469,7 +469,7 @@ class TestHeatmapIntegration:
 
         # Verify JSON output
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         data = json.loads("\n".join(json_lines))
         assert isinstance(data, list)
 

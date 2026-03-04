@@ -2,13 +2,13 @@
 
 import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.confidence import (
     _TIER_FLOORS,
     _next_ceiling,
     calibrate_confidence,
     calibrate_spans,
 )
+from openlabels.core.types import Span, Tier
 
 
 def _make_span(

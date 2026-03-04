@@ -10,23 +10,24 @@ Tests focus on:
 - Inventory statistics (DB aggregation)
 """
 
-import sys
-import os
 import hashlib
+import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch
+
+import pytest
 
 from openlabels.jobs.inventory import (
-    InventoryService,
-    get_folder_path,
     _FILE_CACHE_MAX,
     _FOLDER_CACHE_MAX,
+    InventoryService,
+    get_folder_path,
 )
 
 
@@ -445,7 +446,7 @@ class TestUpdateFolderInventory:
             mock_new_folder = MagicMock()
             MockFolderInv.return_value = mock_new_folder
 
-            result = await service.update_folder_inventory(
+            await service.update_folder_inventory(
                 folder_path="/new/folder",
                 adapter="filesystem",
                 job_id=job_id,
@@ -573,7 +574,7 @@ class TestUpdateFileInventory:
             mock_new_file = MagicMock()
             MockFileInv.return_value = mock_new_file
 
-            result = await service.update_file_inventory(
+            await service.update_file_inventory(
                 file_info=mock_file_info,
                 scan_result=mock_scan_result,
                 content_hash="abc123",

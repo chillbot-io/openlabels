@@ -9,22 +9,23 @@ Tests focus on:
 - Multi-worker consistency
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 import asyncio
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+
+import pytest
 
 from openlabels.jobs.inventory import (
+    DEFAULT_INVENTORY_TTL,
     DistributedScanInventory,
     InventoryService,
-    DEFAULT_INVENTORY_TTL,
 )
 
 

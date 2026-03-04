@@ -10,15 +10,17 @@ Tests focus on:
 - Tenant isolation
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_monitoring_data(test_db):
     """Set up test data for monitoring endpoint tests."""
     from sqlalchemy import select
+
     from openlabels.server.models import Tenant, User
 
     # Get the existing tenant created by test_client
@@ -474,8 +476,9 @@ class TestGetFileAccessHistory:
 
     async def test_returns_events_for_specific_file(self, test_client, setup_monitoring_data):
         """Should return events only for the specified file."""
-        from openlabels.server.models import FileAccessEvent, MonitoredFile
         from datetime import datetime, timezone
+
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
@@ -544,8 +547,9 @@ class TestGetUserAccessHistory:
 
     async def test_returns_events_for_specific_user(self, test_client, setup_monitoring_data):
         """Should return events only for the specified user."""
-        from openlabels.server.models import FileAccessEvent, MonitoredFile
         from datetime import datetime, timezone
+
+        from openlabels.server.models import FileAccessEvent, MonitoredFile
 
         session = setup_monitoring_data["session"]
         tenant = setup_monitoring_data["tenant"]
@@ -1005,7 +1009,7 @@ class TestMonitoringTenantIsolation:
 
     async def test_cannot_access_other_tenant_files(self, test_client, setup_monitoring_data):
         """Should not be able to see files from other tenants."""
-        from openlabels.server.models import Tenant, MonitoredFile
+        from openlabels.server.models import MonitoredFile, Tenant
 
         session = setup_monitoring_data["session"]
 
@@ -1035,7 +1039,7 @@ class TestMonitoringTenantIsolation:
 
     async def test_cannot_delete_other_tenant_file(self, test_client, setup_monitoring_data):
         """Should not be able to delete files from other tenants."""
-        from openlabels.server.models import Tenant, MonitoredFile
+        from openlabels.server.models import MonitoredFile, Tenant
 
         session = setup_monitoring_data["session"]
 

@@ -16,16 +16,18 @@ Tests focus on:
 - Tenant isolation
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_schedules_data(test_db):
     """Set up test data for schedule endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanTarget
+
+    from openlabels.server.models import ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -751,8 +753,9 @@ class TestTriggerSchedule:
 
     async def test_creates_scan_job(self, test_client, setup_schedules_data):
         """Trigger should create a scan job."""
-        from openlabels.server.models import ScanSchedule, ScanJob
         from sqlalchemy import select
+
+        from openlabels.server.models import ScanJob, ScanSchedule
 
         session = setup_schedules_data["session"]
         tenant = setup_schedules_data["tenant"]
@@ -817,7 +820,7 @@ class TestScheduleHistory:
 
     async def test_returns_job_history(self, test_client, setup_schedules_data):
         """History should return past jobs linked to this schedule."""
-        from openlabels.server.models import ScanSchedule, ScanJob
+        from openlabels.server.models import ScanJob, ScanSchedule
 
         session = setup_schedules_data["session"]
         tenant = setup_schedules_data["tenant"]
@@ -869,7 +872,7 @@ class TestScheduleHistory:
 
     async def test_history_excludes_unrelated_jobs(self, test_client, setup_schedules_data):
         """History should only include jobs for this schedule."""
-        from openlabels.server.models import ScanSchedule, ScanJob
+        from openlabels.server.models import ScanJob, ScanSchedule
 
         session = setup_schedules_data["session"]
         tenant = setup_schedules_data["tenant"]
@@ -924,7 +927,7 @@ class TestScheduleTenantIsolation:
 
     async def test_cannot_access_other_tenant_schedule(self, test_client, setup_schedules_data):
         """Should not be able to access schedules from other tenants."""
-        from openlabels.server.models import Tenant, User, ScanTarget, ScanSchedule
+        from openlabels.server.models import ScanSchedule, ScanTarget, Tenant, User
 
         session = setup_schedules_data["session"]
 
@@ -973,7 +976,7 @@ class TestScheduleTenantIsolation:
         self, test_client, setup_schedules_data
     ):
         """Should not be able to create schedule for another tenant's target."""
-        from openlabels.server.models import Tenant, User, ScanTarget
+        from openlabels.server.models import ScanTarget, Tenant, User
 
         session = setup_schedules_data["session"]
 

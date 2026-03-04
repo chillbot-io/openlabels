@@ -30,8 +30,6 @@ from openlabels.core.types import JobStatus, RiskTier
 from openlabels.server.config import get_settings
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import TenantContextDep
-from openlabels.server.routes import audit_log
-from openlabels.server.utils import get_client_ip
 from openlabels.server.models import (  # noqa: E402
     FileAccessEvent,
     Policy,
@@ -40,11 +38,13 @@ from openlabels.server.models import (  # noqa: E402
     ScanResult,
     generate_uuid,
 )
+from openlabels.server.routes import audit_log
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,
     create_paginated_response,
 )
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -730,7 +730,7 @@ async def get_compliance_trend(
     violations. Enables tracking of compliance progress or regression
     across the tenant's data estate.
     """
-    from sqlalchemy import cast, Date
+    from sqlalchemy import Date, cast
 
     tenant_id = tenant.tenant_id
     end_date = datetime.now(timezone.utc)

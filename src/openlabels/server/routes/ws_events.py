@@ -28,8 +28,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
-from sqlalchemy import select
-
 from openlabels.server.db import get_session_factory
 from openlabels.server.models import User
 from openlabels.server.routes.ws import (

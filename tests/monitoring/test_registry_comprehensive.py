@@ -21,10 +21,10 @@ import pytest
 from openlabels.exceptions import MonitoringError
 from openlabels.monitoring.base import MonitoringResult, WatchedFile
 from openlabels.monitoring.registry import (
-    _enable_monitoring_linux,
-    _enable_monitoring_windows,
     _disable_monitoring_linux,
     _disable_monitoring_windows,
+    _enable_monitoring_linux,
+    _enable_monitoring_windows,
     _watched_files,
     disable_monitoring,
     enable_monitoring,

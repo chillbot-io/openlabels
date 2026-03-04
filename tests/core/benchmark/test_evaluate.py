@@ -7,13 +7,13 @@ from openlabels.core.benchmark.evaluate import (
     EvalMetrics,
     MatchType,
     SpanMatch,
+    _overlap_chars,
     aggregate_metrics,
     confusion_matrix,
     evaluate_spans,
     non_identification_rate,
     per_category_metrics,
     per_entity_type_metrics,
-    _overlap_chars,
 )
 from openlabels.core.types import Span, Tier
 

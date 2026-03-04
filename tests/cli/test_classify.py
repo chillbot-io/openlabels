@@ -10,7 +10,6 @@ Tests file classification functionality including:
 """
 
 import json
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -52,7 +51,6 @@ def temp_dir():
 def mock_file_classification():
     """Create a mock FileClassification result."""
     from openlabels.core.processor import FileClassification
-    from openlabels.core.types import RiskTier
 
     return FileClassification(
         file_path="/test/file.txt",
@@ -271,7 +269,6 @@ class TestClassifyMinScore:
         """Min-score option should filter low-risk results."""
         from openlabels.cli.commands.classify import classify
         from openlabels.core.processor import FileClassification
-        from openlabels.core.types import RiskTier
 
         # Create two results with different scores
         low_risk = FileClassification(

@@ -385,8 +385,8 @@ class FileProcessor:
             chunk = files[i : i + chunk_size]
             semaphore = asyncio.Semaphore(concurrency)
 
-            async def process_one(file_info: dict) -> FileClassification:
-                async with semaphore:
+            async def process_one(file_info: dict, _sem: asyncio.Semaphore = semaphore) -> FileClassification:
+                async with _sem:
                     return await self.process_file(
                         file_path=file_info["path"],
                         content=file_info["content"],

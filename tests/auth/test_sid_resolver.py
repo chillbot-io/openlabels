@@ -1,23 +1,20 @@
 """Tests for SID resolver module."""
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 # Import directly to avoid loading oauth which has cryptography dependencies
 from openlabels.auth.sid_resolver import (
-    SIDResolver,
     ResolvedUser,
-    WELL_KNOWN_SIDS,
-    is_system_account_sid,
-    resolve_sid_sync,
+    SIDResolver,
     get_sid_resolver,
+    is_system_account_sid,
     reset_sid_resolver,
 )
 

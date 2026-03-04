@@ -12,16 +12,17 @@ Tests focus on:
 - Tenant isolation
 """
 
-import pytest
 from uuid import uuid4
-from datetime import datetime, timezone
+
+import pytest
 
 
 @pytest.fixture
 async def setup_results_data(test_db):
     """Set up test data for result endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanJob, ScanTarget
+
+    from openlabels.server.models import ScanJob, ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -150,7 +151,7 @@ class TestListResults:
 
     async def test_filter_by_job_id(self, test_client, setup_results_data):
         """List should filter by job_id."""
-        from openlabels.server.models import ScanResult, ScanJob
+        from openlabels.server.models import ScanJob, ScanResult
 
         session = setup_results_data["session"]
         tenant = setup_results_data["tenant"]
@@ -625,7 +626,7 @@ class TestResultsTenantIsolation:
 
     async def test_cannot_access_other_tenant_results(self, test_client, setup_results_data):
         """Should not be able to see results from other tenants."""
-        from openlabels.server.models import Tenant, User, ScanJob, ScanTarget, ScanResult
+        from openlabels.server.models import ScanJob, ScanResult, ScanTarget, Tenant, User
 
         session = setup_results_data["session"]
 

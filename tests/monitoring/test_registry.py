@@ -1,19 +1,20 @@
 """Tests for monitoring registry operations."""
 
 import platform
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from openlabels.monitoring.registry import (
-    enable_monitoring,
-    disable_monitoring,
-    is_monitored,
-    get_watched_files,
-    get_watched_file,
-    _watched_files,
-)
+import pytest
+
 from openlabels.exceptions import MonitoringError
+from openlabels.monitoring.registry import (
+    _watched_files,
+    disable_monitoring,
+    enable_monitoring,
+    get_watched_file,
+    get_watched_files,
+    is_monitored,
+)
 
 
 @pytest.fixture(autouse=True)

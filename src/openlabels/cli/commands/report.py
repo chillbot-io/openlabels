@@ -19,8 +19,8 @@ import httpx
 from openlabels.cli.base import api_client, server_options
 from openlabels.cli.utils import collect_files, handle_http_error, validate_where_filter
 from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
-from openlabels.core.types import ExposureLevel, RiskTier
 from openlabels.core.path_validation import PathValidationError, validate_output_path
+from openlabels.core.types import ExposureLevel, RiskTier
 
 logger = logging.getLogger(__name__)
 

@@ -10,9 +10,9 @@ Tests focus on:
 - Global exception handling
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from uuid import uuid4
 
 
 class TestHealthCheckEndpoint:

@@ -1,25 +1,24 @@
 """Tests for fanotify provider (Phase I)."""
 
-import struct
 import sys
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from openlabels.monitoring.providers.fanotify import (
-    FanotifyProvider,
-    FAN_MODIFY,
+    _FANOTIFY_EVENT_SIZE,
+    FAN_ACCESS,
     FAN_CLOSE_WRITE,
     FAN_CREATE,
     FAN_DELETE,
     FAN_DELETE_SELF,
+    FAN_MODIFY,
     FAN_MOVED_FROM,
     FAN_MOVED_TO,
-    FAN_ACCESS,
+    FanotifyProvider,
     _mask_to_action,
     _resolve_pid_user,
-    _FANOTIFY_EVENT_SIZE,
 )
 
 

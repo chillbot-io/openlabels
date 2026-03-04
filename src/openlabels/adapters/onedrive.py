@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
 
 import httpx
 
@@ -219,7 +218,7 @@ class OneDriveAdapter(BaseGraphAdapter):
             logger.warning(f"Cannot access OneDrive for {user_id}: {e}")
             return
 
-        drive_id = drive["id"]
+        drive["id"]
 
         # Yield root as a folder
         root = await client.get(f"/users/{user_id}/drive/root")

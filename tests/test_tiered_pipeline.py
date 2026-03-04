@@ -9,21 +9,17 @@ Tests multi-stage detection strategy:
 Strong assertions, no skipping.
 """
 
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from dataclasses import dataclass
-from typing import List
 
 from openlabels.core.pipeline.tiered import (
-    TieredPipeline,
+    ESCALATION_THRESHOLD,
     PipelineConfig,
     PipelineResult,
     PipelineStage,
-    ESCALATION_THRESHOLD,
-    ML_BENEFICIAL_TYPES,
+    TieredPipeline,
 )
-from openlabels.core.types import Span, Tier, DetectionResult
-
+from openlabels.core.types import DetectionResult, Span, Tier
 
 # =============================================================================
 # TEST FIXTURES

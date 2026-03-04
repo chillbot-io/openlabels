@@ -1205,7 +1205,7 @@ class InventoryService:
                     FileInventory.tenant_id == self.tenant_id,
                     FileInventory.target_id == self.target_id,
                     FileInventory.last_scan_job_id != job_id,
-                    FileInventory.needs_rescan == False,
+                    not FileInventory.needs_rescan,
                 )
             )
             .values(needs_rescan=True)
@@ -1244,7 +1244,7 @@ class InventoryService:
 
         # Pending rescan count
         rescan_q = select(func.count()).select_from(FileInventory).where(
-            and_(base_filter, FileInventory.needs_rescan == True)
+            and_(base_filter, FileInventory.needs_rescan)
         )
         pending_rescan = (await self.session.execute(rescan_q)).scalar() or 0
 

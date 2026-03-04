@@ -11,7 +11,6 @@ import pytest
 from openlabels.analytics.compaction import compact_catalog, compact_table
 from openlabels.analytics.storage import LocalStorage
 
-
 TENANT = UUID("00000000-0000-0000-0000-000000000001")
 
 

@@ -203,7 +203,7 @@ class EntityResolver:
                     union(indices[0], indices[i])
 
         # Sieve 2: Partial name match (conservative)
-        for word, indices in word_index.items():
+        for _word, indices in word_index.items():
             if len(indices) > 1:
                 # Only merge if at least one is multi-word
                 multi_word = [i for i in indices if len(mentions[i].words) > 1]

@@ -6,13 +6,10 @@ from openlabels.core.agents.hyperscan_matcher import (
     HYPERSCAN_AVAILABLE,
     HyperscanMatcher,
     Pattern,
-    PatternFlags,
-    PII_PATTERNS,
     luhn_check,
     scan_text,
     ssn_validate,
 )
-
 
 # ============================================================================
 # Validator Tests

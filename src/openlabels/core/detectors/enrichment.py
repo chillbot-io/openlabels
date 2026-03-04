@@ -9,9 +9,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ..types import Span, normalize_entity_type
-from .post_processing import _ranges_overlap
-
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -10,14 +10,12 @@ Tests cover:
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from openlabels.core.types import Span, Tier
 from openlabels.core.detectors.gliner import (
     DEFAULT_GLINER_MODEL,
     GLINER_LABEL_MAP,
     GLiNERDetector,
 )
+from openlabels.core.types import Span, Tier
 
 
 class TestGLiNERDetectorInit:
@@ -72,13 +70,13 @@ class TestGLiNERDetectorLoad:
 
     def test_load_success(self):
         det = GLiNERDetector()
-        mock_model = MagicMock()
+        MagicMock()
 
         with patch.dict("sys.modules", {"gliner": MagicMock()}):
             with patch("openlabels.core.detectors.gliner.GLiNERDetector.load") as mock_load:
                 # Simulate successful load
                 mock_load.return_value = True
-                result = det.load()
+                det.load()
 
         # Just verify the mock was called
         assert mock_load.called

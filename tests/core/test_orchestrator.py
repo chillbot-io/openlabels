@@ -6,10 +6,8 @@ Tests the detection coordination, parallel execution, and result merging.
 Adapted from openrisk/tests/test_detector_orchestrator.py
 """
 
-import pytest
 from openlabels.core.detectors.config import DetectionConfig
 from openlabels.core.detectors.orchestrator import DetectorOrchestrator, detect
-
 
 # =============================================================================
 # Initialization Tests
@@ -102,7 +100,7 @@ class TestOrchestratorDetect:
         result = orchestrator.detect_sync(text)
 
         # Should find multiple entity types
-        entity_types = set(s.entity_type for s in result.spans)
+        entity_types = {s.entity_type for s in result.spans}
         assert "SSN" in entity_types, f"Should detect SSN, found: {entity_types}"
         assert "CREDIT_CARD" in entity_types, f"Should detect CREDIT_CARD, found: {entity_types}"
 
@@ -278,7 +276,7 @@ class TestDetectorManagement:
     def test_add_detector(self):
         """Test adding a custom detector."""
         from openlabels.core.detectors.base import BaseDetector
-        from openlabels.core.types import Span, Tier
+        from openlabels.core.types import Tier
 
         class CustomDetector(BaseDetector):
             name = "custom"
@@ -370,7 +368,7 @@ class TestIntegration:
 
         result = orchestrator.detect_sync(text)
 
-        entity_types = set(s.entity_type for s in result.spans)
+        entity_types = {s.entity_type for s in result.spans}
         assert "SSN" in entity_types or "CREDIT_CARD" in entity_types
 
     def test_financial_document_detection(self):
@@ -383,7 +381,7 @@ class TestIntegration:
 
         result = orchestrator.detect_sync(text)
 
-        entity_types = set(s.entity_type for s in result.spans)
+        entity_types = {s.entity_type for s in result.spans}
         assert "CREDIT_CARD" in entity_types or "IBAN" in entity_types
 
     def test_secrets_document_detection(self):

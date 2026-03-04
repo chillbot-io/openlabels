@@ -1,19 +1,19 @@
 """Tests for access history queries."""
 
-import platform
-import pytest
-from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import json
+import platform
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
-from openlabels.monitoring.history import (
-    get_access_history,
-    _is_system_account,
-    _parse_windows_access_mask,
-    _parse_linux_event_type,
-)
+import pytest
+
 from openlabels.monitoring.base import AccessAction
+from openlabels.monitoring.history import (
+    _is_system_account,
+    _parse_linux_event_type,
+    _parse_windows_access_mask,
+    get_access_history,
+)
 
 
 class TestIsSystemAccount:

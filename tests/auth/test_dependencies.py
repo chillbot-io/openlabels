@@ -5,25 +5,25 @@ These tests verify user creation, role assignment, and access control.
 Security-critical: tests should expose authorization bypass vulnerabilities.
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
 from fastapi import HTTPException
 
-from openlabels.auth.oauth import TokenClaims
 from openlabels.auth.dependencies import (
     CurrentUser,
-    _is_admin_allowed,
-    get_or_create_user,
     get_current_user,
+    get_or_create_user,
     require_admin,
 )
+from openlabels.auth.oauth import TokenClaims
 
 
 class TestCurrentUser:

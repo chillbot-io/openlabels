@@ -10,51 +10,51 @@ from ..base import BaseDetector
 from ..pattern_registry import PatternDefinition, _p
 from ..registry import register_detector
 
-logger = logging.getLogger(__name__)
-
 # Imported from submodules — see filters.py and validators.py
 from .filters import (
-    _is_false_positive_name,
-    _is_field_name,
-    _PROPER_NOUN_TYPES,
-    _IDENTIFIER_TYPES,
-    _PASSWORD_FALSE_POSITIVES,
-    _DL_DATE_PATTERN,
-    _MONTH_ABBREVS,
-    _DATE_FP_PRECEDING,
     _ADDRESS_FALSE_POSITIVES,
     _CITY_FALSE_POSITIVES,
+    _DATE_FP_PRECEDING,
+    _DL_DATE_PATTERN,
+    _IDENTIFIER_TYPES,
+    _MONTH_ABBREVS,
+    _PASSWORD_FALSE_POSITIVES,
+    _PROPER_NOUN_TYPES,
     _USERNAME_FALSE_POSITIVES,
+    _is_false_positive_name,
+    _is_field_name,
 )
 from .validators import (
+    _IP_VERSION_CONTEXT,
+    _validate_age,
+    _validate_br_cnpj,
+    _validate_br_cpf,
+    _validate_date,
+    _validate_de_steuer_id,
     _validate_ein,
-    _validate_uk_nino,
+    _validate_el_afm,
+    _validate_el_amka,
     _validate_es_nie,
     _validate_es_nif,
-    _validate_pl_pesel,
+    _validate_fr_nir,
+    _validate_imei,
+    _validate_ip,
+    _validate_luhn,
+    _validate_mac,
     _validate_nhs,
     _validate_nl_bsn,
-    _validate_fr_nir,
-    _validate_de_steuer_id,
-    _validate_el_amka,
-    _validate_el_afm,
-    _validate_br_cpf,
-    _validate_br_cnpj,
+    _validate_phone,
+    _validate_pl_pesel,
     _validate_pt_nif,
     _validate_si_emso,
-    _validate_ip,
-    _IP_VERSION_CONTEXT,
-    _validate_url,
-    _validate_mac,
-    _validate_phone,
-    _validate_date,
-    _validate_age,
-    _validate_imei,
     _validate_sin,
-    _validate_luhn,
-    _validate_vin,
     _validate_ssn_context,
+    _validate_uk_nino,
+    _validate_url,
+    _validate_vin,
 )
+
+logger = logging.getLogger(__name__)
 
 # PATTERN DEFINITIONS
 
@@ -1894,7 +1894,7 @@ _p(r'(?:individuals?|people|persons?|patients?|those)\s+(?:above|over|under|belo
 class PatternDetector(BaseDetector):
     """
     Tier 2 detector: Regex patterns with format validation.
-    
+
     Confidence varies by pattern (0.70 - 0.96).
     Labeled patterns get higher confidence.
     """
@@ -1906,7 +1906,7 @@ class PatternDetector(BaseDetector):
         spans: list[Span] = []
         seen: dict[tuple[int, int, str], int] = {}  # (start, end, entity_type) -> index in spans
 
-        for idx, pdef in enumerate(PATTERNS):
+        for _idx, pdef in enumerate(PATTERNS):
             for match in pdef.pattern.finditer(text):
                 if pdef.group > 0 and match.lastindex and pdef.group <= match.lastindex:
                     value = match.group(pdef.group)

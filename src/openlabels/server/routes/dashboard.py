@@ -486,7 +486,6 @@ async def get_entity_distribution(
 
     # Build response rows, sorted by total count descending
     heatmap_rows: list[EntityHeatmapRow] = []
-    all_file_paths: set[str] = set()
 
     for et, tier_data in entity_map.items():
         total_count = sum(v["entity_count"] for v in tier_data.values())

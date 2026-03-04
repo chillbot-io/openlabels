@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,7 +94,7 @@ async def _auto_label_results(session: AsyncSession, job: ScanJob) -> dict:
     results_query = (
         select(ScanResult)
         .where(ScanResult.job_id == job.id)
-        .where(ScanResult.label_applied == False)
+        .where(not ScanResult.label_applied)
     )
     result_stream = await session.stream(results_query)
     has_results = False
@@ -201,7 +200,7 @@ async def _cloud_label_sync_back(
     results_query = (
         select(ScanResult)
         .where(ScanResult.job_id == job.id)
-        .where(ScanResult.label_applied == True)
+        .where(ScanResult.label_applied)
         .where(ScanResult.current_label_id.isnot(None))
     )
 

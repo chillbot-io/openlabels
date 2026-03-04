@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from openlabels.adapters.base import FileInfo, ExposureLevel
-
+from openlabels.adapters.base import FileInfo
 
 # ── GCSAdapter unit tests ────────────────────────────────────────────
 

@@ -1,14 +1,14 @@
 """Tests for WEF (Windows Event Forwarding) subscription management."""
 
 import subprocess
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from openlabels.monitoring.wef_setup import (
+    _SUBSCRIPTION_NAME,
     WEFSubscriptionInfo,
     _build_subscription_xml,
-    _SUBSCRIPTION_NAME,
     create_subscription,
     delete_subscription,
     get_gpo_config,
@@ -242,7 +242,7 @@ class TestDeleteSubscription:
 
     async def test_delete_custom_name(self):
         mock_proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("openlabels.monitoring.wef_setup._run_wecutil", return_value=mock_proc) as m:
+        with patch("openlabels.monitoring.wef_setup._run_wecutil", return_value=mock_proc):
             success, msg = await delete_subscription("CustomSub")
         assert success is True
         assert "CustomSub" in msg

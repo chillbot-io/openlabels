@@ -199,7 +199,7 @@ class TestReportJsonFormat:
 
         # Parse JSON output (skip the "Scanning..." line)
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         json_output = "\n".join(json_lines)
         data = json.loads(json_output)
 
@@ -221,7 +221,7 @@ class TestReportJsonFormat:
 
         # Parse JSON
         lines = result.output.strip().split("\n")
-        json_lines = [l for l in lines if not l.startswith("Scanning")]
+        json_lines = [line for line in lines if not line.startswith("Scanning")]
         data = json.loads("\n".join(json_lines))
 
         summary = data["summary"]
@@ -265,7 +265,7 @@ class TestReportCsvFormat:
             result = runner.invoke(report, ["--format", "csv", temp_dir])
 
         # Count lines (should have header + data rows)
-        lines = [l for l in result.output.strip().split("\n") if not l.startswith("Scanning")]
+        lines = [line for line in result.output.strip().split("\n") if not line.startswith("Scanning")]
         assert len(lines) >= 2  # Header + at least one data row
         # First non-scanning line should be the CSV header
         assert "file_path" in lines[0]

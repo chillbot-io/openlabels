@@ -167,11 +167,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Periodic event flush background task (Parquet data lake)
     flush_shutdown = asyncio.Event()
-    flush_task: asyncio.Task | None = None
     try:
         from openlabels.jobs.tasks.flush import periodic_event_flush
 
-        flush_task = task_mgr.supervised_task(
+        task_mgr.supervised_task(
             "event_flush",
             periodic_event_flush,
             shutdown_event=flush_shutdown,
@@ -189,12 +188,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Periodic SIEM export background task
     siem_shutdown = asyncio.Event()
-    siem_task: asyncio.Task | None = None
     if settings.siem_export.enabled and settings.siem_export.mode == "periodic":
         try:
             from openlabels.jobs.tasks.export import periodic_siem_export
 
-            siem_task = task_mgr.supervised_task(
+            task_mgr.supervised_task(
                 "siem_export",
                 periodic_siem_export,
                 shutdown_event=siem_shutdown,
@@ -239,7 +237,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Periodic monitoring registry cache sync (re-populates from DB)
     monitoring_sync_shutdown = asyncio.Event()
-    monitoring_sync_task: asyncio.Task | None = None
     if (
         settings.monitoring.enabled
         and settings.monitoring.tenant_id
@@ -250,7 +247,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             from openlabels.monitoring.registry import periodic_cache_sync
 
-            monitoring_sync_task = task_mgr.supervised_task(
+            task_mgr.supervised_task(
                 "monitoring_sync",
                 periodic_cache_sync,
                 shutdown_event=monitoring_sync_shutdown,
@@ -269,12 +266,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Event harvester background task (monitoring)
     harvester_shutdown = asyncio.Event()
-    harvester_task: asyncio.Task | None = None
     if settings.monitoring.enabled:
         try:
             from openlabels.monitoring.harvester import periodic_event_harvest
 
-            harvester_task = task_mgr.supervised_task(
+            task_mgr.supervised_task(
                 "event_harvester",
                 periodic_event_harvest,
                 shutdown_event=harvester_shutdown,
@@ -296,7 +292,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # M365 cloud event harvester (separate interval, separate task)
     m365_shutdown = asyncio.Event()
-    m365_task: asyncio.Task | None = None
     _graph_client = None  # Shared GraphClient for webhook provider (closed on shutdown)
     if (
         settings.monitoring.enabled
@@ -329,7 +324,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         _gc_err,
                     )
 
-            m365_task = task_mgr.supervised_task(
+            task_mgr.supervised_task(
                 "m365_harvester",
                 periodic_m365_harvest,
                 shutdown_event=m365_shutdown,

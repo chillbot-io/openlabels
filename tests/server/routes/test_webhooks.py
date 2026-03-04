@@ -8,8 +8,9 @@ Tests focus on:
 - Malformed input handling
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from pydantic import SecretStr
 
 

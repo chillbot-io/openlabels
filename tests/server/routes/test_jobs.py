@@ -12,16 +12,19 @@ Tests focus on:
 All routes are mounted at /api/v1/jobs.
 """
 
-import pytest
 from datetime import datetime, timezone
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_jobs_data(test_db):
     """Set up test data for jobs endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, JobQueue as JobQueueModel
+
+    from openlabels.server.models import JobQueue as JobQueueModel
+    from openlabels.server.models import Tenant, User
 
     # Get the existing tenant created by test_client (name includes random suffix)
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -34,7 +37,7 @@ async def setup_jobs_data(test_db):
     jobs = []
 
     # Pending jobs
-    for i in range(3):
+    for _i in range(3):
         job = JobQueueModel(
             id=uuid4(),
             tenant_id=tenant.id,
@@ -62,7 +65,7 @@ async def setup_jobs_data(test_db):
         jobs.append(job)
 
     # Completed jobs
-    for i in range(5):
+    for _i in range(5):
         job = JobQueueModel(
             id=uuid4(),
             tenant_id=tenant.id,
@@ -438,7 +441,7 @@ class TestWorkerConfig:
 
     async def test_requires_running_worker(self, test_client, setup_jobs_data):
         """Should fail with BAD_REQUEST if no worker is running."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         # Mock the state manager to return empty workers (no Redis needed)
         mock_state_manager = MagicMock()

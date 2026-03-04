@@ -4,8 +4,7 @@ import pytest
 
 from openlabels.analytics.engine import DuckDBEngine
 from openlabels.analytics.storage import LocalStorage
-
-from tests.analytics.conftest import TENANT_A, TARGET_1, JOB_1, write_scan_results
+from tests.analytics.conftest import TARGET_1, TENANT_A, write_scan_results
 
 
 class TestDuckDBEngine:
@@ -87,7 +86,7 @@ class TestDuckDBEngine:
         e = DuckDBEngine(str(catalog_dir), memory_limit="128MB", threads=1)
         e.close()
         # DuckDB connection is closed; further queries should fail
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             e.fetch_all("SELECT 1")
 
     def test_aggregate_query(self, storage: LocalStorage, engine: DuckDBEngine):

@@ -6,19 +6,18 @@ auto-pagination, authentication, request construction, response handling,
 error cases, and complete API coverage.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import asyncio
-import pytest
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
 import httpx
+import pytest
 
 from openlabels.client.client import OpenLabelsClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -188,7 +187,7 @@ class TestRetryLogic:
         mock = _mock_client(_mock_response({"ok": True}))
         client._client = mock
 
-        resp = await client._request("GET", "/test")
+        await client._request("GET", "/test")
         assert mock.request.await_count == 1
 
     async def test_retry_on_transport_error(self):
@@ -203,7 +202,7 @@ class TestRetryLogic:
         client._client = mock
 
         with patch("openlabels.client.client.asyncio.sleep", new_callable=AsyncMock):
-            resp = await client._request("GET", "/test")
+            await client._request("GET", "/test")
         assert mock.request.await_count == 3
 
     async def test_retry_on_502(self):
@@ -220,7 +219,7 @@ class TestRetryLogic:
         client._client = mock
 
         with patch("openlabels.client.client.asyncio.sleep", new_callable=AsyncMock):
-            resp = await client._request("GET", "/test")
+            await client._request("GET", "/test")
         assert mock.request.await_count == 2
 
     async def test_no_retry_on_400(self):
@@ -368,7 +367,7 @@ class TestScansEndpoints:
         mock = _mock_client(_mock_response({"id": "new", "status": "pending"}))
         client._client = mock
 
-        result = await client.create_scan(target_id, name="Test Scan")
+        await client.create_scan(target_id, name="Test Scan")
 
         call_kwargs = mock.request.call_args
         assert call_kwargs.args == ("POST", "/scans")
@@ -1149,7 +1148,7 @@ class TestDashboardEndpoints:
         client = OpenLabelsClient("http://test", max_retries=0)
         mock = _mock_client(_mock_response({"total_files": 1000}))
         client._client = mock
-        result = await client.get_dashboard_stats()
+        await client.get_dashboard_stats()
         assert mock.request.call_args.args == ("GET", "/dashboard/stats")
 
     async def test_get_heatmap(self):

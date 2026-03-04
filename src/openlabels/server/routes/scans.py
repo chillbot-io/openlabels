@@ -22,8 +22,8 @@ from openlabels.server.dependencies import (
     ScanServiceDep,
     TenantContextDep,
 )
+from openlabels.server.errors import raise_database_error
 from openlabels.server.routes import audit_log
-from openlabels.server.errors import ErrorCode, raise_database_error
 from openlabels.server.schemas.pagination import (
     PaginatedResponse,
     PaginationParams,

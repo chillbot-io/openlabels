@@ -10,8 +10,8 @@ import math
 
 import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.detectors.orchestrator import _calibrated_threshold
+from openlabels.core.types import Span, Tier
 
 
 def _make_ml_span(

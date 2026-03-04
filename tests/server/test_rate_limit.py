@@ -12,10 +12,7 @@ from __future__ import annotations
 import time
 from unittest.mock import patch
 
-import pytest
-
 from openlabels.server.middleware.rate_limit import _InMemoryTenantBackend
-
 
 # ── Basic rate limiting ───────────────────────────────────────────────
 

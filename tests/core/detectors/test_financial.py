@@ -18,20 +18,20 @@ Entity Types tested:
 """
 
 import pytest
+
 from openlabels.core.detectors.financial import (
     FinancialDetector,
-    _validate_cusip,
-    _validate_isin,
-    _validate_sedol,
-    _validate_swift,
-    _validate_lei,
     _validate_bitcoin_base58,
     _validate_bitcoin_bech32,
+    _validate_cusip,
     _validate_ethereum,
+    _validate_isin,
+    _validate_lei,
+    _validate_sedol,
     _validate_seed_phrase,
+    _validate_swift,
 )
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # DETECTOR INITIALIZATION TESTS

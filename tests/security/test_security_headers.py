@@ -5,8 +5,9 @@ Security headers provide defense-in-depth protection against
 various web attacks like XSS, clickjacking, and MIME sniffing.
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi import Request
 from fastapi.responses import Response
 
@@ -158,11 +159,13 @@ class TestCookieSecurityFlags:
 
     async def test_session_cookie_has_security_flags(self):
         """Session cookie should have HttpOnly and SameSite flags when set."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-        from httpx import AsyncClient, ASGITransport
+        from unittest.mock import MagicMock, patch
+
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
-        from openlabels.server.db import get_session
         from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
         # Verify the cookie settings are correct in the source code by

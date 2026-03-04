@@ -257,7 +257,7 @@ async def get_worker_status(
     workers = await state_manager.get_all_workers()
 
     # Return the first running worker found, or empty status
-    for worker_id, state in workers.items():
+    for _worker_id, state in workers.items():
         if state.get("status") == "running":
             return WorkerStatusResponse(
                 worker_id=state.get("worker_id"),

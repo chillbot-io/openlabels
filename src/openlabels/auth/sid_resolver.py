@@ -282,7 +282,7 @@ class SIDResolver:
             Dict mapping SID -> ResolvedUser
         """
         resolved = await asyncio.gather(*(self.resolve(sid) for sid in sids))
-        return dict(zip(sids, resolved))
+        return dict(zip(sids, resolved, strict=False))
 
     def resolve_sync(self, sid: str) -> ResolvedUser:
         """

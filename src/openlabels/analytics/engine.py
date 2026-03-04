@@ -200,7 +200,7 @@ class DuckDBEngine:
         """Execute SQL and return rows as a list of dicts."""
         rel = self.execute(sql, params)
         columns = [desc[0] for desc in rel.description]
-        return [dict(zip(columns, row)) for row in rel.fetchall()]
+        return [dict(zip(columns, row, strict=False)) for row in rel.fetchall()]
 
     def fetch_arrow(
         self,

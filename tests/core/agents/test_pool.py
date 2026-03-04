@@ -16,26 +16,21 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import multiprocessing as mp
 import os
-import queue as _queue_mod
 import tempfile
 import time
-from collections import defaultdict
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from openlabels.core.agents.pool import (
+    _MAX_FILE_BYTES,
     AgentPool,
     AgentPoolConfig,
     FileResult,
     PoolState,
     PoolStats,
     ScanOrchestrator,
-    _MAX_FILE_BYTES,
 )
 from openlabels.core.agents.worker import (
     AgentResult,
@@ -44,7 +39,6 @@ from openlabels.core.agents.worker import (
     WorkItem,
 )
 from openlabels.core.path_validation import PathValidationError
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

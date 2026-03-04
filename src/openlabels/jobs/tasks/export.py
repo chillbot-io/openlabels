@@ -25,7 +25,11 @@ async def periodic_siem_export(
     Runs until *shutdown_event* is set.  Each cycle fetches new scan results
     since the last export cursor and pushes them to all configured SIEMs.
     """
-    from openlabels.export.engine import ExportEngine, scan_result_to_export_records, scan_results_to_dicts
+    from openlabels.export.engine import (
+        ExportEngine,
+        scan_result_to_export_records,
+        scan_results_to_dicts,
+    )
     from openlabels.export.setup import build_adapters_from_settings
     from openlabels.server.config import get_settings
 
@@ -119,7 +123,11 @@ async def execute_export_task(
     """
     from sqlalchemy import select
 
-    from openlabels.export.engine import ExportEngine, scan_result_to_export_records, scan_results_to_dicts
+    from openlabels.export.engine import (
+        ExportEngine,
+        scan_result_to_export_records,
+        scan_results_to_dicts,
+    )
     from openlabels.export.setup import build_adapters_from_settings
     from openlabels.server.config import get_settings
     from openlabels.server.models import ScanResult

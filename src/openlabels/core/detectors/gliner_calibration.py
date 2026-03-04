@@ -273,7 +273,7 @@ def fit_calibration(
     """
     # Group by label
     by_label: dict[str, list[tuple[float, bool]]] = {}
-    for label, score, correct in zip(labels, raw_scores, is_correct):
+    for label, score, correct in zip(labels, raw_scores, is_correct, strict=False):
         by_label.setdefault(label, []).append((score, correct))
 
     calibration: dict[str, tuple[float, float]] = {}
@@ -310,7 +310,7 @@ def _log_loss(
 ) -> float:
     """Compute mean binary cross-entropy after Platt transform."""
     total = 0.0
-    for score, target in zip(scores, targets):
+    for score, target in zip(scores, targets, strict=False):
         p = _platt_transform(score, temperature, bias)
         p = max(1e-7, min(1.0 - 1e-7, p))
         if target:

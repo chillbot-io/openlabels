@@ -443,7 +443,7 @@ _ML_NAME_BLOCKLIST = frozenset({
     "internal", "external", "lateral", "bilateral",
     "rural", "urban", "suburban", "coastal",
     # Nemotron PII FP analysis — additional words
-    "baha", "al", "sales", "jazeera", "brokerage",
+    "al", "sales", "jazeera", "brokerage",
 })
 
 
@@ -494,7 +494,7 @@ _PATTERN_NAME_BLOCKLIST = frozenset({
     "chapter", "section", "appendix", "index", "table",
     "figure", "reference", "disclaimer", "notice", "warning",
     "privacy", "terms", "conditions", "policy", "statement",
-    "welcome", "home", "help", "about", "blog", "news",
+    "welcome", "home", "help", "blog", "news",
     "events", "resources", "services", "products", "support",
 })
 

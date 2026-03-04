@@ -5,7 +5,6 @@ Tests actual CLI behavior: command existence, required arguments, output format.
 """
 
 from click.testing import CliRunner
-import pytest
 
 
 class TestCLIHelp:

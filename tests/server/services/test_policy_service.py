@@ -144,7 +144,7 @@ class TestListPolicies:
         f = policy_fixtures
         svc = _make_service(f["session"], f["tenant"].id, f["user"].id)
 
-        p1 = await svc.create_policy(_policy_data("Enabled", "hipaa"))
+        await svc.create_policy(_policy_data("Enabled", "hipaa"))
         p2 = await svc.create_policy(_policy_data("Disabled", "gdpr"))
         await svc.toggle_policy(p2.id, False)
 

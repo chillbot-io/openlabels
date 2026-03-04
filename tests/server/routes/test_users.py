@@ -12,14 +12,16 @@ Tests focus on:
 - Self-deletion prevention
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_users_data(test_db):
     """Set up test data for user endpoint tests."""
     from sqlalchemy import select
+
     from openlabels.server.models import Tenant, User
 
     # Get the existing tenant created by test_client

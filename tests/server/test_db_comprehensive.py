@@ -33,7 +33,7 @@ class TestGetSessionUninitialized:
             db_module._session_factory = None
 
             with pytest.raises(RuntimeError, match="Database not initialized"):
-                async for session in get_session():
+                async for _session in get_session():
                     pass
         finally:
             db_module._session_factory = original_factory
@@ -51,7 +51,7 @@ class TestGetSessionContextUninitialized:
             db_module._session_factory = None
 
             with pytest.raises(RuntimeError, match="Database not initialized"):
-                async with get_session_context() as session:
+                async with get_session_context():
                     pass
         finally:
             db_module._session_factory = original_factory

@@ -113,7 +113,7 @@ async def create_user(
         raise ConflictError(
             message="User with this email already exists",
             conflicting_field="email",
-        )
+        ) from None
 
     audit_log(
         session, tenant_id=current_user.tenant_id, user_id=current_user.id,

@@ -6,21 +6,18 @@ Strong assertions - no weak checks. All edge cases covered.
 """
 
 import pytest
+
 from openlabels.cli.filter_parser import (
-    Lexer,
-    LexerError,
-    Parser,
-    ParseError,
-    Token,
-    TokenType,
-    parse_filter,
     BinaryOp,
-    UnaryOp,
     Comparison,
     FunctionCall,
-    FilterExpression,
+    Lexer,
+    LexerError,
+    ParseError,
+    TokenType,
+    UnaryOp,
+    parse_filter,
 )
-
 
 # =============================================================================
 # LEXER TESTS

@@ -1,16 +1,13 @@
 """Tests for the benchmark CLI command."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from openlabels.cli.commands.benchmark import benchmark
 from openlabels.core.benchmark.dataset import BenchmarkSample, GoldSpan
-from openlabels.core.benchmark.harness import BenchmarkConfig, BenchmarkResult
-from openlabels.core.benchmark.evaluate import EvalMetrics
-
 
 # Synthetic samples for testing
 MOCK_SAMPLES = [

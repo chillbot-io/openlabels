@@ -597,7 +597,6 @@ class MIPClient:
                 self._create_file_observer(),
             )
 
-            current_label = handler.Label
             was_protected = handler.Protection is not None if hasattr(handler, 'Protection') else False
 
             labeling_options = LabelingOptions()

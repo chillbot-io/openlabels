@@ -10,19 +10,18 @@ Tests cover:
 - Fallback behavior when OCR libraries unavailable
 """
 
-import threading
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
-from openlabels.core.ocr import (
-    clean_ocr_text,
-    OCRBlock,
-    OCRResult,
-    OCREngine,
-)
+import pytest
+
 from openlabels.core.constants import DEFAULT_MODELS_DIR
-
+from openlabels.core.ocr import (
+    OCRBlock,
+    OCREngine,
+    OCRResult,
+    clean_ocr_text,
+)
 
 # =============================================================================
 # CLEAN OCR TEXT TESTS
@@ -402,7 +401,7 @@ class TestOCRResultLinearFallback:
         )
         # IntervalTree should be set if the library is available
         try:
-            from intervaltree import IntervalTree
+            from intervaltree import IntervalTree  # noqa: F401
             assert result._interval_tree is not None
         except ImportError:
             assert result._interval_tree is None

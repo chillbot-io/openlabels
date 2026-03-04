@@ -27,6 +27,8 @@ from openlabels.core.agents.worker import (
     WorkItem,
     agent_process_entry,
 )
+from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
+from openlabels.core.path_validation import validate_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,6 @@ logger = logging.getLogger(__name__)
 # Memory footprint per agent (NER model + overhead)
 AGENT_MEMORY_MB = 400  # ~350MB model + 50MB overhead
 MIN_SYSTEM_MEMORY_MB = 2048  # Keep 2GB free for OS
-from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
-from openlabels.core.path_validation import validate_path
 
 _MAX_FILE_BYTES = MAX_DECOMPRESSED_SIZE
 

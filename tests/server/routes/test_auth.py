@@ -16,11 +16,12 @@ Tests focus on:
 - Security edge cases
 """
 
-import pytest
 import secrets
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import patch, MagicMock, AsyncMock
+
+import pytest
 from pydantic import SecretStr
 
 
@@ -29,7 +30,9 @@ async def setup_auth_test_data(test_db):
     """Set up test data for auth endpoint tests."""
     import random
     import string
+
     from sqlalchemy import select
+
     from openlabels.server.models import Tenant, User
 
     # Generate unique suffix to prevent test data collisions
@@ -151,7 +154,8 @@ class TestLoginEndpoint:
 
     async def test_dev_mode_creates_session_and_redirects(self, test_db, setup_auth_test_data):
         """Dev mode login should create session and redirect."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -190,7 +194,8 @@ class TestLoginEndpoint:
 
     async def test_dev_mode_respects_redirect_uri(self, test_db, setup_auth_test_data):
         """Dev mode login should redirect to specified redirect_uri."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -222,7 +227,8 @@ class TestLoginEndpoint:
 
     async def test_dev_mode_blocked_in_production(self, test_db, setup_auth_test_data):
         """Dev mode auth should be blocked in production environment."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -253,7 +259,8 @@ class TestLoginEndpoint:
 
     async def test_dev_mode_requires_debug_flag(self, test_db, setup_auth_test_data):
         """Dev mode auth should require DEBUG=true."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -283,15 +290,16 @@ class TestLoginEndpoint:
 
     async def test_dev_mode_invalidates_existing_session(self, test_db, setup_auth_test_data, create_test_session):
         """Dev mode login should invalidate existing session (session fixation prevention)."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
         # Create an existing session
-        old_session = await create_test_session(session_id="old-session-id")
+        await create_test_session(session_id="old-session-id")
         await test_db.commit()
 
         async def override_get_session():
@@ -340,7 +348,8 @@ class TestLoginRedirectValidation:
 
     async def test_blocks_external_redirect(self, test_db, setup_auth_test_data):
         """Login should block external redirect URIs."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -374,7 +383,8 @@ class TestLoginRedirectValidation:
 
     async def test_blocks_protocol_relative_redirect(self, test_db, setup_auth_test_data):
         """Login should block protocol-relative URLs (//evil.com)."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -406,7 +416,8 @@ class TestLoginRedirectValidation:
 
     async def test_allows_relative_paths(self, test_db, setup_auth_test_data):
         """Login should allow relative path redirects."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -438,7 +449,8 @@ class TestLoginRedirectValidation:
 
     async def test_allows_cors_origin_redirect(self, test_db, setup_auth_test_data):
         """Login should allow redirects to CORS allowed origins."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -470,7 +482,8 @@ class TestLoginRedirectValidation:
 
     async def test_blocks_javascript_scheme(self, test_db, setup_auth_test_data):
         """Login should block javascript: scheme redirects."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -511,7 +524,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_missing_code_returns_400(self, test_db, setup_auth_test_data):
         """Callback without code should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -543,7 +557,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_missing_state_returns_400(self, test_db, setup_auth_test_data):
         """Callback without state should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -575,7 +590,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_invalid_state_returns_400(self, test_db, setup_auth_test_data):
         """Callback with invalid/unknown state should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -607,7 +623,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_oauth_error_returns_400(self, test_db, setup_auth_test_data):
         """Callback with OAuth error should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -641,8 +658,9 @@ class TestCallbackEndpoint:
 
     async def test_callback_success_creates_session(self, test_db, setup_auth_test_data, create_pending_auth):
         """Successful callback should create session and redirect."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
@@ -710,7 +728,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_token_error_returns_400(self, test_db, setup_auth_test_data, create_pending_auth):
         """Callback with token acquisition error should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -757,7 +776,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_token_exception_returns_400(self, test_db, setup_auth_test_data, create_pending_auth):
         """Callback with token acquisition exception should return 400."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -797,7 +817,8 @@ class TestCallbackEndpoint:
 
     async def test_callback_dev_mode_redirects_to_root(self, test_db, setup_auth_test_data):
         """Callback in dev mode should redirect to /."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -835,13 +856,14 @@ class TestLogoutEndpoint:
 
     async def test_logout_clears_session(self, test_db, setup_auth_test_data, create_test_session):
         """Logout should delete session from database."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
 
-        session = await create_test_session(session_id="logout-test-session")
+        await create_test_session(session_id="logout-test-session")
         await test_db.commit()
 
         async def override_get_session():
@@ -876,7 +898,8 @@ class TestLogoutEndpoint:
 
     async def test_logout_clears_cookie(self, test_db, setup_auth_test_data, create_test_session):
         """Logout should clear the session cookie."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -911,7 +934,8 @@ class TestLogoutEndpoint:
 
     async def test_logout_redirects_to_azure_when_configured(self, test_db, setup_auth_test_data):
         """Logout with Azure AD should redirect to Microsoft logout."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -940,7 +964,8 @@ class TestLogoutEndpoint:
 
     async def test_logout_without_session_still_redirects(self, test_db, setup_auth_test_data):
         """Logout without session cookie should still redirect."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -974,11 +999,12 @@ class TestMeEndpoint:
 
     async def test_me_returns_user_info(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/me should return current user info."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="me-test-session",
             data={
                 "access_token": "test-token",
@@ -1019,7 +1045,8 @@ class TestMeEndpoint:
 
     async def test_me_without_session_returns_401(self, test_db, setup_auth_test_data):
         """GET /auth/me without session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1040,7 +1067,8 @@ class TestMeEndpoint:
 
     async def test_me_with_invalid_session_returns_401(self, test_db, setup_auth_test_data):
         """GET /auth/me with invalid session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1064,12 +1092,13 @@ class TestMeEndpoint:
 
     async def test_me_with_expired_session_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/me with expired session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
         # Create session with expired token (session row exists but token expired)
-        session = await create_test_session(
+        await create_test_session(
             session_id="expired-token-session",
             data={
                 "access_token": "test-token",
@@ -1116,11 +1145,12 @@ class TestTokenEndpoint:
 
     async def test_token_returns_access_token(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token should return access token."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="token-test-session",
             data={
                 "access_token": "my-access-token",
@@ -1154,7 +1184,8 @@ class TestTokenEndpoint:
 
     async def test_token_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/token without session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1174,11 +1205,12 @@ class TestTokenEndpoint:
 
     async def test_token_with_expired_session_attempts_refresh(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token with expired token should attempt refresh."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="refresh-test-session",
             data={
                 "access_token": "old-token",
@@ -1227,11 +1259,12 @@ class TestTokenEndpoint:
 
     async def test_token_refresh_failure_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/token with failed refresh should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="failed-refresh-session",
             data={
                 "access_token": "old-token",
@@ -1287,11 +1320,12 @@ class TestAuthStatusEndpoint:
 
     async def test_status_authenticated(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/status should return authenticated=True with valid session."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="status-test-session",
             data={
                 "access_token": "test-token",
@@ -1333,7 +1367,8 @@ class TestAuthStatusEndpoint:
 
     async def test_status_not_authenticated(self, test_db, setup_auth_test_data):
         """GET /auth/status should return authenticated=False without session."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1361,11 +1396,12 @@ class TestAuthStatusEndpoint:
 
     async def test_status_with_expired_token(self, test_db, setup_auth_test_data, create_test_session):
         """GET /auth/status should return authenticated=False with expired token."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
-        session = await create_test_session(
+        await create_test_session(
             session_id="expired-status-session",
             data={
                 "access_token": "test-token",
@@ -1413,13 +1449,14 @@ class TestRevokeEndpoint:
 
     async def test_revoke_deletes_session(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/revoke should delete the session."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
 
-        session = await create_test_session(session_id="revoke-test-session")
+        await create_test_session(session_id="revoke-test-session")
         await test_db.commit()
 
         async def override_get_session():
@@ -1450,7 +1487,8 @@ class TestRevokeEndpoint:
 
     async def test_revoke_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/revoke without session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1470,7 +1508,8 @@ class TestRevokeEndpoint:
 
     async def test_revoke_invalid_session_returns_404(self, test_db, setup_auth_test_data):
         """POST /auth/revoke with invalid session should return 404."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1502,8 +1541,9 @@ class TestLogoutAllEndpoint:
 
     async def test_logout_all_deletes_user_sessions(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/logout-all should delete all sessions for the user."""
-        from httpx import AsyncClient, ASGITransport
-        from sqlalchemy import select, func
+        from httpx import ASGITransport, AsyncClient
+        from sqlalchemy import func, select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
@@ -1555,7 +1595,8 @@ class TestLogoutAllEndpoint:
 
     async def test_logout_all_without_session_returns_401(self, test_db, setup_auth_test_data):
         """POST /auth/logout-all without session should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1575,7 +1616,8 @@ class TestLogoutAllEndpoint:
 
     async def test_logout_all_without_user_id_deletes_current_only(self, test_db, setup_auth_test_data, create_test_session):
         """POST /auth/logout-all without user_id in claims should only delete current session."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1707,7 +1749,8 @@ class TestSessionCookieSecurity:
 
     async def test_session_cookie_is_httponly(self, test_db, setup_auth_test_data):
         """Session cookie should have HttpOnly flag."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -1739,7 +1782,8 @@ class TestSessionCookieSecurity:
 
     async def test_session_cookie_has_samesite(self, test_db, setup_auth_test_data):
         """Session cookie should have SameSite attribute."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -1781,6 +1825,7 @@ class TestMsalAppConfiguration:
     def test_get_msal_app_raises_when_auth_none(self):
         """_get_msal_app should raise when auth provider is none."""
         from fastapi import HTTPException
+
         from openlabels.server.routes.auth import _get_msal_app
 
         mock_settings = MagicMock()
@@ -1806,7 +1851,7 @@ class TestMsalAppConfiguration:
         with patch('openlabels.server.routes.auth.get_settings', return_value=mock_settings):
             with patch('openlabels.server.routes.auth.ConfidentialClientApplication') as mock_msal:
                 mock_msal.return_value = MagicMock()
-                result = _get_msal_app()
+                _get_msal_app()
 
                 mock_msal.assert_called_once()
                 call_kwargs = mock_msal.call_args
@@ -1859,7 +1904,8 @@ class TestSQLInjectionPrevention:
 
     async def test_session_id_sql_injection_attempt(self, test_db, setup_auth_test_data):
         """SQL injection in session cookie should be safely handled."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -1894,7 +1940,8 @@ class TestSQLInjectionPrevention:
 
     async def test_redirect_uri_sql_injection_attempt(self, test_db, setup_auth_test_data):
         """SQL injection in redirect_uri parameter should be safely handled."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -1932,7 +1979,8 @@ class TestSQLInjectionPrevention:
 
     async def test_state_parameter_sql_injection(self, test_db, setup_auth_test_data):
         """SQL injection in OAuth state parameter should be safely handled."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -1981,11 +2029,12 @@ class TestTokenTampering:
 
     async def test_modified_session_data_detected(self, test_db, setup_auth_test_data, create_test_session):
         """Tampering with session data should be detected."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+        from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
-        from sqlalchemy import select
 
         # Create a valid session
         await create_test_session(
@@ -2046,7 +2095,8 @@ class TestTokenTampering:
 
     async def test_forged_session_id_rejected(self, test_db, setup_auth_test_data):
         """Forged session IDs should be rejected."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2082,7 +2132,8 @@ class TestTokenTampering:
 
     async def test_expired_session_data_with_valid_row(self, test_db, setup_auth_test_data, create_test_session):
         """Session with expired token data but valid row should be rejected."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2126,7 +2177,8 @@ class TestMalformedRequests:
 
     async def test_malformed_cookie_value(self, test_db, setup_auth_test_data):
         """Malformed cookie values should be handled gracefully."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2161,7 +2213,8 @@ class TestMalformedRequests:
 
     async def test_missing_required_callback_params(self, test_db, setup_auth_test_data):
         """Callback endpoint should require code and state parameters."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2197,7 +2250,8 @@ class TestMalformedRequests:
 
     async def test_unicode_in_redirect_uri(self, test_db, setup_auth_test_data):
         """Unicode characters in redirect_uri should be handled safely."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2241,7 +2295,8 @@ class TestMalformedRequests:
     async def test_oversized_state_parameter(self, test_db, setup_auth_test_data):
         """Oversized state parameter should be handled gracefully."""
         import httpx
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.dependencies import get_db_session
@@ -2295,7 +2350,8 @@ class TestMultiTenantIsolation:
 
     async def test_session_isolated_by_tenant(self, test_db, setup_auth_test_data, create_test_session):
         """Sessions should be isolated by tenant."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2365,8 +2421,9 @@ class TestMultiTenantIsolation:
 
     async def test_logout_all_only_affects_own_sessions(self, test_db, setup_auth_test_data, create_test_session):
         """Logout-all should only affect the current user's sessions, not other users."""
-        from httpx import AsyncClient, ASGITransport
-        from sqlalchemy import select, func
+        from httpx import ASGITransport, AsyncClient
+        from sqlalchemy import func, select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session, User
@@ -2457,7 +2514,8 @@ class TestCSRFProtection:
 
     async def test_state_reuse_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
         """State token should only be usable once (replay attack prevention)."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2509,7 +2567,8 @@ class TestCSRFProtection:
 
     async def test_empty_state_rejected(self, test_db, setup_auth_test_data):
         """Empty state parameter should be rejected."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2537,7 +2596,8 @@ class TestCSRFProtection:
 
     async def test_state_from_different_session_rejected(self, test_db, setup_auth_test_data, create_pending_auth):
         """State token from a different session should be rejected."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2590,7 +2650,7 @@ class TestRateLimiting:
 
     async def test_rate_limiter_configured(self, test_db, setup_auth_test_data):
         """Rate limiter should be configured for auth endpoints."""
-        from openlabels.server.routes.auth import limiter, login, auth_callback
+        from openlabels.server.routes.auth import limiter
 
         # Verify limiter is imported and configured
         assert limiter is not None
@@ -2599,8 +2659,9 @@ class TestRateLimiting:
 
     async def test_login_has_rate_limit_decorator(self):
         """Login endpoint should have rate limiting."""
-        from openlabels.server.routes.auth import login
         import inspect
+
+        from openlabels.server.routes.auth import login
 
         # Check that the function has decorators (rate limit is applied)
         source = inspect.getsource(login)
@@ -2608,8 +2669,9 @@ class TestRateLimiting:
 
     async def test_callback_has_rate_limit_decorator(self):
         """Callback endpoint should have rate limiting."""
-        from openlabels.server.routes.auth import auth_callback
         import inspect
+
+        from openlabels.server.routes.auth import auth_callback
 
         source = inspect.getsource(auth_callback)
         assert "@limiter.limit" in source or "limiter.limit" in source
@@ -2627,8 +2689,9 @@ class TestSessionFixation:
         self, test_db, setup_auth_test_data, create_test_session, create_pending_auth
     ):
         """OAuth callback should invalidate any existing session."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
@@ -2701,7 +2764,8 @@ class TestTokenRefreshEdgeCases:
 
     async def test_refresh_token_missing_returns_401(self, test_db, setup_auth_test_data, create_test_session):
         """Expired token without refresh token should return 401."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2735,7 +2799,8 @@ class TestTokenRefreshEdgeCases:
 
     async def test_refresh_token_exception_handled(self, test_db, setup_auth_test_data, create_test_session):
         """Exception during token refresh should be handled gracefully."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -2781,8 +2846,9 @@ class TestTokenRefreshEdgeCases:
 
     async def test_successful_refresh_updates_session(self, test_db, setup_auth_test_data, create_test_session):
         """Successful token refresh should update session with new tokens."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
         from sqlalchemy import select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import Session
@@ -2851,7 +2917,8 @@ class TestSecureCookieFlag:
 
     async def test_secure_flag_set_for_https(self, test_db, setup_auth_test_data):
         """Session cookie should have secure flag when using HTTPS."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2896,7 +2963,8 @@ class TestAzureADLoginFlow:
 
     async def test_azure_login_redirects_to_microsoft(self, test_db, setup_auth_test_data):
         """Azure AD login should redirect to Microsoft login page."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -2937,8 +3005,9 @@ class TestAzureADLoginFlow:
 
     async def test_azure_login_stores_state(self, test_db, setup_auth_test_data):
         """Azure AD login should store state for CSRF protection."""
-        from httpx import AsyncClient, ASGITransport
-        from sqlalchemy import select, func
+        from httpx import ASGITransport, AsyncClient
+        from sqlalchemy import func, select
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.models import PendingAuth
@@ -2989,7 +3058,8 @@ class TestErrorResponseSecurity:
 
     async def test_oauth_error_generic_message(self, test_db, setup_auth_test_data):
         """OAuth errors should return generic messages to prevent information leakage."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -3025,7 +3095,8 @@ class TestErrorResponseSecurity:
 
     async def test_token_error_generic_message(self, test_db, setup_auth_test_data, create_pending_auth):
         """Token acquisition errors should return generic messages."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
@@ -3081,7 +3152,8 @@ class TestSessionStoreBehavior:
 
     async def test_session_store_handles_missing_claims(self, test_db, setup_auth_test_data, create_test_session):
         """Session with missing claims field should be handled gracefully."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -3117,7 +3189,8 @@ class TestSessionStoreBehavior:
 
     async def test_session_without_expires_at(self, test_db, setup_auth_test_data, create_test_session):
         """Session without expires_at should be handled gracefully."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 

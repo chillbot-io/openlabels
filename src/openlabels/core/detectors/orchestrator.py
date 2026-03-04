@@ -22,9 +22,6 @@ from .base import BaseDetector
 from .config import DetectionConfig
 from .language import LanguageResult, detect_language, should_run_detector
 from .post_processing import (
-    _calibrated_threshold,
-    _corroboration_group,
-    _ranges_overlap,
     _split_name_spans,
     _suppress_uncorroborated_ml,
 )
@@ -276,7 +273,7 @@ class DetectorOrchestrator:
                 d for d in self.detectors
                 if should_run_detector(d.name, lang_result)
             ]
-            skipped = set(d.name for d in self.detectors) - set(d.name for d in active_detectors)
+            skipped = {d.name for d in self.detectors} - {d.name for d in active_detectors}
             if skipped:
                 logger.info(
                     "Language gating (%s): skipped detectors %s",
@@ -578,6 +575,7 @@ class DetectorOrchestrator:
             return spans
 
         from bisect import bisect_left
+
         from ..benchmark.entity_mapping import EVAL_CATEGORIES
 
         def _entity_group(entity_type: str) -> str:

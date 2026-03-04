@@ -14,17 +14,19 @@ For each test:
 - Verify no stack traces in error responses
 """
 
-import pytest
 import random
 import string
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_validation_data(test_db):
     """Set up minimal test data for validation tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanTarget
+
+    from openlabels.server.models import ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -582,7 +584,6 @@ class TestMalformedData:
 
     async def test_invalid_json(self, test_client, setup_validation_data):
         """Invalid JSON should return 400/422."""
-        from openlabels.server.app import app
         import httpx
 
         # Access the app from the test client's transport
@@ -994,7 +995,6 @@ class TestEdgeCases:
 
     async def test_content_type_validation(self, test_client, setup_validation_data):
         """Wrong content type should be rejected."""
-        from openlabels.server.app import app
         import httpx
 
         # Access the app from the test client's transport

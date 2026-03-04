@@ -5,16 +5,17 @@ The task delegates Graph API communication to LabelingEngine; these tests
 verify DB upsert logic, stale-label removal, and error handling.
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch
+
+import pytest
 from pydantic import SecretStr
 
 from openlabels.jobs.tasks.label_sync import (
@@ -22,7 +23,6 @@ from openlabels.jobs.tasks.label_sync import (
     execute_label_sync_task,
     sync_labels_from_graph,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

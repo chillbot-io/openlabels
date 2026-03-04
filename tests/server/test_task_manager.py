@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from openlabels.server.task_manager import BackgroundTaskManager, TaskStatus
+from openlabels.server.task_manager import BackgroundTaskManager
 
 
 @pytest.fixture

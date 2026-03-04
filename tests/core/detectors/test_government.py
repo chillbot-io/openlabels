@@ -20,9 +20,9 @@ Entity Types tested:
 """
 
 import pytest
+
 from openlabels.core.detectors.government import GovernmentDetector
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # DETECTOR INITIALIZATION TESTS

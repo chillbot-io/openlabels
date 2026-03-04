@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 _RUST_AVAILABLE = False
 try:
-    from openlabels_matcher import PatternMatcher as RustPatternMatcher
-    from openlabels_matcher import RawMatch
+    from openlabels_matcher import PatternMatcher as RustPatternMatcher  # noqa: F401
+    from openlabels_matcher import RawMatch  # noqa: F401
     _RUST_AVAILABLE = True
     logger.info("Rust pattern matcher loaded successfully")
 except ImportError:

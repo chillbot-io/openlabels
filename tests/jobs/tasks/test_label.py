@@ -6,19 +6,19 @@ DB orchestration (result lookup, field updates) and adapter inference.
 Actual labeling logic is covered by tests/labeling/.
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch
 
-from openlabels.jobs.tasks.label import execute_label_task, _infer_adapter
+import pytest
 
+from openlabels.jobs.tasks.label import _infer_adapter, execute_label_task
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,19 +65,19 @@ class TestInferAdapter:
 # ---------------------------------------------------------------------------
 
 def _make_result(**overrides):
-    defaults = dict(
-        id=uuid4(),
-        file_path="/test/document.docx",
-        file_name="document.docx",
-        file_size=1024,
-        file_modified=datetime.now(timezone.utc),
-        adapter_item_id=None,
-        label_applied=False,
-        label_applied_at=None,
-        current_label_id=None,
-        current_label_name=None,
-        label_error=None,
-    )
+    defaults = {
+        'id': uuid4(),
+        'file_path': "/test/document.docx",
+        'file_name': "document.docx",
+        'file_size': 1024,
+        'file_modified': datetime.now(timezone.utc),
+        'adapter_item_id': None,
+        'label_applied': False,
+        'label_applied_at': None,
+        'current_label_id': None,
+        'current_label_name': None,
+        'label_error': None,
+    }
     defaults.update(overrides)
     return MagicMock(**defaults)
 

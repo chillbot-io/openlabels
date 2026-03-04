@@ -17,12 +17,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import signal
-import time
-from dataclasses import dataclass
-from queue import Empty
-from unittest.mock import MagicMock, patch, PropertyMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from openlabels.core.agents.worker import (
     AgentResult,
@@ -32,7 +27,6 @@ from openlabels.core.agents.worker import (
     WorkItem,
     agent_process_entry,
 )
-
 
 # ── WorkItem tests ───────────────────────────────────────────────────
 
@@ -535,7 +529,7 @@ class TestClassificationAgentRunLoop:
         input_q = MagicMock()
         output_q = MagicMock()
 
-        item = WorkItem(id="test:0", file_path="/tmp/test.txt", text="hello")
+        WorkItem(id="test:0", file_path="/tmp/test.txt", text="hello")
         # First call raises error, second returns poison pill
         input_q.get.side_effect = [RuntimeError("queue error"), None]
 

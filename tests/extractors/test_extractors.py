@@ -4,11 +4,8 @@ Adapted from openrisk tests for openlabels extractors module.
 """
 
 import io
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Dependency Check Helpers
@@ -17,7 +14,7 @@ import pytest
 def has_pymupdf():
     """Check if PyMuPDF is available."""
     try:
-        import fitz
+        import fitz  # noqa: F401
         return True
     except ImportError:
         return False
@@ -26,7 +23,7 @@ def has_pymupdf():
 def has_docx():
     """Check if python-docx is available."""
     try:
-        import docx
+        import docx  # noqa: F401
         return True
     except ImportError:
         return False
@@ -35,7 +32,7 @@ def has_docx():
 def has_openpyxl():
     """Check if openpyxl is available."""
     try:
-        import openpyxl
+        import openpyxl  # noqa: F401
         return True
     except ImportError:
         return False
@@ -44,7 +41,7 @@ def has_openpyxl():
 def has_pillow():
     """Check if Pillow is available."""
     try:
-        from PIL import Image
+        from PIL import Image  # noqa: F401
         return True
     except ImportError:
         return False
@@ -128,6 +125,7 @@ class TestPDFExtractor:
     def test_extract_simple_pdf(self):
         """Test extracting text from a simple PDF."""
         import fitz
+
         from openlabels.core.extractors import PDFExtractor
 
         # Create a simple PDF in memory
@@ -147,6 +145,7 @@ class TestPDFExtractor:
     def test_extract_multi_page_pdf(self):
         """Test extracting from multi-page PDF."""
         import fitz
+
         from openlabels.core.extractors import PDFExtractor
 
         doc = fitz.open()
@@ -173,7 +172,7 @@ class TestPDFExtractor:
 
         extractor = PDFExtractor()
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             extractor.extract(b"This is not a PDF", "fake.pdf")
 
 
@@ -205,6 +204,7 @@ class TestDOCXExtractor:
     def test_extract_simple_docx(self):
         """Test extracting text from a simple DOCX."""
         from docx import Document
+
         from openlabels.core.extractors import DOCXExtractor
 
         doc = Document()
@@ -225,6 +225,7 @@ class TestDOCXExtractor:
     def test_extract_docx_with_tables(self):
         """Test extracting text from DOCX with tables."""
         from docx import Document
+
         from openlabels.core.extractors import DOCXExtractor
 
         doc = Document()
@@ -277,6 +278,7 @@ class TestXLSXExtractor:
     def test_extract_simple_xlsx(self):
         """Test extracting text from a simple XLSX."""
         from openpyxl import Workbook
+
         from openlabels.core.extractors import XLSXExtractor
 
         wb = Workbook()
@@ -344,6 +346,7 @@ class TestImageExtractor:
     def test_extract_without_ocr(self):
         """Test extracting from image without OCR returns empty."""
         from PIL import Image
+
         from openlabels.core.extractors import ImageExtractor
 
         img = Image.new('RGB', (100, 100), color='white')
@@ -429,7 +432,7 @@ class TestExtractorRegistry:
 
     def test_get_extractor_pdf(self):
         """Test getting PDF extractor."""
-        from openlabels.core.extractors import get_extractor, PDFExtractor
+        from openlabels.core.extractors import PDFExtractor, get_extractor
 
         extractor = get_extractor("application/pdf", ".pdf")
         assert isinstance(extractor, PDFExtractor), \

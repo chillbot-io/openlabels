@@ -1,6 +1,5 @@
 """Tests for circuit breaker resilience pattern."""
 
-import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -447,8 +446,8 @@ class TestGetStatusAndRegistry:
         assert "stats" in status
 
     def test_registry_tracks_instances(self):
-        cb1 = CircuitBreaker("svc1")
-        cb2 = CircuitBreaker("svc2")
+        CircuitBreaker("svc1")
+        CircuitBreaker("svc2")
 
         all_status = CircuitBreaker.get_all_status()
         assert "svc1" in all_status

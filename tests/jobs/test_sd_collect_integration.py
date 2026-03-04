@@ -1,7 +1,6 @@
 """Integration tests for SD collection orchestrator and DB helpers."""
 
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -27,7 +26,6 @@ class MockAdapter:
 @pytest.fixture
 async def target_with_real_dirs(test_db):
     """Create tenant, target, and index real temp directories."""
-    from openlabels.jobs.index import bootstrap_directory_tree
     from openlabels.server.models import ScanTarget, Tenant
 
     tenant = Tenant(name="sd-test-tenant")
@@ -101,7 +99,6 @@ class TestCollectSecurityDescriptors:
     async def test_deduplicates_identical_permissions(self, target_with_real_dirs):
         """Dirs with same permissions should produce one SD row."""
         import os
-        from sqlalchemy import text
 
         from openlabels.jobs.index import bootstrap_directory_tree
         from openlabels.jobs.sd_collect import collect_security_descriptors
@@ -231,6 +228,7 @@ class TestPaginationEdgeCases:
         updated mid-loop (the WHERE sd_hash IS NULL result set shrank).
         Keyset pagination must process every directory."""
         import os
+
         from sqlalchemy import text
 
         from openlabels.jobs.index import bootstrap_directory_tree
@@ -271,7 +269,6 @@ class TestPaginationEdgeCases:
     async def test_no_dirs_skipped_after_partial_batch_flush(self, target_with_real_dirs):
         """Even when _update_dirtree_hashes flushes mid-batch (every 2000 rows),
         subsequent reads must not skip any directories."""
-        import os
         from sqlalchemy import text
 
         from openlabels.jobs.index import bootstrap_directory_tree
@@ -316,7 +313,6 @@ class TestGetSDStats:
     async def test_returns_correct_counts(self, target_with_real_dirs):
         """get_sd_stats returns unique_sds, world_accessible, etc."""
         import os
-        from sqlalchemy import text
 
         from openlabels.jobs.index import bootstrap_directory_tree
         from openlabels.jobs.sd_collect import collect_security_descriptors, get_sd_stats
