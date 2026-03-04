@@ -2,7 +2,6 @@
 
 from .scorer import (
     CO_OCCURRENCE_RULES,
-    ENTITY_CATEGORIES,
     ENTITY_WEIGHTS,
     EXPOSURE_MULTIPLIERS,
     TIER_THRESHOLDS,
@@ -22,7 +21,6 @@ __all__ = [
     "calculate_content_score",
     "score_to_tier",
     "ENTITY_WEIGHTS",
-    "ENTITY_CATEGORIES",
     "EXPOSURE_MULTIPLIERS",
     "TIER_THRESHOLDS",
     "CO_OCCURRENCE_RULES",

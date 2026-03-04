@@ -19,6 +19,7 @@ Weights are on a 1-10 scale:
 
 import math
 
+from ..entity_domains import get_legacy_category
 from ..types import RiskTier, ScoringResult, normalize_entity_type
 
 # CALIBRATION PARAMETERS
@@ -157,90 +158,6 @@ ENTITY_WEIGHTS: dict[str, int] = {
 
 DEFAULT_WEIGHT = 5  # For unknown entity types
 
-# ENTITY CATEGORIES
-ENTITY_CATEGORIES: dict[str, str] = {
-    # Direct identifiers
-    "SSN": "direct_identifier",
-    "PASSPORT": "direct_identifier",
-    "DRIVER_LICENSE": "direct_identifier",
-    "MILITARY_ID": "direct_identifier",
-    "TAX_ID": "direct_identifier",
-    "ITIN": "direct_identifier",
-    "EIN": "direct_identifier",
-    "UK_NINO": "direct_identifier",
-    "IN_PAN": "direct_identifier",
-    "SG_NRIC_FIN": "direct_identifier",
-    "ES_NIE": "direct_identifier",
-    "ES_NIF": "direct_identifier",
-    "PL_PESEL": "direct_identifier",
-    "FI_HETU": "direct_identifier",
-    "IT_FISCAL_CODE": "direct_identifier",
-    "KR_RRN": "direct_identifier",
-    "TH_TNIN": "direct_identifier",
-    "MRN": "direct_identifier",
-    "STATE_ID": "direct_identifier",
-
-    # Health info
-    "DIAGNOSIS": "health_info",
-    "MEDICATION": "health_info",
-    "HEALTH_PLAN_ID": "health_info",
-    "NPI": "health_info",
-    "DEA": "health_info",
-    "LAB_TEST": "health_info",
-    "PROCEDURE": "health_info",
-
-    # Financial
-    "CREDIT_CARD": "financial",
-    "IBAN": "financial",
-    "SWIFT_BIC": "financial",
-    "ACCOUNT_NUMBER": "financial",
-    "CUSIP": "financial",
-    "ISIN": "financial",
-    "BITCOIN_ADDRESS": "financial",
-    "ETHEREUM_ADDRESS": "financial",
-    "CRYPTO_SEED_PHRASE": "financial",
-
-    # Contact
-    "EMAIL": "contact",
-    "PHONE": "contact",
-    "ADDRESS": "contact",
-    "ZIP": "contact",
-    "FAX": "contact",
-    "URL": "contact",
-    "USERNAME": "contact",
-
-    # Credentials
-    "PASSWORD": "credential",
-    "API_KEY": "credential",
-    "PRIVATE_KEY": "credential",
-    "JWT": "credential",
-    "AWS_ACCESS_KEY": "credential",
-    "AWS_SECRET_KEY": "credential",
-    "GITHUB_TOKEN": "credential",
-    "GITLAB_TOKEN": "credential",
-    "SLACK_TOKEN": "credential",
-    "STRIPE_KEY": "credential",
-    "DATABASE_URL": "credential",
-
-    # Quasi-identifiers
-    "NAME": "quasi_identifier",
-    "FIRSTNAME": "quasi_identifier",
-    "LASTNAME": "quasi_identifier",
-    "COMPANY": "quasi_identifier",
-    "DATE_DOB": "quasi_identifier",
-    "AGE": "quasi_identifier",
-    "DATE": "quasi_identifier",
-
-    # Direct identifier — vehicle
-    "LICENSE_PLATE": "direct_identifier",
-
-    # Classification markings
-    "CLASSIFICATION_LEVEL": "classification_marking",
-    "CLASSIFICATION_MARKING": "classification_marking",
-    "SCI_MARKING": "classification_marking",
-    "DISSEMINATION_CONTROL": "classification_marking",
-}
-
 # CO-OCCURRENCE RULES
 # (required_categories, multiplier, rule_name)
 CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
@@ -269,9 +186,11 @@ def get_weight(entity_type: str) -> int:
 
 
 def get_category(entity_type: str) -> str:
-    """Get category for an entity type."""
-    normalized = normalize_entity_type(entity_type)
-    return ENTITY_CATEGORIES.get(normalized, "unknown")
+    """Get category for an entity type.
+
+    Delegates to the unified entity domain taxonomy via ``get_legacy_category``.
+    """
+    return get_legacy_category(entity_type)
 
 
 def get_categories(entities: dict[str, int]) -> set[str]:
