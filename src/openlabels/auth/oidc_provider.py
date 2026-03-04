@@ -251,9 +251,7 @@ async def exchange_code(
                 error_code,
                 error_desc,
             )
-            raise AuthError(
-                f"OIDC token exchange failed: {error_code} - {error_desc}"
-            )
+            raise AuthError("Token exchange failed. Please try again.")
 
         return resp.json()
 

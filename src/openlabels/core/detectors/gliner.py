@@ -179,10 +179,10 @@ class GLiNERDetector(BaseDetector):
                     cache_dir, model_name=self.model_name,
                 )
                 if not integrity_ok:
-                    logger.critical(
-                        "GLiNER model integrity verification FAILED for '%s' "
-                        "at %s. Loading anyway, but this should be investigated.",
-                        self.model_name, cache_dir,
+                    raise RuntimeError(
+                        f"GLiNER model integrity verification FAILED for "
+                        f"'{self.model_name}' at {cache_dir}. Refusing to load "
+                        f"a potentially compromised model."
                     )
             else:
                 logger.debug(

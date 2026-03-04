@@ -254,18 +254,17 @@ def download_model(
             filename=mf.repo_path,
         )
 
-        # Copy from HF cache to our models directory
-        shutil.copy2(cached_path, target)
-
-        # Verify checksum if available
+        # Verify checksum BEFORE copying to target to avoid TOCTOU race
         if mf.sha256:
-            if not _verify_sha256(target, mf.sha256):
-                target.unlink()
+            if not _verify_sha256(cached_path, mf.sha256):
                 raise OSError(
                     f"Checksum mismatch for {mf.filename}. "
                     f"Expected {mf.sha256[:16]}..."
                 )
             logger.debug(f"  Checksum verified for {mf.filename}")
+
+        # Copy from HF cache to our models directory (after verification)
+        shutil.copy2(cached_path, target)
         else:
             logger.warning(
                 f"No SHA-256 checksum configured for {mf.filename} in model "

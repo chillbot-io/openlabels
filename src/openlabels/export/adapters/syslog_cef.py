@@ -37,6 +37,8 @@ class SyslogCEFAdapter(SyslogTransportMixin):
         protocol: str = "tcp",
         use_tls: bool = False,
     ) -> None:
+        from openlabels.core.url_validation import validate_host
+        validate_host(host, port, name="Syslog CEF host")
         self._host = host
         self._port = port
         self._protocol = protocol.lower()

@@ -15,6 +15,7 @@ API Versioning:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import types
@@ -162,7 +163,8 @@ def _register_root_endpoints(app: FastAPI) -> None:
             return JSONResponse(status_code=403, content={"error": "OPENLABELS_METRICS_TOKEN not configured"})
         if metrics_token:
             auth_header = request.headers.get("Authorization", "")
-            if auth_header != f"Bearer {metrics_token}":
+            expected = f"Bearer {metrics_token}"
+            if not hmac.compare_digest(auth_header, expected):
                 return JSONResponse(status_code=403, content={"error": "FORBIDDEN"})
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

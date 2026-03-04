@@ -193,8 +193,11 @@ class GraphClient:
         )
 
         if "access_token" not in result:
-            error = result.get("error_description", result.get("error", "Unknown error"))
-            raise RuntimeError(f"Failed to acquire Graph API token: {error}")
+            logger.error(
+                "Failed to acquire Graph API token: %s",
+                result.get("error_description", result.get("error", "Unknown error")),
+            )
+            raise RuntimeError("Failed to acquire Graph API token")
 
         self._access_token = result["access_token"]
         # Token typically valid for 1 hour
