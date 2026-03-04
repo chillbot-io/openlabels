@@ -223,6 +223,9 @@ async def exchange_code(
     """
     token_endpoint = discovery["token_endpoint"]
 
+    from openlabels.core.url_validation import validate_url
+    validate_url(token_endpoint, name="OIDC token endpoint")
+
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
         resp = await client.post(
             token_endpoint,
@@ -373,6 +376,9 @@ async def refresh_token(
     Returns the full token response.
     """
     token_endpoint = discovery["token_endpoint"]
+
+    from openlabels.core.url_validation import validate_url
+    validate_url(token_endpoint, name="OIDC token endpoint")
 
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT) as client:
         resp = await client.post(
