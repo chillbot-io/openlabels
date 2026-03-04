@@ -13,21 +13,19 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.adapters.base import PartitionSpec
 from openlabels.core.constants import RISK_TIER_PRIORITY
 from openlabels.core.types import AdapterType, JobStatus
 from openlabels.exceptions import JobError
-from openlabels.jobs.pipeline import FilePipeline, PipelineConfig, PipelineContext
+from openlabels.jobs.pipeline import FilePipeline, PipelineContext
 from openlabels.jobs.tasks.scan import (
-    CANCELLATION_CHECK_INTERVAL,
     _check_cancellation,
     _detect_and_score,
     _get_adapter,
     cleanup_processor,
-    get_processor,
 )
 from openlabels.jobs.tasks.scan_config import _build_pipeline_config
 from openlabels.server.config import get_settings
@@ -40,7 +38,6 @@ _ws_streaming_enabled = True
 try:
     from openlabels.server.routes.ws import (
         send_scan_completed,
-        send_scan_file_result,
         send_scan_progress,
     )
 except ImportError:
@@ -350,14 +347,14 @@ async def _check_and_aggregate(
     Uses an advisory lock to prevent race conditions when multiple
     partitions complete simultaneously.
     """
-    from openlabels.server.advisory_lock import try_advisory_lock
-
     # Use job ID as a deterministic lock ID to serialize per-job
     # aggregation.  Python's hash() is randomised per-process
     # (PYTHONHASHSEED), so different workers would compute different
     # lock IDs for the same job — breaking the advisory lock.
     # UUID.int is deterministic and stable across processes.
     import uuid as _uuid_mod
+
+    from openlabels.server.advisory_lock import try_advisory_lock
     lock_id = int(_uuid_mod.UUID(str(job.id)).int % (2**31))
     if not await try_advisory_lock(session, lock_id):
         logger.debug("Another worker is aggregating job %s", job.id)

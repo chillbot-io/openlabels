@@ -21,9 +21,8 @@ import asyncio
 import logging
 import subprocess
 from datetime import datetime, timezone
-from pathlib import Path
 
-from openlabels.monitoring.base import WINDOWS_ACCESS_MASKS, AccessAction
+from openlabels.monitoring.base import WINDOWS_ACCESS_MASKS
 
 from .base import RawAccessEvent
 

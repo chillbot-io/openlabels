@@ -12,13 +12,14 @@ Verifies that:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from openlabels.server.crypto import (
     CREDENTIAL_FIELD_NAMES,
@@ -30,7 +31,6 @@ from openlabels.server.crypto import (
     is_encrypted,
     mask_config_credentials,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

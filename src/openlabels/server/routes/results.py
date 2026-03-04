@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
+from slowapi import Limiter
 from sqlalchemy.exc import SQLAlchemyError
 
 from openlabels.exceptions import BadRequestError, NotFoundError
@@ -21,11 +22,8 @@ from openlabels.server.dependencies import (
     ResultServiceDep,
     TenantContextDep,
 )
-from openlabels.server.errors import ErrorCode, raise_database_error
+from openlabels.server.errors import raise_database_error
 from openlabels.server.routes import audit_log
-from openlabels.server.utils import get_client_ip
-
-from slowapi import Limiter
 from openlabels.server.schemas.pagination import (
     CursorPaginatedResponse,
     CursorPaginationParams,
@@ -33,6 +31,7 @@ from openlabels.server.schemas.pagination import (
     PaginationParams,
     create_paginated_response,
 )
+from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 

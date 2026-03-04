@@ -256,7 +256,7 @@ class TestLoadNemotronPii:
             assert cache_path.exists()
 
             # refresh_cache should delete it; without HF it will raise
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017
                 load_nemotron_pii(cache_dir=cache_dir, refresh_cache=True)
 
             assert not cache_path.exists()

@@ -61,21 +61,21 @@ logger = logging.getLogger(__name__)
 
 # GLiNER Detector - optional (requires gliner library)
 try:
-    from .gliner import GLiNERDetector, GLINER_LABEL_MAP
+    from .gliner import GLINER_LABEL_MAP, GLiNERDetector  # noqa: F401
     __all__.extend(["GLiNERDetector", "GLINER_LABEL_MAP"])
 except ImportError:
     logger.debug("GLiNER detector not available - gliner not installed")
 
 # Multilingual GLiNER Detector - optional (requires gliner library)
 try:
-    from .multilingual_gliner import MultilingualGLiNERDetector
+    from .multilingual_gliner import MultilingualGLiNERDetector  # noqa: F401
     __all__.append("MultilingualGLiNERDetector")
 except ImportError:
     logger.debug("Multilingual GLiNER detector not available - gliner not installed")
 
 # Hyperscan Detector - optional (requires hyperscan library)
 try:
-    from .hyperscan import HyperscanDetector, is_hyperscan_available
+    from .hyperscan import HyperscanDetector, is_hyperscan_available  # noqa: F401
     __all__.extend(["HyperscanDetector", "is_hyperscan_available"])
 except ImportError:
     # Hyperscan not installed - SIMD acceleration unavailable
@@ -83,20 +83,20 @@ except ImportError:
 
 # Stanford PHI Detector - optional (requires transformers)
 try:
-    from .phi_detector import StanfordPHIDetector
+    from .phi_detector import StanfordPHIDetector  # noqa: F401
     __all__.append("StanfordPHIDetector")
 except ImportError:
     logger.debug("Stanford PHI detector not available - transformers not installed")
 
 # ML utilities - optional (require onnxruntime)
 try:
-    from .ml import MLDetector, get_device, get_device_info
+    from .ml import MLDetector, get_device, get_device_info  # noqa: F401
     __all__.extend(["MLDetector", "get_device", "get_device_info"])
 except ImportError:
     logger.debug("ML utilities not available - onnxruntime not installed")
 
 try:
-    from .ml_onnx import ONNXDetector
+    from .ml_onnx import ONNXDetector  # noqa: F401
     __all__.append("ONNXDetector")
 except ImportError:
     logger.debug("ONNX detector base not available - onnxruntime not installed")

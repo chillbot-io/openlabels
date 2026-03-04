@@ -11,9 +11,10 @@ Tests focus on:
 - Response structure validation
 """
 
-import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
@@ -24,12 +25,15 @@ async def setup_dashboard_data(test_db, test_client, tmp_path):
     so that the ``/dashboard/*`` route handlers can find it.
     """
     from sqlalchemy import select
-    from openlabels.server.models import (
-        Tenant, User, ScanJob, ScanResult, ScanTarget,
-    )
+
     from openlabels.analytics.engine import DuckDBEngine
     from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
     from openlabels.server.app import app
+    from openlabels.server.models import (
+        ScanTarget,
+        Tenant,
+        User,
+    )
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -108,7 +112,7 @@ class TestOverallStats:
         target = setup_dashboard_data["target"]
 
         # Add scan jobs
-        for i in range(5):
+        for _i in range(5):
             scan = ScanJob(
                 id=uuid4(),
                 tenant_id=tenant.id,

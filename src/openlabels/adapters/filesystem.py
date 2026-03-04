@@ -24,7 +24,13 @@ from types import TracebackType
 import aiofiles
 import aiofiles.os
 
-from openlabels.adapters.base import DEFAULT_FILTER, ExposureLevel, FileInfo, FilterConfig, FolderInfo
+from openlabels.adapters.base import (
+    DEFAULT_FILTER,
+    ExposureLevel,
+    FileInfo,
+    FilterConfig,
+    FolderInfo,
+)
 from openlabels.core.constants import DEFAULT_MAX_READ_BYTES
 from openlabels.exceptions import FilesystemError
 
@@ -580,7 +586,6 @@ class FilesystemAdapter:
             # Check for well-known SIDs
             everyone_sid = win32security.ConvertStringSidToSid("S-1-1-0")
             authenticated_users_sid = win32security.ConvertStringSidToSid("S-1-5-11")
-            domain_users_sid = None  # Would need to look up
 
             for i in range(dacl.GetAceCount()):
                 ace = dacl.GetAce(i)

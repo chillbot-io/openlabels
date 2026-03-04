@@ -1,13 +1,11 @@
 """Tests for Phase I change providers (USNChangeProvider, FanotifyChangeProvider)."""
 
-import asyncio
-from datetime import datetime, timezone
 
 import pytest
 
 from openlabels.core.change_providers import (
-    USNChangeProvider,
     FanotifyChangeProvider,
+    USNChangeProvider,
     _StreamChangeProvider,
 )
 

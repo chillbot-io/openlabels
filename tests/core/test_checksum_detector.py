@@ -8,13 +8,14 @@ Adapted from openrisk/tests/test_scanner/test_checksum_detector.py
 """
 
 import pytest
+
 from openlabels.core.detectors.checksum import (
-    luhn_check,
-    validate_ssn,
-    validate_credit_card,
-    validate_npi,
-    validate_iban,
     ChecksumDetector,
+    luhn_check,
+    validate_credit_card,
+    validate_iban,
+    validate_npi,
+    validate_ssn,
 )
 
 

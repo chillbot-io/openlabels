@@ -7,7 +7,7 @@ correctly with mocked AWS/Azure clients.
 from __future__ import annotations
 
 import io
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -15,11 +15,9 @@ import pytest
 
 from openlabels.analytics.storage import (
     AzureBlobStorage,
-    CatalogStorage,
     S3Storage,
     create_storage,
 )
-
 
 # ── S3Storage tests ──────────────────────────────────────────────────
 
@@ -32,7 +30,6 @@ class TestS3Storage:
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
         # Need to patch the import inside the module
-        import openlabels.analytics.storage as storage_mod
         with patch.dict("sys.modules", {"boto3": mock_boto3}):
             s = S3Storage(
                 bucket="test-bucket",

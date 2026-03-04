@@ -1,12 +1,11 @@
 """Tests for cursor-based pagination utilities."""
 
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from openlabels.server.pagination import (
-    CursorData,
     CursorPaginationParams,
     decode_cursor,
     encode_cursor,

@@ -20,15 +20,17 @@ Tests focus on:
 - Tenant isolation
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_policies_data(test_db):
     """Set up test data for policy endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, Policy
+
+    from openlabels.server.models import Policy, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -881,7 +883,7 @@ class TestPoliciesTenantIsolation:
 
     async def test_cannot_access_other_tenant_policies(self, test_client, setup_policies_data):
         """Should not be able to see policies from other tenants."""
-        from openlabels.server.models import Tenant, Policy
+        from openlabels.server.models import Policy, Tenant
 
         session = setup_policies_data["session"]
 

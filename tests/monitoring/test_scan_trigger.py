@@ -5,16 +5,15 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 from openlabels.monitoring.providers.base import RawAccessEvent
 from openlabels.monitoring.scan_trigger import (
-    ScanTriggerBuffer,
-    PendingScan,
     _DEBOUNCE_BY_TIER,
     _TIER_PRIORITY,
+    PendingScan,
+    ScanTriggerBuffer,
 )
 
 

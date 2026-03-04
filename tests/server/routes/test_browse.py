@@ -1,7 +1,6 @@
 """Tests for browse API endpoints (/browse)."""
 
 from datetime import datetime, timezone
-from uuid import UUID
 
 import pytest
 from sqlalchemy import text
@@ -28,7 +27,7 @@ class MockAdapter:
 async def populated_target(test_client, test_db):
     """Create a target and directory tree under the test_client's tenant."""
     from openlabels.jobs.index import bootstrap_directory_tree
-    from openlabels.server.models import ScanTarget, Tenant
+    from openlabels.server.models import ScanTarget
 
     # Find the tenant the test_client fixture created
     row = (await test_db.execute(text(
@@ -197,7 +196,7 @@ class TestBrowseTenantIsolation:
     ):
         """parent_id belonging to another tenant must NOT leak that
         tenant's dir_path.  The fix filters db.get() by tenant_id."""
-        from openlabels.server.models import ScanTarget, Tenant, generate_uuid
+        from openlabels.server.models import ScanTarget, Tenant
 
         # Create a directory belonging to a DIFFERENT tenant
         other_tenant = Tenant(name="other-tenant-isolation-test")

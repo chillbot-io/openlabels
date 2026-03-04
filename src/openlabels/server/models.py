@@ -39,6 +39,7 @@ from sqlalchemy.types import TypeDecorator
 
 from openlabels.server.db import Base
 
+
 # CROSS-DATABASE JSON TYPE
 class JSONB(TypeDecorator):
     """

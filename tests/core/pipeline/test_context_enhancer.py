@@ -7,7 +7,6 @@ The expansion was motivated by Singh & Narayanan 2025 which found
 contextual disambiguation is the #1 failure mode for NER-based PII.
 """
 
-import pytest
 
 from openlabels.core.pipeline.context_enhancer import (
     ContextEnhancer,

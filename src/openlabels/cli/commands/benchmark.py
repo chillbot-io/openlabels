@@ -21,7 +21,6 @@ import click
 
 from openlabels.core.path_validation import PathValidationError, validate_output_path
 
-
 DATASET_CHOICES = [
     "ai4privacy", "ai4privacy_multilingual",
     "nemotron_pii",
@@ -130,7 +129,7 @@ def benchmark(ctx, samples, preset, dataset, seed, output, verbose, threshold,
         )
     except DatasetLoadError as e:
         click.echo(f"\nDataset error: {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
     except ImportError as e:
         click.echo(f"\nError: {e}", err=True)
         return
@@ -375,9 +374,9 @@ def diagnose(ctx, top):
             upper = label.upper().replace(" ", "").replace("-", "")
             suggestion = _suggest_mapping(upper)
             click.echo(f"  {label:<30} {count:>6} {pct:>8.1f}%  → {suggestion}")
-        click.echo(f"\n  Fix: Add these to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py")
+        click.echo("\n  Fix: Add these to AI4PRIVACY_TO_OPENLABELS in entity_mapping.py")
     else:
-        click.echo(f"\n✓ All labels are mapped (no passthrough labels)")
+        click.echo("\n✓ All labels are mapped (no passthrough labels)")
 
     # 3. Show gold entity type distribution
     click.echo(f"\nGold entity type distribution (top {top}):")
@@ -402,17 +401,17 @@ def diagnose(ctx, top):
     # 5. Label audit summary
     all_original = list(original_labels.keys())
     audit = audit_labels(all_original)
-    click.echo(f"\nLabel audit summary:")
+    click.echo("\nLabel audit summary:")
     click.echo(f"  Mapped:      {len(audit['mapped'])} labels")
     click.echo(f"  Unmapped:    {len(audit['unmapped'])} labels (excluded from scoring)")
     click.echo(f"  Passthrough: {len(audit['passthrough'])} labels (NEEDS FIXING)")
 
     # 6. Check UNMAPPED_PRED_TYPES coverage
-    click.echo(f"\nFiltered prediction types (UNMAPPED_PRED_TYPES):")
+    click.echo("\nFiltered prediction types (UNMAPPED_PRED_TYPES):")
     for t in sorted(UNMAPPED_PRED_TYPES):
         click.echo(f"  {t}")
 
-    click.echo(f"\nDone. Use 'openlabels benchmark -v' for per-category F1 breakdown.")
+    click.echo("\nDone. Use 'openlabels benchmark -v' for per-category F1 breakdown.")
 
 
 def _suggest_mapping(upper_label: str) -> str:
@@ -468,10 +467,8 @@ def calibrate(ctx, output, apply_cal):
         GLINER_CALIBRATION,
         fit_calibration,
         load_calibration,
-        reset_calibration,
         save_calibration,
     )
-    from openlabels.core.types import normalize_entity_type
 
     samples_n = ctx.obj["samples"]
     seed = ctx.obj["seed"]
@@ -527,7 +524,6 @@ def calibrate(ctx, output, apply_cal):
     labels: list[str] = []
     raw_scores: list[float] = []
     is_correct: list[bool] = []
-    skipped = 0
 
     for sr in result.sample_results:
         for m in sr.matches:
@@ -552,7 +548,7 @@ def calibrate(ctx, output, apply_cal):
     # Count TP/FP per label for diagnostics
     tp_count: dict[str, int] = {}
     fp_count: dict[str, int] = {}
-    for lbl, correct in zip(labels, is_correct):
+    for lbl, correct in zip(labels, is_correct, strict=False):
         if correct:
             tp_count[lbl] = tp_count.get(lbl, 0) + 1
         else:
@@ -688,7 +684,7 @@ def _show_model_status(config) -> None:
     if getattr(config, "enable_ml", False):
         from openlabels.core.detectors.gliner import DEFAULT_GLINER_MODEL
         click.echo(f"  GLiNER: {DEFAULT_GLINER_MODEL}")
-        click.echo(f"  Multilingual GLiNER: E3-JSI/gliner-multi-pii-domains-v1 (language-gated)")
+        click.echo("  Multilingual GLiNER: E3-JSI/gliner-multi-pii-domains-v1 (language-gated)")
     if getattr(config, "enable_phi", False):
         click.echo(f"  Stanford PHI: {getattr(config, 'phi_model', 'StanfordAIMI/stanford-deidentifier-base')} (English-gated)")
 

@@ -11,16 +11,18 @@ Tests focus on:
 - Input validation
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_reporting_data(test_db):
     """Set up test data for reporting endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, Report, generate_uuid
+
+    from openlabels.server.models import Report, Tenant, User, generate_uuid
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -228,7 +230,7 @@ class TestDistributeReport:
 
     async def test_returns_400_when_smtp_not_configured(self, test_client, setup_reporting_data):
         """Should return 400 when SMTP is not configured."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         generated_report = setup_reporting_data["reports"][0]
 
@@ -355,8 +357,14 @@ class TestListReportTemplates:
 async def setup_compliance_trend_data(test_db):
     """Set up scan results with policy violations for compliance trend testing."""
     from sqlalchemy import select
+
     from openlabels.server.models import (
-        Tenant, User, ScanTarget, ScanJob, ScanResult, generate_uuid,
+        ScanJob,
+        ScanResult,
+        ScanTarget,
+        Tenant,
+        User,
+        generate_uuid,
     )
 
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -514,7 +522,7 @@ class TestReportingTenantIsolation:
 
     async def test_cannot_access_other_tenant_reports(self, test_client, setup_reporting_data):
         """Should not be able to see reports from other tenants."""
-        from openlabels.server.models import Tenant, Report, generate_uuid
+        from openlabels.server.models import Report, Tenant, generate_uuid
 
         session = setup_reporting_data["session"]
 

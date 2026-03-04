@@ -11,9 +11,9 @@ Tests focus on:
 """
 
 import hashlib
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
 
 from openlabels.server.routes.permissions import _exposure_level
 
@@ -58,8 +58,13 @@ class TestExposureLevel:
 async def setup_permissions_data(test_db):
     """Set up directory tree and security descriptor test data."""
     from sqlalchemy import select
+
     from openlabels.server.models import (
-        Tenant, User, ScanTarget, DirectoryTree, SecurityDescriptor,
+        DirectoryTree,
+        ScanTarget,
+        SecurityDescriptor,
+        Tenant,
+        User,
     )
 
     # Get existing tenant/user from test_client
@@ -340,9 +345,15 @@ class TestLookupPrincipalAccess:
 async def setup_tree_data(test_db):
     """Set up a hierarchical directory tree with varied exposure levels."""
     from sqlalchemy import select
+
     from openlabels.server.models import (
-        Tenant, User, ScanTarget, DirectoryTree, SecurityDescriptor,
-        FolderInventory, RemediationAction,
+        DirectoryTree,
+        FolderInventory,
+        RemediationAction,
+        ScanTarget,
+        SecurityDescriptor,
+        Tenant,
+        User,
     )
 
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))

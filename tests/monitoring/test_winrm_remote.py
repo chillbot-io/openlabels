@@ -8,8 +8,10 @@ import pytest
 from openlabels.monitoring.winrm_remote import (
     WinRMResult,
     _get_winrm_session,
-    configure_audit_policy,
     collect_events,
+    configure_audit_policy,
+)
+from openlabels.monitoring.winrm_remote import (
     test_connection as winrm_test_connection,
 )
 
@@ -23,7 +25,7 @@ class TestGetWinrmSession:
         mock_winrm.Session.return_value = mock_session
 
         with patch.dict("sys.modules", {"winrm": mock_winrm}):
-            session = _get_winrm_session("server1", "admin", "pass123")
+            _get_winrm_session("server1", "admin", "pass123")
 
         mock_winrm.Session.assert_called_once()
         call_args = mock_winrm.Session.call_args

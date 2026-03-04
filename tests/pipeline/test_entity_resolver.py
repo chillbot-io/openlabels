@@ -6,16 +6,13 @@ coreference, and cross-message matching.
 Tests multi-sieve entity resolution pipeline.
 """
 
-import pytest
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.entity_resolver import (
+    ISOLATED_TYPES,
+    NAME_TYPES,
     EntityResolver,
     resolve_entities,
-    NAME_TYPES,
-    ISOLATED_TYPES,
-    Entity,
-    Mention,
 )
+from openlabels.core.types import Span, Tier
 
 
 def make_span(text, start=0, entity_type="NAME", confidence=0.9, detector="test",

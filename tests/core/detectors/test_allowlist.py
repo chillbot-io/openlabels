@@ -12,17 +12,14 @@ openlabels.core.detectors.allowlist, covering:
 - Dictionary loading edge cases
 """
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch
 
 from openlabels.core.detectors.allowlist import (
     Allowlist,
-    _load_terms,
     _load_custom_allowlist,
+    _load_terms,
 )
 from tests.conftest import make_span
-
 
 # =============================================================================
 # HELPER: Temporary dictionary files

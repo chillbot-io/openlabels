@@ -161,7 +161,7 @@ def check_for_overlaps(
 
     if _USE_RUST_SPANS:
         # Convert spans to (start, end) tuples for Rust
-        span_tuples = [(s.start, s.end) for s in spans]
+        [(s.start, s.end) for s in spans]
         # Sort to get a consistent index mapping
         sorted_spans = sorted(range(len(spans)), key=lambda i: (spans[i].start, spans[i].end))
         sorted_span_list = [spans[i] for i in sorted_spans]

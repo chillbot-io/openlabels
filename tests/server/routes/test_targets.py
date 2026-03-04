@@ -9,15 +9,17 @@ Tests focus on:
 - Delete target
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
 async def setup_targets_data(test_db):
     """Set up test data for targets endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, ScanTarget
+
+    from openlabels.server.models import ScanTarget, Tenant, User
 
     # Get the existing tenant created by test_client
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))

@@ -8,24 +8,22 @@ Tests focus on:
 - Database polling (with mocks)
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+
+import pytest
 
 from openlabels.jobs.scheduler import (
     DatabaseScheduler,
-    Scheduler,  # Alias for DatabaseScheduler
-    parse_cron_expression,
-    validate_cron_expression,
     get_cron_description,
     get_scheduler,
-    APSCHEDULER_AVAILABLE,
+    parse_cron_expression,
+    validate_cron_expression,
 )
 
 

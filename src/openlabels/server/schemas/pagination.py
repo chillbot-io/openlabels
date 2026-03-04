@@ -360,7 +360,6 @@ async def cursor_paginate_query(
         except ValueError:
             # Invalid cursor, start from beginning
             cursor_values = None
-            cursor_direction = pagination.direction
 
         if cursor_values:
             # Build cursor filter
@@ -406,7 +405,7 @@ async def cursor_paginate_query(
         if has_next:
             last_item = items[-1]
             cursor_vals = {}
-            for col, name in cursor_columns:
+            for _col, name in cursor_columns:
                 cursor_vals[name] = getattr(last_item, name, None)
             next_cursor = encode_cursor(cursor_vals, "forward")
 
@@ -414,7 +413,7 @@ async def cursor_paginate_query(
         if pagination.cursor:
             first_item = items[0]
             cursor_vals = {}
-            for col, name in cursor_columns:
+            for _col, name in cursor_columns:
                 cursor_vals[name] = getattr(first_item, name, None)
             previous_cursor = encode_cursor(cursor_vals, "backward")
 

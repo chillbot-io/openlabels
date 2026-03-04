@@ -16,6 +16,9 @@ provides coverage that Gretel lacks.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
+from openlabels.core.types import Span
 
 from .gliner import GLINER_LABEL_MAP, GLiNERDetector
 from .registry import register_detector
@@ -122,7 +125,7 @@ def _calibrate_multilingual_score(label: str, raw_score: float) -> float:
 
 
 def load_multilingual_calibration(
-    path: str | "Path",
+    path: str | Path,
 ) -> dict[str, tuple[float, float]]:
     """Load custom multilingual calibration from a JSON file.
 
@@ -200,7 +203,6 @@ class MultilingualGLiNERDetector(GLiNERDetector):
         Overrides the parent to use multilingual-specific calibration.
         """
         from ..types import Span
-
         from .gliner import _MIN_SPAN_LENGTHS
 
         try:

@@ -811,7 +811,7 @@ def _disable_monitoring_linux(path: Path) -> MonitoringResult:
     try:
         # Remove audit rule
         # -W: remove watch (opposite of -w)
-        result = subprocess.run(
+        subprocess.run(
             [
                 "auditctl",
                 "-W", str(path),

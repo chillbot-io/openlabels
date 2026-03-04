@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Configuration ────────────────────────────────────────────────────
 
 
@@ -68,55 +67,57 @@ class TestSettingsIntegration:
 class TestModuleStructure:
     def test_s3_adapter_has_required_protocol_methods(self):
         """S3Adapter must implement all ReadAdapter protocol methods."""
-        from openlabels.adapters.s3 import S3Adapter
         import inspect
+
+        from openlabels.adapters.s3 import S3Adapter
 
         adapter = S3Adapter(bucket="b")
         # Verify methods are callable (not just present as attributes)
-        assert callable(getattr(adapter, "list_files"))
-        assert callable(getattr(adapter, "read_file"))
-        assert callable(getattr(adapter, "get_metadata"))
-        assert callable(getattr(adapter, "apply_label_and_sync"))
-        assert callable(getattr(adapter, "test_connection"))
-        assert callable(getattr(adapter, "supports_delta"))
+        assert callable(adapter.list_files)
+        assert callable(adapter.read_file)
+        assert callable(adapter.get_metadata)
+        assert callable(adapter.apply_label_and_sync)
+        assert callable(adapter.test_connection)
+        assert callable(adapter.supports_delta)
         # Verify list_files is async
         assert inspect.isasyncgenfunction(adapter.list_files) or inspect.iscoroutinefunction(adapter.list_files)
 
     def test_gcs_adapter_has_required_protocol_methods(self):
         """GCSAdapter must implement all ReadAdapter protocol methods."""
-        from openlabels.adapters.gcs import GCSAdapter
         import inspect
 
+        from openlabels.adapters.gcs import GCSAdapter
+
         adapter = GCSAdapter(bucket="b")
-        assert callable(getattr(adapter, "list_files"))
-        assert callable(getattr(adapter, "read_file"))
-        assert callable(getattr(adapter, "get_metadata"))
-        assert callable(getattr(adapter, "apply_label_and_sync"))
-        assert callable(getattr(adapter, "test_connection"))
-        assert callable(getattr(adapter, "supports_delta"))
+        assert callable(adapter.list_files)
+        assert callable(adapter.read_file)
+        assert callable(adapter.get_metadata)
+        assert callable(adapter.apply_label_and_sync)
+        assert callable(adapter.test_connection)
+        assert callable(adapter.supports_delta)
         assert inspect.isasyncgenfunction(adapter.list_files) or inspect.iscoroutinefunction(adapter.list_files)
 
     def test_adapters_exported_from_init(self):
-        from openlabels.adapters import S3Adapter, GCSAdapter
+        from openlabels.adapters import GCSAdapter, S3Adapter
 
         # Verify actual adapter_type values, not just "not None"
         assert S3Adapter(bucket="b").adapter_type == "s3"
         assert GCSAdapter(bucket="b").adapter_type == "gcs"
 
     def test_change_providers_have_changed_files_method(self):
+
         from openlabels.core.change_providers import (
-            SQSChangeProvider,
             PubSubChangeProvider,
+            SQSChangeProvider,
         )
-        import inspect
 
         # Verify changed_files is a callable async method, not just an attribute
-        assert callable(getattr(SQSChangeProvider, "changed_files"))
-        assert callable(getattr(PubSubChangeProvider, "changed_files"))
+        assert callable(SQSChangeProvider.changed_files)
+        assert callable(PubSubChangeProvider.changed_files)
 
     def test_adapter_type_identifiers(self):
-        from openlabels.adapters.s3 import S3Adapter
         from openlabels.adapters.gcs import GCSAdapter
+        from openlabels.adapters.s3 import S3Adapter
 
         assert S3Adapter(bucket="b").adapter_type == "s3"
         assert GCSAdapter(bucket="b").adapter_type == "gcs"
@@ -282,11 +283,11 @@ class TestConflictHandling:
     @pytest.mark.asyncio
     async def test_s3_etag_mismatch_returns_error(self):
         """S3 apply_label_and_sync should fail on ETag mismatch."""
-        from openlabels.adapters.s3 import S3Adapter
-        from unittest.mock import MagicMock
         from datetime import datetime, timezone
+        from unittest.mock import MagicMock
 
         from openlabels.adapters.base import FileInfo
+        from openlabels.adapters.s3 import S3Adapter
 
         mock_client = MagicMock()
         mock_client.head_object.return_value = {
@@ -312,11 +313,11 @@ class TestConflictHandling:
     @pytest.mark.asyncio
     async def test_gcs_generation_mismatch_returns_error(self):
         """GCS apply_label_and_sync should fail on generation mismatch."""
-        from openlabels.adapters.gcs import GCSAdapter
-        from unittest.mock import MagicMock
         from datetime import datetime, timezone
+        from unittest.mock import MagicMock
 
         from openlabels.adapters.base import FileInfo
+        from openlabels.adapters.gcs import GCSAdapter
 
         mock_blob = MagicMock()
         mock_blob.generation = 999

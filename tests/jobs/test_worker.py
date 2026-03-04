@@ -9,26 +9,24 @@ Tests focus on:
 - Graceful shutdown handling
 """
 
-import sys
 import os
-import json
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch
+
+import pytest
 
 from openlabels.jobs.worker import (
+    WORKER_STATE_KEY_PREFIX,
+    InMemoryWorkerState,
     Worker,
     WorkerStateManager,
-    InMemoryWorkerState,
-    get_worker_state_manager,
     close_worker_state_manager,
-    WORKER_STATE_KEY_PREFIX,
-    WORKER_STATE_TTL_SECONDS,
+    get_worker_state_manager,
 )
 
 
@@ -501,7 +499,7 @@ class TestWorkerEdgeCases:
         worker._state_manager.get_state.side_effect = Exception("Redis error")
         worker._state_manager.set_state.side_effect = Exception("Redis error")
 
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with patch('asyncio.sleep', new_callable=AsyncMock):
             # Run one iteration then exit
             worker.running = False
             await worker._concurrency_monitor()
@@ -514,7 +512,7 @@ class TestWorkerEdgeCases:
         worker.running = True
         worker._state_manager = None
 
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with patch('asyncio.sleep', new_callable=AsyncMock):
             # Run one iteration then exit
             worker.running = False
             await worker._concurrency_monitor()

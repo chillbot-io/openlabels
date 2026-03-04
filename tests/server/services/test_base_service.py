@@ -1,12 +1,11 @@
 """Tests for BaseService and TenantContext."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 
 from openlabels.server.services.base import BaseService, TenantContext
-
 
 # ---------------------------------------------------------------------------
 # TenantContext
@@ -156,8 +155,9 @@ class TestBaseServiceDB:
 
     @pytest.mark.asyncio
     async def test_paginate_empty(self, test_db):
-        from openlabels.server.models import Tenant
         from sqlalchemy import select
+
+        from openlabels.server.models import Tenant
 
         svc = BaseService(test_db, TenantContext(tenant_id=uuid4()), MagicMock())
         query = select(Tenant).where(Tenant.name == "nonexistent")

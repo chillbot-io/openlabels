@@ -21,9 +21,9 @@ secret scanning tools while still testing pattern detection.
 """
 
 import pytest
+
 from openlabels.core.detectors.secrets import SecretsDetector
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # TEST TOKEN BUILDERS - Construct fake tokens to avoid secret scanner detection

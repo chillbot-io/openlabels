@@ -5,15 +5,14 @@ Tests actual file system operations, filtering, and permission handling.
 """
 
 import os
-import stat
 import tempfile
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
+from openlabels.adapters.base import ExposureLevel, FileInfo, FilterConfig
 from openlabels.adapters.filesystem import FilesystemAdapter
-from openlabels.adapters.base import FileInfo, ExposureLevel, FilterConfig
 
 
 class TestFilesystemAdapterListFiles:

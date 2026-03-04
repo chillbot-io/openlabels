@@ -2,17 +2,16 @@
 
 import pytest
 
+from openlabels.core.policies.engine import PolicyEngine
+from openlabels.core.policies.loader import load_builtin_policies
 from openlabels.core.policies.schema import (
     EntityMatch,
+    HandlingRequirements,
     PolicyCategory,
     PolicyPack,
     PolicyTrigger,
     RiskLevel,
-    HandlingRequirements,
 )
-from openlabels.core.policies.engine import PolicyEngine
-from openlabels.core.policies.loader import load_builtin_policies
-
 
 # ============================================================================
 # Fixtures

@@ -6,16 +6,21 @@ beyond their assigned permissions (vertical privilege escalation)
 and cannot access other users' resources (horizontal privilege escalation).
 """
 
-import pytest
-from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, patch, MagicMock
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from openlabels.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_optional_user,
+    require_admin,
+)
 from openlabels.server.app import app
 from openlabels.server.db import get_session
 from openlabels.server.dependencies import get_db_session
-from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
-from openlabels.server.models import Tenant, User, ScanTarget, ScanJob
+from openlabels.server.models import ScanJob, ScanTarget, Tenant, User
 
 
 @pytest.fixture
@@ -99,14 +104,14 @@ async def viewer_client(test_db):
     app.dependency_overrides[require_admin] = override_require_admin
 
     from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
     from openlabels.server.routes.remediation import limiter as remediation_limiter
     from openlabels.server.routes.scans import limiter as scans_limiter
-    from openlabels.server.routes.auth import limiter as auth_limiter
 
     limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
-    original_states = [l.enabled for l in limiters]
-    for l in limiters:
-        l.enabled = False
+    original_states = [limiter.enabled for limiter in limiters]
+    for limiter in limiters:
+        limiter.enabled = False
 
     mock_cache = MagicMock()
     mock_cache.is_redis_connected = False
@@ -118,8 +123,8 @@ async def viewer_client(test_db):
         async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             yield client, test_tenant, viewer_user, admin_user, target, test_db
 
-    for l, state in zip(limiters, original_states):
-        l.enabled = state
+    for limiter, state in zip(limiters, original_states, strict=False):
+        limiter.enabled = state
     app.dependency_overrides.clear()
 
 
@@ -128,7 +133,7 @@ class TestRoleBasedAccessControl:
 
     async def test_viewer_cannot_create_targets(self, viewer_client):
         """Viewer role should not be able to create scan targets."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         client, tenant, viewer, admin, target, test_db = viewer_client
 
@@ -157,7 +162,7 @@ class TestRoleBasedAccessControl:
 
     async def test_viewer_cannot_start_scans(self, viewer_client):
         """Viewer role should not be able to start scans."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         client, tenant, viewer, admin, target, test_db = viewer_client
 
@@ -306,8 +311,8 @@ class TestAuthenticationBypass:
 
     async def test_missing_auth_header_rejected(self, test_db):
         """Requests without authentication should be rejected in production mode."""
-        from unittest.mock import patch, MagicMock
-        from openlabels.server.config import get_settings
+        from unittest.mock import MagicMock, patch
+
 
         # Mock settings to simulate production auth mode
         mock_settings = MagicMock()
@@ -338,7 +343,7 @@ class TestAuthenticationBypass:
         ValueError or TokenInvalidError for garbage input, and
         get_current_user converts those to 401.
         """
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
@@ -365,7 +370,7 @@ class TestAuthenticationBypass:
 
     async def test_malformed_auth_header_rejected(self, test_db):
         """Malformed authorization headers should be rejected in production mode."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"
@@ -421,7 +426,7 @@ class TestAPIKeyAuthentication:
 
     async def test_random_api_key_rejected(self, test_db):
         """Random API keys should be rejected in production mode."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         mock_settings = MagicMock()
         mock_settings.auth.provider = "azure_ad"

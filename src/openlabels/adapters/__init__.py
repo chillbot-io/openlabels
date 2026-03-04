@@ -41,6 +41,8 @@ __all__ = [
     "ExposureLevel",
     "FilterConfig",
     "PartitionSpec",
+    "LABEL_COMPATIBLE_EXTENSIONS",
+    "is_label_compatible",
     "supports_remediation",
     "FilesystemAdapter",
     "SharePointAdapter",

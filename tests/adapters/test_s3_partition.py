@@ -8,14 +8,15 @@ Tests cover:
 - Boundary key handling (stop pagination early)
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from openlabels.adapters.base import PartitionSpec
 

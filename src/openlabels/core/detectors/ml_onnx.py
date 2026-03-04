@@ -737,7 +737,7 @@ class ONNXDetector(BaseDetector):
         # Pre-compute word boundaries for O(log n) lookups
         word_starts, word_ends = build_word_boundaries(text)
 
-        for idx, (pred, conf) in enumerate(zip(predictions, confidences)):
+        for idx, (pred, conf) in enumerate(zip(predictions, confidences, strict=False)):
             if idx >= len(offset_mapping):
                 break
             start, end = offset_mapping[idx]
@@ -859,7 +859,7 @@ class ONNXDetector(BaseDetector):
         # Recalculate end position
         last_word = words[-1]
         search_start = 0
-        for i, word in enumerate(words[:-1]):
+        for _i, word in enumerate(words[:-1]):
             pos = span_text.find(word, search_start)
             if pos != -1:
                 search_start = pos + len(word)

@@ -1,10 +1,9 @@
 """Tests for per-entity-type confidence thresholds in the orchestrator."""
 
-import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.detectors.config import DetectionConfig
 from openlabels.core.detectors.orchestrator import DetectorOrchestrator
+from openlabels.core.types import Span, Tier
 
 
 def _make_span(

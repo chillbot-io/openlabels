@@ -1,19 +1,20 @@
 """Tests for permission lockdown operations."""
 
 import platform
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from openlabels.remediation.permissions import (
-    lock_down,
-    get_current_acl,
-    validate_principal_name,
-    DEFAULT_WINDOWS_PRINCIPALS,
-    DEFAULT_UNIX_PRINCIPALS,
-)
-from openlabels.remediation.base import RemediationAction
+import pytest
+
 from openlabels.exceptions import RemediationPermissionError
+from openlabels.remediation.base import RemediationAction
+from openlabels.remediation.permissions import (
+    DEFAULT_UNIX_PRINCIPALS,
+    DEFAULT_WINDOWS_PRINCIPALS,
+    get_current_acl,
+    lock_down,
+    validate_principal_name,
+)
 
 
 class TestLockDownValidation:

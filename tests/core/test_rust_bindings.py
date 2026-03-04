@@ -8,8 +8,8 @@ Tests focus on:
 - Pattern definitions and matching
 """
 
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestPatternMatcherWrapper:
@@ -68,7 +68,7 @@ class TestPatternMatcherWrapper:
 
     def test_find_matches_returns_list(self):
         """find_matches should return a list of MatchResult objects with correct attributes."""
-        from openlabels.core._rust import PatternMatcherWrapper, MatchResult
+        from openlabels.core._rust import MatchResult, PatternMatcherWrapper
 
         patterns = [("DIGITS", r"\d{4}", None, 0.7)]
         matcher = PatternMatcherWrapper(patterns)
@@ -646,6 +646,7 @@ class TestBuiltinPatterns:
     def test_builtin_patterns_valid_regex(self):
         """All BUILTIN_PATTERNS should have valid regex."""
         import re
+
         from openlabels.core._rust.patterns_py import BUILTIN_PATTERNS
 
         for name, regex, _, _ in BUILTIN_PATTERNS:
@@ -742,7 +743,7 @@ class TestPatternMatcherIntegration:
         results = matcher.find_matches(text)
 
         # Should find at least SSN, email, and phone
-        pattern_types = set(r.pattern_name for r in results)
+        pattern_types = {r.pattern_name for r in results}
         assert "SSN" in pattern_types or any("SSN" in p for p in pattern_types)
         assert "EMAIL" in pattern_types
 

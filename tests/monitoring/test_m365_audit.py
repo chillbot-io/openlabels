@@ -17,9 +17,7 @@ These tests validate:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,12 +25,11 @@ from pydantic import SecretStr
 
 from openlabels.monitoring.providers.base import EventProvider, RawAccessEvent
 from openlabels.monitoring.providers.m365_audit import (
-    M365AuditProvider,
-    M365_OPERATION_MAP,
     EVENT_SOURCE,
+    M365_OPERATION_MAP,
+    M365AuditProvider,
     _parse_audit_record,
 )
-
 
 # =====================================================================
 # Helpers
@@ -694,8 +691,8 @@ class TestWebhookEndpoint:
         fastapi = pytest.importorskip("fastapi")
         from fastapi.testclient import TestClient
 
-        from openlabels.server.routes import webhooks
         from openlabels.monitoring.notification_queue import _m365_notifications
+        from openlabels.server.routes import webhooks
 
         app = fastapi.FastAPI()
         app.include_router(webhooks.router)
@@ -722,8 +719,8 @@ class TestWebhookEndpoint:
         fastapi = pytest.importorskip("fastapi")
         from fastapi.testclient import TestClient
 
-        from openlabels.server.routes import webhooks
         from openlabels.monitoring.notification_queue import _m365_notifications
+        from openlabels.server.routes import webhooks
 
         app = fastapi.FastAPI()
         app.include_router(webhooks.router)

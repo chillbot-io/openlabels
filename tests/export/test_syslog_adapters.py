@@ -1,6 +1,5 @@
 """Tests for QRadar and SyslogCEF SIEM adapters."""
 
-import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,21 +11,21 @@ from openlabels.export.adapters.syslog_cef import SyslogCEFAdapter
 
 
 def _make_record(**overrides) -> ExportRecord:
-    defaults = dict(
-        record_type="scan_result",
-        timestamp=datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
-        tenant_id="tenant-1",
-        file_path="/data/secret.txt",
-        risk_score=85,
-        risk_tier="HIGH",
-        entity_types=["SSN"],
-        entity_counts={"SSN": 3},
-        policy_violations=[],
-        action_taken=None,
-        user="alice@example.com",
-        source_adapter="filesystem",
-        metadata={},
-    )
+    defaults = {
+        "record_type": "scan_result",
+        "timestamp": datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
+        "tenant_id": "tenant-1",
+        "file_path": "/data/secret.txt",
+        "risk_score": 85,
+        "risk_tier": "HIGH",
+        "entity_types": ["SSN"],
+        "entity_counts": {"SSN": 3},
+        "policy_violations": [],
+        "action_taken": None,
+        "user": "alice@example.com",
+        "source_adapter": "filesystem",
+        "metadata": {},
+    }
     defaults.update(overrides)
     return ExportRecord(**defaults)
 

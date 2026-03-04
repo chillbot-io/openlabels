@@ -10,7 +10,6 @@ Tests focus on:
 - Host validation and input sanitization
 """
 
-import asyncio
 import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,23 +18,22 @@ from fastapi import HTTPException
 
 from openlabels.server.routes.credentials import VALID_SOURCE_TYPES
 from openlabels.server.routes.enumerate import (
-    EnumerateRequest,
-    EnumerateResponse,
-    EnumeratedResource,
-    _validate_host,
-    _validate_uuid,
-    _safe_json,
-    _enumerate_smb,
-    _enumerate_nfs,
-    _enumerate_s3,
-    _enumerate_gcs,
-    _enumerate_azure_blob,
-    _enumerate_sharepoint,
-    _enumerate_onedrive,
     _ENUMERATORS,
     _PAGINATED_ENUMERATORS,
+    EnumeratedResource,
+    EnumerateRequest,
+    EnumerateResponse,
+    _enumerate_azure_blob,
+    _enumerate_gcs,
+    _enumerate_nfs,
+    _enumerate_onedrive,
+    _enumerate_s3,
+    _enumerate_sharepoint,
+    _enumerate_smb,
+    _safe_json,
+    _validate_host,
+    _validate_uuid,
 )
-
 
 # ── Pydantic model validation ───────────────────────────────────────
 
@@ -68,19 +66,19 @@ class TestEnumerateRequestValidation:
         assert req.use_m365_session is True
 
     def test_page_must_be_positive(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             EnumerateRequest(source_type="smb", page=0)
 
     def test_page_size_must_be_at_least_1(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             EnumerateRequest(source_type="smb", page_size=0)
 
     def test_page_size_max_500(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             EnumerateRequest(source_type="smb", page_size=501)
 
     def test_source_type_required(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             EnumerateRequest()
 
 
@@ -312,7 +310,7 @@ class TestEnumerateSMB:
                 # kwargs might be in the positional args
                 kwargs = call_args[0][-1] if len(call_args[0]) > 2 else {}
             # The env kwarg should contain PASSWD
-            env = kwargs.get("env") or (call_args[1] or {}).get("env")
+            kwargs.get("env") or (call_args[1] or {}).get("env")
             # Due to asyncio.to_thread calling subprocess.run, the env is passed
             # as a keyword arg to subprocess.run
             assert isinstance(cmd, list)
@@ -655,7 +653,7 @@ class TestEnumerateSharePoint:
     async def test_sharepoint_auth_failure_raises_401(self):
         """OAuth token failure should raise HTTP 401."""
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             pytest.skip("httpx not installed")
 
@@ -683,7 +681,7 @@ class TestEnumerateSharePoint:
     async def test_sharepoint_lists_sites(self):
         """Successful enumeration should return site resources."""
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             pytest.skip("httpx not installed")
 
@@ -739,7 +737,7 @@ class TestEnumerateSharePoint:
     async def test_sharepoint_pagination_has_more(self):
         """When response has more items than page_size, has_more should be True."""
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             pytest.skip("httpx not installed")
 
@@ -805,7 +803,7 @@ class TestEnumerateOneDrive:
     async def test_onedrive_lists_users(self):
         """Successful enumeration should return user drive resources."""
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             pytest.skip("httpx not installed")
 
@@ -852,7 +850,7 @@ class TestEnumerateOneDrive:
     async def test_onedrive_auth_failure(self):
         """OAuth failure should raise HTTP 401."""
         try:
-            import httpx
+            import httpx  # noqa: F401
         except ImportError:
             pytest.skip("httpx not installed")
 
@@ -1332,7 +1330,7 @@ class TestEnumerateEndpoint:
             mock_return = ([], False) if source_type in _PAGINATED_ENUMERATORS else []
 
             with patch(
-                f"openlabels.server.routes.enumerate._ENUMERATORS",
+                "openlabels.server.routes.enumerate._ENUMERATORS",
                 {st: AsyncMock(return_value=mock_return) for st in VALID_SOURCE_TYPES},
             ):
                 with patch(
@@ -1523,7 +1521,7 @@ class TestSubprocessSafety:
             mock_thread.return_value = mock_result
             await _enumerate_smb({"host": "server.local"})
 
-            call_kwargs = mock_thread.call_args[0]
+            mock_thread.call_args[0]
             # subprocess.run is called with keyword args including timeout
             # The call is: asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=15, ...)
             # We need to check the keyword args passed to to_thread which are forwarded

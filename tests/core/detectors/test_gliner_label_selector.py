@@ -11,9 +11,8 @@ Tests cover:
 import pytest
 
 from openlabels.core.detectors.gliner_label_selector import (
-    ContentCategory,
-    ContentProfile,
     _MIN_LABELS,
+    ContentCategory,
     profile_content,
 )
 

@@ -9,24 +9,22 @@ Covers:
 - Edge cases: no pronouns, single entity, empty input, no anchors
 """
 
-import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.coref import (
-    NAME_TYPES,
     PRONOUNS,
-    _split_sentences,
+    _cluster_mentions,
+    _get_name_words,
     _get_sentence_index,
     _infer_gender,
+    _link_partial_names,
+    _normalize_name_for_matching,
     _pronoun_matches_gender,
     _resolve_with_rules,
-    _link_partial_names,
-    _get_name_words,
-    _normalize_name_for_matching,
-    _cluster_mentions,
+    _split_sentences,
     _token_spans_to_char_spans,
     resolve_coreferences,
 )
+from openlabels.core.types import Span, Tier
 
 # ---------------------------------------------------------------------------
 # Helpers

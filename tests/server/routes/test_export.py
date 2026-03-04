@@ -8,7 +8,6 @@ Tests focus on:
 - Error handling when SIEM is disabled
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 

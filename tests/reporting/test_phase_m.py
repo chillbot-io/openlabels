@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Configuration ────────────────────────────────────────────────────
 
 
@@ -45,6 +44,7 @@ class TestModuleStructure:
 
     def test_engine_generate_is_coroutine(self):
         import asyncio
+
         from openlabels.reporting.engine import ReportEngine
 
         assert asyncio.iscoroutinefunction(ReportEngine.generate)
@@ -75,7 +75,7 @@ class TestModuleStructure:
 
 class TestTemplates:
     def test_all_template_files_exist(self):
-        from openlabels.reporting.engine import TEMPLATE_DIR, REPORT_TYPES
+        from openlabels.reporting.engine import REPORT_TYPES, TEMPLATE_DIR
 
         for rt in REPORT_TYPES:
             assert (TEMPLATE_DIR / f"{rt}.html").exists(), f"Missing template: {rt}.html"
@@ -231,7 +231,7 @@ class TestReportRenderer:
 class TestReportEngine:
     @pytest.mark.asyncio
     async def test_generate_creates_file(self, tmp_path):
-        from openlabels.reporting.engine import ReportEngine, ReportRenderer
+        from openlabels.reporting.engine import ReportEngine
 
         engine = ReportEngine(storage_dir=tmp_path)
         data = TestReportRenderer()._sample_data()

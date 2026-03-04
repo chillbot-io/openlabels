@@ -1,7 +1,6 @@
 """Tests for CatalogStorage protocol and LocalStorage backend."""
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 from openlabels.analytics.storage import CatalogStorage, LocalStorage, create_storage

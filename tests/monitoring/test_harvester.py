@@ -17,7 +17,7 @@ These tests validate:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,18 +25,19 @@ from uuid import uuid4
 
 import pytest
 
-from openlabels.monitoring.base import AccessEvent, AccessAction
+from openlabels.monitoring.base import AccessAction, AccessEvent
+from openlabels.monitoring.harvester import EventHarvester
 from openlabels.monitoring.providers.base import EventProvider, RawAccessEvent
+from openlabels.monitoring.providers.linux import (
+    AuditdProvider,
+)
+from openlabels.monitoring.providers.linux import (
+    _access_event_to_raw as _linux_access_event_to_raw,
+)
 from openlabels.monitoring.providers.windows import (
     WindowsSACLProvider,
     _access_event_to_raw,
 )
-from openlabels.monitoring.providers.linux import (
-    AuditdProvider,
-    _access_event_to_raw as _linux_access_event_to_raw,
-)
-from openlabels.monitoring.harvester import EventHarvester
-
 
 # =====================================================================
 # Fixtures and helpers

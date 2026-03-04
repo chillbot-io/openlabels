@@ -12,8 +12,6 @@ Tests include:
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -75,6 +73,7 @@ class TestStatusCommand:
     def test_status_shows_server_offline_on_timeout(self, runner):
         """status should show server as offline on timeout."""
         import httpx
+
         from openlabels.cli.commands.system import status
 
         mock_client = MagicMock()
@@ -94,6 +93,7 @@ class TestStatusCommand:
     def test_status_shows_server_offline_on_connect_error(self, runner):
         """status should show server as offline on connection error."""
         import httpx
+
         from openlabels.cli.commands.system import status
 
         mock_client = MagicMock()
@@ -409,7 +409,7 @@ class TestRestoreCommand:
         mock_client.__exit__ = MagicMock(return_value=False)
 
         with patch("openlabels.cli.commands.system.api_client") as mock_api, \
-             patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+             patch("subprocess.Popen", return_value=mock_proc):
             mock_api.return_value = mock_client
 
             result = runner.invoke(restore, [
@@ -553,7 +553,7 @@ class TestSubprocessCommandConstruction:
              patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             mock_api.return_value = mock_client
 
-            result = runner.invoke(backup, [
+            runner.invoke(backup, [
                 "--output", output_dir,
                 "--include-db",
                 "--db-url", "postgresql://myuser:mypass@dbhost:5432/mydb",
@@ -597,7 +597,7 @@ class TestSubprocessCommandConstruction:
              patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             mock_api.return_value = mock_client
 
-            result = runner.invoke(restore, [
+            runner.invoke(restore, [
                 "--from", str(backup_dir),
                 "--include-db",
                 "--db-url", "postgresql://restoreuser:restorepass@restorehost:5433/restoredb",

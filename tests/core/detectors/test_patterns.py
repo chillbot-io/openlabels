@@ -22,20 +22,20 @@ Also tests:
 """
 
 import pytest
+
 from openlabels.core.detectors.patterns import (
-    PatternDetector,
-    _validate_ip,
-    _validate_phone,
-    _validate_date,
-    _validate_age,
-    _validate_luhn,
-    _validate_vin,
-    _validate_ssn_context,
-    _is_false_positive_name,
     PATTERNS,
+    PatternDetector,
+    _is_false_positive_name,
+    _validate_age,
+    _validate_date,
+    _validate_ip,
+    _validate_luhn,
+    _validate_phone,
+    _validate_ssn_context,
+    _validate_vin,
 )
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # DETECTOR INITIALIZATION TESTS
@@ -837,7 +837,7 @@ class TestPatternRegistration:
             # Pattern should be compiled regex
             assert hasattr(p.pattern, 'finditer')
             # Entity type should be non-empty string that follows naming convention
-            assert p.entity_type, f"Pattern has empty entity_type"
+            assert p.entity_type, "Pattern has empty entity_type"
             assert p.entity_type == p.entity_type.upper(), (
                 f"Entity type {p.entity_type!r} should be uppercase"
             )

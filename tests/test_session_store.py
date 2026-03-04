@@ -9,11 +9,12 @@ Run with:
     pytest tests/test_session_store.py -v
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from openlabels.server.session import SessionStore, PendingAuthStore
+import pytest
+
+from openlabels.server.session import PendingAuthStore, SessionStore
 
 
 @pytest.fixture
@@ -130,7 +131,6 @@ class TestSessionStoreExpiration:
 
     async def test_expired_session_returns_none(self, session_store):
         """Expired session should return None."""
-        from openlabels.server.models import Session
 
         session_id = f"test-expired-{uuid4()}"
 

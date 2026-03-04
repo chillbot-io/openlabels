@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from openlabels.export.adapters.base import SIEMAdapter
-
 
 # ── Configuration ────────────────────────────────────────────────────
 
@@ -40,16 +35,16 @@ class TestSIEMExportSettings:
 
 class TestBuildAdaptersFromSettings:
     def test_no_adapters_when_empty(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         cfg = SIEMExportSettings()
         adapters = build_adapters_from_settings(cfg)
         assert adapters == []
 
     def test_splunk_adapter_created(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         cfg = SIEMExportSettings(
             splunk_hec_url="https://splunk:8088",
@@ -60,8 +55,8 @@ class TestBuildAdaptersFromSettings:
         assert adapters[0].format_name() == "splunk"
 
     def test_multiple_adapters_created(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         cfg = SIEMExportSettings(
             splunk_hec_url="https://splunk:8088",
@@ -74,8 +69,8 @@ class TestBuildAdaptersFromSettings:
         assert names == {"splunk", "qradar", "syslog_cef"}
 
     def test_sentinel_needs_both_fields(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         # Only workspace_id, no shared_key -> no adapter
         cfg = SIEMExportSettings(sentinel_workspace_id="ws123")
@@ -83,8 +78,8 @@ class TestBuildAdaptersFromSettings:
         assert len(adapters) == 0
 
     def test_elastic_adapter_created(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         cfg = SIEMExportSettings(elastic_hosts=["https://es:9200"])
         adapters = build_adapters_from_settings(cfg)
@@ -92,8 +87,8 @@ class TestBuildAdaptersFromSettings:
         assert adapters[0].format_name() == "elastic"
 
     def test_sentinel_created_with_both_fields(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         key = base64.b64encode(b"0" * 64).decode()
         cfg = SIEMExportSettings(
@@ -105,8 +100,8 @@ class TestBuildAdaptersFromSettings:
         assert adapters[0].format_name() == "sentinel"
 
     def test_all_five_adapters_created(self):
-        from openlabels.server.config import SIEMExportSettings
         from openlabels.export.setup import build_adapters_from_settings
+        from openlabels.server.config import SIEMExportSettings
 
         key = base64.b64encode(b"0" * 64).decode()
         cfg = SIEMExportSettings(

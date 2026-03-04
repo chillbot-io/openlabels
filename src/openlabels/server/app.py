@@ -28,6 +28,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi import Limiter
 
 from openlabels import __version__
+from openlabels.server.dependencies import check_tenant_rate_limit
 from openlabels.server.error_handlers import register_error_handlers
 from openlabels.server.lifespan import lifespan
 from openlabels.server.middleware import register_middleware
@@ -59,7 +60,6 @@ from openlabels.server.routes import (
     ws,
     ws_events,
 )
-from openlabels.server.dependencies import check_tenant_rate_limit
 from openlabels.server.utils import get_client_ip
 
 # API version constants

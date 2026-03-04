@@ -4,9 +4,9 @@ Unified test configuration for OpenLabels.
 Handles optional dependencies (OCR, ML) gracefully.
 """
 
-import sys
+import os
+
 import pytest
-from typing import List, Dict, Any
 
 
 def pytest_configure(config):
@@ -23,8 +23,7 @@ def pytest_configure(config):
 # CORE TYPE IMPORTS
 # =============================================================================
 
-from openlabels.core.types import Span, Tier, RiskTier
-
+from openlabels.core.types import Span, Tier  # noqa: E402
 
 # =============================================================================
 # SPAN FACTORY FUNCTIONS
@@ -69,7 +68,7 @@ def make_span(
     )
 
 
-def make_spans_from_text(text: str, annotations: list) -> List[Span]:
+def make_spans_from_text(text: str, annotations: list) -> list[Span]:
     """
     Create spans from a text string and list of annotations.
 
@@ -291,8 +290,6 @@ def sample_ibans():
 # DATABASE FIXTURES (for API tests)
 # =============================================================================
 
-import os
-
 def _try_setup_system_postgres():
     """Auto-detect and configure system PostgreSQL for testing.
 
@@ -427,10 +424,11 @@ async def test_db(database_url):
     if not database_url:
         pytest.skip("PostgreSQL not available - set TEST_DATABASE_URL")
 
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-    from sqlalchemy.orm import sessionmaker
-    from openlabels.server.models import Base
     from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from openlabels.server.models import Base
 
     global _tables_initialized
 
@@ -527,12 +525,18 @@ async def test_client(test_db):
     """
     import random
     import string
-    from uuid import UUID
-    from httpx import AsyncClient, ASGITransport
+
+    from httpx import ASGITransport, AsyncClient
+
+    from openlabels.auth.dependencies import (
+        CurrentUser,
+        get_current_user,
+        get_optional_user,
+        require_admin,
+    )
     from openlabels.server.app import app
     from openlabels.server.db import get_session
     from openlabels.server.dependencies import get_db_session
-    from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin, CurrentUser
     from openlabels.server.models import Tenant, User
 
     # Generate unique suffix to prevent test data collisions
@@ -592,19 +596,19 @@ async def test_client(test_db):
 
     # Disable rate limiting for tests - collect all limiters from various modules
     from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
     from openlabels.server.routes.remediation import limiter as remediation_limiter
     from openlabels.server.routes.scans import limiter as scans_limiter
-    from openlabels.server.routes.auth import limiter as auth_limiter
 
     limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
-    original_states = [l.enabled for l in limiters]
-    for l in limiters:
-        l.enabled = False
+    original_states = [limiter.enabled for limiter in limiters]
+    for limiter in limiters:
+        limiter.enabled = False
 
     # Patch lifespan-related functions to prevent the app from creating its
     # own DB engine, connecting to Redis, or starting the scheduler during tests.
     # The test_db fixture already provides the DB session.
-    from unittest.mock import AsyncMock, patch, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
     mock_cache = MagicMock()
     mock_cache.is_redis_connected = False
     with patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
@@ -616,7 +620,7 @@ async def test_client(test_db):
             yield client
 
     # Re-enable rate limiting
-    for l, state in zip(limiters, original_states):
-        l.enabled = state
+    for limiter, state in zip(limiters, original_states, strict=False):
+        limiter.enabled = state
 
     app.dependency_overrides.clear()

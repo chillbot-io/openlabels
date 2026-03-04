@@ -16,7 +16,7 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from openlabels.core.constants import DEFAULT_QUERY_LIMIT
 from openlabels.server.models import (

@@ -4,11 +4,8 @@ Tests for labeling engine.
 Tests cover LabelCache, LabelResult, TokenCache, and LabelingEngine behavior.
 """
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
-
-import pytest
-
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 # =============================================================================
 # LABEL CACHE TESTS
@@ -184,8 +181,9 @@ class TestLabelingEngineConfiguration:
 
     def test_graph_client_injected(self):
         """Injected GraphClient should be used directly."""
-        from openlabels.labeling.engine import LabelingEngine
         from unittest.mock import MagicMock
+
+        from openlabels.labeling.engine import LabelingEngine
 
         mock_client = MagicMock()
         engine = LabelingEngine(
@@ -207,8 +205,8 @@ class TestLabelingEngineRouting:
 
     async def test_apply_label_routes_filesystem_to_local(self):
         """Filesystem files should route to local labeling."""
-        from openlabels.labeling.engine import LabelingEngine
         from openlabels.adapters.base import FileInfo
+        from openlabels.labeling.engine import LabelingEngine
 
         engine = LabelingEngine(
             tenant_id="t", client_id="c", client_secret="s"
@@ -233,8 +231,8 @@ class TestLabelingEngineRouting:
 
     async def test_apply_label_routes_sharepoint_to_graph(self):
         """SharePoint files should route to Graph API."""
-        from openlabels.labeling.engine import LabelingEngine
         from openlabels.adapters.base import FileInfo
+        from openlabels.labeling.engine import LabelingEngine
 
         engine = LabelingEngine(
             tenant_id="t", client_id="c", client_secret="s"
@@ -260,8 +258,8 @@ class TestLabelingEngineRouting:
 
     async def test_apply_label_routes_onedrive_to_graph(self):
         """OneDrive files should route to Graph API."""
-        from openlabels.labeling.engine import LabelingEngine
         from openlabels.adapters.base import FileInfo
+        from openlabels.labeling.engine import LabelingEngine
 
         engine = LabelingEngine(
             tenant_id="t", client_id="c", client_secret="s"
@@ -287,8 +285,8 @@ class TestLabelingEngineRouting:
 
     async def test_apply_label_fails_for_unknown_adapter(self):
         """Unknown adapter should return failure."""
-        from openlabels.labeling.engine import LabelingEngine
         from openlabels.adapters.base import FileInfo
+        from openlabels.labeling.engine import LabelingEngine
 
         engine = LabelingEngine(
             tenant_id="t", client_id="c", client_secret="s"

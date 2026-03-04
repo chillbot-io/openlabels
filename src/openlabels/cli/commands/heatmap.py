@@ -14,8 +14,8 @@ import click
 
 from openlabels.cli.utils import collect_files
 from openlabels.core.constants import MAX_DECOMPRESSED_SIZE
-from openlabels.core.types import ExposureLevel, RiskTier
 from openlabels.core.scoring.scorer import TIER_THRESHOLDS
+from openlabels.core.types import ExposureLevel, RiskTier
 
 logger = logging.getLogger(__name__)
 

@@ -9,17 +9,13 @@ Tests cover:
 - Empty input handling
 """
 
-import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.entity_proximity import (
-    DEFAULT_PROXIMITY_CHARS,
     MAX_CONFIDENCE_BOOST,
-    MIN_ANCHOR_CONFIDENCE,
     EntityCluster,
-    ProximityResult,
     analyze_proximity,
 )
+from openlabels.core.types import Span, Tier
 
 
 def _make_span(

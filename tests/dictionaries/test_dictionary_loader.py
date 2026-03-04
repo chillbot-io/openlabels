@@ -10,12 +10,8 @@ Tests cover:
 - Edge cases (empty terms, special characters)
 """
 
+
 import pytest
-import logging
-from pathlib import Path
-from unittest.mock import patch, mock_open, MagicMock
-import tempfile
-import os
 
 from openlabels.dictionaries import (
     DictionaryLoader,

@@ -20,7 +20,11 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from openlabels.server.config import get_settings
 from openlabels.server.logging import get_request_id, set_request_id, set_tenant_id, set_user_id
-from openlabels.server.metrics import http_active_connections, record_http_request, update_db_pool_metrics
+from openlabels.server.metrics import (
+    http_active_connections,
+    record_http_request,
+    update_db_pool_metrics,
+)
 from openlabels.server.middleware.csrf import CSRFMiddleware
 
 logger = logging.getLogger(__name__)

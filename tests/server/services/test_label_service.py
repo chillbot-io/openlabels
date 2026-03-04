@@ -476,6 +476,6 @@ class TestInvalidateLabelCaches:
 
         with patch(
             "openlabels.server.services.label_service.LabelService._invalidate_label_caches"
-        ) as mock_invalidate:
+        ):
             # Should not raise even if underlying cache is unavailable
             svc._invalidate_label_caches()

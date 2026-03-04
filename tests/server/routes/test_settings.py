@@ -10,7 +10,6 @@ Tests focus on:
 - HTMX response headers
 """
 
-import pytest
 
 
 class TestUpdateAzureSettings:

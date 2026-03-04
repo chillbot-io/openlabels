@@ -4,8 +4,9 @@ Tests for adapter base classes and filter logic.
 Tests actual behavior of FilterConfig, ExposureLevel ordering, and FileInfo.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 
 class TestExposureLevel:
@@ -40,7 +41,7 @@ class TestFileInfo:
 
     def test_defaults_to_private_exposure(self):
         """FileInfo should default to PRIVATE exposure for security."""
-        from openlabels.adapters.base import FileInfo, ExposureLevel
+        from openlabels.adapters.base import ExposureLevel, FileInfo
 
         info = FileInfo(
             path="/test/file.txt",
@@ -70,7 +71,7 @@ class TestFileInfo:
 
     def test_stores_all_provided_values(self):
         """FileInfo should correctly store all provided values."""
-        from openlabels.adapters.base import FileInfo, ExposureLevel
+        from openlabels.adapters.base import ExposureLevel, FileInfo
 
         now = datetime.now()
         info = FileInfo(
@@ -101,7 +102,7 @@ class TestFilterConfig:
 
     def test_excludes_temp_file_extensions(self):
         """Should exclude common temp file extensions by default."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(exclude_temp_files=True)
 
@@ -118,7 +119,7 @@ class TestFilterConfig:
 
     def test_excludes_system_directories(self):
         """Should exclude system/build directories by default."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(exclude_system_dirs=True)
 
@@ -141,7 +142,7 @@ class TestFilterConfig:
 
     def test_includes_normal_files(self):
         """Should include normal source files."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig()
 
@@ -163,7 +164,7 @@ class TestFilterConfig:
 
     def test_respects_size_limits(self):
         """Should filter files by size limits."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(
             min_size_bytes=100,
@@ -186,7 +187,7 @@ class TestFilterConfig:
 
     def test_excludes_specified_accounts(self):
         """Should exclude files owned by specified accounts."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(
             exclude_accounts=["system@domain.com", "svc_*"],
@@ -217,7 +218,7 @@ class TestFilterConfig:
 
     def test_extension_exclusion_is_case_insensitive(self):
         """Extension exclusion should be case-insensitive."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(
             exclude_extensions=["TMP", "BAK"],
@@ -235,7 +236,7 @@ class TestFilterConfig:
 
     def test_custom_exclusion_patterns(self):
         """Should support custom glob patterns for exclusion."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(
             exclude_patterns=["*.log", "backup_*/*"],
@@ -248,7 +249,7 @@ class TestFilterConfig:
 
     def test_no_filters_includes_everything(self):
         """With all filters disabled, should include any file."""
-        from openlabels.adapters.base import FilterConfig, FileInfo
+        from openlabels.adapters.base import FileInfo, FilterConfig
 
         config = FilterConfig(
             exclude_temp_files=False,

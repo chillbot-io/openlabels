@@ -5,20 +5,21 @@ Tests filter execution against scan results with strong assertions.
 All comparison operators, functions, and logical operators are tested.
 """
 
-import pytest
-from dataclasses import dataclass
-from typing import Dict, Optional
+from __future__ import annotations
 
-from openlabels.cli.filter_parser import parse_filter
+from dataclasses import dataclass
+
+import pytest
+
 from openlabels.cli.filter_executor import (
+    _compare,
+    _get_entity_count,
+    _get_field_value,
     execute_filter,
     filter_scan_results,
     validate_filter,
-    _get_field_value,
-    _compare,
-    _get_entity_count,
 )
-
+from openlabels.cli.filter_parser import parse_filter
 
 # =============================================================================
 # TEST FIXTURES
@@ -31,9 +32,9 @@ class MockScanResult:
     file_name: str
     risk_score: int
     risk_tier: str
-    entity_counts: Dict[str, int]
-    exposure_level: Optional[str] = None
-    owner: Optional[str] = None
+    entity_counts: dict[str, int]
+    exposure_level: str | None = None
+    owner: str | None = None
     total_entities: int = 0
 
 

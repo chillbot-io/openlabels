@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openlabels.adapters.base import FileInfo, ExposureLevel
+from openlabels.adapters.base import FileInfo
 
 
 def _mock_paged_iterator(items):

@@ -10,7 +10,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 from slowapi.errors import RateLimitExceeded
-
 from sqlalchemy.exc import SQLAlchemyError
 
 from openlabels.exceptions import (
@@ -253,7 +252,7 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: Exception,
     ) -> JSONResponse:
         request_id = get_request_id()
-        settings = get_settings()
+        get_settings()
 
         logger.exception(
             "Unhandled exception: %s", exc,

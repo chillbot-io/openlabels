@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.server.dependencies import DbSessionDep, TenantContextDep
-from openlabels.server.models import DirectoryTree, FileInventory, FolderInventory, ScanResult, SecurityDescriptor
+from openlabels.server.models import (
+    DirectoryTree,
+    FileInventory,
+    FolderInventory,
+    ScanResult,
+    SecurityDescriptor,
+)
 
 router = APIRouter()
 

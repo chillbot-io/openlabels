@@ -1,6 +1,5 @@
 """Tests for ResultService."""
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -18,7 +17,7 @@ def _make_service(session, tenant_id):
 @pytest.fixture
 async def result_fixtures(test_db):
     """Create tenant, job, and sample results."""
-    from openlabels.server.models import Tenant, User, ScanTarget, ScanJob, ScanResult
+    from openlabels.server.models import ScanJob, ScanResult, ScanTarget, Tenant, User
 
     tenant = Tenant(name="Result Tenant", azure_tenant_id="result-test-tid")
     test_db.add(tenant)

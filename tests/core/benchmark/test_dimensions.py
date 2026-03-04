@@ -4,7 +4,6 @@ Verifies that the Singh & Narayanan 2025 difficulty dimensions are
 correctly assigned to benchmark samples.
 """
 
-import pytest
 
 from openlabels.core.benchmark.dataset import BenchmarkSample, GoldSpan
 from openlabels.core.benchmark.dimensions import (

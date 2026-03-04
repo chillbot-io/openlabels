@@ -30,26 +30,26 @@ Tests focus on:
 - Orphaned tasks cleanup
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
-from openlabels.jobs.tasks.scan import (
-    get_processor,
-    _check_cancellation,
-    _get_adapter,
-    _detect_and_score,
-    execute_scan_task,
-    CANCELLATION_CHECK_INTERVAL,
-)
+import pytest
+
 from openlabels.exceptions import AdapterError, JobError
+from openlabels.jobs.tasks.scan import (
+    _check_cancellation,
+    _detect_and_score,
+    _get_adapter,
+    execute_scan_task,
+    get_processor,
+)
 
 
 class TestGetProcessor:
@@ -180,7 +180,7 @@ class TestGetAdapter:
             )
             with patch('openlabels.jobs.tasks.scan.SharePointAdapter') as MockAdapter:
                 MockAdapter.return_value = MagicMock()
-                result = _get_adapter("sharepoint", {})
+                _get_adapter("sharepoint", {})
 
                 MockAdapter.assert_called_once()
 
@@ -196,7 +196,7 @@ class TestGetAdapter:
             )
             with patch('openlabels.jobs.tasks.scan.OneDriveAdapter') as MockAdapter:
                 MockAdapter.return_value = MagicMock()
-                result = _get_adapter("onedrive", {})
+                _get_adapter("onedrive", {})
 
                 MockAdapter.assert_called_once()
 

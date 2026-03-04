@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ from openlabels.server.crypto import (
     mask_config_credentials,
 )
 from openlabels.server.db import get_session
-from openlabels.server.errors import ErrorCode, raise_database_error
+from openlabels.server.errors import raise_database_error
 from openlabels.server.models import ScanTarget
 from openlabels.server.routes import audit_log, get_or_404
 from openlabels.server.schemas.pagination import (
@@ -319,7 +319,7 @@ def validate_s3_target_config(config: dict) -> dict:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid S3 endpoint_url: {exc}",
-            )
+            ) from exc
 
     return validated
 
@@ -405,7 +405,7 @@ class TargetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_target(cls, target: ScanTarget) -> "TargetResponse":
+    def from_target(cls, target: ScanTarget) -> TargetResponse:
         """Build a response with credential fields masked."""
         return cls(
             id=target.id,

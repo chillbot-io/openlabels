@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
 
 import httpx
 

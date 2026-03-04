@@ -4,25 +4,24 @@ Comprehensive tests for Microsoft Graph API client.
 Tests cover authentication, user lookups, error handling, and edge cases.
 """
 
-import sys
 import os
+import sys
 
 # Add src to path for direct import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
+import httpx
+import pytest
 from pydantic import SecretStr
 
 from openlabels.auth.graph import (
-    GraphUser,
     GraphClient,
+    GraphUser,
     get_graph_client,
     reset_graph_client,
-    GRAPH_API_BASE,
 )
 
 
@@ -121,7 +120,7 @@ class TestGraphClientInitialization:
         mock_settings.auth.client_secret = SecretStr("settings-secret")
 
         with patch("openlabels.auth.graph.get_settings", return_value=mock_settings):
-            with patch("openlabels.auth.graph.ConfidentialClientApplication") as MockMSAL:
+            with patch("openlabels.auth.graph.ConfidentialClientApplication"):
                 client = GraphClient(
                     tenant_id="explicit-tenant",
                     client_id="explicit-client",

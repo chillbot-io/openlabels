@@ -5,11 +5,9 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
-import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
 
-from openlabels.analytics.arrow_convert import _uuid_bytes, directory_tree_to_arrow
+from openlabels.analytics.arrow_convert import directory_tree_to_arrow
 from openlabels.analytics.schemas import DIRECTORY_TREE_SCHEMA
 
 
@@ -36,24 +34,24 @@ class FakeDirectoryTree:
 
 
 def _make_fake(**overrides) -> FakeDirectoryTree:
-    defaults = dict(
-        id=uuid4(),
-        tenant_id=uuid4(),
-        target_id=uuid4(),
-        dir_path="/data/test",
-        dir_name="test",
-        parent_id=uuid4(),
-        dir_ref=12345,
-        parent_ref=100,
-        sd_hash=b"\x00" * 32,
-        share_id=None,
-        dir_modified=datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
-        child_dir_count=3,
-        child_file_count=10,
-        flags=0,
-        discovered_at=datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
-        updated_at=datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
-    )
+    defaults = {
+        "id": uuid4(),
+        "tenant_id": uuid4(),
+        "target_id": uuid4(),
+        "dir_path": "/data/test",
+        "dir_name": "test",
+        "parent_id": uuid4(),
+        "dir_ref": 12345,
+        "parent_ref": 100,
+        "sd_hash": b"\x00" * 32,
+        "share_id": None,
+        "dir_modified": datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
+        "child_dir_count": 3,
+        "child_file_count": 10,
+        "flags": 0,
+        "discovered_at": datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2024, 6, 15, 12, 0, tzinfo=timezone.utc),
+    }
     defaults.update(overrides)
     return FakeDirectoryTree(**defaults)
 

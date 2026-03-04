@@ -49,8 +49,7 @@ _ADDRESS_SUFFIXES = frozenset({
     "trace", "club", "extension", "oval", "close",
     "mews", "row", "rise", "dell", "dell's",
     "walk", "path", "gate", "fort", "loaf",
-    "meadow", "passage", "dell",
-    # Administrative divisions — suppress "Wayne" in "Wayne County"
+    "meadow", "passage", # Administrative divisions — suppress "Wayne" in "Wayne County"
     "county", "county's", "township", "borough", "parish",
     "province", "district", "municipality",
     # Indian/South Asian suffixes
@@ -98,9 +97,8 @@ _AMBIGUOUS_FIRST = frozenset({
     "real", "lira", "rand", "peso", "euro",
     "tala", "won", "sol", "rial",
     # Food/drink words
-    "berry", "ginger", "sage", "basil", "pepper", "olive",
-    # Music/art terms
-    "aria", "tempo", "solo", "forte",
+    "berry", "ginger", "sage", "basil", "pepper", # Music/art terms
+    "tempo", "solo", "forte",
     # Nemotron PII FP analysis — common words detected as first names
     "tone", "yoga", "baha", "alto",
     # Common words often title-cased at sentence start
@@ -114,25 +112,21 @@ _AMBIGUOUS_FIRST = frozenset({
     # Nationalities/demonyms
     "omani", "thai", "czech", "irish", "welsh",
     "swiss", "dutch", "french", "german", "indian",
-    "roman", "latin", "arab", "asian", "roman",
-    # Technology/browser names
-    "safari", "chrome", "firefox", "pixel", "android",
+    "roman", "latin", "arab", "asian", # Technology/browser names
+    "chrome", "firefox", "android",
     # Misc common words from FP analysis
     "county", "advisory", "league", "guild", "forum",
     "manor", "ranch", "villa", "lodge", "haven",
-    "isle", "cove", "mesa", "glen", "dale",
-    "ridge", "creek", "grove", "knoll", "trace",
+    "isle", "cove", "mesa", "ridge", "creek", "grove", "knoll", "trace",
     # Gretel PII FP analysis — common words detected as names
     "loan", "reason", "room", "holder", "must",
     "case", "author", "price", "marine", "foster",
-    "lead", "chief", "judge", "bond", "major",
-    "bond", "chase", "cruz", "duke", "ember",
-    "haven", "journey", "justice", "liberty", "mason",
+    "lead", "chief", "judge", "bond", "chase", "cruz", "duke", "ember",
+    "journey", "justice", "liberty", "mason",
     "nelson", "porter", "ranger", "reign", "royal",
-    "scout", "sterling", "stone", "summit", "texas",
+    "scout", "stone", "summit", "texas",
     "titan", "urban", "valor", "virtue", "walker",
-    "warren", "wren", "drake", "genesis", "roman",
-    "smith", "john", "jane", "gates", "bell",
+    "warren", "wren", "drake", "genesis", "smith", "jane", "gates", "bell",
     "parks", "numbers", "access", "level", "record",
     "energy", "system", "defendant", "type",
     "region", "domain", "sector", "zone", "area",
@@ -148,7 +142,7 @@ _AMBIGUOUS_FIRST = frozenset({
     "born", "lost", "found", "gone", "came",
     "went", "fell", "kept", "meant", "brought",
     # AI4Privacy 10k FP analysis — top repeat offenders
-    "more", "link", "english", "fair", "company",
+    "more", "link", "english", "company",
     "read", "arts", "producer", "forward", "human",
     "york", "ireland", "france", "berlin", "london",
     "giulia", "eden", "madera", "lancaster", "colton",
@@ -180,10 +174,8 @@ _AMBIGUOUS_LAST = frozenset({
     # Additional from FP analysis
     "parent", "street", "hill", "hills", "river", "valley",
     "lake", "ocean", "gate", "town", "port", "mill",
-    "turn", "end", "rest", "hope", "will", "may",
-    "brown", "black", "red", "blue", "gray", "pink",
-    "east", "west", "north", "south",
-    "server", "media", "math", "web", "net",
+    "turn", "end", "rest", "hope", "will", "brown", "black", "red", "blue", "gray", "pink",
+    "east", "server", "media", "math", "web", "net",
     "franc", "real", "lira", "rand",
     # Browser/tech terms
     "safari", "chrome", "firefox", "android",
@@ -199,8 +191,8 @@ _AMBIGUOUS_LAST = frozenset({
     "villa", "lodge", "haven", "league",
     # Gretel PII FP analysis — common words detected as lastnames
     "loan", "reason", "room", "holder", "must", "sales",
-    "case", "author", "price", "marine", "foster",
-    "parks", "gates", "bell", "smith", "john", "jane",
+    "author", "marine", "foster",
+    "parks", "gates", "smith", "john", "jane",
     "numbers", "access", "level", "record", "energy",
     "system", "defendant", "type", "summit",
     "region", "domain", "sector", "zone", "area",
@@ -212,7 +204,7 @@ _AMBIGUOUS_LAST = frozenset({
     "line", "carrier", "amble", "christian", "woods",
     "nagar", "hanna", "reserved",
     # AI4Privacy 10k FP analysis
-    "more", "link", "english", "fair", "company",
+    "more", "english", "fair", "company",
     "read", "arts", "producer", "forward", "human",
     "york", "ireland", "france", "berlin", "london",
     "giulia", "eden", "madera", "lancaster", "colton",
@@ -259,7 +251,7 @@ _NEVER_NAMES = frozenset({
     "screen", "server", "software", "storage", "system",
     "update", "upload", "virtual", "website",
     # Financial terms
-    "account", "balance", "banking", "capital", "credit",
+    "balance", "banking", "capital", "credit",
     "currency", "deposit", "exchange", "finance", "fiscal",
     "insurance", "interest", "invoice", "payment", "premium",
     "revenue", "savings", "transfer",
@@ -286,7 +278,7 @@ _NEVER_NAMES = frozenset({
     "regulatory", "judicial", "legislative", "diplomatic",
     "wholesale", "retail", "consumer", "vendor", "supplier",
     "inventory", "warehouse", "shipping", "delivery",
-    "revenue", "portfolio", "advisory", "brokerage",
+    "portfolio", "advisory", "brokerage",
     "diagnostic", "surgical", "pharmaceutical", "veterinary",
     "academic", "scholarly", "tutorial", "curriculum",
     "garrison", "sentinel", "outpost", "barracks",

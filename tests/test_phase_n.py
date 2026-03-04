@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Step 1: Settings Persistence Round-Trip ──────────────────────────
 
 class TestSettingsPersistence:
@@ -88,7 +87,6 @@ class TestRestorePermissions:
         from openlabels.remediation.permissions import (
             lock_down,
             restore_permissions,
-            get_current_acl,
         )
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -143,8 +141,8 @@ class TestRestorePermissions:
 
     def test_restore_permissions_nonexistent_file(self):
         """Raise RemediationPermissionError for missing file."""
-        from openlabels.remediation.permissions import restore_permissions
         from openlabels.exceptions import RemediationPermissionError
+        from openlabels.remediation.permissions import restore_permissions
 
         acl = base64.b64encode(b"{}").decode()
         with pytest.raises(RemediationPermissionError):
@@ -152,8 +150,8 @@ class TestRestorePermissions:
 
     def test_restore_permissions_invalid_base64(self):
         """Raise RemediationPermissionError for invalid base64."""
-        from openlabels.remediation.permissions import restore_permissions
         from openlabels.exceptions import RemediationPermissionError
+        from openlabels.remediation.permissions import restore_permissions
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(b"test")

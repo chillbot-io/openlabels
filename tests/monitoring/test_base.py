@@ -1,20 +1,19 @@
 """Tests for monitoring base types."""
 
-import pytest
 from datetime import datetime
 from pathlib import Path
 
-from openlabels.monitoring.base import (
-    AccessEvent,
-    AccessAction,
-    WatchedFile,
-    MonitoringResult,
-    WINDOWS_EVENT_IDS,
-)
 from openlabels.exceptions import (
+    AuditRuleError,
     MonitoringError,
     SACLError,
-    AuditRuleError,
+)
+from openlabels.monitoring.base import (
+    WINDOWS_EVENT_IDS,
+    AccessAction,
+    AccessEvent,
+    MonitoringResult,
+    WatchedFile,
 )
 
 

@@ -12,16 +12,13 @@ Covers:
 - source_text extraction during merge
 """
 
-import pytest
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.pipeline.span_resolver import (
     OverlapStrategy,
-    resolve_spans,
-    _deduplicate,
     _compare_by_strategy,
+    resolve_spans,
 )
-
+from openlabels.core.types import Span, Tier
 
 # ---------------------------------------------------------------------------
 # Helpers

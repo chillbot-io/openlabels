@@ -45,7 +45,6 @@ from openlabels.server.services.base import TenantContext as ServiceTenantContex
 from openlabels.server.services.job_service import JobService
 from openlabels.server.services.label_service import LabelService
 from openlabels.server.services.result_service import ResultService
-
 from openlabels.server.services.scan_service import ScanService
 
 logger = logging.getLogger(__name__)

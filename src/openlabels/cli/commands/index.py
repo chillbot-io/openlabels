@@ -12,7 +12,7 @@ import sys
 
 import click
 
-from openlabels.cli.base import server_options, spinner
+from openlabels.cli.base import server_options
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,7 @@ async def _init_db():
 async def _resolve_target(session, target_name: str):
     """Look up a ScanTarget by name.  Returns (target, error_msg)."""
     from sqlalchemy import select
+
     from openlabels.server.models import ScanTarget
 
     result = await session.execute(
@@ -224,7 +225,8 @@ async def _run_bootstrap(
                 )
 
             # Save checkpoint so delta sync knows when the last full build was
-            from datetime import datetime as dt, timezone as tz
+            from datetime import datetime as dt
+            from datetime import timezone as tz
             await upsert_checkpoint(
                 session,
                 target.tenant_id,
@@ -415,7 +417,7 @@ async def _run_status(target_name: str) -> None:
         elif stats["last_updated"]:
             click.echo(f"  Last updated:        {stats['last_updated'].isoformat()}")
         else:
-            click.echo(f"  Last updated:        never")
+            click.echo("  Last updated:        never")
 
     finally:
         await close_db()

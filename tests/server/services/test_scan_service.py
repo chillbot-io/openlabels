@@ -1,6 +1,5 @@
 """Tests for ScanService."""
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -22,7 +21,7 @@ def _make_service(session, tenant_id=None, user_id=None):
 @pytest.fixture
 async def scan_fixtures(test_db):
     """Create a tenant, user, and scan target for testing."""
-    from openlabels.server.models import Tenant, User, ScanTarget
+    from openlabels.server.models import ScanTarget, Tenant, User
 
     tenant = Tenant(name="Test Tenant Scan", azure_tenant_id="scan-test-tid")
     test_db.add(tenant)
@@ -254,7 +253,7 @@ class TestScanStats:
         MockJobQueue.return_value = AsyncMock()
 
         svc = _make_service(f["session"], f["tenant"].id, f["user"].id)
-        j1 = await svc.create_scan(f["target"].id)
+        await svc.create_scan(f["target"].id)
         j2 = await svc.create_scan(f["target"].id)
         j2.status = "completed"
         await f["session"].flush()

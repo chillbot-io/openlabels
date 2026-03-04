@@ -34,7 +34,7 @@ def export_results(job: str, fmt: str, output: str, server: str, token: str | No
     try:
         with api_client(server, token) as client:
             with spinner("Exporting results...") as progress:
-                task = progress.add_task("Downloading export...", total=None)
+                progress.add_task("Downloading export...", total=None)
                 response = client.get(
                     "/api/results/export",
                     params={"job_id": job, "format": fmt}

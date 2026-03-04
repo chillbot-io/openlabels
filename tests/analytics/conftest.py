@@ -7,9 +7,6 @@ temporary catalog directory and DuckDB engine for test isolation.
 
 from __future__ import annotations
 
-import shutil
-import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -20,13 +17,11 @@ import pytest
 from openlabels.analytics.engine import DuckDBEngine
 from openlabels.analytics.schemas import (
     ACCESS_EVENTS_SCHEMA,
-    AUDIT_LOG_SCHEMA,
     REMEDIATION_ACTIONS_SCHEMA,
     SCAN_RESULTS_SCHEMA,
 )
 from openlabels.analytics.service import AnalyticsService, DuckDBDashboardService
 from openlabels.analytics.storage import LocalStorage
-
 
 # ── Deterministic test UUIDs ──────────────────────────────────────────
 

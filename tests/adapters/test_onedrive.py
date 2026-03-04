@@ -4,10 +4,7 @@ Tests for OneDrive adapter.
 Tests cover adapter configuration, exposure level mapping, and file info conversion.
 """
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 
 class TestOneDriveAdapterConfiguration:
@@ -75,8 +72,8 @@ class TestOneDriveExposureMapping:
 
     def test_anonymous_link_is_public(self):
         """Anonymous sharing link should map to PUBLIC exposure."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
         from openlabels.adapters.base import ExposureLevel
+        from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"
@@ -92,8 +89,8 @@ class TestOneDriveExposureMapping:
 
     def test_organization_link_is_org_wide(self):
         """Organization sharing link should map to ORG_WIDE exposure."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
         from openlabels.adapters.base import ExposureLevel
+        from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"
@@ -109,8 +106,8 @@ class TestOneDriveExposureMapping:
 
     def test_shared_item_is_internal(self):
         """Item with shared flag should map to INTERNAL exposure."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
         from openlabels.adapters.base import ExposureLevel
+        from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"
@@ -122,8 +119,8 @@ class TestOneDriveExposureMapping:
 
     def test_no_sharing_is_private(self):
         """Item without sharing info should default to PRIVATE."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
         from openlabels.adapters.base import ExposureLevel
+        from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"
@@ -135,8 +132,8 @@ class TestOneDriveExposureMapping:
 
     def test_empty_permissions_is_private(self):
         """Empty permissions list should default to PRIVATE."""
-        from openlabels.adapters.onedrive import OneDriveAdapter
         from openlabels.adapters.base import ExposureLevel
+        from openlabels.adapters.onedrive import OneDriveAdapter
 
         adapter = OneDriveAdapter(
             tenant_id="t", client_id="c", client_secret="s"

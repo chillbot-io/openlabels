@@ -104,12 +104,12 @@ def _check_onnx_available() -> bool:
         return False
 
     try:
-        import onnxruntime
+        import onnxruntime  # noqa: F401
         # Check for tokenizer library (preferred) or transformers (fallback)
         try:
-            from tokenizers import Tokenizer
+            from tokenizers import Tokenizer  # noqa: F401
         except ImportError:
-            from transformers import AutoTokenizer
+            from transformers import AutoTokenizer  # noqa: F401
         _ONNX_AVAILABLE = True
         logger.info("FastCoref ONNX model available")
     except ImportError as e:
@@ -691,10 +691,10 @@ def _link_partial_names(spans: list[Span], min_confidence: float = 0.70) -> list
     groups: dict[int, set[int]] = {}
     next_group = 0
 
-    for idx, span in name_spans:
+    for idx, _span in name_spans:
         connected = {idx}
         for word in span_words.get(idx, set()):
-            for other_idx, other_span in word_to_spans.get(word, []):
+            for other_idx, _other_span in word_to_spans.get(word, []):
                 connected.add(other_idx)
 
         existing_groups = set()
@@ -723,7 +723,7 @@ def _link_partial_names(spans: list[Span], min_confidence: float = 0.70) -> list
     # For each group, find anchor and link others
     result = list(spans)
 
-    for group_id, member_indices in groups.items():
+    for _group_id, member_indices in groups.items():
         if len(member_indices) < 2:
             continue
 

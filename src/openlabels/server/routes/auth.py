@@ -39,7 +39,7 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlabels.server.config import get_settings
+from openlabels.server.config import OIDCProviderSettings, get_settings
 from openlabels.server.db import get_session
 from openlabels.server.routes import audit_log
 from openlabels.server.security import log_security_event
@@ -416,7 +416,7 @@ async def _login_oidc(
     db: AsyncSession,
     pending_store: PendingAuthStore,
     provider_key: str,
-    oidc_config: "OIDCProviderSettings",
+    oidc_config: OIDCProviderSettings,
 ) -> RedirectResponse:
     """Initiate generic OIDC login for a specific provider."""
     from openlabels.auth.oidc_provider import get_authorization_url, get_discovery
@@ -672,7 +672,7 @@ async def _callback_oidc(
     final_redirect: str,
     db: AsyncSession,
     nonce: str | None = None,
-    oidc_config: "OIDCProviderSettings | None" = None,
+    oidc_config: OIDCProviderSettings | None = None,
     provider_key: str | None = None,
 ) -> RedirectResponse:
     """Handle generic OIDC callback."""
@@ -818,7 +818,7 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Untrusted userinfo_endpoint in discovery document: {exc}",
-        )
+        ) from exc
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(

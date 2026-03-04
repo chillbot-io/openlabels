@@ -10,14 +10,15 @@ Tests cover:
 
 import pytest
 from pydantic import ValidationError
-from openlabels.core.types import Span, Tier
+
 from openlabels.core.pipeline.span_validation import (
-    validate_span_positions,
-    check_for_overlaps,
-    validate_after_coref,
     SpanValidationError,
     _validate_single_span,
+    check_for_overlaps,
+    validate_after_coref,
+    validate_span_positions,
 )
+from openlabels.core.types import Span, Tier
 
 
 def make_span(text, start=0, entity_type="NAME", confidence=0.9, detector="test"):
@@ -173,7 +174,6 @@ class TestValidateSingleSpan:
         text = "Hello John"
         # Create a span whose text doesn't match what's at position in a longer text
         # Use a span that extends past text boundaries to trigger a length-based error
-        long_text = "Hello John Smith"
         # Span says it covers positions 6-16 (10 chars), but text at that position is "John Smith"
         # However we'll validate against a shorter text
         span = make_span("John Smith", start=6)  # positions 6-16

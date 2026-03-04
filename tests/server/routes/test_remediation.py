@@ -15,11 +15,9 @@ Tests focus on:
 - Error handling
 """
 
-import pytest
 from uuid import uuid4
-from datetime import datetime, timezone
-from unittest.mock import patch, AsyncMock, MagicMock
 
+import pytest
 
 # Rate limiting is disabled globally in the test_client fixture in conftest.py
 
@@ -28,8 +26,14 @@ from unittest.mock import patch, AsyncMock, MagicMock
 async def setup_remediation_data(test_db):
     """Set up test data for remediation endpoint tests."""
     from sqlalchemy import select
+
     from openlabels.server.models import (
-        Tenant, User, ScanTarget, ScanJob, ScanResult, SensitivityLabel,
+        ScanJob,
+        ScanResult,
+        ScanTarget,
+        SensitivityLabel,
+        Tenant,
+        User,
     )
 
     # Get the existing tenant created by test_client (name includes random suffix)
@@ -609,6 +613,7 @@ class TestLabelApply:
     async def test_applies_label_to_scan_result(self, test_client, setup_remediation_data):
         """Label apply should update scan result with label info."""
         from sqlalchemy import select
+
         from openlabels.server.models import ScanResult
 
         label = setup_remediation_data["label"]
@@ -643,6 +648,7 @@ class TestLabelApply:
     async def test_dry_run_does_not_update_scan_result(self, test_client, setup_remediation_data):
         """Dry run should not update the scan result."""
         from sqlalchemy import select
+
         from openlabels.server.models import ScanResult
 
         label = setup_remediation_data["label"]
@@ -780,11 +786,12 @@ class TestRollbackAction:
     async def test_rollback_label_apply_clears_label(self, test_client, setup_remediation_data):
         """Rolling back a label_apply should clear the label from the scan result."""
         from sqlalchemy import select
-        from openlabels.server.models import RemediationAction, ScanResult
+
+        from openlabels.server.models import ScanResult
 
         session = setup_remediation_data["session"]
         tenant = setup_remediation_data["tenant"]
-        admin_user = setup_remediation_data["admin_user"]
+        setup_remediation_data["admin_user"]
         label = setup_remediation_data["label"]
 
         # First apply a label
@@ -977,6 +984,7 @@ class TestBulkRemediation:
     async def test_bulk_label_apply_updates_scan_results(self, test_client, setup_remediation_data):
         """Bulk label apply should update scan results when not dry run."""
         from sqlalchemy import select
+
         from openlabels.server.models import ScanResult
 
         label = setup_remediation_data["label"]
@@ -1168,7 +1176,7 @@ class TestRemediationTenantIsolation:
 
     async def test_cannot_access_other_tenant_action(self, test_client, setup_remediation_data):
         """Should not be able to access actions from other tenants."""
-        from openlabels.server.models import Tenant, User, RemediationAction
+        from openlabels.server.models import RemediationAction, Tenant, User
 
         session = setup_remediation_data["session"]
 
@@ -1205,7 +1213,7 @@ class TestRemediationTenantIsolation:
 
     async def test_cannot_rollback_other_tenant_action(self, test_client, setup_remediation_data):
         """Should not be able to rollback actions from other tenants."""
-        from openlabels.server.models import Tenant, User, RemediationAction
+        from openlabels.server.models import RemediationAction, Tenant, User
 
         session = setup_remediation_data["session"]
 

@@ -1,22 +1,21 @@
 """Tests for quarantine operations."""
 
 import json
-import os
 import platform
-import pytest
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from openlabels.exceptions import QuarantineError
+from openlabels.remediation.base import RemediationAction
+from openlabels.remediation.manifest import QuarantineManifest
 from openlabels.remediation.quarantine import (
+    ROBOCOPY_ERROR_CODES,
+    ROBOCOPY_SUCCESS_CODES,
     quarantine,
     restore_from_quarantine,
-    ROBOCOPY_SUCCESS_CODES,
-    ROBOCOPY_ERROR_CODES,
 )
-from openlabels.remediation.base import RemediationAction
-from openlabels.remediation.manifest import QuarantineEntry, QuarantineManifest
-from openlabels.exceptions import QuarantineError
 
 
 class TestQuarantineValidation:
@@ -133,7 +132,7 @@ class TestQuarantineWindows:
                 stderr="",
             )
 
-            result = quarantine(source, dest)
+            quarantine(source, dest)
 
             # Check robocopy was called
             mock_run.assert_called_once()

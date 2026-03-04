@@ -74,7 +74,7 @@ def validate_ssn(ssn: str) -> tuple[bool, float]:
 
     # The canonical validator rejected this SSN (invalid area, group, or serial),
     # but we still detect it at lower confidence for security.
-    area, group, serial = digits[:3], digits[3:5], digits[5:]
+    _area, group, serial = digits[:3], digits[3:5], digits[5:]
     confidence = 0.85
     if group == '00':
         confidence = min(confidence, 0.80)
@@ -323,7 +323,7 @@ def validate_fedex_tracking(tracking: str) -> tuple[bool, float]:
 
     if len(digits) == 12:
         weights = [1, 7, 3, 1, 7, 3, 1, 7, 3, 1, 7]
-        total = sum(int(d) * w for d, w in zip(digits[:11], weights))
+        total = sum(int(d) * w for d, w in zip(digits[:11], weights, strict=False))
         check = (total % 11) % 10
         if check != int(digits[11]):
             return False, 0.0
@@ -338,7 +338,7 @@ def validate_fedex_tracking(tracking: str) -> tuple[bool, float]:
 
     elif len(digits) == 20:
         weights = [3, 1] * 9 + [3]
-        total = sum(int(d) * w for d, w in zip(digits[:19], weights))
+        total = sum(int(d) * w for d, w in zip(digits[:19], weights, strict=False))
         check = (10 - (total % 10)) % 10
         if check != int(digits[19]):
             return False, 0.0
@@ -346,7 +346,7 @@ def validate_fedex_tracking(tracking: str) -> tuple[bool, float]:
 
     elif len(digits) == 22 and digits.startswith('92'):
         weights = [3, 1] * 10 + [3]
-        total = sum(int(d) * w for d, w in zip(digits[:21], weights))
+        total = sum(int(d) * w for d, w in zip(digits[:21], weights, strict=False))
         check = (10 - (total % 10)) % 10
         if check != int(digits[21]):
             return False, 0.0
@@ -365,7 +365,7 @@ def validate_usps_tracking(tracking: str) -> tuple[bool, float]:
         if not digits.isdigit():
             return False, 0.0
         weights = [8, 6, 4, 2, 3, 5, 9, 7]
-        total = sum(int(d) * w for d, w in zip(digits[:8], weights))
+        total = sum(int(d) * w for d, w in zip(digits[:8], weights, strict=False))
         check = 11 - (total % 11)
         if check == 10:
             check = 0
@@ -379,7 +379,7 @@ def validate_usps_tracking(tracking: str) -> tuple[bool, float]:
     digits = re.sub(r'\D', '', tracking)
     if len(digits) in (20, 22):
         weights = ([3, 1] * ((len(digits) - 1) // 2 + 1))[:len(digits) - 1]
-        total = sum(int(d) * w for d, w in zip(digits[:-1], weights))
+        total = sum(int(d) * w for d, w in zip(digits[:-1], weights, strict=False))
         check = (10 - (total % 10)) % 10
         if check != int(digits[-1]):
             return False, 0.0

@@ -10,17 +10,18 @@ Tests focus on:
 - System info (Python version, platform, uptime)
 """
 
-import pytest
-from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 
 @pytest.fixture
 async def setup_health_test_data(test_db):
     """Set up test data for health endpoint tests."""
     from openlabels.server.models import (
-        Tenant, User, ScanJob, ScanResult, JobQueue as JobQueueModel,
+        Tenant,
+        User,
     )
 
     # Create a test tenant
@@ -136,7 +137,8 @@ class TestHealthQueueStatus:
     async def setup_queue_data(self, test_db):
         """Set up test data with job queue entries."""
         from openlabels.server.models import (
-            Tenant, User, JobQueue as JobQueueModel,
+            Tenant,
+            User,
         )
 
         tenant = Tenant(
@@ -257,8 +259,11 @@ class TestHealthScanStatistics:
         Uses the existing tenant/user created by test_client fixture.
         """
         from sqlalchemy import select
+
         from openlabels.server.models import (
-            Tenant, User, ScanJob, ScanResult, ScanTarget,
+            ScanTarget,
+            Tenant,
+            User,
         )
 
         # Get the existing tenant created by test_client
@@ -296,7 +301,7 @@ class TestHealthScanStatistics:
         target = setup_scan_data["target"]
 
         # Add scan jobs for today
-        for i in range(5):
+        for _i in range(5):
             scan = ScanJob(
                 id=uuid4(),
                 tenant_id=tenant.id,
@@ -361,7 +366,7 @@ class TestHealthScanStatistics:
         target = setup_scan_data["target"]
 
         # Add 8 completed and 2 failed scans (80% success rate)
-        for i in range(8):
+        for _i in range(8):
             scan = ScanJob(
                 id=uuid4(),
                 tenant_id=tenant.id,
@@ -370,7 +375,7 @@ class TestHealthScanStatistics:
             )
             session.add(scan)
 
-        for i in range(2):
+        for _i in range(2):
             scan = ScanJob(
                 id=uuid4(),
                 tenant_id=tenant.id,
@@ -522,8 +527,8 @@ class TestHealthEndpointAuthentication:
 
     async def test_health_allows_unauthenticated_requests(self, test_db):
         """Health status endpoint uses optional auth and allows unauthenticated access."""
-        from httpx import AsyncClient, ASGITransport
-        from unittest.mock import patch, MagicMock
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
         from openlabels.server.db import get_session
 
@@ -663,13 +668,8 @@ class TestScanThroughput:
 
     async def test_throughput_with_completed_scans(self, test_client, setup_health_test_data):
         """Should return throughput data for completed scans."""
-        from openlabels.server.models import ScanJob, ScanTarget
-        from openlabels.server.db import get_session
-        from sqlalchemy import select
 
         # We need to create scan data - use direct DB access
-        from openlabels.server.models import Tenant, User
-        from openlabels.server.app import app
 
         # Get the session used by test_client
         # Create a scan target and completed scan
@@ -730,10 +730,7 @@ class TestErrorLog:
 
     async def test_includes_failed_jobs(self, test_client, setup_health_test_data):
         """Error log should include failed job entries."""
-        from openlabels.server.models import JobQueue as JobQueueModel
 
-        from sqlalchemy import select
-        from openlabels.server.models import Tenant, User
 
         # Use the test_client's session via setup fixture
         # The test_client fixture auto-creates tenant/user

@@ -15,13 +15,13 @@ import base64
 import hashlib
 import json
 import logging
-import time
 import threading
+import time
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from openlabels.server.config import get_settings
 
@@ -201,7 +201,7 @@ def encrypt_config_credentials(config: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError(
                     "OPENLABELS_SERVER__SECRET_KEY is required to store credentials. "
                     "Cannot save plaintext credentials without encryption configured."
-                )
+                ) from None
         else:
             result[key] = value
     return result

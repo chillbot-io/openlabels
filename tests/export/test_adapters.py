@@ -14,7 +14,6 @@ import pytest
 
 from openlabels.export.adapters.base import ExportRecord
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -170,10 +169,11 @@ class TestSentinelAdapter:
         assert rec["User_s"] == "jdoe"
 
     def test_build_signature(self):
-        from openlabels.export.adapters.sentinel import SentinelAdapter
         import base64
         import hashlib
         import hmac
+
+        from openlabels.export.adapters.sentinel import SentinelAdapter
 
         # Use a known key
         raw_key = b"test-key-1234567890123456"

@@ -12,23 +12,22 @@ Tests cover:
 All ML model dependencies are mocked -- no actual model files needed.
 """
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
 
-from openlabels.core.types import Span, Tier
 from openlabels.core.detectors.ml import (
+    MLDetector,
     get_device,
     get_device_info,
-    MLDetector,
 )
 from openlabels.core.detectors.ml_onnx import (
     ONNXDetector,
     build_word_boundaries,
     expand_to_word_boundary,
 )
-
+from openlabels.core.types import Span, Tier
 
 # =============================================================================
 # HELPERS
@@ -208,16 +207,16 @@ class TestMLDetectorLoad:
         (model_dir / "config.json").write_text("{}")
 
         with patch("openlabels.core.detectors.ml.get_device", return_value=-1):
-            mock_tokenizer = MagicMock()
-            mock_model = MagicMock()
-            mock_pipeline = MagicMock()
+            MagicMock()
+            MagicMock()
+            MagicMock()
 
             with patch.dict("sys.modules", {
                 "transformers": MagicMock(),
             }):
-                with patch("openlabels.core.detectors.ml.AutoTokenizer", create=True) as at, \
-                     patch("openlabels.core.detectors.ml.AutoModelForTokenClassification", create=True) as am, \
-                     patch("openlabels.core.detectors.ml.pipeline", create=True) as pipe:
+                with patch("openlabels.core.detectors.ml.AutoTokenizer", create=True), \
+                     patch("openlabels.core.detectors.ml.AutoModelForTokenClassification", create=True), \
+                     patch("openlabels.core.detectors.ml.pipeline", create=True):
                     # We need to patch inside the load() try block
                     pass
 
@@ -1151,9 +1150,9 @@ class TestONNXDetectorDetect:
         long_text = "word " * 1000  # ~5000 chars
         assert len(long_text) > det.CHUNK_MAX_CHARS
 
-        with patch.object(det, "_detect_single", return_value=[]) as mock_ds, \
+        with patch.object(det, "_detect_single", return_value=[]), \
              patch.object(det, "_chunk_text", wraps=det._chunk_text) as mock_chunk:
-            result = det.detect(long_text)
+            det.detect(long_text)
             mock_chunk.assert_called_once()
 
     def test_inference_exception_raises_detection_error(self):

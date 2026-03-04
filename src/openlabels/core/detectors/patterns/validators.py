@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-
 # ---------------------------------------------------------------------------
 # International Government ID Validators (used inline in pattern definitions)
 # ---------------------------------------------------------------------------
@@ -72,7 +71,7 @@ def _validate_pl_pesel(value: str) -> bool:
     if len(value) != 11 or not value.isdigit():
         return False
     weights = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]
-    total = sum(int(d) * w for d, w in zip(value[:10], weights))
+    total = sum(int(d) * w for d, w in zip(value[:10], weights, strict=False))
     check = (10 - (total % 10)) % 10
     return check == int(value[10])
 
@@ -82,7 +81,7 @@ def _validate_nhs(value: str) -> bool:
     digits = ''.join(c for c in value if c.isdigit())
     if len(digits) != 10:
         return False
-    total = sum(int(d) * w for d, w in zip(digits[:9], range(10, 1, -1)))
+    total = sum(int(d) * w for d, w in zip(digits[:9], range(10, 1, -1), strict=False))
     remainder = 11 - (total % 11)
     if remainder == 11:
         remainder = 0

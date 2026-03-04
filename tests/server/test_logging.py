@@ -9,11 +9,9 @@ Tests focus on:
 - ContextLogger wrapper
 """
 
-import pytest
 import json
 import logging
-from io import StringIO
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestRequestIdContext:
@@ -30,7 +28,7 @@ class TestRequestIdContext:
 
     def test_set_request_id_stores_value(self):
         """Set request ID should store the value."""
-        from openlabels.server.logging import get_request_id, set_request_id, request_id_var
+        from openlabels.server.logging import get_request_id, request_id_var, set_request_id
 
         # Reset context
         request_id_var.set(None)
@@ -43,7 +41,7 @@ class TestRequestIdContext:
 
     def test_request_id_can_be_overwritten(self):
         """Request ID can be overwritten with new value."""
-        from openlabels.server.logging import get_request_id, set_request_id, request_id_var
+        from openlabels.server.logging import get_request_id, request_id_var, set_request_id
 
         # Reset context
         request_id_var.set(None)
@@ -176,7 +174,7 @@ class TestJSONFormatter:
 
     def test_includes_request_id_when_set(self):
         """Output should include request ID when set."""
-        from openlabels.server.logging import JSONFormatter, set_request_id, request_id_var
+        from openlabels.server.logging import JSONFormatter, request_id_var, set_request_id
 
         # Reset and set request ID
         request_id_var.set(None)
@@ -372,7 +370,7 @@ class TestDevelopmentFormatter:
 
     def test_includes_request_id_when_set(self):
         """Output should include request ID when set."""
-        from openlabels.server.logging import DevelopmentFormatter, set_request_id, request_id_var
+        from openlabels.server.logging import DevelopmentFormatter, request_id_var, set_request_id
 
         request_id_var.set(None)
         set_request_id("req-abc123")
@@ -492,7 +490,7 @@ class TestSetupLogging:
             # Add a dummy handler
             dummy_handler = logging.StreamHandler()
             root_logger.addHandler(dummy_handler)
-            handler_count_before = len(root_logger.handlers)
+            len(root_logger.handlers)
 
             setup_logging()
 

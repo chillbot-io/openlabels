@@ -12,36 +12,36 @@ Tests cover security-critical paths:
 - Error handling edge cases
 """
 
-import sys
 import os
+import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
+import pytest
 from pydantic import SecretStr
 
 from openlabels.auth.oidc_provider import (
     OIDCTokenClaims,
-    get_discovery,
-    get_authorization_url,
-    exchange_code,
-    validate_id_token,
-    extract_claims,
-    refresh_token,
-    get_end_session_url,
-    clear_oidc_cache,
-    _get_jwks,
-    _find_signing_key,
-    _stable_hash,
     _discovery_cache,
+    _find_signing_key,
+    _get_jwks,
     _jwks_cache,
+    _stable_hash,
+    clear_oidc_cache,
+    exchange_code,
+    extract_claims,
+    get_authorization_url,
+    get_discovery,
+    get_end_session_url,
+    refresh_token,
+    validate_id_token,
 )
 from openlabels.exceptions import AuthError, TokenExpiredError, TokenInvalidError
 from openlabels.server.config import OIDCProviderSettings
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -733,7 +733,7 @@ class TestValidateIdToken:
             mock_pyjwk.return_value = MagicMock()
             mock_decode.return_value = {"sub": "user"}
 
-            claims = await validate_id_token("no.kid.token", SAMPLE_DISCOVERY, config)
+            await validate_id_token("no.kid.token", SAMPLE_DISCOVERY, config)
             # _find_signing_key called with None kid
             mock_find_key.assert_called_once_with(None, SAMPLE_DISCOVERY["jwks_uri"])
 

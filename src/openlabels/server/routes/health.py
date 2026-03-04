@@ -27,7 +27,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import Integer, case, func, select, text
+from sqlalchemy import Integer, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,7 +167,7 @@ async def get_health_status(
         pending_count = 0
         failed_count = 0
         try:
-            queue_query = select(
+            select(
                 func.count().label("total"),
                 func.sum(func.cast(JobQueue.status == JobStatus.PENDING, Integer)).label("pending"),
                 func.sum(func.cast(JobQueue.status == JobStatus.FAILED, Integer)).label("failed"),
@@ -203,14 +203,14 @@ async def get_health_status(
         try:
             models_available = []
             try:
-                from openlabels.core.detectors.gliner import GLiNERDetector
+                from openlabels.core.detectors.gliner import GLiNERDetector  # noqa: F401
                 models_available.append("GLiNER")
             except ImportError:
                 logger.info("GLiNER detector not available")
 
             try:
-                from openlabels.core.detectors.phi_detector import StanfordPHIDetector  # noqa: F401
                 from openlabels.core.constants import DEFAULT_MODELS_DIR
+                from openlabels.core.detectors.phi_detector import StanfordPHIDetector  # noqa: F401
                 phi_dir = DEFAULT_MODELS_DIR / "stanford_phi"
                 if phi_dir.is_dir() and (phi_dir / "config.json").exists():
                     models_available.append("Stanford-PHI")
@@ -231,7 +231,7 @@ async def get_health_status(
         # Check MIP SDK
         try:
             if sys.platform == "win32":
-                from openlabels.labeling.mip import MIPClient
+                from openlabels.labeling.mip import MIPClient  # noqa: F401
                 status["mip"] = "healthy"
                 status["mip_text"] = "Available"
             else:
@@ -303,7 +303,7 @@ async def get_health_status(
         # Add circuit breaker status
         try:
             cb_statuses = []
-            for name, cb in CircuitBreaker._registry.items():
+            for _name, cb in CircuitBreaker._registry.items():
                 cb_status = cb.get_status()
                 cb_statuses.append(CircuitBreakerStatus(
                     name=cb_status["name"],

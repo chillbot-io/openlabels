@@ -4,10 +4,7 @@ Tests for database models.
 Tests actual model behavior, constraints, defaults, and relationships.
 """
 
-from datetime import datetime, timezone
-from uuid import UUID, uuid4
-
-import pytest
+from uuid import UUID
 
 
 class TestTenantModel:
@@ -23,8 +20,9 @@ class TestTenantModel:
 
     def test_tenant_id_is_uuid(self):
         """Tenant ID should be a UUID type."""
-        from openlabels.server.models import Tenant
         from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+        from openlabels.server.models import Tenant
 
         id_column = Tenant.__table__.c.id
         assert isinstance(id_column.type, PG_UUID)
@@ -172,7 +170,7 @@ class TestScanResultModel:
 
     def test_result_entity_counts_is_jsonb(self):
         """Entity counts should use JSONB for efficient queries."""
-        from openlabels.server.models import ScanResult, JSONB
+        from openlabels.server.models import JSONB, ScanResult
 
         col = ScanResult.__table__.c.entity_counts
         assert isinstance(col.type, JSONB)
@@ -222,8 +220,9 @@ class TestSensitivityLabelModel:
 
     def test_label_id_is_string_for_mip_guids(self):
         """Label ID should be string to match MIP label GUIDs."""
-        from openlabels.server.models import SensitivityLabel
         from sqlalchemy import String
+
+        from openlabels.server.models import SensitivityLabel
 
         id_col = SensitivityLabel.__table__.c.id
         assert isinstance(id_col.type, String)
@@ -369,8 +368,9 @@ class TestSessionModel:
 
     def test_session_id_is_string(self):
         """Session ID should be a secure token string."""
-        from openlabels.server.models import Session
         from sqlalchemy import String
+
+        from openlabels.server.models import Session
 
         id_col = Session.__table__.c.id
         assert isinstance(id_col.type, String)

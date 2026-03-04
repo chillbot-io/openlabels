@@ -17,7 +17,6 @@ import socket
 from openlabels.export.adapters.base import (
     ExportRecord,
     SyslogTransportMixin,
-    cef_escape,
     format_cef,
 )
 

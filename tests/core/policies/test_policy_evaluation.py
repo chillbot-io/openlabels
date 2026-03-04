@@ -19,8 +19,12 @@ Complements test_engine.py by focusing on:
 
 import pytest
 
+from openlabels.core.policies.engine import RISK_ORDER, PolicyEngine
+from openlabels.core.policies.loader import (
+    load_builtin_policies,
+    load_policy_pack,
+)
 from openlabels.core.policies.schema import (
-    DataSubjectRights,
     EntityMatch,
     HandlingRequirements,
     PolicyCategory,
@@ -31,12 +35,6 @@ from openlabels.core.policies.schema import (
     RetentionPolicy,
     RiskLevel,
 )
-from openlabels.core.policies.engine import PolicyEngine, RISK_ORDER, EvaluationContext
-from openlabels.core.policies.loader import (
-    load_builtin_policies,
-    load_policy_pack,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers

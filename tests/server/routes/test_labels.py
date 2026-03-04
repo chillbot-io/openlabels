@@ -11,16 +11,17 @@ Tests focus on:
 - Tenant isolation
 """
 
-import pytest
 from uuid import uuid4
-from datetime import datetime, timezone
+
+import pytest
 
 
 @pytest.fixture
 async def setup_labels_data(test_db):
     """Set up test data for label endpoint tests."""
     from sqlalchemy import select
-    from openlabels.server.models import Tenant, User, SensitivityLabel
+
+    from openlabels.server.models import SensitivityLabel, Tenant, User
 
     # Get the existing tenant created by test_client (name includes random suffix)
     result = await test_db.execute(select(Tenant).where(Tenant.name.like("Test Tenant%")))
@@ -68,7 +69,7 @@ class TestListLabels:
         items = data["items"]
 
         assert len(items) == 3
-        names = [l["name"] for l in items]
+        names = [label["name"] for label in items]
         assert "Confidential" in names
         assert "Internal" in names
         assert "Public" in names
@@ -94,7 +95,7 @@ class TestListLabels:
         items = data["items"]
 
         # Should be ordered by priority (ascending)
-        priorities = [l["priority"] for l in items]
+        priorities = [label["priority"] for label in items]
         assert priorities == sorted(priorities)
 
 
@@ -567,7 +568,7 @@ class TestLabelTenantIsolation:
 
     async def test_cannot_access_other_tenant_labels(self, test_client, setup_labels_data):
         """Should not be able to see labels from other tenants."""
-        from openlabels.server.models import Tenant, SensitivityLabel
+        from openlabels.server.models import SensitivityLabel, Tenant
 
         session = setup_labels_data["session"]
 
@@ -593,7 +594,7 @@ class TestLabelTenantIsolation:
         assert response.status_code == 200
         data = response.json()
 
-        names = [l["name"] for l in data["items"]]
+        names = [label["name"] for label in data["items"]]
         assert "Other Tenant Label" not in names
 
 

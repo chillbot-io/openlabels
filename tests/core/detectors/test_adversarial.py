@@ -14,8 +14,8 @@ with contextual disambiguation being the hardest dimension.
 """
 
 import pytest
+
 from openlabels.core.detectors.patterns import PatternDetector
-from openlabels.core.types import Tier
 
 
 @pytest.fixture
@@ -184,7 +184,7 @@ class TestCrossLingualPatterns:
         """UK National Insurance Number."""
         text = "My NI number is AB 12 34 56 C"
         spans = detector.detect(text)
-        ninos = [s for s in spans if "UK_NINO" in s.entity_type or "NINO" in s.entity_type]
+        [s for s in spans if "UK_NINO" in s.entity_type or "NINO" in s.entity_type]
         # UK NINO detection may require specific pattern — verify at least no crash
         # and that no false misclassification occurs
         assert isinstance(spans, list)

@@ -286,7 +286,7 @@ class WorkerStateManager:
 
                     if keys:
                         values = await self._redis_client.mget(*keys)
-                        for key, value in zip(keys, values):
+                        for key, value in zip(keys, values, strict=False):
                             if value:
                                 worker_id = key[len(self._key_prefix):]
                                 try:

@@ -9,20 +9,19 @@ Tests cover:
 - Post-scan operations (auto-labeling, catalog flush, SIEM export)
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-import pytest
-from datetime import datetime, timezone
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
 
 from openlabels.jobs.tasks.scan_partition import (
     _check_and_aggregate,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -239,8 +238,8 @@ class TestPartitionTaskExecution:
     @pytest.mark.asyncio
     async def test_partition_not_found_raises(self):
         """Missing partition should raise JobError."""
-        from openlabels.jobs.tasks.scan_partition import execute_scan_partition_task
         from openlabels.exceptions import JobError
+        from openlabels.jobs.tasks.scan_partition import execute_scan_partition_task
 
         session = AsyncMock()
         session.get = AsyncMock(return_value=None)

@@ -216,7 +216,7 @@ class OCREngine:
             return True
         # Otherwise check if rapidocr-onnxruntime is installed (has bundled models)
         try:
-            import rapidocr_onnxruntime
+            import rapidocr_onnxruntime  # noqa: F401
             return True
         except ImportError:
             # RapidOCR not installed - OCR functionality unavailable
@@ -564,7 +564,7 @@ class OCREngine:
         blocks = []
         confidences = []
 
-        for i, (bbox, text, conf) in enumerate(result):
+        for _i, (bbox, text, conf) in enumerate(result):
             blocks.append(OCRBlock(
                 text=text,
                 bbox=bbox,
@@ -579,7 +579,7 @@ class OCREngine:
         current_line_parts = []
         current_line_group = None
 
-        for i, block in enumerate(blocks):
+        for _i, block in enumerate(blocks):
             y_top = min(p[1] for p in block.bbox)
             line_group = int(y_top / 20)
 

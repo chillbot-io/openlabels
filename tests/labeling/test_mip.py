@@ -4,10 +4,7 @@ Note: MIP SDK tests use limited assertions since the actual SDK requires Windows
 Tests focus on dataclasses, configuration, and availability checks.
 """
 
-from unittest.mock import MagicMock, patch
-from pathlib import Path
 
-import pytest
 
 
 # =============================================================================
@@ -20,7 +17,7 @@ class TestMIPAvailability:
 
     def test_is_mip_available_matches_constant(self):
         """is_mip_available() should match PYTHONNET_AVAILABLE constant."""
-        from openlabels.labeling.mip import is_mip_available, PYTHONNET_AVAILABLE
+        from openlabels.labeling.mip import PYTHONNET_AVAILABLE, is_mip_available
 
         assert is_mip_available() == PYTHONNET_AVAILABLE
 
@@ -154,7 +151,7 @@ class TestMIPClientConfiguration:
 
     def test_is_available_matches_pythonnet(self):
         """MIPClient.is_available should match PYTHONNET_AVAILABLE."""
-        from openlabels.labeling.mip import MIPClient, PYTHONNET_AVAILABLE
+        from openlabels.labeling.mip import PYTHONNET_AVAILABLE, MIPClient
 
         client = MIPClient(
             client_id="client",

@@ -231,7 +231,7 @@ class TestBenchmarkExecution:
 
         with patch("openlabels.cli.commands.benchmark._load_dataset_samples", return_value=mock_samples), \
              patch("openlabels.core.benchmark.harness.get_preset") as mock_get_preset, \
-             patch("openlabels.core.benchmark.harness.run_benchmark", return_value=mock_result) as mock_run, \
+             patch("openlabels.core.benchmark.harness.run_benchmark", return_value=mock_result), \
              patch("openlabels.cli.commands.benchmark._show_model_status"):
             mock_config = MagicMock()
             mock_config.name = "patterns_only"

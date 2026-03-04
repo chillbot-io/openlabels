@@ -1,6 +1,5 @@
 """Tests for remediation base types and utilities."""
 
-import pytest
 from datetime import datetime
 from pathlib import Path
 

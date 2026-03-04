@@ -9,16 +9,16 @@ Tests focus on:
 - Credential isolation per user and source type
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from uuid import uuid4
-from unittest.mock import patch, AsyncMock, MagicMock
 
 from openlabels.server.routes.credentials import (
-    _encrypt,
+    VALID_SOURCE_TYPES,
+    _cred_key,
     _decrypt,
     _derive_fernet_key,
-    _cred_key,
-    VALID_SOURCE_TYPES,
+    _encrypt,
 )
 
 

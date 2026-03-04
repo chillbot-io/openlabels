@@ -6,8 +6,9 @@ URLs for redirection without validation, allowing attackers to redirect
 users to malicious sites after authentication.
 """
 
+from unittest.mock import MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
 
 from openlabels.server.routes.auth import validate_redirect_uri
 
@@ -130,11 +131,13 @@ class TestOpenRedirectIntegration:
 
     async def test_login_endpoint_validates_redirect(self):
         """Login endpoint should use validated redirect_uri."""
-        from unittest.mock import AsyncMock, MagicMock
-        from httpx import AsyncClient, ASGITransport
+        from unittest.mock import AsyncMock
+
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
-        from openlabels.server.db import get_session
         from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
         # Create a mock DB session so the endpoint doesn't hit real DB
@@ -176,11 +179,13 @@ class TestOpenRedirectIntegration:
 
     async def test_callback_rejects_malicious_redirect_override(self):
         """OAuth callback should not use untrusted redirect from query."""
-        from unittest.mock import AsyncMock, MagicMock
-        from httpx import AsyncClient, ASGITransport
+        from unittest.mock import AsyncMock
+
+        from httpx import ASGITransport, AsyncClient
+
         from openlabels.server.app import app
-        from openlabels.server.db import get_session
         from openlabels.server.app import limiter as app_limiter
+        from openlabels.server.db import get_session
         from openlabels.server.routes.auth import limiter as auth_limiter
 
         # Create a mock DB session so the endpoint doesn't hit real DB

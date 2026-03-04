@@ -4,9 +4,7 @@ Tests for FastAPI application configuration components.
 Tests actual behavior of settings loading, validation, and defaults.
 """
 
-import os
 import pytest
-from unittest.mock import patch
 
 
 class TestServerSettings:
@@ -14,8 +12,9 @@ class TestServerSettings:
 
     def test_environment_must_be_valid(self):
         """Environment must be one of the allowed values."""
-        from openlabels.server.config import ServerSettings
         from pydantic import ValidationError
+
+        from openlabels.server.config import ServerSettings
 
         # Valid values should work
         for env in ["development", "staging", "production"]:
@@ -32,8 +31,9 @@ class TestAuthSettings:
 
     def test_provider_must_be_valid(self):
         """Provider must be azure_ad or none."""
-        from openlabels.server.config import AuthSettings
         from pydantic import ValidationError
+
+        from openlabels.server.config import AuthSettings
 
         # Valid
         AuthSettings(provider="azure_ad")

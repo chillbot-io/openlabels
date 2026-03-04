@@ -30,6 +30,7 @@ from slowapi import Limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
+from openlabels.core.url_validation import _BLOCKED_NETWORKS
 from openlabels.server.db import get_session
 from openlabels.server.routes.credentials import (
     SESSION_COOKIE_NAME,
@@ -37,7 +38,6 @@ from openlabels.server.routes.credentials import (
     get_decrypted_credentials,
 )
 from openlabels.server.session import SessionStore
-from openlabels.core.url_validation import _BLOCKED_NETWORKS
 from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ def _validate_host(host: str) -> str:
     try:
         addr_infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
-        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {host}")
+        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {host}") from None
 
     for addr_info in addr_infos:
         ip_addr = ipaddress.ip_address(addr_info[4][0])
@@ -84,7 +84,7 @@ def _validate_host(host: str) -> str:
             if ip_addr in network:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Host resolves to a private/internal address, which is not allowed",
+                    detail="Host resolves to a private/internal address, which is not allowed",
                 )
 
     return host
@@ -264,10 +264,10 @@ async def _enumerate_smb(creds: dict[str, Any]) -> list[EnumeratedResource]:
             description="smbclient not installed — enter share paths manually",
         ))
     except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail=f"Connection to {host} timed out")
-    except Exception as e:
+        raise HTTPException(status_code=504, detail=f"Connection to {host} timed out") from None
+    except Exception:
         logger.exception("SMB enumeration failed for %s", host)
-        raise HTTPException(status_code=502, detail="SMB enumeration failed: internal error")
+        raise HTTPException(status_code=502, detail="SMB enumeration failed: internal error") from None
 
     return resources
 
@@ -413,10 +413,10 @@ async def _enumerate_nfs(creds: dict[str, Any]) -> list[EnumeratedResource]:
             description="showmount not installed — enter export paths manually",
         ))
     except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail=f"Connection to {host} timed out")
-    except Exception as e:
+        raise HTTPException(status_code=504, detail=f"Connection to {host} timed out") from None
+    except Exception:
         logger.exception("NFS enumeration failed for %s", host)
-        raise HTTPException(status_code=502, detail="NFS enumeration failed: internal error")
+        raise HTTPException(status_code=502, detail="NFS enumeration failed: internal error") from None
 
     return resources
 
@@ -502,7 +502,7 @@ async def _enumerate_sharepoint(
     try:
         import httpx
     except ImportError:
-        raise HTTPException(status_code=500, detail="httpx not installed")
+        raise HTTPException(status_code=500, detail="httpx not installed") from None
 
     # Get access token
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
@@ -588,7 +588,7 @@ async def _enumerate_onedrive(
     try:
         import httpx
     except ImportError:
-        raise HTTPException(status_code=500, detail="httpx not installed")
+        raise HTTPException(status_code=500, detail="httpx not installed") from None
 
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     token_data = {
@@ -662,13 +662,13 @@ async def _enumerate_s3(creds: dict[str, Any]) -> list[EnumeratedResource]:
             _validate_endpoint_url(endpoint_url)
         except ValueError as e:
             logger.warning("Endpoint URL validation failed: %s", e)
-            raise HTTPException(status_code=400, detail="Invalid endpoint URL")
+            raise HTTPException(status_code=400, detail="Invalid endpoint URL") from e
 
     try:
         import boto3
         from botocore.exceptions import ClientError, NoCredentialsError
     except ImportError:
-        raise HTTPException(status_code=500, detail="boto3 not installed")
+        raise HTTPException(status_code=500, detail="boto3 not installed") from None
 
     try:
         kwargs: dict[str, Any] = {"service_name": "s3", "region_name": region}
@@ -695,13 +695,13 @@ async def _enumerate_s3(creds: dict[str, Any]) -> list[EnumeratedResource]:
         return resources
 
     except NoCredentialsError:
-        raise HTTPException(status_code=401, detail="Invalid or missing AWS credentials")
+        raise HTTPException(status_code=401, detail="Invalid or missing AWS credentials") from None
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
-        raise HTTPException(status_code=502, detail=f"S3 error: {error_code}")
-    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"S3 error: {error_code}") from e
+    except Exception:
         logger.exception("S3 enumeration failed")
-        raise HTTPException(status_code=502, detail="S3 enumeration failed: internal error")
+        raise HTTPException(status_code=502, detail="S3 enumeration failed: internal error") from None
 
 
 # ── GCS enumeration ──────────────────────────────────────────────────
@@ -715,7 +715,7 @@ async def _enumerate_gcs(creds: dict[str, Any]) -> list[EnumeratedResource]:
         from google.cloud import storage as gcs_storage
         from google.oauth2 import service_account
     except ImportError:
-        raise HTTPException(status_code=500, detail="google-cloud-storage not installed")
+        raise HTTPException(status_code=500, detail="google-cloud-storage not installed") from None
 
     try:
         import json as json_module
@@ -740,9 +740,9 @@ async def _enumerate_gcs(creds: dict[str, Any]) -> list[EnumeratedResource]:
             ))
         return resources
 
-    except Exception as e:
+    except Exception:
         logger.exception("GCS enumeration failed")
-        raise HTTPException(status_code=502, detail="GCS enumeration failed: internal error")
+        raise HTTPException(status_code=502, detail="GCS enumeration failed: internal error") from None
 
 
 # ── Azure Blob enumeration ───────────────────────────────────────────
@@ -765,7 +765,7 @@ async def _enumerate_azure_blob(creds: dict[str, Any]) -> list[EnumeratedResourc
     try:
         from azure.storage.blob import BlobServiceClient
     except ImportError:
-        raise HTTPException(status_code=500, detail="azure-storage-blob not installed")
+        raise HTTPException(status_code=500, detail="azure-storage-blob not installed") from None
 
     try:
         account_url = f"https://{storage_account}.blob.core.windows.net"
@@ -789,9 +789,9 @@ async def _enumerate_azure_blob(creds: dict[str, Any]) -> list[EnumeratedResourc
             ))
         return resources
 
-    except Exception as e:
+    except Exception:
         logger.exception("Azure Blob enumeration failed")
-        raise HTTPException(status_code=502, detail="Azure Blob enumeration failed: internal error")
+        raise HTTPException(status_code=502, detail="Azure Blob enumeration failed: internal error") from None
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────

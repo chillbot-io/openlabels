@@ -9,25 +9,22 @@ Tests cover:
 - Full score function
 """
 
-import pytest
-from openlabels.core.types import RiskTier
 from openlabels.core.scoring.scorer import (
-    get_weight,
-    get_category,
-    get_categories,
-    get_co_occurrence_multiplier,
-    calculate_content_score,
-    score_to_tier,
-    score,
-    ENTITY_WEIGHTS,
-    ENTITY_CATEGORIES,
     CO_OCCURRENCE_RULES,
-    TIER_THRESHOLDS,
-    EXPOSURE_MULTIPLIERS,
-    WEIGHT_SCALE,
     DEFAULT_WEIGHT,
+    ENTITY_WEIGHTS,
+    EXPOSURE_MULTIPLIERS,
+    TIER_THRESHOLDS,
+    WEIGHT_SCALE,
+    calculate_content_score,
+    get_categories,
+    get_category,
+    get_co_occurrence_multiplier,
+    get_weight,
+    score,
+    score_to_tier,
 )
-
+from openlabels.core.types import RiskTier
 
 # =============================================================================
 # GET WEIGHT TESTS

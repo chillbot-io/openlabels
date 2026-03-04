@@ -8,14 +8,12 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from openlabels.core.benchmark.dataset import (
     BenchmarkSample,
     GoldSpan,
+    _load_from_cache,
     _load_multilingual,
     _parse_annotations,
-    _load_from_cache,
     load_dataset,
 )
 

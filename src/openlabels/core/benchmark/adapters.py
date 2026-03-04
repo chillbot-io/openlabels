@@ -882,7 +882,7 @@ def _log_first_rows_diagnostic(ds: object, n: int = 3) -> None:
         logger.warning("Nemotron-PII diagnostic failed: %s", exc)
 
 
-def _nemotron_pass_spans(ds: object) -> tuple[list["BenchmarkSample"], dict]:
+def _nemotron_pass_spans(ds: object) -> tuple[list[BenchmarkSample], dict]:
     """First pass: parse the ``spans`` column."""
     samples: list[BenchmarkSample] = []
     stats = {
@@ -962,7 +962,7 @@ def _log_span_rejections(text: str, span_list: list[dict], row_idx: int) -> None
         )
 
 
-def _nemotron_pass_tagged(ds: object) -> tuple[list["BenchmarkSample"], dict]:
+def _nemotron_pass_tagged(ds: object) -> tuple[list[BenchmarkSample], dict]:
     """Fallback pass: extract spans from ``text_tagged`` XML markup."""
     samples: list[BenchmarkSample] = []
     stats = {
@@ -1000,7 +1000,7 @@ def _nemotron_pass_tagged(ds: object) -> tuple[list["BenchmarkSample"], dict]:
     return samples, stats
 
 
-def _write_nemotron_cache(cache_path: Path, samples: list["BenchmarkSample"]) -> None:
+def _write_nemotron_cache(cache_path: Path, samples: list[BenchmarkSample]) -> None:
     """Write parsed Nemotron-PII samples to JSONL cache."""
     with open(cache_path, "w", encoding="utf-8") as f:
         for s in samples:

@@ -3,7 +3,7 @@
 import csv
 import io
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -12,7 +12,6 @@ from openlabels.reporting.engine import (
     ReportEngine,
     ReportRenderer,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

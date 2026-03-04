@@ -15,9 +15,8 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from openlabels.core.benchmark.dataset import BenchmarkSample, DatasetLoadError, load_dataset
+from openlabels.core.benchmark.dataset import BenchmarkSample, load_dataset
 from openlabels.core.benchmark.entity_mapping import UNMAPPED_PRED_TYPES
-from openlabels.core.types import normalize_entity_type
 from openlabels.core.benchmark.evaluate import (
     EvalMetrics,
     SpanMatch,
@@ -28,6 +27,7 @@ from openlabels.core.benchmark.evaluate import (
     per_category_metrics,
     per_entity_type_metrics,
 )
+from openlabels.core.types import normalize_entity_type
 
 logger = logging.getLogger(__name__)
 
@@ -94,38 +94,38 @@ class BenchmarkConfig:
         from openlabels.core.detectors.config import DetectionConfig
 
         ml_dir = Path(self.ml_model_dir) if self.ml_model_dir else None
-        kwargs: dict = dict(
-            enable_checksum=self.enable_checksum,
-            enable_secrets=self.enable_secrets,
-            enable_financial=self.enable_financial,
-            enable_government=self.enable_government,
-            enable_patterns=self.enable_patterns,
-            enable_dictionary_names=self.enable_patterns,  # follows patterns flag
-            enable_language_detection=self.enable_language_detection,
-            enable_ml=self.enable_ml,
-            enable_phi=self.enable_phi,
-            enable_hyperscan=self.enable_hyperscan,
-            confidence_threshold=self.confidence_threshold,
-            max_workers=self.max_workers,
-            ml_model_dir=ml_dir,
+        kwargs: dict = {
+            "enable_checksum": self.enable_checksum,
+            "enable_secrets": self.enable_secrets,
+            "enable_financial": self.enable_financial,
+            "enable_government": self.enable_government,
+            "enable_patterns": self.enable_patterns,
+            "enable_dictionary_names": self.enable_patterns,  # follows patterns flag
+            "enable_language_detection": self.enable_language_detection,
+            "enable_ml": self.enable_ml,
+            "enable_phi": self.enable_phi,
+            "enable_hyperscan": self.enable_hyperscan,
+            "confidence_threshold": self.confidence_threshold,
+            "max_workers": self.max_workers,
+            "ml_model_dir": ml_dir,
             # ML tuning
-            ml_confidence_threshold=self.ml_confidence_threshold,
-            gliner_model=self.gliner_model,
-            gliner_threshold=self.gliner_threshold,
-            use_onnx=self.use_onnx,
-            enable_label_selection=self.enable_label_selection,
+            "ml_confidence_threshold": self.ml_confidence_threshold,
+            "gliner_model": self.gliner_model,
+            "gliner_threshold": self.gliner_threshold,
+            "use_onnx": self.use_onnx,
+            "enable_label_selection": self.enable_label_selection,
             # Stanford PHI
-            phi_model=self.phi_model,
-            phi_threshold=self.phi_threshold,
+            "phi_model": self.phi_model,
+            "phi_threshold": self.phi_threshold,
             # Post-processing
-            enable_coref=self.enable_coref,
-            enable_context_enhancement=self.enable_context_enhancement,
-            enable_context_keywords=self.enable_context_keywords,
-            enable_proximity_boost=self.enable_proximity_boost,
-            proximity_window_chars=self.proximity_window_chars,
-            enable_allowlist=self.enable_allowlist,
-            enable_policy=self.enable_policy,
-        )
+            "enable_coref": self.enable_coref,
+            "enable_context_enhancement": self.enable_context_enhancement,
+            "enable_context_keywords": self.enable_context_keywords,
+            "enable_proximity_boost": self.enable_proximity_boost,
+            "proximity_window_chars": self.proximity_window_chars,
+            "enable_allowlist": self.enable_allowlist,
+            "enable_policy": self.enable_policy,
+        }
         if self.entity_thresholds is not None:
             kwargs["entity_thresholds"] = self.entity_thresholds
         return DetectionConfig(**kwargs)

@@ -6,11 +6,12 @@ fallback (ONNX model tests require the actual model files).
 Tests rule-based coreference resolution.
 """
 
-import pytest
 from unittest.mock import patch
 
-from openlabels.core.types import Span, Tier
+import pytest
+
 import openlabels.core.pipeline.coref as coref_module
+from openlabels.core.types import Span, Tier
 
 
 def make_span(text, start=0, entity_type="NAME", confidence=0.9, detector="test",

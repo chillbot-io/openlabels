@@ -9,17 +9,17 @@ Covers:
 """
 
 import os
+
 import pytest
-from pathlib import Path
 
 from openlabels.core.path_validation import (
+    BLOCKED_FILE_PATTERNS,
+    BLOCKED_PATH_PREFIXES,
     PathValidationError,
-    validate_path,
-    validate_output_path,
     _check_blocked_paths,
     _check_blocked_patterns,
-    BLOCKED_PATH_PREFIXES,
-    BLOCKED_FILE_PATTERNS,
+    validate_output_path,
+    validate_path,
 )
 
 

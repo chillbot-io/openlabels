@@ -5,26 +5,23 @@ Tests the double-submit cookie pattern, origin validation,
 and request protection. Strong assertions, no skipping.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-import secrets
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
-from urllib.parse import urlparse
 
 from openlabels.server.middleware.csrf import (
-    generate_csrf_token,
-    is_same_origin,
-    validate_csrf_token,
-    CSRFMiddleware,
     CSRF_COOKIE_NAME,
     CSRF_HEADER_NAME,
     CSRF_TOKEN_LENGTH,
-    SESSION_COOKIE_NAME,
-    PROTECTED_METHODS,
     EXEMPT_PATHS,
+    PROTECTED_METHODS,
+    SESSION_COOKIE_NAME,
+    CSRFMiddleware,
     _normalize_path,
-    _session_binding,
+    generate_csrf_token,
+    is_same_origin,
+    validate_csrf_token,
 )
-
 
 # =============================================================================
 # TOKEN GENERATION TESTS
@@ -741,8 +738,8 @@ class TestConcurrentRequests:
 
     def test_multiple_tokens_generated_simultaneously(self):
         """Multiple simultaneous token generations should all be unique."""
-        import threading
         import queue
+        import threading
 
         result_queue = queue.Queue()
 

@@ -5,9 +5,6 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
-import pyarrow as pa
-import pytest
-
 from openlabels.analytics.arrow_convert import (
     _entity_counts_to_map,
     _ts,
@@ -15,7 +12,6 @@ from openlabels.analytics.arrow_convert import (
     scan_results_to_arrow,
 )
 from openlabels.analytics.schemas import SCAN_RESULTS_SCHEMA
-
 
 # ── Unit tests for helpers ────────────────────────────────────────────
 
@@ -88,28 +84,28 @@ class FakeScanResult:
 
 
 def _make_fake(**overrides) -> FakeScanResult:
-    defaults = dict(
-        id=uuid4(),
-        job_id=uuid4(),
-        tenant_id=uuid4(),
-        file_path="/test/file.txt",
-        file_name="file.txt",
-        file_size=1024,
-        file_modified=datetime(2026, 2, 1, tzinfo=timezone.utc),
-        content_hash="abc",
-        risk_score=50,
-        risk_tier="MEDIUM",
-        content_score=40.0,
-        exposure_multiplier=1.2,
-        exposure_level="INTERNAL",
-        owner="user@test.com",
-        entity_counts={"SSN": 2, "EMAIL": 1},
-        total_entities=3,
-        label_applied=False,
-        current_label_name=None,
-        policy_violations=None,
-        scanned_at=datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
-    )
+    defaults = {
+        "id": uuid4(),
+        "job_id": uuid4(),
+        "tenant_id": uuid4(),
+        "file_path": "/test/file.txt",
+        "file_name": "file.txt",
+        "file_size": 1024,
+        "file_modified": datetime(2026, 2, 1, tzinfo=timezone.utc),
+        "content_hash": "abc",
+        "risk_score": 50,
+        "risk_tier": "MEDIUM",
+        "content_score": 40.0,
+        "exposure_multiplier": 1.2,
+        "exposure_level": "INTERNAL",
+        "owner": "user@test.com",
+        "entity_counts": {"SSN": 2, "EMAIL": 1},
+        "total_entities": 3,
+        "label_applied": False,
+        "current_label_name": None,
+        "policy_violations": None,
+        "scanned_at": datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
+    }
     defaults.update(overrides)
     return FakeScanResult(**defaults)
 

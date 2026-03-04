@@ -9,15 +9,15 @@ Tests cover:
 """
 
 import pytest
+
+from openlabels.core.pipeline.entity_resolver import Entity, Mention
 from openlabels.core.types import (
+    DetectionResult,
+    RiskTier,
     Span,
     Tier,
-    DetectionResult,
     normalize_entity_type,
-    RiskTier,
 )
-from openlabels.core.pipeline.entity_resolver import Entity, Mention
-
 
 # =============================================================================
 # SPAN TESTS

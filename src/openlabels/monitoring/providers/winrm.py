@@ -23,11 +23,10 @@ and M365 harvester.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 
-from openlabels.monitoring.providers.base import EventProvider, RawAccessEvent
+from openlabels.monitoring.providers.base import RawAccessEvent
 
 logger = logging.getLogger(__name__)
 
@@ -229,9 +228,10 @@ class WinRMProvider:
             tenant.  This prevents cross-tenant credential leakage.
         """
         try:
+            from sqlalchemy import select
+
             from openlabels.server.db import get_session_context
             from openlabels.server.models import SavedCredential
-            from sqlalchemy import select
 
             # Import the public decrypt API from the credentials module.
             # Falls back to the private name for backward compatibility.

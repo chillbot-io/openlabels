@@ -93,7 +93,7 @@ def _load_manifest(manifest_path: Path) -> dict[str, Any]:
         return {}
 
     try:
-        with open(manifest_path, "r") as f:
+        with open(manifest_path) as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to read model manifest %s: %s", manifest_path, e)

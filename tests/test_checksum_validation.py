@@ -16,24 +16,24 @@ No skipping - dependencies must be present.
 """
 
 import pytest
+
 from openlabels.core.detectors.checksum import (
     ChecksumDetector,
     luhn_check,
-    validate_ssn,
-    validate_credit_card,
-    validate_npi,
-    validate_dea,
-    validate_iban,
-    validate_vin,
     validate_aba_routing,
-    validate_ups_tracking,
-    validate_fedex_tracking,
-    validate_usps_tracking,
+    validate_credit_card,
     validate_cusip,
+    validate_dea,
+    validate_fedex_tracking,
+    validate_iban,
     validate_isin,
+    validate_npi,
+    validate_ssn,
+    validate_ups_tracking,
+    validate_usps_tracking,
+    validate_vin,
 )
 from openlabels.core.types import Tier
-
 
 # =============================================================================
 # LUHN ALGORITHM TESTS

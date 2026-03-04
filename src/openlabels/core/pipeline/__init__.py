@@ -80,7 +80,7 @@ __all__ = [
 # Import explicitly when needed:
 #   from openlabels.core.pipeline.coref import resolve_coreferences
 try:
-    from .coref import (
+    from .coref import (  # noqa: F401
         NAME_TYPES,
         PRONOUNS,
         is_fastcoref_available,

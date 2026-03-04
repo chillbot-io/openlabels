@@ -31,18 +31,11 @@ from openlabels.adapters import (
 from openlabels.adapters.base import FileInfo
 from openlabels.core.constants import RISK_TIER_PRIORITY
 from openlabels.core.policies.engine import get_policy_engine
-from openlabels.core.types import AdapterType, ExposureLevel, JobStatus
 from openlabels.core.policies.schema import EntityMatch
 from openlabels.core.processor import FileProcessor
+from openlabels.core.types import AdapterType, ExposureLevel, JobStatus
 from openlabels.exceptions import AdapterError, JobError
 from openlabels.jobs.pipeline import FilePipeline, PipelineContext
-from openlabels.server.config import get_settings
-from openlabels.server.metrics import (
-    record_entities_found,
-    record_file_processed,
-    record_processing_duration,
-)
-from openlabels.server.models import ScanJob, ScanResult, ScanTarget
 
 # Re-export extracted functions so existing importers continue to work.
 # scan_partition.py imports _build_pipeline_config, _auto_label_results,
@@ -53,6 +46,13 @@ from openlabels.jobs.tasks.scan_labeling import (  # noqa: F401
     _cloud_label_sync_back,
 )
 from openlabels.jobs.tasks.scan_processors import _run_agent_pool_scan
+from openlabels.server.config import get_settings
+from openlabels.server.metrics import (
+    record_entities_found,
+    record_file_processed,
+    record_processing_duration,
+)
+from openlabels.server.models import ScanJob, ScanResult, ScanTarget
 
 logger = logging.getLogger(__name__)
 
@@ -1031,7 +1031,6 @@ async def _detect_and_score(
             })
 
         # Policy evaluation
-        policy_data = None
         policy_violations = None
         if result.spans:
             try:
@@ -1049,7 +1048,7 @@ async def _detect_and_score(
                 engine = get_policy_engine()
                 policy_result = engine.evaluate(entity_matches)
                 if policy_result.is_sensitive:
-                    policy_data = policy_result.to_dict()
+                    policy_result.to_dict()
                     # Map policy names to their framework categories
                     name_to_framework = {
                         p.name: p.category.value
