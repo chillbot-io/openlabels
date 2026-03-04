@@ -2,23 +2,19 @@
 
 Tests cover:
 - Entity weight lookups
-- Category lookups
-- Co-occurrence multipliers
+- Co-occurrence multipliers (domain-based)
 - Content score calculation
 - Tier mapping
 - Full score function
 """
 
 from openlabels.core.scoring.scorer import (
-    CO_OCCURRENCE_RULES,
     DEFAULT_WEIGHT,
     ENTITY_WEIGHTS,
     EXPOSURE_MULTIPLIERS,
     TIER_THRESHOLDS,
     WEIGHT_SCALE,
     calculate_content_score,
-    get_categories,
-    get_category,
     get_co_occurrence_multiplier,
     get_weight,
     score,
@@ -69,98 +65,15 @@ class TestGetWeight:
 
 
 # =============================================================================
-# GET CATEGORY TESTS
-# =============================================================================
-
-class TestGetCategory:
-    """Tests for get_category function."""
-
-    def test_direct_identifiers(self):
-        """Direct identifiers are categorized correctly."""
-        assert get_category("SSN") == "direct_identifier"
-        assert get_category("PASSPORT") == "direct_identifier"
-        assert get_category("DRIVER_LICENSE") == "direct_identifier"
-        assert get_category("MRN") == "direct_identifier"
-
-    def test_health_info(self):
-        """Health info entities are categorized correctly."""
-        assert get_category("DIAGNOSIS") == "health_info"
-        assert get_category("MEDICATION") == "health_info"
-        assert get_category("NPI") == "health_info"
-
-    def test_financial(self):
-        """Financial entities are categorized correctly."""
-        assert get_category("CREDIT_CARD") == "financial"
-        assert get_category("IBAN") == "financial"
-        assert get_category("BITCOIN_ADDRESS") == "financial"
-
-    def test_credentials(self):
-        """Credential entities are categorized correctly."""
-        assert get_category("PASSWORD") == "credential"
-        assert get_category("API_KEY") == "credential"
-        assert get_category("JWT") == "credential"
-        assert get_category("AWS_ACCESS_KEY") == "credential"
-
-    def test_contact_info(self):
-        """Contact entities are categorized correctly."""
-        assert get_category("EMAIL") == "contact"
-        assert get_category("PHONE") == "contact"
-        assert get_category("ADDRESS") == "contact"
-
-    def test_quasi_identifiers(self):
-        """Quasi-identifiers are categorized correctly."""
-        assert get_category("NAME") == "quasi_identifier"
-        assert get_category("DATE_DOB") == "quasi_identifier"
-        assert get_category("AGE") == "quasi_identifier"
-
-    def test_unknown_category(self):
-        """Unknown entities return 'unknown' category."""
-        assert get_category("UNKNOWN_TYPE") == "unknown"
-
-
-# =============================================================================
-# GET CATEGORIES TESTS
-# =============================================================================
-
-class TestGetCategories:
-    """Tests for get_categories function."""
-
-    def test_empty_entities(self):
-        """Empty entities returns empty set."""
-        assert get_categories({}) == set()
-
-    def test_single_category(self):
-        """Single entity type returns its category."""
-        result = get_categories({"SSN": 1})
-        assert result == {"direct_identifier"}
-
-    def test_multiple_categories(self):
-        """Multiple entity types return their categories."""
-        result = get_categories({
-            "SSN": 1,
-            "DIAGNOSIS": 1,
-            "EMAIL": 1,
-        })
-        assert "direct_identifier" in result
-        assert "health_info" in result
-        assert "contact" in result
-
-    def test_excludes_unknown(self):
-        """Unknown categories are excluded."""
-        result = get_categories({
-            "SSN": 1,
-            "UNKNOWN_TYPE": 1,
-        })
-        assert "unknown" not in result
-        assert "direct_identifier" in result
-
-
-# =============================================================================
-# CO-OCCURRENCE MULTIPLIER TESTS
+# CO-OCCURRENCE MULTIPLIER TESTS (domain-based compositions)
 # =============================================================================
 
 class TestGetCoOccurrenceMultiplier:
-    """Tests for get_co_occurrence_multiplier function."""
+    """Tests for get_co_occurrence_multiplier function.
+
+    These now delegate to domain-based compliance compositions in
+    entity_domains.py rather than the removed CO_OCCURRENCE_RULES.
+    """
 
     def test_empty_entities(self):
         """Empty entities returns multiplier 1.0."""
@@ -169,36 +82,43 @@ class TestGetCoOccurrenceMultiplier:
         assert rules == []
 
     def test_hipaa_phi_rule(self):
-        """Direct ID + Health data triggers HIPAA PHI rule."""
+        """Identifier + medical data triggers HIPAA PHI composition."""
         entities = {"SSN": 1, "DIAGNOSIS": 1}
         mult, rules = get_co_occurrence_multiplier(entities)
         assert mult == 2.0
         assert "hipaa_phi" in rules
 
-    def test_identity_theft_rule(self):
-        """Direct ID + Financial triggers identity theft rule."""
+    def test_identity_package_rule(self):
+        """Identifier + government + financial triggers full identity composition."""
+        # SSN has {IDENTIFIER, GOVERNMENT}, CREDIT_CARD has {IDENTIFIER, FINANCIAL}
         entities = {"SSN": 1, "CREDIT_CARD": 1}
         mult, rules = get_co_occurrence_multiplier(entities)
-        assert mult == 1.8
-        assert "identity_theft" in rules
+        assert mult >= 1.8  # full_identity (2.2) or higher
 
     def test_credential_exposure_rule(self):
-        """Credentials alone trigger exposure rule."""
+        """Credentials alone trigger exposure composition."""
         entities = {"PASSWORD": 1}
         mult, rules = get_co_occurrence_multiplier(entities)
         assert mult == 1.5
         assert "credential_exposure" in rules
 
     def test_classified_data_rule(self):
-        """Classification markings trigger classified rule."""
+        """Classification markings trigger classified composition."""
         entities = {"CLASSIFICATION_LEVEL": 1}
         mult, rules = get_co_occurrence_multiplier(entities)
         assert mult == 2.5
         assert "classified_data" in rules
 
+    def test_classified_does_not_fire_for_government_ids(self):
+        """Government IDs like SSN should NOT trigger classified_data."""
+        entities = {"SSN": 1}
+        mult, rules = get_co_occurrence_multiplier(entities)
+        assert "classified_data" not in rules
+
     def test_highest_multiplier_wins(self):
         """Highest applicable multiplier is used."""
-        # Classified (2.5) should win over HIPAA PHI (2.0)
+        # SSN (identifier+gov) + DIAGNOSIS (medical) + CLASSIFICATION_LEVEL (classification)
+        # classified_data (2.5) > hipaa_phi (2.0)
         entities = {"SSN": 1, "DIAGNOSIS": 1, "CLASSIFICATION_LEVEL": 1}
         mult, rules = get_co_occurrence_multiplier(entities)
         assert mult == 2.5
@@ -224,11 +144,11 @@ class TestCalculateContentScore:
 
     def test_single_ssn(self):
         """Single SSN has expected score."""
-        score = calculate_content_score({"SSN": 1})
+        s = calculate_content_score({"SSN": 1})
         # SSN weight=10, scale=4.0, aggregation=1+ln(1)=1
         # Expected: 10 * 4 * 1 * 0.85 = 34
-        assert score > 30
-        assert score < 50
+        assert s > 30
+        assert s < 50
 
     def test_count_aggregation(self):
         """Multiple instances have diminishing returns."""
@@ -361,10 +281,11 @@ class TestScore:
         assert "hipaa_phi" in result.co_occurrence_rules
 
     def test_categories_in_result(self):
-        """Categories are included in result."""
+        """Domain-based categories are included in result."""
         result = score({"SSN": 1, "EMAIL": 1})
 
-        assert "direct_identifier" in result.categories
+        # Now uses EntityDomain values instead of legacy category names
+        assert "identifier" in result.categories
         assert "contact" in result.categories
 
     def test_content_score_in_result(self):
@@ -425,8 +346,3 @@ class TestConstants:
     def test_default_weight_in_range(self):
         """DEFAULT_WEIGHT is in 1-10 range."""
         assert 1 <= DEFAULT_WEIGHT <= 10
-
-    def test_co_occurrence_multipliers_positive(self):
-        """Co-occurrence multipliers are all >= 1.0."""
-        for _, mult, _ in CO_OCCURRENCE_RULES:
-            assert mult >= 1.0

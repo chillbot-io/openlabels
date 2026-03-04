@@ -64,7 +64,8 @@ class EntityDomain(str, Enum):
     LOCATION = "location"           # Geographic information
     TEMPORAL = "temporal"           # Dates, times, ages
     BIOMETRIC = "biometric"         # Physical/behavioral characteristics
-    GOVERNMENT = "government"       # Government-issued or classified
+    GOVERNMENT = "government"       # Government-issued identifiers
+    CLASSIFICATION = "classification"  # Security markings & clearances
     VEHICLE = "vehicle"             # Vehicle identifiers
     PROFESSIONAL = "professional"   # Employment/organizational
     NETWORK = "network"             # Digital infrastructure (IPs, MACs)
@@ -84,6 +85,7 @@ _LOC = EntityDomain.LOCATION
 _TMP = EntityDomain.TEMPORAL
 _BIO = EntityDomain.BIOMETRIC
 _GOV = EntityDomain.GOVERNMENT
+_CLS = EntityDomain.CLASSIFICATION
 _VEH = EntityDomain.VEHICLE
 _PRO = EntityDomain.PROFESSIONAL
 _NET = EntityDomain.NETWORK
@@ -319,13 +321,13 @@ ENTITY_DOMAIN_REGISTRY: dict[str, frozenset[EntityDomain]] = {
     "VENDOR":          frozenset({_PRO}),
 
     # --- Government Classification ---
-    "CLASSIFICATION_LEVEL":   frozenset({_GOV}),
-    "CLASSIFICATION_MARKING": frozenset({_GOV}),
-    "SCI_MARKING":            frozenset({_GOV}),
-    "DISSEMINATION_CONTROL":  frozenset({_GOV}),
-    "CLEARANCE_LEVEL":        frozenset({_GOV}),
-    "ITAR_MARKING":           frozenset({_GOV}),
-    "EAR_MARKING":            frozenset({_GOV}),
+    "CLASSIFICATION_LEVEL":   frozenset({_CLS}),
+    "CLASSIFICATION_MARKING": frozenset({_CLS}),
+    "SCI_MARKING":            frozenset({_CLS}),
+    "DISSEMINATION_CONTROL":  frozenset({_CLS}),
+    "CLEARANCE_LEVEL":        frozenset({_CLS}),
+    "ITAR_MARKING":           frozenset({_CLS}),
+    "EAR_MARKING":            frozenset({_CLS}),
     "CAGE_CODE":              frozenset({_GOV, _ID}),
     "UEI":                    frozenset({_GOV, _ID}),
     "DUNS_NUMBER":            frozenset({_GOV, _ID}),
@@ -430,6 +432,15 @@ class ComplianceComposition:
     risk_level: RiskLevel
     score_multiplier: float
     description: str
+    excluded_domains: frozenset[EntityDomain] = frozenset()
+
+    def matches(self, present_domains: set[EntityDomain]) -> bool:
+        """Check if this composition matches the given domain set."""
+        if not self.required_domains.issubset(present_domains):
+            return False
+        if self.excluded_domains and self.excluded_domains.intersection(present_domains):
+            return False
+        return True
 
 
 COMPLIANCE_COMPOSITIONS: list[ComplianceComposition] = [
@@ -505,11 +516,10 @@ COMPLIANCE_COMPOSITIONS: list[ComplianceComposition] = [
         score_multiplier=1.5,
         description="Exposed credentials, secrets, or API keys",
     ),
-    # Classified data (only fires for classification-marking entities, which
-    # have GOVERNMENT without IDENTIFIER)
+    # Classified data: fires for security classification markings
     ComplianceComposition(
         name="classified_data",
-        required_domains=frozenset({EntityDomain.GOVERNMENT}),
+        required_domains=frozenset({EntityDomain.CLASSIFICATION}),
         implies_framework=PolicyCategory.CUSTOM,
         risk_level=RiskLevel.CRITICAL,
         score_multiplier=2.5,
@@ -595,7 +605,8 @@ _LEGACY_DOMAIN_PRIORITY: list[tuple[EntityDomain, str]] = [
     (EntityDomain.FINANCIAL, "financial"),
     (EntityDomain.MEDICAL, "health_info"),
     (EntityDomain.CONTACT, "contact"),
-    (EntityDomain.GOVERNMENT, "classification_marking"),
+    (EntityDomain.CLASSIFICATION, "classification_marking"),
+    (EntityDomain.GOVERNMENT, "direct_identifier"),
     (EntityDomain.IDENTIFIER, "direct_identifier"),
 ]
 
@@ -644,7 +655,7 @@ def evaluate_compositions(
 
     matched: list[ComplianceComposition] = []
     for comp in COMPLIANCE_COMPOSITIONS:
-        if comp.required_domains.issubset(present_domains):
+        if comp.matches(present_domains):
             matched.append(comp)
 
     return sorted(matched, key=lambda c: c.score_multiplier, reverse=True)

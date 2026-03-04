@@ -60,8 +60,8 @@ class TestRegistryCoverage:
 # -----------------------------------------------------------------------
 
 class TestEntityDomainEnum:
-    def test_exactly_13_domains(self):
-        assert len(EntityDomain) == 13
+    def test_exactly_14_domains(self):
+        assert len(EntityDomain) == 14
 
     def test_string_values(self):
         for domain in EntityDomain:
@@ -71,8 +71,8 @@ class TestEntityDomainEnum:
     def test_known_domains(self):
         expected = {
             "identifier", "medical", "financial", "credential", "contact",
-            "location", "temporal", "biometric", "government", "vehicle",
-            "professional", "network", "demographic",
+            "location", "temporal", "biometric", "government", "classification",
+            "vehicle", "professional", "network", "demographic",
         }
         actual = {d.value for d in EntityDomain}
         assert actual == expected
@@ -179,7 +179,8 @@ class TestEvaluateCompositions:
         names = [c.name for c in compositions]
         assert "hipaa_phi" in names
         assert "gdpr_health" in names
-        assert "classified_data" in names  # has GOVERNMENT
+        # classified_data does NOT fire: requires CLASSIFICATION domain,
+        # not GOVERNMENT (which is for government-issued IDs)
 
     def test_credential_only(self):
         compositions = evaluate_compositions(["AWS_ACCESS_KEY"])
@@ -207,7 +208,7 @@ class TestEvaluateCompositions:
         assert "pci_dss" in names
 
     def test_classification_markings_only(self):
-        """Classification entities have GOVERNMENT without IDENTIFIER."""
+        """Classification entities have CLASSIFICATION domain."""
         compositions = evaluate_compositions(["CLASSIFICATION_LEVEL"])
         names = [c.name for c in compositions]
         assert "classified_data" in names
@@ -236,7 +237,7 @@ class TestGetComplianceFrameworks:
         assert PolicyCategory.HIPAA in frameworks
 
     def test_multiple_frameworks(self):
-        # SSN + CREDIT_CARD → PII, PCI_DSS, GLBA, CUSTOM (classified_data via GOV)
+        # SSN + CREDIT_CARD → PII, PCI_DSS, GLBA (no classified_data: that needs CLASSIFICATION)
         frameworks = get_compliance_frameworks(["SSN", "CREDIT_CARD"])
         assert PolicyCategory.PCI_DSS in frameworks
         assert PolicyCategory.PII in frameworks
@@ -274,13 +275,11 @@ class TestGetMaxScoreMultiplier:
         assert "credential_exposure" in rules
 
     def test_full_identity_multiplier(self):
-        # SSN has GOVERNMENT domain, so classified_data (2.5) also fires
+        # SSN has {IDENTIFIER, GOVERNMENT}, CREDIT_CARD has {IDENTIFIER, FINANCIAL}
+        # Together: full_identity (2.2) is the highest
         mult, rules = get_max_score_multiplier({"SSN": 1, "CREDIT_CARD": 1})
-        assert mult == 2.5
-        assert "classified_data" in rules
-        # Verify full_identity is in the compositions list
-        compositions = evaluate_compositions({"SSN": 1, "CREDIT_CARD": 1})
-        assert any(c.name == "full_identity" for c in compositions)
+        assert mult == 2.2
+        assert "full_identity" in rules
 
     def test_parity_with_current_scorer_rules(self):
         """Verify that the key multiplier values match the existing CO_OCCURRENCE_RULES."""
@@ -288,11 +287,11 @@ class TestGetMaxScoreMultiplier:
         mult, _ = get_max_score_multiplier({"MRN": 1, "DIAGNOSIS": 1})
         assert mult == 2.0
 
-        # identity_theft = 1.8 (but full_identity = 2.2 fires too since SSN has GOV+ID and CC has FIN+ID)
-        # Use a GOV+FIN combo without triple-domain overlap
+        # SSN has {GOVERNMENT, IDENTIFIER}, SWIFT_BIC has {FINANCIAL}
+        # Together all three → full_identity (2.2) wins over identity_theft (1.8)
         mult, rules = get_max_score_multiplier({"SSN": 1, "SWIFT_BIC": 1})
-        assert mult >= 1.8
-        assert "identity_theft" in rules or "classified_data" in rules
+        assert mult == 2.2
+        assert "full_identity" in rules
 
         # credential_exposure = 1.5
         mult, _ = get_max_score_multiplier({"JWT": 1})
@@ -388,7 +387,7 @@ class TestEdgeCases:
         """A single multi-domain entity can trigger compositions."""
         # NHS_NUMBER is {IDENTIFIER, GOVERNMENT, MEDICAL}
         compositions = evaluate_compositions(["NHS_NUMBER"])
-        assert len(compositions) >= 3  # hipaa_phi, gdpr_health, classified_data, ...
+        assert len(compositions) >= 2  # hipaa_phi, gdpr_health, ...
 
     def test_duplicate_entity_types(self):
         """Duplicate entity types in iterable don't change domains."""

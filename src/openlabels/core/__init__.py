@@ -61,7 +61,6 @@ from .processor import (
 )
 from .scoring.scorer import (
     calculate_content_score,
-    get_category,
     get_weight,
     score,
     score_to_tier,
@@ -105,7 +104,6 @@ __all__ = [
     # Scoring
     "score",
     "get_weight",
-    "get_category",
     "calculate_content_score",
     "score_to_tier",
     # Processor

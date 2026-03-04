@@ -19,7 +19,7 @@ Weights are on a 1-10 scale:
 
 import math
 
-from ..entity_domains import get_legacy_category
+from ..entity_domains import get_all_domains, get_max_score_multiplier
 from ..types import RiskTier, ScoringResult, normalize_entity_type
 
 # CALIBRATION PARAMETERS
@@ -158,25 +158,6 @@ ENTITY_WEIGHTS: dict[str, int] = {
 
 DEFAULT_WEIGHT = 5  # For unknown entity types
 
-# CO-OCCURRENCE RULES
-# (required_categories, multiplier, rule_name)
-CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
-    # HIPAA: Direct ID + Health data
-    ({'direct_identifier', 'health_info'}, 2.0, 'hipaa_phi'),
-    # Identity theft: Direct ID + Financial
-    ({'direct_identifier', 'financial'}, 1.8, 'identity_theft'),
-    # Credentials always risky
-    ({'credential'}, 1.5, 'credential_exposure'),
-    # Personal + Health (even without direct ID)
-    ({'quasi_identifier', 'health_info'}, 1.5, 'phi_without_id'),
-    # Contact + Health
-    ({'contact', 'health_info'}, 1.4, 'phi_with_contact'),
-    # Full identity package
-    ({'direct_identifier', 'quasi_identifier', 'financial'}, 2.2, 'full_identity'),
-    # Classified data
-    ({'classification_marking'}, 2.5, 'classified_data'),
-]
-
 
 # SCORING FUNCTIONS
 def get_weight(entity_type: str) -> int:
@@ -185,42 +166,13 @@ def get_weight(entity_type: str) -> int:
     return ENTITY_WEIGHTS.get(normalized, DEFAULT_WEIGHT)
 
 
-def get_category(entity_type: str) -> str:
-    """Get category for an entity type.
-
-    Delegates to the unified entity domain taxonomy via ``get_legacy_category``.
-    """
-    return get_legacy_category(entity_type)
-
-
-def get_categories(entities: dict[str, int]) -> set[str]:
-    """Get set of categories present in entities."""
-    categories = set()
-    for entity_type in entities:
-        cat = get_category(entity_type)
-        if cat and cat != "unknown":
-            categories.add(cat)
-    return categories
-
-
 def get_co_occurrence_multiplier(entities: dict[str, int]) -> tuple[float, list[str]]:
-    """Get the highest applicable co-occurrence multiplier."""
-    if not entities:
-        return 1.0, []
+    """Get the highest applicable co-occurrence multiplier.
 
-    categories = get_categories(entities)
-    max_mult = 1.0
-    triggered_rules = []
-
-    for required_cats, mult, rule_name in CO_OCCURRENCE_RULES:
-        if required_cats.issubset(categories):
-            if mult > max_mult:
-                max_mult = mult
-                triggered_rules = [rule_name]
-            elif mult == max_mult:
-                triggered_rules.append(rule_name)
-
-    return max_mult, triggered_rules
+    Delegates to the domain-based compliance compositions defined in
+    :mod:`openlabels.core.entity_domains`.
+    """
+    return get_max_score_multiplier(entities)
 
 
 def calculate_content_score(
@@ -312,6 +264,6 @@ def score(
         exposure_multiplier=exp_mult,
         co_occurrence_multiplier=co_mult,
         co_occurrence_rules=co_rules,
-        categories=get_categories(entities),
+        categories={d.value for d in get_all_domains(entities)},
         exposure=exposure.upper(),
     )
