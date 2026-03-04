@@ -213,32 +213,6 @@ async def get_tenant_session(tenant_id: UUID) -> AsyncGenerator[AsyncSession, No
             raise
 
 
-@asynccontextmanager
-async def get_tenant_session_context(tenant_id: UUID) -> AsyncGenerator[AsyncSession, None]:
-    """Get a tenant-scoped database session as a context manager.
-
-    Same as :func:`get_tenant_session` but usable with ``async with``.
-
-    Args:
-        tenant_id: The UUID of the current tenant.
-
-    Yields:
-        AsyncSession: A session whose transaction has ``app.current_tenant_id``
-            set to *tenant_id*.
-    """
-    if _session_factory is None:
-        raise RuntimeError("Database not initialized. Call init_db() first.")
-
-    async with _session_factory() as session:
-        try:
-            await set_rls_tenant_id(session, tenant_id)
-            yield session
-            await session.commit()
-        except Exception as e:  # Intentionally broad: must rollback on any error before re-raising
-            logger.debug(f"Session error, rolling back: {e}")
-            await session.rollback()
-            raise
-
 
 def get_pool_stats() -> dict[str, int] | None:
     """Return current connection pool statistics, or None if the engine is not initialised."""

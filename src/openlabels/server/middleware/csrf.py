@@ -59,12 +59,10 @@ def is_same_origin(request: Request) -> bool:
     settings = get_settings()
     allowed_origins = set(settings.cors.allowed_origins)
 
-    # Get origin from headers
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
 
     if origin:
-        # Check against allowed origins
         if origin in allowed_origins:
             return True
         # Also allow same host
