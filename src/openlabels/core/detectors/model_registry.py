@@ -209,13 +209,18 @@ def resolve_names(names: list[str]) -> list[str]:
 
 
 # Download
-def _verify_sha256(path: Path, expected: str) -> bool:
-    """Verify file SHA-256 checksum."""
+def _compute_sha256(path: Path | str) -> str:
+    """Compute SHA-256 hex digest for a file."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
-    return h.hexdigest() == expected
+    return h.hexdigest()
+
+
+def _verify_sha256(path: Path, expected: str) -> bool:
+    """Verify file SHA-256 checksum."""
+    return _compute_sha256(path) == expected
 
 
 def download_model(
@@ -289,9 +294,14 @@ def download_model(
                 )
             logger.debug(f"  Checksum verified for {mf.filename}")
         else:
+            # Compute and log the checksum so operators can populate the
+            # registry from a verified download.
+            actual = _compute_sha256(cached_path)
             logger.warning(
-                f"No SHA-256 checksum configured for {mf.filename} in model "
-                f"{spec.name!r} — file integrity was not verified"
+                "No SHA-256 checksum configured for %s in model %r — "
+                "file integrity was NOT verified.  Computed sha256: %s  "
+                "Add this to model_registry.py to enable verification.",
+                mf.filename, spec.name, actual,
             )
 
         # Copy from HF cache to our models directory (after verification)
@@ -326,3 +336,28 @@ def download_all(
             progress_callback=progress_callback,
         )
     return results
+
+
+def compute_installed_checksums(
+    models_dir: Path | None = None,
+) -> dict[str, dict[str, str]]:
+    """Compute SHA-256 checksums for all installed model files.
+
+    Returns a nested dict: ``{model_name: {filename: sha256_hex}}``.
+    Useful for populating the registry from a verified download.
+    """
+    if models_dir is None:
+        from openlabels.core.constants import DEFAULT_MODELS_DIR
+        models_dir = DEFAULT_MODELS_DIR
+
+    result: dict[str, dict[str, str]] = {}
+    for name, spec in _REGISTRY.items():
+        install_dir = spec.get_install_dir(models_dir)
+        file_hashes: dict[str, str] = {}
+        for mf in spec.files:
+            path = install_dir / mf.filename
+            if path.exists():
+                file_hashes[mf.filename] = _compute_sha256(path)
+        if file_hashes:
+            result[name] = file_hashes
+    return result

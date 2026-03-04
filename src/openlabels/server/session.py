@@ -200,14 +200,29 @@ class SessionStore:
         encrypted_data = _encrypt_session_data(data)
 
         # SECURITY (M-14): Enforce concurrent session limit per user.
-        # If the user already has the maximum number of active sessions,
-        # delete the oldest ones before creating a new one.
+        # Use SELECT ... FOR UPDATE to serialise concurrent session
+        # creation for the same user, preventing the TOCTOU race where
+        # two requests both count N < MAX and both insert.
         if user_id:
-            active_count = await self.count_user_sessions(user_id)
-            if active_count >= self.MAX_SESSIONS_PER_USER:
-                await self._evict_oldest_sessions(
-                    user_id, active_count - self.MAX_SESSIONS_PER_USER + 1
+            lock_result = await self.db.execute(
+                select(Session.id)
+                .where(
+                    Session.user_id == user_id,
+                    Session.expires_at > datetime.now(timezone.utc),
                 )
+                .order_by(Session.expires_at.asc())
+                .with_for_update()
+            )
+            locked_ids = [row[0] for row in lock_result.all()]
+            active_count = len(locked_ids)
+            if active_count >= self.MAX_SESSIONS_PER_USER:
+                # Evict the oldest sessions (already locked, no extra query)
+                evict_count = active_count - self.MAX_SESSIONS_PER_USER + 1
+                ids_to_delete = locked_ids[:evict_count]
+                await self.db.execute(
+                    delete(Session).where(Session.id.in_(ids_to_delete))
+                )
+                await self.db.flush()
 
         stmt = pg_insert(Session).values(
             id=session_id,
