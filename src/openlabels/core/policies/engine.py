@@ -15,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from openlabels.core.entity_domains import EntityDomain, get_all_domains
 from openlabels.core.policies.schema import (
     EntityMatch,
     PolicyCategory,
@@ -53,6 +54,12 @@ class EvaluationContext:
 
     # All entities for detailed matching
     entities: list[EntityMatch] = field(default_factory=list)
+
+    # Detected domains (derived from entity types via entity_domains registry)
+    detected_domains: frozenset[EntityDomain] = frozenset()
+
+    # Mapping: domain → entity types that contribute to it
+    domain_sources: dict[EntityDomain, set[str]] = field(default_factory=dict)
 
 
 class PolicyEngine:
@@ -185,6 +192,19 @@ class PolicyEngine:
             )
             ctx.entities.append(entity)
 
+        # Derive domains from entity types
+        if ctx.entity_types:
+            all_domains = get_all_domains(ctx.entity_types)
+            ctx.detected_domains = frozenset(all_domains)
+
+            # Build reverse mapping: domain → contributing entity types
+            from openlabels.core.entity_domains import get_domains
+            domain_sources: dict[EntityDomain, set[str]] = {}
+            for etype in ctx.entity_types:
+                for domain in get_domains(etype):
+                    domain_sources.setdefault(domain, set()).add(etype)
+            ctx.domain_sources = domain_sources
+
         return ctx
 
     def _evaluate_policy(
@@ -259,6 +279,11 @@ class PolicyEngine:
                             matched_values=self._get_matched_values(ctx, combo_types),
                         )
 
+        # Check domain triggers
+        domain_match = self._evaluate_domain_triggers(triggers, ctx, policy.name)
+        if domain_match:
+            return domain_match
+
         # Check special category triggers
         if not policy.special_category_triggers.is_empty():
             special_match = self._evaluate_triggers(
@@ -296,6 +321,93 @@ class PolicyEngine:
                 combo_types = {t.lower() for t in combination}
                 if combo_types.issubset(ctx.entity_types):
                     return list(combo_types)
+
+        return None
+
+    def _evaluate_domain_triggers(
+        self,
+        triggers: PolicyTrigger,
+        ctx: EvaluationContext,
+        policy_name: str,
+    ) -> PolicyMatch | None:
+        """Evaluate domain-based triggers against detected domains.
+
+        Domain triggers check the EntityDomain tags derived from detected
+        entity types.  Confidence thresholds are applied: at least one
+        entity contributing to each matched domain must meet
+        ``triggers.min_confidence``.
+        """
+        detected = ctx.detected_domains
+        if not detected:
+            return None
+
+        min_conf = triggers.min_confidence
+
+        def _sources_meet_confidence(sources: set[str]) -> bool:
+            """At least one source entity meets min_confidence."""
+            return any(
+                ctx.type_max_confidence.get(t, 0) >= min_conf for t in sources
+            )
+
+        def _domain_set(domain_strs: list[str]) -> set[EntityDomain] | None:
+            """Parse domain strings; return None if any are unknown."""
+            result: set[EntityDomain] = set()
+            for s in domain_strs:
+                try:
+                    result.add(EntityDomain(s.lower()))
+                except ValueError:
+                    return None
+            return result
+
+        def _collect_sources(domains: set[EntityDomain]) -> set[str]:
+            sources: set[str] = set()
+            for d in domains:
+                sources.update(ctx.domain_sources.get(d, set()))
+            return sources
+
+        # domain_any_of: fire if ANY listed domain is present
+        if triggers.domain_any_of:
+            for domain_str in triggers.domain_any_of:
+                parsed = _domain_set([domain_str])
+                if parsed is None:
+                    continue
+                domain = next(iter(parsed))
+                if domain in detected:
+                    sources = ctx.domain_sources.get(domain, set())
+                    if _sources_meet_confidence(sources):
+                        return PolicyMatch(
+                            policy_name=policy_name,
+                            trigger_type="domain_any_of",
+                            matched_entities=sorted(sources),
+                            matched_values=self._get_matched_values(ctx, sources),
+                        )
+
+        # domain_all_of: fire only if ALL listed domains are present
+        if triggers.domain_all_of:
+            required = _domain_set(triggers.domain_all_of)
+            if required is not None and required.issubset(detected):
+                sources = _collect_sources(required)
+                if _sources_meet_confidence(sources):
+                    return PolicyMatch(
+                        policy_name=policy_name,
+                        trigger_type="domain_all_of",
+                        matched_entities=sorted(sources),
+                        matched_values=self._get_matched_values(ctx, sources),
+                    )
+
+        # domain_combinations: OR between domain all_of combos
+        if triggers.domain_combinations:
+            for combo in triggers.domain_combinations:
+                required = _domain_set(combo)
+                if required is not None and required.issubset(detected):
+                    sources = _collect_sources(required)
+                    if _sources_meet_confidence(sources):
+                        return PolicyMatch(
+                            policy_name=policy_name,
+                            trigger_type="domain_combination",
+                            matched_entities=sorted(sources),
+                            matched_values=self._get_matched_values(ctx, sources),
+                        )
 
         return None
 

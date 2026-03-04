@@ -64,6 +64,13 @@ def _create_hipaa_phi() -> PolicyPack:
                 ["phone", "diagnosis"],
                 ["address", "diagnosis"],
             ],
+            # Domain triggers: any entity tagged MEDICAL, or
+            # identifier+medical / contact+medical combinations
+            domain_any_of=["medical"],
+            domain_combinations=[
+                ["identifier", "medical"],
+                ["contact", "medical"],
+            ],
             min_confidence=0.7,
         ),
         handling=HandlingRequirements(
@@ -155,6 +162,8 @@ def _create_pci_dss() -> PolicyPack:
                 ["bank_account", "routing_number"],
                 ["iban", "bic"],
             ],
+            # Domain trigger: any entity tagged FINANCIAL
+            domain_any_of=["financial"],
             min_confidence=0.8,
         ),
         handling=HandlingRequirements(
@@ -334,6 +343,10 @@ def _create_glba() -> PolicyPack:
                 ["person_name", "credit_score"],
                 ["person_name", "loan_amount"],
             ],
+            # Domain trigger: identifier + financial combination
+            domain_combinations=[
+                ["identifier", "financial"],
+            ],
             min_confidence=0.7,
         ),
         handling=HandlingRequirements(
@@ -415,6 +428,8 @@ def _create_credentials() -> PolicyPack:
                 "encryption_key",
                 "client_secret",
             ],
+            # Domain trigger: any entity tagged CREDENTIAL
+            domain_any_of=["credential"],
             min_confidence=0.8,
         ),
         handling=HandlingRequirements(
@@ -471,6 +486,12 @@ def _create_soc2() -> PolicyPack:
                 ["person_name", "credit_card"],
                 ["email", "ssn"],
             ],
+            # Domain triggers: credential or financial entities, or
+            # identifier+financial combinations
+            domain_any_of=["credential", "financial"],
+            domain_combinations=[
+                ["identifier", "financial"],
+            ],
             min_confidence=0.7,
         ),
         handling=HandlingRequirements(
@@ -516,6 +537,9 @@ def _parse_trigger(data: dict[str, Any]) -> PolicyTrigger:
         any_of=data.get("any_of", []),
         all_of=data.get("all_of", []),
         combinations=data.get("combinations", []),
+        domain_any_of=data.get("domain_any_of", []),
+        domain_all_of=data.get("domain_all_of", []),
+        domain_combinations=data.get("domain_combinations", []),
         min_confidence=data.get("min_confidence", 0.5),
         min_count=data.get("min_count", 1),
         exclude_if_only=data.get("exclude_if_only", []),

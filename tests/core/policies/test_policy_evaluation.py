@@ -959,16 +959,17 @@ class TestRetentionMerge:
 
     def test_pci_and_hipaa_retention_merge(self, full_engine):
         """
-        PCI max_days=365. HIPAA min_days=2190.
-        Both fire together to illustrate that max and min are tracked independently.
+        PCI max_days=365. HIPAA min_days=2190. GLBA min_days=2555.
+        GLBA fires via domain_combinations (credit_card has FINANCIAL+IDENTIFIER domains).
+        Most restrictive min_days wins (GLBA's 2555 > HIPAA's 2190).
         """
         entities = [
-            _entity("credit_card_number"),      # PCI
+            _entity("credit_card_number"),      # PCI, GLBA (via domain)
             _entity("medical_record_number"),    # HIPAA
         ]
         result = full_engine.evaluate(entities)
         assert result.retention.max_days == 365
-        assert result.retention.min_days == 2190
+        assert result.retention.min_days == 2555  # GLBA fires via domain trigger
 
 
 # ============================================================================
