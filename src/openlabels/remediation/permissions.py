@@ -622,9 +622,36 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
         # Restore ACLs via setfacl if data available
         setfacl_failed = False
         if "acl" in acl_dict and _has_setfacl():
+            # SECURITY (M-59): Validate that all "# file:" lines in the
+            # getfacl output reference the expected target path (or a
+            # parent directory of it).  Crafted ACL data could include
+            # "# file:" entries pointing to arbitrary files, causing
+            # setfacl --restore to modify permissions on unintended paths.
+            acl_text = acl_dict["acl"]
+            resolved_path = path.resolve()
+            for acl_line in acl_text.splitlines():
+                stripped = acl_line.strip()
+                if stripped.startswith("# file:"):
+                    acl_target = stripped[len("# file:"):].strip()
+                    acl_target_resolved = Path(acl_target).resolve()
+                    if acl_target_resolved != resolved_path:
+                        logger.warning(
+                            "ACL data contains path outside expected target: "
+                            "%s (expected %s) — refusing to restore",
+                            acl_target, resolved_path,
+                        )
+                        return RemediationResult.failure(
+                            action=RemediationAction.RESTORE,
+                            source=path,
+                            error=(
+                                f"Security error: ACL data references path "
+                                f"{acl_target!r} which does not match target {resolved_path}"
+                            ),
+                        )
+
             import tempfile
             with tempfile.NamedTemporaryFile(mode="w", suffix=".acl", delete=False) as tmp:
-                tmp.write(acl_dict["acl"])
+                tmp.write(acl_text)
                 tmp_path = tmp.name
             try:
                 result = subprocess.run(

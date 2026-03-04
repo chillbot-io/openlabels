@@ -60,7 +60,7 @@ def _decrypt(token: str) -> dict[str, Any]:
 
 class CredentialStore(BaseModel):
     """Request to store credentials for a source type."""
-    source_type: str = Field(..., description="Source type (smb, nfs, sharepoint, onedrive, s3, gcs, azure_blob)")
+    source_type: str = Field(..., max_length=50, description="Source type (smb, nfs, sharepoint, onedrive, s3, gcs, azure_blob)")
     credentials: dict[str, Any] = Field(..., description="Credential fields (host, username, password, etc.)")
     save: bool = Field(False, description="Whether to persist credentials for the session duration")
 
@@ -81,8 +81,8 @@ class CredentialCheckResponse(BaseModel):
 
 class SaveCredentialRequest(BaseModel):
     """Request to persist credentials to the database."""
-    source_type: str = Field(..., description="Source type")
-    name: str = Field(..., description="Display name (e.g. 'SMB — fileserver.contoso.com')")
+    source_type: str = Field(..., max_length=50, description="Source type")
+    name: str = Field(..., max_length=255, description="Display name (e.g. 'SMB — fileserver.contoso.com')")
     credentials: dict[str, Any] = Field(..., description="Credential fields")
     target_id: UUID | None = Field(None, description="Optional target to associate with")
 
@@ -379,6 +379,8 @@ def get_decrypted_credentials(
     session_data: dict,
     user_id: str,
     source_type: str,
+    db: AsyncSession | None = None,
+    tenant_id: UUID | None = None,
 ) -> dict[str, Any] | None:
     """Utility: decrypt credentials from session data.
 
@@ -390,7 +392,23 @@ def get_decrypted_credentials(
     if not encrypted:
         return None
     try:
-        return _decrypt(encrypted)
+        creds = _decrypt(encrypted)
+        logger.info(
+            "credential_decrypted: user=%s source_type=%s (session)",
+            user_id,
+            source_type,
+        )
+        if db is not None and tenant_id is not None:
+            audit_log(
+                db,
+                tenant_id=tenant_id,
+                user_id=UUID(user_id),
+                action="credential_decrypted",
+                resource_type="session_credential",
+                resource_id=None,
+                details={"source_type": source_type, "storage": "session"},
+            )
+        return creds
     except HTTPException:
         return None
 
@@ -414,7 +432,24 @@ async def get_saved_credentials_for_target(
     if not row:
         return None
     try:
-        return decrypt_dict(row.encrypted_data)
+        creds = decrypt_dict(row.encrypted_data)
+        logger.info(
+            "credential_decrypted: tenant=%s target=%s credential_id=%s source_type=%s (saved)",
+            tenant_id,
+            target_id,
+            row.id,
+            row.source_type,
+        )
+        audit_log(
+            db,
+            tenant_id=tenant_id,
+            user_id=None,
+            action="credential_decrypted",
+            resource_type="saved_credential",
+            resource_id=row.id,
+            details={"source_type": row.source_type, "target_id": str(target_id)},
+        )
+        return creds
     except (InvalidToken, json.JSONDecodeError):
         logger.warning("Failed to decrypt saved credentials %s", row.id)
         return None

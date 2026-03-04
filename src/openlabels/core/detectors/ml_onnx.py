@@ -338,8 +338,7 @@ class ONNXDetector(BaseDetector):
             # Subtract special tokens ([CLS], [SEP])
             n_tokens = max(n_tokens - 2, 1)
             return len(sample) / n_tokens
-        except (KeyError, TypeError, ValueError) as e:
-            logger.debug("ONNX tokenization estimation failed: %s", e)
+        except Exception:
             return 4.0
 
     def _compute_chunk_params(self, text: str) -> tuple[int, int, int]:

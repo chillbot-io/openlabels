@@ -53,13 +53,13 @@ class ScheduleCreate(BaseModel):
 
     name: str = Field(max_length=255)
     target_id: UUID
-    cron: str | None = None  # Cron expression, None = on-demand only
+    cron: str | None = Field(None, max_length=100)  # Cron expression, None = on-demand only
 
 
 class BulkScheduleCreate(BaseModel):
     """Create schedules for all enabled targets with a shared cron expression."""
 
-    cron: str = Field(..., description="Cron expression for all schedules")
+    cron: str = Field(..., max_length=100, description="Cron expression for all schedules")
     enabled: bool = True
 
 
@@ -67,7 +67,7 @@ class ScheduleUpdate(BaseModel):
     """Request to update a scan schedule."""
 
     name: str | None = Field(default=None, max_length=255)
-    cron: str | None = None
+    cron: str | None = Field(None, max_length=100)
     target_id: UUID | None = None
     enabled: bool | None = None
 
@@ -98,7 +98,7 @@ class ScheduleResponse(BaseModel):
 class CronValidationRequest(BaseModel):
     """Request to validate a cron expression."""
 
-    cron: str
+    cron: str = Field(..., max_length=100)
 
 
 class CronValidationResponse(BaseModel):

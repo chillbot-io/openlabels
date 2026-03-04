@@ -68,6 +68,16 @@ class ModelSpec:
     # If the first file in an alternative group exists, skip the rest
     alternatives: dict[str, list[str]] = field(default_factory=dict)
 
+    def __post_init__(self):
+        missing = [mf.filename for mf in self.files if not mf.sha256]
+        if missing:
+            logger.warning(
+                "Model %r has %d file(s) without SHA-256 checksums: %s. "
+                "Populate checksums from a verified download to enable "
+                "integrity verification.",
+                self.name, len(missing), ", ".join(missing),
+            )
+
     def get_install_dir(self, models_dir: Path) -> Path:
         if self.install_subdir:
             return models_dir / self.install_subdir
@@ -111,17 +121,30 @@ class ModelSpec:
 # HuggingFace repo IDs are placeholders until the user publishes models.
 # The download logic works with any valid HF repo.
 
+# TODO(security): Replace empty sha256 values below with checksums computed
+# from a verified download.  Run:
+#   python -c "import hashlib,sys; h=hashlib.sha256();
+#     [h.update(c) for c in iter(lambda:open(sys.argv[1],'rb').read(65536),b'')];
+#     print(h.hexdigest())" <file>
+# The download_model() function already warns at runtime when a checksum is
+# missing, and verifies the hash before copying when one is present.
+
 _PHI_SPEC = ModelSpec(
     name="phi",
     description="Stanford Clinical De-identifier (PubMedBERT, token classification)",
     repo_id="StanfordAIMI/stanford-deidentifier-base",
     install_subdir="stanford_phi",
     files=[
-        ModelFile("pytorch_model.bin", size_bytes=438_000_000),
-        ModelFile("config.json", size_bytes=1_200),
-        ModelFile("vocab.txt", size_bytes=226_000),
-        ModelFile("special_tokens_map.json", size_bytes=112),
-        ModelFile("tokenizer_config.json", size_bytes=29),
+        ModelFile("pytorch_model.bin", size_bytes=438_000_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("config.json", size_bytes=1_200,
+                  sha256=""),  # fill from verified download
+        ModelFile("vocab.txt", size_bytes=226_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("special_tokens_map.json", size_bytes=112,
+                  sha256=""),  # fill from verified download
+        ModelFile("tokenizer_config.json", size_bytes=29,
+                  sha256=""),  # fill from verified download
     ],
 )
 
@@ -131,9 +154,12 @@ _OCR_SPEC = ModelSpec(
     repo_id="chillbot-io/openlabels-ocr",
     install_subdir="rapidocr",
     files=[
-        ModelFile("det.onnx", size_bytes=4_500_000),
-        ModelFile("rec.onnx", size_bytes=11_000_000),
-        ModelFile("cls.onnx", size_bytes=1_500_000),
+        ModelFile("det.onnx", size_bytes=4_500_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("rec.onnx", size_bytes=11_000_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("cls.onnx", size_bytes=1_500_000,
+                  sha256=""),  # fill from verified download
     ],
 )
 

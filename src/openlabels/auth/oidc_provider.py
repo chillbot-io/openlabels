@@ -288,15 +288,16 @@ async def validate_id_token(
         key_data = await _find_signing_key(kid, jwks_uri)
         signing_key = jwt.PyJWK(key_data)
 
-        # Some providers use RS256, others ES256 — accept common algorithms
-        algorithms = unverified_header.get("alg", "RS256")
-        if algorithms not in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"):
-            raise TokenInvalidError(f"Unsupported algorithm: {algorithms}")
+        # Pin allowed algorithms to a safe list instead of trusting
+        # the unverified token header (M-2). This prevents algorithm
+        # confusion attacks where an attacker could specify "none" or
+        # "HS256" (symmetric) in the header to bypass signature verification.
+        _ALLOWED_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
 
         claims = jwt.decode(
             id_token,
             signing_key,
-            algorithms=[algorithms],
+            algorithms=_ALLOWED_ALGORITHMS,
             audience=config.client_id,
             issuer=issuer,
             options={"verify_at_hash": False},  # Not all providers include at_hash

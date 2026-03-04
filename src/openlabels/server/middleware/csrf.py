@@ -53,7 +53,10 @@ def _normalize_path(path: str) -> str:
     """Normalize a URL path: collapse double slashes, resolve dots, strip trailing slash."""
     # posixpath.normpath collapses // and resolves . / ..
     normalized = posixpath.normpath(path)
-    # Ensure leading slash is preserved (normpath keeps it)
+    # POSIX preserves exactly two leading slashes (//foo); collapse to single slash
+    # since URL paths should always start with a single slash.
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
     # Strip trailing slash for consistent matching (but keep "/" as-is)
     if normalized != "/" and normalized.endswith("/"):
         normalized = normalized.rstrip("/")

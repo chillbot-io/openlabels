@@ -40,52 +40,20 @@ class ServerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secret_key(self) -> ServerSettings:
-        """Require a strong secret_key in production/staging environments.
-
-        In production/staging the key is mandatory and must have at least 32
-        characters with sufficient entropy (measured by unique-character ratio).
-        In development, a warning is logged if a key is set but weak.
-        """
-        import logging as _logging
-        import math as _math
-
+        """Require a strong secret_key in production/staging environments."""
         key = self.secret_key.get_secret_value()
-        _MIN_LENGTH = 32
-
         if self.environment in ("production", "staging"):
             if not key:
                 raise ValueError(
                     "OPENLABELS_SERVER__SECRET_KEY is required in production/staging. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
-            if len(key) < _MIN_LENGTH:
+            if len(key) < 32:
                 raise ValueError(
-                    f"OPENLABELS_SERVER__SECRET_KEY must be at least {_MIN_LENGTH} characters "
+                    "OPENLABELS_SERVER__SECRET_KEY must be at least 32 characters "
                     "for adequate entropy. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
                 )
-            # Shannon entropy check: reject trivially low-entropy keys
-            # (e.g. "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            freq: dict[str, int] = {}
-            for ch in key:
-                freq[ch] = freq.get(ch, 0) + 1
-            entropy = -sum(
-                (c / len(key)) * _math.log2(c / len(key)) for c in freq.values()
-            )
-            if entropy < 3.0:
-                raise ValueError(
-                    "OPENLABELS_SERVER__SECRET_KEY has insufficient entropy "
-                    f"({entropy:.1f} bits). Use a randomly generated value: "
-                    "python -c \"import secrets; print(secrets.token_urlsafe(32))\""
-                )
-        elif key and len(key) < _MIN_LENGTH:
-            _logger = _logging.getLogger(__name__)
-            _logger.warning(
-                "OPENLABELS_SERVER__SECRET_KEY is shorter than %d characters. "
-                "This is acceptable for development but would be rejected in "
-                "production/staging.",
-                _MIN_LENGTH,
-            )
         return self
 
 
@@ -203,6 +171,12 @@ class AuthSettings(BaseSettings):
 
     # Multi-provider OIDC: keyed by slug ("google", "microsoft", "github", etc.)
     oidc_providers: dict[str, OIDCProviderSettings] = Field(default_factory=dict)
+
+    # Server-side admin allowlist.  Only users whose email appears in this
+    # list AND whose IdP token includes the "admin" role will be promoted.
+    # If empty, falls back to IdP-only behaviour (a warning is logged).
+    # Env: OPENLABELS_AUTH__ADMIN_EMAILS='["alice@co.com","bob@co.com"]'
+    admin_emails: list[str] = Field(default_factory=list)
 
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -929,25 +903,6 @@ class Settings(BaseSettings):
             )
         return self
 
-    @model_validator(mode="after")
-    def validate_production_cors_origins(self) -> Settings:
-        """Reject localhost-only CORS origins in production/staging with credentials."""
-        if self.server.environment not in ("production", "staging"):
-            return self
-        if not self.cors.allow_credentials:
-            return self
-        non_local = [
-            o for o in self.cors.allowed_origins
-            if "localhost" not in o and "127.0.0.1" not in o
-        ]
-        if not non_local and self.cors.allowed_origins:
-            raise ValueError(
-                "CORS allowed_origins contains only localhost origins in "
-                f"{self.server.environment} with allow_credentials=True. "
-                "Configure real origin URLs or set allow_credentials=False."
-            )
-        return self
-
 
 class ReportingSettings(BaseSettings):
     """Reporting and distribution configuration (Phase M).
@@ -1011,5 +966,9 @@ def get_settings() -> Settings:
     return Settings(**yaml_config)
 
 
+def reload_settings() -> Settings:
+    """Clear settings cache and return a fresh instance."""
+    get_settings.cache_clear()
+    return get_settings()
 
 

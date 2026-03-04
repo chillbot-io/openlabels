@@ -68,14 +68,14 @@ class RequeueRequest(BaseModel):
 class RequeueAllRequest(BaseModel):
     """Request to requeue all failed jobs."""
 
-    task_type: str | None = None
+    task_type: str | None = Field(None, max_length=100)
     reset_retries: bool = True
 
 
 class PurgeRequest(BaseModel):
     """Request to purge failed jobs."""
 
-    task_type: str | None = None
+    task_type: str | None = Field(None, max_length=100)
     older_than_days: int | None = None
 
 

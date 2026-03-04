@@ -68,9 +68,9 @@ class AllSettingsResponse(BaseModel):
 class AzureSettingsRequest(BaseModel):
     """Request to update Azure AD settings."""
     model_config = ConfigDict(extra="forbid")
-    azure_tenant_id: str = ""
-    azure_client_id: str = ""
-    azure_client_secret: str = ""
+    azure_tenant_id: str = Field("", max_length=255)
+    azure_client_id: str = Field("", max_length=255)
+    azure_client_secret: str = Field("", max_length=1024)
 
 
 class ScanSettingsRequest(BaseModel):

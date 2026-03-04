@@ -845,8 +845,8 @@ class SystemAlertRuleCreate(BaseModel):
     """Create a system alert rule."""
 
     name: str = Field(..., max_length=255)
-    component: str = Field(..., description="Component to monitor: api, db, queue, redis, worker, task, disk, memory, cpu")
-    condition: str = Field("unhealthy", description="Condition: unhealthy, threshold_exceeded, offline")
+    component: str = Field(..., max_length=50, description="Component to monitor: api, db, queue, redis, worker, task, disk, memory, cpu")
+    condition: str = Field("unhealthy", max_length=50, description="Condition: unhealthy, threshold_exceeded, offline")
     threshold: float | None = Field(None, description="Threshold percentage (for threshold_exceeded condition)")
     actions: list[str] = Field(default=["log"], description="Actions: log, notify, webhook")
     enabled: bool = True

@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 
 from openlabels.auth.dependencies import CurrentUser, require_admin
@@ -24,7 +24,7 @@ limiter = Limiter(key_func=get_client_ip)
 class SIEMExportRequest(BaseModel):
     since: datetime | None = None
     record_types: list[str] | None = None
-    adapter: str | None = None
+    adapter: str | None = Field(None, max_length=100)
 
 
 class SIEMExportResponse(BaseModel):

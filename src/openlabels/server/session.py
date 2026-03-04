@@ -122,6 +122,9 @@ class SessionStore:
             await store.delete("session_id")
     """
 
+    # Maximum number of active sessions allowed per user (M-14).
+    MAX_SESSIONS_PER_USER = 5
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -195,6 +198,16 @@ class SessionStore:
         session_id = _sanitize_id(session_id)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
         encrypted_data = _encrypt_session_data(data)
+
+        # SECURITY (M-14): Enforce concurrent session limit per user.
+        # If the user already has the maximum number of active sessions,
+        # delete the oldest ones before creating a new one.
+        if user_id:
+            active_count = await self.count_user_sessions(user_id)
+            if active_count >= self.MAX_SESSIONS_PER_USER:
+                await self._evict_oldest_sessions(
+                    user_id, active_count - self.MAX_SESSIONS_PER_USER + 1
+                )
 
         stmt = pg_insert(Session).values(
             id=session_id,
@@ -273,6 +286,30 @@ class SessionStore:
             )
         )
         return result.scalar() or 0
+
+    async def _evict_oldest_sessions(self, user_id: str, count: int) -> None:
+        """Delete the *count* oldest active sessions for a user (M-14)."""
+        # Find the IDs of the oldest sessions to evict.
+        oldest = await self.db.execute(
+            select(Session.id)
+            .where(
+                Session.user_id == user_id,
+                Session.expires_at > datetime.now(timezone.utc),
+            )
+            .order_by(Session.expires_at.asc())
+            .limit(count)
+        )
+        ids_to_delete = [row[0] for row in oldest.all()]
+        if ids_to_delete:
+            await self.db.execute(
+                delete(Session).where(Session.id.in_(ids_to_delete))
+            )
+            await self.db.flush()
+            logger.info(
+                "Evicted %d oldest session(s) for user %s (session limit enforced)",
+                len(ids_to_delete),
+                user_id,
+            )
 
 
 class PendingAuthStore:

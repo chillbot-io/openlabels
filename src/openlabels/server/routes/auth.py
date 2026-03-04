@@ -809,6 +809,17 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
             detail="Provider did not return id_token and has no userinfo_endpoint",
         )
 
+    # Validate the endpoint URL to prevent SSRF via crafted discovery docs
+    from openlabels.core.url_validation import validate_url
+
+    try:
+        validate_url(userinfo_endpoint, name="userinfo_endpoint")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Untrusted userinfo_endpoint in discovery document: {exc}",
+        )
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
             userinfo_endpoint,

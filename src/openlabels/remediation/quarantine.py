@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import platform
 import shutil
 import subprocess
@@ -318,17 +319,42 @@ def _quarantine_unix(
             # Log rsync failures with exception type - non-critical as we have fallback
             logger.info(f"rsync failed, falling back to shutil: {type(e).__name__}: {e}")
 
-    # Fallback to shutil.move — verify destination is not a symlink to
-    # prevent following symlinks to write files outside the quarantine area (M59).
-    if dest_file.exists() and dest_file.is_symlink():
-        logger.error("Quarantine destination is a symlink: %s", dest_file)
-        return RemediationResult.failure(
-            action=RemediationAction.QUARANTINE,
-            source=source,
-            error="Quarantine destination is a symlink — refusing to follow",
-        )
+    # Fallback: use os.rename() for an atomic move that eliminates the
+    # TOCTOU race (M-58) between symlink check and file move.  If the
+    # destination is a symlink, os.rename() atomically replaces it (it
+    # does NOT follow symlinks on POSIX), so we re-check after the move.
     try:
-        shutil.move(str(source), str(dest_file))
+        # First, reject existing symlinks at the destination.
+        if dest_file.is_symlink():
+            logger.error("Quarantine destination is a symlink: %s", dest_file)
+            return RemediationResult.failure(
+                action=RemediationAction.QUARANTINE,
+                source=source,
+                error="Quarantine destination is a symlink — refusing to follow",
+            )
+
+        # Use os.rename for an atomic move.  Falls back to shutil.move
+        # only when source and destination are on different filesystems.
+        try:
+            os.rename(str(source), str(dest_file))
+        except OSError:
+            # Cross-device rename not supported — fall back to shutil.move
+            shutil.move(str(source), str(dest_file))
+
+        # SECURITY (M-58): Re-check that the destination is not a symlink
+        # after the move to close the TOCTOU window.  If an attacker raced
+        # to plant a symlink, the moved file would now sit at a symlink
+        # target; detect and undo.
+        if dest_file.is_symlink():
+            logger.error(
+                "Quarantine destination became a symlink after move: %s", dest_file
+            )
+            return RemediationResult.failure(
+                action=RemediationAction.QUARANTINE,
+                source=source,
+                error="Quarantine destination is a symlink after move — possible race",
+            )
+
         logger.info(f"Successfully quarantined {source} to {dest_file}")
         return RemediationResult.success_quarantine(
             source=source,

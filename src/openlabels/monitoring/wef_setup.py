@@ -226,16 +226,10 @@ async def get_subscription_status(
         try:
             try:
                 import defusedxml.ElementTree as ET
-
-                root = ET.fromstring(output)
             except ImportError:
                 import xml.etree.ElementTree as ET  # noqa: S405
 
-                # Mitigate XXE: forbid DTD and external entities via XMLParser
-                parser = ET.XMLParser()
-                parser.entity = {}  # type: ignore[attr-defined]
-                parser.feed(output)
-                root = parser.close()
+            root = ET.fromstring(output)
             # Handle namespaced and non-namespaced XML
             ns = {"s": "http://schemas.microsoft.com/2006/03/windows/events/subscription"}
 
@@ -313,10 +307,7 @@ async def list_subscriptions() -> list[str]:
         if proc.returncode != 0:
             return []
         return [s.strip() for s in proc.stdout.strip().splitlines() if s.strip()]
-    except FileNotFoundError:
-        return []
-    except Exception as e:
-        logger.warning("Failed to list WEF subscriptions: %s", e)
+    except (FileNotFoundError, Exception):
         return []
 
 
