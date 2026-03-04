@@ -13,6 +13,7 @@ Provides:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
@@ -44,6 +45,8 @@ from openlabels.server.schemas.pagination import (
     cursor_paginate_query,
     paginate_query,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -281,7 +284,8 @@ async def enable_file_monitoring(
     try:
         validated_path = validate_path(request.file_path)
     except PathValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        logger.warning("Path validation failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid file path") from e
 
     # Check if already monitored
     existing = await session.execute(

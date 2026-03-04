@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Fields in the session data dict that contain bearer tokens and must be
 # encrypted at rest to limit blast radius of a database compromise.
-_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token", "m365_app_credentials")
+_SENSITIVE_FIELDS = ("access_token", "refresh_token", "id_token", "client_secret", "m365_app_credentials")
 
 # Lazy-initialised Fernet cipher (None until first use, False if no key).
 _fernet: object | None = None

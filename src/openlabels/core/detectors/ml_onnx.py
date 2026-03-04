@@ -141,6 +141,12 @@ class ONNXDetector(BaseDetector):
         if not self.model_dir:
             return None
 
+        # Security: reject model names with path traversal characters
+        if any(c in self.model_name for c in ("/", "\\", "\0")) or ".." in self.model_name:
+            raise ValueError(
+                f"Invalid model_name: contains path traversal characters: {self.model_name!r}"
+            )
+
         # Prefer INT8 quantized version
         int8_path = self.model_dir / f"{self.model_name}_int8.onnx"
         if int8_path.exists():

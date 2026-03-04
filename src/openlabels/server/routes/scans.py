@@ -197,8 +197,10 @@ async def cancel_scan(
 
 
 @router.post("/{scan_id}/retry")
+@limiter.limit("10/minute")
 async def retry_scan(
     scan_id: UUID,
+    request: Request,
     scan_service: ScanServiceDep,
     _admin: AdminContextDep,
     db: DbSessionDep,

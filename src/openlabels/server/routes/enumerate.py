@@ -37,6 +37,7 @@ from openlabels.server.routes.credentials import (
     get_decrypted_credentials,
 )
 from openlabels.server.session import SessionStore
+from openlabels.core.url_validation import _BLOCKED_NETWORKS
 from openlabels.server.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,14 @@ _USERNAME_RE = re.compile(r"^[a-zA-Z0-9._\\@\-]+$")
 
 
 def _validate_host(host: str) -> str:
-    """Sanitize and validate a hostname / IP address."""
+    """Sanitize and validate a hostname / IP address.
+
+    Rejects private/internal IP ranges to prevent internal network
+    reconnaissance via SMB/NFS enumeration.
+    """
+    import ipaddress
+    import socket
+
     host = host.strip()
     if not host:
         raise HTTPException(status_code=400, detail="Host is required")
@@ -63,6 +71,22 @@ def _validate_host(host: str) -> str:
         raise HTTPException(status_code=400, detail="Host contains invalid characters")
     if ".." in host:
         raise HTTPException(status_code=400, detail="Host contains invalid traversal sequence")
+
+    # Block private/internal IP ranges to prevent SSRF / network recon
+    try:
+        addr_infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {host}")
+
+    for addr_info in addr_infos:
+        ip_addr = ipaddress.ip_address(addr_info[4][0])
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Host resolves to a private/internal address, which is not allowed",
+                )
+
     return host
 
 
@@ -95,7 +119,7 @@ class EnumerateRequest(BaseModel):
         description="Search query to filter resources (server-side for SharePoint/OneDrive).",
     )
     page: int = Field(1, ge=1, description="Page number (1-indexed)")
-    page_size: int = Field(50, ge=1, le=500, description="Results per page")
+    page_size: int = Field(50, ge=1, le=100, description="Results per page")
     use_m365_session: bool = Field(
         False,
         description="Use M365 tenant credentials from the active session "
@@ -491,8 +515,9 @@ async def _enumerate_sharepoint(
     async with httpx.AsyncClient(timeout=30) as client:
         token_resp = await client.post(token_url, data=token_data)
         if token_resp.status_code != 200:
-            error_detail = _safe_json(token_resp).get("error_description", "Authentication failed")
-            raise HTTPException(status_code=401, detail=f"SharePoint auth failed: {error_detail}")
+            error_detail = _safe_json(token_resp).get("error_description", "unknown")
+            logger.warning("SharePoint token request failed: %s", error_detail)
+            raise HTTPException(status_code=401, detail="SharePoint authentication failed")
 
         access_token = token_resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -635,7 +660,8 @@ async def _enumerate_s3(creds: dict[str, Any]) -> list[EnumeratedResource]:
         try:
             _validate_endpoint_url(endpoint_url)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            logger.warning("Endpoint URL validation failed: %s", e)
+            raise HTTPException(status_code=400, detail="Invalid endpoint URL")
 
     try:
         import boto3
@@ -727,6 +753,13 @@ async def _enumerate_azure_blob(creds: dict[str, Any]) -> list[EnumeratedResourc
 
     if not storage_account:
         raise HTTPException(status_code=400, detail="Azure storage_account is required")
+
+    # Azure storage account naming rules: 3-24 chars, lowercase alphanumeric only
+    if not re.match(r"^[a-z0-9]{3,24}$", storage_account):
+        raise HTTPException(
+            status_code=400,
+            detail="Azure storage_account must be 3-24 lowercase alphanumeric characters",
+        )
 
     try:
         from azure.storage.blob import BlobServiceClient

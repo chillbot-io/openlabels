@@ -173,7 +173,7 @@ class AuthDelegateImpl:
         tenant_id: str,
     ):
         self.client_id = client_id
-        self.client_secret = client_secret
+        self._client_secret = client_secret
         self.tenant_id = tenant_id
         self._app = None
 
@@ -186,7 +186,7 @@ class AuthDelegateImpl:
             self._app = msal.ConfidentialClientApplication(
                 self.client_id,
                 authority=authority,
-                client_credential=self.client_secret,
+                client_credential=self._client_secret,
             )
         return self._app
 
@@ -253,7 +253,7 @@ class MIPClient:
             app_version: Application version
         """
         self.client_id = client_id
-        self.client_secret = client_secret
+        self._client_secret = client_secret
         self.tenant_id = tenant_id
         self.mip_sdk_path = mip_sdk_path or self._default_sdk_path()
         self.app_name = app_name
@@ -352,7 +352,7 @@ class MIPClient:
 
             self._auth_delegate = AuthDelegateImpl(
                 self.client_id,
-                self.client_secret,
+                self._client_secret,
                 self.tenant_id,
             )
 

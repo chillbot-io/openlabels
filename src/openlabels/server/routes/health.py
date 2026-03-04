@@ -160,45 +160,45 @@ async def get_health_status(
         status["db"] = "error"
         status["db_text"] = "Disconnected"
 
-    # Check job queue
-    pending_count = 0
-    failed_count = 0
-    try:
-        queue_query = select(
-            func.count().label("total"),
-            func.sum(func.cast(JobQueue.status == JobStatus.PENDING, Integer)).label("pending"),
-            func.sum(func.cast(JobQueue.status == JobStatus.FAILED, Integer)).label("failed"),
-        )
-        # Simplified query - just count pending jobs
-        pending_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == JobStatus.PENDING
-        )
-        result = await session.execute(pending_query)
-        pending_count = result.scalar() or 0
-
-        failed_query = select(func.count()).select_from(JobQueue).where(
-            JobQueue.status == JobStatus.FAILED
-        )
-        result = await session.execute(failed_query)
-        failed_count = result.scalar() or 0
-
-        if failed_count > 10:
-            status["queue"] = "error"
-            status["queue_text"] = f"{failed_count} failed"
-        elif pending_count > 100:
-            status["queue"] = "warning"
-            status["queue_text"] = f"{pending_count} pending"
-        else:
-            status["queue"] = "healthy"
-            status["queue_text"] = f"{pending_count} pending"
-    except (SQLAlchemyError, ConnectionError, OSError) as e:
-        logger.warning(f"Queue health check failed: {e}")
-        status["queue"] = "warning"
-        status["queue_text"] = "Unknown"
-
     # SECURITY: Detailed component checks only for authenticated users.
-    # Unauthenticated probes (load balancers) only see api/db/queue.
+    # Unauthenticated probes (load balancers) only see api/db status.
     if user is not None:
+        # Check job queue — counts only exposed to authenticated users
+        pending_count = 0
+        failed_count = 0
+        try:
+            queue_query = select(
+                func.count().label("total"),
+                func.sum(func.cast(JobQueue.status == JobStatus.PENDING, Integer)).label("pending"),
+                func.sum(func.cast(JobQueue.status == JobStatus.FAILED, Integer)).label("failed"),
+            )
+            # Simplified query - just count pending jobs
+            pending_query = select(func.count()).select_from(JobQueue).where(
+                JobQueue.status == JobStatus.PENDING
+            )
+            result = await session.execute(pending_query)
+            pending_count = result.scalar() or 0
+
+            failed_query = select(func.count()).select_from(JobQueue).where(
+                JobQueue.status == JobStatus.FAILED
+            )
+            result = await session.execute(failed_query)
+            failed_count = result.scalar() or 0
+
+            if failed_count > 10:
+                status["queue"] = "error"
+                status["queue_text"] = f"{failed_count} failed"
+            elif pending_count > 100:
+                status["queue"] = "warning"
+                status["queue_text"] = f"{pending_count} pending"
+            else:
+                status["queue"] = "healthy"
+                status["queue_text"] = f"{pending_count} pending"
+        except (SQLAlchemyError, ConnectionError, OSError) as e:
+            logger.warning(f"Queue health check failed: {e}")
+            status["queue"] = "warning"
+            status["queue_text"] = "Unknown"
+
         # Check ML models
         try:
             models_available = []

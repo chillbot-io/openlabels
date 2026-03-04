@@ -487,8 +487,28 @@ def supports_remediation(adapter: ReadAdapter) -> bool:
 
 
 # Shared cloud-adapter helpers
+def _validate_cloud_key(key: str) -> str:
+    """Reject cloud storage keys containing path traversal sequences or null bytes.
+
+    Raises :class:`ValueError` if the key contains ``..`` path components or
+    null bytes (``\\x00``), which could be used to escape the intended prefix.
+    """
+    if "\x00" in key:
+        raise ValueError(f"Cloud storage key contains null byte: {key!r}")
+    # Check for ".." as a standalone path segment (e.g. "a/../b" or "../b")
+    segments = key.replace("\\", "/").split("/")
+    if ".." in segments:
+        raise ValueError(
+            f"Cloud storage key contains path traversal sequence: {key!r}"
+        )
+    return key
+
+
 def resolve_prefix(prefix: str, target: str) -> str:
     """Join a base prefix and a target sub-path, skipping empty parts."""
+    for part in (prefix, target):
+        if part:
+            _validate_cloud_key(part)
     parts = [p for p in (prefix, target) if p]
     return "/".join(parts)
 

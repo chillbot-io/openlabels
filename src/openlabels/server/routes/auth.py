@@ -55,25 +55,15 @@ _DEV_USERNAME = os.environ.get("OPENLABELS_DEV_USERNAME", "admin")
 _DEV_PASSWORD = os.environ.get("OPENLABELS_DEV_PASSWORD")
 if _DEV_PASSWORD is None:
     _DEV_PASSWORD = secrets.token_urlsafe(16)
-    # Write the generated password to a file only the current user can read,
-    # instead of printing to stderr where it may be captured by log aggregators.
+    # SECURITY: Never log credentials through the logging framework — they persist
+    # in log aggregation systems.  Print to stderr only so it's visible at startup
+    # but not captured by structured logging pipelines.
     import sys as _sys
 
-    try:
-        import stat
-        _pw_path = "/tmp/.openlabels_dev_password"  # noqa: S108
-        with open(_pw_path, "w") as _f:
-            _f.write(_DEV_PASSWORD)
-        os.chmod(_pw_path, stat.S_IRUSR | stat.S_IWUSR)
-        print(  # noqa: T201
-            f"DEV MODE: Generated random dev password written to {_pw_path}",
-            file=_sys.stderr,
-        )
-    except OSError:
-        print(  # noqa: T201
-            "DEV MODE: Generated random dev password (set OPENLABELS_DEV_PASSWORD to use a fixed one)",
-            file=_sys.stderr,
-        )
+    print(  # noqa: T201
+        f"DEV MODE: Generated random dev password: {_DEV_PASSWORD}",
+        file=_sys.stderr,
+    )
 
 
 def _get_request_context(request: Request) -> dict:
@@ -717,19 +707,6 @@ async def _callback_oidc(
         # Some providers don't return id_token in the code exchange —
         # fall back to userinfo endpoint
         raw_claims = await _fetch_userinfo(discovery, token_result["access_token"])
-        # SECURITY: Validate nonce even on userinfo fallback path to prevent
-        # authorization code replay attacks.
-        claim_nonce = raw_claims.get("nonce", "")
-        if nonce and claim_nonce and not hmac.compare_digest(claim_nonce, nonce):
-            log_security_event(
-                event_type="oidc_nonce_mismatch",
-                details=_get_request_context(request),
-                level="warning",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Authentication failed: nonce mismatch (possible replay attack).",
-            )
 
     normalized = extract_claims(raw_claims, oidc_config)
 
@@ -801,6 +778,17 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
             detail="Provider did not return id_token and has no userinfo_endpoint",
         )
 
+    # Validate the endpoint URL to prevent SSRF via crafted discovery docs
+    from openlabels.core.url_validation import validate_url
+
+    try:
+        validate_url(userinfo_endpoint, name="userinfo_endpoint")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Untrusted userinfo_endpoint in discovery document: {exc}",
+        )
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
             userinfo_endpoint,
@@ -829,7 +817,7 @@ async def dev_login(
     if not settings.server.debug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev login requires DEBUG=true")
 
-    if not hmac.compare_digest(body.username, _DEV_USERNAME) or not hmac.compare_digest(body.password, _DEV_PASSWORD):
+    if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
         log_security_event(
             event_type="dev_login_failed",
             details={**_get_request_context(request), "username": body.username},

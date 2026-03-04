@@ -22,6 +22,7 @@ __all__ = [
     "MIN_NATIVE_TEXT_LENGTH",
     "MAX_FILE_SIZE_BYTES",
     "MAX_DECOMPRESSED_SIZE",
+    "MAX_TEXT_SIZE",
     "MAX_EXTRACTION_RATIO",
     "DEFAULT_MAX_READ_BYTES",
     # Subprocess & query limits
@@ -110,6 +111,7 @@ MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB file upload limit
 # Decompression bomb protection
 # DOCX/XLSX are ZIP files - malicious files could decompress to gigabytes
 MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024  # 200MB - reasonable for large documents
+MAX_TEXT_SIZE = 10 * 1024 * 1024  # 10MB - limit on accumulated extracted text to prevent memory exhaustion
 MAX_EXTRACTION_RATIO = 100  # Max ratio of decompressed:compressed size
 
 # Adapter read_file default limit (prevents memory exhaustion)

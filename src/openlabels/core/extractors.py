@@ -30,6 +30,7 @@ from .constants import (
     MAX_DOCUMENT_PAGES,
     MAX_EXTRACTION_RATIO,
     MAX_SPREADSHEET_ROWS,
+    MAX_TEXT_SIZE,
     MIN_NATIVE_TEXT_LENGTH,
 )
 
@@ -135,6 +136,7 @@ class PDFExtractor(BaseExtractor):
         ocr_pages = []
         ocr_confidences = []
         warnings = []
+        total_chars = 0
 
         try:
             for i, page in enumerate(doc):
@@ -153,12 +155,18 @@ class PDFExtractor(BaseExtractor):
                 if has_native_text:
                     # Native text page
                     pages_text.append(native_text)
+                    total_chars += len(native_text)
                     page_infos.append(PageInfo(
                         page_num=i,
                         text=native_text,
                         is_scanned=False,
                     ))
                     logger.debug(f"Page {i+1}: native text ({len(native_text)} chars)")
+
+                    # SECURITY: Limit accumulated text size to prevent memory exhaustion
+                    if total_chars > MAX_TEXT_SIZE:
+                        warnings.append(f"Document truncated: text exceeds {MAX_TEXT_SIZE // (1024*1024)}MB limit")
+                        break
 
                 elif self.ocr_engine and hasattr(self.ocr_engine, 'is_available') and self.ocr_engine.is_available:
                     # Scanned page - needs OCR
@@ -188,6 +196,7 @@ class PDFExtractor(BaseExtractor):
                             ocr_text = self.ocr_engine.extract_text(img_array)
 
                         pages_text.append(ocr_text)
+                        total_chars += len(ocr_text)
                         ocr_pages.append(i)
 
                         page_infos.append(PageInfo(
@@ -195,6 +204,11 @@ class PDFExtractor(BaseExtractor):
                             text=ocr_text,
                             is_scanned=True,
                         ))
+
+                        # SECURITY: Limit accumulated text size to prevent memory exhaustion
+                        if total_chars > MAX_TEXT_SIZE:
+                            warnings.append(f"Document truncated: text exceeds {MAX_TEXT_SIZE // (1024*1024)}MB limit")
+                            break
 
                     except (OSError, ValueError, RuntimeError, MemoryError) as e:
                         # Log OCR failures with full context - may indicate corrupted pages or OCR issues
@@ -384,14 +398,31 @@ class XLSXExtractor(BaseExtractor):
             )
 
         rows = []
+        warnings = []
+        total_chars = 0
+        row_count = 0
         reader = csv.reader(io.StringIO(text_content), delimiter=delimiter)
         for row in reader:
             if any(cell.strip() for cell in row):
-                rows.append(" | ".join(cell.strip() for cell in row if cell.strip()))
+                # SECURITY: Limit row count to prevent DoS
+                if row_count >= MAX_SPREADSHEET_ROWS:
+                    warnings.append(f"CSV truncated at {MAX_SPREADSHEET_ROWS} rows")
+                    break
+                row_count += 1
+
+                row_text = " | ".join(cell.strip() for cell in row if cell.strip())
+                rows.append(row_text)
+                total_chars += len(row_text)
+
+                # SECURITY: Limit total extracted text size
+                if total_chars > MAX_TEXT_SIZE:
+                    warnings.append(f"CSV truncated: text exceeds {MAX_TEXT_SIZE // (1024*1024)}MB limit")
+                    break
 
         return ExtractionResult(
             text="\n".join(rows),
             pages=1,
+            warnings=warnings,
         )
 
     def _extract_xlsx(self, content: bytes, filename: str) -> ExtractionResult:
@@ -428,12 +459,13 @@ class XLSXExtractor(BaseExtractor):
                     sheet_rows.append(row_text)
                     total_chars += len(row_text)
 
-                    # SECURITY: Check for decompression bomb
-                    if total_chars > MAX_DECOMPRESSED_SIZE:
+                    # SECURITY: Limit accumulated text size to prevent memory exhaustion
+                    if total_chars > MAX_TEXT_SIZE:
                         wb.close()
-                        raise ValueError(
-                            f"Decompression bomb detected: extracted content exceeds "
-                            f"{MAX_DECOMPRESSED_SIZE // (1024*1024)}MB limit"
+                        return ExtractionResult(
+                            text="\n".join(all_text + [f"[Sheet: {sheet_name}]"] + sheet_rows),
+                            pages=len(wb.sheetnames) if hasattr(wb, 'sheetnames') else 1,
+                            warnings=warnings + [f"XLSX truncated: text exceeds {MAX_TEXT_SIZE // (1024*1024)}MB limit"],
                         )
 
             if sheet_rows:
@@ -471,6 +503,7 @@ class XLSXExtractor(BaseExtractor):
 
         all_text = []
         warnings = []
+        total_chars = 0
         for sheet_idx in range(wb.nsheets):
             sheet = wb.sheet_by_index(sheet_idx)
             sheet_rows = []
@@ -484,7 +517,14 @@ class XLSXExtractor(BaseExtractor):
                 row = sheet.row_values(row_idx)
                 cells = [str(cell).strip() for cell in row if cell]
                 if cells:
-                    sheet_rows.append(" | ".join(cells))
+                    row_text = " | ".join(cells)
+                    sheet_rows.append(row_text)
+                    total_chars += len(row_text)
+
+                    # SECURITY: Limit accumulated text size to prevent memory exhaustion
+                    if total_chars > MAX_TEXT_SIZE:
+                        warnings.append(f"XLS truncated: text exceeds {MAX_TEXT_SIZE // (1024*1024)}MB limit")
+                        break
 
             if sheet_rows:
                 all_text.append(f"[Sheet: {sheet.name}]")

@@ -334,35 +334,41 @@ class FilesystemAdapter:
 
         Security: Enforces maximum file size to prevent DoS attacks via
         memory exhaustion from processing extremely large files.  Also
-        validates the resolved path stays within *base_directory* (if
-        provided) to prevent path-traversal attacks.
+        validates the resolved path stays within *base_directory* to
+        prevent path-traversal attacks.
 
         Args:
             file_info: FileInfo of file to read
             max_size_bytes: Maximum file size to read (default 100MB)
-            base_directory: If provided, the resolved file path must reside
-                within this directory.  Prevents path-traversal attacks.
+            base_directory: The resolved file path must reside within this
+                directory.  Prevents path-traversal attacks.
 
         Returns:
             File content as bytes
 
         Raises:
-            ValueError: If file exceeds max_size_bytes
+            ValueError: If file exceeds max_size_bytes or base_directory not provided
             FilesystemError: If the resolved path escapes *base_directory*
         """
         import os
 
+        # Security: base_directory is mandatory to prevent path-traversal bypass
+        if base_directory is None:
+            raise ValueError(
+                "base_directory is required for filesystem read_file() "
+                "to enforce path-traversal protection"
+            )
+
         # Security: Validate the resolved path is within the expected base directory
         real_path = os.path.realpath(file_info.path)
-        if base_directory is not None:
-            real_base = os.path.realpath(base_directory)
-            if not real_path.startswith(real_base + os.sep) and real_path != real_base:
-                raise FilesystemError(
-                    "Path traversal detected: resolved path escapes base directory",
-                    path=file_info.path,
-                    operation="read_file",
-                    context=f"resolved to {real_path}, which is outside {real_base}",
-                )
+        real_base = os.path.realpath(base_directory)
+        if not real_path.startswith(real_base + os.sep) and real_path != real_base:
+            raise FilesystemError(
+                "Path traversal detected: resolved path escapes base directory",
+                path=file_info.path,
+                operation="read_file",
+                context=f"resolved to {real_path}, which is outside {real_base}",
+            )
 
         # Security: Check file size before reading to prevent memory exhaustion
         if file_info.size > max_size_bytes:

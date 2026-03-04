@@ -411,6 +411,7 @@ class LocalLabelWriter:
         try:
             file_path = validate_path(file_path, require_exists=True)
             sidecar_path = f"{file_path}.openlabels"
+            sidecar_path = validate_path(sidecar_path)
             sidecar_data = {
                 "label_id": label_id,
                 "label_name": label_name,
@@ -504,6 +505,8 @@ class LocalLabelWriter:
     def remove_pdf_label(self, file_path: str) -> LabelResult:
         """Remove sensitivity label from PDF metadata."""
         try:
+            file_path = validate_path(file_path, require_exists=True)
+
             try:
                 from pypdf import PdfReader, PdfWriter
             except ImportError:
@@ -528,6 +531,9 @@ class LocalLabelWriter:
 
             return LabelResult(success=True, method="pdf_metadata_removed")
 
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for PDF label removal: {e}")
+            return LabelResult(success=False, error=f"Invalid path: {e}")
         except PermissionError as e:
             return LabelResult(success=False, error=f"Permission denied removing PDF label: {e}")
         except OSError as e:
@@ -543,6 +549,11 @@ class LocalLabelWriter:
         metadata. Returns a dict with ``id`` and ``name`` keys, or
         ``None`` if no label is found.
         """
+        try:
+            file_path = validate_path(file_path, require_exists=True)
+        except PathValidationError as e:
+            logger.warning(f"Path validation failed for get_local_label: {e}")
+            return None
         path = Path(file_path)
         ext = path.suffix.lower()
 

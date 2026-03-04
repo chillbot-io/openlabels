@@ -224,9 +224,18 @@ async def get_subscription_status(
         # Parse key fields from wecutil XML output using proper XML parser
         output = proc.stdout
         try:
-            import defusedxml.ElementTree as ET
+            try:
+                import defusedxml.ElementTree as ET
 
-            root = ET.fromstring(output)
+                root = ET.fromstring(output)
+            except ImportError:
+                import xml.etree.ElementTree as ET  # noqa: S405
+
+                # Mitigate XXE: forbid DTD and external entities via XMLParser
+                parser = ET.XMLParser()
+                parser.entity = {}  # type: ignore[attr-defined]
+                parser.feed(output)
+                root = parser.close()
             # Handle namespaced and non-namespaced XML
             ns = {"s": "http://schemas.microsoft.com/2006/03/windows/events/subscription"}
 
